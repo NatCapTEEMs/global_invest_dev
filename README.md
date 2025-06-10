@@ -1,4 +1,4 @@
-# global_invest_dev
+# Global InVEST Dev repo
 
 Private development repo for the global_invest models used in the Gross Ecosystem Service (GEP) project. Upon publication, will be moved to global_invest (non _dev).
 
