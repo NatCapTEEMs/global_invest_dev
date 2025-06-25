@@ -7,7 +7,7 @@ def build_gep_task_tree(p):
     Build the default task tree for commercial agriculture.
     """
     p.commercial_agriculture_task = p.add_task(commercial_agriculture)
-    p.commercial_agriculture_preprocess_task = p.add_task(gep_preprocess, parent=p.commercial_agriculture_task)  
+    # p.commercial_agriculture_preprocess_task = p.add_task(gep_preprocess, parent=p.commercial_agriculture_task)  
     p.commercial_agriculture_gep_calculation_task = p.add_task(gep_calculation, parent=p.commercial_agriculture_task)  
     
     return p
@@ -18,7 +18,7 @@ def commercial_agriculture(p):
     """
     p.fao_input_path = p.get_path(os.path.join(p.base_data_dir, 'fao', 'Value_of_Production_E_All_Data.csv'))
 
-def gep_preprocess(p):
+def gep_preprocess_ryan_old(p):
     """
     Preprocessing tasks are assumed NOT to be run by the user. Instead, it is assumed that the output of a preprocess
     task is an input to the actual model, saved at the canonical project attribute p.commercial_agriculture_input_path.
@@ -28,7 +28,7 @@ def gep_preprocess(p):
     p.commercial_agriculture_input_path = os.path.join(p.cur_dir, "commercial_agriculture_value_by_crop.csv")
     commercial_agriculture_functions.preprocess_fao(p.fao_input_path, p.commercial_agriculture_input_path)
 
-def gep_calculation(p):
+def gep_calculation_ryan_old(p):
     """
     Calculate GEP for commercial agriculture.
     
@@ -39,3 +39,9 @@ def gep_calculation(p):
     p.commercial_agriculture_gep_by_crop_path = os.path.join(p.cur_dir, "commercial_agriculture_gep_by_country_year_and_crop.csv")
 
     commercial_agriculture_functions.calculate_gep(p.commercial_agriculture_input_path, p.commercial_agriculture_output_path, crop_values_output_path=p.commercial_agriculture_gep_by_crop_path)
+    
+    
+def gep_calculation(p):
+    r = commercial_agriculture_functions.calculate_gep(p.base_data_dir)
+
+    (df_gep_by_country_year_crop, df_gep_by_year_country, df_gep_by_year) = r
