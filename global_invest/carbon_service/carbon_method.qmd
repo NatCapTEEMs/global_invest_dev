@@ -1,0 +1,76 @@
+---
+title: "Overview of Ecosystem Service: Carbon Sequestration"
+format:
+  aps-pdf:
+    keep-tex: true
+    toc: false
+  aps-html: default
+
+author:
+  - name: Yanxu Long
+    affiliations:
+      - name: University of Minnesota
+        department: Department of Applied Economics
+        address:
+        city:
+        country: USA
+        postal-code: 55108
+    orcid: 0000-0001-9800-4242
+    email: yxlong@umn.edu
+    url: https://yanxulong.github.io/
+  - name: Justin Andrew Johnson
+    affiliations: University of Minnesota
+  - name: Nfamara Dampha
+    affiliations: University of Minnesota
+  - name: Haku Bo
+    affiliations: University of Minnesota
+abstract: |
+
+keywords: [template, demo]
+bibliography: references.bib
+---
+
+This section outlines how we value carbon sequestration as an ecosystem service within the GEP framework.The analysis focuses specifically on carbon sequestration provided by terrestrial ecosystems, which is appraised in terms of its contribution to climate change mitigation. By quantifying the carbon sequestration capacity of these ecosystems, we aim to capture their role in reducing atmospheric greenhouse gas concentrations, thereby contributing to global climate regulation.
+
+
+# Methods
+
+
+## Estimating Quantity
+
+
+We followed the methodology outlined in @johnson2023investing to quantify global carbon sequestration. To estimate the quantity of carbon sequestered, we implemented a two-stage modeling framework, as illustrated in @fig-carbon-workflow.
+
+First, we utilized an advanced global carbon density map developed by @spawn2020harmonized to update the carbon pool. This dataset consists of harmonized vegetation-specific maps that integrate both aboveground and belowground biomass into a single, comprehensive spatial representation for the year 2010, thereby enabling more accurate assessments of carbon stocks across diverse ecosystems. To construct the carbon pool table or carbon density lookup table, we combined the 300 m land use and land cover (LULC) data from the European Space Agency Climate Change Initiative Land Cover (ESA CCI LC) with the carbon zone map employed by @gibbs2008new. This integrated methodology enhances both the spatial resolution and contextual relevance of carbon stock estimations.
+
+Second, we applied the updated carbon density lookup table and the carbon zone map to a time series of LULC data, also derived from ESA CCI LC, to enable dynamic assessments of carbon storage over time.
+
+![Workflow for quantifying the global carbon sequestration. (a) The Data Preparation phase integrates the carbon zone map employed by @gibbs2008new, global ESA LULC data for 2010, and carbon density data from Spawn et al. (2020) to generate a carbon density lookup table.
+(b) The Time-Series Application phase applies the carbon density lookup table to sequential ESA LULC maps to estimate globally annual carbon density values.](figures/GEP_carbon_workflow.png){#fig-carbon-workflow width=100%}
+
+
+## Estimating Price
+
+To estimate the value of carbon sequestration, we employed the rental social cost of carbon (SCC) [@parisa_time_2022] as the pricing metric. @parisa_time_2022 provides the theoretical rationale for quantifying the value of short-term carbon storage, which corresponds to carbon sequestration. Following this approach, and within the framework of Gross Ecosystem Product (GEP), we estimate the annual value of carbon sequestration as follows:
+
+$$
+\text{Carbon Rental Rate} = P_C(t) - P_C(t+1)e^{-r} = P_C(t)\left(1 - e^{-r} \right)
+$$
+
+
+where $P_C(t)$ denotes the social cost of carbon in year $t$, and $\lambda$ represents net discount rate equal to
+the difference between the discount rate and the rate of growth of carbon prices. This formulation reflects the rental valuation approach, capturing the annualized benefit of temporarily storing one metric ton of CO2 for one year. This measure represents the annualized marginal damage cost of emitting an additional metric ton of CO2, thereby aligning our valuation approach with established climate policy frameworks and principles of intertemporal cost-benefit analysis. We adopt a carbon price of $185 per ton of CO2, consistent with the mean social cost of carbon estimated by Rennert et al. (2022). This value is employed for $P_C(t)$, the carbon price at time $t$. Furthermore, a discount rate of 2% is applied, following the same source. Based on these parameters, the annual carbon rental rate is calculated to be approximately $3.66 per ton of CO2.
+
+## Valuation
+
+After estimating both the quantity and price of carbon sequestration, the economic value of carbon sequestration, is calculated as:
+
+$$
+\text{GEP}_{\text{carbon\_sequestration}} = Q \cdot P \cdot \lambda= \text{Carbon Storage} \times \text{Rental SCC} \times 1
+$$
+
+where $Q$ represents the quantity of carbon storage (in metric tons), and $P$ denotes the annual rental SCC per ton. This formulation aligns with the GEP framework, translating biophysical carbon sequestration into monetary value.
+
+
+# References
+
