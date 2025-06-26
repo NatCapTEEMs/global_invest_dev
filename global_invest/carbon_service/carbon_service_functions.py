@@ -144,8 +144,6 @@ def combine_two_float_rasters(
     print(f"Combined raster saved to: {out_path}")
 
 
-#%%
-
 def reproject_raster(
     input_path,
     reference_path,
@@ -192,10 +190,6 @@ def reproject_raster(
     del ref, target, reprojected
     gc.collect()
 
-
-
-
-#%%
 
 def stack_layers_to_csv(
     group_layer1_path,
@@ -306,7 +300,6 @@ def stack_layers_to_csv(
         final_summary.to_csv(output_path, index=False)
         print(f"Summary written to: {output_path}")
 
-#%%
 
 def generate_carbon_density_raster(lulc_path, cz_path, carbon_density_lookup_table_path, out_path):
     """
@@ -371,7 +364,6 @@ def generate_carbon_density_raster(lulc_path, cz_path, carbon_density_lookup_tab
 
     gc.collect()
     print(f"Saved: {out_path}")
-
 
 
 def summarize_raster_by_region(value_raster_path, region_boundary_path, out_path):
