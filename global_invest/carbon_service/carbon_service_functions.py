@@ -440,4 +440,4 @@ def summarize_raster_by_region(value_raster_path, region_boundary_path, out_path
 
     df = pd.DataFrame(results)
     df.to_csv(out_path, index=False)
-    print(f"✅ Summary written to: {out_path}")
+    print(f"Summary written to: {out_path}")
