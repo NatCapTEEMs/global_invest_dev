@@ -92,7 +92,7 @@ def read_crop_values(path: str, items):
         id_vars=["area_code", "country", "crop_code", "crop"],
         value_vars=[str(year) for year in range(1961, 2023)],  # 1961–2022
         var_name="year",
-        value_name="gep",
+        value_name="Value",
     )
 
     # ensure area_code and year are ints
@@ -170,7 +170,7 @@ def merge_crop_with_coefs(df_crop_value: pd.DataFrame, df_crop_coefs: pd.DataFra
 
     # recombine everything
     df_crop_value = pd.concat(merged_parts, ignore_index=True)
-    df_crop_value["gep"] = df_crop_value["gep"] * df_crop_value["rental_rate"]
+    df_crop_value["Value"] = df_crop_value["Value"] * df_crop_value["rental_rate"]
     df_crop_value = df_crop_value.sort_values(by=["area_code", "year"], ascending=[True, True])
     logging.info(f"Merged values + coefs ({df_crop_value.shape[0]} rows).")
     return df_crop_value
@@ -180,9 +180,9 @@ def group_crops(df: pd.DataFrame):
     """
     Aggregate adjusted GEP by country-year.
     """
-    df_gep_by_year_country = df.groupby(["area_code", "country", "year"], as_index=False).agg(gep=("gep", "sum"))
+    df_gep_by_year_country = df.groupby(["area_code", "country", "year"], as_index=False).agg(Value=("Value", "sum"))
     df_gep_by_year_country = df_gep_by_year_country.sort_values(by=["area_code", "year"], ascending=[True, True])
-    df_gep_by_year_country["gep"] = pd.to_numeric(df_gep_by_year_country["gep"], errors="coerce")
+    df_gep_by_year_country["Value"] = pd.to_numeric(df_gep_by_year_country["Value"], errors="coerce")
     logging.info(f"Grouped by country-year ({df_gep_by_year_country.shape[0]} rows).")
     return df_gep_by_year_country
 
@@ -191,15 +191,15 @@ def group_countries(df: pd.DataFrame):
     """
     Aggregate total GEP across all countries by year.
     """
-    df_gep_by_year = df.groupby("year", as_index=False).agg(gep=("gep", "sum"))
+    df_gep_by_year = df.groupby("year", as_index=False).agg(Value=("Value", "sum"))
     df_gep_by_year.set_index("year", inplace=False)
-    df_gep_by_year.rename(columns={"gep": "total_gep"}, inplace=True)
+    # df_gep_by_year.rename(columns={"gep": "total_gep"}, inplace=True)
     df_gep_by_year.sort_values("year", inplace=True)
     logging.info(f"Grouped total by year ({df_gep_by_year.shape[0]} rows).")
     return df_gep_by_year
 
 
-def calculate_gep(data_input_dir, items: list = commercial_agriculture_defaults.DEFAULT_CROP_ITEMS):
+def calculate_gep(data_input_dir, items: list = commercial_agriculture_defaults.DEFAULT_CROP_ITEMS, base_year: int = 2019):
 
     # 1. Read and process data
     df_crop_value = read_crop_values(os.path.join(data_input_dir, 'fao', "Value_of_Production_E_All_Data2.csv"), items)
@@ -208,8 +208,16 @@ def calculate_gep(data_input_dir, items: list = commercial_agriculture_defaults.
     df_gep_by_country_year_crop = merge_crop_with_coefs(df_crop_value, df_crop_coefs)
     df_gep_by_year_country = group_crops(df_gep_by_country_year_crop)
     df_gep_by_year = group_countries(df_gep_by_year_country)
+    
+    # Extract the value for the base year (2019)
+
+    total_value = df_gep_by_year[df_gep_by_year["year"] == base_year]["Value"].sum()
+    if pd.isna(total_value) or total_value == 0:
+        logging.warning(f"No GEP data found for base year {base_year}. Using 0 as total value.")
+        total_value = 0.0
 
     return {
+        "gep_base_year": total_value,
         "gep_by_year": df_gep_by_year,
         "gep_by_year_country": df_gep_by_year_country,
         "gep_by_country_year_crop": df_gep_by_country_year_crop,

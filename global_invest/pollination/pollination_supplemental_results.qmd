@@ -1,17 +1,3 @@
----
-format:
-  html:
-    embed-resources: true
-    standalone: true
-    code-fold: true           # Fold code by default in HTML
-    code-summary: "Show code"
-  pdf:
-    echo: false              # Hide code by default in PDF
-  docx:
-    echo: false              # Hide code by default in Word
-  ipynb: default
----
-
 # Commercial Agriculture Supplementary Results
 
 Text describing it
@@ -32,8 +18,9 @@ livestock = commercial_agriculture_functions.calculate_gep(p.base_data_dir, item
 crops = commercial_agriculture_functions.calculate_gep(p.base_data_dir, items=commercial_agriculture_defaults.DEFAULT_CROP_ITEMS)
 
 def year_value(df, year):
-    return df[df['year'] == year]['Value'].iloc[0]
-
+    return df[df['year'] == year]['total_gep'].iloc[0]
+print(year_value(livestock['gep_by_year'], 2019))
+print(year_value(crops['gep_by_year'], 2019))
 
 ```
 
@@ -42,11 +29,13 @@ def year_value(df, year):
 Raw values
 
 ```{python}
+print(year_value(livestock['gep_by_year'], 2019))
+print(year_value(crops['gep_by_year'], 2019))
 
-df = crops["Value"]
+df = crops["gep_by_year_country"]
 display(df[df["year"] == 2019])
 
-df = livestock["Value"]
+df = livestock["gep_by_year_country"]
 display(df[df["year"] == 2019])
 ```
 
@@ -55,22 +44,22 @@ display(df[df["year"] == 2019])
 Display country level value for for both livestock and crops items for selected year: 2019
 
 ```{python}
-df = crops["Value"]
+df = crops["gep_by_country_year_crop"]
 display(df[df["year"] == 2019])
 
-df = livestock["Value"]
+df = livestock["gep_by_country_year_crop"]
 display(df[df["year"] == 2019])
 ```
 
 ## Time series plot
 
 ```{python}
-df = livestock["Value"]
-df2 = crops["Value"]
+df = livestock["gep_by_year"]
+df2 = crops["gep_by_year"]
 display(df)
 
-plt.plot(df["year"], df["Value"], marker="o", linestyle="-")
-plt.plot(df2["year"], df2["Value"], marker="o", linestyle="-")
+plt.plot(df["year"], df["total_gep"], marker="o", linestyle="-")
+plt.plot(df2["year"], df2["total_gep"], marker="o", linestyle="-")
 plt.title("Time Series of Commercial Agriculture (All Countries)")
 plt.xlabel("Year")
 plt.ylabel("GEP (1000 USD)")
