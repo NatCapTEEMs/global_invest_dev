@@ -5,7 +5,7 @@ import os, sys
 import hazelbean as hb
 import pandas as pd
 
-from global_invest.carbon_service import carbon_service_tasks
+from global_invest.carbon import carbon_tasks
 
 # Create the project flow object
 p = hb.ProjectFlow()
@@ -31,13 +31,13 @@ p.region_boundary_path = p.get_path(os.path.join(p.base_data_dir,'ee_r264_corres
 p.task_tree.children = []
 p.task_names_defined = []
 def build_task_tree(p):
-    p.task_print_hello = p.add_task(carbon_service_tasks.task_print_hello)
-    p.task_convert_carbon_density_maps_dtype = p.add_task(carbon_service_tasks.task_convert_carbon_density_maps_dtype)
-    p.task_combine_two_carbon_density_maps = p.add_task(carbon_service_tasks.task_combine_two_carbon_density_maps)
-    p.task_reproject_total_carbon_density = p.add_task(carbon_service_tasks.task_reproject_total_carbon_density)
-    p.task_compute_carbon_density_table = p.add_task(carbon_service_tasks.task_compute_carbon_density_table)
-    p.task_generate_carbon_density_raster_base_year = p.add_task(carbon_service_tasks.task_generate_carbon_density_raster_base_year)
-    p.task_summarize_carbon_density_by_region = p.add_task(carbon_service_tasks.task_summarize_carbon_density_by_region)
+    p.task_print_hello = p.add_task(carbon_tasks.task_print_hello)
+    p.task_convert_carbon_density_maps_dtype = p.add_task(carbon_tasks.task_convert_carbon_density_maps_dtype)
+    p.task_combine_two_carbon_density_maps = p.add_task(carbon_tasks.task_combine_two_carbon_density_maps)
+    p.task_reproject_total_carbon_density = p.add_task(carbon_tasks.task_reproject_total_carbon_density)
+    p.task_compute_carbon_density_table = p.add_task(carbon_tasks.task_compute_carbon_density_table)
+    p.task_generate_carbon_density_raster_base_year = p.add_task(carbon_tasks.task_generate_carbon_density_raster_base_year)
+    p.task_summarize_carbon_density_by_region = p.add_task(carbon_tasks.task_summarize_carbon_density_by_region)
 
 # Build the task tree and excute it!
 build_task_tree(p)

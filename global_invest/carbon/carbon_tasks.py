@@ -5,7 +5,7 @@
 import os
 import numpy as np
 
-from global_invest.carbon_service import carbon_service_functions
+from global_invest.carbon import carbon_functions
 
 
 # =============================================================================
@@ -37,7 +37,7 @@ def task_convert_carbon_density_maps_dtype(p):
         output_name = f"{name_root}_float{ext}"
         output_path = os.path.join(output_folder, output_name)
 
-        carbon_service_functions.convert_uint_to_float_raster(
+        carbon_functions.convert_uint_to_float_raster(
             input_path=input_path,
             output_path=output_path,
             scale_factor=0.1,
@@ -59,7 +59,7 @@ def task_combine_two_carbon_density_maps(p):
     p.total_carbon_output_path = os.path.join(p.project_dir, "total_biomass_carbon_2010_float.tif")
 
     # Run the function
-    result = carbon_service_functions.combine_two_float_rasters(
+    result = carbon_functions.combine_two_float_rasters(
         raster1_path=p.agb_path,
         raster2_path=p.bgb_path,
         out_path=p.total_carbon_output_path,
@@ -80,7 +80,7 @@ def task_reproject_total_carbon_density(p):
     p.reprojected_total_carbon_density_path = os.path.join(p.project_dir, "total_biomass_carbon_2010_float_reprojected.tif")
 
     # Run the function
-    result = carbon_service_functions.reproject_raster(
+    result = carbon_functions.reproject_raster(
         input_path=p.total_carbon_density_path,
         reference_path=p.base_year_lulc_path,
         output_path=p.reprojected_total_carbon_density_path,
@@ -101,7 +101,7 @@ def task_reproject_carbon_zones(p):
     p.reprojected_carbon_zones_path = os.path.join(p.project_dir, "carbon_zones_rasterized_reprojected.tif")
 
     # Run the function
-    result = carbon_service_functions.reproject_raster(
+    result = carbon_functions.reproject_raster(
         input_path=p.carbon_zones_path,
         reference_path=p.base_year_lulc_path,
         output_path=p.reprojected_carbon_zones_path,
@@ -117,7 +117,7 @@ def task_compute_carbon_density_table(p):
     p.reprojected_total_carbon_density_path = p.get_path(os.path.join(p.project_dir, "total_biomass_carbon_2010_float_reprojected.tif"))
     p.carbon_density_lookup_table_path = os.path.join(p.project_dir, "carbon_density_lookup_table.csv")
 
-    result = carbon_service_functions.stack_layers_to_csv(
+    result = carbon_functions.stack_layers_to_csv(
         group_layer1_path=p.base_year_lulc_path,
         group_layer2_path=p.carbon_zones_path,
         value_layer_path=p.reprojected_total_carbon_density_path,
@@ -133,7 +133,7 @@ def task_generate_carbon_density_raster_base_year(p):
     p.reprojected_total_carbon_density_path = p.get_path(os.path.join(p.project_dir, "total_biomass_carbon_2010_float_reprojected.tif"))
     p.carbon_density_lookup_table_path = p.get_path(os.path.join(p.project_dir, "carbon_density_lookup_table.csv"))
     p.carbon_density_raster_output_path = os.path.join(p.project_dir, "carbon_density_2019.tif")
-    result = carbon_service_functions.generate_carbon_density_raster(
+    result = carbon_functions.generate_carbon_density_raster(
         lulc_path=p.base_year_lulc_path,
         cz_path=p.carbon_zones_path,
         carbon_density_lookup_table_path=p.carbon_density_lookup_table_path,
@@ -144,7 +144,7 @@ def task_generate_carbon_density_raster_base_year(p):
 def task_summarize_carbon_density_by_region(p):
     p.carbon_density_raster_output_path = p.get_path(os.path.join(p.project_dir, "carbon_density_2019.tif"))
     p.carbon_density_by_region_path = os.path.join(p.project_dir, "carbon_density_by_region_2019.csv")
-    result = carbon_service_functions.summarize_raster_by_region(
+    result = carbon_functions.summarize_raster_by_region(
         value_raster_path=p.carbon_density_raster_output_path,
         region_boundary_path=p.region_boundary_path,
         out_path=p.carbon_density_by_region_path)
