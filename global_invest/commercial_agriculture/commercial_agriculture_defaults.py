@@ -210,3 +210,5 @@ DEFAULT_CROP_ITEMS = [
     "Meat of other domestic rodents, fresh or chilled",
     "Other sugar crops n.e.c.",
 ]
+
+DEFAULT_AGRICULTURE_ITEMS = DEFAULT_CROP_ITEMS + DEFAULT_LIVESTOCK_ITEMS

@@ -4,6 +4,7 @@ import logging
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+import hazelbean as hb
 from global_invest.commercial_agriculture import commercial_agriculture_defaults
 
 def read_crop_values(path: str, items):
@@ -89,7 +90,7 @@ def read_crop_values(path: str, items):
     # reshape to long format
     df_crop_value = pd.melt(
         df_crop_value,
-        id_vars=["area_code", "country", "crop_code", "crop"],
+        id_vars=["area_code", "area_code_M49", "country", "crop_code", "crop"],
         value_vars=[str(year) for year in range(1961, 2023)],  # 1961–2022
         var_name="year",
         value_name="Value",
@@ -180,7 +181,7 @@ def group_crops(df: pd.DataFrame):
     """
     Aggregate adjusted GEP by country-year.
     """
-    df_gep_by_year_country = df.groupby(["area_code", "country", "year"], as_index=False).agg(Value=("Value", "sum"))
+    df_gep_by_year_country = df.groupby(["area_code", "ee_r264_id", "ee_r264_label", "country", "year"], as_index=False).agg(Value=("Value", "sum"))
     df_gep_by_year_country = df_gep_by_year_country.sort_values(by=["area_code", "year"], ascending=[True, True])
     df_gep_by_year_country["Value"] = pd.to_numeric(df_gep_by_year_country["Value"], errors="coerce")
     logging.info(f"Grouped by country-year ({df_gep_by_year_country.shape[0]} rows).")
@@ -199,14 +200,22 @@ def group_countries(df: pd.DataFrame):
     return df_gep_by_year
 
 
-def calculate_gep(data_input_dir, items: list = commercial_agriculture_defaults.DEFAULT_CROP_ITEMS, base_year: int = 2019):
+def calculate_gep(p, data_input_dir, items: list = commercial_agriculture_defaults.DEFAULT_CROP_ITEMS, base_year: int = 2019):
 
     # 1. Read and process data
-    df_crop_value = read_crop_values(os.path.join(data_input_dir, 'fao', "Value_of_Production_E_All_Data2.csv"), items)
+    df_crop_value = read_crop_values(os.path.join(data_input_dir, 'fao', "Value_of_Production_E_All_Data.csv"), items)
     df_crop_coefs = read_crop_coefs(os.path.join(data_input_dir, 'gep', "CWON2024_crop_coef.csv"))
-
+    
     df_gep_by_country_year_crop = merge_crop_with_coefs(df_crop_value, df_crop_coefs)
+    
+    df_gep_by_country_year_crop['area_code_M49'] = df_gep_by_country_year_crop['area_code_M49'].str.replace('\'', '')    
+    df_gep_by_country_year_crop['area_code_M49'] = df_gep_by_country_year_crop['area_code_M49'].astype(int)
+    
+    df_gep_by_country_year_crop = hb.df_merge(p.ee_r264_df, df_gep_by_country_year_crop, how='outer', left_on='iso3_r250_id', right_on='area_code_M49')
+    
+    
     df_gep_by_year_country = group_crops(df_gep_by_country_year_crop)
+    df_gep_by_country_base_year = df_gep_by_year_country.loc[df_gep_by_year_country['year'] == 2019].copy()
     df_gep_by_year = group_countries(df_gep_by_year_country)
     
     # Extract the value for the base year (2019)
@@ -218,6 +227,7 @@ def calculate_gep(data_input_dir, items: list = commercial_agriculture_defaults.
 
     return {
         "gep_base_year": total_value,
+        "gep_by_country_base_year": df_gep_by_country_base_year,
         "gep_by_year": df_gep_by_year,
         "gep_by_year_country": df_gep_by_year_country,
         "gep_by_country_year_crop": df_gep_by_country_year_crop,

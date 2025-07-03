@@ -18,63 +18,21 @@ Text describing it
 
 ```{python}
 import matplotlib.pyplot as plt
+import pandas as pd
 import os
 import hazelbean as hb
 from global_invest.commercial_agriculture import commercial_agriculture_functions
 from global_invest.commercial_agriculture import commercial_agriculture_defaults
 
-project_name = 'commercial_agriculture_gep' 
+project_name = 'gep_commercial_agriculture' 
 project_dir = os.path.join(os.path.expanduser('~'), 'Files', 'gep', 'projects', project_name)
 p = hb.ProjectFlow(project_dir)
 p.base_data_dir = "G:/Shared drives/NatCapTEEMs/Files/base_data"
 
-livestock = commercial_agriculture_functions.calculate_gep(p.base_data_dir, items=commercial_agriculture_defaults.DEFAULT_LIVESTOCK_ITEMS)
-crops = commercial_agriculture_functions.calculate_gep(p.base_data_dir, items=commercial_agriculture_defaults.DEFAULT_CROP_ITEMS)
+crop_gep_by_year = pd.read_csv(os.path.join(project_dir, 'intermediate', 'commercial_agriculture', 'gep_calculation', 'crop_gep_by_year.csv'))
+livestock_gep_by_year = pd.read_csv(os.path.join(project_dir, 'intermediate', 'commercial_agriculture', 'gep_calculation', 'livestock_gep_by_year.csv'))
 
-def year_value(df, year):
-    return df[df['year'] == year]['Value'].iloc[0]
-
+total_value = crop_gep_by_year['Value'] + livestock_gep_by_year['Value']
 
 ```
 
-## Primary Results: All Countries 2019
-
-Raw values
-
-```{python}
-
-df = crops["Value"]
-display(df[df["year"] == 2019])
-
-df = livestock["Value"]
-display(df[df["year"] == 2019])
-```
-
-## All countries, all crops and livestock 2019
-
-Display country level value for for both livestock and crops items for selected year: 2019
-
-```{python}
-df = crops["Value"]
-display(df[df["year"] == 2019])
-
-df = livestock["Value"]
-display(df[df["year"] == 2019])
-```
-
-## Time series plot
-
-```{python}
-df = livestock["Value"]
-df2 = crops["Value"]
-display(df)
-
-plt.plot(df["year"], df["Value"], marker="o", linestyle="-")
-plt.plot(df2["year"], df2["Value"], marker="o", linestyle="-")
-plt.title("Time Series of Commercial Agriculture (All Countries)")
-plt.xlabel("Year")
-plt.ylabel("GEP (1000 USD)")
-plt.xticks(rotation=45)
-plt.grid(True)
-plt.show()
-```
