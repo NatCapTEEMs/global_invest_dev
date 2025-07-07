@@ -149,8 +149,3 @@ def task_summarize_carbon_density_by_region(p):
         region_boundary_path=p.region_boundary_path,
         out_path=p.carbon_density_by_region_path)
     return result
-
-
-def task_print_hello(p):
-    print("Hello World!")
-    return True

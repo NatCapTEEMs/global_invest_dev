@@ -1,10 +1,9 @@
 ---
-title: "Overview of Ecosystem Service: Carbon Sequestration"
+title: "Overview of Ecosystem Service: Carbon Storage and Sequestration"
 format:
-  aps-pdf:
-    keep-tex: true
+  pdf:
     toc: false
-  aps-html: default
+  html: default
 
 author:
   - name: Yanxu Long
@@ -45,7 +44,7 @@ First, we utilized an advanced global carbon density map developed by @spawn2020
 
 Second, we applied the updated carbon density lookup table and the carbon zone map to a time series of LULC data, also derived from ESA CCI LC, to enable dynamic assessments of carbon storage over time.
 
-![Workflow for quantifying the global carbon sequestration. (a) The Data Preparation phase integrates the carbon zone map employed by @gibbs2008new, global ESA LULC data for 2010, and carbon density data from Spawn et al. (2020) to generate a carbon density lookup table.
+![Workflow for quantifying the global carbon sequestration. (a) The Data Preparation phase integrates the carbon zone map employed by @gibbs2008new, global ESA LULC data for 2010, and carbon density data from @spawn2020harmonized to generate a carbon density lookup table.
 (b) The Time-Series Application phase applies the carbon density lookup table to sequential ESA LULC maps to estimate globally annual carbon density values.](figures/GEP_carbon_workflow.png){#fig-carbon-workflow width=100%}
 
 
@@ -59,14 +58,14 @@ $$
 
 
 where $P_C(t)$ denotes the social cost of carbon in year $t$, and $\lambda$ represents net discount rate equal to
-the difference between the discount rate and the rate of growth of carbon prices. This formulation reflects the rental valuation approach, capturing the annualized benefit of temporarily storing one metric ton of CO2 for one year. This measure represents the annualized marginal damage cost of emitting an additional metric ton of CO2, thereby aligning our valuation approach with established climate policy frameworks and principles of intertemporal cost-benefit analysis. We adopt a carbon price of $185 per ton of CO2, consistent with the mean social cost of carbon estimated by Rennert et al. (2022). This value is employed for $P_C(t)$, the carbon price at time $t$. Furthermore, a discount rate of 2% is applied, following the same source. Based on these parameters, the annual carbon rental rate is calculated to be approximately $3.66 per ton of CO2.
+the difference between the discount rate and the rate of growth of carbon prices. This formulation reflects the rental valuation approach, capturing the annualized benefit of temporarily storing one metric ton of CO2 for one year. This measure represents the annualized marginal damage cost of emitting an additional metric ton of CO2, thereby aligning our valuation approach with established climate policy frameworks and principles of intertemporal cost-benefit analysis. We adopt a carbon price of \$678.33 per metric ton of carbon (C), corresponding to the mean social cost of CO2 estimated by @rennert_comprehensive_2022. This value is employed for $P_C(t)$, the carbon price at time $t$. Furthermore, a discount rate of 2% is applied, following the same source. Based on these parameters, the annual carbon rental rate is calculated to be approximately $13.43 per ton of C.
 
 ## Valuation
 
 After estimating both the quantity and price of carbon sequestration, the economic value of carbon sequestration, is calculated as:
 
 $$
-\text{GEP}_{\text{carbon\_sequestration}} = Q \cdot P \cdot \lambda= \text{Carbon Storage} \times \text{Rental SCC} \times 1
+\text{GEP}_{\text{carbon storage and sequestration}}} = Q \cdot P \cdot \lambda= \text{Carbon Storage} \times \text{Rental SCC} \times 1
 $$
 
 where $Q$ represents the quantity of carbon storage (in metric tons), and $P$ denotes the annual rental SCC per ton. This formulation aligns with the GEP framework, translating biophysical carbon sequestration into monetary value.

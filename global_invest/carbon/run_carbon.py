@@ -1,5 +1,5 @@
 # Copyright (c) 2025, Yanxu Long
-# This file is part of the Global GEP project: carbon service
+# This file is part of the Global GEP project: carbon storage and sequestration
 
 import os, sys
 import hazelbean as hb
@@ -13,7 +13,6 @@ p = hb.ProjectFlow()
 # Set project-directories
 p.user_dir = os.path.expanduser('~')
 p.extra_dirs = ['Files', 'global_invest', 'projects']
-p.project_name = 'test_global_invest'
 p.project_name = p.project_name + '_' + hb.pretty_time() # Comment this line out if you want it to use an existing project. Will skip recreation of files that already exist.
 p.project_dir = os.path.join(p.user_dir, os.sep.join(p.extra_dirs), p.project_name)
 p.set_project_dir(p.project_dir)
@@ -28,8 +27,6 @@ p.all_lulcs_path = p.get_path(os.path.join(p.base_data_dir, 'lulc/esa')) # Defin
 p.carbon_zones_path = p.get_path(os.path.join(p.base_data_dir,'carbon_zones_rasterized.tif')) # Defines the carbon zones
 p.region_boundary_path = p.get_path(os.path.join(p.base_data_dir,'ee_r264_correspondence.gpkg'))
 
-p.task_tree.children = []
-p.task_names_defined = []
 def build_task_tree(p):
     p.task_print_hello = p.add_task(carbon_tasks.task_print_hello)
     p.task_convert_carbon_density_maps_dtype = p.add_task(carbon_tasks.task_convert_carbon_density_maps_dtype)
@@ -41,14 +38,15 @@ def build_task_tree(p):
 
 # Build the task tree and excute it!
 build_task_tree(p)
-
-print(p.task_tree.children)
-print(p.task_names_defined)
-
 p.fail_fast = True
 p.verbosity = 2
 p.debug = True
 p.execute()
+
+
+
+
+
 
 
 
