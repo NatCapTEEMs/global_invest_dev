@@ -2,17 +2,25 @@ import os
 import sys
 import pandas as pd
 import hazelbean as hb
+
 from global_invest.commercial_agriculture import commercial_agriculture_functions
 from global_invest.commercial_agriculture import commercial_agriculture_defaults
 
+def build_standard_task_tree(p):
+    """Build the default task tree for commercial agriculture."""
+    p.commercial_agriculture_task = p.add_task(commercial_agriculture)
+    p.commercial_agriculture_gep_calculation_task = p.add_task(gep_calculation, parent=p.commercial_agriculture_task)  
+    return p
+
 def build_gep_task_tree(p):
     """
-    Build the default task tree for commercial agriculture.
+    Build the default task tree forthe GEP application of commercial agriculture. In this case, it's very similar to the standard task tree
+    but i've included it here for consistency with other models.
     """
     p.commercial_agriculture_task = p.add_task(commercial_agriculture)
     # p.commercial_agriculture_preprocess_task = p.add_task(gep_preprocess, parent=p.commercial_agriculture_task)  
     p.commercial_agriculture_gep_calculation_task = p.add_task(gep_calculation, parent=p.commercial_agriculture_task)  
-    p.commercial_agriculture_gep_result_task = p.add_task(gep_result, parent=p.commercial_agriculture_task)  
+    # p.commercial_agriculture_gep_result_task = p.add_task(gep_result, parent=p.commercial_agriculture_task)  
     
     return p
 
@@ -20,7 +28,7 @@ def commercial_agriculture(p):
     """
     Parent task for commercial agriculture.
     """
-    p.fao_input_path = p.get_path(os.path.join(p.base_data_dir, 'fao', 'Value_of_Production_E_All_Data.csv'))
+    p.fao_input_path = p.get_path(os.path.join(p.base_data_dir, 'global_invest', 'commercial_agriculture', 'Value_of_Production_E_All_Data.csv'))
 
 
 def gep_preprocess_ryan_old(p):
@@ -119,7 +127,11 @@ def gep_calculation(p):
             
             hb.df_write(crop_coefs, os.path.join(p.cur_dir, 'crop_coefs.csv'))
             
-            # START HERE: Merge the crop value with the coefficients
+            # Merge the crop value with the coefficients
+            value_with_coeffs = hb.df_merge(crop_value_melted, crop_coefs, how='outer', left_on=['area_code', 'year'], right_on=['FAO', 'year'])
+            
+            hb.df_write(value_with_coeffs, p.results['commercial_agriculture']['gep_by_country_year_crop_csv'])
+            
     
 def gep_result(p):
     """
@@ -139,3 +151,5 @@ def gep_result(p):
         quarto_command = f"quarto render {results_qmd_path}"
         hb.log(f"Running quarto command: {quarto_command}")        
         os.system(quarto_command)
+        
+    
