@@ -192,7 +192,7 @@ def group_countries(df: pd.DataFrame):
     """
     Aggregate total GEP across all countries by year.
     """
-    df_gep_by_year = df.groupby("year", as_index=False).agg(Value=("Value", "sum"))
+    df_gep_by_year = df.groupby(["area_code", "ee_r264_id", "ee_r264_label", "country", "year"], as_index=False).agg(Value=("Value", "sum"))
     df_gep_by_year.set_index("year", inplace=False)
     # df_gep_by_year.rename(columns={"gep": "total_gep"}, inplace=True)
     df_gep_by_year.sort_values("year", inplace=True)
@@ -200,35 +200,35 @@ def group_countries(df: pd.DataFrame):
     return df_gep_by_year
 
 
-def calculate_gep(p, data_input_dir, items: list = commercial_agriculture_defaults.DEFAULT_CROP_ITEMS, base_year: int = 2019):
+# def calculate_gep(p, data_input_dir, items: list = commercial_agriculture_defaults.DEFAULT_CROP_ITEMS, base_year: int = 2019):
 
-    # 1. Read and process data
-    df_crop_value = read_crop_values(os.path.join(data_input_dir, 'fao', "Value_of_Production_E_All_Data.csv"), items)
-    df_crop_coefs = read_crop_coefs(os.path.join(data_input_dir, 'gep', "CWON2024_crop_coef.csv"))
+#     # 1. Read and process data
+#     df_crop_value = read_crop_values(os.path.join(data_input_dir, 'fao', "Value_of_Production_E_All_Data.csv"), items)
+#     df_crop_coefs = read_crop_coefs(os.path.join(data_input_dir, 'gep', "CWON2024_crop_coef.csv"))
     
-    df_gep_by_country_year_crop = merge_crop_with_coefs(df_crop_value, df_crop_coefs)
+#     df_gep_by_country_year_crop = merge_crop_with_coefs(df_crop_value, df_crop_coefs)
     
-    df_gep_by_country_year_crop['area_code_M49'] = df_gep_by_country_year_crop['area_code_M49'].str.replace('\'', '')    
-    df_gep_by_country_year_crop['area_code_M49'] = df_gep_by_country_year_crop['area_code_M49'].astype(int)
+#     df_gep_by_country_year_crop['area_code_M49'] = df_gep_by_country_year_crop['area_code_M49'].str.replace('\'', '')    
+#     df_gep_by_country_year_crop['area_code_M49'] = df_gep_by_country_year_crop['area_code_M49'].astype(int)
     
-    df_gep_by_country_year_crop = hb.df_merge(p.ee_r264_df, df_gep_by_country_year_crop, how='outer', left_on='iso3_r250_id', right_on='area_code_M49')
+#     df_gep_by_country_year_crop = hb.df_merge(p.ee_r264_df, df_gep_by_country_year_crop, how='outer', left_on='iso3_r250_id', right_on='area_code_M49')
     
     
-    df_gep_by_year_country = group_crops(df_gep_by_country_year_crop)
-    df_gep_by_country_base_year = df_gep_by_year_country.loc[df_gep_by_year_country['year'] == 2019].copy()
-    df_gep_by_year = group_countries(df_gep_by_year_country)
+#     df_gep_by_year_country = group_crops(df_gep_by_country_year_crop)
+#     df_gep_by_country_base_year = df_gep_by_year_country.loc[df_gep_by_year_country['year'] == 2019].copy()
+#     df_gep_by_year = group_countries(df_gep_by_year_country)
     
-    # Extract the value for the base year (2019)
+#     # Extract the value for the base year (2019)
 
-    total_value = df_gep_by_year[df_gep_by_year["year"] == base_year]["Value"].sum()
-    if pd.isna(total_value) or total_value == 0:
-        logging.warning(f"No GEP data found for base year {base_year}. Using 0 as total value.")
-        total_value = 0.0
+#     total_value = df_gep_by_year[df_gep_by_year["year"] == base_year]["Value"].sum()
+#     if pd.isna(total_value) or total_value == 0:
+#         logging.warning(f"No GEP data found for base year {base_year}. Using 0 as total value.")
+#         total_value = 0.0
 
-    return {
-        "gep_base_year": total_value,
-        "gep_by_country_base_year": df_gep_by_country_base_year,
-        "gep_by_year": df_gep_by_year,
-        "gep_by_year_country": df_gep_by_year_country,
-        "gep_by_country_year_crop": df_gep_by_country_year_crop,
-    }
+#     return {
+#         "gep_base_year": total_value,
+#         "gep_by_country_base_year": df_gep_by_country_base_year,
+#         "gep_by_year": df_gep_by_year,
+#         "gep_by_year_country": df_gep_by_year_country,
+#         "gep_by_country_year_crop": df_gep_by_country_year_crop,
+#     }

@@ -6,29 +6,58 @@ import hazelbean as hb
 from global_invest.commercial_agriculture import commercial_agriculture_functions
 from global_invest.commercial_agriculture import commercial_agriculture_defaults
 
-def build_standard_task_tree(p):
-    """Build the default task tree for commercial agriculture."""
-    p.commercial_agriculture_task = p.add_task(commercial_agriculture)
-    p.commercial_agriculture_gep_calculation_task = p.add_task(gep_calculation, parent=p.commercial_agriculture_task)  
-    return p
-
-def build_gep_task_tree(p):
-    """
-    Build the default task tree forthe GEP application of commercial agriculture. In this case, it's very similar to the standard task tree
-    but i've included it here for consistency with other models.
-    """
-    p.commercial_agriculture_task = p.add_task(commercial_agriculture)
-    # p.commercial_agriculture_preprocess_task = p.add_task(gep_preprocess, parent=p.commercial_agriculture_task)  
-    p.commercial_agriculture_gep_calculation_task = p.add_task(gep_calculation, parent=p.commercial_agriculture_task)  
-    # p.commercial_agriculture_gep_result_task = p.add_task(gep_result, parent=p.commercial_agriculture_task)  
-    
-    return p
 
 def commercial_agriculture(p):
     """
     Parent task for commercial agriculture.
     """
     p.fao_input_path = p.get_path(os.path.join(p.base_data_dir, 'global_invest', 'commercial_agriculture', 'Value_of_Production_E_All_Data.csv'))
+
+
+def gep_calculation(p):
+    """ GEP calculation task for commercial agriculture."""
+    # Ranked in order of processing, basically from least aggregated to most aggregated.
+    result = {}
+    p.results['commercial_agriculture'] = result   
+    p.results['commercial_agriculture']['gep_by_country_year_crop'] = os.path.join(p.cur_dir, "gep_by_country_year_crop.csv")
+    p.results['commercial_agriculture']['gep_by_country_year'] = os.path.join(p.cur_dir, "gep_by_country_year.csv")
+    p.results['commercial_agriculture']['gep_by_country_base_year'] = os.path.join(p.cur_dir, "gep_by_country_base_year.csv")
+    p.results['commercial_agriculture']['gep_by_year'] = os.path.join(p.cur_dir, "gep_by_year.csv")
+        
+
+    input_dir = os.path.join(p.base_data_dir, 'global_invest', 'commercial_agriculture')
+    
+    if not getattr(p, 'commercial_agriculture_subservices', None):
+        p.commercial_attribute_subservices = commercial_agriculture_defaults.DEFAULT_AGRICULTURE_ITEMS
+
+    # 1. Read and process data
+    df_crop_value = commercial_agriculture_functions.read_crop_values(os.path.join(input_dir, "Value_of_Production_E_All_Data.csv"), p.commercial_attribute_subservices)
+    df_crop_coefs = commercial_agriculture_functions.read_crop_coefs(os.path.join(input_dir, "CWON2024_crop_coef.csv"))
+
+    df_gep_by_country_year_crop = commercial_agriculture_functions.merge_crop_with_coefs(df_crop_value, df_crop_coefs)
+    # String mangle the FAO M49 codes to integers.
+    df_gep_by_country_year_crop['area_code_M49'] = df_gep_by_country_year_crop['area_code_M49'].str.replace('\'', '')
+    df_gep_by_country_year_crop['area_code_M49'] = df_gep_by_country_year_crop['area_code_M49'].astype(int)
+    
+    df_gep_by_coutry_year_crop_ee_r264 = hb.df_merge(p.ee_r264_df, df_gep_by_country_year_crop, how='outer', left_on='iso3_r250_id', right_on='area_code_M49')
+    df_gep_by_country_year = commercial_agriculture_functions.group_crops(df_gep_by_coutry_year_crop_ee_r264)
+    # df_gep_by_country_year = commercial_agriculture_functions.group_crops(df_gep_by_country_year_crop)
+    df_gep_by_year = commercial_agriculture_functions.group_countries(df_gep_by_country_year)
+    
+    df_gep_by_country_base_year = df_gep_by_country_year.loc[df_gep_by_country_year['year'] == 2019].copy()
+    
+    # Write to CSVs
+    hb.df_write(df_gep_by_country_year_crop, p.results['commercial_agriculture']['gep_by_country_year_crop'])
+    hb.df_write(df_gep_by_country_year, p.results['commercial_agriculture']['gep_by_country_year'])
+    hb.df_write(df_gep_by_country_base_year, p.results['commercial_agriculture']['gep_by_country_base_year'])   
+    hb.df_write(df_gep_by_year, p.results['commercial_agriculture']['gep_by_year'])
+
+    # Then sum the values across all countries. 
+    value_gep_base_year = df_gep_by_country_base_year['Value'].sum()
+    
+    hb.log(f"Total GEP value for base year 2019: {value_gep_base_year}")
+    
+    return value_gep_base_year
 
 
 def gep_preprocess_ryan_old(p):
@@ -40,8 +69,9 @@ def gep_preprocess_ryan_old(p):
     """
     p.commercial_agriculture_input_path = os.path.join(p.cur_dir, "commercial_agriculture_value_by_crop.csv")
     commercial_agriculture_functions.preprocess_fao(p.fao_input_path, p.commercial_agriculture_input_path)
-    
-def gep_calculation(p):
+
+
+def gep_calculation_justin_try_1(p):
 
     # Ranked in order of processing, basically from least aggregated to most aggregated.
     result = {}
@@ -101,8 +131,8 @@ def gep_calculation(p):
             )
             
             hb.df_write(crop_value_melted, os.path.join(p.cur_dir, 'crop_value_melted.csv'))
-       
-            crop_coefficients_path = os.path.join(p.base_data_dir, 'gep', "CWON2024_crop_coef.csv")
+        # "G:\Shared drives\NatCapTEEMs\Files\base_data\global_invest\commercial_agriculture\CWON2024_crop_coef.csv"
+            crop_coefficients_path = os.path.join(p.base_data_dir, 'global_invest', 'commercial_agriculture', "CWON2024_crop_coef.csv")
             crop_coefs = hb.df_read(crop_coefficients_path, delimiter=';')
 
             crop_coefs = crop_coefs.melt(
@@ -134,9 +164,7 @@ def gep_calculation(p):
             
     
 def gep_result(p):
-    """
-    Display the results of the GEP calculation.
-    """
+    """Display the results of the GEP calculation."""
     os.environ['QUARTO_PYTHON'] = sys.executable
     
     qmd_paths = hb.list_filtered_paths_recursively(os.path.dirname(__file__), include_extensions='.qmd')
