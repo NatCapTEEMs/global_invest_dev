@@ -39,6 +39,8 @@ def gep_calculation(p):
     df_gep_by_country_year_crop['area_code_M49'] = df_gep_by_country_year_crop['area_code_M49'].str.replace('\'', '')
     df_gep_by_country_year_crop['area_code_M49'] = df_gep_by_country_year_crop['area_code_M49'].astype(int)
     
+    # START HERE: Merging results in a lower value, 525 vs 812. Figure out why. Merge m49 earlier? but what was dropped?
+    
     df_gep_by_coutry_year_crop_ee_r264 = hb.df_merge(p.ee_r264_df, df_gep_by_country_year_crop, how='outer', left_on='iso3_r250_id', right_on='area_code_M49')
     df_gep_by_country_year = commercial_agriculture_functions.group_crops(df_gep_by_coutry_year_crop_ee_r264)
     # df_gep_by_country_year = commercial_agriculture_functions.group_crops(df_gep_by_country_year_crop)
