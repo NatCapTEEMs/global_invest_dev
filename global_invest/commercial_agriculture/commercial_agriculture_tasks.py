@@ -39,12 +39,67 @@ def gep_calculation(p):
     df_gep_by_country_year_crop['area_code_M49'] = df_gep_by_country_year_crop['area_code_M49'].str.replace('\'', '')
     df_gep_by_country_year_crop['area_code_M49'] = df_gep_by_country_year_crop['area_code_M49'].astype(int)
     
-    # START HERE: Merging results in a lower value, 525 vs 812. Figure out why. Merge m49 earlier? but what was dropped?
     
-    df_gep_by_coutry_year_crop_ee_r264 = hb.df_merge(p.ee_r264_df, df_gep_by_country_year_crop, how='outer', left_on='iso3_r250_id', right_on='area_code_M49')
+    print('sum df_gep_by_country_year_crop', df_gep_by_country_year_crop['Value'].sum())
+    
+    
+    mistmatches = {
+        'China': 159,
+        'Serbia and Montenegro': 891,
+        'Czechoslovakia': 200,
+        'Ethiopia PDR': 230,
+        'Sudan (former)': 736,
+    }	
+    
+    replacements = {
+        159: 156,  # China
+        891: 688,  # Serbia and Montenegro
+        200: 203,  # Czechoslovakia
+        230: 231,  # Ethiopia PDR
+        736: 729,  # Sudan (former)     
+    }
+    
+    # Replace wrong codes in the m49
+    df_gep_by_country_year_crop['area_code_M49'] = df_gep_by_country_year_crop['area_code_M49'].replace(replacements)
+
+    
+    a = hb.df_compare_column_contents_as_dict(df_gep_by_country_year_crop['area_code_M49'], p.ee_r264_df['iso3_r250_id'])
+
+
+
+
+
+    
+    # Huh? Merging results in a lower value, 525 vs 812. Figure out why. Merge m49 earlier? but what was dropped?
+    hb.df_write(df_gep_by_country_year_crop, os.path.join(p.cur_dir, 'TEST_gep_by_country_year_crop_raw.csv'))
+    df_gep_by_coutry_year_crop_ee_r264 = hb.df_merge(p.ee_r264_df, df_gep_by_country_year_crop, how='right', left_on='iso3_r250_id', right_on='area_code_M49', compare_inner_outer=True, verbose=True)
+ 
+    # Group
+    # 
+    # df_gep_by_coutry_year_crop_ee_r264_grouped = df_gep_by_coutry_year_crop_ee_r264.groupby(
+    #     ["country", "year", "crop"],
+    #     as_index=False
+    # ).agg(Value=("Value", "mean"))    
+    
+    df_gep_by_coutry_year_crop_ee_r264_grouped = hb.df_groupby(
+        df_gep_by_coutry_year_crop_ee_r264,
+        by=["country", "year", "crop"],
+        agg_dict={"Value": "sum"},
+        preserve="keep_all",
+    )
+    #
+
+    # hb.df_compare_column_labels_as_dict
+    hb.df_write(df_gep_by_coutry_year_crop_ee_r264, os.path.join(p.cur_dir, 'TEST_df_gep_by_coutry_year_crop_ee_r264.csv'))
+    hb.df_write(df_gep_by_coutry_year_crop_ee_r264_grouped, os.path.join(p.cur_dir, 'TEST_df_gep_by_coutry_year_crop_ee_r264_grouped.csv'))
+    
+    
     df_gep_by_country_year = commercial_agriculture_functions.group_crops(df_gep_by_coutry_year_crop_ee_r264)
+    
+    print('sum df_gep_by_country_year', df_gep_by_country_year['Value'].sum())
     # df_gep_by_country_year = commercial_agriculture_functions.group_crops(df_gep_by_country_year_crop)
     df_gep_by_year = commercial_agriculture_functions.group_countries(df_gep_by_country_year)
+    print('sum df_gep_by_year', df_gep_by_year['Value'].sum())
     
     df_gep_by_country_base_year = df_gep_by_country_year.loc[df_gep_by_country_year['year'] == 2019].copy()
     

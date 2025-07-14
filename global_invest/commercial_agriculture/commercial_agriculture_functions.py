@@ -183,6 +183,7 @@ def group_crops(df: pd.DataFrame):
     """
     df_gep_by_year_country = df.groupby(["area_code", "ee_r264_id", "ee_r264_label", "country", "year"], as_index=False).agg(Value=("Value", "sum"))
     df_gep_by_year_country = df_gep_by_year_country.sort_values(by=["area_code", "year"], ascending=[True, True])
+        
     df_gep_by_year_country["Value"] = pd.to_numeric(df_gep_by_year_country["Value"], errors="coerce")
     logging.info(f"Grouped by country-year ({df_gep_by_year_country.shape[0]} rows).")
     return df_gep_by_year_country

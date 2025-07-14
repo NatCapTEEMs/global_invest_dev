@@ -88,6 +88,9 @@ def read_crop_values(path: str, items):
     df_crop_value = df_crop_value[~df_crop_value["country"].isin(countries_to_drop)]
     logging.info(f"Finished cleaning up ({df_crop_value.shape[0]} rows).")
 
+    # 678413996.115
+    # 678413996.1150001
+    
     # reshape to long format
     df_crop_value = pd.melt(
         df_crop_value,
@@ -224,4 +227,6 @@ if __name__ == "__main__":
     gep_by_year_country = result['gep_by_year_country']
     gep_by_country_base_year = gep_by_year_country[gep_by_year_country['year'] == 2019]
     gep = gep_by_country_base_year['gep'].sum()
+    path = 'c:/temp/gep_by_country_base_year.csv'
+    gep_by_country_base_year.to_csv(path, index=False)
     print(f"Total GEP in base year 2019: {gep}")

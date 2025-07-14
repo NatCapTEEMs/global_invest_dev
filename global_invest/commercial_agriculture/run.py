@@ -12,8 +12,6 @@ if __name__ == '__main__':
     p.project_name = 'gep_commercial_agriculture'  # Determines the folder created to store intermediate and final results.
     p.project_dir = os.path.join(os.path.expanduser('~'), 'Files', 'global_invest', 'projects', p.project_name) # Put it in the right location relative to the user's home directory.
     p.base_data_dir = "G:/Shared drives/NatCapTEEMs/Files/base_data" # Set where data outside the project will be stored. CAUTION: For GEP we are using the shared Google Drive, but best practice is to use a local directory that you can control (also it's faster)
-    p.data_credentials_path = None # If you want to use a different bucket than the default, provide the credentials here. Otherwise uses default public data 'gtap_invest_seals_2023_04_21'.
-    p.input_bucket_name = None # If you want to use a different bucket than the default, provide the name here. Otherwise uses default public data 'gtap_invest_seals_2023_04_21'.
     p.set_project_dir(p.project_dir) # Set the project directory in the ProjectFlow object. Also defines p.input_dir, p.intermediate_dir, and p.output_dir based on the project_dir.
     
     # Task tree
@@ -29,6 +27,7 @@ if __name__ == '__main__':
     
     # START HERE: Finish the minimal run.py for commecial agriculture. Then make more detailed run files for the input_repo stype and the projectflow style.
     
+    # START HERE: I'm not getting consistent totals when i merge in ee_R264 due to multiple entries for the same country. consider a groupby
 
     hb.log('Created ProjectFlow object at ' + p.project_dir + '\n    from script ' + p.calling_script + '\n    with base_data set at ' + p.base_data_dir)
     
