@@ -48,42 +48,46 @@ def gep_calculation(p):
     }
     
     # Replace wrong codes in the m49
-    df_gep_by_country_year_crop['area_code_M49'] = df_gep_by_country_year_crop['area_code_M49'].replace(replacements)
-    
-    a = hb.df_compare_column_contents_as_dict(df_gep_by_country_year_crop['area_code_M49'], p.ee_r264_df['iso3_r250_id'])
-    
-    # Huh? Merging results in a lower value, 525 vs 812. Figure out why. Merge m49 earlier? but what was dropped?
-    hb.df_write(df_gep_by_country_year_crop, os.path.join(p.cur_dir, 'TEST_gep_by_country_year_crop_raw.csv'))
-    df_gep_by_coutry_year_crop_ee_r264 = hb.df_merge(p.ee_r264_df, df_gep_by_country_year_crop, how='right', left_on='iso3_r250_id', right_on='area_code_M49', compare_inner_outer=True, verbose=True)
- 
-    # Group
-    # 
-    # df_gep_by_coutry_year_crop_ee_r264_grouped = df_gep_by_coutry_year_crop_ee_r264.groupby(
-    #     ["country", "year", "crop"],
-    #     as_index=False
-    # ).agg(Value=("Value", "mean"))
-    
-    comparison = hb.df_compare_column_contents_as_dict(df_gep_by_country_year_crop['country'], df_gep_by_coutry_year_crop_ee_r264['ee_r264_id'])
-    
-    df_gep_by_coutry_year_crop_ee_r264_grouped = hb.df_groupby(
-        df_gep_by_coutry_year_crop_ee_r264,
-        by=["iso3_r250_id", "year", "crop"],
-        agg_dict={"Value": "sum"},
-        preserve="keep_all",
-    )
-    #
+    df_gep_by_country_year_crop['area_code_M49'] = df_gep_by_country_year_crop['area_code_M49'].replace(replacements)    
 
-    # hb.df_compare_column_labels_as_dict
-    hb.df_write(df_gep_by_coutry_year_crop_ee_r264, os.path.join(p.cur_dir, 'TEST_df_gep_by_coutry_year_crop_ee_r264.csv'))
-    hb.df_write(df_gep_by_coutry_year_crop_ee_r264_grouped, os.path.join(p.cur_dir, 'TEST_df_gep_by_coutry_year_crop_ee_r264_grouped.csv'))
+    # LEARNING POINT: I wasted lots of time not realizing the a how='right' operates differently than I expect. The left had IDs that were not in right under r264_id, but they thus had the a 
+    # repeated ID in the r250. I had wrongly thought that the how='right' would only then return 1 row for each r250_id, but it actually a duplicate row repeated for each unique r264_id
+    # even tho the r_250_id was the same. Thus, I had to drop the repeated ones.
     
+    # Drop repeated ids in ee_r264_df
+    ee_r264_to_250 = p.ee_r264_df.copy()
+    ee_r264_to_250 = ee_r264_to_250[ee_r264_to_250['ee_r264_label'] == ee_r264_to_250['iso3_r250_label']]
     
-    df_gep_by_country_year = commercial_agriculture_functions.group_crops(df_gep_by_coutry_year_crop_ee_r264)
+    cols_to_keep = [
+        'ee_r264_id',	
+        'iso3_r250_id',
+        'ee_r264_label',
+        'iso3_r250_label',
+        'ee_r264_name',
+        'iso3_r250_name',
+        'continent',
+        'region_un',
+        'region_wb',
+        'income_grp',
+        'subregion',
+        'area_code_M49',
+        'area_code',
+        'country',
+        'crop_code',
+        'crop',
+        'year',
+        'rental_rate',
+        'Value',
+    ]
+    ee_r264_to_250.drop([i for i in ee_r264_to_250.columns if i not in cols_to_keep], axis=1, inplace=True, errors='ignore')
+    # ee_r264_to_250 = ee_r264_to_250[cols_to_keep]
     
-    print('sum df_gep_by_country_year', df_gep_by_country_year['Value'].sum())
-    # df_gep_by_country_year = commercial_agriculture_functions.group_crops(df_gep_by_country_year_crop)
+    # Merge so it has all the good labels from the ee_r264_df 
+    df_gep_by_country_year_crop = hb.df_merge(ee_r264_to_250, df_gep_by_country_year_crop, how='right', left_on='iso3_r250_id', right_on='area_code_M49')
+    
+    df_gep_by_country_year = commercial_agriculture_functions.group_crops(df_gep_by_country_year_crop)
+
     df_gep_by_year = commercial_agriculture_functions.group_countries(df_gep_by_country_year)
-    print('sum df_gep_by_year', df_gep_by_year['Value'].sum())
     
     df_gep_by_country_base_year = df_gep_by_country_year.loc[df_gep_by_country_year['year'] == 2019].copy()
     

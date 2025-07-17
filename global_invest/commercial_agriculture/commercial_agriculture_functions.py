@@ -181,12 +181,40 @@ def group_crops(df: pd.DataFrame):
     """
     Aggregate adjusted GEP by country-year.
     """
+    cols_to_keep = [
+        'ee_r264_id',	
+        'iso3_r250_id',
+        'ee_r264_label',
+        'iso3_r250_label',
+        'ee_r264_name',
+        'iso3_r250_name',
+        'continent',
+        'region_un',
+        'region_wb',
+        'income_grp',
+        'subregion',
+        'area_code_M49',
+        'area_code',
+        'country',
+        'crop_code',
+        'crop',
+        'year',
+        'rental_rate',
+        'Value',
+    ]
+    groupby_cols = ['iso3_r250_id', 'year']
     df_gep_by_year_country = df.groupby(["area_code", "ee_r264_id", "ee_r264_label", "country", "year"], as_index=False).agg(Value=("Value", "sum"))
     df_gep_by_year_country = df_gep_by_year_country.sort_values(by=["area_code", "year"], ascending=[True, True])
-        
     df_gep_by_year_country["Value"] = pd.to_numeric(df_gep_by_year_country["Value"], errors="coerce")
+    
+    
+    # START HERE: hb.df_groupby is nearly working but has unexpected behavior with keep_all vs keep_all_valid. In particular, it seems to drop area_code even though that should be unique by group.
+    
+    df2 = hb.df_groupby(df, groupby_cols, agg_dict={"Value": "sum"}, preserve='keep_all_valid') 
+    # df2 = df2.sort_values(by=["area_code", "year"], ascending=[True, True])
+    df2["Value"] = pd.to_numeric(df2["Value"], errors="coerce")
     logging.info(f"Grouped by country-year ({df_gep_by_year_country.shape[0]} rows).")
-    return df_gep_by_year_country
+    return df2
 
 
 def group_countries(df: pd.DataFrame):
