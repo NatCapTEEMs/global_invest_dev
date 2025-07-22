@@ -16,12 +16,13 @@ def commercial_agriculture(p):
 
 def gep_calculation(p):
     """ GEP calculation task for commercial agriculture."""
-    # Ranked in order of processing, basically from least aggregated to most aggregated.
-    result = {}
-    p.results['commercial_agriculture'] = result   
+    # Define at least the primary output for the service, which for this project is gep_by_country_base_year.   
+    p.results['commercial_agriculture'] = {}  
+    p.results['commercial_agriculture']['gep_by_country_base_year'] = os.path.join(p.cur_dir, "gep_by_country_base_year.csv")
+    
+    # Optional additional results.
     p.results['commercial_agriculture']['gep_by_country_year_crop'] = os.path.join(p.cur_dir, "gep_by_country_year_crop.csv")
     p.results['commercial_agriculture']['gep_by_country_year'] = os.path.join(p.cur_dir, "gep_by_country_year.csv")
-    p.results['commercial_agriculture']['gep_by_country_base_year'] = os.path.join(p.cur_dir, "gep_by_country_base_year.csv")
     p.results['commercial_agriculture']['gep_by_year'] = os.path.join(p.cur_dir, "gep_by_year.csv")
         
 
@@ -105,7 +106,7 @@ def gep_calculation(p):
     return value_gep_base_year
 
 
-def gep_preprocess_ryan_old(p):
+def gep_preprocess(p):
     """
     Preprocessing tasks are assumed NOT to be run by the user. Instead, it is assumed that the output of a preprocess
     task is an input to the actual model, saved at the canonical project attribute p.commercial_agriculture_input_path.
@@ -225,4 +226,14 @@ def gep_result(p):
         hb.log(f"Running quarto command: {quarto_command}")        
         os.system(quarto_command)
         
+def gep_results_distribution(p):
+    """Distribute the results of the GEP calculation."""
+    # This task is intended to copy the results to the output directory.
+    hb.log("Distributing GEP results...")
     
+    for key, value in p.results['commercial_agriculture'].items():
+        output_path = os.path.join(p.output_dir, key)
+        hb.path_copy(value, output_path)
+        hb.log(f"Distributed {key} to {output_path}")
+    
+    hb.log("GEP results distribution complete.")

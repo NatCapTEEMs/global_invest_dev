@@ -9,7 +9,10 @@ def initialize_paths(p):
 def build_standard_task_tree(p):
     """Build the default task tree for commercial agriculture."""
     p.commercial_agriculture_task = p.add_task(commercial_agriculture_tasks.commercial_agriculture)
+    # p.commercial_agriculture_gep_preprocess_task = p.add_task(commercial_agriculture_tasks.gep_preprocess, parent=p.commercial_agriculture_task)  
     p.commercial_agriculture_gep_calculation_task = p.add_task(commercial_agriculture_tasks.gep_calculation, parent=p.commercial_agriculture_task)  
+    # p.commercial_agriculture_gep_result_task = p.add_task(commercial_agriculture_tasks.gep_result, parent=p.commercial_agriculture_task)   
+    # p.commercial_agriculture_gep_results_distribution_task = p.add_task(commercial_agriculture_tasks.gep_results_distribution, parent=p.commercial_agriculture_task)   
     return p
 
 def build_gep_task_tree(p):

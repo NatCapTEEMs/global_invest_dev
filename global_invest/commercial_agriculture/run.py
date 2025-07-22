@@ -4,7 +4,6 @@ import hazelbean as hb
 
 from global_invest.commercial_agriculture import commercial_agriculture_initialization, commercial_agriculture_tasks
 
-
 if __name__ == '__main__':
     
     # ProjectFlow object
@@ -23,15 +22,18 @@ if __name__ == '__main__':
     p.results = {}  # All results will be stored here by each child task.
     commercial_agriculture_initialization.initialize_paths(p)
 
-
+    # Run the model
+    hb.log('Created ProjectFlow object at ' + p.project_dir + '\n    from script ' + p.calling_script + '\n    with base_data set at ' + p.base_data_dir)    
+    p.execute()
+    
+    result = 'Done!'
+    
+    
+    
+    
     
     # START HERE: Finish the minimal run.py for commecial agriculture. Then make more detailed run files for the input_repo stype and the projectflow style.
     
     # START HERE: I'm not getting consistent totals when i merge in ee_R264 due to multiple entries for the same country. consider a groupby
 
-    hb.log('Created ProjectFlow object at ' + p.project_dir + '\n    from script ' + p.calling_script + '\n    with base_data set at ' + p.base_data_dir)
-    
-    p.execute()
-    
-    result = 'Done!'
 
