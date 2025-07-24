@@ -201,6 +201,9 @@ def group_countries(df: pd.DataFrame):
     Aggregate total GEP across all countries by year.
     """
     df_gep_by_year = df.groupby(["area_code", "ee_r264_id", "ee_r264_label", "country", "year"], as_index=False).agg(Value=("Value", "sum"))
+    
+    
+    # START HERE: df_gep_by_year = hb.df_groupby(df, groupby_cols='iso3_r250_label', agg_dict={"Value": "sum"}). This line causes a really wrongly formatted DataFrame.
     df_gep_by_year.set_index("year", inplace=False)
     # df_gep_by_year.rename(columns={"gep": "total_gep"}, inplace=True)
     df_gep_by_year.sort_values("year", inplace=True)

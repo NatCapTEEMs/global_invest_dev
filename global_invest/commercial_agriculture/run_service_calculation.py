@@ -2,7 +2,7 @@ import os
 import pandas as pd
 import hazelbean as hb
 
-from global_invest.commercial_agriculture import commercial_agriculture_initialization, commercial_agriculture_tasks
+from global_invest.commercial_agriculture import commercial_agriculture_initialization
 
 if __name__ == '__main__':
     
@@ -14,7 +14,7 @@ if __name__ == '__main__':
     p.set_project_dir(p.project_dir) # Set the project directory in the ProjectFlow object. Also defines p.input_dir, p.intermediate_dir, and p.output_dir based on the project_dir.
     
     # Task tree
-    commercial_agriculture_initialization.build_standard_task_tree(p) # Defines the actual logic of the model. Navigate into here to see what the model does.
+    commercial_agriculture_initialization.build_gep_service_calculation_task_tree(p) # Defines the actual logic of the model. Navigate into here to see what the model does.
 
     # Project level attributes
     p.countries_csv_path = p.get_path('cartographic', 'ee', 'ee_r264_correspondence.csv') # ProjectFlow downloads all files automatically via the p.get_path() function. 
@@ -27,13 +27,3 @@ if __name__ == '__main__':
     p.execute()
     
     result = 'Done!'
-    
-    
-    
-    
-    
-    # START HERE: Finish the minimal run.py for commecial agriculture. Then make more detailed run files for the input_repo stype and the projectflow style.
-    
-    # START HERE: I'm not getting consistent totals when i merge in ee_R264 due to multiple entries for the same country. consider a groupby
-
-
