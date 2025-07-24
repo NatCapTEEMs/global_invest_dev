@@ -188,7 +188,7 @@ def group_crops(df: pd.DataFrame):
     # df_gep_by_year_country = df_gep_by_year_country.sort_values(by=["area_code", "year"], ascending=[True, True])
     # df_gep_by_year_country["Value"] = pd.to_numeric(df_gep_by_year_country["Value"], errors="coerce")
     
-    df_gep_by_year_country = hb.df_groupby(df, groupby_cols, agg_dict={"Value": "sum"}) 
+    df_gep_by_year_country = hb.df_groupby(df, groupby_cols, agg_dict={"Value": "sum"}, preserve='keep_all_valid') 
     df_gep_by_year_country = df_gep_by_year_country.sort_values(by=["iso3_r250_id", "year"], ascending=[True, True])
     df_gep_by_year_country["Value"] = pd.to_numeric(df_gep_by_year_country["Value"], errors="coerce")
 
@@ -200,8 +200,9 @@ def group_countries(df: pd.DataFrame):
     """
     Aggregate total GEP across all countries by year.
     """
-    df_gep_by_year = df.groupby(["area_code", "ee_r264_id", "ee_r264_label", "country", "year"], as_index=False).agg(Value=("Value", "sum"))
-    
+    # df = df.loc[df['year'] == 2019].copy()
+    df_gep_by_year = hb.df_groupby(df, groupby_cols='year', agg_cols="Value", preserve='keep_all_valid')
+
     
     # START HERE: df_gep_by_year = hb.df_groupby(df, groupby_cols='iso3_r250_label', agg_dict={"Value": "sum"}). This line causes a really wrongly formatted DataFrame.
     df_gep_by_year.set_index("year", inplace=False)
@@ -222,7 +223,7 @@ def group_countries(df: pd.DataFrame):
 #     df_gep_by_country_year_crop['area_code_M49'] = df_gep_by_country_year_crop['area_code_M49'].str.replace('\'', '')    
 #     df_gep_by_country_year_crop['area_code_M49'] = df_gep_by_country_year_crop['area_code_M49'].astype(int)
     
-#     df_gep_by_country_year_crop = hb.df_merge(p.ee_r264_df, df_gep_by_country_year_crop, how='outer', left_on='iso3_r250_id', right_on='area_code_M49')
+#     df_gep_by_country_year_crop = hb.df_merge(p., df_gep_by_country_year_crop, how='outer', left_on='iso3_r250_id', right_on='area_code_M49')
     
     
 #     df_gep_by_year_country = group_crops(df_gep_by_country_year_crop)

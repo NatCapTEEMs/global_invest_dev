@@ -3,6 +3,7 @@ import sys
 import pandas as pd
 import hazelbean as hb
 import subprocess
+import csv
 
 from global_invest.commercial_agriculture import commercial_agriculture_initialization
 from global_invest.commercial_agriculture import commercial_agriculture_functions
@@ -41,6 +42,10 @@ def gep_calculation(p):
         hb.log("All results already exist. Skipping GEP calculation for commercial agriculture.")
     else:
         hb.log("Starting GEP calculation for commercial agriculture.")
+        
+        # Optimization here,
+        # p.gdf_countries = hb.read_vector(p.gdf_countries)
+        p.gdf_countries = hb.read_vector(p.gdf_countries_simplified)
 
         # TODOOO: Could automate this by inspecting all ref_paths in a task. Or, could formalize a tasks inputs in p.inputs = {} like results.
         if not getattr(p, 'fao_input_path', None):
@@ -77,8 +82,8 @@ def gep_calculation(p):
         # repeated ID in the r250. I had wrongly thought that the how='right' would only then return 1 row for each r250_id, but it actually a duplicate row repeated for each unique r264_id
         # even tho the r_250_id was the same. Thus, I had to drop the repeated ones.
         
-        # Drop repeated ids in ee_r264_df
-        ee_r264_to_250 = p.ee_r264_df.copy()
+        # Drop repeated ids in df_countries
+        ee_r264_to_250 = p.df_countries.copy()
         ee_r264_to_250 = ee_r264_to_250[ee_r264_to_250['ee_r264_label'] == ee_r264_to_250['iso3_r250_label']]
         
         cols_to_keep = [
@@ -105,7 +110,7 @@ def gep_calculation(p):
         ee_r264_to_250.drop([i for i in ee_r264_to_250.columns if i not in cols_to_keep], axis=1, inplace=True, errors='ignore')
         # ee_r264_to_250 = ee_r264_to_250[cols_to_keep]
         
-        # Merge so it has all the good labels from the ee_r264_df 
+        # Merge so it has all the good labels from the  
         df_gep_by_country_year_crop = hb.df_merge(ee_r264_to_250, df_gep_by_country_year_crop, how='right', left_on='iso3_r250_id', right_on='area_code_M49')
         
         df_gep_by_country_year = commercial_agriculture_functions.group_crops(df_gep_by_country_year_crop)
@@ -118,7 +123,12 @@ def gep_calculation(p):
         hb.df_write(df_gep_by_country_year_crop, p.results['commercial_agriculture']['gep_by_country_year_crop'])
         hb.df_write(df_gep_by_country_year, p.results['commercial_agriculture']['gep_by_country_year'])
         hb.df_write(df_gep_by_country_base_year, p.results['commercial_agriculture']['gep_by_country_base_year'])   
-        hb.df_write(df_gep_by_year, p.results['commercial_agriculture']['gep_by_year'])
+        hb.df_write(df_gep_by_year, p.results['commercial_agriculture']['gep_by_year'], handle_quotes='all')
+        hb.df_write(df_gep_by_year, hb.replace_ext(p.results['commercial_agriculture']['gep_by_year'], 'xlsx'), handle_quotes='all')
+        
+        # Use geopandas to merge the df_gep_by_country_base_year with the  to get the country names and other attributes
+        gdf_gep_by_country_base_year = hb.df_merge(p.gdf_countries_simplified, df_gep_by_country_base_year, how='outer', left_on='ee_r264_id', right_on='ee_r264_id')
+        gdf_gep_by_country_base_year.to_file(p.results['commercial_agriculture']['gep_by_country_base_year'].replace('.csv', '.gpkg'), driver='GPKG')
 
         # Then sum the values across all countries. 
         value_gep_base_year = df_gep_by_country_base_year['Value'].sum()
@@ -135,6 +145,8 @@ def gep_result(p):
     
     # Get the  list of current services run
     services_run = list(p.results.keys())
+    
+    # Additional groupbys = []
     
     # Imply from the service name the file_path for the results_qmd
     module_root = hb.get_projectflow_module_root()

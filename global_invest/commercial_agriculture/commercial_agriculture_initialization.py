@@ -4,7 +4,14 @@ import hazelbean as hb
 from global_invest.commercial_agriculture import commercial_agriculture_tasks
 
 def initialize_paths(p):
-    p.ee_r264_df = pd.read_csv(p.countries_csv_path)  
+    p.df_countries = pd.read_csv(p.df_countries_csv_path)  
+    
+    # Notice optimization here: the GDFs are still just path_strings. hb.read_vector takes the string as an input and converts it to a GeoDataFrame when needed.
+    p.gdf_countries = p.gdf_countries_vector_path 
+    p.gdf_countries_simplified = p.gdf_countries_vector_simplified_path 
+    
+    # p.gdf_countries = hb.read_vector(p.gdf_countries_vector_path)  # Read the vector file for the countries.
+    # p.countries_simplified_gdf = hb.read_vector(p.countries_simplified_vector_path)  # Read the vector file for the countries.
 
 def build_gep_service_calculation_task_tree(p):
     """Build the default task tree for commercial agriculture."""

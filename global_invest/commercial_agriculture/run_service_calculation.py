@@ -17,8 +17,8 @@ if __name__ == '__main__':
     commercial_agriculture_initialization.build_gep_service_calculation_task_tree(p) # Defines the actual logic of the model. Navigate into here to see what the model does.
 
     # Project level attributes
-    p.countries_csv_path = p.get_path('cartographic', 'ee', 'ee_r264_correspondence.csv') # ProjectFlow downloads all files automatically via the p.get_path() function. 
-    p.countries_vector_path = p.get_path('cartographic', 'ee', 'ee_r264_correspondence.gpkg') 
+    p.df_countries_csv_path = p.get_path('cartographic', 'ee', 'ee_r264_correspondence.csv') # ProjectFlow downloads all files automatically via the p.get_path() function. 
+    p.gdf_countries_vector_path = p.get_path('cartographic', 'ee', 'ee_r264_correspondence.gpkg') 
     p.results = {}  # All results will be stored here by each child task.
     commercial_agriculture_initialization.initialize_paths(p)
 
