@@ -24,11 +24,12 @@ This is a final product that enters the economy via the agricultural sector. Fur
 **Data and Methods**
 
 We estimate gross ecosystem product (GEP) for crop provision for the year 2019 as:\
-GEP crop RRc,k,t=c,k,tGPVc,k,tλc,t10
-
+$$
+\mathrm{GEP crop}_{\text{c,k,t}} = \sum_{c,k,t} \left( \mathrm{GPV}_{c,k,t} \cdot \lambda_{c,t10} \right)
+$$
 , where
 
-RRc,k,t is the agricultural resource rent for country c, crop item k and given year t,
+GEP crop c,k,t is the agricultural ecosystem contribution for country c, crop item k and given year t,
 
 GPVk,t is the FAO’s gross production value for country c, crop item k and given year ,
 

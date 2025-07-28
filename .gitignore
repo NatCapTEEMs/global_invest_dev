@@ -195,3 +195,6 @@ cython_debug/
 
 *.Rhistory
 *.DS_Store
+
+# Ignore quarto generated files
+*.html
