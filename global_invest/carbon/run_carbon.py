@@ -18,7 +18,8 @@ p.project_dir = os.path.join(p.user_dir, os.sep.join(p.extra_dirs), p.project_na
 p.set_project_dir(p.project_dir)
 
 # Set basa_data_dir. Will download required files here.
-p.base_data_dir = os.path.join(p.user_dir, 'Files', 'base_data')
+p.base_data_dir = "/Users/long/Library/CloudStorage/GoogleDrive-yxlong@umn.edu/Shared drives/NatCapTEEMs/Files/base_data/submissions/carbon/spawn_2020"
+# p.base_data_dir = os.path.join(p.user_dir, 'Files', 'base_data') # Uncomment this line if you want to use the default base_data_dir
 
 # Set model-paths
 p.aoi = 'global' #p.aoi = 'RWA'
