@@ -9,7 +9,8 @@ format:
     echo: false              # Hide code by default in PDF
   docx:
     echo: false              # Hide code by default in Word
-  ipynb: default
+  ipynb: 
+    echo: true
 ---
 
 # Commercial Agriculture Results
@@ -17,7 +18,6 @@ format:
 Text describing it. To be written by service team.
 
 ```{python}
-#| echo: false
 #| output: false
 
 ### SETUP CODE: Runs the whole model if it doesn't exist, else loads the results. Doesn't output anything and all debugging surpressed for this QMD.
@@ -56,7 +56,6 @@ p.execute()
 
 
 ```{python}
-#| echo: false
 #| output: false
 
 ### DISPLAY SETUP CODE: Based on the results in the prior cells, make the objectgs that will actually get displayed, like smol csvs or gpkg-as-pngs
