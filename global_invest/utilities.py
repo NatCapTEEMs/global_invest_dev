@@ -1,6 +1,6 @@
 
 
-# example utility fucntion
+# example utility function
 
 def convert_currency(value, from_currency, to_currency, exchange_rate):
     """
