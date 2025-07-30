@@ -19,6 +19,7 @@ if __name__ == '__main__':
     # Project level attributes
     p.df_countries_csv_path = p.get_path('cartographic', 'ee', 'ee_r264_correspondence.csv') # ProjectFlow downloads all files automatically via the p.get_path() function. 
     p.gdf_countries_vector_path = p.get_path('cartographic', 'ee', 'ee_r264_correspondence.gpkg') 
+    p.gdf_countries_vector_simplified_path = p.get_path('cartographic', 'ee', 'ee_r264_simplified30sec.gpkg') 
     p.results = {}  # All results will be stored here by each child task.
     commercial_agriculture_initialization.initialize_paths(p)
 
