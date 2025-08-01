@@ -7,21 +7,21 @@ import csv
 import numpy as np
 from pathlib import Path
 
-from global_invest.renewable_energy_production import renewable_energy_production_initialization
-from global_invest.renewable_energy_production import renewable_energy_production_functions
-# from global_invest.renewable_energy_production import renewable_energy_production_defaults
+from global_invest.renewable_energy_provision import renewable_energy_provision_initialization
+from global_invest.renewable_energy_provision import renewable_energy_provision_functions
+# from global_invest.renewable_energy_provision import renewable_energy_provision_defaults
 
-def renewable_energy_production(p):
+def renewable_energy_provision(p):
     """
     Parent task for commercial agriculture.
     """
-    p.fao_input_ref_path = os.path.join('global_invest', 'renewable_energy_production', 'Value_of_Production_E_All_Data.csv')
-    p.cwon_crop_coefficients_ref_path = os.path.join('global_invest', 'renewable_energy_production', "CWON2024_crop_coef.csv")
+    p.fao_input_ref_path = os.path.join('global_invest', 'renewable_energy_provision', 'Value_of_Production_E_All_Data.csv')
+    p.cwon_crop_coefficients_ref_path = os.path.join('global_invest', 'renewable_energy_provision', "CWON2024_crop_coef.csv")
 
 def gep_preprocess(p):
     """
     Preprocessing tasks are assumed NOT to be run by the user. Instead, it is assumed that the output of a preprocess
-    task is an input to the actual model, saved at the canonical project attribute p.renewable_energy_production_input_path.
+    task is an input to the actual model, saved at the canonical project attribute p.renewable_energy_provision_input_path.
     These are preprocessing tasks are still provided for reference, but are not intended to be run directly by the user.
     We will "promote" the data outputed by a preprocess task to the base_data_dir provided to users.
     """
@@ -31,13 +31,22 @@ def gep_calculation(p):
     """ GEP calculation task for commercial agriculture."""
     # Define at least the primary output for the service, which for this project is gep_by_country_base_year.   
     service_results = {}
-    p.results['renewable_energy_production'] = service_results  
-    p.results['renewable_energy_production']['gep_by_country_base_year'] = os.path.join(p.cur_dir, "gep_by_country_base_year.csv")
+    p.results['renewable_energy_provision'] = service_results  
+    p.results['renewable_energy_provision']['gep_by_country_base_year'] = os.path.join(p.cur_dir, "renewable_energy_provision_gep_by_country_base_year.csv")
     
-    # Optional additional results.
-    p.results['renewable_energy_production']['gep_by_country_year_crop'] = os.path.join(p.cur_dir, "gep_by_country_year_crop.csv")
-    p.results['renewable_energy_production']['gep_by_country_year'] = os.path.join(p.cur_dir, "gep_by_country_year.csv")
-    p.results['renewable_energy_production']['gep_by_year'] = os.path.join(p.cur_dir, "gep_by_year.csv")
+    # Add subservices if present
+    subservice_results = {}
+    p.results['renewable_energy_provision']['subservices'] = subservice_results    
+    p.results['renewable_energy_provision']['subservices']['wind_energy_provision'] = {}
+    p.results['renewable_energy_provision']['subservices']['solar_energy_provision'] = {}
+    p.results['renewable_energy_provision']['subservices']['geothermal_energy_provision'] = {}
+    
+    p.results['renewable_energy_provision']['subservices']['wind_energy_provision'] ['gep_by_country_base_year'] = os.path.join(p.cur_dir, "wind_energy_provision_gep_by_country_base_year.csv")
+    p.results['renewable_energy_provision']['subservices']['solar_energy_provision']['gep_by_country_base_year'] = os.path.join(p.cur_dir, "solar_energy_provision_gep_by_country_base_year.csv")
+    p.results['renewable_energy_provision']['subservices']['geothermal_energy_provision']['gep_by_country_base_year'] = os.path.join(p.cur_dir, "geothermal_energy_provision_gep_by_country_base_year.csv")
+
+    
+
             
     # Check if all results exist
     if hb.path_all_exist(list(service_results.values())):
@@ -48,7 +57,7 @@ def gep_calculation(p):
         print('Calculating Gross Ecosystem Product (GEP) for Renewable Energy Production.')
         # set dir
         # hb.create_shortcut
-        data_dir = hb.Path(p.base_data_dir, 'global_invest', 'renewable_energy_production')
+        data_dir = hb.Path(p.base_data_dir, 'global_invest', 'renewable_energy_provision')
         output_dir = hb.Path(p.cur_dir)
 
         #############
@@ -94,7 +103,7 @@ def gep_calculation(p):
             
 
         # call P * Q merge
-        gep_dfs = renewable_energy_production_functions.merge_dfs(wb_df, df_list)
+        gep_dfs = renewable_energy_provision_functions.merge_dfs(wb_df, df_list)
         # print(len(gep_dfs))
 
         ########################
@@ -122,9 +131,27 @@ def gep_calculation(p):
         filter_cols = ['ISO3 code', 'Country', 'Year', 'Group Technology', 'Price (USD/GWh)', 'Electricity Generation (GWh)', 'nat_contrib', 'gep']
         final_df = gep_df[filter_cols]
         
-        # call export function
-        renewable_energy_production_functions.export_by_resource(final_df, output_dir)
-        value_gep_base_year = 5
+        
+        # Filter years
+        final_df = final_df.loc[final_df['Year'] == 2019] # 2019 only base
+        
+        # Drop rows where gep <= 0 (happens from nat_contrib calc)
+        final_df = final_df.loc[final_df['gep'] > 0]
+        
+        hb.df_write(final_df, p.results['renewable_energy_provision']['gep_by_country_base_year'], index=False)
+        
+        # Filter and split by subservice
+        df_dict = renewable_energy_provision_functions.filter_and_split_by_resource(final_df)
+        
+        for subservice_key, subservice_results in p.results['renewable_energy_provision']['subservices'].items():
+            modkey = subservice_key.split('_')[0].title() + ' energy' # e.g. 'wind_energy_provision' -> 'wind'
+            df_cur = df_dict[modkey]
+            
+            output_path = subservice_results['gep_by_country_base_year']
+            hb.df_write(df_cur, output_path, index=False)
+            
+        value_gep_base_year = final_df['gep'].sum()
+        hb.log(f"Total renewable_energy_provision GEP for 2019: {value_gep_base_year} USD")
         return value_gep_base_year
 
 def gep_result(p):
@@ -190,7 +217,7 @@ def gep_load_results(p):
     
     # Learn the paths by creating a temp task treep
     p_temp = hb.ProjectFlow()
-    renewable_energy_production_initialization.build_gep_service_calculation_task_tree(p_temp)
+    renewable_energy_provision_initialization.build_gep_service_calculation_task_tree(p_temp)
     p_temp.set_all_tasks_to_skip_if_dir_exists()
     p_temp.execute()
     
@@ -202,7 +229,7 @@ def gep_results_distribution(p):
     # This task is intended to copy the results to the output directory.
     hb.log("Distributing GEP results...")
     
-    for key, value in p.results['renewable_energy_production'].items():
+    for key, value in p.results['renewable_energy_provision'].items():
         output_path = os.path.join(p.output_dir, key)
         hb.path_copy(value, output_path)
         hb.log(f"Distributed {key} to {output_path}")
