@@ -1,6 +1,6 @@
 import os
 import hazelbean as hb
-from global_invest.commercial_agriculture import commercial_agriculture_functions
+from global_invest.commercial_agriculture import crop_provision_functions
 
 def build_gep_task_tree(p):
     """
@@ -496,6 +496,6 @@ def pollination_shock(p):
             gdf.to_file(p.pollination_shock_change_per_region_path, driver='GPKG')
 
 def gep_calculation(p):
-    r = commercial_agriculture_functions.calculate_gep(p.base_data_dir)
+    r = crop_provision_functions.calculate_gep(p.base_data_dir)
 
     (df_gep_by_country_year_crop, df_gep_by_year_country, df_gep_by_year) = r

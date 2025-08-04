@@ -124,24 +124,39 @@ def gep_calculation(p):
         gep_df = combined_df.merge(a_df, on = merge_cols, how = 'inner')
 
         # gep calculation: gep = nat_contrib * P * Q
-        gep_df['gep'] = gep_df['nat_contrib'] * gep_df['Price (USD/GWh)'] * gep_df['Electricity Generation (GWh)']
+        gep_df['renewable_energy_provision_gep'] = gep_df['nat_contrib'] * gep_df['Price (USD/GWh)'] * gep_df['Electricity Generation (GWh)']
         gep_df.head()
 
         # filter to columns of interest
-        filter_cols = ['ISO3 code', 'Country', 'Year', 'Group Technology', 'Price (USD/GWh)', 'Electricity Generation (GWh)', 'nat_contrib', 'gep']
-        final_df = gep_df[filter_cols]
+        filter_cols = ['ISO3 code', 'Country', 'Year', 'Group Technology', 'Price (USD/GWh)', 'Electricity Generation (GWh)', 'nat_contrib', 'renewable_energy_provision_gep']
+        df_gep_by_country_base_year = gep_df[filter_cols]
         
         
         # Filter years
-        final_df = final_df.loc[final_df['Year'] == 2019] # 2019 only base
+        df_gep_by_country_base_year = df_gep_by_country_base_year.loc[df_gep_by_country_base_year['Year'] == 2019] # 2019 only base
         
         # Drop rows where gep <= 0 (happens from nat_contrib calc)
-        final_df = final_df.loc[final_df['gep'] > 0]
+        df_gep_by_country_base_year = df_gep_by_country_base_year.loc[df_gep_by_country_base_year['renewable_energy_provision_gep'] > 0]
+        # Rename to iso3_r250_label
+        df_gep_by_country_base_year = df_gep_by_country_base_year.rename(columns={'ISO3 code': 'iso3_r250_label'})
         
-        hb.df_write(final_df, p.results['renewable_energy_provision']['gep_by_country_base_year'], index=False)
+        # Merge in ee spec.
+        p.df_countries = hb.df_read(p.df_countries)
+        
+        
+        # Drop repeated ids in df_countries.
+        # TODO Need to make this more robust by having a r250 dataset as the starting point.
+        ee_r264_to_250 = p.df_countries.copy()
+        ee_r264_to_250 = ee_r264_to_250[ee_r264_to_250['ee_r264_label'] == ee_r264_to_250['iso3_r250_label']]
+        
+        df_gep_by_country_base_year = hb.df_merge(ee_r264_to_250, df_gep_by_country_base_year, left_on='iso3_r250_label', right_on='iso3_r250_label', how='left')
+        
+        
+        
+        hb.df_write(df_gep_by_country_base_year, p.results['renewable_energy_provision']['gep_by_country_base_year'], index=False)
         
         # Filter and split by subservice
-        df_dict = renewable_energy_provision_functions.filter_and_split_by_resource(final_df)
+        df_dict = renewable_energy_provision_functions.filter_and_split_by_resource(df_gep_by_country_base_year)
         
         for subservice_key, subservice_results in p.results['renewable_energy_provision']['subservices'].items():
             modkey = subservice_key.split('_')[0].title() + ' energy' # e.g. 'wind_energy_provision' -> 'wind'
@@ -150,8 +165,16 @@ def gep_calculation(p):
             output_path = subservice_results['gep_by_country_base_year']
             hb.df_write(df_cur, output_path, index=False)
             
-        value_gep_base_year = final_df['gep'].sum()
-        hb.log(f"Total renewable_energy_provision GEP for 2019: {value_gep_base_year} USD")
+            
+        # Use geopandas to merge the df_gep_by_country_base_year with the  to get the country names and other attributes
+        gdf_gep_by_country_base_year = hb.df_merge(p.gdf_countries_simplified, df_gep_by_country_base_year, how='outer', left_on='ee_r264_id', right_on='ee_r264_id')
+        gdf_gep_by_country_base_year.to_file(p.results['renewable_energy_provision']['gep_by_country_base_year'].replace('.csv', '.gpkg'), driver='GPKG')
+
+        # Then sum the values across all countries. 
+        value_gep_base_year = df_gep_by_country_base_year['renewable_energy_provision_gep'].sum()
+        
+        hb.log(f"Total GEP value for base year 2019: {value_gep_base_year}")
+                    
         return value_gep_base_year
 
 def gep_result(p):

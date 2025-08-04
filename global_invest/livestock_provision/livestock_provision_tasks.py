@@ -5,21 +5,21 @@ import hazelbean as hb
 import subprocess
 import csv
 
-from global_invest.commercial_agriculture import commercial_agriculture_initialization
-from global_invest.commercial_agriculture import commercial_agriculture_functions
-from global_invest.commercial_agriculture import commercial_agriculture_defaults
+from global_invest.livestock_provision import livestock_provision_initialization
+from global_invest.livestock_provision import livestock_provision_functions
+from global_invest.livestock_provision import livestock_provision_defaults
 
-def commercial_agriculture(p):
+def livestock_provision(p):
     """
     Parent task for commercial agriculture.
     """
-    p.fao_input_ref_path = os.path.join('global_invest', 'commercial_agriculture', 'Value_of_Production_E_All_Data.csv')
-    p.cwon_crop_coefficients_ref_path = os.path.join('global_invest', 'commercial_agriculture', "CWON2024_crop_coef.csv")
+    p.fao_input_ref_path = os.path.join('global_invest', 'livestock_provision', 'Value_of_Production_E_All_Data.csv')
+    p.cwon_crop_coefficients_ref_path = os.path.join('global_invest', 'livestock_provision', "CWON2024_crop_coef.csv")
 
 def gep_preprocess(p):
     """
     Preprocessing tasks are assumed NOT to be run by the user. Instead, it is assumed that the output of a preprocess
-    task is an input to the actual model, saved at the canonical project attribute p.commercial_agriculture_input_path.
+    task is an input to the actual model, saved at the canonical project attribute p.livestock_provision_input_path.
     These are preprocessing tasks are still provided for reference, but are not intended to be run directly by the user.
     We will "promote" the data outputed by a preprocess task to the base_data_dir provided to users.
     """
@@ -29,13 +29,13 @@ def gep_calculation(p):
     """ GEP calculation task for commercial agriculture."""
     # Define at least the primary output for the service, which for this project is gep_by_country_base_year.   
     service_results = {}
-    p.results['commercial_agriculture'] = service_results  
-    p.results['commercial_agriculture']['gep_by_country_base_year'] = os.path.join(p.cur_dir, "gep_by_country_base_year.csv")
+    p.results['livestock_provision'] = service_results  
+    p.results['livestock_provision']['gep_by_country_base_year'] = os.path.join(p.cur_dir, "gep_by_country_base_year.csv")
     
     # Optional additional results.
-    p.results['commercial_agriculture']['gep_by_country_year_crop'] = os.path.join(p.cur_dir, "gep_by_country_year_crop.csv")
-    p.results['commercial_agriculture']['gep_by_country_year'] = os.path.join(p.cur_dir, "gep_by_country_year.csv")
-    p.results['commercial_agriculture']['gep_by_year'] = os.path.join(p.cur_dir, "gep_by_year.csv")
+    p.results['livestock_provision']['gep_by_country_year_crop'] = os.path.join(p.cur_dir, "gep_by_country_year_crop.csv")
+    p.results['livestock_provision']['gep_by_country_year'] = os.path.join(p.cur_dir, "gep_by_country_year.csv")
+    p.results['livestock_provision']['gep_by_year'] = os.path.join(p.cur_dir, "gep_by_year.csv")
             
     # Check if all results exist
     if hb.path_all_exist(list(service_results.values())):
@@ -55,14 +55,14 @@ def gep_calculation(p):
         if not getattr(p, 'cwon_crop_coefficients_path', None):
             p.cwon_crop_coefficients_path = p.get_path(p.cwon_crop_coefficients_ref_path)
 
-        if not getattr(p, 'commercial_agriculture_subservices', None):
-            p.commercial_attribute_subservices = commercial_agriculture_defaults.DEFAULT_AGRICULTURE_ITEMS
+        if not getattr(p, 'livestock_provision_subservices', None):
+            p.commercial_attribute_subservices = livestock_provision_defaults.DEFAULT_LIVESTOCK_ITEMS
 
         # 1. Read and process data
-        df_crop_value = commercial_agriculture_functions.read_crop_values(p.fao_input_path, p.commercial_attribute_subservices)
-        df_crop_coefs = commercial_agriculture_functions.read_crop_coefs(p.cwon_crop_coefficients_path)
+        df_crop_value = livestock_provision_functions.read_crop_values(p.fao_input_path, p.commercial_attribute_subservices)
+        df_crop_coefs = livestock_provision_functions.read_crop_coefs(p.cwon_crop_coefficients_path)
 
-        df_gep_by_country_year_crop = commercial_agriculture_functions.merge_crop_with_coefs(df_crop_value, df_crop_coefs)
+        df_gep_by_country_year_crop = livestock_provision_functions.merge_crop_with_coefs(df_crop_value, df_crop_coefs)
         # String mangle the FAO M49 codes to integers.
         df_gep_by_country_year_crop['area_code_M49'] = df_gep_by_country_year_crop['area_code_M49'].str.replace('\'', '')
         df_gep_by_country_year_crop['area_code_M49'] = df_gep_by_country_year_crop['area_code_M49'].astype(int)
@@ -113,22 +113,25 @@ def gep_calculation(p):
         # Merge so it has all the good labels from the  
         df_gep_by_country_year_crop = hb.df_merge(ee_r264_to_250, df_gep_by_country_year_crop, how='right', left_on='iso3_r250_id', right_on='area_code_M49')
         
-        df_gep_by_country_year = commercial_agriculture_functions.group_crops(df_gep_by_country_year_crop)
+        # Rename Valu to livestock_provision_gep
+        df_gep_by_country_year_crop.rename(columns={'Value': 'livestock_provision_gep'}, inplace=True)
+        
+        df_gep_by_country_year = livestock_provision_functions.group_crops(df_gep_by_country_year_crop)
 
-        df_gep_by_year = commercial_agriculture_functions.group_countries(df_gep_by_country_year)
+        df_gep_by_year = livestock_provision_functions.group_countries(df_gep_by_country_year)
         
         df_gep_by_country_base_year = df_gep_by_country_year.loc[df_gep_by_country_year['year'] == 2019].copy()
         
         # Write to CSVs
-        hb.df_write(df_gep_by_country_year_crop, p.results['commercial_agriculture']['gep_by_country_year_crop'])
-        hb.df_write(df_gep_by_country_year, p.results['commercial_agriculture']['gep_by_country_year'])
-        hb.df_write(df_gep_by_country_base_year, p.results['commercial_agriculture']['gep_by_country_base_year'])   
-        hb.df_write(df_gep_by_year, p.results['commercial_agriculture']['gep_by_year'], handle_quotes='all')
-        hb.df_write(df_gep_by_year, hb.replace_ext(p.results['commercial_agriculture']['gep_by_year'], 'xlsx'), handle_quotes='all')
+        hb.df_write(df_gep_by_country_year_crop, p.results['livestock_provision']['gep_by_country_year_crop'])
+        hb.df_write(df_gep_by_country_year, p.results['livestock_provision']['gep_by_country_year'])
+        hb.df_write(df_gep_by_country_base_year, p.results['livestock_provision']['gep_by_country_base_year'])   
+        hb.df_write(df_gep_by_year, p.results['livestock_provision']['gep_by_year'], handle_quotes='all')
+        hb.df_write(df_gep_by_year, hb.replace_ext(p.results['livestock_provision']['gep_by_year'], 'xlsx'), handle_quotes='all')
         
         # Use geopandas to merge the df_gep_by_country_base_year with the  to get the country names and other attributes
         gdf_gep_by_country_base_year = hb.df_merge(p.gdf_countries_simplified, df_gep_by_country_base_year, how='outer', left_on='ee_r264_id', right_on='ee_r264_id')
-        gdf_gep_by_country_base_year.to_file(p.results['commercial_agriculture']['gep_by_country_base_year'].replace('.csv', '.gpkg'), driver='GPKG')
+        gdf_gep_by_country_base_year.to_file(p.results['livestock_provision']['gep_by_country_base_year'].replace('.csv', '.gpkg'), driver='GPKG')
 
         # Then sum the values across all countries. 
         value_gep_base_year = df_gep_by_country_base_year['Value'].sum()
@@ -200,7 +203,7 @@ def gep_load_results(p):
     
     # Learn the paths by creating a temp task treep
     p_temp = hb.ProjectFlow()
-    commercial_agriculture_initialization.build_gep_service_calculation_task_tree(p_temp)
+    livestock_provision_initialization.build_gep_service_calculation_task_tree(p_temp)
     p_temp.set_all_tasks_to_skip_if_dir_exists()
     p_temp.execute()
     
@@ -212,7 +215,7 @@ def gep_results_distribution(p):
     # This task is intended to copy the results to the output directory.
     hb.log("Distributing GEP results...")
     
-    for key, value in p.results['commercial_agriculture'].items():
+    for key, value in p.results['livestock_provision'].items():
         output_path = os.path.join(p.output_dir, key)
         hb.path_copy(value, output_path)
         hb.log(f"Distributed {key} to {output_path}")

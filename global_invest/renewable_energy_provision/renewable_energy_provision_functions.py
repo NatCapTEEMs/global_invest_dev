@@ -44,7 +44,7 @@ def filter_and_split_by_resource(df):
 
     # Rename columns
     df_filtered = df.rename(columns={
-        'ISO3 code': 'Country_Code',
+        # 'ISO3 code': 'Country_Code',
         'Country': 'Country_Name',
         'Group Technology': 'Resource',
         'Price (USD/GWh)': 'P_electricity_USD_per_GWh',
@@ -52,7 +52,7 @@ def filter_and_split_by_resource(df):
     })
 
     # Reorder columns
-    df_filtered = df_filtered[['Resource', 'Country_Name', 'Year', 'Country_Code', 'P_electricity_USD_per_GWh', 'energy_prod_GWh', 'nat_contrib', 'gep']]
+    # df_filtered = df_filtered[['Resource', 'Country_Name', 'Year', 'iso3_r250_label', 'P_electricity_USD_per_GWh', 'energy_prod_GWh', 'nat_contrib', 'renewable_energy_provision_gep']]
 
 
 

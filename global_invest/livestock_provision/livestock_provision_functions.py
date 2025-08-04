@@ -5,7 +5,7 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import hazelbean as hb
-from global_invest.commercial_agriculture import commercial_agriculture_defaults
+from global_invest.livestock_provision import livestock_provision_defaults
 
 def read_crop_values(path: str, items):
     """
@@ -212,7 +212,7 @@ def group_countries(df: pd.DataFrame):
     return df_gep_by_year
 
 
-# def calculate_gep(p, data_input_dir, items: list = commercial_agriculture_defaults.DEFAULT_CROP_ITEMS, base_year: int = 2019):
+# def calculate_gep(p, data_input_dir, items: list = livestock_provision_defaults.DEFAULT_CROP_ITEMS, base_year: int = 2019):
 
 #     # 1. Read and process data
 #     df_crop_value = read_crop_values(os.path.join(data_input_dir, 'fao', "Value_of_Production_E_All_Data.csv"), items)
