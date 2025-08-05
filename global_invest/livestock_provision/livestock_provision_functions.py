@@ -93,7 +93,7 @@ def read_crop_values(path: str, items):
         id_vars=["area_code", "area_code_M49", "country", "crop_code", "crop"],
         value_vars=[str(year) for year in range(1961, 2023)],  # 1961–2022
         var_name="year",
-        value_name="Value",
+        value_name="livestock_provision_gep",
     )
 
     # ensure area_code and year are ints
@@ -171,7 +171,7 @@ def merge_crop_with_coefs(df_crop_value: pd.DataFrame, df_crop_coefs: pd.DataFra
 
     # recombine everything
     df_crop_value = pd.concat(merged_parts, ignore_index=True)
-    df_crop_value["Value"] = df_crop_value["Value"] * df_crop_value["rental_rate"]
+    df_crop_value["livestock_provision_gep"] = df_crop_value["livestock_provision_gep"] * df_crop_value["rental_rate"]
     df_crop_value = df_crop_value.sort_values(by=["area_code", "year"], ascending=[True, True])
     logging.info(f"Merged values + coefs ({df_crop_value.shape[0]} rows).")
     return df_crop_value
@@ -184,13 +184,13 @@ def group_crops(df: pd.DataFrame):
     groupby_cols = ['iso3_r250_id', 'year']
     
     # # OLD METHOD
-    # df_gep_by_year_country = df.groupby(["area_code", "ee_r264_id", "ee_r264_label", "country", "year"], as_index=False).agg(Value=("Value", "sum"))    
+    # df_gep_by_year_country = df.groupby(["area_code", "ee_r264_id", "ee_r264_label", "country", "year"], as_index=False).agg(livestock_provision_gep=("livestock_provision_gep", "sum"))    
     # df_gep_by_year_country = df_gep_by_year_country.sort_values(by=["area_code", "year"], ascending=[True, True])
-    # df_gep_by_year_country["Value"] = pd.to_numeric(df_gep_by_year_country["Value"], errors="coerce")
+    # df_gep_by_year_country["livestock_provision_gep"] = pd.to_numeric(df_gep_by_year_country["livestock_provision_gep"], errors="coerce")
     
-    df_gep_by_year_country = hb.df_groupby(df, groupby_cols, agg_dict={"Value": "sum"}, preserve='keep_all_valid') 
+    df_gep_by_year_country = hb.df_groupby(df, groupby_cols, agg_dict={"livestock_provision_gep": "sum"}, preserve='keep_all_valid') 
     df_gep_by_year_country = df_gep_by_year_country.sort_values(by=["iso3_r250_id", "year"], ascending=[True, True])
-    df_gep_by_year_country["Value"] = pd.to_numeric(df_gep_by_year_country["Value"], errors="coerce")
+    df_gep_by_year_country["livestock_provision_gep"] = pd.to_numeric(df_gep_by_year_country["livestock_provision_gep"], errors="coerce")
 
     logging.info(f"Grouped by country-year ({df_gep_by_year_country.shape[0]} rows).")
     return df_gep_by_year_country
@@ -201,10 +201,10 @@ def group_countries(df: pd.DataFrame):
     Aggregate total GEP across all countries by year.
     """
     # df = df.loc[df['year'] == 2019].copy()
-    df_gep_by_year = hb.df_groupby(df, groupby_cols='year', agg_cols="Value", preserve='keep_all_valid')
+    df_gep_by_year = hb.df_groupby(df, groupby_cols='year', agg_cols="livestock_provision_gep", preserve='keep_all_valid')
 
     
-    # START HERE: df_gep_by_year = hb.df_groupby(df, groupby_cols='iso3_r250_label', agg_dict={"Value": "sum"}). This line causes a really wrongly formatted DataFrame.
+    # START HERE: df_gep_by_year = hb.df_groupby(df, groupby_cols='iso3_r250_label', agg_dict={"livestock_provision_gep": "sum"}). This line causes a really wrongly formatted DataFrame.
     df_gep_by_year.set_index("year", inplace=False)
     # df_gep_by_year.rename(columns={"gep": "total_gep"}, inplace=True)
     df_gep_by_year.sort_values("year", inplace=True)
@@ -232,7 +232,7 @@ def group_countries(df: pd.DataFrame):
     
 #     # Extract the value for the base year (2019)
 
-#     total_value = df_gep_by_year[df_gep_by_year["year"] == base_year]["Value"].sum()
+#     total_value = df_gep_by_year[df_gep_by_year["year"] == base_year]["livestock_provision_gep"].sum()
 #     if pd.isna(total_value) or total_value == 0:
 #         logging.warning(f"No GEP data found for base year {base_year}. Using 0 as total value.")
 #         total_value = 0.0

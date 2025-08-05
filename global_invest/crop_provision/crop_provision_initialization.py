@@ -31,7 +31,8 @@ def build_gep_service_task_tree(p):
     # Actually, maybe it's just that load_results is more useful for notebooks?
     
     p = build_gep_service_calculation_task_tree(p)
-    p.crop_provision_gep_result_task = p.add_task(crop_provision_tasks.gep_result, parent=p.crop_provision_task)   
+    p.crop_provision_gep_result_task = p.add_task(crop_provision_tasks.gep_result, parent=p.crop_provision_task) 
+    return p
 
     
 def build_gep_task_tree(p):

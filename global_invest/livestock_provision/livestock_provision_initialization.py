@@ -32,7 +32,7 @@ def build_gep_service_task_tree(p):
     
     p = build_gep_service_calculation_task_tree(p)
     p.livestock_provision_gep_result_task = p.add_task(livestock_provision_tasks.gep_result, parent=p.livestock_provision_task)   
-
+    return p
     
 def build_gep_task_tree(p):
     """

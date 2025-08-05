@@ -105,7 +105,7 @@ def gep_calculation(p):
             'crop',
             'year',
             'rental_rate',
-            'Value',
+            'livestock_provision_gep',
         ]
         ee_r264_to_250.drop([i for i in ee_r264_to_250.columns if i not in cols_to_keep], axis=1, inplace=True, errors='ignore')
         # ee_r264_to_250 = ee_r264_to_250[cols_to_keep]
@@ -114,7 +114,7 @@ def gep_calculation(p):
         df_gep_by_country_year_crop = hb.df_merge(ee_r264_to_250, df_gep_by_country_year_crop, how='right', left_on='iso3_r250_id', right_on='area_code_M49')
         
         # Rename Valu to livestock_provision_gep
-        df_gep_by_country_year_crop.rename(columns={'Value': 'livestock_provision_gep'}, inplace=True)
+        # df_gep_by_country_year_crop.rename(columns={'livestock_provision_gep': 'livestock_provision_gep'}, inplace=True)
         
         df_gep_by_country_year = livestock_provision_functions.group_crops(df_gep_by_country_year_crop)
 
@@ -134,7 +134,7 @@ def gep_calculation(p):
         gdf_gep_by_country_base_year.to_file(p.results['livestock_provision']['gep_by_country_base_year'].replace('.csv', '.gpkg'), driver='GPKG')
 
         # Then sum the values across all countries. 
-        value_gep_base_year = df_gep_by_country_base_year['Value'].sum()
+        value_gep_base_year = df_gep_by_country_base_year['livestock_provision_gep'].sum()
         
         hb.log(f"Total GEP value for base year 2019: {value_gep_base_year}")
         

@@ -24,7 +24,7 @@ def build_gep_service_task_tree(p):
     
     p = build_gep_service_calculation_task_tree(p)
     p.renewable_energy_provision_gep_result_task = p.add_task(renewable_energy_provision_tasks.gep_result, parent=p.renewable_energy_provision_task)   
-
+    return p
     
 def build_gep_task_tree(p):
     """

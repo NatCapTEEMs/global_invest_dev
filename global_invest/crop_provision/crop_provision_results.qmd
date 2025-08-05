@@ -91,7 +91,7 @@ for k, v in p.results[service_label].items():
         # Group by useful aggregation columns explicitly and assign each as an attribute to p
         if 'income_grp' in df.columns:
             p.gep_by_income_grp_base_year_table = df.groupby('income_grp', as_index=False)['crop_provision_gep'].sum()
-            p.gep_by_income_grp_base_year_table = p.gep_by_income_grp_base_year_table[['income_grp', 'Value']]
+            p.gep_by_income_grp_base_year_table = p.gep_by_income_grp_base_year_table[['income_grp', 'crop_provision_gep']]
         if 'region_un' in df.columns:
             p.gep_by_region_un_base_year_table = df.groupby('region_un', as_index=False)['crop_provision_gep'].sum()
             p.gep_by_region_un_base_year_table = p.gep_by_region_un_base_year_table[['region_un', 'crop_provision_gep']]
@@ -104,7 +104,7 @@ for k, v in p.results[service_label].items():
             # p.gep_by_subregion_base_year_table = p.gep_by_country_base_year_table[['subregion', 'crop_provision_gep']]
         
         # Save each plot table as a CSV in the current directory
-        p.gep_by_country_base_year_table.to_csv(os.path.join(p.intermediate_dir, service_label, 'gep_result', 'gep_by_country_base_year_table.csv'), index=False)
+        hb.df_write(p.gep_by_country_base_year_table, os.path.join(p.intermediate_dir, service_label, 'gep_result', 'gep_by_country_base_year_table.csv'))
         hb.df_write(p.gep_by_income_grp_base_year_table, os.path.join(p.intermediate_dir, service_label, 'gep_result', 'gep_by_income_grp_base_year_table.csv'))
         hb.df_write(p.gep_by_region_un_base_year_table, os.path.join(p.intermediate_dir, service_label, 'gep_result', 'gep_by_region_un_base_year_table.csv'))
         hb.df_write(p.gep_by_continent_base_year_table, os.path.join(p.intermediate_dir, service_label, 'gep_result', 'gep_by_continent_base_year_table.csv'))

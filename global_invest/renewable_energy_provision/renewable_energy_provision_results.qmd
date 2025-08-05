@@ -76,88 +76,90 @@ service_label = 'renewable_energy_provision'
 
 # Load the results
 for k, v in p.results[service_label].items():
-    # Load the results DataFrame
-    df = hb.df_read(v)
+    if hb.path_exists(v):
 
-    setattr(p, k, df)
+        # Load the results DataFrame
+        df = hb.df_read(v)
 
-    # SERVICE-SPECIFIC CODE CUSTOMIZATION GOES HERE: Put whatever you think should be displayed
-    # E.g., generate manuscript-ready tables, calculate total values for inline text, make plot pngs, etc
-    if k == 'gep_by_country_base_year':
-        total_agricultural_value = df['renewable_energy_provision_gep'].sum()
-        p.gep_by_country_base_year_table = df[['iso3_r250_name', 'renewable_energy_provision_gep']]
+        setattr(p, k, df)
 
-        # Group by useful aggregation columns explicitly and assign each as an attribute to p
-        if 'income_grp' in df.columns:
-            p.gep_by_income_grp_base_year_table = df.groupby('income_grp', as_index=False)['renewable_energy_provision_gep'].sum()
-            p.gep_by_income_grp_base_year_table = p.gep_by_income_grp_base_year_table[['income_grp', 'renewable_energy_provision_gep']]
-        if 'region_un' in df.columns:
-            p.gep_by_region_un_base_year_table = df.groupby('region_un', as_index=False)['renewable_energy_provision_gep'].sum()
-            p.gep_by_region_un_base_year_table = p.gep_by_region_un_base_year_table[['region_un', 'renewable_energy_provision_gep']]
-        if 'continent' in df.columns:
-            p.gep_by_continent_base_year_table = df.groupby('continent', as_index=False)['renewable_energy_provision_gep'].sum()
-            p.gep_by_continent_base_year_table = p.gep_by_continent_base_year_table[['continent', 'renewable_energy_provision_gep']]
-        if 'subregion' in df.columns:
-            p.gep_by_subregion_base_year_table = df.groupby('subregion', as_index=False)['renewable_energy_provision_gep'].sum()
+        # SERVICE-SPECIFIC CODE CUSTOMIZATION GOES HERE: Put whatever you think should be displayed
+        # E.g., generate manuscript-ready tables, calculate total values for inline text, make plot pngs, etc
+        if k == 'gep_by_country_base_year':
+            total_agricultural_value = df['renewable_energy_provision_gep'].sum()
+            p.gep_by_country_base_year_table = df[['iso3_r250_name', 'renewable_energy_provision_gep']]
 
-            # p.gep_by_subregion_base_year_table = p.gep_by_country_base_year_table[['subregion', 'renewable_energy_provision_gep']]
+            # Group by useful aggregation columns explicitly and assign each as an attribute to p
+            if 'income_grp' in df.columns:
+                p.gep_by_income_grp_base_year_table = df.groupby('income_grp', as_index=False)['renewable_energy_provision_gep'].sum()
+                p.gep_by_income_grp_base_year_table = p.gep_by_income_grp_base_year_table[['income_grp', 'renewable_energy_provision_gep']]
+            if 'region_un' in df.columns:
+                p.gep_by_region_un_base_year_table = df.groupby('region_un', as_index=False)['renewable_energy_provision_gep'].sum()
+                p.gep_by_region_un_base_year_table = p.gep_by_region_un_base_year_table[['region_un', 'renewable_energy_provision_gep']]
+            if 'continent' in df.columns:
+                p.gep_by_continent_base_year_table = df.groupby('continent', as_index=False)['renewable_energy_provision_gep'].sum()
+                p.gep_by_continent_base_year_table = p.gep_by_continent_base_year_table[['continent', 'renewable_energy_provision_gep']]
+            if 'subregion' in df.columns:
+                p.gep_by_subregion_base_year_table = df.groupby('subregion', as_index=False)['renewable_energy_provision_gep'].sum()
+
+                # p.gep_by_subregion_base_year_table = p.gep_by_country_base_year_table[['subregion', 'renewable_energy_provision_gep']]
+            
+            # Save each plot table as a CSV in the current directory
+            hb.df_write(p.gep_by_country_base_year_table, os.path.join(p.intermediate_dir, service_label, 'gep_result', 'gep_by_country_base_year_table.csv'))
+            hb.df_write(p.gep_by_income_grp_base_year_table, os.path.join(p.intermediate_dir, service_label, 'gep_result', 'gep_by_income_grp_base_year_table.csv'))
+            hb.df_write(p.gep_by_region_un_base_year_table, os.path.join(p.intermediate_dir, service_label, 'gep_result', 'gep_by_region_un_base_year_table.csv'))
+            hb.df_write(p.gep_by_continent_base_year_table, os.path.join(p.intermediate_dir, service_label, 'gep_result', 'gep_by_continent_base_year_table.csv'))
+            hb.df_write(p.gep_by_subregion_base_year_table, os.path.join(p.intermediate_dir, service_label, 'gep_result', 'gep_by_subregion_base_year_table.csv'))
+
+            # Using the gpkg in gep_calculation, plot the GEP by country on a map
+
+            import numpy as np
+            import matplotlib as mpl
+
+            gpkg_path = p.results[service_label]['gep_by_country_base_year'].replace('.csv', '.gpkg')
+            gdf = hb.read_vector(gpkg_path)
+            gdf = gdf[['iso3_r250_id', 'iso3_r250_name', 'renewable_energy_provision_gep', 'geometry']]  # Keep only relevant columns
+
+            # Add country borders for clarity
+            borders = gdf.copy()
+            borders['geometry'] = borders['geometry'].boundary
+
+            # Set up log normalization for color mapping
+            norm = mpl.colors.LogNorm(vmin=gdf['renewable_energy_provision_gep'][gdf['renewable_energy_provision_gep'] > 0].min(), vmax=gdf['renewable_energy_provision_gep'].max())
+
+            fig, ax = plt.subplots(figsize=(15, 10))
+            gdf.plot(column='renewable_energy_provision_gep', cmap='OrRd', legend=False, norm=norm, ax=ax)
+            borders.plot(ax=ax, color='black', linewidth=0.5)
+
+            # Add colorbar with actual renewable_energy_provision_geps
+            sm = plt.cm.ScalarMappable(cmap='OrRd', norm=norm)
+            sm._A = []
+            cbar = fig.colorbar(sm, ax=ax, orientation='vertical', fraction=0.03, pad=0.02)
+            cbar.set_label("Gross Economic Product (GEP) in Base Year")
+            cbar.ax.yaxis.set_major_formatter(mpl.ticker.FuncFormatter(lambda x, _: f'{int(x):,}'))
+
+            ax.set_title('GEP by Country in Base Year')
+            ax.set_axis_off()  # Hide the axis
+            plt.savefig(os.path.join(p.intermediate_dir, service_label, 'gep_result', 'gep_by_country_base_year_map.png'), bbox_inches='tight', dpi=300)
+            plt.close()
+
         
-        # Save each plot table as a CSV in the current directory
-        p.gep_by_country_base_year_table.to_csv(os.path.join(p.intermediate_dir, service_label, 'gep_result', 'gep_by_country_base_year_table.csv'), index=False)
-        hb.df_write(p.gep_by_income_grp_base_year_table, os.path.join(p.intermediate_dir, service_label, 'gep_result', 'gep_by_income_grp_base_year_table.csv'))
-        hb.df_write(p.gep_by_region_un_base_year_table, os.path.join(p.intermediate_dir, service_label, 'gep_result', 'gep_by_region_un_base_year_table.csv'))
-        hb.df_write(p.gep_by_continent_base_year_table, os.path.join(p.intermediate_dir, service_label, 'gep_result', 'gep_by_continent_base_year_table.csv'))
-        hb.df_write(p.gep_by_subregion_base_year_table, os.path.join(p.intermediate_dir, service_label, 'gep_result', 'gep_by_subregion_base_year_table.csv'))
 
-        # Using the gpkg in gep_calculation, plot the GEP by country on a map
+        if k == 'gep_by_year':
+            p.gep_by_year_table = df[['year', 'renewable_energy_provision_gep']]
+            # Drop renewable_energy_provision_geps that are zero
+            p.gep_by_year_table = p.gep_by_year_table[p.gep_by_year_table['renewable_energy_provision_gep'] > 0]
+            hb.df_write(p.gep_by_year_table, os.path.join(p.intermediate_dir, service_label, 'gep_result', 'gep_by_year_table.csv'))
 
-        import numpy as np
-        import matplotlib as mpl
-
-        gpkg_path = p.results[service_label]['gep_by_country_base_year'].replace('.csv', '.gpkg')
-        gdf = hb.read_vector(gpkg_path)
-        gdf = gdf[['iso3_r250_id', 'iso3_r250_name', 'renewable_energy_provision_gep', 'geometry']]  # Keep only relevant columns
-
-        # Add country borders for clarity
-        borders = gdf.copy()
-        borders['geometry'] = borders['geometry'].boundary
-
-        # Set up log normalization for color mapping
-        norm = mpl.colors.LogNorm(vmin=gdf['renewable_energy_provision_gep'][gdf['renewable_energy_provision_gep'] > 0].min(), vmax=gdf['renewable_energy_provision_gep'].max())
-
-        fig, ax = plt.subplots(figsize=(15, 10))
-        gdf.plot(column='renewable_energy_provision_gep', cmap='OrRd', legend=False, norm=norm, ax=ax)
-        borders.plot(ax=ax, color='black', linewidth=0.5)
-
-        # Add colorbar with actual renewable_energy_provision_geps
-        sm = plt.cm.ScalarMappable(cmap='OrRd', norm=norm)
-        sm._A = []
-        cbar = fig.colorbar(sm, ax=ax, orientation='vertical', fraction=0.03, pad=0.02)
-        cbar.set_label("Gross Economic Product (GEP) in Base Year")
-        cbar.ax.yaxis.set_major_formatter(mpl.ticker.FuncFormatter(lambda x, _: f'{int(x):,}'))
-
-        ax.set_title('GEP by Country in Base Year')
-        ax.set_axis_off()  # Hide the axis
-        plt.savefig(os.path.join(p.intermediate_dir, service_label, 'gep_result', 'gep_by_country_base_year_map.png'), bbox_inches='tight', dpi=300)
-        plt.close()
-
-    
-
-    if k == 'gep_by_year':
-        p.gep_by_year_table = df[['year', 'renewable_energy_provision_gep']]
-        # Drop renewable_energy_provision_geps that are zero
-        p.gep_by_year_table = p.gep_by_year_table[p.gep_by_year_table['renewable_energy_provision_gep'] > 0]
-        hb.df_write(p.gep_by_year_table, os.path.join(p.intermediate_dir, service_label, 'gep_result', 'gep_by_year_table.csv'))
-
-        # Also make a basic line graph as a png
-        plt.figure(figsize=(10, 6))
-        plt.plot(p.gep_by_year_table['year'], p.gep_by_year_table['renewable_energy_provision_gep'], marker='o')
-        plt.title('GEP by Year')  
-        plt.xlabel('Year')
-        plt.ylabel('Gross Economic Product (GEP)')
-        plt.grid(True)
-        plt.savefig(os.path.join(p.intermediate_dir, service_label, 'gep_result', 'gep_by_year_plot.png'), dpi=300)
-        plt.close()
+            # Also make a basic line graph as a png
+            plt.figure(figsize=(10, 6))
+            plt.plot(p.gep_by_year_table['year'], p.gep_by_year_table['renewable_energy_provision_gep'], marker='o')
+            plt.title('GEP by Year')  
+            plt.xlabel('Year')
+            plt.ylabel('Gross Economic Product (GEP)')
+            plt.grid(True)
+            plt.savefig(os.path.join(p.intermediate_dir, service_label, 'gep_result', 'gep_by_year_plot.png'), dpi=300)
+            plt.close()
 
 ```
 
@@ -187,18 +189,4 @@ display(p.gep_by_continent_base_year_table)
 ```{python}
 # Display the GEP by income group table   
 display(p.gep_by_subregion_base_year_table)
-```
-## GEP  Over Time
-```{python}
-
-display(Image(os.path.join(p.intermediate_dir, service_label, 'gep_result', 'gep_by_year_plot.png')))
-
-# Display the GEP by income group table   
-display(p.gep_by_year_table)
-```
-
-
-## GEP by Country in Base Year
-```{python}
-display(p.gep_by_country_base_year_table)
 ```
