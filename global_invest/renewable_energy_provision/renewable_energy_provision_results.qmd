@@ -31,7 +31,9 @@ from global_invest.renewable_energy_provision import renewable_energy_provision_
 # ProjectFlow object
 p = hb.ProjectFlow() # Create a ProjectFlow Object to organize directories and enable parallel processing.
 p.project_name = 'gep_renewable_energy_provision'  # Determines the folder created to store intermediate and final results.
-p.project_dir = os.path.join(os.path.expanduser('~'), 'Files', 'global_invest', 'projects', p.project_name) # Put it in the right location relative to the user's home directory.
+local_project_dir = os.path.join(os.path.expanduser('~'), 'Files', 'global_invest', 'projects', p.project_name) # For use if someone is running the qmd directly (Rather than being called by a script)
+p.project_dir = os.environ.get('PROJECTFLOW_ROOT', local_project_dir)
+
 p.base_data_dir = "G:/Shared drives/NatCapTEEMs/Files/base_data" # Set where data outside the project will be stored. CAUTION: For GEP we are using the shared Google Drive, but best practice is to use a local directory that you can control (also it's faster)
 p.set_project_dir(p.project_dir) # Set the project directory in the ProjectFlow object. Also defines p.input_dir, p.intermediate_dir, and p.output_dir based on the project_dir.
 
