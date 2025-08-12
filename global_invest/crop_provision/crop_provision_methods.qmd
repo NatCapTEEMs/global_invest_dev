@@ -11,9 +11,9 @@ format:
     echo: false              # Hide code by default in Word
 ---
 
-# **Ecosystem Service: crop provision, a provisioning service of crop**
+# Crop Provision
 
-Main contributors: Marta Sylla, Lijing Wang, Ryan McWay
+*Main contributors: Marta Sylla, Lijing Wang, Ryan McWay*
 
 This section outlines how we assess and value food provision as an ecosystem service within the GEP framework. The analysis focuses specifically on food provision provided by terrestrial ecosystems. This analysis does not include any aquatic ecosystem; aquaculture/fisheries is covered in a different section of the GEP manuscript. By estimating and valuing crop provision, we aim to capture the ecosystem contribution to commercial crop agricultural practices.
 
@@ -21,13 +21,12 @@ Crop production is defined as a contribution of the ecosystem to agricultural pr
 
 This is a final product that enters the economy via the agricultural sector. Further modifications or processing of the initial/raw products are included in the GDP of the economic sector of Agriculture, Forestry, Fishing and Hunting, but also other sectors down the value chain. It should be noted, however, that according to the global study farmers receive, on average, 27% of the money consumers spend on food eaten at home, while they receive a significantly smaller share of the expenditure on food consumed outside home (Yi et al., 2021). This percentage varies across countries and regions, as well as changes with the quality of the raw product.
 
-**Data and Methods**
+## Data and Methods
 
 We estimate gross ecosystem product (GEP) for crop provision for the year 2019 as:\
 $$
 \mathrm{GEP crop}_{\text{c,k,t}} = \sum_{c,k,t} \left( \mathrm{GPV}_{c,k,t} \cdot \lambda_{c,t10} \right)
-$$
-, where
+$$ , where
 
 GEP crop c,k,t is the agricultural ecosystem contribution for country c, crop item k and given year t,
 
@@ -39,11 +38,11 @@ This value is aggregated at the national level for a given year (in this case, 2
 
 This formula and method follows the Changing Wealth of Nations method presented in the [2024 report](https://documents1.worldbank.org/curated/en/099100824155021548/pdf/P178446-7dfe6e92-9cf0-4d24-ad25-20b1320904c2.pdf) (World Bank, 2024). Lambda (λ) is “proxied by land cost shares provided by the International Agricultural Productivity database for each country and each decade. For countries where rental rates vary across decades, annual values are assumed to be constant within each decade” (World Bank, 2024). Agricultural land is further subdivided into pasture or cropland, therefore land rates are disaggregated into livestock or crop production. We do not distinguish between organic and non-organic farming, as well as intensive/extensive types of farming. In the CWON report of 2021 (Source: CWON 2021: Methods and Data, p. 48) the pastures were divided into intensive and extensive pastureland and the rental rates for extensive pasture were twice as high as for intensive. The rental rates for intensive pasture and cropland were the same. However, the data was provided by regions of several countries clustered together. Therefore, the CWON 2024 methodology constitutes a major improvement in terms of accuracy and timeframe, losing the artificially doubling the rent for extensive pastureland.
 
-**Validation**
+## Validation
 
 The applied method follows the CWON methodology for estimating the value of natural capital rents. For agriculture, the natural resource is land and the crop rents represent ecosystem contribution. We compared our results with the CWON 2024 for global results for the year 2019. CWON’s results are about 5% lower than ours, even though we use the same input data and values for lambda.
 
-**References:**
+## References
 
 1.  K.A. Brauman, L.A. Garibaldi, S. Polasky, Y. Aumeeruddy-Thomas, P.H.S. Brancalion, F. DeClerck, U. Jacob, M.E. Mastrangelo, N.V. Nkongolo, H. Palang, N. Pérez-Méndez, L.J. Shannon, U.B. Shrestha, E. Strombom, & M. Verma,Global trends in nature’s contributions to people, *Proc. Natl. Acad. Sci. U.S.A.* 117 (51) 32799-32805, <https://doi.org/10.1073/pnas.2010473117> (2020).\
 2.  Yi, J., Meemken, EM., Mazariegos-Anastassiou, V. *et al.* Post-farmgate food value chains make up most of consumer food expenditures globally. *Nat Food* **2**, 417–425 (2021). <https://doi.org/10.1038/s43016-021-00279-9>\
