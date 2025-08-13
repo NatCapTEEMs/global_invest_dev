@@ -1,7 +1,7 @@
 import os
 import sys
 import pandas as pd
-import hazelbean as hb # type: ignore
+import hazelbean as hb
 import subprocess
 import csv
 import numpy as np
@@ -29,7 +29,7 @@ def task_convert_carbon_density_maps_dtype(p):
         Must contain p.base_data_dir (input folder path).
     """
     input_folder = p.get_path('terrestrial_carbon', 'spawn_2020')
-    output_folder = p.project_dir
+    output_folder = p.cur_dir
 
     raw_carbon_density_maps = [
         f for f in os.listdir(input_folder)
@@ -60,9 +60,9 @@ def task_combine_two_carbon_density_maps(p):
     """
 
     # Input and output paths
-    p.agb_path = p.get_path(os.path.join(p.project_dir,"aboveground_biomass_carbon_2010_float.tif"))
-    p.bgb_path = p.get_path(os.path.join(p.project_dir,"belowground_biomass_carbon_2010_float.tif"))
-    p.total_carbon_output_path = os.path.join(p.project_dir, "total_biomass_carbon_2010_float.tif")
+    p.agb_path = p.get_path(os.path.join(p.task_convert_carbon_density_maps_dtype_dir,"aboveground_biomass_carbon_2010_float.tif"))
+    p.bgb_path = p.get_path(os.path.join(p.task_convert_carbon_density_maps_dtype_dir,"belowground_biomass_carbon_2010_float.tif"))
+    p.total_carbon_output_path = os.path.join(p.cur_dir, "total_biomass_carbon_2010_float.tif")
 
     # Run the function
     result = terrestrial_carbon_functions.combine_two_float_rasters(
@@ -82,8 +82,8 @@ def task_reproject_total_carbon_density(p):
     """
 
     # Input and output paths
-    p.total_carbon_density_path = p.get_path(os.path.join(p.project_dir, "total_biomass_carbon_2010_float.tif"))
-    p.reprojected_total_carbon_density_path = os.path.join(p.project_dir, "total_biomass_carbon_2010_float_reprojected.tif")
+    # p.total_carbon_density_path = p.get_path(os.path.join(p.task_combine_two_carbon_density_maps, "total_biomass_carbon_2010_float.tif")) Defined above
+    p.reprojected_total_carbon_density_path = os.path.join(p.cur_dir, "total_biomass_carbon_2010_float_reprojected.tif")
 
     # Run the function
     result = terrestrial_carbon_functions.reproject_raster(
@@ -100,8 +100,7 @@ def task_reproject_total_carbon_density(p):
 
 def task_compute_carbon_density_table(p):
 
-    p.reprojected_total_carbon_density_path = p.get_path(os.path.join(p.project_dir, "total_biomass_carbon_2010_float_reprojected.tif"))
-    p.carbon_density_lookup_table_path = os.path.join(p.project_dir, "carbon_density_lookup_table.csv")
+    p.carbon_density_lookup_table_path = os.path.join(p.cur_dir, "carbon_density_lookup_table.csv")
 
     result = terrestrial_carbon_functions.stack_layers_to_csv(
         group_layer1_path=p.base_year_lulc_path,
@@ -116,9 +115,8 @@ def task_compute_carbon_density_table(p):
 
 
 def task_generate_carbon_density_raster_base_year(p):
-    p.reprojected_total_carbon_density_path = p.get_path(os.path.join(p.project_dir, "total_biomass_carbon_2010_float_reprojected.tif"))
-    p.carbon_density_lookup_table_path = p.get_path(os.path.join(p.project_dir, "carbon_density_lookup_table.csv"))
-    p.carbon_density_raster_base_year_path = os.path.join(p.project_dir, "projected_carbon_density_maps_per_ha/projected_carbon_density_2019.tif")
+
+    p.carbon_density_raster_base_year_path = os.path.join(p.cur_dir, "projected_carbon_density_2019.tif")
     result = terrestrial_carbon_functions.generate_carbon_density_raster(
         lulc_path=p.base_year_lulc_path,
         cz_path=p.carbon_zones_path,
@@ -129,33 +127,31 @@ def task_generate_carbon_density_raster_base_year(p):
 
 def task_generate_carbon_density_raster_per_cell_base_year(p):
     p.ha_per_cell_10sec_ref_path = p.get_path('pyramids', 'ha_per_cell_10sec.tif')
-    p.projected_carbon_density_2019_per_cell_path = os.path.join(p.project_dir, 'projected_carbon_density_maps_per_cell/projected_carbon_density_2019_per_cell.tif')
+    p.projected_carbon_density_2019_per_cell_path = os.path.join(p.cur_dir, 'projected_carbon_density_2019_per_cell.tif')
     hb.multiply(p.carbon_density_raster_base_year_path, p.ha_per_cell_10sec_ref_path, p.projected_carbon_density_2019_per_cell_path)
     return True
 
 
-def task_summarize_carbon_density_by_region(p):
-    p.carbon_density_by_region_path = os.path.join(p.project_dir, "gep_by_country_base_year.csv")
+def task_summarize_carbon_by_region(p):
+    p.carbon_by_region_base_year_path = os.path.join(p.cur_dir, "gep_by_country_base_year.csv")
     result = terrestrial_carbon_functions.summarize_raster_by_region(
         value_raster_path=p.projected_carbon_density_2019_per_cell_path,
         region_boundary_path=p.gdf_countries_vector_path,
-        out_path=p.carbon_density_by_region_path)
+        out_path=p.carbon_by_region_base_year_path)
     return result
 
-
-#%%
 
 def gep_calculation(p):
     """ GEP calculation task for terrestrial carbon."""
     # Define at least the primary output for the service, which for this project is gep_by_country_base_year.
     service_results = {}
     p.results['terrestrial_carbon'] = service_results
-    p.results['terrestrial_carbon']['gep_by_country_base_year'] = os.path.join(p.project_dir, "gep_by_country_base_year.csv")
+    p.results['terrestrial_carbon']['gep_by_country_base_year'] = os.path.join(p.cur_dir, "gep_by_country_base_year.csv")
 
     # Optional additional results.
-    p.results['terrestrial_carbon']['gep_by_country_year'] = os.path.join(p.project_dir, "gep_by_country_year.csv")
-    p.results['terrestrial_carbon']['gep_by_country_year'] = os.path.join(p.project_dir, "gep_by_country_year.csv")
-    p.results['terrestrial_carbon']['gep_by_year'] = os.path.join(p.project_dir, "gep_by_year.csv")
+    p.results['terrestrial_carbon']['gep_by_country_year'] = os.path.join(p.cur_dir, "gep_by_country_year.csv")
+    p.results['terrestrial_carbon']['gep_by_country_year'] = os.path.join(p.cur_dir, "gep_by_country_year.csv")
+    p.results['terrestrial_carbon']['gep_by_year'] = os.path.join(p.cur_dir, "gep_by_year.csv")
 
     # Check if all results exist
     if hb.path_all_exist(list(service_results.values())):
@@ -168,12 +164,19 @@ def gep_calculation(p):
         # p.gdf_countries = hb.read_vector(p.gdf_countries_simplified)
 
         # 1. Read and process data
-        df_carbon_q264 = pd.read_csv(os.path.join(p.project_dir, "gep_by_country_base_year.csv"))
-        df_carbon_q250 = df_carbon_q264.groupby(['iso3_r250_id', 'year'])['total'].sum().reset_index()
+        df_carbon_q264 = pd.read_csv(p.carbon_by_region_base_year_path)
+        df_carbon_q250 = (
+            df_carbon_q264
+            .groupby(['iso3_r250_id', 'year'])['total']
+            .sum()
+            .reset_index()
+            .sort_values('total', ascending=False)  # Sort by highest total first
+            .drop_duplicates('iso3_r250_id', keep='first')  # Keep the first (highest) entry per ID
+        )
         df_carbon_q = df_carbon_q250.rename(columns={'total': 'terrestrial_carbon_quantity'})
         df_carbon_p = pd.read_excel(p.carbon_prices_path)
         df_carbon_p = df_carbon_p[[p.carbon_price, 'year']]
-        df_gep_by_country_base_year_terrestrial_carbon = df_carbon_q.merge(df_carbon_p,how='left',on='year')
+        df_gep_by_country_base_year_terrestrial_carbon = df_carbon_q.merge(df_carbon_p,how='left',on='year') # marge on year to get the carbon price
         df_gep_by_country_base_year_terrestrial_carbon['terrestrial_carbon_gep'] = df_gep_by_country_base_year_terrestrial_carbon['terrestrial_carbon_quantity'] * df_gep_by_country_base_year_terrestrial_carbon[p.carbon_price]
         df_gep_by_country_base_year_terrestrial_carbon = df_gep_by_country_base_year_terrestrial_carbon.merge(df_carbon_q264,how='left',on='iso3_r250_id')
         df_gep_by_country_base_year_terrestrial_carbon['year'] = df_gep_by_country_base_year_terrestrial_carbon['year_x']
@@ -225,12 +228,11 @@ def gep_result(p):
     # Additional groupbys = []
 
     # Imply from the service name the file_path for the results_qmd
-    # module_root = hb.get_projectflow_module_root()
+    module_root = hb.get_projectflow_module_root()
 
     for service_label in services_run:
         print(service_label)
-        results_qmd_path = os.path.join(p.project_dir, f'{service_label}_results.qmd')
-        #results_qmd_path = os.path.join(module_root, service_label, f'{service_label}_results.qmd')
+        results_qmd_path = os.path.join(module_root, service_label, f'{service_label}_results.qmd')
         results_qmd_project_path = os.path.join(p.cur_dir, f'{service_label}_results.qmd')
         hb.create_directories(results_qmd_path)  # Ensure the directory exists
 

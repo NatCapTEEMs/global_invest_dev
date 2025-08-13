@@ -21,7 +21,6 @@ if __name__ == '__main__':
     p.gdf_countries_vector_path = p.get_path('cartographic', 'ee', 'ee_r264_correspondence.gpkg')
     p.gdf_countries_vector_simplified_path = p.get_path('cartographic', 'ee', 'ee_r264_simplified300sec.gpkg')
     p.carbon_zones_path =os.path.join(p.base_data_dir,'carbon', 'johnson_2019', 'decision_tree_combined_carbon', 'carbon_zones_rasterized.tif')
-    p.projected_carbon_density_2019_per_cell_path = os.path.join(p.project_dir, 'projected_carbon_density_maps_per_cell/projected_carbon_density_2019_per_cell.tif')
     p.lulc_folder_path = os.path.join(p.base_data_dir, 'lulc/esa')
     p.base_year_lulc_path = os.path.join(p.base_data_dir, 'lulc/esa/lulc_esa_2019.tif')
     p.carbon_prices_path = os.path.join(p.base_data_dir, 'terrestrial_carbon', 'carbon_prices.xlsx')

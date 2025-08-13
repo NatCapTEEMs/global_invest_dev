@@ -15,13 +15,13 @@ def initialize_paths(p):
 
 def build_gep_service_calculation_task_tree(p):
     """Build the default task tree for terrestrial carbon."""
-    # p.task_convert_carbon_density_maps_dtype = p.add_task(terrestrial_carbon_tasks.task_convert_carbon_density_maps_dtype)
-    # p.task_combine_two_carbon_density_maps = p.add_task(terrestrial_carbon_tasks.task_combine_two_carbon_density_maps)
-    # p.task_reproject_total_carbon_density = p.add_task(terrestrial_carbon_tasks.task_reproject_total_carbon_density)
-    # p.task_compute_carbon_density_table = p.add_task(terrestrial_carbon_tasks.task_compute_carbon_density_table)
-    # p.task_generate_carbon_density_raster_base_year = p.add_task(terrestrial_carbon_tasks.task_generate_carbon_density_raster_base_year)
-    # p.task_generate_carbon_density_raster_per_cell_base_year = p.add_task(terrestrial_carbon_tasks.task_generate_carbon_density_raster_per_cell_base_year)
-    # p.task_summarize_carbon_density_by_region = p.add_task(terrestrial_carbon_tasks.task_summarize_carbon_density_by_region)
+    p.task_convert_carbon_density_maps_dtype = p.add_task(terrestrial_carbon_tasks.task_convert_carbon_density_maps_dtype)
+    p.task_combine_two_carbon_density_maps = p.add_task(terrestrial_carbon_tasks.task_combine_two_carbon_density_maps)
+    p.task_reproject_total_carbon_density = p.add_task(terrestrial_carbon_tasks.task_reproject_total_carbon_density)
+    p.task_compute_carbon_density_table = p.add_task(terrestrial_carbon_tasks.task_compute_carbon_density_table)
+    p.task_generate_carbon_density_raster_base_year = p.add_task(terrestrial_carbon_tasks.task_generate_carbon_density_raster_base_year)
+    p.task_generate_carbon_density_raster_per_cell_base_year = p.add_task(terrestrial_carbon_tasks.task_generate_carbon_density_raster_per_cell_base_year)
+    p.task_summarize_carbon_by_region = p.add_task(terrestrial_carbon_tasks.task_summarize_carbon_by_region)
     p.task_gep_calculation = p.add_task(terrestrial_carbon_tasks.gep_calculation)
 
     return p
