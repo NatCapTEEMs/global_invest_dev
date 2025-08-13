@@ -14,11 +14,27 @@ def initialize_paths(p):
     # p.countries_simplified_gdf = hb.read_vector(p.countries_simplified_vector_path)  # Read the vector file for the countries.
 
 def build_gep_service_calculation_task_tree(p):
+<<<<<<< Updated upstream
     """Build the default task tree for commercial agriculture."""
     p.terrestrial_carbon_task = p.add_task(terrestrial_carbon_tasks.terrestrial_carbon)
     p.terrestrial_carbon_gep_calculation_task = p.add_task(terrestrial_carbon_tasks.gep_calculation, parent=p.terrestrial_carbon_task)
     return p
 
+=======
+    """Build the default task tree for terrestrial carbon."""
+    # p.task_convert_carbon_density_maps_dtype = p.add_task(terrestrial_carbon_tasks.task_convert_carbon_density_maps_dtype)
+    # p.task_combine_two_carbon_density_maps = p.add_task(terrestrial_carbon_tasks.task_combine_two_carbon_density_maps)
+    # p.task_reproject_total_carbon_density = p.add_task(terrestrial_carbon_tasks.task_reproject_total_carbon_density)
+    # p.task_compute_carbon_density_table = p.add_task(terrestrial_carbon_tasks.task_compute_carbon_density_table)
+    # p.task_generate_carbon_density_raster_base_year = p.add_task(terrestrial_carbon_tasks.task_generate_carbon_density_raster_base_year)
+    # p.task_generate_carbon_density_raster_per_cell_base_year = p.add_task(terrestrial_carbon_tasks.task_generate_carbon_density_raster_per_cell_base_year)
+    # p.task_summarize_carbon_density_by_region = p.add_task(terrestrial_carbon_tasks.task_summarize_carbon_density_by_region)
+    p.task_gep_calculation = p.add_task(terrestrial_carbon_tasks.gep_calculation)
+
+    return p
+
+
+>>>>>>> Stashed changes
 def build_gep_service_task_tree(p):
     """If you just want to load results, eg for reporting, this task tree inspects a different task tree and to learn paths and then loads results."""
 
@@ -31,6 +47,7 @@ def build_gep_service_task_tree(p):
     # Actually, maybe it's just that load_results is more useful for notebooks?
 
     p = build_gep_service_calculation_task_tree(p)
+<<<<<<< Updated upstream
     p.terrestrial_carbon_gep_result_task = p.add_task(terrestrial_carbon_tasks.gep_result, parent=p.terrestrial_carbon_task)
 
 
@@ -45,4 +62,19 @@ def build_gep_task_tree(p):
     p.terrestrial_carbon_gep_result_task = p.add_task(terrestrial_carbon_tasks.gep_result, parent=p.terrestrial_carbon_task)
     p.terrestrial_carbon_gep_results_distribution_task = p.add_task(terrestrial_carbon_tasks.gep_results_distribution, parent=p.terrestrial_carbon_task)
     return p
+=======
+    p.terrestrial_carbon_gep_result_task = p.add_task(terrestrial_carbon_tasks.gep_result)
+
+
+# def build_gep_task_tree(p):
+#     """
+#     Build the default task tree forthe GEP application of commercial agriculture. In this case, it's very similar to the standard task tree
+#     but i've included it here for consistency with other models.
+#     """
+#     p.terrestrial_carbon_gep_preprocess_task = p.add_task(terrestrial_carbon_tasks.gep_preprocess, parent=p.terrestrial_carbon_task)
+#     p.terrestrial_carbon_gep_calculation_task = p.add_task(terrestrial_carbon_tasks.gep_calculation, parent=p.terrestrial_carbon_task)
+#     p.terrestrial_carbon_gep_result_task = p.add_task(terrestrial_carbon_tasks.gep_result, parent=p.terrestrial_carbon_task)
+#     p.terrestrial_carbon_gep_results_distribution_task = p.add_task(terrestrial_carbon_tasks.gep_results_distribution, parent=p.terrestrial_carbon_task)
+#     return p
+>>>>>>> Stashed changes
 

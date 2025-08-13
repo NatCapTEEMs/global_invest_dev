@@ -1,3 +1,4 @@
+<<<<<<< Updated upstream
 # =============================================================================
 # imports
 # =============================================================================
@@ -17,10 +18,26 @@ from global_invest.terrestrial_carbon import terrestrial_carbon_functions
 # define tasks
 # =============================================================================
 
+=======
+import os
+import sys
+import pandas as pd
+import hazelbean as hb # type: ignore
+import subprocess
+import csv
+import numpy as np
+
+
+from global_invest.terrestrial_carbon import terrestrial_carbon_functions
+from global_invest.terrestrial_carbon import terrestrial_carbon_initialization
+
+
+>>>>>>> Stashed changes
 def terrestrial_carbon(p):
     """
     Parent task for terrestrial carbon.
     """
+<<<<<<< Updated upstream
     pass
 
 def gep_preprocess(p):
@@ -31,6 +48,9 @@ def gep_preprocess(p):
     We will "promote" the data outputed by a preprocess task to the base_data_dir provided to users.
     """
     pass # NYI
+=======
+    return True
+>>>>>>> Stashed changes
 
 
 def task_convert_carbon_density_maps_dtype(p):
@@ -40,10 +60,17 @@ def task_convert_carbon_density_maps_dtype(p):
 
     Parameters
     ----------
+<<<<<<< Updated upstream
     p : ProjectFlow-like object
         Must contain p.base_data_dir (input folder path).
     """
     input_folder = p.base_data_dir
+=======
+    p : ProjectFlow
+        Must contain p.base_data_dir (input folder path).
+    """
+    input_folder = p.get_path('terrestrial_carbon', 'spawn_2020')
+>>>>>>> Stashed changes
     output_folder = p.project_dir
 
     raw_carbon_density_maps = [
@@ -113,6 +140,7 @@ def task_reproject_total_carbon_density(p):
     return True
 
 
+<<<<<<< Updated upstream
 def task_reproject_carbon_zones(p):
     """
     Task to reproject the total carbon density raster to the project's coordinate reference system (CRS).
@@ -133,6 +161,8 @@ def task_reproject_carbon_zones(p):
     return True
 
 
+=======
+>>>>>>> Stashed changes
 def task_compute_carbon_density_table(p):
 
     p.reprojected_total_carbon_density_path = p.get_path(os.path.join(p.project_dir, "total_biomass_carbon_2010_float_reprojected.tif"))
@@ -153,25 +183,48 @@ def task_compute_carbon_density_table(p):
 def task_generate_carbon_density_raster_base_year(p):
     p.reprojected_total_carbon_density_path = p.get_path(os.path.join(p.project_dir, "total_biomass_carbon_2010_float_reprojected.tif"))
     p.carbon_density_lookup_table_path = p.get_path(os.path.join(p.project_dir, "carbon_density_lookup_table.csv"))
+<<<<<<< Updated upstream
     p.carbon_density_raster_output_path = os.path.join(p.project_dir, "carbon_density_2019.tif")
+=======
+    p.carbon_density_raster_base_year_path = os.path.join(p.project_dir, "projected_carbon_density_maps_per_ha/projected_carbon_density_2019.tif")
+>>>>>>> Stashed changes
     result = terrestrial_carbon_functions.generate_carbon_density_raster(
         lulc_path=p.base_year_lulc_path,
         cz_path=p.carbon_zones_path,
         carbon_density_lookup_table_path=p.carbon_density_lookup_table_path,
+<<<<<<< Updated upstream
         out_path=p.carbon_density_raster_output_path)
+=======
+        out_path=p.carbon_density_raster_base_year_path)
+    return True
+
+
+def task_generate_carbon_density_raster_per_cell_base_year(p):
+    p.ha_per_cell_10sec_ref_path = p.get_path('pyramids', 'ha_per_cell_10sec.tif')
+    p.projected_carbon_density_2019_per_cell_path = os.path.join(p.project_dir, 'projected_carbon_density_maps_per_cell/projected_carbon_density_2019_per_cell.tif')
+    hb.multiply(p.carbon_density_raster_base_year_path, p.ha_per_cell_10sec_ref_path, p.projected_carbon_density_2019_per_cell_path)
+>>>>>>> Stashed changes
     return True
 
 
 def task_summarize_carbon_density_by_region(p):
+<<<<<<< Updated upstream
     p.carbon_density_raster_output_path = p.get_path(os.path.join(p.project_dir, "carbon_density_2019.tif"))
     p.carbon_density_by_region_path = os.path.join(p.project_dir, "carbon_density_by_region_2019.csv")
     result = terrestrial_carbon_functions.summarize_raster_by_region(
         value_raster_path=p.carbon_density_raster_output_path,
         region_boundary_path=p.region_boundary_path,
+=======
+    p.carbon_density_by_region_path = os.path.join(p.project_dir, "gep_by_country_base_year.csv")
+    result = terrestrial_carbon_functions.summarize_raster_by_region(
+        value_raster_path=p.projected_carbon_density_2019_per_cell_path,
+        region_boundary_path=p.gdf_countries_vector_path,
+>>>>>>> Stashed changes
         out_path=p.carbon_density_by_region_path)
     return result
 
 
+<<<<<<< Updated upstream
 
 #%% to be revised
 
@@ -243,6 +296,42 @@ def gep_calculation(p):
         # Drop repeated ids in df_countries
         ee_r264_to_250 = p.df_countries.copy()
         ee_r264_to_250 = ee_r264_to_250[ee_r264_to_250['ee_r264_label'] == ee_r264_to_250['iso3_r250_label']]
+=======
+#%%
+
+def gep_calculation(p):
+    """ GEP calculation task for terrestrial carbon."""
+    # Define at least the primary output for the service, which for this project is gep_by_country_base_year.
+    service_results = {}
+    p.results['terrestrial_carbon'] = service_results
+    p.results['terrestrial_carbon']['gep_by_country_base_year'] = os.path.join(p.project_dir, "gep_by_country_base_year.csv")
+
+    # Optional additional results.
+    p.results['terrestrial_carbon']['gep_by_country_year'] = os.path.join(p.project_dir, "gep_by_country_year.csv")
+    p.results['terrestrial_carbon']['gep_by_country_year'] = os.path.join(p.project_dir, "gep_by_country_year.csv")
+    p.results['terrestrial_carbon']['gep_by_year'] = os.path.join(p.project_dir, "gep_by_year.csv")
+
+    # Check if all results exist
+    if hb.path_all_exist(list(service_results.values())):
+        hb.log("All results already exist. Skipping GEP calculation for terrestrial carbon.")
+    else:
+        hb.log("Starting GEP calculation for terrestrial carbon.")
+
+        # Optimization here,
+        # p.gdf_countries = hb.read_vector(p.gdf_countries)
+        # p.gdf_countries = hb.read_vector(p.gdf_countries_simplified)
+
+        # 1. Read and process data
+        df_carbon_q264 = pd.read_csv(os.path.join(p.project_dir, "gep_by_country_base_year.csv"))
+        df_carbon_q250 = df_carbon_q264.groupby(['iso3_r250_id', 'year'])['total'].sum().reset_index()
+        df_carbon_q = df_carbon_q250.rename(columns={'total': 'terrestrial_carbon_quantity'})
+        df_carbon_p = pd.read_excel(p.carbon_prices_path)
+        df_carbon_p = df_carbon_p[[p.carbon_price, 'year']]
+        df_gep_by_country_base_year_terrestrial_carbon = df_carbon_q.merge(df_carbon_p,how='left',on='year')
+        df_gep_by_country_base_year_terrestrial_carbon['terrestrial_carbon_gep'] = df_gep_by_country_base_year_terrestrial_carbon['terrestrial_carbon_quantity'] * df_gep_by_country_base_year_terrestrial_carbon[p.carbon_price]
+        df_gep_by_country_base_year_terrestrial_carbon = df_gep_by_country_base_year_terrestrial_carbon.merge(df_carbon_q264,how='left',on='iso3_r250_id')
+        df_gep_by_country_base_year_terrestrial_carbon['year'] = df_gep_by_country_base_year_terrestrial_carbon['year_x']
+>>>>>>> Stashed changes
 
         cols_to_keep = [
             'ee_r264_id',
@@ -256,6 +345,7 @@ def gep_calculation(p):
             'region_wb',
             'income_grp',
             'subregion',
+<<<<<<< Updated upstream
             'area_code_M49',
             'area_code',
             'country',
@@ -283,21 +373,41 @@ def gep_calculation(p):
         hb.df_write(df_gep_by_country_base_year, p.results['terrestrial_carbon']['gep_by_country_base_year'])
         hb.df_write(df_gep_by_year, p.results['terrestrial_carbon']['gep_by_year'], handle_quotes='all')
         hb.df_write(df_gep_by_year, hb.replace_ext(p.results['terrestrial_carbon']['gep_by_year'], 'xlsx'), handle_quotes='all')
+=======
+            'year',
+            'terrestrial_carbon_quantity',
+            p.carbon_price,
+            'terrestrial_carbon_gep',
+        ]
+
+        df_gep_by_country_base_year = df_gep_by_country_base_year_terrestrial_carbon[cols_to_keep]
+
+
+        # Write to CSVs
+        hb.df_write(df_gep_by_country_base_year, p.results['terrestrial_carbon']['gep_by_country_base_year'])
+>>>>>>> Stashed changes
 
         # Use geopandas to merge the df_gep_by_country_base_year with the  to get the country names and other attributes
         gdf_gep_by_country_base_year = hb.df_merge(p.gdf_countries_simplified, df_gep_by_country_base_year, how='outer', left_on='ee_r264_id', right_on='ee_r264_id')
         gdf_gep_by_country_base_year.to_file(p.results['terrestrial_carbon']['gep_by_country_base_year'].replace('.csv', '.gpkg'), driver='GPKG')
 
         # Then sum the values across all countries.
+<<<<<<< Updated upstream
         value_gep_base_year = df_gep_by_country_base_year['Value'].sum()
+=======
+        value_gep_base_year = df_gep_by_country_base_year['terrestrial_carbon_gep'].sum()
+>>>>>>> Stashed changes
 
         hb.log(f"Total GEP value for base year 2019: {value_gep_base_year}")
 
         return value_gep_base_year
 
+<<<<<<< Updated upstream
 
 
 
+=======
+>>>>>>> Stashed changes
 def gep_result(p):
     """Display the results of the GEP calculation."""
 
@@ -310,6 +420,7 @@ def gep_result(p):
     # Additional groupbys = []
 
     # Imply from the service name the file_path for the results_qmd
+<<<<<<< Updated upstream
     module_root = hb.get_projectflow_module_root()
 
     for service_label in services_run:
@@ -320,6 +431,20 @@ def gep_result(p):
         # Copy it to the project dir for cmd line processing (but will be removed again later because it makes confusion when people try to edit it and then rerun the script which won't of course update the results.)
         hb.path_copy(results_qmd_path, results_qmd_project_path)
 
+=======
+    # module_root = hb.get_projectflow_module_root()
+
+    for service_label in services_run:
+        print(service_label)
+        results_qmd_path = os.path.join(p.project_dir, f'{service_label}_results.qmd')
+        #results_qmd_path = os.path.join(module_root, service_label, f'{service_label}_results.qmd')
+        results_qmd_project_path = os.path.join(p.cur_dir, f'{service_label}_results.qmd')
+        hb.create_directories(results_qmd_path)  # Ensure the directory exists
+
+        # Copy it to the project dir for cmd line processing (but will be removed again later because it makes confusion when people try to edit it and then rerun the script which won't of course update the results.)
+        # hb.path_copy(results_qmd_path, results_qmd_project_path)
+        # hb.path_copy(results_qmd_path, results_qmd_project_path)
+>>>>>>> Stashed changes
 
         quarto_command = f"quarto render {results_qmd_project_path}"
         hb.log(f"Running quarto command: {quarto_command}")
@@ -335,8 +460,11 @@ def gep_result(p):
         print(f"Working directory: {os.getcwd()}")
         print(f"File exists: {os.path.exists(results_qmd_project_path)}")
 
+<<<<<<< Updated upstream
 
 
+=======
+>>>>>>> Stashed changes
         process = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE,
@@ -361,7 +489,11 @@ def gep_load_results(p):
 
     # Learn the paths by creating a temp task treep
     p_temp = hb.ProjectFlow()
+<<<<<<< Updated upstream
     commercial_agriculture_initialization.build_gep_service_calculation_task_tree(p_temp)
+=======
+    terrestrial_carbon_initialization.build_gep_service_calculation_task_tree(p_temp)
+>>>>>>> Stashed changes
     p_temp.set_all_tasks_to_skip_if_dir_exists()
     p_temp.execute()
 
@@ -378,4 +510,10 @@ def gep_results_distribution(p):
         hb.path_copy(value, output_path)
         hb.log(f"Distributed {key} to {output_path}")
 
+<<<<<<< Updated upstream
     hb.log("GEP results distribution complete.")
+=======
+    hb.log("GEP results distribution complete.")
+
+
+>>>>>>> Stashed changes
