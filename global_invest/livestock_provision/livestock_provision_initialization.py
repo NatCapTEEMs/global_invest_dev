@@ -13,13 +13,13 @@ def initialize_paths(p):
     # p.gdf_countries = hb.read_vector(p.gdf_countries_vector_path)  # Read the vector file for the countries.
     # p.countries_simplified_gdf = hb.read_vector(p.countries_simplified_vector_path)  # Read the vector file for the countries.
 
-def build_gep_service_calculation_task_tree(p):
+def build_gep_service_calculation_task_tree(p, parent=None):
     """Build the default task tree for commercial agriculture."""
-    p.livestock_provision_task = p.add_task(livestock_provision_tasks.livestock_provision)
+    p.livestock_provision_task = p.add_task(livestock_provision_tasks.livestock_provision, parent=parent)
     p.livestock_provision_gep_calculation_task = p.add_task(livestock_provision_tasks.gep_calculation, parent=p.livestock_provision_task)  
     return p
 
-def build_gep_service_task_tree(p):
+def build_gep_service_task_tree(p, parent=None):
     """If you just want to load results, eg for reporting, this task tree inspects a different task tree and to learn paths and then loads results."""
     
     
@@ -30,7 +30,7 @@ def build_gep_service_task_tree(p):
     # and functionality for promoting project results to base data per the new documentation in ee_dev.
     # Actually, maybe it's just that load_results is more useful for notebooks?
     
-    p = build_gep_service_calculation_task_tree(p)
+    p = build_gep_service_calculation_task_tree(p, parent=parent)
     p.livestock_provision_gep_result_task = p.add_task(livestock_provision_tasks.gep_result, parent=p.livestock_provision_task)   
     return p
     
