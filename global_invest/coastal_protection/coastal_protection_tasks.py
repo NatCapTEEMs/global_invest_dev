@@ -4,44 +4,50 @@ import pandas as pd
 import hazelbean as hb
 import subprocess
 import csv
+import pyogrio
 
-from global_invest.crop_provision import crop_provision_initialization
-from global_invest.crop_provision import crop_provision_functions
-from global_invest.crop_provision import crop_provision_defaults
+import sys
+print(sys.executable)
 
-def crop_provision(p):
+from osgeo import gdal
+print(gdal.__version__)
+
+from global_invest.coastal_protection import coastal_protection_initialization
+from global_invest.coastal_protection import coastal_protection_functions
+
+
+def coastal_protection(p):
     """
-    Parent task for commercial agriculture.
+    Parent task for mangrove coastal protection.
     """
-    p.fao_input_ref_path = os.path.join('global_invest', 'crop_provision', 'Value_of_Production_E_All_Data.csv')
-    p.cwon_crop_coefficients_ref_path = os.path.join('global_invest', 'crop_provision', "CWON2024_crop_coef.csv")
+    p.cwon_input_ref_path = os.path.join('global_invest', 'coastal_protection', 'Value_of_Production_E_All_Data.xlsx')
 
 def gep_preprocess(p):
     """
     Preprocessing tasks are assumed NOT to be run by the user. Instead, it is assumed that the output of a preprocess
-    task is an input to the actual model, saved at the canonical project attribute p.crop_provision_input_path.
+    task is an input to the actual model, saved at the canonical project attribute p.coastal_protection_input_path.
     These are preprocessing tasks are still provided for reference, but are not intended to be run directly by the user.
     We will "promote" the data outputed by a preprocess task to the base_data_dir provided to users.
     """
     pass # NYI
 
+####
+# only for development 
+p.cur_dir = os.path.join(p.base_data_dir, 'coastal_protection')
+
 def gep_calculation(p):
-    """ GEP calculation task for commercial agriculture."""
+    """ GEP calculation task for coastal protection."""
     # Define at least the primary output for the service, which for this project is gep_by_country_base_year.   
     service_results = {}
-    p.results['crop_provision'] = service_results  
-    p.results['crop_provision']['gep_by_country_base_year'] = os.path.join(p.cur_dir, "gep_by_country_base_year.csv")
+    p.results['coastal_protection'] = service_results  
+    p.results['coastal_protection']['gep_by_country_base_year'] = os.path.join(p.cur_dir, "gep_by_country_base_year.csv")
     
-    # Optional additional results.
-    p.results['crop_provision']['gep_by_country_year_crop'] = os.path.join(p.cur_dir, "gep_by_country_year_crop.csv")
-    p.results['crop_provision']['gep_by_country_year'] = os.path.join(p.cur_dir, "gep_by_country_year.csv")
-    p.results['crop_provision']['gep_by_year'] = os.path.join(p.cur_dir, "gep_by_year.csv")
             
     # Check if all results exist
     if hb.path_all_exist(list(service_results.values())):
-        hb.log("All results already exist. Skipping GEP calculation for commercial agriculture.")
+        hb.log("All results already exist. Skipping GEP calculation for coastal protection.")
     else:
-        hb.log("Starting GEP calculation for commercial agriculture.")
+        hb.log("Starting GEP calculation for coastal protection.")
         
         # Optimization here,
         # p.gdf_countries = hb.read_vector(p.gdf_countries)
@@ -55,14 +61,12 @@ def gep_calculation(p):
         if not getattr(p, 'cwon_crop_coefficients_path', None):
             p.cwon_crop_coefficients_path = p.get_path(p.cwon_crop_coefficients_ref_path)
 
-        if not getattr(p, 'crop_provision_subservices', None):
-            p.commercial_attribute_subservices = crop_provision_defaults.DEFAULT_CROP_ITEMS
 
         # 1. Read and process data
-        df_crop_value = crop_provision_functions.read_crop_values(p.fao_input_path, p.commercial_attribute_subservices)
-        df_crop_coefs = crop_provision_functions.read_crop_coefs(p.cwon_crop_coefficients_path)
+        df_mangrove_value = coastal_protection_functions.read_crop_values(p.fao_input_path, p.commercial_attribute_subservices)
+        df_crop_coefs = coastal_protection_functions.read_crop_coefs(p.cwon_crop_coefficients_path)
 
-        df_gep_by_country_year_crop = crop_provision_functions.merge_crop_with_coefs(df_crop_value, df_crop_coefs)
+        df_gep_by_country_year_crop = coastal_protection_functions.merge_crop_with_coefs(df_crop_value, df_crop_coefs)
         # String mangle the FAO M49 codes to integers.
         df_gep_by_country_year_crop['area_code_M49'] = df_gep_by_country_year_crop['area_code_M49'].str.replace('\'', '')
         df_gep_by_country_year_crop['area_code_M49'] = df_gep_by_country_year_crop['area_code_M49'].astype(int)
@@ -113,28 +117,28 @@ def gep_calculation(p):
         # Merge so it has all the good labels from the  
         df_gep_by_country_year_crop = hb.df_merge(ee_r264_to_250, df_gep_by_country_year_crop, how='right', left_on='iso3_r250_id', right_on='area_code_M49')
         
-        # Rename value to crop_provision_gep
-        df_gep_by_country_year_crop.rename(columns={'Value': 'crop_provision_gep'}, inplace=True)
+        # Rename value to coastal_protection_gep
+        df_gep_by_country_year_crop.rename(columns={'Value': 'coastal_protection_gep'}, inplace=True)
         
-        df_gep_by_country_year = crop_provision_functions.group_crops(df_gep_by_country_year_crop)
+        df_gep_by_country_year = coastal_protection_functions.group_crops(df_gep_by_country_year_crop)
 
-        df_gep_by_year = crop_provision_functions.group_countries(df_gep_by_country_year)
+        df_gep_by_year = coastal_protection_functions.group_countries(df_gep_by_country_year)
         
         df_gep_by_country_base_year = df_gep_by_country_year.loc[df_gep_by_country_year['year'] == 2019].copy()
         
         # Write to CSVs
-        hb.df_write(df_gep_by_country_year_crop, p.results['crop_provision']['gep_by_country_year_crop'])
-        hb.df_write(df_gep_by_country_year, p.results['crop_provision']['gep_by_country_year'])
-        hb.df_write(df_gep_by_country_base_year, p.results['crop_provision']['gep_by_country_base_year'])   
-        hb.df_write(df_gep_by_year, p.results['crop_provision']['gep_by_year'], handle_quotes='all')
-        hb.df_write(df_gep_by_year, hb.replace_ext(p.results['crop_provision']['gep_by_year'], 'xlsx'), handle_quotes='all')
+        hb.df_write(df_gep_by_country_year_crop, p.results['coastal_protection']['gep_by_country_year_crop'])
+        hb.df_write(df_gep_by_country_year, p.results['coastal_protection']['gep_by_country_year'])
+        hb.df_write(df_gep_by_country_base_year, p.results['coastal_protection']['gep_by_country_base_year'])   
+        hb.df_write(df_gep_by_year, p.results['coastal_protection']['gep_by_year'], handle_quotes='all')
+        hb.df_write(df_gep_by_year, hb.replace_ext(p.results['coastal_protection']['gep_by_year'], 'xlsx'), handle_quotes='all')
         
         # Use geopandas to merge the df_gep_by_country_base_year with the  to get the country names and other attributes
         gdf_gep_by_country_base_year = hb.df_merge(p.gdf_countries_simplified, df_gep_by_country_base_year, how='outer', left_on='ee_r264_id', right_on='ee_r264_id')
-        gdf_gep_by_country_base_year.to_file(p.results['crop_provision']['gep_by_country_base_year'].replace('.csv', '.gpkg'), driver='GPKG')
+        gdf_gep_by_country_base_year.to_file(p.results['coastal_protection']['gep_by_country_base_year'].replace('.csv', '.gpkg'), driver='GPKG')
 
         # Then sum the values across all countries. 
-        value_gep_base_year = df_gep_by_country_base_year['crop_provision_gep'].sum()
+        value_gep_base_year = df_gep_by_country_base_year['coastal_protection_gep'].sum()
         
         hb.log(f"Total GEP value for base year 2019: {value_gep_base_year}")
         
@@ -203,7 +207,7 @@ def gep_load_results(p):
     
     # Learn the paths by creating a temp task treep
     p_temp = hb.ProjectFlow()
-    crop_provision_initialization.build_gep_service_calculation_task_tree(p_temp)
+    coastal_protection_initialization.build_gep_service_calculation_task_tree(p_temp)
     p_temp.set_all_tasks_to_skip_if_dir_exists()
     p_temp.execute()
     
@@ -215,7 +219,7 @@ def gep_results_distribution(p):
     # This task is intended to copy the results to the output directory.
     hb.log("Distributing GEP results...")
     
-    for key, value in p.results['crop_provision'].items():
+    for key, value in p.results['coastal_protection'].items():
         output_path = os.path.join(p.output_dir, key)
         hb.path_copy(value, output_path)
         hb.log(f"Distributed {key} to {output_path}")
