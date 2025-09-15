@@ -1,6 +1,9 @@
 import os
 import pandas as pd
 import hazelbean as hb
+os.environ['GDAL_DATA'] = '/Users/long/miniforge3/envs/geo_env/share/gdal'
+os.environ['PROJ_LIB'] = '/Users/long/miniforge3/envs/geo_env/share/proj'
+import pyogrio
 
 from global_invest.coastal_protection import coastal_protection_initialization
 

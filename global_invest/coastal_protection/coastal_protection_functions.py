@@ -5,12 +5,12 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import hazelbean as hb
-from global_invest.crop_provision import crop_provision_defaults
+
 
 
 path = '/Users/long/Library/CloudStorage/GoogleDrive-yxlong@umn.edu/Shared drives/NatCapTEEMs/Files/base_data/submissions/coastal_protection/data_mangroves_2019.xlsx'
 
-def read_mangrove_values(path: str, items):
+def read_mangrove_values(path: str):
     """
     Read FAO crop production values, filter by unit, drop unwanted columns/crops/countries,
     and reshape to long format.
@@ -28,7 +28,7 @@ def read_mangrove_values(path: str, items):
 
     # rename columns
     old_names = ["countrycode","annual_value_2019"]
-    new_names = ["area_code",'Value']
+    new_names = ["fao_r250_label",'Value']
 
     rename_dict = dict(zip(old_names, new_names))
     df_mangrove_value.rename(columns=rename_dict, inplace=True)
@@ -37,18 +37,7 @@ def read_mangrove_values(path: str, items):
     logging.info(f"Finished cleaning up ({df_mangrove_value.shape[0]} rows).")
 
     # reshape to long format
-    df_mangrove_value = pd.melt(
-        df_mangrove_value,
-        id_vars=["area_code"],
-        value_vars=[str(year) for year in range(1961, 2023)],  # 1961–2022
-        var_name="year",
-        value_name="Value",
-    )
-
-    # ensure area_code and year are ints
-    df_mangrove_value["area_code"] = pd.to_numeric(df_mangrove_value["area_code"], errors="coerce").astype(int)
     df_mangrove_value["year"] = pd.to_numeric(df_mangrove_value["year"], errors="coerce").astype(int)
-    df_mangrove_value.loc[df_mangrove_value["area_code"] == 223, "country"] = "Turkey"
 
     logging.info(f"Reshaped to long format ({df_mangrove_value.shape[0]} rows).")
     return df_mangrove_value

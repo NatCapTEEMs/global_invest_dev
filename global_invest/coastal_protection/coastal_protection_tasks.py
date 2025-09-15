@@ -20,7 +20,7 @@ def coastal_protection(p):
     """
     Parent task for mangrove coastal protection.
     """
-    p.cwon_input_ref_path = os.path.join('global_invest', 'coastal_protection', 'Value_of_Production_E_All_Data.xlsx')
+    p.cwon_input_ref_path = os.path.join(p.base_data_dir, 'coastal_protection', 'data_mangroves_2019.xlsx')
 
 def gep_preprocess(p):
     """
@@ -31,17 +31,13 @@ def gep_preprocess(p):
     """
     pass # NYI
 
-####
-# only for development 
-p.cur_dir = os.path.join(p.base_data_dir, 'coastal_protection')
 
 def gep_calculation(p):
     """ GEP calculation task for coastal protection."""
     # Define at least the primary output for the service, which for this project is gep_by_country_base_year.   
     service_results = {}
     p.results['coastal_protection'] = service_results  
-    p.results['coastal_protection']['gep_by_country_base_year'] = os.path.join(p.cur_dir, "gep_by_country_base_year.csv")
-    
+    p.results['coastal_protection']['gep_by_country_base_year'] = os.path.join(p.project_dir, 'gep_by_country_base_year.csv')
             
     # Check if all results exist
     if hb.path_all_exist(list(service_results.values())):
@@ -51,43 +47,19 @@ def gep_calculation(p):
         
         # Optimization here,
         # p.gdf_countries = hb.read_vector(p.gdf_countries)
-        p.gdf_countries = hb.read_vector(p.gdf_countries_simplified)
-
-        # TODOOO: Could automate this by inspecting all ref_paths in a task. Or, could formalize a tasks inputs in p.inputs = {} like results.
-        if not getattr(p, 'fao_input_path', None):
-            # TODO: ProjectFlow Feature: make a similar p.load_path(). Get gets the file to storage, load gets it to memory. Also consider extending this to p.load_metadata() where, for eg tifs, it just loads the gdal ds, not the array
-            p.fao_input_path = p.get_path(p.fao_input_ref_path)
-
-        if not getattr(p, 'cwon_crop_coefficients_path', None):
-            p.cwon_crop_coefficients_path = p.get_path(p.cwon_crop_coefficients_ref_path)
-
+        p.gdf_countries = hb.read_vector(p.gdf_countries_vector_path)
 
         # 1. Read and process data
-        df_mangrove_value = coastal_protection_functions.read_crop_values(p.fao_input_path, p.commercial_attribute_subservices)
-        df_crop_coefs = coastal_protection_functions.read_crop_coefs(p.cwon_crop_coefficients_path)
+        df_mangrove_value = coastal_protection_functions.read_mangrove_values(p.cwon_input_ref_path)
 
-        df_gep_by_country_year_crop = coastal_protection_functions.merge_crop_with_coefs(df_crop_value, df_crop_coefs)
-        # String mangle the FAO M49 codes to integers.
-        df_gep_by_country_year_crop['area_code_M49'] = df_gep_by_country_year_crop['area_code_M49'].str.replace('\'', '')
-        df_gep_by_country_year_crop['area_code_M49'] = df_gep_by_country_year_crop['area_code_M49'].astype(int)
-    
-        replacements = {
-            159: 156,  # China
-            891: 688,  # Serbia and Montenegro
-            200: 203,  # Czechoslovakia
-            230: 231,  # Ethiopia PDR
-            736: 729,  # Sudan (former)     
-        }
         
-        # Replace wrong codes in the m49
-        df_gep_by_country_year_crop['area_code_M49'] = df_gep_by_country_year_crop['area_code_M49'].replace(replacements)    
-
+   
         # LEARNING POINT: I wasted lots of time not realizing the a how='right' operates differently than I expect. The left had IDs that were not in right under r264_id, but they thus had the a 
         # repeated ID in the r250. I had wrongly thought that the how='right' would only then return 1 row for each r250_id, but it actually a duplicate row repeated for each unique r264_id
         # even tho the r_250_id was the same. Thus, I had to drop the repeated ones.
         
         # Drop repeated ids in df_countries
-        ee_r264_to_250 = p.df_countries.copy()
+        ee_r264_to_250 = p.gdf_countries.copy()
         ee_r264_to_250 = ee_r264_to_250[ee_r264_to_250['ee_r264_label'] == ee_r264_to_250['iso3_r250_label']]
         
         cols_to_keep = [
@@ -105,43 +77,35 @@ def gep_calculation(p):
             'area_code_M49',
             'area_code',
             'country',
-            'crop_code',
-            'crop',
-            'year',
-            'rental_rate',
-            'Value',
+            'geometry'
         ]
         ee_r264_to_250.drop([i for i in ee_r264_to_250.columns if i not in cols_to_keep], axis=1, inplace=True, errors='ignore')
         # ee_r264_to_250 = ee_r264_to_250[cols_to_keep]
         
         # Merge so it has all the good labels from the  
-        df_gep_by_country_year_crop = hb.df_merge(ee_r264_to_250, df_gep_by_country_year_crop, how='right', left_on='iso3_r250_id', right_on='area_code_M49')
+        df_gep_by_country_year_mangrove = hb.df_merge(ee_r264_to_250, df_gep_by_country_year_mangrove, how='right', on='iso3_r250_id')
         
-        # Rename value to coastal_protection_gep
-        df_gep_by_country_year_crop.rename(columns={'Value': 'coastal_protection_gep'}, inplace=True)
-        
-        df_gep_by_country_year = coastal_protection_functions.group_crops(df_gep_by_country_year_crop)
 
-        df_gep_by_year = coastal_protection_functions.group_countries(df_gep_by_country_year)
-        
-        df_gep_by_country_base_year = df_gep_by_country_year.loc[df_gep_by_country_year['year'] == 2019].copy()
+
+        # Rename value to coastal_protection_gep
+        df_gep_by_country_year_mangrove.rename(columns={'Value': 'coastal_protection_gep'}, inplace=True)
+    
+
+
+        df_gep_by_country_base_year = df_gep_by_country_year_mangrove.loc[df_gep_by_country_year_mangrove['year'] == 2019].copy()
         
         # Write to CSVs
-        hb.df_write(df_gep_by_country_year_crop, p.results['coastal_protection']['gep_by_country_year_crop'])
-        hb.df_write(df_gep_by_country_year, p.results['coastal_protection']['gep_by_country_year'])
         hb.df_write(df_gep_by_country_base_year, p.results['coastal_protection']['gep_by_country_base_year'])   
-        hb.df_write(df_gep_by_year, p.results['coastal_protection']['gep_by_year'], handle_quotes='all')
-        hb.df_write(df_gep_by_year, hb.replace_ext(p.results['coastal_protection']['gep_by_year'], 'xlsx'), handle_quotes='all')
-        
+
         # Use geopandas to merge the df_gep_by_country_base_year with the  to get the country names and other attributes
-        gdf_gep_by_country_base_year = hb.df_merge(p.gdf_countries_simplified, df_gep_by_country_base_year, how='outer', left_on='ee_r264_id', right_on='ee_r264_id')
+        gdf_gep_by_country_base_year = hb.df_merge(p.gdf_countries_vector_simplified_path, df_gep_by_country_base_year, how='outer', left_on='ee_r264_id', right_on='ee_r264_id')
         gdf_gep_by_country_base_year.to_file(p.results['coastal_protection']['gep_by_country_base_year'].replace('.csv', '.gpkg'), driver='GPKG')
 
         # Then sum the values across all countries. 
         value_gep_base_year = df_gep_by_country_base_year['coastal_protection_gep'].sum()
         
         hb.log(f"Total GEP value for base year 2019: {value_gep_base_year}")
-        
+        #Total GEP value for base year 2019: 73004611295.3582
         return value_gep_base_year
 
 def gep_result(p):
