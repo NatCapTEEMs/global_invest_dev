@@ -1,0 +1,46 @@
+common_input_folder: "/users/5/salmamun/GEP/CommonInputs"
+gep_shared_folder: "/projects/standard/jajohns/shared/base_data"
+result_folder: "/scratch.global/salmamun/GEP/Results"   # This is where all the results are organized by watersheds
+country_output_folder: "base"  # This is individual results for all models for each watershed
+projected_crs: 3857
+
+# The following dictionary will take boolean values to determine which models to run
+es_dict:
+  "ndr": True
+  "sdr": False
+  "polination": False
+  "swy": False
+  "ucm": False
+# The following are the raster needed for models
+lulc_folder: "/projects/standard/jajohns/shared/base_data/lulc/esa"
+dem: "/users/5/salmamun/GEP/CommonInputs/raster/global_dem_10as.tif"
+precip_folder: "/users/5/salmamun/GEP/CommonInputs/raster/PrecipAnnualCHIRPS"
+
+# The following are the vector needed for models
+country_vector: "/projects/standard/jajohns/shared/base_data/cartographic/ee/ee_r264_correspondence.gpkg"
+watersheds_huc7: "/users/5/salmamun/GEP/CommonInputs/vector/watersheds_level_7_valid.gpkg"
+
+# The following are the parameters tables
+ndr_lulc_parameter_table_path: "/users/5/salmamun/GEP/CommonInputs/BiophysicalTables/esacci_biophysical_table__bck_nature_2019.csv"
+
+
+# The following are specific parameters for the models
+# NDR or SDR model
+threshold_flow_accumulation: 1000
+k_param: 2
+
+# NDR model
+calc_p: True
+calc_n: True
+subsurface_critical_length_n: 150
+subsurface_eff_n: 0.8
+
+# Resource management parameters
+n_cores: 24     # Provide the number of cores to use.
+parallelized: True # If True, the model will run in parallel and use one core per watershed.
+
+# Retention calculation parameters
+price_csv: "/users/5/salmamun/GEP/CommonInputs/BiophysicalTables/Prices.csv"
+aquastat_csv: "/users/5/salmamun/GEP/CommonInputs/BiophysicalTables/AQUASTAT_water.csv"
+estimation_output: "/users/5/salmamun/GEP/EstimationOutput/retention_estimates.csv"
+
