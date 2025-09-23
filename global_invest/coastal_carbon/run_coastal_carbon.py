@@ -2,6 +2,12 @@ import os
 import pandas as pd
 import hazelbean as hb
 
+os.environ['GDAL_DATA'] = '/Users/long/miniforge3/envs/geo_env/share/gdal'
+os.environ['PROJ_LIB'] = '/Users/long/miniforge3/envs/geo_env/share/proj'
+import pyogrio
+
+print(os.getcwd())
+
 from global_invest.coastal_carbon import coastal_carbon_initialization
 
 if __name__ == '__main__':
