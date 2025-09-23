@@ -5,9 +5,18 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import hazelbean as hb
-from global_invest.crop_provision import crop_provision_defaults
 
-def read_crop_values(path: str, items):
+
+path = ("/Users/long/Library/CloudStorage/GoogleDrive-yxlong@umn.edu/Shared "
+        "drives/NatCapTEEMs/Files/base_data/submissions/forestry_production/Forestry_E_All_Data_(Normalized).csv")
+df_forestry_value = pd.read_csv(path, encoding="ISO-8859-1")
+
+set(df_forestry_value["Item"])
+
+
+df_forestry_value[df_forestry_value["Area"]=="China"].to_csv("/Users/long/Desktop/China.csv")
+
+def read_forestry_values(path: str, items):
     """
     Read FAO crop production values, filter by unit, drop unwanted columns/crops/countries,
     and reshape to long format.
@@ -16,8 +25,8 @@ def read_crop_values(path: str, items):
     """
 
     try:
-        df_crop_value = pd.read_csv(path, encoding="ISO-8859-1")
-        logging.info(f"Loaded crop values from {path} ({df_crop_value.shape[0]} rows).")
+        df_forestry_value = pd.read_csv(path, encoding="ISO-8859-1")
+        logging.info(f"Loaded crop values from {path} ({df_forestry_value.shape[0]} rows).")
     except Exception as e:
         logging.error(f"Failed to read crop values file '{path}': {e}")
         raise
