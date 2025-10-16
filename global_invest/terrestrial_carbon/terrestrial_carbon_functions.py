@@ -19,7 +19,7 @@ import pandas as pd
 import numpy as np
 from tqdm import tqdm
 import geopandas as gpd
-
+import pyogrio
 
 # =============================================================================
 # define functions
@@ -142,6 +142,7 @@ def combine_two_float_rasters(
 
     gc.collect()
     print(f"Combined raster saved to: {out_path}")
+
 
 
 def reproject_raster(
@@ -365,7 +366,6 @@ def generate_carbon_density_raster(lulc_path, cz_path, carbon_density_lookup_tab
     gc.collect()
     print(f"Saved: {out_path}")
 
-
 def summarize_raster_by_region(value_raster_path, region_boundary_path, out_path):
     """
     Summarize value raster by polygon regions from a vector file (e.g., GPKG).
@@ -390,46 +390,35 @@ def summarize_raster_by_region(value_raster_path, region_boundary_path, out_path
             print(f"Reprojecting vector data from {regions.crs} to match raster CRS {raster_crs}")
             regions = regions.to_crs(raster_crs)
 
-        x_res, y_res = src.res
-        is_geographic = raster_crs.is_geographic if raster_crs else False
-
-        # Calculate pixel area
-        if is_geographic:
-            pixel_area_m2 = (111_320 ** 2) * abs(x_res * y_res)
-        else:
-            pixel_area_m2 = abs(x_res * y_res)
-
         results = []
-
+        id_list = []
         for idx, row in tqdm(regions.iterrows(), total=len(regions), desc="Summarizing polygons"):
             geom = [row.geometry]
-
+            id_list.append(row.get("id", idx))
             try:
                 masked, _ = mask(src, geom, crop=True, nodata=np.nan, all_touched=True)
                 values = masked[0]
                 values = values[~np.isnan(values)]
 
-                if values.size == 0:
-                    continue
-
-                area_m2 = values.size * pixel_area_m2
+                area_m2 = values.size
 
                 stats = {
-                    "region_id": row.get("id", idx),
+                    "index_id": row.get("id", idx),
                     "mean": values.mean(),
                     "min": values.min(),
                     "max": values.max(),
                     "count": values.size,
-                    "area_m2": area_m2,
-                    "area_ha": area_m2 / 10_000,
-                    "area_km2": area_m2 / 1_000_000,
+                    "total": values.sum()
                 }
                 results.append(stats)
 
             except Exception as e:
                 print(f"Error processing region {idx}: {e}")
                 continue
-
+    regions["index_id"] =id_list
     df = pd.DataFrame(results)
+    df = regions.merge(df, on="index_id", how="right")
+    df = df.drop(columns=["index_id","geometry"])
+    df['year'] = '2019'
     df.to_csv(out_path, index=False)
     print(f"Summary written to: {out_path}")
