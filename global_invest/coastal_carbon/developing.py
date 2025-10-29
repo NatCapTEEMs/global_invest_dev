@@ -205,3 +205,65 @@ country_sum = country_sum.reset_index()
 
 print(country_sum[['NAME', 'total_raster_sum']].head())
 
+#%%
+
+#read seagrass carbon data
+
+global_seagrass_carbon_path = "/Users/long/Library/CloudStorage/GoogleDrive-yxlong@umn.edu/Shared drives/NatCapTEEMs/Files/base_data/submissions/coastal_carbon/014_001_WCMC013-014_SeagrassPtPy2021_v7_1/01_Data/WCMC013_014_Seagrasses_Py_v7_1.shp"
+
+gdf = gpd.read_file(global_seagrass_carbon_path)
+
+gdf.head()
+
+for index, row in gdf[:5].iterrows():
+    print(row)
+
+gdf['year'] = gdf['eventDate'].str[:4]
+
+gdf["year"] = pd.to_numeric(gdf["year"], errors="coerce")
+
+global_seagrass_2018 = gdf[gdf['year'] == 2018]
+
+
+output_path = "/Users/long/Library/CloudStorage/GoogleDrive-yxlong@umn.edu/Shared drives/NatCapTEEMs/Files/base_data/submissions/coastal_carbon/global_seagrass_2018.gpkg"
+
+global_seagrass_2018.to_file(output_path, driver="GPKG")
+
+global_seagrass_2018.head()
+
+
+
+#%%
+
+# mangrove
+
+mangrove_area_path = "/Users/long/Files/global_invest/projects/gep_coastal_carbon/mangrove_area_by_countries2019.csv"
+
+mangrove_area = pd.read_csv(mangrove_area_path)
+
+mangrove_area.drop(columns=['geometry'], inplace=True)
+
+mangrove_area.to_excel("/Users/long/Files/global_invest/projects/gep_coastal_carbon/mangrove_area_by_countries2019.xlsx", index=False)
+
+salt_marsh2019_path =  "/Users/long/Library/CloudStorage/GoogleDrive-yxlong@umn.edu/Shared drives/NatCapTEEMs/Files/base_data/submissions/coastal_carbon/global_salt_marsh_within_countries.gpkg"
+
+gdf = gpd.read_file(salt_marsh2019_path)
+
+gdf.columns
+
+
+
+print(gdf.crs)
+
+gdf_proj = gdf.to_crs("EPSG:54009")  # Mollweide projection (meters)
+
+gdf = gdf.to_crs("EPSG:6933")  # World Equidistant Cylindrical Equal-Area
+gdf["area_ha"] = gdf.geometry.area / 10_000
+
+df_area = (
+    gdf.groupby("iso3_r250_label", as_index=False)["area_ha"]
+       .sum()
+       .rename(columns={"area_ha": "salt_marsh_area_ha"})
+)
+
+df_area.to_excel("/Users/long/Files/global_invest/projects/gep_coastal_carbon/salt_marsh_area_by_countries2019.xlsx", index=False)
