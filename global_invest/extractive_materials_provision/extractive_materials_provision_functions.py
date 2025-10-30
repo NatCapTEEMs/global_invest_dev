@@ -5,9 +5,11 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import hazelbean as hb
-from global_invest.crop_provision import crop_provision_defaults
 
-def read_crop_values(path: str, items):
+path = os.path.join(p.base_data_dir , 'extractive_materials_provision', 'WBdata_mineral_rents_calculations.xlsx')
+read_mineral_values(path)
+
+def read_mineral_values(path: str):
     """
     Read FAO crop production values, filter by unit, drop unwanted columns/crops/countries,
     and reshape to long format.
@@ -16,28 +18,28 @@ def read_crop_values(path: str, items):
     """
 
     try:
-        df_crop_value = pd.read_csv(path, encoding="ISO-8859-1")
-        logging.info(f"Loaded crop values from {path} ({df_crop_value.shape[0]} rows).")
+        df_mineral_value = pd.read_csv(path, encoding="ISO-8859-1")
+        logging.info(f"Loaded crop values from {path} ({df_mineral_value.shape[0]} rows).")
     except Exception as e:
         logging.error(f"Failed to read crop values file '{path}': {e}")
         raise
 
     # keep only Int$ unit AND element code 57
-    df_crop_value = df_crop_value[(df_crop_value["Unit"] == "1000 USD") & (df_crop_value["Element Code"] == 57)].copy()
+    df_mineral_value = df_mineral_value[(df_mineral_value["Unit"] == "1000 USD") & (df_mineral_value["Element Code"] == 57)].copy()
 
     # drop columns ending with F
-    cols_to_drop = [col for col in df_crop_value.columns if col.endswith("F")]
-    df_crop_value.drop(columns=cols_to_drop, inplace=True)
+    cols_to_drop = [col for col in df_mineral_value.columns if col.endswith("F")]
+    df_mineral_value.drop(columns=cols_to_drop, inplace=True)
 
     # rename columns
     old_names = ["Area Code", "Area Code (M49)", "Area", "Item Code", "Item"] + [f"Y{y}" for y in range(1961, 2023)]
     new_names = ["area_code", "area_code_M49", "country", "crop_code", "crop"] + [str(y) for y in range(1961, 2023)]
 
     rename_dict = dict(zip(old_names, new_names))
-    df_crop_value.rename(columns=rename_dict, inplace=True)
+    df_mineral_value.rename(columns=rename_dict, inplace=True)
 
     # Keep only listed items
-    df_crop_value = df_crop_value[df_crop_value["crop"].isin(items)].copy()
+    df_mineral_value = df_mineral_value[df_mineral_value["crop"].isin(items)].copy()
 
     # drop unwanted countries (aggregates and currently nonexisting)
     countries_to_drop = [
@@ -84,12 +86,12 @@ def read_crop_values(path: str, items):
         "China, Taiwan Province of",
         "Belgium-Luxembourg",
     ]
-    df_crop_value = df_crop_value[~df_crop_value["country"].isin(countries_to_drop)]
-    logging.info(f"Finished cleaning up ({df_crop_value.shape[0]} rows).")
+    df_mineral_value = df_mineral_value[~df_mineral_value["country"].isin(countries_to_drop)]
+    logging.info(f"Finished cleaning up ({df_mineral_value.shape[0]} rows).")
 
     # reshape to long format
-    df_crop_value = pd.melt(
-        df_crop_value,
+    df_mineral_value = pd.melt(
+        df_mineral_value,
         id_vars=["area_code", "area_code_M49", "country", "crop_code", "crop"],
         value_vars=[str(year) for year in range(1961, 2023)],  # 1961–2022
         var_name="year",
@@ -97,59 +99,59 @@ def read_crop_values(path: str, items):
     )
 
     # ensure area_code and year are ints
-    df_crop_value["area_code"] = pd.to_numeric(df_crop_value["area_code"], errors="coerce").astype(int)
-    df_crop_value["year"] = pd.to_numeric(df_crop_value["year"], errors="coerce").astype(int)
-    df_crop_value.loc[df_crop_value["area_code"] == 223, "country"] = "Turkey"
+    df_mineral_value["area_code"] = pd.to_numeric(df_mineral_value["area_code"], errors="coerce").astype(int)
+    df_mineral_value["year"] = pd.to_numeric(df_mineral_value["year"], errors="coerce").astype(int)
+    df_mineral_value.loc[df_mineral_value["area_code"] == 223, "country"] = "Turkey"
 
-    logging.info(f"Reshaped to long format ({df_crop_value.shape[0]} rows).")
-    return df_crop_value
+    logging.info(f"Reshaped to long format ({df_mineral_value.shape[0]} rows).")
+    return df_mineral_value
 
 
-def read_crop_coefs(path: str):
+def read_mineral_coefs(path: str):
     """
     Read crop rental-rate coefficients, melt by decade, and build lookup table.
 
     Returns DataFrame with columns: [FAO, year, rental_rate].
     """
     try:
-        df_crop_coefs = pd.read_csv(path, delimiter=";", encoding="utf-8")
-        logging.info(f"Loaded crop coefs from {path} ({df_crop_coefs.shape[0]} rows).")
+        df_mineral_coefs = pd.read_csv(path, delimiter=";", encoding="utf-8")
+        logging.info(f"Loaded crop coefs from {path} ({df_mineral_coefs.shape[0]} rows).")
     except Exception as e:
         logging.error(f"Failed to read crop coefs file '{path}': {e}")
         raise
 
-    df_crop_coefs = df_crop_coefs.melt(
+    df_mineral_coefs = df_mineral_coefs.melt(
         id_vars=["Order", "FAO", "Country/territory"],
         var_name="Decade",
         value_name="rental_rate",
     )
-    df_crop_coefs["Decade_start"] = df_crop_coefs["Decade"].str.extract(r"^(\d{4})").astype(float)
-    df_crop_coefs = df_crop_coefs.dropna(subset=["Decade_start"])
+    df_mineral_coefs["Decade_start"] = df_mineral_coefs["Decade"].str.extract(r"^(\d{4})").astype(float)
+    df_mineral_coefs = df_mineral_coefs.dropna(subset=["Decade_start"])
 
     # build the lookup
-    df_crop_coefs = df_crop_coefs[["FAO", "Decade_start", "rental_rate"]].copy()
+    df_mineral_coefs = df_mineral_coefs[["FAO", "Decade_start", "rental_rate"]].copy()
 
     # drop any rows where FAO is null (so the cast can succeed)
-    df_crop_coefs = df_crop_coefs.dropna(subset=["FAO"])
+    df_mineral_coefs = df_mineral_coefs.dropna(subset=["FAO"])
 
     # ensure ints
-    df_crop_coefs["FAO"] = df_crop_coefs["FAO"].astype(int)
-    df_crop_coefs["Decade_start"] = df_crop_coefs["Decade_start"].astype(int)
+    df_mineral_coefs["FAO"] = df_mineral_coefs["FAO"].astype(int)
+    df_mineral_coefs["Decade_start"] = df_mineral_coefs["Decade_start"].astype(int)
 
-    df_crop_coefs = df_crop_coefs.rename(columns={"Decade_start": "year"})
-    logging.info(f"Prepared coef lookup ({df_crop_coefs.shape[0]} rows).")
-    return df_crop_coefs
+    df_mineral_coefs = df_mineral_coefs.rename(columns={"Decade_start": "year"})
+    logging.info(f"Prepared coef lookup ({df_mineral_coefs.shape[0]} rows).")
+    return df_mineral_coefs
 
 
-def merge_crop_with_coefs(df_crop_value: pd.DataFrame, df_crop_coefs: pd.DataFrame):
+def merge_mineral_with_coefs(df_mineral_value: pd.DataFrame, df_mineral_coefs: pd.DataFrame):
     """
     For each country, asof-merge crop values with rental rates by year,
     then apply rate to gep.
     """
     merged_parts = []
-    for code, df_group in df_crop_value.groupby("area_code", sort=True):
+    for code, df_group in df_mineral_value.groupby("area_code", sort=True):
         # pull the matching lookup rows for this country code
-        lookup_sub = df_crop_coefs[df_crop_coefs["FAO"] == code]
+        lookup_sub = df_mineral_coefs[df_mineral_coefs["FAO"] == code]
         if lookup_sub.empty:
             # if no rental-rate data, fill NaN (or skip)
             df_group["rental_rate"] = pd.NA
@@ -170,11 +172,11 @@ def merge_crop_with_coefs(df_crop_value: pd.DataFrame, df_crop_coefs: pd.DataFra
         merged_parts.append(merged)
 
     # recombine everything
-    df_crop_value = pd.concat(merged_parts, ignore_index=True)
-    df_crop_value["Value"] = df_crop_value["Value"] * df_crop_value["rental_rate"]
-    df_crop_value = df_crop_value.sort_values(by=["area_code", "year"], ascending=[True, True])
-    logging.info(f"Merged values + coefs ({df_crop_value.shape[0]} rows).")
-    return df_crop_value
+    df_mineral_value = pd.concat(merged_parts, ignore_index=True)
+    df_mineral_value["Value"] = df_mineral_value["Value"] * df_mineral_value["rental_rate"]
+    df_mineral_value = df_mineral_value.sort_values(by=["area_code", "year"], ascending=[True, True])
+    logging.info(f"Merged values + coefs ({df_mineral_value.shape[0]} rows).")
+    return df_mineral_value
 
 
 def group_crops(df: pd.DataFrame):
@@ -212,13 +214,13 @@ def group_countries(df: pd.DataFrame):
     return df_gep_by_year
 
 
-# def calculate_gep(p, data_input_dir, items: list = crop_provision_defaults.DEFAULT_CROP_ITEMS, base_year: int = 2019):
+# def calculate_gep(p, data_input_dir, items: list = extractive_materials_provision_defaults.DEFAULT_mineral_ITEMS, base_year: int = 2019):
 
 #     # 1. Read and process data
-#     df_crop_value = read_crop_values(os.path.join(data_input_dir, 'fao', "Value_of_Production_E_All_Data.csv"), items)
-#     df_crop_coefs = read_crop_coefs(os.path.join(data_input_dir, 'gep', "CWON2024_crop_coef.csv"))
+#     df_mineral_value = read_mineral_values(os.path.join(data_input_dir, 'fao', "Value_of_Production_E_All_Data.csv"), items)
+#     df_mineral_coefs = read_mineral_coefs(os.path.join(data_input_dir, 'gep', "CWON2024_mineral_coef.csv"))
     
-#     df_gep_by_country_year_crop = merge_crop_with_coefs(df_crop_value, df_crop_coefs)
+#     df_gep_by_country_year_crop = merge_mineral_with_coefs(df_mineral_value, df_mineral_coefs)
     
 #     df_gep_by_country_year_crop['area_code_M49'] = df_gep_by_country_year_crop['area_code_M49'].str.replace('\'', '')    
 #     df_gep_by_country_year_crop['area_code_M49'] = df_gep_by_country_year_crop['area_code_M49'].astype(int)
