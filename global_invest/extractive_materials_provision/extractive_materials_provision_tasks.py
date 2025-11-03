@@ -7,14 +7,14 @@ import csv
 
 from global_invest.extractive_materials_provision import extractive_materials_provision_initialization
 from global_invest.extractive_materials_provision import extractive_materials_provision_functions
-from global_invest.extractive_materials_provision import extractive_materials_provision_defaults
+
 
 def extractive_materials_provision(p):
     """
     Parent task for commercial agriculture.
     """
-    p.fao_input_ref_path = os.path.join('global_invest', 'extractive_materials_provision', 'Value_of_Production_E_All_Data.csv')
-    p.cwon_crop_coefficients_ref_path = os.path.join('global_invest', 'extractive_materials_provision', "CWON2024_crop_coef.csv")
+    p.wb_mineral_input_ref_path = os.path.join(p.base_data_dir, 'extractive_materials_provision', 'API_NY.GDP.MINR.RT.ZS_DS2_en_csv_v2_6559.csv')
+    p.wb_GDP_ref_path = os.path.join(p.base_data_dir, 'extractive_materials_provision', "API_NY.GDP.MKTP.CD_DS2_en_csv_v2_130122.csv")
 
 def gep_preprocess(p):
     """
@@ -33,7 +33,7 @@ def gep_calculation(p):
     p.results['extractive_materials_provision']['gep_by_country_base_year'] = os.path.join(p.cur_dir, "gep_by_country_base_year.csv")
     
     # Optional additional results.
-    p.results['extractive_materials_provision']['gep_by_country_year_crop'] = os.path.join(p.cur_dir, "gep_by_country_year_crop.csv")
+    p.results['extractive_materials_provision']['gep_by_country_year_mineral'] = os.path.join(p.cur_dir, "gep_by_country_year_mineral.csv")
     p.results['extractive_materials_provision']['gep_by_country_year'] = os.path.join(p.cur_dir, "gep_by_country_year.csv")
     p.results['extractive_materials_provision']['gep_by_year'] = os.path.join(p.cur_dir, "gep_by_year.csv")
             
@@ -47,40 +47,22 @@ def gep_calculation(p):
         # p.gdf_countries = hb.read_vector(p.gdf_countries)
         p.gdf_countries = hb.read_vector(p.gdf_countries_simplified)
 
-        # TODOOO: Could automate this by inspecting all ref_paths in a task. Or, could formalize a tasks inputs in p.inputs = {} like results.
-        if not getattr(p, 'fao_input_path', None):
-            # TODO: ProjectFlow Feature: make a similar p.load_path(). Get gets the file to storage, load gets it to memory. Also consider extending this to p.load_metadata() where, for eg tifs, it just loads the gdal ds, not the array
-            p.fao_input_path = p.get_path(p.fao_input_ref_path)
-
-        if not getattr(p, 'cwon_crop_coefficients_path', None):
-            p.cwon_crop_coefficients_path = p.get_path(p.cwon_crop_coefficients_ref_path)
-
-        if not getattr(p, 'extractive_materials_provision_subservices', None):
-            p.commercial_attribute_subservices = extractive_materials_provision_defaults.DEFAULT_CROP_ITEMS
 
         # 1. Read and process data
-        df_crop_value = extractive_materials_provision_functions.read_crop_values(p.fao_input_path, p.commercial_attribute_subservices)
-        df_crop_coefs = extractive_materials_provision_functions.read_crop_coefs(p.cwon_crop_coefficients_path)
+        df_mineral_values = extractive_materials_provision_functions.read_mineral_values(p.wb_mineral_input_ref_path)
 
-        df_gep_by_country_year_crop = extractive_materials_provision_functions.merge_crop_with_coefs(df_crop_value, df_crop_coefs)
-        # String mangle the FAO M49 codes to integers.
-        df_gep_by_country_year_crop['area_code_M49'] = df_gep_by_country_year_crop['area_code_M49'].str.replace('\'', '')
-        df_gep_by_country_year_crop['area_code_M49'] = df_gep_by_country_year_crop['area_code_M49'].astype(int)
-    
-        replacements = {
-            159: 156,  # China
-            891: 688,  # Serbia and Montenegro
-            200: 203,  # Czechoslovakia
-            230: 231,  # Ethiopia PDR
-            736: 729,  # Sudan (former)     
-        }
-        
-        # Replace wrong codes in the m49
-        df_gep_by_country_year_crop['area_code_M49'] = df_gep_by_country_year_crop['area_code_M49'].replace(replacements)    
+        df_gdp_values = extractive_materials_provision_functions.read_GDP_values(p.wb_GDP_ref_path)
 
-        # LEARNING POINT: I wasted lots of time not realizing the a how='right' operates differently than I expect. The left had IDs that were not in right under r264_id, but they thus had the a 
-        # repeated ID in the r250. I had wrongly thought that the how='right' would only then return 1 row for each r250_id, but it actually a duplicate row repeated for each unique r264_id
-        # even tho the r_250_id was the same. Thus, I had to drop the repeated ones.
+
+        df_mineral_gdp_values = df_mineral_values.merge(df_gdp_values, on=['Country Code', 'year'], how='left')
+
+        df_mineral_gdp_values['extractive_materials_provision_gep'] = (df_mineral_gdp_values['mineral_rent'] / 100) * df_mineral_gdp_values['GDP_currentUSD']*0.49
+
+        df_mineral_gdp_values['Value'] = df_mineral_gdp_values['extractive_materials_provision_gep']
+
+        df_gep_by_country_year_mineral = df_mineral_gdp_values.copy()
+
+        df_gep_by_country_year_mineral.drop_duplicates(subset=['Country Code', 'year'], inplace=True)
         
         # Drop repeated ids in df_countries
         ee_r264_to_250 = p.df_countries.copy()
@@ -98,37 +80,31 @@ def gep_calculation(p):
             'region_wb',
             'income_grp',
             'subregion',
-            'area_code_M49',
-            'area_code',
-            'country',
-            'crop_code',
-            'crop',
-            'year',
-            'rental_rate',
-            'Value',
         ]
+
         ee_r264_to_250.drop([i for i in ee_r264_to_250.columns if i not in cols_to_keep], axis=1, inplace=True, errors='ignore')
         # ee_r264_to_250 = ee_r264_to_250[cols_to_keep]
         
         # Merge so it has all the good labels from the  
-        df_gep_by_country_year_crop = hb.df_merge(ee_r264_to_250, df_gep_by_country_year_crop, how='right', left_on='iso3_r250_id', right_on='area_code_M49')
+        df_gep_by_country_year_mineral = hb.df_merge(ee_r264_to_250, df_gep_by_country_year_mineral, how='left', left_on='iso3_r250_label', right_on='Country Code')
         
         # Rename value to extractive_materials_provision_gep
-        df_gep_by_country_year_crop.rename(columns={'Value': 'extractive_materials_provision_gep'}, inplace=True)
-        
-        df_gep_by_country_year = extractive_materials_provision_functions.group_crops(df_gep_by_country_year_crop)
 
-        df_gep_by_year = extractive_materials_provision_functions.group_countries(df_gep_by_country_year)
+        df_gep_by_country_year =  df_gep_by_country_year_mineral.copy()
         
         df_gep_by_country_base_year = df_gep_by_country_year.loc[df_gep_by_country_year['year'] == 2019].copy()
+
+        df_gep_by_year = extractive_materials_provision_functions.group_countries(df_gep_by_country_year)
+
         
         # Write to CSVs
-        hb.df_write(df_gep_by_country_year_crop, p.results['extractive_materials_provision']['gep_by_country_year_crop'])
+        hb.df_write(df_gep_by_country_year_mineral, p.results['extractive_materials_provision']['gep_by_country_year_mineral'])
         hb.df_write(df_gep_by_country_year, p.results['extractive_materials_provision']['gep_by_country_year'])
         hb.df_write(df_gep_by_country_base_year, p.results['extractive_materials_provision']['gep_by_country_base_year'])   
         hb.df_write(df_gep_by_year, p.results['extractive_materials_provision']['gep_by_year'], handle_quotes='all')
         hb.df_write(df_gep_by_year, hb.replace_ext(p.results['extractive_materials_provision']['gep_by_year'], 'xlsx'), handle_quotes='all')
-        
+
+
         # Use geopandas to merge the df_gep_by_country_base_year with the  to get the country names and other attributes
         gdf_gep_by_country_base_year = hb.df_merge(p.gdf_countries_simplified, df_gep_by_country_base_year, how='outer', left_on='ee_r264_id', right_on='ee_r264_id')
         gdf_gep_by_country_base_year.to_file(p.results['extractive_materials_provision']['gep_by_country_base_year'].replace('.csv', '.gpkg'), driver='GPKG')

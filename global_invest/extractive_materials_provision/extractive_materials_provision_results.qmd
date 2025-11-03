@@ -18,6 +18,15 @@ format:
 Text describing it. To be written by service team.
 
 ```{python}
+import os
+
+os.chdir("/Users/long/Files/global_invest/global_invest_dev")
+
+print("Working directory", os.getcwd())
+```
+
+
+```{python}
 #| output: false
 
 ### SETUP CODE: Runs the whole model if it doesn't exist, else loads the results. Doesn't output anything and all debugging surpressed for this QMD.
@@ -28,11 +37,15 @@ import hazelbean as hb
 
 from global_invest.extractive_materials_provision import extractive_materials_provision_initialization
 
+os.environ['GDAL_DATA'] = '/Users/long/miniforge3/envs/geo_env/share/gdal'
+os.environ['PROJ_LIB'] = '/Users/long/miniforge3/envs/geo_env/share/proj'
+import pyogrio
+
 # ProjectFlow object
 p = hb.ProjectFlow() # Create a ProjectFlow Object to organize directories and enable parallel processing.
 p.project_name = 'gep_extractive_materials_provision'  # Determines the folder created to store intermediate and final results.
 p.project_dir = os.path.join(os.path.expanduser('~'), 'Files', 'global_invest', 'projects', p.project_name) # Put it in the right location relative to the user's home directory.
-p.base_data_dir = "G:/Shared drives/NatCapTEEMs/Files/base_data" # Set where data outside the project will be stored. CAUTION: For GEP we are using the shared Google Drive, but best practice is to use a local directory that you can control (also it's faster)
+p.base_data_dir = "/Users/long/Library/CloudStorage/GoogleDrive-yxlong@umn.edu/Shared drives/NatCapTEEMs/Files/base_data/submissions" # Set where data outside the project will be stored. CAUTION: For GEP we are using the shared Google Drive, but best practice is to use a local directory that you can control (also it's faster)
 p.set_project_dir(p.project_dir) # Set the project directory in the ProjectFlow object. Also defines p.input_dir, p.intermediate_dir, and p.output_dir based on the project_dir.
 
 # Task tree
@@ -65,7 +78,7 @@ import pandas as pd
 import os
 import hazelbean as hb
 from global_invest.extractive_materials_provision import extractive_materials_provision_functions
-from global_invest.extractive_materials_provision import extractive_materials_provision_defaults
+
 
 pd.set_option('display.float_format', '{:,.2f}'.format)
 pd.set_option('display.max_rows', 1000)  # Set max rows to display
@@ -78,6 +91,7 @@ service_label = 'extractive_materials_provision'
 # Load the results
 for k, v in p.results[service_label].items():
     # Load the results DataFrame
+    print(k)
     df = hb.df_read(v)
 
     setattr(p, k, df)
@@ -85,13 +99,13 @@ for k, v in p.results[service_label].items():
     # SERVICE-SPECIFIC CODE CUSTOMIZATION GOES HERE: Put whatever you think should be displayed
     # E.g., generate manuscript-ready tables, calculate total values for inline text, make plot pngs, etc
     if k == 'gep_by_country_base_year':
-        total_agricultural_value = df['extractive_materials_provision_gep'].sum()
+        total_extractive_materials_provision_value = df['extractive_materials_provision_gep'].sum()
         p.gep_by_country_base_year_table = df[['iso3_r250_name', 'extractive_materials_provision_gep']]
 
         # Group by useful aggregation columns explicitly and assign each as an attribute to p
         if 'income_grp' in df.columns:
             p.gep_by_income_grp_base_year_table = df.groupby('income_grp', as_index=False)['extractive_materials_provision_gep'].sum()
-            p.gep_by_income_grp_base_year_table = p.gep_by_income_grp_base_year_table[['income_grp', 'Value']]
+            p.gep_by_income_grp_base_year_table = p.gep_by_income_grp_base_year_table[['income_grp', 'extractive_materials_provision_gep']]
         if 'region_un' in df.columns:
             p.gep_by_region_un_base_year_table = df.groupby('region_un', as_index=False)['extractive_materials_provision_gep'].sum()
             p.gep_by_region_un_base_year_table = p.gep_by_region_un_base_year_table[['region_un', 'extractive_materials_provision_gep']]
@@ -145,14 +159,14 @@ for k, v in p.results[service_label].items():
     
 
     if k == 'gep_by_year':
-        p.gep_by_year_table = df[['year', 'extractive_materials_provision_gep']]
+        p.gep_by_year_table = df[['year', 'Value']]
         # Drop values that are zero
-        p.gep_by_year_table = p.gep_by_year_table[p.gep_by_year_table['extractive_materials_provision_gep'] > 0]
+        p.gep_by_year_table = p.gep_by_year_table[p.gep_by_year_table['Value'] > 0]
         hb.df_write(p.gep_by_year_table, os.path.join(p.intermediate_dir, service_label, 'gep_result', 'gep_by_year_table.csv'))
 
         # Also make a basic line graph as a png
         plt.figure(figsize=(10, 6))
-        plt.plot(p.gep_by_year_table['year'], p.gep_by_year_table['extractive_materials_provision_gep'], marker='o')
+        plt.plot(p.gep_by_year_table['year'], p.gep_by_year_table['Value'], marker='o')
         plt.title('GEP by Year')  
         plt.xlabel('Year')
         plt.ylabel('Gross Economic Product (GEP)')
@@ -162,7 +176,7 @@ for k, v in p.results[service_label].items():
 
 ```
 
-The analysis reveals that commercial agriculture generates a total gross economic product of $`{python} f"{total_agricultural_value:,.2f}"` across the study period. Below we present the results in various aggregations, ending with the GEP by country in the base year.
+The analysis reveals that total extractive materials provision value generates a total gross economic product of $`{python} f"{total_extractive_materials_provision_value:,.2f}"` across the study period. Below we present the results in various aggregations, ending with the GEP by country in the base year.
 
 ```{python}
 # Display the GEP by income group table   
