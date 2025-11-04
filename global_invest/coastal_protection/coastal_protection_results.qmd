@@ -175,7 +175,7 @@ for k, v in p.results[service_label].items():
 
 ```
 
-The analysis reveals that mangrove costal protection generates a total gross economic product of $`{python} f"{total_value:,.2f}"` across the study period. Below we present the results in various aggregations, ending with the GEP by country in the base year.
+The analysis reveals that costal protection generates a total gross economic product of $`{python} f"{total_value:,.2f}"` across the study period. Below we present the results in various aggregations, ending with the GEP by country in the base year.
 
 ```{python}
 # Display the GEP by income group table   

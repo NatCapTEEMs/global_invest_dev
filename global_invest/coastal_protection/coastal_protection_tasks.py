@@ -111,7 +111,10 @@ def gep_calculation(p):
             on=['iso3_r250_label', 'year']
         )
 
+        df_gep_by_country_year = df_gep_by_country_year.fillna(0)
+
         df_gep_by_country_year['coastal_protection_gep'] = df_gep_by_country_year['coastal_protection_gep_mangrove'] + df_gep_by_country_year['coastal_protection_gep_coral_reef']
+        # df_gep_by_country_year['coastal_protection_gep'] = df_gep_by_country_year['coastal_protection_gep_coral_reef'] # for mangrove or coral reef only testing
         df_gep_by_country_year['Value'] = df_gep_by_country_year['coastal_protection_gep']
                 # Drop repeated ids in df_countries
         ee_r264_to_250 = p.gdf_countries.copy()
