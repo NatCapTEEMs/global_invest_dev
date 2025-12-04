@@ -11,6 +11,25 @@ format:
     echo: false              # Hide code by default in Word
   ipynb:
     echo: true
+
+author:
+  - name: Yanxu Long
+    affiliations:
+      - name: University of Minnesota
+        department: Department of Applied Economics
+        address:
+        city:
+        country: USA
+        postal-code: 55108
+    orcid: 0000-0001-9800-4242
+    email: yxlong@umn.edu
+    url: https://yanxulong.github.io/
+  - name: Justin Andrew Johnson
+    affiliations: University of Minnesota
+  - name: Nfamara Dampha
+    affiliations: University of Minnesota
+  - name: Haku Bo
+    affiliations: University of Minnesota
 ---
 
 # Terrestrial Carbon Results

@@ -218,42 +218,43 @@ def gep_calculation(p):
 
 def gep_result(p):
     """Display the results of the GEP calculation."""
-
+    
     # Set the quarto path to wherever the current script is running. This means that the environment used needs to have quarto, which may not be true on e.g. codespaces.
     os.environ['QUARTO_PYTHON'] = sys.executable
-
+    
     # Get the  list of current services run
     services_run = list(p.results.keys())
-
+    
     # Additional groupbys = []
-
+    
     # Imply from the service name the file_path for the results_qmd
     module_root = hb.get_projectflow_module_root()
-
+    
     for service_label in services_run:
-        print(service_label)
-        results_qmd_path = os.path.join(module_root, service_label, f'{service_label}_results.qmd')
+        results_qmd_path = os.path.join(module_root, service_label, f'{service_label}_results.qmd')    
         results_qmd_project_path = os.path.join(p.cur_dir, f'{service_label}_results.qmd')
-        hb.create_directories(results_qmd_path)  # Ensure the directory exists
-
+        hb.create_directories(results_qmd_project_path)  # Ensure the directory exists   
+        
         # Copy it to the project dir for cmd line processing (but will be removed again later because it makes confusion when people try to edit it and then rerun the script which won't of course update the results.)
-        # hb.path_copy(results_qmd_path, results_qmd_project_path)
-        # hb.path_copy(results_qmd_path, results_qmd_project_path)
-
+        hb.path_copy(results_qmd_path, results_qmd_project_path)
+        
+        
         quarto_command = f"quarto render {results_qmd_project_path}"
-        hb.log(f"Running quarto command: {quarto_command}")
+        hb.log(f"Running quarto command: {quarto_command}")     
 
         """Run quarto with debug information"""
         # Set environment for more verbose output
         env = os.environ.copy()
         env['QUARTO_LOG_LEVEL'] = 'DEBUG'
-
+        
         cmd = ['quarto', 'render', results_qmd_project_path, '--verbose']
-
+        
         # print(f"Running command: {' '.join(results_qmd_project_path)}")
         print(f"Working directory: {os.getcwd()}")
         print(f"File exists: {os.path.exists(results_qmd_project_path)}")
-
+        
+        
+        
         process = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE,
@@ -262,7 +263,7 @@ def gep_result(p):
             bufsize=1,  # Line buffering
             universal_newlines=True
         )
-
+        
         # Read line by line as they come
         while True:
             line = process.stdout.readline()
@@ -273,28 +274,26 @@ def gep_result(p):
                 sys.stdout.flush()  # Force immediate display
         # remove results_qmd_project_path
         hb.path_remove(results_qmd_project_path)
-
+        
 def gep_load_results(p):
-
+    
     # Learn the paths by creating a temp task treep
     p_temp = hb.ProjectFlow()
     terrestrial_carbon_initialization.build_gep_service_calculation_task_tree(p_temp)
     p_temp.set_all_tasks_to_skip_if_dir_exists()
     p_temp.execute()
-
+    
     print(p_temp.results)
     pass
-
+        
 def gep_results_distribution(p):
     """Distribute the results of the GEP calculation."""
     # This task is intended to copy the results to the output directory.
     hb.log("Distributing GEP results...")
-
+    
     for key, value in p.results['terrestrial_carbon'].items():
         output_path = os.path.join(p.output_dir, key)
         hb.path_copy(value, output_path)
         hb.log(f"Distributed {key} to {output_path}")
-
+    
     hb.log("GEP results distribution complete.")
-
-

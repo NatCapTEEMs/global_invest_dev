@@ -36,7 +36,7 @@ def build_gep_service_task_tree(p):
     
 def build_gep_task_tree(p):
     """
-    Build the default task tree forthe GEP application of commercial agriculture. In this case, it's very similar to the standard task tree
+    Build the default task tree forthe GEP application. In this case, it's very similar to the standard task tree
     but i've included it here for consistency with other models.
     """
     p.coastal_protection_task = p.add_task(coastal_protection_tasks.coastal_protection)
