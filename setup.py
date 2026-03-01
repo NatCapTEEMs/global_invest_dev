@@ -12,12 +12,12 @@ import numpy
 packages=find_packages()
 include_package_data=True
 
-extensions = [
-        Extension(
-        "global_invest.carbon_storage.carbon_storage_ipcc_tier_1_cython",  # This corresponds to the Python import path
-        ["global_invest/carbon_storage/carbon_storage_ipcc_tier_1_cython.pyx"],  # Path to the .pyx file
-    )
-]
+# extensions = [
+#         Extension(
+#         "global_invest.carbon_storage.carbon_storage_ipcc_tier_1_cython",  # This corresponds to the Python import path
+#         ["global_invest/carbon_storage/carbon_storage_ipcc_tier_1_cython.pyx"],  # Path to the .pyx file
+#     )
+# ]
 
 setup(
     name = 'global_invest',
@@ -28,7 +28,7 @@ setup(
     url = 'https://github.com/jandrewjohnson/global_invest_dev',
     keywords = ['geospatial', 'raster', 'shapefile', 'ecoystem services'],
     classifiers = [],
-    ext_modules=cythonize(extensions),
+    # ext_modules=cythonize(extensions),
     include_dirs=[numpy.get_include()],
     cmdclass={'build_ext': build_ext},
 )
