@@ -1,5 +1,5 @@
 ---
-title: "Overview of Ecosystem Service: Carbon Storage and Sequestration"
+title: "Overview of Ecosystem Service: Terrestrial Carbon Storage"
 format:
   pdf:
     toc: false

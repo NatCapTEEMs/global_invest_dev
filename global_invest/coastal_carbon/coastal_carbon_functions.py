@@ -1,1774 +1,490 @@
-# =============================================================================
-# imports
-# =============================================================================
+"""
+Coastal carbon pipeline helpers.
+
+All ecosystem-density and per-country stock primitives used by the four-file
+pipeline (run / initialization / tasks / functions) live here. There are no
+runtime dependencies on the per-ecosystem reference modules in `archieve/`.
+"""
+
+import contextlib
 import os
-import re
-import rasterio
-from rasterio.mask import mask
-from rasterio.enums import Resampling
-from rasterio.merge import merge
-import rasterio.warp
-import rasterio.features
-import rasterio.vrt
-import numpy as np
-from tqdm import tqdm
-import gc
-import rioxarray as rxr
-import dask.array as da
-import dask.dataframe as dd
-import pandas as pd
-import numpy as np
-from tqdm import tqdm
+
 import geopandas as gpd
-import pyogrio
-import glob
-import os
-os.environ["CHECK_DISK_FREE_SPACE"] = "FALSE"
-# =============================================================================
-# define functions
-# =============================================================================
-
-
-
-
-import os
-import glob
+import numpy as np
+import pandas as pd
 import rasterio
-from rasterio.merge import merge
-import re
+import rasterio.features
+import rasterio.warp
+import rasterio.windows
+from rasterio.enums import Resampling
 from tqdm import tqdm
 
 
-# Function to extract longitude from filename
-def extract_longitude(filename):
-    """
-    Extract longitude coordinate from filename.
-    Handles patterns like:
-    - GWL_FCS30D_2019Maps_E0N10.tif -> E0
-    - GWL_FCS30D_2019Maps_E10N20.tif -> E10
-    - GWL_FCS30D_2019Maps_W5N15.tif -> W5
-    """
-    # Pattern to match longitude coordinates (E or W followed by digits)
-    pattern = r'([EW]\d+)'
-    match = re.search(pattern, filename)
-    if match:
-        return match.group(1)  # Returns E0, E10, W5, etc.
-    return None
+# ============================================================================
+# Per-pixel ecosystem carbon density helpers
+# ============================================================================
 
-def group_tif_files_by_longitude(input_folder):
+# Mangrove (Hamilton & Friess 2018 + IPCC 2014 zone BGB + Sanderman 2018 SOC)
+MANGROVE_BGB_AGB_RATIO_TROPICAL_WET = 0.49
+MANGROVE_BGB_AGB_RATIO_TROPICAL_DRY = 0.29
+MANGROVE_BGB_AGB_RATIO_SUBTROPICAL = 0.96
+MANGROVE_TROPICAL_LAT_THRESHOLD = 23.5
+MANGROVE_TROPICAL_WET_PRECIP_THRESHOLD_MM = 2000.0
+MANGROVE_AGB_TO_C = 0.48   # Hamilton & Friess 2018
+MANGROVE_BGB_TO_C = 0.39   # Howard et al. 2014
+
+
+def calculate_mangrove_density_array(latitude_arr, precipitation_arr=None,
+                                     soc_arr=None):
     """
-    Group TIFF files by their longitude coordinate.
+    Vectorised mangrove total carbon density (Mg C/ha).
+
+    AGB: Hamilton & Friess (2018) EQ5 latitude regression
+        AGB (t/ha) = max(0, -6.4305 * |lat| + 271.747)
+    BGB: AGB x IPCC 2014 zone-specific ratio (0.49 tropical wet, 0.29 tropical
+         dry, 0.96 subtropical). If precipitation_arr is None, all tropics use
+         the wet ratio (0.49). Tropical/subtropical split at |lat| = 23.5 deg.
+    SOC: from soc_arr (Sanderman 2018 raster) when provided; otherwise a
+         latitude step function (400 to 250 Mg C/ha by zone).
     """
-    tif_files = glob.glob(os.path.join(input_folder, "*.tif"))
-    tif_files.extend(glob.glob(os.path.join(input_folder, "*.tiff")))
+    lat_abs = np.abs(latitude_arr).astype(np.float64)
+    agb_t_per_ha = np.maximum(0.0, -6.4305 * lat_abs + 271.747)
 
-    if not tif_files:
-        print("No TIFF files found!")
-        return {}
-
-    # Group files by longitude
-    file_groups = {}
-    for file_path in tif_files:
-        filename = os.path.basename(file_path)
-        lon_group = extract_longitude(filename)
-        
-        if lon_group is None:
-            print(f"Warning: Could not extract longitude from {filename}, skipping")
-            continue
-            
-        if lon_group not in file_groups:
-            file_groups[lon_group] = []
-        file_groups[lon_group].append(file_path)
-    
-    # Sort files within each group by latitude for consistent merging
-    for lon_group in file_groups:
-        file_groups[lon_group].sort()
-    
-    return file_groups
-
-def merge_tif_files_by_longitude(input_folder, output_folder):
-    """
-    Group TIFF files by longitude and merge each group separately.
-    For example, files with E0N10 and E0N15 will be merged into one file for longitude E0.
-    """
-    # Group files by longitude
-    file_groups = group_tif_files_by_longitude(input_folder)
-    
-    if not file_groups:
-        print("No valid TIFF files with coordinate patterns found!")
-        return
-    
-    print(f"Found {len(file_groups)} longitude groups: {list(file_groups.keys())}")
-    
-    # Process each group separately
-    for lon_group, file_list in file_groups.items():
-        print(f"\nProcessing longitude {lon_group} with {len(file_list)} files:")
-        for file in file_list:
-            print(f"  - {os.path.basename(file)}")
-        
-        # Generate output filename
-        first_filename = os.path.basename(file_list[0])
-        base_pattern = re.sub(r'_[EW]\d+[NS]\d+', '', first_filename)  # Remove coordinate part
-        base_pattern = re.sub(r'\.tiff?$', '', base_pattern)  # Remove extension
-        
-        output_filename = f"{base_pattern}_{lon_group}.tif"
-        output_path = os.path.join(output_folder, output_filename)
-        
-        if os.path.exists(output_path):
-            print(f"{output_filename} already exists")
-            continue
-
-        # Merge files in this longitude group
-        merge_longitude_group(file_list, output_path, lon_group)
-
-def merge_longitude_group(file_list, output_path, longitude):
-    """
-    Merge a group of TIFF files that share the same longitude.
-    This will create north-south strips for each longitude band.
-    """
-    if len(file_list) == 1:
-        print(f"Only one file for longitude {longitude}, copying...")
-        try:
-            with rasterio.open(file_list[0]) as src:
-                data = src.read()
-                meta = src.meta.copy()
-            
-            with rasterio.open(output_path, "w", **meta) as dest:
-                dest.write(data)
-            print(f"Copied single file to: {output_path}")
-        except Exception as e:
-            print(f"Error copying single file: {e}")
-        return
-
-    print(f"Merging {len(file_list)} files for longitude {longitude}...")
-
-    # Open all datasets for this longitude
-    datasets = []
-    try:
-        for file_path in file_list:
-            src = rasterio.open(file_path)
-            datasets.append(src)
-        
-        # Get metadata from first dataset
-        first_meta = datasets[0].meta.copy()
-        nodata = first_meta.get('nodata', None)
-        
-        # Merge all datasets for this longitude
-        mosaic, out_transform = merge(
-            datasets,
-            method='first',
-            nodata=nodata
+    is_tropical = lat_abs < MANGROVE_TROPICAL_LAT_THRESHOLD
+    if precipitation_arr is not None:
+        is_wet = precipitation_arr > MANGROVE_TROPICAL_WET_PRECIP_THRESHOLD_MM
+        bgb_ratio = np.where(
+            is_tropical & is_wet, MANGROVE_BGB_AGB_RATIO_TROPICAL_WET,
+            np.where(is_tropical & ~is_wet, MANGROVE_BGB_AGB_RATIO_TROPICAL_DRY,
+                     MANGROVE_BGB_AGB_RATIO_SUBTROPICAL),
         )
-        
-        # Update metadata
-        first_meta.update({
-            "height": mosaic.shape[1],
-            "width": mosaic.shape[2],
-            "transform": out_transform,
-            "compress": "lzw"
-        })
-        
-        # Write output
-        print(f"Writing output for longitude {longitude}...")
-        with rasterio.open(output_path, "w", **first_meta) as dest:
-            if nodata is not None:
-                dest.fill(nodata)
-            
-            for i in tqdm(range(mosaic.shape[0]), desc="Writing bands"):
-                dest.write(mosaic[i], i + 1)
-        
-        print(f"Successfully merged {len(file_list)} files to: {output_path}")
-        print(f"Final output size: {mosaic.shape}")
-        
-    except Exception as e:
-        print(f"Error processing longitude {longitude}: {e}")
-    
-    finally:
-        # Ensure all datasets are closed
-        for src in datasets:
-            if not src.closed:
-                src.close()
+    else:
+        bgb_ratio = np.where(
+            is_tropical, MANGROVE_BGB_AGB_RATIO_TROPICAL_WET,
+            MANGROVE_BGB_AGB_RATIO_SUBTROPICAL,
+        )
 
+    bgb_t_per_ha = agb_t_per_ha * bgb_ratio
+    agb_c = agb_t_per_ha * MANGROVE_AGB_TO_C
+    bgb_c = bgb_t_per_ha * MANGROVE_BGB_TO_C
 
+    if soc_arr is not None:
+        soc = soc_arr.astype(np.float64)
+    else:
+        soc = np.full_like(lat_abs, 250.0, dtype=np.float64)
+        soc = np.where(lat_abs < 25, 300.0, soc)
+        soc = np.where(lat_abs < 20, 350.0, soc)
+        soc = np.where(lat_abs < 15, 375.0, soc)
+        soc = np.where(lat_abs < 10, 400.0, soc)
 
-
-if __name__ == "__main__":
-    input_folder = "/Users/long/Library/CloudStorage/GoogleDrive-yxlong@umn.edu/Shared drives/NatCapTEEMs/Files/base_data/submissions/coastal_carbon/GWL_FCS30D_2019"
-    output_folder = "/Users/long/Library/CloudStorage/GoogleDrive-yxlong@umn.edu/Shared drives/NatCapTEEMs/Files/base_data/submissions/coastal_carbon/GWL_2019"
-    
-    # Create output folder if it doesn't exist
-    os.makedirs(output_folder, exist_ok=True)
-    
-    # Merge files by longitude
-    merge_tif_files_by_longitude(input_folder, output_folder)
-
-#%%
-
-
-import rasterio
-from rasterio.transform import from_bounds
-import numpy as np
-
-def create_blank_global_canvas(output_path, resolution=0.008333333333333333, dtype='uint16', nodata_val=255):
-    """Creates a blank raster file covering the full globe."""
-    
-    # Standard WGS 84 Bounds (Full Extent)
-    bounds = [-180.0, -90.0, 180.0, 90.0] 
-    
-    # Calculate transform (top-left corner coordinates)
-    transform = from_bounds(*bounds, width=360 / resolution, height=180 / resolution)
-    
-    # Calculate Height and Width (number of rows and columns)
-    height = int(180 / resolution)
-    width = int(360 / resolution)
-
-    # Define metadata
-    profile = {
-        'driver': 'GTiff',
-        'dtype': dtype,
-        'count': 1,  # Single band for LULC
-        'crs': 'EPSG:4326', # WGS 84 standard
-        'transform': transform,
-        'width': width,
-        'height': height,
-        'nodata': nodata_val,
-        'compress': 'lzw'
+    return {
+        'agb_c_mg_per_ha':   agb_c,
+        'bgb_c_mg_per_ha':   bgb_c,
+        'soil_c_mg_per_ha':  soc,
+        'total_c_mg_per_ha': agb_c + bgb_c + soc,
     }
-    
-    # Initialize a blank NumPy array filled with the nodata value
-    blank_array = np.full((1, height, width), nodata_val, dtype=dtype)
-    
-    # Write the file
-    with rasterio.open(output_path, 'w', **profile) as dst:
-        dst.write(blank_array)
-        
-    print(f"✅ Created blank global map: {output_path} with shape ({height}, {width})")
-
-# Example: create_blank_global_canvas("blank_global_lulc_canvas.tif", resolution=0.008333)
-
-output_file_path = "/Users/long/Library/CloudStorage/GoogleDrive-yxlong@umn.edu/Shared drives/NatCapTEEMs/Files/base_data/submissions/coastal_carbon/global_map.tif"
-
-create_blank_global_canvas(output_file_path, resolution=0.008333333333333333, dtype='uint16', nodata_val=255)
 
 
+# Salt marsh (Chmura 2003 AGB + 2.5 BGB ratio + Maxwell 2024 MarSOC)
+SALT_MARSH_AGB_MEDIAN_T_HA = 5.0
+SALT_MARSH_BGB_AGB_RATIO = 2.5
+SALT_MARSH_AGB_TO_C = 0.45
+SALT_MARSH_BGB_TO_C = 0.41
+SALT_MARSH_TROPICAL_BOOST_LAT = 25.0
+SALT_MARSH_TROPICAL_BOOST_FACTOR = 1.2
 
 
-
-import rasterio
-import numpy as np
-import os
-import glob
-from tqdm import tqdm
-from rasterio.warp import reproject, Resampling
-from rasterio.windows import from_bounds
-
-def insert_multiple_lulc_tiles(global_map_path, lulc_input_folder, output_path):
+def calculate_salt_marsh_density_array(latitude_arr, soc_arr=None):
     """
-    Inserts pixel values from all LULC tiles in a folder into the corresponding 
-    area of a global map array (the base mosaic), handling necessary reprojection 
-    and ensuring integer data type compatibility for categorical LULC data.
+    Vectorised salt marsh total carbon density (Mg C/ha).
 
-    Args:
-        global_map_path (str): Path to the base global raster file (the canvas).
-        lulc_input_folder (str): Folder containing all the LULC tile files.
-        output_path (str): Path to save the updated global raster.
+    AGB: Chmura et al. 2003 median (5 t/ha) with 1.2x tropical boost (|lat| < 25).
+    BGB: AGB x 2.5 (extensive root systems).
+    SOC: from soc_arr (Maxwell 2024 MarSOC raster) when provided; otherwise a
+         latitude step function (180 to 350 Mg C/ha by zone).
     """
-    
-    # 1. Get the list of LULC files
-    lulc_files = glob.glob(os.path.join(lulc_input_folder, "*.tif"))
-    lulc_files.extend(glob.glob(os.path.join(lulc_input_folder, "*.tiff")))
-    lulc_files.sort()
+    lat_abs = np.abs(latitude_arr).astype(np.float64)
 
-    if not lulc_files:
-        print("❌ No LULC TIFF files found in the specified folder!")
-        return
-        
-    print(f"Found {len(lulc_files)} LULC tiles to process.")
+    agb_t_per_ha = np.where(
+        lat_abs < SALT_MARSH_TROPICAL_BOOST_LAT,
+        SALT_MARSH_AGB_MEDIAN_T_HA * SALT_MARSH_TROPICAL_BOOST_FACTOR,
+        SALT_MARSH_AGB_MEDIAN_T_HA,
+    ).astype(np.float64)
+    bgb_t_per_ha = agb_t_per_ha * SALT_MARSH_BGB_AGB_RATIO
+    agb_c = agb_t_per_ha * SALT_MARSH_AGB_TO_C
+    bgb_c = bgb_t_per_ha * SALT_MARSH_BGB_TO_C
 
-    # 2. Open the global map and initialize the mutable mosaic
-    try:
-        with rasterio.open(global_map_path) as global_src:
-            global_profile = global_src.profile
-            
-            # Read the entire global data into a mutable array for in-place updates
-            mosaic_array = global_src.read() 
-            
-            # Check for multi-band, assuming insertion happens in Band 1 (index 0)
-            if mosaic_array.shape[0] > 1:
-                 print("⚠️ Global map has multiple bands. Insertion will only happen in the first band (index 0).")
-            
-    except Exception as e:
-        print(f"❌ Error during global raster initialization: {e}")
-        return
+    if soc_arr is not None:
+        soc = soc_arr.astype(np.float64)
+    else:
+        soc = np.full_like(lat_abs, 350.0, dtype=np.float64)
+        soc = np.where(lat_abs < 45, 250.0, soc)
+        soc = np.where(lat_abs < 35, 220.0, soc)
+        soc = np.where(lat_abs < 20, 180.0, soc)
 
-    # 3. Loop through all LULC tiles and insert
-    for i, lulc_file in enumerate(tqdm(lulc_files, desc="Inserting LULC Tiles")):
-        
-        try:
-            with rasterio.open(lulc_file) as lulc_src:
-                lulc_data = lulc_src.read()
-                
-                if lulc_data.shape[0] != 1:
-                    print(f"\n❌ Skipping {os.path.basename(lulc_file)}: Must be a single band.")
-                    continue
-                
-                lulc_array = lulc_data[0] # The 2D array of values
-                
-                # Get the necessary metadata
-                lulc_bounds = lulc_src.bounds
-                lulc_transform = lulc_src.transform
-                lulc_crs = lulc_src.crs
-                
-                # Get LULC nodata and explicitly cast to an integer (safe default of 0)
-                lulc_nodata = int(lulc_src.nodata) if lulc_src.nodata is not None else 0
+    return {
+        'agb_c_mg_per_ha':   agb_c,
+        'bgb_c_mg_per_ha':   bgb_c,
+        'soil_c_mg_per_ha':  soc,
+        'total_c_mg_per_ha': agb_c + bgb_c + soc,
+    }
 
-            # Calculate the window (pixel indices) on the global grid
-            window = from_bounds(
-                lulc_bounds.left, lulc_bounds.bottom, lulc_bounds.right, lulc_bounds.top, 
-                global_profile['transform']
+
+# Seagrass (Gomis et al. 2025 genus-specific biomass + Fourqurean 2012 soil scaled to 1 m)
+SEAGRASS_GENUS_TOTAL_BIOMASS_C_MG_HA = {
+    # Persistent strategy
+    'Posidonia':       9.78,
+    'Phyllospadix':    3.70,
+    'Enhalus':         3.70,
+    'Cymodocea':       3.70,
+    'Thalassia':       3.70,
+    'Amphibolis':      3.70,
+    'Thalassodendron': 3.70,
+    # Opportunistic
+    'Zostera':         0.94,
+    'Syringodium':     0.94,
+    'Halodule':        0.94,
+    # Colonising
+    'Ruppia':          0.33,
+    'Halophila':       0.19,
+}
+SEAGRASS_DEFAULT_BIOMASS_C_MG_HA = 1.55  # Gomis 2025 global mean
+SEAGRASS_BGB_FRACTION = 0.70
+SEAGRASS_AGB_FRACTION = 0.30
+SEAGRASS_SOIL_C_MG_HA_1M = 70.0  # Fourqurean 2012 22 Mg/ha at 20 cm scaled to 1 m
+SEAGRASS_NON_MARINE_GENERA = frozenset({
+    'Valisneria', 'Trapa', 'Myriophyllum', 'Najas', 'Heteranthera',
+    'Stuckenia', 'Utricularia',
+})
+
+
+def _normalize_seagrass_genus(genus_str):
+    if not isinstance(genus_str, str):
+        return None
+    primary = genus_str.strip().split('|')[0].strip()
+    if not primary or primary.lower() == 'not reported':
+        return None
+    return primary.capitalize()
+
+
+def _seagrass_biomass_for_genus(genus_str):
+    """Mg C/ha total biomass for a genus, or None if non-marine."""
+    if isinstance(genus_str, str) and genus_str.strip().lower() == 'not reported':
+        return SEAGRASS_DEFAULT_BIOMASS_C_MG_HA
+    g = _normalize_seagrass_genus(genus_str)
+    if g is None:
+        return SEAGRASS_DEFAULT_BIOMASS_C_MG_HA
+    if g in SEAGRASS_NON_MARINE_GENERA:
+        return None
+    return SEAGRASS_GENUS_TOTAL_BIOMASS_C_MG_HA.get(g, SEAGRASS_DEFAULT_BIOMASS_C_MG_HA)
+
+
+def calculate_seagrass_pool_densities_array(genus_array):
+    """
+    Vectorised per-pool seagrass densities (Mg C/ha) for an array of genus strings.
+    Non-marine genera (freshwater plants) are zeroed out across all pools so the
+    caller can join by row index without dropping records. Soil density is a
+    constant (Fourqurean 2012 scaled to 1 m).
+    """
+    n = len(genus_array)
+    agb = np.zeros(n, dtype=np.float64)
+    bgb = np.zeros(n, dtype=np.float64)
+    soil = np.zeros(n, dtype=np.float64)
+    for i, g in enumerate(genus_array):
+        biomass = _seagrass_biomass_for_genus(g)
+        if biomass is None:
+            continue
+        agb[i] = biomass * SEAGRASS_AGB_FRACTION
+        bgb[i] = biomass * SEAGRASS_BGB_FRACTION
+        soil[i] = SEAGRASS_SOIL_C_MG_HA_1M
+    return {
+        'agb_c_mg_per_ha':   agb,
+        'bgb_c_mg_per_ha':   bgb,
+        'soil_c_mg_per_ha':  soil,
+        'total_c_mg_per_ha': agb + bgb + soil,
+    }
+
+
+# ============================================================================
+# Raster utilities
+# ============================================================================
+
+def rasterize_polygons_to_template(vector_path, template_raster_path, out_path,
+                                   field=None, default_value=1, dtype='uint8',
+                                   nodata=0, all_touched=True):
+    """
+    Burn polygons from `vector_path` onto the grid of `template_raster_path`.
+
+    Defaults produce a binary mask. Pass `field` to burn a numeric attribute
+    (e.g., country id). Vectors are reprojected into the template CRS as needed.
+    """
+    gdf = gpd.read_file(vector_path)
+    with rasterio.open(template_raster_path) as src:
+        template_crs = src.crs
+        if gdf.crs != template_crs:
+            gdf = gdf.to_crs(template_crs)
+        meta = src.meta.copy()
+        meta.update({'count': 1, 'dtype': dtype, 'nodata': nodata, 'compress': 'lzw'})
+        if field is None:
+            shapes = ((geom, default_value) for geom in gdf.geometry if geom is not None)
+        else:
+            shapes = (
+                (geom, val)
+                for geom, val in zip(gdf.geometry, gdf[field])
+                if geom is not None and pd.notna(val)
             )
-            
-            # Extract array indices and target dimensions
-            row_start, row_end = window.row_off, window.row_off + window.height
-            col_start, col_end = window.col_off, window.col_off + window.width
-            target_height = row_end - row_start
-            target_width = col_end - col_start
-            
-            # 4. Resample LULC array if shapes don't match (fixing misalignment/resolution)
-            if lulc_array.shape != (target_height, target_width):
-                
-                # CRITICAL FIX: Explicitly set the destination dtype to a safe integer type (np.int16)
-                resampled_lulc = np.empty((target_height, target_width), dtype=np.int16) 
-                
-                out_transform = global_src.window_transform(window)
-                
-                reproject(
-                    source=lulc_data, 
-                    destination=resampled_lulc,
-                    src_transform=lulc_transform,
-                    src_crs=lulc_crs,
-                    dst_transform=out_transform,
-                    dst_crs=global_profile['crs'],
-                    resampling=Resampling.nearest, 
-                    
-                    # Ensure nodata values are integers
-                    src_nodata=lulc_nodata, 
-                    dst_nodata=lulc_nodata
-                )
-                lulc_array = resampled_lulc
-            
-            # 5. Insert the LULC data into the global map array (Overwriting Band 1)
-            # This works because lulc_array (resampled or not) is now the correct shape
-            # and an integer type, ready to be assigned to the mosaic array.
-            mosaic_array[0, row_start:row_end, col_start:col_end] = lulc_array
-
-        except Exception as e:
-            print(f"\n❌ An error occurred processing {os.path.basename(lulc_file)}: {e}")
-            continue
-
-    # 6. Write the final output
-    out_meta = global_profile.copy()
-    out_meta.update({"compress": "lzw"})
-    
-    print("\nWriting final output mosaic...")
-    try:
-        # Re-open global_src for the profile, but write the mosaic_array
-        with rasterio.open(output_path, "w", **out_meta) as dest:
-            dest.write(mosaic_array)
-
-        print(f"✅ Successfully created final mosaic and saved to: {output_path}")
-
-    except Exception as e:
-        print(f"❌ Error writing output file: {e}")
-
-
-
-
-global_map_path = "/Users/long/Library/CloudStorage/GoogleDrive-yxlong@umn.edu/Shared drives/NatCapTEEMs/Files/base_data/submissions/coastal_carbon/global_map.tif"
-lulc_input_folder =  "/Users/long/Library/CloudStorage/GoogleDrive-yxlong@umn.edu/Shared drives/NatCapTEEMs/Files/base_data/submissions/coastal_carbon/GWL_2019_latitude"
-#lulc_input_folder =  "/Users/long/Library/CloudStorage/GoogleDrive-yxlong@umn.edu/Shared drives/NatCapTEEMs/Files/base_data/submissions/coastal_carbon/GWL_FCS30D_2019"
-output_path = "/Users/long/Library/CloudStorage/GoogleDrive-yxlong@umn.edu/Shared drives/NatCapTEEMs/Files/base_data/submissions/coastal_carbon/GWL_2019.tif"
-insert_multiple_lulc_tiles(global_map_path, lulc_input_folder, output_path)
-
-
-#%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-import os
-import glob
-import rasterio
-from rasterio.merge import merge
-import re
-from tqdm import tqdm
-
-def extract_latitude(filename):
-    """
-    Extract latitude coordinate from filename.
-    Handles patterns like:
-    - GWL_FCS30D_2019Maps_E0N10.tif -> N10
-    - GWL_FCS30D_2019Maps_E10S20.tif -> S20
-    - GWL_FCS30D_2019Maps_W5N15.tif -> N15
-    """
-    # Pattern to match latitude coordinates (N or S followed by digits)
-    pattern = r'[EW]\d+([NS]\d+)'
-    match = re.search(pattern, filename)
-    if match:
-        return match.group(1)  # Returns N10, S20, N15, etc.
-    return None
-
-def group_tif_files_by_latitude(input_folder):
-    """
-    Group TIFF files by their latitude coordinate.
-    """
-    tif_files = glob.glob(os.path.join(input_folder, "*.tif"))
-    tif_files.extend(glob.glob(os.path.join(input_folder, "*.tiff")))
-
-    if not tif_files:
-        print("No TIFF files found!")
-        return {}
-
-    # Group files by latitude
-    file_groups = {}
-    for file_path in tif_files:
-        filename = os.path.basename(file_path)
-        lat_group = extract_latitude(filename)
-        
-        if lat_group is None:
-            print(f"Warning: Could not extract latitude from {filename}, skipping")
-            continue
-            
-        if lat_group not in file_groups:
-            file_groups[lat_group] = []
-        file_groups[lat_group].append(file_path)
-    
-    # Sort files within each group by longitude for consistent merging
-    for lat_group in file_groups:
-        file_groups[lat_group].sort()
-    
-    return file_groups
-
-def merge_tif_files_by_latitude(input_folder, output_folder):
-    """
-    Group TIFF files by latitude and merge each group separately.
-    For example, files with E0N10 and W10N10 will be merged into one file for latitude N10.
-    """
-    # Group files by latitude
-    file_groups = group_tif_files_by_latitude(input_folder)
-    
-    if not file_groups:
-        print("No valid TIFF files with coordinate patterns found!")
-        return
-    
-    print(f"Found {len(file_groups)} latitude groups: {list(file_groups.keys())}")
-    
-    # Process each group separately
-    for lat_group, file_list in file_groups.items():
-        print(f"\nProcessing latitude {lat_group} with {len(file_list)} files:")
-        for file in file_list:
-            print(f"  - {os.path.basename(file)}")
-        
-        # Generate output filename
-        first_filename = os.path.basename(file_list[0])
-        base_pattern = re.sub(r'_[EW]\d+[NS]\d+', '', first_filename)  # Remove coordinate part
-        base_pattern = re.sub(r'\.tiff?$', '', base_pattern)  # Remove extension
-        
-        output_filename = f"{base_pattern}_{lat_group}.tif"
-        output_path = os.path.join(output_folder, output_filename)
-        
-        if os.path.exists(output_path):
-            print(f"{output_filename} already exists")
-            continue
-
-        # Merge files in this latitude group
-        merge_latitude_group(file_list, output_path, lat_group)
-
-def merge_latitude_group(file_list, output_path, latitude):
-    """
-    Merge a group of TIFF files that share the same latitude.
-    This will create east-west strips for each latitude band.
-    """
-    if len(file_list) == 1:
-        print(f"Only one file for latitude {latitude}, copying...")
-        try:
-            with rasterio.open(file_list[0]) as src:
-                data = src.read()
-                meta = src.meta.copy()
-            
-            with rasterio.open(output_path, "w", **meta) as dest:
-                dest.write(data)
-            print(f"Copied single file to: {output_path}")
-        except Exception as e:
-            print(f"Error copying single file: {e}")
-        return
-
-    print(f"Merging {len(file_list)} files for latitude {latitude}...")
-
-    # Open all datasets for this latitude
-    datasets = []
-    try:
-        for file_path in file_list:
-            src = rasterio.open(file_path)
-            datasets.append(src)
-        
-        # Get metadata from first dataset
-        first_meta = datasets[0].meta.copy()
-        nodata = first_meta.get('nodata', None)
-        
-        # Merge all datasets for this latitude
-        mosaic, out_transform = merge(
-            datasets,
-            method='first',
-            nodata=nodata
+        arr = rasterio.features.rasterize(
+            shapes=shapes,
+            out_shape=(src.height, src.width),
+            fill=nodata,
+            transform=src.transform,
+            dtype=dtype,
+            all_touched=all_touched,
         )
-        
-        # Update metadata
-        first_meta.update({
-            "height": mosaic.shape[1],
-            "width": mosaic.shape[2],
-            "transform": out_transform,
-            "compress": "lzw"
+        with rasterio.open(out_path, 'w', **meta) as dst:
+            dst.write(arr, 1)
+    return out_path
+
+
+def align_raster_to_template(src_raster_path, template_raster_path, out_path,
+                             resampling='average', dtype=None):
+    """
+    Reproject and resample a source raster to match the grid of a template raster.
+
+    Used to bring external products like Sanderman 2018 SOC or Maxwell 2024
+    MarSOC onto the ha_per_cell template so they can be read in lockstep with
+    the windowed streaming pass. If `out_path` already exists, returns it
+    directly without recomputing.
+    """
+    if os.path.exists(out_path):
+        return out_path
+
+    resampling_method = getattr(Resampling, resampling)
+    with rasterio.open(template_raster_path) as tmpl, \
+         rasterio.open(src_raster_path) as src:
+        out_dtype = dtype or src.dtypes[0]
+        out_meta = tmpl.meta.copy()
+        out_meta.update({
+            'count': 1,
+            'dtype': out_dtype,
+            'nodata': src.nodata if src.nodata is not None else 0,
+            'compress': 'lzw',
         })
-        
-        # Write output
-        print(f"Writing output for latitude {latitude}...")
-        with rasterio.open(output_path, "w", **first_meta) as dest:
-            if nodata is not None:
-                dest.fill(nodata)
-            
-            for i in tqdm(range(mosaic.shape[0]), desc="Writing bands"):
-                dest.write(mosaic[i], i + 1)
-        
-        print(f"Successfully merged {len(file_list)} files to: {output_path}")
-        print(f"Final output size: {mosaic.shape}")
-        
-    except Exception as e:
-        print(f"Error processing latitude {latitude}: {e}")
-    
-    finally:
-        # Ensure all datasets are closed
-        for src in datasets:
-            if not src.closed:
-                src.close()
-
-# Usage
-if __name__ == "__main__":
-    input_folder = "/Users/long/Library/CloudStorage/GoogleDrive-yxlong@umn.edu/Shared drives/NatCapTEEMs/Files/base_data/submissions/coastal_carbon/GWL_FCS30D_2019"
-    output_folder = "/Users/long/Library/CloudStorage/GoogleDrive-yxlong@umn.edu/Shared drives/NatCapTEEMs/Files/base_data/submissions/coastal_carbon/GWL_2019_latitude"
-    
-    # Create output folder if it doesn't exist
-    os.makedirs(output_folder, exist_ok=True)
-    
-    # Merge files by latitude
-    merge_tif_files_by_latitude(input_folder, output_folder)
-
-
-
-#%%
-
-
-import rasterio
-from rasterio.merge import merge
-import os
-import glob
-from tqdm import tqdm
-import gc
-
-def merge_all_tifs_into_one(input_folder, output_file_path):
-    """
-    Simply merge all TIFF files in input folder into a single file.
-    """
-    # Get all TIFF files
-    tif_files = glob.glob(os.path.join(input_folder, "*.tif"))
-    tif_files.extend(glob.glob(os.path.join(input_folder, "*.tiff")))
-    
-    if not tif_files:
-        print("No TIFF files found!")
-        return
-    
-    print(f"Found {len(tif_files)} TIFF files to merge into one")
-    
-    # Check if output already exists
-    if os.path.exists(output_file_path):
-        print(f"✓ Merged file already exists: {output_file_path}")
-        return
-    
-    print("Merging all files into one...")
-    
-    # Use rasterio environment context manager
-    with rasterio.Env() as env:
-        datasets = []
-        try:
-            # Open all datasets
-            for file_path in tqdm(tif_files, desc="Opening files"):
-                ds = rasterio.open(file_path)
-                datasets.append(ds)
-            
-            # Get metadata from first dataset
-            meta = datasets[0].meta.copy()
-            nodata = meta.get('nodata', None)
-            
-            # Merge all files
-            mosaic, transform = merge(datasets, method='first', nodata=nodata)
-            
-            # Update metadata
-            meta.update({
-                "height": mosaic.shape[1],
-                "width": mosaic.shape[2],
-                "transform": transform,
-                "compress": "lzw"
-            })
-            
-            # Write output
-            with rasterio.open(output_file_path, "w", **meta) as dest:
-                if nodata is not None:
-                    dest.fill(nodata)
-                
-                for i in tqdm(range(mosaic.shape[0]), desc="Writing bands"):
-                    dest.write(mosaic[i], i + 1)
-            
-            print(f"✓ Successfully created merged file: {output_file_path}")
-            print(f"Final size: {mosaic.shape}")
-            
-        except Exception as e:
-            print(f"✗ Error merging files: {e}")
-            # Remove partial output file if error occurred
-            if os.path.exists(output_file_path):
-                try:
-                    os.remove(output_file_path)
-                    print("Removed partial output file")
-                except:
-                    pass
-        
-        finally:
-            # Close all datasets explicitly
-            print("Closing datasets...")
-            for i, ds in enumerate(datasets):
-                try:
-                    if not ds.closed:
-                        ds.close()
-                except Exception as e:
-                    print(f"Warning: Could not close dataset {i}: {e}")
-            
-            # Clear the list to help garbage collection
-            datasets.clear()
-            
-            # Force garbage collection
-            gc.collect()
-
-input_folder = "/Users/long/Library/CloudStorage/GoogleDrive-yxlong@umn.edu/Shared drives/NatCapTEEMs/Files/base_data/submissions/coastal_carbon/GWL_2019_latitude"
-    
-output_file_path = "/Users/long/Library/CloudStorage/GoogleDrive-yxlong@umn.edu/Shared drives/NatCapTEEMs/Files/base_data/submissions/coastal_carbon/GWL_2019.tif"
-    
-merge_all_tifs_into_one(input_folder, output_file_path)
-
-
-
-def merge_all_tifs_into_one_safe(input_folder, output_file_path):
-    """
-    Simply merge all TIFF files in input folder into a single file.
-    Uses context managers for all file operations.
-    """
-    # Get all TIFF files
-    tif_files = glob.glob(os.path.join(input_folder, "*.tif"))
-    tif_files.extend(glob.glob(os.path.join(input_folder, "*.tiff")))
-    
-    if not tif_files:
-        print("No TIFF files found!")
-        return
-    
-    print(f"Found {len(tif_files)} TIFF files to merge into one")
-    
-    # Check if output already exists
-    if os.path.exists(output_file_path):
-        print(f"✓ Merged file already exists: {output_file_path}")
-        return
-    
-    print("Merging all files into one...")
-    
-    # Use context managers for all dataset operations
-    try:
-        # Open all datasets using context managers in a list comprehension
-        with contextlib.ExitStack() as stack:
-            datasets = [stack.enter_context(rasterio.open(file_path)) 
-                       for file_path in tif_files]
-            
-            # Get metadata from first dataset
-            meta = datasets[0].meta.copy()
-            nodata = meta.get('nodata', None)
-            
-            # Merge all files
-            mosaic, transform = merge(datasets, method='first', nodata=nodata)
-            
-            # Update metadata
-            meta.update({
-                "height": mosaic.shape[1],
-                "width": mosaic.shape[2],
-                "transform": transform,
-                "compress": "lzw"
-            })
-            
-            # Write output
-            with rasterio.open(output_file_path, "w", **meta) as dest:
-                if nodata is not None:
-                    dest.fill(nodata)
-                
-                for i in tqdm(range(mosaic.shape[0]), desc="Writing bands"):
-                    dest.write(mosaic[i], i + 1)
-        
-        print(f"✓ Successfully created merged file: {output_file_path}")
-        print(f"Final size: {mosaic.shape}")
-        
-    except Exception as e:
-        print(f"✗ Error merging files: {e}")
-        # Remove partial output file if error occurred
-        if os.path.exists(output_file_path):
-            try:
-                os.remove(output_file_path)
-                print("Removed partial output file")
-            except:
-                pass
-
-
-#%%
-import rasterio
-import numpy as np
-import glob
-import os
-from tqdm import tqdm
-from rasterio.warp import reproject, Resampling
-
-def filter_global_raster_with_multiple_lulc(global_raster_path, lulc_input_folder, output_path, target_code=186):
-    """
-    Filters a global raster using multiple LULC maps (e.g., split by latitude).
-    It explicitly warps each LULC tile to the global raster's grid before masking, 
-    fixing the shape and dtype mismatch errors.
-
-    Args:
-        global_raster_path (str): Path to the primary global raster map.
-        lulc_input_folder (str): Folder containing all the LULC raster files.
-        output_path (str): Path to save the resulting filtered raster file.
-        target_code (int): The LULC code to filter by (default is 186).
-    """
-    
-    # 1. Setup and Initialization
-    lulc_files = glob.glob(os.path.join(lulc_input_folder, "*.tif"))
-    lulc_files.extend(glob.glob(os.path.join(lulc_input_folder, "*.tiff")))
-    lulc_files.sort()
-
-    if not lulc_files:
-        print("❌ No LULC TIFF files found in the specified folder!")
-        return
-        
-    print(f"Found {len(lulc_files)} LULC files to process.")
-    
-    # Open global raster ONCE and keep the handler (src) open
-    try:
-        global_src = rasterio.open(global_raster_path)
-        global_profile = global_src.profile
-        
-        # Get nodata value and set a sensible default if missing
-        nodata_val = global_src.nodata if global_src.nodata is not None else 0
-        global_profile.update({"nodata": nodata_val, "compress": "lzw"})
-        
-        # Initialize the output array with nodata values (memory efficient)
-        filtered_data = np.full(
-            (global_profile['count'], global_profile['height'], global_profile['width']), 
-            nodata_val,
-            dtype=global_profile['dtype']
-        )
-        
-    except Exception as e:
-        print(f"❌ Error during global raster initialization: {e}")
-        if 'global_src' in locals() and not global_src.closed:
-            global_src.close()
-        return
-    
-    # 2. Iteratively Apply Masks
-    for i, lulc_file in enumerate(tqdm(lulc_files[:2], desc="Applying LULC Masks")):
-        
-        try:
-            with rasterio.open(lulc_file) as lulc_src:
-                lulc_bounds = lulc_src.bounds
-                lulc_transform = lulc_src.transform
-                lulc_crs = lulc_src.crs
-                
-                # FIX: Access the dtype using lulc_src.profile['dtype'] for the destination array
-                lulc_dtype = lulc_src.profile['dtype'] 
-                
-                # Check for misalignment
-                if global_src.crs != lulc_src.crs:
-                    print(f"\n⚠️ Warning: CRS mismatch for {os.path.basename(lulc_file)}. Reprojection is necessary.")
-                
-                # Calculate the target geometry based on the global grid
-                lulc_window = global_src.window(*lulc_bounds)
-                out_transform = global_src.window_transform(lulc_window)
-                
-                out_height = lulc_window.height
-                out_width = lulc_window.width
-
-                # Initialize a temporary array for the warped LULC data
-                # Using the correctly retrieved lulc_dtype
-                warped_lulc_data = np.empty((1, out_height, out_width), dtype=lulc_dtype)
-                
-                # WARP/REPROJECT the LULC data to match the global slice's grid
-                reproject(
-                    source=rasterio.band(lulc_src, 1), 
-                    destination=warped_lulc_data,
-                    src_transform=lulc_transform,
-                    src_crs=lulc_crs,
-                    dst_transform=out_transform,
-                    dst_crs=global_src.crs,
-                    resampling=Resampling.nearest, # Use nearest for classification data
-                    num_threads=4 
-                )
-            
-            # 3. Create the Mask and Read the Global Slice
-            current_mask = (warped_lulc_data[0] == target_code)
-            global_slice = global_src.read(window=lulc_window)
-            
-            # 4. Update the Filtered Data in place
-            row_start, row_end = lulc_window.row_off, lulc_window.row_off + lulc_window.height
-            col_start, col_end = lulc_window.col_off, lulc_window.col_off + lulc_window.width
-
-            for band_idx in range(global_slice.shape[0]):
-                global_band_slice = global_slice[band_idx]
-                
-                # Apply the mask: True (186) keeps global data, False sets nodata
-                filtered_slice = np.where(current_mask, global_band_slice, nodata_val)
-                
-                # Write the result back to the correct location in the master array
-                filtered_data[band_idx, row_start:row_end, col_start:col_end] = filtered_slice
-        
-        except Exception as e:
-            # Catch the error and continue
-            print(f"\n❌ An error occurred during processing {os.path.basename(lulc_file)}: {e}")
-            continue
-            
-    # Close the global source file
-    global_src.close()
-    
-    # 3. Finalize and Write Output
-    print("\nWriting final filtered mosaic...")
-    try:
-        with rasterio.open(output_path, "w", **global_profile) as dest:
-            dest.write(filtered_data)
-        
-        print(f"✅ Successfully created filtered global map for code {target_code} at: {output_path}")
-
-    except Exception as e:
-        print(f"❌ Error writing output file: {e}")
-
-# --- Example Usage ---
-# NOTE: Replace these placeholder paths with your actual file paths
-global_map_file = "/Users/long/Library/CloudStorage/GoogleDrive-yxlong@umn.edu/Shared drives/NatCapTEEMs/Files/base_data/pyramids/ha_per_cell_10sec.tif"
-lulc_tiles_folder = "/Users/long/Library/CloudStorage/GoogleDrive-yxlong@umn.edu/Shared drives/NatCapTEEMs/Files/base_data/submissions/coastal_carbon/GWL_2019_latitude"
-output_result_file = "/Users/long/Library/CloudStorage/GoogleDrive-yxlong@umn.edu/Shared drives/NatCapTEEMs/Files/base_data/submissions/coastal_carbon/filtered_global_map_code_186.tif"
-
-# Execute the function
-filter_global_raster_with_multiple_lulc(
-    global_map_file, 
-    lulc_tiles_folder, 
-    output_result_file, 
-    target_code=186
-)
-
-
-#%%
-
-import os
-import glob
-import rasterio
-from rasterio.merge import merge
-import re
-from tqdm import tqdm
-import numpy as np
-import gc
-
-def extract_latitude_value(filename):
-    """
-    Extract numeric latitude value from filename for proper sorting.
-    """
-    n_pattern = r'N(\d+)'
-    s_pattern = r'S(\d+)'
-    
-    match = re.search(n_pattern, filename)
-    if match:
-        return int(match.group(1))
-    
-    match = re.search(s_pattern, filename)
-    if match:
-        return -int(match.group(1))
-    
-    return 0
-
-def get_latitude_files_sorted(input_folder):
-    """
-    Get all latitude files and sort them properly from South to North.
-    """
-    lat_files = glob.glob(os.path.join(input_folder, "*_N*.tif"))
-    lat_files.extend(glob.glob(os.path.join(input_folder, "*_S*.tif")))
-    lat_files.extend(glob.glob(os.path.join(input_folder, "*.tiff")))
-    
-    if not lat_files:
-        return []
-    
-    valid_files = []
-    for file_path in lat_files:
-        filename = os.path.basename(file_path)
-        lat_value = extract_latitude_value(filename)
-        if lat_value != 0:
-            valid_files.append((lat_value, file_path))
-    
-    valid_files.sort(key=lambda x: x[0])
-    return [file_path for _, file_path in valid_files]
-
-def merge_global_latitude_safe(input_folder, output_file_path, batch_size=2):
-    """
-    Safe version that merges latitude files in small batches to avoid memory issues.
-    """
-    lat_files = get_latitude_files_sorted(input_folder)
-    
-    if not lat_files:
-        print("No valid latitude files found!")
-        return
-    
-    print(f"Found {len(lat_files)} latitude files")
-    
-    if os.path.exists(output_file_path):
-        print(f"✓ Global map already exists: {output_file_path}")
-        return
-    
-    # Show file list
-    print("Files to process (South to North):")
-    for i, file_path in enumerate(lat_files):
-        filename = os.path.basename(file_path)
-        lat_value = extract_latitude_value(filename)
-        print(f"  {i+1:2d}. {filename} (lat: {lat_value:4d}°)")
-    
-    # If few files, merge directly
-    if len(lat_files) <= batch_size:
-        print("Merging files directly...")
-        return merge_files_directly(lat_files, output_file_path)
-    
-    print(f"Merging {len(lat_files)} files in batches of {batch_size}...")
-    
-    temp_files = []
-    temp_dir = os.path.dirname(output_file_path)
-    
-    try:
-        # Process in small batches
-        for i in range(0, len(lat_files), batch_size):
-            batch = lat_files[i:i + batch_size]
-            batch_num = i // batch_size + 1
-            total_batches = (len(lat_files) - 1) // batch_size + 1
-            
-            temp_file = os.path.join(temp_dir, f"temp_batch_{batch_num:03d}.tif")
-            temp_files.append(temp_file)
-            
-            print(f"\nProcessing batch {batch_num}/{total_batches} ({len(batch)} files)...")
-            
-            if os.path.exists(temp_file):
-                print("  Batch file exists, skipping")
-                continue
-            
-            success = merge_files_directly(batch, temp_file)
-            if not success:
-                print(f"  ✗ Failed to process batch {batch_num}")
-                return False
-            
-            # Force garbage collection
-            gc.collect()
-        
-        # Now merge all temporary batch files
-        print(f"\nMerging {len(temp_files)} batch files into final global map...")
-        success = merge_files_directly(temp_files, output_file_path)
-        
-        if success:
-            print(f"✓ Successfully created global map: {output_file_path}")
-            
-            # Clean up temporary files
-            print("Cleaning up temporary files...")
-            for temp_file in temp_files:
-                if os.path.exists(temp_file):
-                    os.remove(temp_file)
-                    print(f"  Removed: {os.path.basename(temp_file)}")
-        
-        return success
-        
-    except Exception as e:
-        print(f"✗ Error during batch processing: {e}")
-        return False
-
-def merge_files_directly(file_list, output_path):
-    """
-    Merge a list of files directly with memory management.
-    """
-    if len(file_list) == 1:
-        # Just copy the single file
-        try:
-            print(f"  Copying single file...")
-            with rasterio.open(file_list[0]) as src:
-                data = src.read()
-                meta = src.meta.copy()
-            
-            with rasterio.open(output_path, "w", **meta) as dest:
-                dest.write(data)
-            print(f"  ✓ Copied: {os.path.basename(file_list[0])}")
-            return True
-        except Exception as e:
-            print(f"  ✗ Error copying file: {e}")
-            return False
-    
-    datasets = []
-    try:
-        # Open all datasets
-        print(f"  Opening {len(file_list)} files...")
-        for file_path in file_list:
-            try:
-                datasets.append(rasterio.open(file_path))
-            except Exception as e:
-                print(f"  ✗ Error opening {os.path.basename(file_path)}: {e}")
-                continue
-        
-        if not datasets:
-            print("  ✗ No valid datasets to merge")
-            return False
-        
-        # Get metadata
-        meta = datasets[0].meta.copy()
-        nodata = meta.get('nodata', None)
-        
-        # Merge files
-        print("  Merging files...")
-        mosaic, transform = merge(
-            datasets,
-            method='first',
-            nodata=nodata
-        )
-        
-        # Update metadata
-        meta.update({
-            "height": mosaic.shape[1],
-            "width": mosaic.shape[2],
-            "transform": transform,
-            "compress": "lzw",
-            "nodata": nodata
-        })
-        
-        # Write output
-        print("  Writing output...")
-        with rasterio.open(output_path, "w", **meta) as dest:
-            if nodata is not None:
-                dest.fill(nodata)
-            
-            for i in tqdm(range(mosaic.shape[0]), desc="    Writing bands", leave=False):
-                dest.write(mosaic[i], i + 1)
-        
-        print(f"  ✓ Created: {os.path.basename(output_path)}")
-        print(f"    Size: {mosaic.shape}")
-        
-        # Calculate coverage
-        if nodata is not None:
-            total_pixels = mosaic[0].size
-            valid_pixels = np.sum(mosaic[0] != nodata)
-            coverage = (valid_pixels / total_pixels) * 100
-            print(f"    Coverage: {coverage:.1f}%")
-        
-        return True
-        
-    except Exception as e:
-        print(f"  ✗ Error merging files: {e}")
-        return False
-    
-    finally:
-        # Close all datasets and clean up memory
-        for ds in datasets:
-            if not ds.closed:
-                ds.close()
-        datasets.clear()
-        gc.collect()
-
-def create_global_map_step_by_step(input_folder, output_file_path):
-    """
-    Alternative approach: Build global map step by step, merging one file at a time.
-    This is the most memory-efficient method.
-    """
-    lat_files = get_latitude_files_sorted(input_folder)
-    
-    if not lat_files:
-        print("No valid latitude files found!")
-        return
-    
-    print(f"Found {len(lat_files)} latitude files")
-    
-    if os.path.exists(output_file_path):
-        print(f"✓ Global map already exists: {output_file_path}")
-        return
-    
-    # Start with first file
-    print("Building global map step by step...")
-    current_temp = os.path.join(os.path.dirname(output_file_path), "temp_current.tif")
-    
-    try:
-        # Copy first file as starting point
-        print(f"Step 1/{(len(lat_files)*2)-1}: Starting with {os.path.basename(lat_files[0])}")
-        with rasterio.open(lat_files[0]) as src:
-            data = src.read()
-            meta = src.meta.copy()
-        
-        with rasterio.open(current_temp, "w", **meta) as dest:
-            dest.write(data)
-        
-        # Merge remaining files one by one
-        for i, file_path in enumerate(lat_files[1:], 2):
-            print(f"Step {i}/{(len(lat_files)*2)-1}: Merging {os.path.basename(file_path)}")
-            
-            next_temp = os.path.join(os.path.dirname(output_file_path), f"temp_next_{i}.tif")
-            
-            datasets = []
-            try:
-                datasets.append(rasterio.open(current_temp))
-                datasets.append(rasterio.open(file_path))
-                
-                mosaic, transform = merge(datasets, method='first')
-                
-                meta = datasets[0].meta.copy()
-                nodata = meta.get('nodata')
-                meta.update({
-                    "height": mosaic.shape[1],
-                    "width": mosaic.shape[2],
-                    "transform": transform,
-                    "compress": "lzw",
-                    "nodata": nodata
-                })
-                
-                with rasterio.open(next_temp, "w", **meta) as dest:
-                    if nodata is not None:
-                        dest.fill(nodata)
-                    for band_idx in range(mosaic.shape[0]):
-                        dest.write(mosaic[band_idx], band_idx + 1)
-                
-                # Update current temp file
-                if os.path.exists(current_temp):
-                    os.remove(current_temp)
-                current_temp = next_temp
-                
-                print(f"  ✓ Progress: {i-1}/{len(lat_files)} files merged")
-                
-            finally:
-                for ds in datasets:
-                    if not ds.closed:
-                        ds.close()
-                gc.collect()
-        
-        # Rename final temp file to output
-        os.rename(current_temp, output_file_path)
-        print(f"✓ Successfully created global map: {output_file_path}")
-        
-    except Exception as e:
-        print(f"✗ Error during step-by-step merge: {e}")
-        # Clean up temporary files
-        for temp_file in glob.glob(os.path.join(os.path.dirname(output_file_path), "temp_*.tif")):
-            if os.path.exists(temp_file):
-                os.remove(temp_file)
-
-
-# Usage
-if __name__ == "__main__":
-    input_folder = "/Users/long/Library/CloudStorage/GoogleDrive-yxlong@umn.edu/Shared drives/NatCapTEEMs/Files/base_data/submissions/coastal_carbon/GWL_2019_latitude"
-    lulc_tiles_folder = "/Users/long/Library/CloudStorage/GoogleDrive-yxlong@umn.edu/Shared drives/NatCapTEEMs/Files/base_data/submissions/coastal_carbon/GWL_2019_latitude"
-    output_file = "/Users/long/Library/CloudStorage/GoogleDrive-yxlong@umn.edu/Shared drives/NatCapTEEMs/Files/base_data/submissions/coastal_carbon/GWL_2019.tif"
-    
-    # Create output directory if needed
-    os.makedirs(os.path.dirname(output_file), exist_ok=True)
-    
-    # Method 1: Direct merge (for smaller datasets)
-    merge_global_latitude_safe(input_folder, output_file)
-    
-    # Method 2: Safe batch merge (for larger datasets or if you get memory errors)
-    # merge_global_latitude_safe(input_folder, output_file, batch_size=3)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-#%%
-
-
-from osgeo import gdal
-import glob
-import os
-
-def merge_rasters_direct(input_folder, output_path):
-    # Find all TIFF files
-    tif_files = glob.glob(os.path.join(input_folder, "*.tif"))
-    
-    # Use gdal_merge.py functionality
-    gdal.Warp(output_path, tif_files[:10], format="GTiff")
-    
-    print(f"Merged raster saved to: {output_path}")
-
-merge_rasters_direct(input_folder, output_path)
-
-#%%
-
-import os
-import glob
-import rasterio
-from rasterio.merge import merge
-from tqdm import tqdm
-import gc
-import numpy as np # Needed for nodata fill
-
-def merge_tif_files(input_folder, output_path):
-    """
-    Merge TIFF files sequentially using rasterio.merge for minimal memory usage,
-    and correctly updating the mosaic and metadata in each step.
-    This also aims to minimize the final output file size by ensuring the merge
-    correctly calculates the minimal bounding box.
-    """
-    tif_files = glob.glob(os.path.join(input_folder, "*.tif"))
-    tif_files.extend(glob.glob(os.path.join(input_folder, "*.tiff")))
-
-    if not tif_files:
-        print("No TIFF files found!")
-        return
-
-    # Sort files to ensure deterministic merging order
-    tif_files.sort()
-
-    print(f"Found {len(tif_files)} TIFF files")
-    print("Processing files sequentially...")
-
-    # --- Initialization ---
-    first_file = tif_files[0]
-    print(f"Starting with: {os.path.basename(first_file)}")
-
-    # Store the list of datasets to be merged, starting with the first one
-    # Note: We open the file here and keep the dataset open for the initial meta/transform
-    datasets_to_merge = []
-    try:
-        # Open and keep the first dataset
-        first_src = rasterio.open(first_file)
-        datasets_to_merge.append(first_src)
-        current_meta = first_src.meta.copy()
-        current_nodata = current_meta.get('nodata', None)
-    except Exception as e:
-        print(f"Error opening initial file {first_file}: {e}")
-        return
-
-    # --- Sequential Merging ---
-    # Process remaining files one by one
-    for i, file in enumerate(tqdm(tif_files[1:9], desc="Merging files")): # Loop over ALL remaining files
-        try:
-            # Open the new dataset and add it to the list
-            new_src = rasterio.open(file)
-            datasets_to_merge.append(new_src)
-
-            # --- Perform Merge (The critical step) ---
-            # Using merge() on the list of datasets correctly calculates the union
-            # of all extents up to this point and creates the combined array.
-            # This is the most robust way to manage the extent growth.
-            mosaic, out_transform = merge(
-                datasets_to_merge,
-                method='first', # Or 'max', 'min', 'mean', 'last' - 'first' is common for simple mosaics
-                nodata=current_nodata
+        with rasterio.open(out_path, 'w', **out_meta) as dst:
+            rasterio.warp.reproject(
+                source=rasterio.band(src, 1),
+                destination=rasterio.band(dst, 1),
+                src_transform=src.transform,
+                src_crs=src.crs,
+                dst_transform=tmpl.transform,
+                dst_crs=tmpl.crs,
+                resampling=resampling_method,
             )
-
-            # Important: Close the dataset that was just merged, to free memory
-            # The list 'datasets_to_merge' keeps the *references* to the datasets
-            # which can hold memory, but the largest memory consumer is the 'mosaic' array itself.
-            # We only keep the list of open sources for the next merge iteration.
-            # To be truly memory efficient, we must use a different approach (e.g., VRT and then gdal_translate)
-            # but sticking to your current rasterio.merge approach:
-
-            # Note: The *most* memory efficient way would be to write the current mosaic to a temporary file
-            # and use that temporary file as the base for the next merge.
-            # Sticking to the in-memory array for simplicity:
-
-            current_mosaic = mosaic
-            current_transform = out_transform
-
-            # Force cleanup (Crucial for memory-efficient iteration)
-            del mosaic
-            gc.collect()
-
-        except Exception as e:
-            print(f"Error merging {os.path.basename(file)}: {e}")
-            # Ensure the problematic file is closed if it was opened
-            if 'new_src' in locals() and not new_src.closed:
-                new_src.close()
-            continue
-
-        # Print progress every 50 files
-        if (i + 1) % 50 == 0:
-            print(f"Processed {i + 2}/{len(tif_files)} files")
-
-    # Ensure all source files are closed before final write
-    for src in datasets_to_merge:
-        src.close()
-    
-    # --- Finalize and Write Output ---
-    if 'current_mosaic' not in locals():
-        print("Error: Merging failed or only one file was found.")
-        return
-
-    # Update final metadata
-    current_meta.update({
-        "height": current_mosaic.shape[1],
-        "width": current_mosaic.shape[2],
-        "transform": current_transform,
-        # Set compression to reduce file size (LZW is lossless and standard)
-        "compress": "lzw"
-    })
-    
-    # Write final output
-    print("Writing final output...")
-    try:
-        with rasterio.open(output_path, "w", **current_meta) as dest:
-            # Write 'nodata' value to areas not covered by any input data.
-            # This is essential for a clean mosaic.
-            if current_nodata is not None:
-                 # Fill any unwritten areas with the nodata value
-                 # In many cases, merge() does this, but it's a good safety step
-                 # if the initial array wasn't fully filled.
-                 dest.fill(current_nodata) 
-
-            for i in tqdm(range(current_mosaic.shape[0]), desc="Writing bands"):
-                # Use current_mosaic.astype(current_meta['dtype']) if data type issues arise
-                dest.write(current_mosaic[i], i + 1)
-        
-        print(f"Successfully merged {len(tif_files)} files to: {output_path}")
-        print(f"Final output size: {current_mosaic.shape}")
-
-    except Exception as e:
-        print(f"Error writing output file: {e}")
+    return out_path
 
 
+# ============================================================================
+# Per-country streaming carbon stock pass
+# ============================================================================
+
+def compute_carbon_stock_by_country(ecosystem_mask_path, country_id_raster_path,
+                                    ha_per_cell_path, density_func, country_ids,
+                                    chunk_rows=2048, extra_raster_paths=None):
+    """
+    Stream a global per-pixel carbon stock calculation aggregated per country.
+
+    For each row-block, computes density(latitude, **extras) x ha_per_cell x mask
+    and accumulates per-country totals via np.bincount.
+
+    Parameters
+    ----------
+    ecosystem_mask_path : str
+        Binary 0/1 mask aligned to ha_per_cell (any positive value is treated as 1).
+    country_id_raster_path : str
+        Integer country-id raster on the same grid (0 = nodata / outside).
+    ha_per_cell_path : str
+        Hectares-per-cell raster on the same grid; must have a geographic CRS.
+    density_func : callable
+        density_func(lat_array, **extras) -> dict with 'agb_c_mg_per_ha',
+        'bgb_c_mg_per_ha', 'soil_c_mg_per_ha', 'total_c_mg_per_ha'.
+    country_ids : iterable[int]
+        Set of valid country ids (used to size accumulators and order output rows).
+    chunk_rows : int
+        Row-block size to read per iteration.
+    extra_raster_paths : dict[str, str], optional
+        Mapping kwarg name -> raster path. Each raster must be aligned to the
+        ha_per_cell grid (use align_raster_to_template). The block is read per
+        chunk and passed as a kwarg to density_func.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Columns: eemarine_r566_id, agb_c_total_mg, bgb_c_total_mg,
+        soil_c_total_mg, total_c_total_mg.
+    """
+    country_ids = np.asarray(list(country_ids), dtype=np.int64)
+    max_id = int(country_ids.max()) + 1
+    extra_raster_paths = extra_raster_paths or {}
+
+    with contextlib.ExitStack() as stack:
+        src_ha = stack.enter_context(rasterio.open(ha_per_cell_path))
+        src_mask = stack.enter_context(rasterio.open(ecosystem_mask_path))
+        src_cid = stack.enter_context(rasterio.open(country_id_raster_path))
+        extra_srcs = {
+            name: stack.enter_context(rasterio.open(path))
+            for name, path in extra_raster_paths.items()
+        }
+
+        if not src_ha.crs.is_geographic:
+            raise ValueError(
+                f"ha_per_cell raster must be in a geographic CRS (degrees); got {src_ha.crs}"
+            )
+        height, width = src_ha.height, src_ha.width
+        transform = src_ha.transform
+
+        agb_sum = np.zeros(max_id, dtype=np.float64)
+        bgb_sum = np.zeros(max_id, dtype=np.float64)
+        soil_sum = np.zeros(max_id, dtype=np.float64)
+        total_sum = np.zeros(max_id, dtype=np.float64)
+
+        for row_off in tqdm(
+            range(0, height, chunk_rows),
+            desc=f"Stock {os.path.basename(ecosystem_mask_path)}",
+        ):
+            rows = min(chunk_rows, height - row_off)
+            window = rasterio.windows.Window(0, row_off, width, rows)
+            mask_arr = src_mask.read(1, window=window)
+            if mask_arr.sum() == 0:
+                continue
+            ha_arr = src_ha.read(1, window=window).astype(np.float64)
+            cid_arr = src_cid.read(1, window=window)
+
+            row_indices = np.arange(row_off, row_off + rows)
+            lats_col = np.array(
+                [rasterio.transform.xy(transform, r, 0, offset='center')[1]
+                 for r in row_indices],
+                dtype=np.float64,
+            )
+            lat_arr = np.broadcast_to(lats_col[:, None], (rows, width))
+
+            valid = (mask_arr > 0) & (cid_arr > 0) & (ha_arr > 0)
+            if not valid.any():
+                continue
+
+            extras = {}
+            for name, src in extra_srcs.items():
+                arr = src.read(1, window=window).astype(np.float64)
+                if src.nodata is not None:
+                    arr = np.where(arr == src.nodata, np.nan, arr)
+                extras[name] = arr
+
+            d = density_func(lat_arr, **extras)
+            ha_v = ha_arr[valid]
+            cid_v = cid_arr[valid].astype(np.int64)
+
+            agb_pix = ha_v * d['agb_c_mg_per_ha'][valid]
+            bgb_pix = ha_v * d['bgb_c_mg_per_ha'][valid]
+            soil_pix = ha_v * np.nan_to_num(d['soil_c_mg_per_ha'][valid], nan=0.0)
+            total_pix = agb_pix + bgb_pix + soil_pix
+
+            agb_sum += np.bincount(cid_v, weights=agb_pix, minlength=max_id)
+            bgb_sum += np.bincount(cid_v, weights=bgb_pix, minlength=max_id)
+            soil_sum += np.bincount(cid_v, weights=soil_pix, minlength=max_id)
+            total_sum += np.bincount(cid_v, weights=total_pix, minlength=max_id)
+
+    rows_out = []
+    for cid in country_ids:
+        cid_i = int(cid)
+        rows_out.append({
+            'eemarine_r566_id': cid_i,
+            'agb_c_total_mg': agb_sum[cid_i],
+            'bgb_c_total_mg': bgb_sum[cid_i],
+            'soil_c_total_mg': soil_sum[cid_i],
+            'total_c_total_mg': total_sum[cid_i],
+        })
+    return pd.DataFrame(rows_out)
 
 
-#%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+# ============================================================================
+# Per-ecosystem stock orchestrators
+# ============================================================================
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-#%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-def convert_uint_to_float_raster(
-        input_path,
-        output_path,
-        scale_factor=0.1,
-        compress="lzw"
+def compute_mangrove_carbon_stock_with_sanderman(
+    project_dir,
+    mangrove_mask_path,
+    country_id_raster_path,
+    ha_per_cell_path,
+    country_ids,
+    sanderman_soc_path=None,
+    precipitation_path=None,
 ):
     """
-    Read unsigned integer GeoTIFF, scale values, and write as float32 GeoTIFF.
+    Single-call orchestrator for per-pixel mangrove carbon stock by country.
 
-    Parameters
-    ----------
-    input_path : str
-        Path to the input uint raster.
-    output_path : str
-        Path to save the output float32 raster.
-    scale_factor : float
-        The multiplier to scale the values (e.g., 0.1).
-    compress : str
-        Compression method for output (default: 'lzw').
+    Aligns Sanderman 2018 SOC and (optionally) a precipitation raster onto the
+    ha_per_cell grid (cached on disk under project_dir), then streams a global
+    carbon stock pass.
     """
-    with rasterio.open(input_path) as src:
-        profile = src.profile.copy()
-        dtype = np.dtype(src.dtypes[0])
+    extra_raster_paths = {}
 
-        if not np.issubdtype(dtype, np.unsignedinteger):
-            raise ValueError("Input raster must have unsigned integer dtype.")
+    if sanderman_soc_path and os.path.exists(sanderman_soc_path):
+        soc_aligned = os.path.join(project_dir, "sanderman_soc_aligned_10sec.tif")
+        align_raster_to_template(sanderman_soc_path, ha_per_cell_path, soc_aligned,
+                                 resampling='average', dtype='float32')
+        extra_raster_paths['soc_arr'] = soc_aligned
+        print(f"  Mangrove SOC source: Sanderman 2018 raster ({sanderman_soc_path})")
+    else:
+        print("  Mangrove SOC source: latitude step function fallback")
 
-        # Determine nodata value
-        nodata = src.nodata if src.nodata is not None else np.iinfo(dtype).max
+    if precipitation_path and os.path.exists(precipitation_path):
+        precip_aligned = os.path.join(project_dir, "precipitation_aligned_10sec.tif")
+        align_raster_to_template(precipitation_path, ha_per_cell_path, precip_aligned,
+                                 resampling='average', dtype='float32')
+        extra_raster_paths['precipitation_arr'] = precip_aligned
+        print(f"  Mangrove BGB ratio: IPCC zones using precipitation ({precipitation_path})")
+    else:
+        print("  Mangrove BGB ratio: latitude-only IPCC zones (tropics treated as wet)")
 
-        # Update output profile
-        profile.update({
-            "dtype": "float32",
-            "nodata": np.nan,
-            "compress": compress
-        })
-
-        with rasterio.open(output_path, "w", **profile) as dst:
-            windows = list(src.block_windows(1))
-
-            for idx, window in tqdm(windows, desc="Scaling raster blocks"):
-                block = src.read(1, window=window)
-                block = np.where(block == nodata, np.nan, block)
-                block_scaled = block * scale_factor
-                dst.write(block_scaled.astype("float32"), 1, window=window)
-
-    gc.collect()
-    print(f"Saved scaled float32 raster to: {output_path}")
-
-
-def combine_two_float_rasters(
-    raster1_path,
-    raster2_path,
-    out_path,
-    operation=lambda a, b: a + b,  # Default operation: addition
-    fill_value=np.nan,
-    compress="lzw"
-):
-    """
-    Combine two float32 raster maps using a specified operation (e.g., addition),
-    handle fill values, and write the result to a new raster file.
-
-    Parameters
-    ----------
-    raster1_path : str
-        Path to the first input raster.
-    raster2_path : str
-        Path to the second input raster.
-    out_path : str
-        Path to the output raster file.
-    operation : callable
-        A function that takes two arrays and returns their combination (default: addition).
-    fill_value : float
-        NoData value to ignore in computations (default: np.nan).
-    compress : str
-        Compression method for the output raster (default: 'lzw').
-    """
-    with rasterio.open(raster1_path) as src1, rasterio.open(raster2_path) as src2:
-        if src1.shape != src2.shape:
-            raise ValueError("Input rasters must have the same dimensions.")
-
-        profile = src1.profile.copy()
-        profile.update({
-            "dtype": "float32",
-            "nodata": fill_value,
-            "compress": compress
-        })
-
-        with rasterio.open(out_path, "w", **profile) as dst:
-            windows = list(src1.block_windows(1))
-
-            for _, window in tqdm(windows, desc="Combining raster blocks"):
-                b1 = src1.read(1, window=window)
-                b2 = src2.read(1, window=window)
-
-                mask1 = np.isnan(b1) if np.isnan(fill_value) else (b1 == fill_value)
-                mask2 = np.isnan(b2) if np.isnan(fill_value) else (b2 == fill_value)
-
-                b1_clean = np.where(mask1, 0, b1)
-                b2_clean = np.where(mask2, 0, b2)
-
-                del b1, b2
-                gc.collect()
-
-                combined = operation(b1_clean, b2_clean)
-                combined[mask1 & mask2] = fill_value
-
-                del mask1, mask2, b1_clean, b2_clean
-                gc.collect()
-
-                dst.write(combined.astype("float32"), 1, window=window)
-
-                # Explicit memory cleanup
-                gc.collect()
-
-    gc.collect()
-    print(f"Combined raster saved to: {out_path}")
-
-
-
-def reproject_raster(
-    input_path,
-    reference_path,
-    output_path,
-    compress="lzw",
-    chunks={"x": 1024, "y": 1024},
-    overwrite=False
-    ):
-    """
-    Reproject a raster to match the CRS, resolution, and extent of a reference raster.
-
-    Parameters
-    ----------
-    input_path : str
-        Path to the raster to reproject.
-    reference_path : str
-        Path to the reference raster.
-    output_path : str
-        Path to save the reprojected raster.
-    compress : str
-        Compression method for output (default: 'lzw').
-    chunks : dict
-        Chunk size for Dask loading (default: {"x": 1024, "y": 1024}).
-    overwrite : bool
-        Whether to overwrite an existing file.
-    """
-    if os.path.exists(output_path) and not overwrite:
-        raise FileExistsError(f"{output_path} exists. Use overwrite=True to replace it.")
-
-    ref = rxr.open_rasterio(reference_path, masked=True, chunks=chunks).squeeze("band", drop=True)
-    target = rxr.open_rasterio(input_path, masked=True, chunks=chunks).squeeze("band", drop=True)
-
-    reprojected = target.rio.reproject_match(ref)
-
-    reprojected.rio.to_raster(
-        output_path,
-        compress=compress,
-        tiled=True,
-        blockxsize=256,
-        blockysize=256
+    return compute_carbon_stock_by_country(
+        ecosystem_mask_path=mangrove_mask_path,
+        country_id_raster_path=country_id_raster_path,
+        ha_per_cell_path=ha_per_cell_path,
+        density_func=calculate_mangrove_density_array,
+        country_ids=country_ids,
+        extra_raster_paths=extra_raster_paths,
     )
 
-    print(f"Reprojected raster saved to: {output_path}")
-    del ref, target, reprojected
-    gc.collect()
 
-
-def stack_layers_to_csv(
-    group_layer1_path,
-    group_layer2_path,
-    value_layer_path,
-    output_path="stacked_summary.csv",
-    num_slices=100,
-    group1_name="group1",
-    group2_name="group2",
-    value_name="value"
+def compute_salt_marsh_carbon_stock_with_maxwell(
+    project_dir,
+    salt_marsh_mask_path,
+    country_id_raster_path,
+    ha_per_cell_path,
+    country_ids,
+    maxwell_soc_path=None,
 ):
     """
-    Stack three raster layers, summarize the third by grouping over the first two, and write to CSV.
+    Single-call orchestrator for per-pixel salt marsh carbon stock by country.
 
-    Parameters
-    ----------
-    group_layer1_path : str
-        Path to the first grouping raster layer.
-    group_layer2_path : str
-        Path to the second grouping raster layer.
-    value_layer_path : str
-        Path to the value raster layer to be summarized.
-    output_path : str
-        Output CSV file path.
-    num_slices : int
-        Number of vertical slices to process in chunks.
-    group1_name : str
-        Column name for the first group layer.
-    group2_name : str
-        Column name for the second group layer.
-    value_name : str
-        Column name for the value layer.
+    Aligns the Maxwell et al. 2024 MarSOC raster onto the ha_per_cell grid
+    (cached on disk under project_dir), then streams a global carbon stock pass.
     """
-    print("Loading raster layers...")
-    layer1 = rxr.open_rasterio(group_layer1_path, masked=True, chunks={"x": 1024, "y": 1024}).squeeze("band")
-    layer2 = rxr.open_rasterio(group_layer2_path, masked=True, chunks={"x": 1024, "y": 1024}).squeeze("band")
-    layer3 = rxr.open_rasterio(value_layer_path, masked=True, chunks={"x": 1024, "y": 1024}).squeeze("band")
-    gc.collect()
+    extra_raster_paths = {}
 
-    layers = [layer1, layer2, layer3]
-    layer_names = [group1_name, group2_name, value_name]
-    group_cols = layer_names[:-1]
-    value_col = layer_names[-1]
+    if maxwell_soc_path and os.path.exists(maxwell_soc_path):
+        soc_aligned = os.path.join(project_dir, "maxwell_marsoc_aligned_10sec.tif")
+        align_raster_to_template(maxwell_soc_path, ha_per_cell_path, soc_aligned,
+                                 resampling='average', dtype='float32')
+        extra_raster_paths['soc_arr'] = soc_aligned
+        print(f"  Salt marsh SOC source: Maxwell 2024 MarSOC raster ({maxwell_soc_path})")
+    else:
+        print("  Salt marsh SOC source: latitude step function fallback")
 
-    total_width = layer1.sizes["x"]
-    step = total_width // num_slices
-    dfs = []
-
-    print("Processing raster slices...")
-    for i in tqdm(range(num_slices), desc="Slicing and summarizing"):
-        x_start = i * step
-        x_end = (i + 1) * step if i < (num_slices - 1) else total_width
-
-        try:
-            sliced_layers = [layer.isel(x=slice(x_start, x_end)) for layer in layers]
-            flattened = [sl.values.reshape(-1).astype("float32") for sl in sliced_layers]
-
-            if len(set(arr.shape[0] for arr in flattened)) != 1:
-                print(f"Skipping slice {i + 1} due to shape mismatch.")
-                continue
-
-            stacked = da.stack(flattened, axis=1)
-            df = dd.from_dask_array(stacked, columns=layer_names)
-            df_pd = df.compute().dropna(subset=group_cols + [value_col])
-
-            if df_pd.empty:
-                continue
-
-            summary = df_pd.groupby(group_cols)[value_col].agg(
-                mean="mean",
-                min="min",
-                max="max",
-                count="count"
-            ).reset_index()
-
-            dfs.append(summary)
-            del df_pd, summary, df, stacked, flattened
-            gc.collect()
-
-        except Exception as e:
-            print(f"Slice {i + 1} failed: {e}")
-            continue
-
-    if dfs:
-        final = pd.concat(dfs)
-        final["weighted_sum"] = final["mean"] * final["count"]
-        final_summary = (
-            final.groupby(group_cols, as_index=False)
-            .agg({
-                "weighted_sum": "sum",
-                "count": "sum",
-                "min": "min",
-                "max": "max"
-            })
-        )
-
-        # Calculate final weighted mean
-        final_summary["mean"] = final_summary["weighted_sum"] / final_summary["count"]
-
-        # Clean up and reorder
-        final_summary = final_summary[[group1_name, group2_name, "mean", "min", "max", "count"]]
-        final_summary = final_summary.rename(columns={
-            "mean": f"{value_col}_mean",
-            "min": f"{value_col}_min",
-            "max": f"{value_col}_max",
-            "count": f"{value_col}_count"
-        })
-        final_summary.to_csv(output_path, index=False)
-        print(f"Summary written to: {output_path}")
-
-
-def generate_carbon_density_raster(lulc_path, cz_path, carbon_density_lookup_table_path, out_path):
-    """
-    Generate a carbon density raster by mapping carbon zone and LULC combinations
-    to values from a carbon lookup table.
-
-    Parameters
-    ----------
-    lulc_path : str
-        Path to the land use land cover (LULC) raster.
-    cz_path : str
-        Path to the carbon zone raster.
-    carbon_density_lookup_table_path : str
-        Path to CSV file containing the carbon density lookup table,
-        indexed by carbon_zone_id with columns for LULC types.
-    out_path : str
-        Output path for the resulting carbon density raster.
-    """
-    # Read lookup table from CSV
-
-    carbon_table = pd.read_csv(carbon_density_lookup_table_path, index_col=False)
-
-    lulc_filename = os.path.basename(lulc_path)
-
-    with rasterio.open(lulc_path) as lulc_src, rasterio.open(cz_path) as cz_src:
-        assert lulc_src.shape == cz_src.shape, f"Shape mismatch between rasters: {lulc_filename}"
-
-        profile = lulc_src.profile
-        profile.update(dtype=rasterio.float32, nodata=np.nan)
-
-        block_indices = list(lulc_src.block_windows(1))
-
-        with rasterio.open(out_path, "w", **profile) as out_dst:
-            for ji, window in tqdm(block_indices, desc=f"Processing {lulc_filename}"):
-                try:
-                    lulc_block = lulc_src.read(1, window=window)
-                    carbon_zone_block = cz_src.read(1, window=window)
-                except rasterio.errors.RasterioIOError as e:
-                    print(f"Skipping corrupt tile in {lulc_filename} at {window}: {e}")
-                    continue
-
-                carbon_block = np.full_like(lulc_block, np.nan, dtype=np.float32)
-
-                for carbon_zone_id in np.unique(carbon_zone_block):
-                    for lulc_id in np.unique(lulc_block):
-                        # Filter the lookup table for the matching carbon zone and lulc
-                        match = carbon_table[
-                            (carbon_table["carbon_zone_id"] == carbon_zone_id) &
-                            (carbon_table["lulc_id"] == lulc_id)
-                            ]
-
-                        # Skip if no match found
-                        if match.empty:
-                            continue
-
-                        value = match["carbon_density_mean"].values[0]
-
-                        mask = (carbon_zone_block == carbon_zone_id) & (lulc_block == lulc_id)
-                        carbon_block[mask] = value
-
-                out_dst.write(carbon_block, 1, window=window)
-
-    gc.collect()
-    print(f"Saved: {out_path}")
-
-def summarize_raster_by_region(value_raster_path, region_boundary_path, out_path):
-    """
-    Summarize value raster by polygon regions from a vector file (e.g., GPKG).
-    Includes mean, min, max, count, and area (m², ha, km²) for each region.
-
-    Parameters
-    ----------
-    value_raster_path : str
-        Path to the value raster (e.g., carbon density).
-    region_boundary_path : str
-        Path to the vector file (GeoPackage) containing polygon regions.
-    out_csv_path : str
-        Output path for the CSV summary.
-    """
-    # Load vector data
-    regions = gpd.read_file(region_boundary_path)
-
-    # Open the raster once
-    with rasterio.open(value_raster_path) as src:
-        raster_crs = src.crs
-        if regions.crs != raster_crs:
-            print(f"Reprojecting vector data from {regions.crs} to match raster CRS {raster_crs}")
-            regions = regions.to_crs(raster_crs)
-
-        results = []
-        id_list = []
-        for idx, row in tqdm(regions.iterrows(), total=len(regions), desc="Summarizing polygons"):
-            geom = [row.geometry]
-            id_list.append(row.get("id", idx))
-            try:
-                masked, _ = mask(src, geom, crop=True, nodata=np.nan, all_touched=True)
-                values = masked[0]
-                values = values[~np.isnan(values)]
-
-                area_m2 = values.size
-
-                stats = {
-                    "index_id": row.get("id", idx),
-                    "mean": values.mean(),
-                    "min": values.min(),
-                    "max": values.max(),
-                    "count": values.size,
-                    "total": values.sum()
-                }
-                results.append(stats)
-
-            except Exception as e:
-                print(f"Error processing region {idx}: {e}")
-                continue
-    regions["index_id"] =id_list
-    df = pd.DataFrame(results)
-    df = regions.merge(df, on="index_id", how="right")
-    df = df.drop(columns=["index_id","geometry"])
-    df['year'] = '2019'
-    df.to_csv(out_path, index=False)
-    print(f"Summary written to: {out_path}")
+    return compute_carbon_stock_by_country(
+        ecosystem_mask_path=salt_marsh_mask_path,
+        country_id_raster_path=country_id_raster_path,
+        ha_per_cell_path=ha_per_cell_path,
+        density_func=calculate_salt_marsh_density_array,
+        country_ids=country_ids,
+        extra_raster_paths=extra_raster_paths,
+    )

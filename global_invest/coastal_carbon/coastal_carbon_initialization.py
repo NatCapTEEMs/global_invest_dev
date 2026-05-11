@@ -3,53 +3,111 @@ import hazelbean as hb
 
 from global_invest.coastal_carbon import coastal_carbon_tasks
 
+
 def initialize_paths(p):
-    p.df_countries = pd.read_csv(p.df_countries_csv_path)
+    """Initialize path references."""
+    p.df_countries = pd.read_csv(p.df_countries_marine_csv_path)
 
-    # Notice optimization here: the GDFs are still just path_strings. hb.read_vector takes the string as an input and converts it to a GeoDataFrame when needed.
-    p.gdf_countries = p.gdf_countries_vector_path
-    p.gdf_countries_simplified = p.gdf_countries_vector_simplified_path
+    # Notice optimization here: the GDFs are still just path_strings
+    p.gdf_countries = p.gdf_countries_marine_vector_path
+    p.gdf_countries_simplified = p.gdf_countries_marine_vector_path
 
-    # p.gdf_countries = hb.read_vector(p.gdf_countries_vector_path)  # Read the vector file for the countries.
-    # p.countries_simplified_gdf = hb.read_vector(p.countries_simplified_vector_path)  # Read the vector file for the countries.
 
-def build_gep_service_calculation_task_tree(p):
-    """Build the default task tree for terrestrial carbon."""
-    p.task_convert_carbon_density_maps_dtype = p.add_task(coastal_carbon_tasks.task_convert_carbon_density_maps_dtype)
-    p.task_combine_two_carbon_density_maps = p.add_task(coastal_carbon_tasks.task_combine_two_carbon_density_maps)
-    p.task_reproject_total_carbon_density = p.add_task(coastal_carbon_tasks.task_reproject_total_carbon_density)
-    p.task_compute_carbon_density_table = p.add_task(coastal_carbon_tasks.task_compute_carbon_density_table)
-    p.task_generate_carbon_density_raster_base_year = p.add_task(coastal_carbon_tasks.task_generate_carbon_density_raster_base_year)
-    p.task_generate_carbon_density_raster_per_cell_base_year = p.add_task(coastal_carbon_tasks.task_generate_carbon_density_raster_per_cell_base_year)
-    p.task_summarize_carbon_by_region = p.add_task(coastal_carbon_tasks.task_summarize_carbon_by_region)
-    p.task_gep_calculation = p.add_task(coastal_carbon_tasks.gep_calculation)
+# ============================================================================
+# Per-ecosystem task trees
+#
+# Each ecosystem flow follows the same three-step pattern:
+#   1. Area within countries  (rasterize extent, intersect with EEZ, sum ha)
+#   2. Carbon stock           (per-pixel density x ha, sum to country)
+#   3. Storage value          (stock x rental SCC for the base year)
+# ============================================================================
+
+def build_mangrove_carbon_calculation_task_tree(p):
+    """Add mangrove area, stock, and storage-value tasks to the task tree."""
+    p.task_calculate_mangrove_area = p.add_task(
+        coastal_carbon_tasks.task_calculate_mangrove_area_within_countries
+    )
+    p.task_calculate_mangrove_carbon_stock = p.add_task(
+        coastal_carbon_tasks.task_calculate_mangrove_carbon_stock
+    )
+    p.task_calculate_mangrove_storage_value = p.add_task(
+        coastal_carbon_tasks.task_calculate_mangrove_storage_value
+    )
+    return p
+
+
+def build_marsh_carbon_calculation_task_tree(p):
+    """Add salt marsh area, stock, and storage-value tasks to the task tree."""
+    p.task_calculate_salt_marsh_area = p.add_task(
+        coastal_carbon_tasks.task_calculate_salt_marsh_area_within_countries
+    )
+    p.task_calculate_salt_marsh_carbon_stock = p.add_task(
+        coastal_carbon_tasks.task_calculate_salt_marsh_carbon_stock
+    )
+    p.task_calculate_salt_marsh_storage_value = p.add_task(
+        coastal_carbon_tasks.task_calculate_salt_marsh_storage_value
+    )
+    return p
+
+
+def build_seagrass_carbon_calculation_task_tree(p):
+    """
+    Add seagrass area, stock, and storage-value tasks to the task tree.
+
+    Seagrass tasks are currently stubs that print a NotImplemented notice and
+    return early. To activate, replace the stubs in coastal_carbon_tasks.py
+    with real implementations following the mangrove or salt marsh pattern.
+    """
+    p.task_calculate_seagrass_area = p.add_task(
+        coastal_carbon_tasks.task_calculate_seagrass_area_within_countries
+    )
+    p.task_calculate_seagrass_carbon_stock = p.add_task(
+        coastal_carbon_tasks.task_calculate_seagrass_carbon_stock
+    )
+    p.task_calculate_seagrass_storage_value = p.add_task(
+        coastal_carbon_tasks.task_calculate_seagrass_storage_value
+    )
+    return p
+
+
+# ============================================================================
+# Composite trees
+# ============================================================================
+
+def build_gep_service_calculation_task_tree(p, include_seagrass=False):
+    """
+    Build the full coastal carbon GEP calculation task tree.
+
+    Composes the per-ecosystem trees (mangrove + salt marsh, with seagrass
+    optional) and appends the cross-ecosystem combine + GEP tasks.
+
+    Parameters
+    ----------
+    p : hb.ProjectFlow
+    include_seagrass : bool
+        If True, append the seagrass stub tree. Defaults to False since the
+        seagrass tasks are not yet implemented.
+    """
+    build_mangrove_carbon_calculation_task_tree(p)
+    build_marsh_carbon_calculation_task_tree(p)
+    if include_seagrass:
+        build_seagrass_carbon_calculation_task_tree(p)
+
+    # Cross-ecosystem aggregation
+    p.task_combine_ecosystem_areas = p.add_task(
+        coastal_carbon_tasks.task_combine_ecosystem_areas
+    )
+    p.task_gep_calculation = p.add_task(
+        coastal_carbon_tasks.gep_calculation
+    )
 
     return p
 
 
-def build_gep_service_task_tree(p):
-    """If you just want to load results, eg for reporting, this task tree inspects a different task tree and to learn paths and then loads results."""
-
-
-    # QUESTION!!!! If a task truly already inspects itself to not rerun, what's the difference between loading and just executing the tree on
-    # an existing project? The difference is that load will do more error checking and FAIL rather than recalculate if it didn't find, also reporting
-    # that it didn't find it and giving information about how to put the data in so it does find it in the base data or a manually-built project data.
-    # I might want to have methods for automatically putting an archive into the right spot and also extended functionality for finding results in base_data
-    # and functionality for promoting project results to base data per the new documentation in ee_dev.
-    # Actually, maybe it's just that load_results is more useful for notebooks?
-
-    p = build_gep_service_calculation_task_tree(p)
-    p.coastal_carbon_gep_result_task = p.add_task(coastal_carbon_tasks.gep_result)
-
-
-# def build_gep_task_tree(p):
-#     """
-#     Build the default task tree forthe GEP application of commercial agriculture. In this case, it's very similar to the standard task tree
-#     but i've included it here for consistency with other models.
-#     """
-#     p.coastal_carbon_gep_preprocess_task = p.add_task(coastal_carbon_tasks.gep_preprocess, parent=p.coastal_carbon_task)
-#     p.coastal_carbon_gep_calculation_task = p.add_task(coastal_carbon_tasks.gep_calculation, parent=p.coastal_carbon_task)
-#     p.coastal_carbon_gep_result_task = p.add_task(coastal_carbon_tasks.gep_result, parent=p.coastal_carbon_task)
-#     p.coastal_carbon_gep_results_distribution_task = p.add_task(coastal_carbon_tasks.gep_results_distribution, parent=p.coastal_carbon_task)
-#     return p
-
+def build_gep_service_task_tree(p, include_seagrass=False):
+    """Full calculation tree plus the Quarto results task."""
+    p = build_gep_service_calculation_task_tree(p, include_seagrass=include_seagrass)
+    p.coastal_carbon_gep_result_task = p.add_task(
+        coastal_carbon_tasks.gep_result
+    )
+    return p
