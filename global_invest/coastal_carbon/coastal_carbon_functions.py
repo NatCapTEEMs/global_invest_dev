@@ -69,13 +69,15 @@ def calculate_mangrove_density_array(latitude_arr, precipitation_arr=None,
     bgb_c = bgb_t_per_ha * MANGROVE_BGB_TO_C
 
     if soc_arr is not None:
-        soc = soc_arr.astype(np.float64)
+        # Scale Sanderman 1 m data to 20 cm assuming linear depth profile
+        soc = soc_arr.astype(np.float64) * 0.2
     else:
-        soc = np.full_like(lat_abs, 250.0, dtype=np.float64)
-        soc = np.where(lat_abs < 25, 300.0, soc)
-        soc = np.where(lat_abs < 20, 350.0, soc)
-        soc = np.where(lat_abs < 15, 375.0, soc)
-        soc = np.where(lat_abs < 10, 400.0, soc)
+        # Fallback step function scaled from 1 m to 20 cm (multiply by 0.2)
+        soc = np.full_like(lat_abs, 50.0, dtype=np.float64)  # was 250
+        soc = np.where(lat_abs < 25, 60.0, soc)   # was 300
+        soc = np.where(lat_abs < 20, 70.0, soc)   # was 350
+        soc = np.where(lat_abs < 15, 75.0, soc)   # was 375
+        soc = np.where(lat_abs < 10, 80.0, soc)   # was 400
 
     return {
         'agb_c_mg_per_ha':   agb_c,
@@ -115,12 +117,14 @@ def calculate_salt_marsh_density_array(latitude_arr, soc_arr=None):
     bgb_c = bgb_t_per_ha * SALT_MARSH_BGB_TO_C
 
     if soc_arr is not None:
-        soc = soc_arr.astype(np.float64)
+        # Scale MarSOC to 20 cm assuming linear depth profile
+        soc = soc_arr.astype(np.float64) * 0.2
     else:
-        soc = np.full_like(lat_abs, 350.0, dtype=np.float64)
-        soc = np.where(lat_abs < 45, 250.0, soc)
-        soc = np.where(lat_abs < 35, 220.0, soc)
-        soc = np.where(lat_abs < 20, 180.0, soc)
+        # Fallback step function scaled from 1 m to 20 cm (multiply by 0.2)
+        soc = np.full_like(lat_abs, 70.0, dtype=np.float64)   # was 350
+        soc = np.where(lat_abs < 45, 50.0, soc)   # was 250
+        soc = np.where(lat_abs < 35, 44.0, soc)   # was 220
+        soc = np.where(lat_abs < 20, 36.0, soc)   # was 180
 
     return {
         'agb_c_mg_per_ha':   agb_c,
@@ -151,7 +155,7 @@ SEAGRASS_GENUS_TOTAL_BIOMASS_C_MG_HA = {
 SEAGRASS_DEFAULT_BIOMASS_C_MG_HA = 1.55  # Gomis 2025 global mean
 SEAGRASS_BGB_FRACTION = 0.70
 SEAGRASS_AGB_FRACTION = 0.30
-SEAGRASS_SOIL_C_MG_HA_1M = 70.0  # Fourqurean 2012 22 Mg/ha at 20 cm scaled to 1 m
+SEAGRASS_SOIL_C_MG_HA_20CM = 22.0  # Fourqurean 2012 global mean for top 20 cm
 SEAGRASS_NON_MARINE_GENERA = frozenset({
     'Valisneria', 'Trapa', 'Myriophyllum', 'Najas', 'Heteranthera',
     'Stuckenia', 'Utricularia',
@@ -184,7 +188,7 @@ def calculate_seagrass_pool_densities_array(genus_array):
     Vectorised per-pool seagrass densities (Mg C/ha) for an array of genus strings.
     Non-marine genera (freshwater plants) are zeroed out across all pools so the
     caller can join by row index without dropping records. Soil density is a
-    constant (Fourqurean 2012 scaled to 1 m).
+    constant (Fourqurean 2012 global mean for top 20 cm).
     """
     n = len(genus_array)
     agb = np.zeros(n, dtype=np.float64)
@@ -196,7 +200,7 @@ def calculate_seagrass_pool_densities_array(genus_array):
             continue
         agb[i] = biomass * SEAGRASS_AGB_FRACTION
         bgb[i] = biomass * SEAGRASS_BGB_FRACTION
-        soil[i] = SEAGRASS_SOIL_C_MG_HA_1M
+        soil[i] = SEAGRASS_SOIL_C_MG_HA_20CM
     return {
         'agb_c_mg_per_ha':   agb,
         'bgb_c_mg_per_ha':   bgb,
