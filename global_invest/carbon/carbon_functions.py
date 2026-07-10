@@ -19,6 +19,7 @@ import pandas as pd
 import numpy as np
 from tqdm import tqdm
 import geopandas as gpd
+import hazelbean as hb
 
 
 # =============================================================================
@@ -149,45 +150,30 @@ def reproject_raster(
     reference_path,
     output_path,
     compress="lzw",
-    chunks={"x": 1024, "y": 1024},
-    overwrite=False
+    chunks=None,          # kept for signature compatibility; hazelbean handles chunking internally
+    overwrite=False,
+    resample_method="near",
     ):
     """
-    Reproject a raster to match the CRS, resolution, and extent of a reference raster.
+    Resample/reproject a raster to match the CRS, resolution and extent of a reference
+    raster, via hazelbean (rule #127: geospatial ops go through hb, not raw rioxarray/gdal).
 
-    Parameters
-    ----------
-    input_path : str
-        Path to the raster to reproject.
-    reference_path : str
-        Path to the reference raster.
-    output_path : str
-        Path to save the reprojected raster.
-    compress : str
-        Compression method for output (default: 'lzw').
-    chunks : dict
-        Chunk size for Dask loading (default: {"x": 1024, "y": 1024}).
-    overwrite : bool
-        Whether to overwrite an existing file.
+    resample_method defaults to "near" to preserve the values-as-built behaviour of the prior
+    `rioxarray.reproject_match` (which defaulted to nearest). ⚠ If switching to "bilinear" for
+    continuous density, do it alongside a lookup-rebuild + diff against the current base_data
+    lookup — the choice changes the per-(class,zone) means.
     """
     if os.path.exists(output_path) and not overwrite:
         raise FileExistsError(f"{output_path} exists. Use overwrite=True to replace it.")
 
-    ref = rxr.open_rasterio(reference_path, masked=True, chunks=chunks).squeeze("band", drop=True)
-    target = rxr.open_rasterio(input_path, masked=True, chunks=chunks).squeeze("band", drop=True)
-
-    reprojected = target.rio.reproject_match(ref)
-
-    reprojected.rio.to_raster(
+    hb.resample_to_match(
+        input_path,
+        reference_path,
         output_path,
-        compress=compress,
-        tiled=True,
-        blockxsize=256,
-        blockysize=256
+        resample_method=resample_method,
+        compress=bool(compress),
     )
-
     print(f"Reprojected raster saved to: {output_path}")
-    del ref, target, reprojected
     gc.collect()
 
 
