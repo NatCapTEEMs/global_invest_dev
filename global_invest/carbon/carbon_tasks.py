@@ -174,12 +174,40 @@ def task_compute_carbon_shock(p):
     import geopandas as gpd
 
     base_scn  = getattr(p, 'carbon_shock_base_scenario', 'baseline_ignore_dependencies')
-    base_year = getattr(p, 'carbon_shock_base_year', 2023)
+    base_year = getattr(p, 'carbon_shock_base_year', 2020)
     end_year  = getattr(p, 'carbon_shock_end_year', 2050)
-    endw_col  = getattr(p, 'carbon_shock_endw_col', 'ENDW')
-    reg_col   = getattr(p, 'carbon_shock_reg_col', 'REG')
+    endw_col  = getattr(p, 'carbon_shock_endw_col', 'aez18_id')            # GTAP r50xAEZ18 defaults
+    reg_col   = getattr(p, 'carbon_shock_reg_col', 'gtapv7_r50_label')
     val_col   = getattr(p, 'carbon_shock_value_col', 'mean')
     acts      = getattr(p, 'carbon_shock_acts', 'FRS')
+    endw_fmt  = getattr(p, 'carbon_shock_endw_format', 'AEZ%d')            # int id -> 'AEZ1'..'AEZ18'
+
+    # Standard GTAP-carbon inputs default here (Spawn density, r50xAEZ18 boundary, observed 2020 base
+    # map); the caller overrides only when different, so project wiring stays a couple of lines.
+    if not getattr(p, 'region_boundary_path', None):
+        p.region_boundary_path = p.get_path('gtap_invest/region_boundaries/ee_r50_aez18_correspondence.gpkg')
+    if not getattr(p, 'carbon_zones_path', None):
+        p.carbon_zones_path = p.get_path('carbon_storage', 'carbon_zones_rasterized.tif')
+    if not getattr(p, 'carbon_density_lookup_table_path', None):
+        p.carbon_density_lookup_table_path = p.get_path('carbon_storage', 'carbon_density_lookup_seals7_spawn.csv')
+    base_lulc = getattr(p, 'carbon_shock_base_lulc', None) or p.get_path('carbon_storage', 'lulc_seals7_2020_from_esa.tif')
+
+    # Resolve the LULC map per scenario by globbing carbon_lulc_path_template ({scenario}/{year}
+    # placeholders) when the caller didn't pre-build scenario_lulc_paths. Globbing lives here so a
+    # project passes only a template string, not a path-building task; base_year uses base_lulc.
+    scenarios = list(getattr(p, 'carbon_shock_scenarios', []))
+    if not getattr(p, 'scenario_lulc_paths', None):
+        import glob
+        tmpl = p.carbon_lulc_path_template
+        paths = {}
+        for scen in [base_scn] + scenarios:
+            hits = glob.glob(tmpl.format(scenario=scen, year=end_year))
+            if hits:
+                paths.setdefault(scen, {})[end_year] = hits[0]
+        paths.setdefault(base_scn, {})[base_year] = base_lulc
+        p.scenario_lulc_paths = paths
+    if not scenarios:
+        scenarios = [s for s in p.scenario_lulc_paths if s != base_scn]
 
     def zone_mean(scenario, year):
         dens = os.path.join(p.cur_dir, 'carbon_density_%s_%d.tif' % (scenario, year))
@@ -197,7 +225,6 @@ def task_compute_carbon_shock(p):
     # summarize_raster_by_region keys each row by row.get("id", idx) and DROPS empty zones,
     # so map + align on region_id, never on row position.
     regions = gpd.read_file(p.region_boundary_path)
-    endw_fmt = getattr(p, 'carbon_shock_endw_format', None)   # e.g. 'AEZ%d' when the id column is an int
     def _fmt(v):
         return (endw_fmt % int(v)) if endw_fmt is not None else v
     labels = {r.get('id', i): (_fmt(r[endw_col]), r[reg_col]) for i, r in regions.iterrows()}
@@ -207,7 +234,7 @@ def task_compute_carbon_shock(p):
     n_years = end_year - base_year
 
     rows = []
-    for scenario in p.carbon_shock_scenarios:
+    for scenario in scenarios:
         scn = zone_mean(scenario, end_year)
         zids = base_by.index.intersection(base_ey.index).intersection(scn.index)
         shock_ey = (scn.loc[zids] - base_ey.loc[zids]) / base_by.loc[zids].replace(0, np.nan) * 100.0
