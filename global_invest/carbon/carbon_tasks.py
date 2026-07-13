@@ -174,8 +174,8 @@ def task_compute_carbon_shock(p):
     import geopandas as gpd
 
     base_scn  = getattr(p, 'carbon_shock_base_scenario', 'baseline_ignore_dependencies')
-    base_year = getattr(p, 'carbon_shock_base_year', 2020)
-    end_year  = getattr(p, 'carbon_shock_end_year', 2050)
+    base_year = int(p.carbon_shock_base_year)     # interp 0-anchor, set by the caller from config
+    end_year  = int(p.carbon_shock_end_year)      # last anchor, set by the caller from config
     endw_col  = getattr(p, 'carbon_shock_endw_col', 'aez18_id')            # GTAP r50xAEZ18 defaults
     reg_col   = getattr(p, 'carbon_shock_reg_col', 'gtapv7_r50_label')
     val_col   = getattr(p, 'carbon_shock_value_col', 'mean')
