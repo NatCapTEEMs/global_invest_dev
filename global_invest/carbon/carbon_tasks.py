@@ -190,11 +190,9 @@ def task_compute_carbon_shock(p):
         p.carbon_zones_path = p.get_path('carbon_storage', 'carbon_zones_rasterized.tif')
     if not getattr(p, 'carbon_density_lookup_table_path', None):
         p.carbon_density_lookup_table_path = p.get_path('carbon_storage', 'carbon_density_lookup_seals7_spawn.csv')
-    base_lulc = getattr(p, 'carbon_shock_base_lulc', None) or p.get_path('carbon_storage', 'lulc_seals7_2020_from_esa.tif')
-
     # Resolve the LULC map per scenario by globbing carbon_lulc_path_template ({scenario}/{year}
     # placeholders) when the caller didn't pre-build scenario_lulc_paths. Globbing lives here so a
-    # project passes only a template string, not a path-building task; base_year uses base_lulc.
+    # project passes only a template string, not a path-building task.
     scenarios = list(getattr(p, 'carbon_shock_scenarios', []))
     if not getattr(p, 'scenario_lulc_paths', None):
         import glob
@@ -204,7 +202,6 @@ def task_compute_carbon_shock(p):
             hits = glob.glob(tmpl.format(scenario=scen, year=end_year))
             if hits:
                 paths.setdefault(scen, {})[end_year] = hits[0]
-        paths.setdefault(base_scn, {})[base_year] = base_lulc
         p.scenario_lulc_paths = paths
     if not scenarios:
         scenarios = [s for s in p.scenario_lulc_paths if s != base_scn]
