@@ -149,3 +149,78 @@ def task_summarize_carbon_density_by_region(p):
         region_boundary_path=p.region_boundary_path,
         out_path=p.carbon_density_by_region_path)
     return result
+
+
+def task_compute_carbon_shock(p):
+    """Turn per-scenario 300 m LULC into a carbon ES-productivity shock -- region-agnostic.
+
+    For the baseline scenario at base_year and end_year, and each scenario at end_year, build
+    a carbon-density raster (generate_carbon_density_raster) and take its mean tC/ha per polygon
+    of p.region_boundary_path (summarize_raster_by_region -- untouched, generic; the polygon
+    geometry is identical across scenarios, so the mean is sufficient and area cancels). The
+    shock is (mean_scenario - mean_baseline) / mean_base_year * 100 per zone, linearly
+    interpolated base_year -> end_year. Emits an aoall table keyed by the boundary's ENDW/REG
+    columns and p.carbon_shock_acts. The only region-specific knowledge is the column names,
+    supplied by the caller via p; nothing GTAP-specific is hardcoded.
+
+    Caller sets on p: scenario_lulc_paths {scenario: {year: path}}, carbon_shock_scenarios,
+    region_boundary_path, carbon_zones_path, carbon_density_lookup_table_path,
+    carbon_shock_output_path. Optional: carbon_shock_{base_scenario, base_year, end_year,
+    endw_col, reg_col, value_col, acts}.
+    """
+    if not p.run_this:
+        return
+    import pandas as pd
+    import geopandas as gpd
+
+    base_scn  = getattr(p, 'carbon_shock_base_scenario', 'baseline_ignore_dependencies')
+    base_year = getattr(p, 'carbon_shock_base_year', 2023)
+    end_year  = getattr(p, 'carbon_shock_end_year', 2050)
+    endw_col  = getattr(p, 'carbon_shock_endw_col', 'ENDW')
+    reg_col   = getattr(p, 'carbon_shock_reg_col', 'REG')
+    val_col   = getattr(p, 'carbon_shock_value_col', 'mean')
+    acts      = getattr(p, 'carbon_shock_acts', 'FRS')
+
+    def zone_mean(scenario, year):
+        dens = os.path.join(p.cur_dir, 'carbon_density_%s_%d.tif' % (scenario, year))
+        if not os.path.exists(dens):
+            carbon_functions.generate_carbon_density_raster(
+                lulc_path=p.scenario_lulc_paths[scenario][year],
+                cz_path=p.carbon_zones_path,
+                carbon_density_lookup_table_path=p.carbon_density_lookup_table_path,
+                out_path=dens)
+        summ = os.path.join(p.cur_dir, 'carbon_by_zone_%s_%d.csv' % (scenario, year))
+        if not os.path.exists(summ):
+            carbon_functions.summarize_raster_by_region(dens, p.region_boundary_path, summ)
+        return pd.read_csv(summ).set_index('region_id')[val_col]
+
+    # summarize_raster_by_region keys each row by row.get("id", idx) and DROPS empty zones,
+    # so map + align on region_id, never on row position.
+    regions = gpd.read_file(p.region_boundary_path)
+    endw_fmt = getattr(p, 'carbon_shock_endw_format', None)   # e.g. 'AEZ%d' when the id column is an int
+    def _fmt(v):
+        return (endw_fmt % int(v)) if endw_fmt is not None else v
+    labels = {r.get('id', i): (_fmt(r[endw_col]), r[reg_col]) for i, r in regions.iterrows()}
+
+    base_by = zone_mean(base_scn, base_year)
+    base_ey = zone_mean(base_scn, end_year)
+    n_years = end_year - base_year
+
+    rows = []
+    for scenario in p.carbon_shock_scenarios:
+        scn = zone_mean(scenario, end_year)
+        zids = base_by.index.intersection(base_ey.index).intersection(scn.index)
+        shock_ey = (scn.loc[zids] - base_ey.loc[zids]) / base_by.loc[zids].replace(0, np.nan) * 100.0
+        for zid, s in shock_ey.items():
+            if not np.isfinite(s) or zid not in labels:
+                continue
+            endw, reg = labels[zid]
+            for year in range(base_year, end_year + 1):
+                rows.append({'ENDW': endw, 'ACTS': acts, 'REG': reg, 'scenario': scenario,
+                             'year': year, 'shock_pct': s * (year - base_year) / n_years})
+
+    out = pd.DataFrame(rows)
+    out.to_csv(p.carbon_shock_output_path, index=False)
+    print('  carbon shock: %d rows, %d scenarios -> %s'
+          % (len(out), out['scenario'].nunique() if rows else 0, p.carbon_shock_output_path))
+    return True
