@@ -229,15 +229,15 @@ def task_compute_carbon_shock(p):
         return (endw_fmt % int(v)) if endw_fmt is not None else v
     labels = {r.get('id', i): (_fmt(r[endw_col]), r[reg_col]) for i, r in regions.iterrows()}
 
-    base_by = zone_mean(base_scn, base_year)
-    base_ey = zone_mean(base_scn, end_year)
+    base_ey = zone_mean(base_scn, end_year)              # baseline at the anchor year -- also the denominator
     n_years = end_year - base_year
 
     rows = []
     for scenario in scenarios:
         scn = zone_mean(scenario, end_year)
-        zids = base_by.index.intersection(base_ey.index).intersection(scn.index)
-        shock_ey = (scn.loc[zids] - base_ey.loc[zids]) / base_by.loc[zids].replace(0, np.nan) * 100.0
+        zids = base_ey.index.intersection(scn.index)
+        # /base_Y: normalise by the SAME-year baseline (contemporaneous Value-of-Nature %), not a fixed base year
+        shock_ey = (scn.loc[zids] - base_ey.loc[zids]) / base_ey.loc[zids].replace(0, np.nan) * 100.0
         for zid, s in shock_ey.items():
             if not np.isfinite(s) or zid not in labels:
                 continue
