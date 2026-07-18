@@ -206,6 +206,22 @@ def task_compute_carbon_shock(p):
     if not scenarios:
         scenarios = [s for s in p.scenario_lulc_paths if s != base_scn]
 
+    # generate_carbon_density_raster asserts LULC and carbon-zones share a grid. The zones raster is
+    # global 300 m; a SEALS LULC map may be a sub-window (single-country or short-horizon test AOI).
+    # When they differ, align the zones to the end-year LULC extent once -- same resolution and an
+    # aligned grid, so nearest is a lossless clip -- so the task works at any extent, not only global.
+    import hazelbean as hb
+    from osgeo import gdal
+    def _yx(path):
+        ds = gdal.Open(path)
+        return (ds.RasterYSize, ds.RasterXSize)
+    _ref_lulc = p.scenario_lulc_paths[base_scn][end_year]
+    if _yx(p.carbon_zones_path) != _yx(_ref_lulc):
+        _aligned_cz = os.path.join(p.cur_dir, 'carbon_zones_aligned.tif')
+        if not os.path.exists(_aligned_cz):
+            hb.resample_to_match(p.carbon_zones_path, _ref_lulc, _aligned_cz, resample_method='near')
+        p.carbon_zones_path = _aligned_cz
+
     def zone_mean(scenario, year):
         dens = os.path.join(p.cur_dir, 'carbon_density_%s_%d.tif' % (scenario, year))
         if not os.path.exists(dens):
