@@ -154,18 +154,21 @@ def task_summarize_carbon_density_by_region(p):
 def task_compute_carbon_shock(p):
     """Turn per-scenario 300 m LULC into a carbon ES-productivity shock -- region-agnostic.
 
-    For the baseline scenario at base_year and end_year, and each scenario at end_year, build
-    a carbon-density raster (generate_carbon_density_raster) and take its mean tC/ha per polygon
-    of p.region_boundary_path (summarize_raster_by_region -- untouched, generic; the polygon
-    geometry is identical across scenarios, so the mean is sufficient and area cancels). The
-    shock is (mean_scenario - mean_baseline) / mean_base_year * 100 per zone, linearly
-    interpolated base_year -> end_year. Emits an aoall table keyed by the boundary's ENDW/REG
-    columns and p.carbon_shock_acts. The only region-specific knowledge is the column names,
+    At each SEALS anchor year in carbon_shock_years (5-year MAgPIE steps), build a carbon-density
+    raster (generate_carbon_density_raster) for the baseline scenario and each scenario, and take
+    its mean tC/ha per polygon of p.region_boundary_path (summarize_raster_by_region -- untouched,
+    generic; the polygon geometry is identical across scenarios, so the mean is sufficient and area
+    cancels). The shock at year Y is (mean_scenario_Y - mean_baseline_Y) / mean_baseline_Y * 100 per
+    zone (contemporaneous /base_Y = the GTAP shock, column `shock_pct`), piecewise-linearly interpolated
+    across the anchor years (0 at base_year). ALSO emits a fixed-base measure (column `shock_pct_fixedbase`)
+    = same numerator / baseline density at base_year -- the "Value of Nature" % of base-year value, for
+    comparability with pollination (denominator decision). Emits an aoall table keyed by the boundary's ENDW/REG columns and p.carbon_shock_acts. The only region-specific knowledge is the column names,
     supplied by the caller via p; nothing GTAP-specific is hardcoded.
 
-    Caller sets on p: scenario_lulc_paths {scenario: {year: path}}, carbon_shock_scenarios,
+    Caller sets on p: carbon_shock_years (SEALS anchor years, from seals_years),
+    scenario_lulc_paths {scenario: {year: path}} or carbon_lulc_path_template, carbon_shock_scenarios,
     region_boundary_path, carbon_zones_path, carbon_density_lookup_table_path,
-    carbon_shock_output_path. Optional: carbon_shock_{base_scenario, base_year, end_year,
+    carbon_shock_output_path. Optional: carbon_shock_{base_scenario, base_year,
     endw_col, reg_col, value_col, acts}.
     """
     if not p.run_this:
@@ -173,9 +176,10 @@ def task_compute_carbon_shock(p):
     import pandas as pd
     import geopandas as gpd
 
-    base_scn  = getattr(p, 'carbon_shock_base_scenario', 'baseline_ignore_dependencies')
-    base_year = int(p.carbon_shock_base_year)     # interp 0-anchor, set by the caller from config
-    end_year  = int(p.carbon_shock_end_year)      # last anchor, set by the caller from config
+    base_scn     = getattr(p, 'carbon_shock_base_scenario', 'baseline_ignore_dependencies')
+    base_year    = int(p.carbon_shock_base_year)          # interp 0-anchor, set by the caller from config
+    anchor_years = sorted(y for y in map(int, p.carbon_shock_years) if y > base_year)  # SEALS anchors (seals_years)
+    end_year     = anchor_years[-1]
     endw_col  = getattr(p, 'carbon_shock_endw_col', 'aez18_id')            # GTAP r50xAEZ18 defaults
     reg_col   = getattr(p, 'carbon_shock_reg_col', 'gtapv7_r50_label')
     val_col   = getattr(p, 'carbon_shock_value_col', 'mean')
@@ -197,12 +201,10 @@ def task_compute_carbon_shock(p):
     if not getattr(p, 'scenario_lulc_paths', None):
         import glob
         tmpl = p.carbon_lulc_path_template
-        paths = {}
-        for scen in [base_scn] + scenarios:
-            hits = glob.glob(tmpl.format(scenario=scen, year=end_year))
-            if hits:
-                paths.setdefault(scen, {})[end_year] = hits[0]
-        p.scenario_lulc_paths = paths
+        p.scenario_lulc_paths = {
+            scen: {y: glob.glob(tmpl.format(scenario=scen, year=y))[0]
+                   for y in anchor_years if glob.glob(tmpl.format(scenario=scen, year=y))}
+            for scen in [base_scn] + scenarios}
     if not scenarios:
         scenarios = [s for s in p.scenario_lulc_paths if s != base_scn]
 
@@ -242,25 +244,61 @@ def task_compute_carbon_shock(p):
         return (endw_fmt % int(v)) if endw_fmt is not None else v
     labels = {r.get('id', i): (_fmt(r[endw_col]), r[reg_col]) for i, r in regions.iterrows()}
 
-    base_ey = zone_mean(base_scn, end_year)              # baseline at the anchor year -- also the denominator
-    n_years = end_year - base_year
+    # per-anchor-year zone means; shock_Y = (scenario_Y - baseline_Y)/baseline_Y * 100 (contemporaneous /base_Y),
+    # then piecewise-linear interp to annual values (0 at base_year) -- one computed point per SEALS map year.
+    all_years = list(range(base_year, end_year + 1))
+    base_by_year = {y: zone_mean(base_scn, y) for y in anchor_years}
+
+    # FIXED-BASE denominator: baseline carbon density at the base year (the "Value of Nature"
+    # reference, % of base-year value). At base_year every scenario shares the observed base map,
+    # so this is just that map's zone means. Emitted ALONGSIDE the contemporaneous shock so carbon
+    # and pollination are comparable on the fixed-base measure (denominator decision). Degrades to
+    # NaN if the caller supplied no base map, so shock_pct is never affected.
+    #
+    # Prefer a carbon-specific SEALS7 base map (carbon_shock_base_year_lulc_path) over the generic
+    # base_year_lulc_path: the density lookup is keyed on SEALS7 classes, so a raw-ESA base map would
+    # yield all-NaN densities. Align it to the scenario grid first, exactly as the zones raster is
+    # aligned above -- same res/origin makes 'near' a lossless clip (and the only correct method for
+    # categorical LULC), so a global base map over an AOI sub-window works too.
+    base_at_base = None
+    _base_map = getattr(p, 'carbon_shock_base_year_lulc_path', None) or getattr(p, 'base_year_lulc_path', None)
+    if _base_map:
+        _base_map = _base_map if os.path.isabs(_base_map) else p.get_path(_base_map)
+        if _yx(_base_map) != _yx(_ref_lulc):
+            _aligned_base = os.path.join(p.cur_dir, 'lulc_base_year_aligned.tif')
+            if not os.path.exists(_aligned_base):
+                hb.resample_to_match(_base_map, _ref_lulc, _aligned_base, resample_method='near')
+            _base_map = _aligned_base
+        p.scenario_lulc_paths.setdefault(base_scn, {}).setdefault(base_year, _base_map)
+        base_at_base = zone_mean(base_scn, base_year)
 
     rows = []
     for scenario in scenarios:
-        scn = zone_mean(scenario, end_year)
-        zids = base_ey.index.intersection(scn.index)
-        # /base_Y: normalise by the SAME-year baseline (contemporaneous Value-of-Nature %), not a fixed base year
-        shock_ey = (scn.loc[zids] - base_ey.loc[zids]) / base_ey.loc[zids].replace(0, np.nan) * 100.0
-        for zid, s in shock_ey.items():
-            if not np.isfinite(s) or zid not in labels:
+        scn_by_year = {y: zone_mean(scenario, y) for y in anchor_years}
+        num = {y: (scn_by_year[y] - base_by_year[y]) for y in anchor_years}  # shared numerator
+        # (1) contemporaneous /base_Y -- the GTAP shock (unchanged behaviour)
+        anchor_contemp = pd.DataFrame({
+            y: num[y] / base_by_year[y].replace(0, np.nan) * 100.0 for y in anchor_years}).dropna()
+        # (2) fixed-base /base_{base_year} -- reporting/comparability measure
+        anchor_fixed = (pd.DataFrame({
+            y: num[y] / base_at_base.replace(0, np.nan) * 100.0 for y in anchor_years}).dropna()
+            if base_at_base is not None else None)
+        for zid, s in anchor_contemp.iterrows():
+            if zid not in labels:
                 continue
             endw, reg = labels[zid]
-            for year in range(base_year, end_year + 1):
+            annual_c = np.interp(all_years, [base_year] + anchor_years, [0.0] + list(s.values))
+            if anchor_fixed is not None and zid in anchor_fixed.index:
+                annual_f = np.interp(all_years, [base_year] + anchor_years,
+                                     [0.0] + list(anchor_fixed.loc[zid].values))
+            else:
+                annual_f = [np.nan] * len(all_years)
+            for year, vc, vf in zip(all_years, annual_c, annual_f):
                 rows.append({'ENDW': endw, 'ACTS': acts, 'REG': reg, 'scenario': scenario,
-                             'year': year, 'shock_pct': s * (year - base_year) / n_years})
+                             'year': year, 'shock_pct': vc, 'shock_pct_fixedbase': vf})
 
     out = pd.DataFrame(rows)
     out.to_csv(p.carbon_shock_output_path, index=False)
-    print('  carbon shock: %d rows, %d scenarios -> %s'
-          % (len(out), out['scenario'].nunique() if rows else 0, p.carbon_shock_output_path))
+    print('  carbon shock: %d rows, %d scenarios (shock_pct=/base_Y, shock_pct_fixedbase=/base_%d) -> %s'
+          % (len(out), out['scenario'].nunique() if rows else 0, base_year, p.carbon_shock_output_path))
     return True
