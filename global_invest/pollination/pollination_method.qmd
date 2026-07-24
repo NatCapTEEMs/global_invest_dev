@@ -1,0 +1,72 @@
+---
+title: "Pollination ecosystem-service shock"
+format: html
+---
+
+## Purpose
+
+Turn the pipeline's own 300 m SEALS land-use maps into a per-region, per-year **pollination
+productivity shock** for the crop sectors (`V_F`, `OSD`), so the economic model responds to the
+pollinator habitat each scenario actually produces rather than to a frozen table.
+
+The science is William Sidemo-Holm's `crop_benefits` package, imported unchanged. This module only
+drives it per scenario on our maps and aggregates the result to GTAP regions.
+
+## Method
+
+For each scenario, at each SEALS anchor year:
+
+1. **Sufficiency (300 m).** For every cropland pixel, count natural-habitat pixels within a ~2 km
+   latitude-adjusted elliptical kernel and normalise against a 30 % habitat threshold, giving a
+   0–1 sufficiency index (≥30 % habitat nearby → 1; 15 % → 0.5; none → 0). SEALS7 classes: cropland
+   = 2, natural habitat = {3, 4, 5}. The ellipse (rather than a circle) keeps the foraging radius
+   ~2 km on the ground as longitude degrees shorten away from the equator.
+
+2. **Stable cropland.** Sufficiency is computed only on pixels that are cropland in **both** the
+   baseline and the scenario map. This isolates the change in pollinator support on continuously
+   farmed land and excludes land that converted into or out of cropland, matching the original
+   PNAS/InVEST `pollination_shock()` treatment. Each scenario therefore produces its own paired
+   baseline raster as well as its own scenario raster.
+
+3. **Aggregate to 5 km.** Average the 300 m index onto the CropGrids 5 km grid (over stable-ag
+   sub-pixels only), the resolution at which crop production and value are known.
+
+4. **Value.** Multiply 5 km sufficiency by the fixed global pollination-value raster
+   (`poll_value_global_<base_year>usd.tif`, pollination-dependent crop value). The value raster is
+   the same in every scenario, so all scenario variation enters through sufficiency.
+
+5. **Difference.** Scenario value minus paired-baseline value, on the 5 km grid.
+
+6. **Regional shock.** Area-weighted zonal aggregation to GTAP r50 × AEZ18 zones:
+   `(Σ difference × area) / (Σ baseline value × area) × 100`, i.e. the percentage change in
+   supported pollination value per zone.
+
+7. **Nature effect.** Subtract the corresponding value for the `baseline_ignore_damages` scenario,
+   so the shock isolates the nature signal rather than the shared climate/land trend.
+
+8. **Annual series.** The per-anchor-year shocks are interpolated piecewise-linearly
+   (`numpy.interp`) to annual values, anchored at 0 in the base year (all scenarios share the
+   base-year land, so the shock is zero there by construction). Computing at every SEALS anchor
+   year — rather than only at the horizon — lets the series follow non-linear land trajectories
+   instead of assuming a single straight ramp.
+
+## Output
+
+`pollination_interpolated.csv` with columns `ENDW, ACTS, REG, scenario, year, shock_pct`, written
+into the `prepare_es_shocks` directory. This is the same handoff file the static path produces, so
+the downstream `build_combined_afeall_cc_es` step consumes it unchanged and is agnostic to whether
+the shock was computed dynamically or read from a precomputed table.
+
+## Inputs
+
+| Input | Source |
+|---|---|
+| Scenario LULC (300 m, SEALS7) | pipeline's stitched SEALS maps, one per scenario × anchor year |
+| Baseline LULC (300 m, SEALS7) | pipeline's SEALS7 base-year map |
+| `poll_value_global_<base_year>usd.tif` | `crop_benefits` precomputed baseline value raster |
+| `country_m49_cropgrids_grid.tif` | 5 km CropGrids grid template |
+| `ee_r50_aez18_correspondence.gpkg` | GTAP r50 × AEZ18 region boundaries |
+
+The FAO / CropGrids / Monfreda tabular stages of `crop_benefits` are **not** run here: they exist to
+build the baseline value raster, which is fixed across scenarios, so the finished raster is used
+directly.
