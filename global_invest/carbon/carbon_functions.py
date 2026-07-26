@@ -313,8 +313,8 @@ def generate_carbon_density_raster(lulc_path, cz_path, carbon_density_lookup_tab
     cz_path : str
         Path to the carbon zone raster.
     carbon_density_lookup_table_path : str
-        Path to CSV file containing the carbon density lookup table,
-        indexed by carbon_zone_id with columns for LULC types.
+        Path to a long/tidy CSV with one row per (carbon_zone_id, lulc_id) and a single
+        carbon_density_mean value column (NOT a wide table indexed by carbon_zone_id).
     out_path : str
         Output path for the resulting carbon density raster.
     """
@@ -377,7 +377,7 @@ def summarize_raster_by_region(value_raster_path, region_boundary_path, out_path
         Path to the value raster (e.g., carbon density).
     region_boundary_path : str
         Path to the vector file (GeoPackage) containing polygon regions.
-    out_csv_path : str
+    out_path : str
         Output path for the CSV summary.
     """
     # Load vector data

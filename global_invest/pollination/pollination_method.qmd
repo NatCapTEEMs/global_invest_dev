@@ -53,9 +53,9 @@ For each scenario, at each SEALS anchor year:
 ## Output
 
 `pollination_interpolated.csv` with columns `ENDW, ACTS, REG, scenario, year, shock_pct`, written
-into the `prepare_es_shocks` directory. This is the same handoff file the static path produces, so
-the downstream `build_combined_afeall_cc_es` step consumes it unchanged and is agnostic to whether
-the shock was computed dynamically or read from a precomputed table.
+into the shared ES-shock directory (`p.es_shock_dir`). The downstream `build_combined_afeall_cc_es`
+step consumes it unchanged and is agnostic to whether the shock was computed dynamically (as here) or,
+for other services, read from a precomputed table.
 
 ## Inputs
 
