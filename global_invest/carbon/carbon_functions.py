@@ -415,7 +415,9 @@ def summarize_raster_by_region(value_raster_path, region_boundary_path, out_path
                 area_m2 = values.size * pixel_area_m2
 
                 stats = {
-                    "region_id": row.get("id", idx),
+                    # key zones by the stable ee_r50_aez18_id as int (gpkg stores it as string), not gpkg row
+                    # position; fall back to the old row.get("id", idx) for callers whose gpkg lacks the column
+                    "region_id": int(row["ee_r50_aez18_id"]) if "ee_r50_aez18_id" in row.index else row.get("id", idx),
                     "mean": values.mean(),
                     "min": values.min(),
                     "max": values.max(),

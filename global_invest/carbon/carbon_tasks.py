@@ -237,12 +237,13 @@ def task_compute_carbon_shock(p):
             carbon_functions.summarize_raster_by_region(dens, p.region_boundary_path, summ)
         return pd.read_csv(summ).set_index('region_id')[val_col]
 
-    # summarize_raster_by_region keys each row by row.get("id", idx) and DROPS empty zones,
-    # so map + align on region_id, never on row position.
+    # summarize_raster_by_region keys each zone by the stable ee_r50_aez18_id (see carbon_functions),
+    # and DROPS empty zones, so map + align on that id, never on gpkg row position.
     regions = gpd.read_file(p.region_boundary_path)
     def _fmt(v):
         return (endw_fmt % int(v)) if endw_fmt is not None else v
-    labels = {r.get('id', i): (_fmt(r[endw_col]), r[reg_col]) for i, r in regions.iterrows()}
+    labels = {(int(r['ee_r50_aez18_id']) if 'ee_r50_aez18_id' in r.index else r.get('id', i)):
+              (_fmt(r[endw_col]), r[reg_col]) for i, r in regions.iterrows()}
 
     # per-anchor-year zone means; shock_Y = (scenario_Y - baseline_Y)/baseline_Y * 100 (contemporaneous /base_Y),
     # then piecewise-linear interp to annual values (0 at base_year) -- one computed point per SEALS map year.
@@ -294,11 +295,14 @@ def task_compute_carbon_shock(p):
             else:
                 annual_f = [np.nan] * len(all_years)
             for year, vc, vf in zip(all_years, annual_c, annual_f):
+                # Explicit, same-named columns in both ES files (carbon + pollination) for the #14 diagnostic.
+                # shock_pct = the GTAP-primary alias (carbon primary = contemporaneous, so it equals shock_pct_contemp).
                 rows.append({'ENDW': endw, 'ACTS': acts, 'REG': reg, 'scenario': scenario,
-                             'year': year, 'shock_pct': vc, 'shock_pct_fixedbase': vf})
+                             'year': year, 'shock_pct': vc,
+                             'shock_pct_fixedbase': vf, 'shock_pct_contemp': vc})
 
     out = pd.DataFrame(rows)
     out.to_csv(p.carbon_shock_output_path, index=False)
-    print('  carbon shock: %d rows, %d scenarios (shock_pct=/base_Y, shock_pct_fixedbase=/base_%d) -> %s'
+    print('  carbon shock: %d rows, %d scenarios (shock_pct=shock_pct_contemp=/base_Y, shock_pct_fixedbase=/base_%d) -> %s'
           % (len(out), out['scenario'].nunique() if rows else 0, base_year, p.carbon_shock_output_path))
     return True

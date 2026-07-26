@@ -25,7 +25,7 @@ def task_compute_pollination_shock(p):
     if not p.run_this:
         return
 
-    base_scn     = getattr(p, 'pollination_shock_base_scenario', 'baseline_ignore_damages')
+    base_scn     = getattr(p, 'pollination_shock_base_scenario', 'baseline_ignore_dependencies')
     base_year    = int(p.pollination_shock_base_year)
     acts         = getattr(p, 'pollination_shock_acts', ('V_F', 'OSD'))
     scenarios    = list(p.pollination_shock_scenarios)
@@ -56,19 +56,34 @@ def task_compute_pollination_shock(p):
                 denominator_path=denom, correspondence_gpkg=p.region_boundary_path,
                 target_year=base_year)
 
-    # ES shock = scenario - baseline_ignore_damages at each anchor; piecewise-interp annually (0 at base_year)
+    # ES shock numerator = scenario minus baseline_ignore_dependencies value at each anchor (S_y - B_y); interp annually.
+    # TWO denominators emitted under explicit names (carbon uses the SAME names) for the #14 diagnostic:
+    #   shock_pct_fixedbase = (S_y - B_y) / B0    -- B0 = base-year (2023) value, denominator FIXED across years
+    #   shock_pct_contemp   = (S_y - B_y) / B_y   -- B_y = baseline year-y value = (poll_scenario - poll_base)/poll_base
+    #   shock_pct           = GTAP-primary = shock_pct_contemp (÷B_y), matching carbon. afeall is a productivity
+    #                         deviation from the baseline path (scenarios take productivity as given from BAU), so
+    #                         normalize by the year-y baseline, not the fixed 2023 value.
+    # contemp is an EXACT rescale of fixedbase (no extra rasters): (sum B_y*area)/(sum B0*area) = 1 + value[base_scn][y]/100,
+    # so contemp = fixedbase / that factor. Guards only exact-zero; near-zero baselines handled after seeing #14.
     all_years, rows = list(range(base_year, end_year + 1)), []
     for scen in scenarios:
         anchor_shock = pd.DataFrame({y: value[scen][y] - value[base_scn][y] for y in anchor_years}).dropna()
+        # reindex the growth factor onto anchor_shock's own zones, so contemp has exactly the same rows
+        base_factor = pd.DataFrame({y: 1.0 + value[base_scn][y] / 100.0
+                                    for y in anchor_years}).reindex(anchor_shock.index).replace(0, np.nan)
+        anchor_contemp = anchor_shock / base_factor
         for (endw, reg), s in anchor_shock.iterrows():
-            annual = np.interp(all_years, [base_year] + anchor_years, [0.0] + list(s.values))
-            for year, v in zip(all_years, annual):
+            annual   = np.interp(all_years, [base_year] + anchor_years, [0.0] + list(s.values))
+            annual_c = np.interp(all_years, [base_year] + anchor_years,
+                                 [0.0] + list(anchor_contemp.loc[(endw, reg)].values))
+            for year, v, vc in zip(all_years, annual, annual_c):
                 for sector in acts:
                     rows.append({'ENDW': endw, 'ACTS': sector, 'REG': reg, 'scenario': scen,
-                                 'year': year, 'shock_pct': v})
+                                 'year': year, 'shock_pct': vc,
+                                 'shock_pct_fixedbase': v, 'shock_pct_contemp': vc})
 
     out = pd.DataFrame(rows)
     out.to_csv(p.pollination_shock_output_path, index=False)
-    print('  pollination shock: %d rows, %d scenarios, anchors %s -> %s'
-          % (len(out), out['scenario'].nunique() if rows else 0, anchor_years, p.pollination_shock_output_path))
+    print('  pollination shock: %d rows, %d scenarios (shock_pct=shock_pct_contemp=/baseline-year value, shock_pct_fixedbase=/2023 value) -> %s'
+          % (len(out), out['scenario'].nunique() if rows else 0, p.pollination_shock_output_path))
     return True

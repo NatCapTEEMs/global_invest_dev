@@ -38,6 +38,13 @@ def configure_crop_benefits(p, target_year):
     """
     cfg = load_config(validate=False)
     cb = os.path.join(p.base_data_dir, 'crop_benefits')
+    # poll_value_global_<year>usd.tif is a PRECOMPUTED baseline input, not built here. It is the
+    # output of the crop_benefits raster pipeline, run once over Monfreda yields x CropGrids area x
+    # FAO producer prices x pollination-dependence ratios:
+    #   crop_benefits: scripts/pipelines/run_fao_pipeline.py  then
+    #                  scripts/pipelines/run_raster_pipeline.py --step poll_value
+    #                  (src/crop_benefits/raster/pollination_value.py::run_pollination_value)
+    # This fold reuses that raster and skips the FAO/CropGrids tabular stages (validate=False).
     cfg.paths.country_raster = Path(os.path.join(cb, 'poll_value_global_%dusd.tif' % int(target_year)))
     cfg.outputs.pollination_value_2020 = Path(cb)
     cfg.outputs.pollination_sufficiency = Path(p.cur_dir)
