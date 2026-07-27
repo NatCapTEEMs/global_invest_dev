@@ -2,7 +2,7 @@
 
 Currently STATIC: read from a pre-computed per-scenario dependency table (raw_dependencies/
 erosion_prevention_dependency.csv), NOT recomputed from our SEALS maps. The paper wants this DYNAMIC
-(InVEST SDR on each SEALS map -- Nfamara's global_erosion_gep), which is the heavy compute upgrade (#26).
+(InVEST SDR on each SEALS map -- the erosion GEP model), which is the heavy compute upgrade (#26).
 This module isolates the static read so the seam is in place and the dynamic swap is contained later.
 """
 import pandas as pd

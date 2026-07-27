@@ -1,7 +1,7 @@
 """Standard task-tree seam for the erosion-control ES model (mirrors add_pollination/carbon/fisheries).
 
 STATIC for now (reads the pre-computed erosion dependency table); the DYNAMIC InVEST-SDR version
-(Nfamara's global_erosion_gep, re-run on each SEALS scenario x year map) is the heavy upgrade tracked in
+(the erosion GEP model, re-run on each SEALS scenario x year map) is the heavy upgrade tracked in
 #26. Consumers (ngfs_pnas) set the erosion_shock_* inputs on p, then call add_erosion_tasks(p) alongside
 the other ES seams.
 """
@@ -9,11 +9,27 @@ from global_invest.erosion import erosion_tasks
 
 
 def add_erosion_tasks(p, parent=None):
-    """Graft the (static) erosion ES-shock task onto p.
+    """Graft the erosion ES-shock tasks onto p, dispatching by data availability.
+
+    STATIC (default): read the pre-computed dependency table -> task_compute_erosion_shock.
+    DYNAMIC (>=2 SEALS land-cover years on p.seals_years): recompute per scenario x year from our
+    SEALS maps -- SDR -> upstream (D8) -> prevention shares -> valuation. The valuation emits the
+    shock the same two ways as carbon/pollination, as ABSOLUTE differences of the productivity-share
+    level (the level is already a fraction of output, so an absolute change IS the productivity %;
+    dividing would give a change-of-a-fraction): contemporaneous (scn_Y - base_Y) and fixed-base
+    (scn_Y - base_0). Resolution follows p.modality (local -> 6.45 km, sc/msi -> native 300 m).
+    Dynamic build tracked in #26.
 
     Caller sets on p before calling: erosion_shock_scenarios, erosion_shock_base_year,
-    erosion_shock_end_year, erosion_shock_output_path. Writes the per-region 8-sector shock CSV at
-    erosion_shock_output_path.
+    erosion_shock_end_year, erosion_shock_output_path (and, for dynamic, p.seals_years + the
+    erosion input rasters/tables).
     """
-    p.compute_erosion_shock_task = p.add_task(erosion_tasks.task_compute_erosion_shock, parent=parent)
+    dynamic = bool(getattr(p, 'seals_years', None)) and len(p.seals_years) >= 2
+    if not dynamic:
+        p.compute_erosion_shock_task = p.add_task(erosion_tasks.task_compute_erosion_shock, parent=parent)
+        return p
+    p.erosion_sdr_task        = p.add_task(erosion_tasks.task_erosion_sdr, parent=parent)
+    p.erosion_upstream_task   = p.add_task(erosion_tasks.task_erosion_upstream, parent=parent)
+    p.erosion_prevention_task = p.add_task(erosion_tasks.task_erosion_prevention, parent=parent)
+    p.erosion_valuation_task  = p.add_task(erosion_tasks.task_erosion_valuation, parent=parent)
     return p
