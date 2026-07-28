@@ -41,7 +41,7 @@ For each scenario, at each SEALS anchor year:
    `(Σ difference × area) / (Σ baseline value × area) × 100`, i.e. the percentage change in
    supported pollination value per zone.
 
-7. **Nature effect.** Subtract the corresponding value for the `baseline_ignore_damages` scenario,
+7. **Nature effect.** Subtract the corresponding value for the `baseline_ignore_dependencies` scenario,
    so the shock isolates the nature signal rather than the shared climate/land trend.
 
 8. **Annual series.** The per-anchor-year shocks are interpolated piecewise-linearly
@@ -52,7 +52,7 @@ For each scenario, at each SEALS anchor year:
 
 ## Output
 
-`pollination_interpolated.csv` with columns `ENDW, ACTS, REG, scenario, year, shock_pct`, written
+`pollination_interpolated.csv` with columns `ENDW, ACTS, REG, scenario, year, shock_pct, shock_pct_contemp, shock_pct_fixedbase`, written
 into the shared ES-shock directory (`p.es_shock_dir`). The downstream `build_combined_afeall_cc_es`
 step consumes it unchanged and is agnostic to whether the shock was computed dynamically (as here) or,
 for other services, read from a precomputed table.
@@ -64,7 +64,6 @@ for other services, read from a precomputed table.
 | Scenario LULC (300 m, SEALS7) | pipeline's stitched SEALS maps, one per scenario × anchor year |
 | Baseline LULC (300 m, SEALS7) | pipeline's SEALS7 base-year map |
 | `poll_value_global_<base_year>usd.tif` | `crop_benefits` precomputed baseline value raster |
-| `country_m49_cropgrids_grid.tif` | 5 km CropGrids grid template |
 | `ee_r50_aez18_correspondence.gpkg` | GTAP r50 × AEZ18 region boundaries |
 
 The FAO / CropGrids / Monfreda tabular stages of `crop_benefits` are **not** run here: they exist to

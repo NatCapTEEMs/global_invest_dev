@@ -1,9 +1,9 @@
-"""Erosion-control ES science: the STATIC per-scenario erosion (sediment-retention) shock.
+"""Erosion-control ES science helpers (sediment-retention shock).
 
-Currently STATIC: read from a pre-computed per-scenario dependency table (raw_dependencies/
-erosion_prevention_dependency.csv), NOT recomputed from our SEALS maps. The paper wants this DYNAMIC
-(InVEST SDR on each SEALS map -- the erosion GEP model), which is the heavy compute upgrade (#26).
-This module isolates the static read so the seam is in place and the dynamic swap is contained later.
+STATIC helpers (read_erosion_dependency, find_scenario): parse the frozen per-scenario dependency table
+(raw_dependencies/erosion_prevention_dependency.csv). DYNAMIC helpers (#26): the SPAM->elasticity
+crosswalk (load_erosion_elasticity_map, get_erosion_elasticity, SPAM_ALIAS_MAP) and the per-country
+severe-threshold policy (build_severe_threshold_raster) used by the dynamic prevention/valuation tasks.
 """
 import numpy as np
 import pandas as pd

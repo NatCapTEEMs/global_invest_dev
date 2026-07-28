@@ -1,9 +1,8 @@
 """Standard task-tree seam for the erosion-control ES model (mirrors add_pollination/carbon/fisheries).
 
-STATIC for now (reads the pre-computed erosion dependency table); the DYNAMIC InVEST-SDR version
-(the erosion GEP model, re-run on each SEALS scenario x year map) is the heavy upgrade tracked in
-#26. Consumers (ngfs_pnas) set the erosion_shock_* inputs on p, then call add_erosion_tasks(p) alongside
-the other ES seams.
+add_erosion_tasks dispatches STATIC (read the pre-computed erosion dependency table) vs DYNAMIC (recompute
+from the SEALS maps via InVEST SDR, #26) on the number of SEALS map years. Consumers (ngfs_pnas) set the
+erosion_shock_* inputs on p, then call add_erosion_tasks(p) alongside the other ES seams.
 """
 from global_invest.erosion import erosion_tasks
 

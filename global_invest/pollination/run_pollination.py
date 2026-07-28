@@ -7,7 +7,6 @@ of the pollination model on one or two scenarios.
 
 Requires (Track 2) under base_data/crop_benefits/:
   - poll_value_global_<base_year>usd.tif      baseline pollination value raster (fixed, all scenarios)
-  - country_m49_cropgrids_grid.tif            5 km CROPGRIDS grid template
 """
 import os
 

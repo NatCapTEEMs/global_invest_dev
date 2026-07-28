@@ -1,12 +1,13 @@
-"""Erosion-control ES-shock task (STATIC, per-scenario). Mirrors carbon/pollination/fisheries on the
-add_<es>_tasks seam.
+"""Erosion-control ES-shock tasks (static + dynamic), on the add_<es>_tasks seam like carbon/pollination.
 
-Ported verbatim from the old prepare_es_shocks erosion block: read erosion_prevention_dependency.csv,
-subtract the baseline_ignore_damages reference, linearly ramp 0 -> the scenario value over the horizon,
-apply to the 8 erosion-affected crop sectors, write erosion_prevention_interpolated.csv. UNCAPPED here --
-the cap is applied later on the COMBINED value in build_combined_afeall_cc_es (matches the old block).
-The paper wants this DYNAMIC (InVEST SDR on each SEALS map -- the erosion GEP model), the heavy
-upgrade tracked in #26; this module is the static seam so the dynamic swap is contained later.
+STATIC (task_compute_erosion_shock): read raw_dependencies/erosion_prevention_dependency.csv, subtract
+the baseline reference, linearly ramp 0 -> the scenario value over the horizon, apply to the 8
+erosion-affected crop sectors -> erosion_prevention_interpolated.csv. UNCAPPED here -- the cap is applied
+later on the COMBINED value in build_combined_afeall_cc_es.
+
+DYNAMIC (#26; task_erosion_sdr -> upstream -> prevention -> valuation): recompute the shock from our
+SEALS maps via InVEST SDR -> D8 upstream -> prevention shares -> per-zone valuation. add_erosion_tasks
+(erosion_initialize) dispatches static vs dynamic on the number of SEALS map years.
 """
 import os
 import pandas as pd
@@ -212,8 +213,8 @@ def task_erosion_upstream(p):
 def task_erosion_prevention(p):
     """DYNAMIC step 3: per (scenario, year), on-farm PS = avoided/(avoided+usle) on severe pixels
     (usle > threshold); combined = 1 - (1-onfarm)(1-upstream), zeroed off severe pixels. Reads
-    usle/avoided (p.erosion_sdr_dir) and upstream (p.erosion_upstream_dir); writes
-    ps_onfarm_<scn>_<yr>.tif and ps_combined_<scn>_<yr>.tif.
+    usle/avoided (p.erosion_sdr_dir) and upstream (p.erosion_upstream_dir); writes ps_combined_<scn>_<yr>.tif
+    (on-farm is an intermediate for the combined union -- only combined is valued downstream).
 
     NB: the cropland restriction is NOT applied here -- it comes from SPAM production being zero
     off-cropland in task_erosion_valuation (matches the erosion valuation code, which puts PS on all
@@ -275,14 +276,13 @@ def task_erosion_prevention(p):
             combined = np.where(mask, 1.0 - (1.0 - onfarm) * (1.0 - ups_v), 0.0)
 
             tr = usle.rio.transform(); px = usle.rio.resolution()
-            for name, arr in (('ps_onfarm', onfarm), ('ps_combined', combined)):
-                pgp.numpy_array_to_raster(arr.astype('float32'), -9999.0, (px[0], px[1]),
-                                          (tr.c, tr.f), usle.rio.crs.to_wkt(),
-                                          os.path.join(p.cur_dir, '%s_%s.tif' % (name, suffix)))
+            pgp.numpy_array_to_raster(combined.astype('float32'), -9999.0, (px[0], px[1]),
+                                      (tr.c, tr.f), usle.rio.crs.to_wkt(),
+                                      os.path.join(p.cur_dir, 'ps_combined_%s.tif' % suffix))
             n += 1
     p.erosion_prevention_dir = p.cur_dir
     per_country = getattr(p, 'erosion_country_boundary_path', None) is not None
-    print('  erosion prevention: %d maps -> ps_onfarm_/ps_combined_ on EPSG:%d (severe T=%s)'
+    print('  erosion prevention: %d maps -> ps_combined_ on EPSG:%d (severe T=%s)'
           % (n, analysis_crs.to_epsg(), 'per-country 11/2' if per_country else '%.1f flat' % thresh_high))
     return True
 
@@ -328,34 +328,47 @@ def task_erosion_valuation(p):
     reg_col = next(c for c in zones.columns if c.lower() == 'gtapv7_r50_label')
     labels = {int(r[zid_col]): ('AEZ%d' % int(r[aez_col]), r[reg_col]) for _, r in zones.iterrows()}
 
+    anchor_years = sorted(int(y) for y in getattr(p, 'seals_years', []) if int(y) > base_year) or [end_year]
+    scenarios = [s for s in p.scenario_lulc_paths if s != base_scn]
+
+    # Precompute ONCE (all ps_combined rasters share the analysis grid): rasterize the zones and reproject
+    # each SPAM crop's production to that grid, plus its zone totals (ps-independent, so constant across
+    # scenarios). zone_level then only reads ps and does the ps-weighted bincount -- no per-(scenario,year)
+    # SPAM reproject or zone re-rasterize.
+    def _ps_path(scn, yr): return os.path.join(p.erosion_prevention_dir, 'ps_combined_%s_%d.tif' % (scn, yr))
+    _ref = rxr.open_rasterio(_ps_path(base_scn, anchor_years[0]), masked=True).squeeze()   # any ps: shared grid
+    zr = zones.to_crs(_ref.rio.crs)
+    zone_id = rio_rasterize([(g, int(z)) for g, z in zip(zr.geometry, zr[zid_col])],
+                            out_shape=_ref.shape, transform=_ref.rio.transform(), fill=0, dtype='int32')
+    max_id = int(zone_id.max())
+    dy = rxr.open_rasterio(yield_stack, masked=True); da = rxr.open_rasterio(area_stack, masked=True)
+    nb = dy.sizes.get('band', 1)
+    crop_prod = []                     # [(production_array float64, elasticity)] per SPAM crop, on the grid
+    tot = np.zeros(max_id + 1)         # total production per zone (ps-independent -> constant)
+    for _, r in bandmap.iterrows():
+        b = int(r[bcol])
+        if b < 1 or b > nb:
+            continue
+        elast = ef.get_erosion_elasticity(str(r[crcol]).strip().lower(), elast_map, fallback_elast)
+        y = dy.sel(band=b).squeeze().rio.reproject_match(_ref, resampling=Resampling.average).fillna(0.0)
+        ha = da.sel(band=b).squeeze().clip(min=0).fillna(0).rio.reproject_match(_ref, resampling=Resampling.sum).fillna(0.0)
+        prod = (y * ha).values.astype('float64')
+        crop_prod.append((prod, elast))
+        m = np.isfinite(prod) & (zone_id > 0)
+        tot += np.bincount(zone_id[m], weights=prod[m], minlength=max_id + 1)
+
     def zone_level(scn, yr):
         """per-ee_r50_aez18 erosion protection level for one scenario x year (pd.Series keyed by zid)."""
-        ps = rxr.open_rasterio(os.path.join(p.erosion_prevention_dir, 'ps_combined_%s_%d.tif' % (scn, yr)),
-                               masked=True).squeeze()                       # already on the 8857 grid
-        ps_arr = np.clip(np.nan_to_num(ps.values), 0.0, 1.0)
-        zr = zones.to_crs(ps.rio.crs)
-        zone_id = rio_rasterize([(g, int(z)) for g, z in zip(zr.geometry, zr[zid_col])],
-                                out_shape=ps.shape, transform=ps.rio.transform(), fill=0, dtype='int32')
-        max_id = int(zone_id.max())
-        dy = rxr.open_rasterio(yield_stack, masked=True); da = rxr.open_rasterio(area_stack, masked=True)
-        nb = dy.sizes.get('band', 1)
-        tot = np.zeros(max_id + 1); protel = np.zeros(max_id + 1)
-        for _, r in bandmap.iterrows():
-            b = int(r[bcol])
-            if b < 1 or b > nb:
-                continue
-            elast = ef.get_erosion_elasticity(str(r[crcol]).strip().lower(), elast_map, fallback_elast)
-            y = dy.sel(band=b).squeeze().rio.reproject_match(ps, resampling=Resampling.average).fillna(0.0)
-            ha = da.sel(band=b).squeeze().clip(min=0).fillna(0).rio.reproject_match(ps, resampling=Resampling.sum).fillna(0.0)
-            prod = (y * ha).values.astype('float64'); prot = ps_arr * prod
-            m = np.isfinite(prod) & (zone_id > 0); tot += np.bincount(zone_id[m], weights=prod[m], minlength=max_id + 1)
-            mp = np.isfinite(prot) & (zone_id > 0); protel += np.bincount(zone_id[mp], weights=prot[mp] * elast, minlength=max_id + 1)
+        ps_arr = np.clip(np.nan_to_num(rxr.open_rasterio(_ps_path(scn, yr), masked=True).squeeze().values), 0.0, 1.0)
+        protel = np.zeros(max_id + 1)
+        for prod, elast in crop_prod:
+            prot = ps_arr * prod
+            mp = np.isfinite(prot) & (zone_id > 0)
+            protel += np.bincount(zone_id[mp], weights=prot[mp] * elast, minlength=max_id + 1)
         with np.errstate(invalid='ignore', divide='ignore'):
             lvl = np.where(tot > 0, np.clip(protel / tot, 0.0, 1.0), np.nan)
         return pd.Series({int(i): lvl[i] for i in range(1, max_id + 1) if tot[i] > 0})
 
-    anchor_years = sorted(int(y) for y in getattr(p, 'seals_years', []) if int(y) > base_year) or [end_year]
-    scenarios = [s for s in p.scenario_lulc_paths if s != base_scn]
     base_by_year = {y: zone_level(base_scn, y) for y in anchor_years}
     base_map = p.scenario_lulc_paths.get(base_scn, {})
     base_at_base = zone_level(base_scn, base_year) if base_year in base_map else None

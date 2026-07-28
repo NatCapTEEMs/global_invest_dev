@@ -12,7 +12,7 @@ def add_carbon_tasks(p, parent=None):
     """Graft the dynamic carbon ES-shock task onto p.
 
     Caller sets on p before calling: carbon_lulc_path_template, carbon_shock_scenarios,
-    carbon_shock_base_year, carbon_shock_end_year, carbon_shock_output_path. Standard GTAP-carbon
+    carbon_shock_base_year, carbon_shock_years, carbon_shock_output_path. Standard GTAP-carbon
     inputs (r50xAEZ boundary, Spawn density, zones) default inside the task via p.get_path; override
     on p only when different. Writes the per-region FRS aoall shock CSV at carbon_shock_output_path.
     """
