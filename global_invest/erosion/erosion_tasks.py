@@ -207,54 +207,147 @@ def task_erosion_prevention(p):
     if not p.run_this:
         return
     import numpy as np
-    import hazelbean as hb
+    import rioxarray as rxr
     import pygeoprocessing as pgp
+    from rasterio.crs import CRS as rioCRS
+    from rasterio.enums import Resampling
 
     threshold = float(getattr(p, 'erosion_severe_threshold_t_ha', 11.0))
+    analysis_crs = rioCRS.from_epsg(int(getattr(p, 'erosion_analysis_epsg', 8857)))
 
-    def _rd(path):
-        info = pgp.get_raster_info(path); nd = info['nodata'][0]
-        a = hb.as_array(path).astype('float64')
-        return np.where(np.isfinite(a) & (a != nd) & (np.abs(a) < 1e30), a, np.nan)
+    def _to_grid(path, template=None):     # reproject to the equal-area analysis grid (average)
+        da = rxr.open_rasterio(path, masked=True).squeeze().rio.reproject(analysis_crs, resampling=Resampling.average)
+        return da if template is None else da.rio.reproject_match(template, resampling=Resampling.average)
 
     n = 0
     for scenario, by_year in p.scenario_lulc_paths.items():
         for year in by_year:
             suffix = '%s_%d' % (scenario, year)
             sdr_dir = os.path.join(p.erosion_sdr_dir, suffix)
-            usle_p    = os.path.join(sdr_dir, 'usle_%s.tif' % suffix)
-            avoided_p = os.path.join(sdr_dir, 'avoided_erosion_%s.tif' % suffix)
-            ups_p     = os.path.join(p.erosion_upstream_dir, 'upstream_%s.tif' % suffix)
+            # PS is computed ON the analysis grid (reproject usle/avoided/ups FIRST, then PS) -- the
+            # order matters because PS is nonlinear; computing it on the native grid then reprojecting
+            # biases the shock high.
+            usle = _to_grid(os.path.join(sdr_dir, 'usle_%s.tif' % suffix))
+            avoided = _to_grid(os.path.join(sdr_dir, 'avoided_erosion_%s.tif' % suffix), usle)
+            ups = _to_grid(os.path.join(p.erosion_upstream_dir, 'upstream_%s.tif' % suffix), usle)
+            usle_v = np.nan_to_num(np.maximum(usle.values, 0.0))
+            avoided_v = np.nan_to_num(np.maximum(avoided.values, 0.0))
+            ups_v = np.clip(np.nan_to_num(ups.values), 0.0, 1.0)
 
-            info = pgp.get_raster_info(usle_p)
-            ps, gt, wkt = info['pixel_size'], info['geotransform'], info['projection_wkt']
-            usle = np.nan_to_num(_rd(usle_p)); avoided = np.nan_to_num(np.maximum(_rd(avoided_p), 0))
-            ups = np.clip(np.nan_to_num(_rd(ups_p)), 0.0, 1.0)
-
-            mask = usle > threshold          # severe pixels; cropland comes from SPAM in valuation
+            mask = usle_v > threshold        # severe pixels; cropland comes from SPAM in valuation
             with np.errstate(invalid='ignore', divide='ignore'):
-                onfarm = np.where(mask & (avoided + usle > 0), avoided / (avoided + usle), 0.0)
-            combined = np.where(mask, 1.0 - (1.0 - onfarm) * (1.0 - ups), 0.0)
+                onfarm = np.where(mask & (avoided_v + usle_v > 0), avoided_v / (avoided_v + usle_v), 0.0)
+            combined = np.where(mask, 1.0 - (1.0 - onfarm) * (1.0 - ups_v), 0.0)
 
-            pgp.numpy_array_to_raster(onfarm.astype('float32'), -9999.0, ps, (gt[0], gt[3]), wkt,
-                                      os.path.join(p.cur_dir, 'ps_onfarm_%s.tif' % suffix))
-            pgp.numpy_array_to_raster(combined.astype('float32'), -9999.0, ps, (gt[0], gt[3]), wkt,
-                                      os.path.join(p.cur_dir, 'ps_combined_%s.tif' % suffix))
+            tr = usle.rio.transform(); px = usle.rio.resolution()
+            for name, arr in (('ps_onfarm', onfarm), ('ps_combined', combined)):
+                pgp.numpy_array_to_raster(arr.astype('float32'), -9999.0, (px[0], px[1]),
+                                          (tr.c, tr.f), usle.rio.crs.to_wkt(),
+                                          os.path.join(p.cur_dir, '%s_%s.tif' % (name, suffix)))
             n += 1
     p.erosion_prevention_dir = p.cur_dir
-    print('  erosion prevention: %d maps -> ps_onfarm_/ps_combined_ (severe cropland, threshold=%.1f)'
-          % (n, threshold))
+    print('  erosion prevention: %d maps -> ps_onfarm_/ps_combined_ on EPSG:%d (severe, threshold=%.1f)'
+          % (n, analysis_crs.to_epsg(), threshold))
     return True
 
 
 def task_erosion_valuation(p):
-    """DYNAMIC step 4: per scenario, per-pixel crop-productivity value (combined PS x SPAM crop
-    production x supply elasticity) -> zonal means over ee_r50_aez18 (summarize_raster_by_region)
-    -> the shock as ABSOLUTE differences of the productivity-share level (comparable to
-    carbon/pollination because that level is already a fraction of output): contemporaneous
-    (scn_Y - base_Y) and fixed-base (scn_Y - base_0). Writes the 8-sector per-zone shock CSV at
-    p.erosion_shock_output_path (same format as the static path / carbon / pollination).
+    """DYNAMIC step 4: per (scenario, year) compute the per-ee_r50_aez18 erosion protection LEVEL
+    (his exact formula, validated to ~1.02x his country account): for each SPAM crop, protected =
+    combined_PS * yield * area, total = yield * area, summed per zone; level =
+    sum(protected*elasticity)/sum(total). Then the shock as ABSOLUTE two-reference differences (x100):
+    contemporaneous (scn_Y - base_Y) and fixed-base (scn_Y - base_0), interpolated to annual (0 at
+    base_year). Writes the 8-sector per-zone shock CSV at p.erosion_shock_output_path (same columns
+    as the static path / carbon / pollination: ENDW, ACTS, REG, scenario, year, shock_pct,
+    shock_pct_contemp, shock_pct_fixedbase).
+
+    Caller sets on p: scenario_lulc_paths (incl. the base scenario), seals_years (anchor years),
+    erosion_shock_base_year, erosion_shock_end_year, erosion_shock_output_path; erosion_prevention_dir
+    (set by step 3); erosion_zone_boundary_path (ee_r50_aez18 correspondence gpkg with ee_r50_aez18_id,
+    aez18_id, gtapv7_r50_label); erosion_yield_stack_path, erosion_area_stack_path,
+    erosion_bandmap_csv_path, erosion_elasticity_csv_path; base scenario via
+    erosion_shock_base_scenario (default baseline_ignore_damages).
     """
     if not p.run_this:
         return
-    raise NotImplementedError('dynamic erosion valuation -- build tracked in #26')
+    import numpy as np, pandas as pd, rioxarray as rxr, geopandas as gpd
+    from rasterio.enums import Resampling
+    from rasterio.features import rasterize as rio_rasterize
+    from global_invest.erosion import erosion_functions as ef
+
+    base_year = int(p.erosion_shock_base_year); end_year = int(p.erosion_shock_end_year)
+    base_scn = getattr(p, 'erosion_shock_base_scenario', 'baseline_ignore_damages')
+    fallback_elast = float(getattr(p, 'erosion_elasticity_fallback', 0.08))
+    sectors = getattr(p, 'erosion_sectors', EROSION_SECTORS)
+
+    yield_stack = p.get_path(p.erosion_yield_stack_path)
+    area_stack = p.get_path(p.erosion_area_stack_path)
+    bandmap = pd.read_csv(p.get_path(p.erosion_bandmap_csv_path))
+    bcol = next(c for c in bandmap.columns if 'band' in c.lower())
+    crcol = next(c for c in bandmap.columns if c.lower() in ('crop', 'crop_name', 'name'))
+    elast_map = ef.load_erosion_elasticity_map(p.get_path(p.erosion_elasticity_csv_path))
+    zones = gpd.read_file(p.get_path(p.erosion_zone_boundary_path))
+    zid_col = next(c for c in zones.columns if c.lower() == 'ee_r50_aez18_id')
+    aez_col = next(c for c in zones.columns if c.lower() == 'aez18_id')
+    reg_col = next(c for c in zones.columns if c.lower() == 'gtapv7_r50_label')
+    labels = {int(r[zid_col]): ('AEZ%d' % int(r[aez_col]), r[reg_col]) for _, r in zones.iterrows()}
+
+    def zone_level(scn, yr):
+        """per-ee_r50_aez18 erosion protection level for one scenario x year (pd.Series keyed by zid)."""
+        ps = rxr.open_rasterio(os.path.join(p.erosion_prevention_dir, 'ps_combined_%s_%d.tif' % (scn, yr)),
+                               masked=True).squeeze()                       # already on the 8857 grid
+        ps_arr = np.clip(np.nan_to_num(ps.values), 0.0, 1.0)
+        zr = zones.to_crs(ps.rio.crs)
+        zone_id = rio_rasterize([(g, int(z)) for g, z in zip(zr.geometry, zr[zid_col])],
+                                out_shape=ps.shape, transform=ps.rio.transform(), fill=0, dtype='int32')
+        max_id = int(zone_id.max())
+        dy = rxr.open_rasterio(yield_stack, masked=True); da = rxr.open_rasterio(area_stack, masked=True)
+        nb = dy.sizes.get('band', 1)
+        tot = np.zeros(max_id + 1); protel = np.zeros(max_id + 1)
+        for _, r in bandmap.iterrows():
+            b = int(r[bcol])
+            if b < 1 or b > nb:
+                continue
+            elast = ef.get_erosion_elasticity(str(r[crcol]).strip().lower(), elast_map, fallback_elast)
+            y = dy.sel(band=b).squeeze().rio.reproject_match(ps, resampling=Resampling.average).fillna(0.0)
+            ha = da.sel(band=b).squeeze().clip(min=0).fillna(0).rio.reproject_match(ps, resampling=Resampling.sum).fillna(0.0)
+            prod = (y * ha).values.astype('float64'); prot = ps_arr * prod
+            m = np.isfinite(prod) & (zone_id > 0); tot += np.bincount(zone_id[m], weights=prod[m], minlength=max_id + 1)
+            mp = np.isfinite(prot) & (zone_id > 0); protel += np.bincount(zone_id[mp], weights=prot[mp] * elast, minlength=max_id + 1)
+        with np.errstate(invalid='ignore', divide='ignore'):
+            lvl = np.where(tot > 0, np.clip(protel / tot, 0.0, 1.0), np.nan)
+        return pd.Series({int(i): lvl[i] for i in range(1, max_id + 1) if tot[i] > 0})
+
+    anchor_years = sorted(int(y) for y in getattr(p, 'seals_years', []) if int(y) > base_year) or [end_year]
+    scenarios = [s for s in p.scenario_lulc_paths if s != base_scn]
+    base_by_year = {y: zone_level(base_scn, y) for y in anchor_years}
+    base_map = p.scenario_lulc_paths.get(base_scn, {})
+    base_at_base = zone_level(base_scn, base_year) if base_year in base_map else None
+    all_years = list(range(base_year, end_year + 1))
+
+    rows = []
+    for scn in scenarios:
+        scn_by_year = {y: zone_level(scn, y) for y in anchor_years}
+        zids = sorted(set().union(*[set(s.index) for s in scn_by_year.values()]))
+        for zid in zids:
+            if zid not in labels:
+                continue
+            endw, reg = labels[zid]
+            # ABSOLUTE difference of the productivity-share level, x100 (percentage points)
+            c_anchor = [100.0 * (scn_by_year[y].get(zid, np.nan) - base_by_year[y].get(zid, np.nan)) for y in anchor_years]
+            annual_c = np.interp(all_years, [base_year] + anchor_years, [0.0] + c_anchor)
+            if base_at_base is not None:
+                f_anchor = [100.0 * (scn_by_year[y].get(zid, np.nan) - base_at_base.get(zid, np.nan)) for y in anchor_years]
+                annual_f = np.interp(all_years, [base_year] + anchor_years, [0.0] + f_anchor)
+            else:
+                annual_f = [np.nan] * len(all_years)
+            for yr, vc, vf in zip(all_years, annual_c, annual_f):
+                for sector in sectors:
+                    rows.append({'ENDW': endw, 'ACTS': sector, 'REG': reg, 'scenario': scn, 'year': yr,
+                                 'shock_pct': vc, 'shock_pct_contemp': vc, 'shock_pct_fixedbase': vf})
+
+    out = pd.DataFrame(rows)
+    out.to_csv(p.erosion_shock_output_path, index=False)
+    print('  erosion valuation (dynamic): %d rows, %d scenarios, %d anchor years -> %s'
+          % (len(out), len(scenarios), len(anchor_years), p.erosion_shock_output_path))
+    return True
