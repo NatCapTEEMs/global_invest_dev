@@ -9,14 +9,22 @@ from global_invest.pollination import pollination_tasks
 
 
 def add_pollination_tasks(p, parent=None):
-    """Graft the dynamic pollination ES-shock task onto p.
+    """Graft the pollination ES-shock task onto p, dispatching STATIC vs DYNAMIC on SEALS-map availability.
 
-    Caller sets on p before calling: pollination_shock_years (SEALS-map anchor years, from
-    seals_years), pollination_shock_base_year, pollination_shock_scenarios,
-    pollination_lulc_path_template, pollination_baseline_lulc_path,
-    pollination_shock_output_path. Standard GTAP r50xAEZ boundary defaults inside the task via
-    p.get_path; override on p only when different. Writes the per-region V_F/OSD shock CSV at
-    pollination_shock_output_path.
+    DYNAMIC (>=2 SEALS map years in p.seals_years): recompute the sufficiency shock from our SEALS maps
+    at each anchor year (task_compute_pollination_shock). STATIC (<2, the fallback -- the dynamic
+    recompute needs >=2 anchors to measure change): read the frozen
+    raw_dependencies/pollination_dependency.csv (task_compute_pollination_shock_static). Mirrors
+    add_erosion_tasks / add_carbon_tasks; both paths write pollination_interpolated.csv.
+
+    Caller sets on p before calling: pollination_shock_scenarios, pollination_shock_base_year,
+    pollination_shock_output_path. DYNAMIC also: pollination_shock_years (SEALS-map anchor years, from
+    seals_years), pollination_lulc_path_template, pollination_baseline_lulc_path,
+    pollination_shock_base_scenario. STATIC also: pollination_shock_end_year. Standard GTAP r50xAEZ
+    boundary defaults inside the task via p.get_path; override on p only when different.
     """
-    p.compute_pollination_shock_task = p.add_task(pollination_tasks.task_compute_pollination_shock, parent=parent)
+    dynamic = len(str(getattr(p, 'seals_years', '') or '').split()) >= 2
+    task = (pollination_tasks.task_compute_pollination_shock if dynamic
+            else pollination_tasks.task_compute_pollination_shock_static)
+    p.compute_pollination_shock_task = p.add_task(task, parent=parent)
     return p

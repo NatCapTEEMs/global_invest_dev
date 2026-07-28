@@ -18,7 +18,9 @@ FISH_HEADER_MAP = {
     'ndcs': 'FI45', 'delayed_transition': 'FI45',
     'current_policies': 'FI85', 'fragmented_world': 'FI85', 'stress_test': 'FI85',
 }
-FISH_CAP = 5.0          # +-5% cap (consistent with the afeall cap)
+FISH_CAP = 2.0          # +-2% cap. Clips only the broken 'nor' FI26=13.5 outlier; every legitimate FI
+                        # value across FI26/FI45/FI85 is <=1.6%, so real signal passes untouched. Fixing
+                        # the outlier at source is not possible here (upstream cwon_shocks.har), so cap it.
 FISH_SECTORS = ('FSH',)
 
 

@@ -306,3 +306,71 @@ def task_compute_carbon_shock(p):
     print('  carbon shock: %d rows, %d scenarios (shock_pct=shock_pct_contemp=/base_Y, shock_pct_fixedbase=/base_%d) -> %s'
           % (len(out), out['scenario'].nunique() if rows else 0, base_year, p.carbon_shock_output_path))
     return True
+
+
+# our scenario -> raw_dependencies scenario name(s), with fallbacks (stress_test reuses current_policies).
+CARBON_SCENARIO_MAP = {
+    'below_2c': ['below_2c'], 'current_policies': ['current_policies'],
+    'delayed_transition': ['delayed_transition'], 'fragmented_world': ['fragmented_world'],
+    'low_demand': ['low_demand'], 'ndcs': ['ndcs'],
+    'net_zero': ['net_zero', 'net_zero_2050'], 'stress_test': ['current_policies'],
+}
+
+
+def task_compute_carbon_shock_static(p):
+    """Static per-scenario carbon shock -> FRS, linear ramp 0->end_year, from the frozen dependency table.
+
+    The fallback add_carbon_tasks selects when <2 SEALS map years exist (the dynamic recompute needs >=2
+    anchor maps to measure change). READS input_dir/raw_dependencies/carbon_storage_dependency.csv
+    (override p.carbon_dependency_path) and subtracts the baseline_ignore_dependencies row at 2050
+    (percentage_change x100), ramping that difference linearly from 0 at base_year. NEVER writes back to
+    raw_dependencies -- the output goes to p.carbon_shock_output_path (carbon_storage_interpolated.csv),
+    the same file the dynamic task writes, so build_combined_afeall_cc_es is agnostic to which one ran.
+    Caller sets: carbon_shock_base_year, carbon_shock_end_year, carbon_shock_scenarios,
+    carbon_shock_output_path; scenario->raw name via p.carbon_scenario_map (default CARBON_SCENARIO_MAP);
+    sector via p.carbon_shock_acts (default 'FRS', matching the dynamic task).
+    """
+    if not p.run_this:
+        return
+    import pandas as pd
+
+    base_year = int(p.carbon_shock_base_year)
+    end_year = int(p.carbon_shock_end_year)
+    n_years = end_year - base_year
+    scenario_map = getattr(p, 'carbon_scenario_map', CARBON_SCENARIO_MAP)
+    scenarios = list(p.carbon_shock_scenarios)
+    acts = getattr(p, 'carbon_shock_acts', 'FRS')
+
+    carb_path = getattr(p, 'carbon_dependency_path', None) or os.path.join(
+        p.input_dir, 'raw_dependencies', 'carbon_storage_dependency.csv')
+    if not os.path.exists(carb_path):
+        print('  carbon shock: dependency csv not found (%s) -- skipping' % carb_path)
+        return
+
+    df = pd.read_csv(carb_path)
+    base = df[(df['scenario'] == 'baseline_ignore_dependencies') & (df['year'] == 2050)]
+    base_vals = base.set_index(['ENDW', 'REG'])['percentage_change'].astype(float) * 100
+
+    rows = []
+    for our_scn in scenarios:
+        candidates = scenario_map.get(our_scn)
+        raw_scn = next((c for c in candidates if c in df['scenario'].values), None) if candidates else None
+        if not raw_scn:
+            continue
+        scn = df[(df['scenario'] == raw_scn) & (df['year'] == 2050)]
+        scn_vals = scn.set_index(['ENDW', 'REG'])['percentage_change'].astype(float) * 100
+        common = base_vals.index.intersection(scn_vals.index)
+        shock = (scn_vals.loc[common] - base_vals.loc[common]).dropna()
+        for year in range(base_year, end_year + 1):
+            frac = (year - base_year) / n_years
+            for (endw, reg), val in shock.items():
+                rows.append({'ENDW': endw, 'ACTS': acts, 'REG': reg,
+                             'scenario': our_scn, 'year': year, 'shock_pct': val * frac})
+
+    out = pd.DataFrame(rows)
+    out.to_csv(p.carbon_shock_output_path, index=False)
+    nz = out[(out['year'] == end_year) & (out['shock_pct'] != 0)] if len(out) else out
+    print('  carbon shock: %d rows, %d scenarios, %d nonzero @%d (static, uncapped) -> %s'
+          % (len(out), out['scenario'].nunique() if len(out) else 0, len(nz), end_year,
+             p.carbon_shock_output_path))
+    return True
