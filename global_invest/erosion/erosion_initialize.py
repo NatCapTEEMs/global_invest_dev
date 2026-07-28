@@ -12,7 +12,8 @@ def add_erosion_tasks(p, parent=None):
     """Graft the erosion ES-shock tasks onto p, dispatching by data availability.
 
     STATIC (default): read the pre-computed dependency table -> task_compute_erosion_shock.
-    DYNAMIC (>=2 SEALS land-cover years on p.seals_years): recompute per scenario x year from our
+    DYNAMIC (p.erosion_dynamic True; caller sets it when >=2 SEALS anchor years + the erosion_*
+    inputs are wired): recompute per scenario x year from our
     SEALS maps -- SDR -> upstream (D8) -> prevention shares -> valuation. The valuation emits the
     shock the same two ways as carbon/pollination, as ABSOLUTE differences of the productivity-share
     level (the level is already a fraction of output, so an absolute change IS the productivity %;
@@ -24,8 +25,8 @@ def add_erosion_tasks(p, parent=None):
     erosion_shock_end_year, erosion_shock_output_path (and, for dynamic, p.seals_years + the
     erosion input rasters/tables).
     """
-    dynamic = bool(getattr(p, 'seals_years', None)) and len(p.seals_years) >= 2
-    if not dynamic:
+    dynamic = bool(getattr(p, 'erosion_dynamic', False))   # explicit opt-in; caller sets it when
+    if not dynamic:                                         # >=2 SEALS anchor years + dynamic inputs are wired
         p.compute_erosion_shock_task = p.add_task(erosion_tasks.task_compute_erosion_shock, parent=parent)
         return p
     p.erosion_sdr_task        = p.add_task(erosion_tasks.task_erosion_sdr, parent=parent)

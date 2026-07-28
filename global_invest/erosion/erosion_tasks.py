@@ -96,8 +96,25 @@ def task_erosion_sdr(p):
     """
     if not p.run_this:
         return
+    import glob
     import hazelbean as hb
     from natcap.invest.sdr import sdr
+
+    # Build scenario_lulc_paths from a template if the caller didn't (mirrors carbon/pollination).
+    # p.erosion_lulc_path_template uses {scenario} and {year}; include the base scenario for differencing.
+    if not getattr(p, 'scenario_lulc_paths', None) and getattr(p, 'erosion_lulc_path_template', None):
+        tmpl = p.erosion_lulc_path_template
+        years = [int(y) for y in getattr(p, 'erosion_shock_years', [])]
+        scens = list(getattr(p, 'erosion_shock_scenarios', []))
+        base = getattr(p, 'erosion_shock_base_scenario', 'baseline_ignore_damages')
+        if base not in scens:
+            scens = scens + [base]
+        p.scenario_lulc_paths = {}
+        for scn in scens:
+            yr_map = {y: sorted(glob.glob(tmpl.format(scenario=scn, year=y)))[0]
+                      for y in years if glob.glob(tmpl.format(scenario=scn, year=y))}
+            if yr_map:
+                p.scenario_lulc_paths[scn] = yr_map
 
     # analysis grid: downsample to a 6.45 km reference for local; run at native SEALS res on the cluster
     native = getattr(p, 'modality', 'local') in ('sc', 'msi')
