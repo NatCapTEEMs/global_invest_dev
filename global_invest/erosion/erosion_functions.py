@@ -81,3 +81,51 @@ def get_erosion_elasticity(crop_key, elast_map, fallback=0.08):
         if np.isfinite(v2):
             return float(np.clip(v2, 0.0, 1.0))
     return float(np.clip(fallback, 0.0, 1.0))
+
+
+def build_severe_threshold_raster(grid_da, country_boundary_path, dem_path=None,
+                                  thresh_high=11.0, thresh_low=2.0,
+                                  small_area_km2=50_000, low_elevation_mean_m=250,
+                                  mask_below_sea=True, max_valid_elevation_m=9000.0):
+    """Per-pixel soil-loss-tolerance threshold aligned to grid_da (the SES-11 policy).
+
+    T = thresh_low for a country that is small-area (geometry area < small_area_km2) OR low-elevation
+    (mean DEM elevation < low_elevation_mean_m); else thresh_high. grid_da must be on an equal-area
+    grid (its CRS units are used for the km2 area). If dem_path is None the elevation rule is skipped.
+    Returns a float32 array of shape grid_da.shape.
+    """
+    import geopandas as gpd
+    import rioxarray as rxr
+    from rasterio.features import rasterize
+    from rasterio.enums import Resampling
+
+    gdf = gpd.read_file(country_boundary_path).to_crs(grid_da.rio.crs)
+    gdf = gdf[gdf.geometry.notnull()].reset_index(drop=True)
+    gdf['iid'] = range(1, len(gdf) + 1)
+    shape, transform = grid_da.shape, grid_da.rio.transform()
+    iso_id = rasterize([(g, int(i)) for g, i in zip(gdf.geometry, gdf['iid'])],
+                       out_shape=shape, transform=transform, fill=0, dtype='int32')
+    max_id = int(gdf['iid'].max())
+
+    area_km2 = gdf.set_index('iid').geometry.area / 1e6      # equal-area CRS -> m2 -> km2
+    iso_low = set(int(i) for i in area_km2[area_km2 < small_area_km2].index)
+
+    if dem_path:
+        dem = rxr.open_rasterio(dem_path, masked=True).squeeze().rio.reproject_match(
+            grid_da, resampling=Resampling.bilinear)
+        v = dem.values.astype('float64')
+        if mask_below_sea:
+            v[v < 0.0] = np.nan
+        v[v > max_valid_elevation_m] = np.nan
+        m = np.isfinite(v) & (iso_id > 0)
+        s = np.bincount(iso_id[m], weights=v[m], minlength=max_id + 1).astype('float64')
+        c = np.bincount(iso_id[m], minlength=max_id + 1).astype('float64')
+        with np.errstate(invalid='ignore'):
+            mean_elev = np.where(c > 0, s / c, np.nan)
+        iso_low |= set(int(i) for i in range(1, max_id + 1)
+                       if np.isfinite(mean_elev[i]) and mean_elev[i] < low_elevation_mean_m)
+
+    thr = np.full(shape, float(thresh_high), dtype='float32')
+    if iso_low:
+        thr[np.isin(iso_id, np.fromiter(iso_low, dtype='int32'))] = float(thresh_low)
+    return thr

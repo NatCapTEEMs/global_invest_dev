@@ -218,8 +218,9 @@ def task_erosion_prevention(p):
     NB: the cropland restriction is NOT applied here -- it comes from SPAM production being zero
     off-cropland in task_erosion_valuation (matches the erosion valuation code, which puts PS on all
     severe pixels). The PS is a direct, validated formula; the SPAM/elasticity step is deferred to
-    valuation. Caller may set p.erosion_severe_threshold_t_ha (default 11; the per-country 11/2
-    policy is a later refinement).
+    valuation. The severe threshold follows the per-country SES-11 policy (T=2 for small-area
+    <50,000 km2 or low-elevation <250 m countries, else 11) when p.erosion_country_boundary_path
+    (+ p.erosion_dem_path for the elevation rule) is set; otherwise flat p.erosion_severe_threshold_t_ha.
     """
     if not p.run_this:
         return
@@ -228,8 +229,9 @@ def task_erosion_prevention(p):
     import pygeoprocessing as pgp
     from rasterio.crs import CRS as rioCRS
     from rasterio.enums import Resampling
+    from global_invest.erosion import erosion_functions as ef
 
-    threshold = float(getattr(p, 'erosion_severe_threshold_t_ha', 11.0))
+    thresh_high = float(getattr(p, 'erosion_severe_threshold_t_ha', 11.0))
     analysis_crs = rioCRS.from_epsg(int(getattr(p, 'erosion_analysis_epsg', 8857)))
 
     def _to_grid(path, template=None):     # reproject to the equal-area analysis grid (average)
@@ -251,7 +253,23 @@ def task_erosion_prevention(p):
             avoided_v = np.nan_to_num(np.maximum(avoided.values, 0.0))
             ups_v = np.clip(np.nan_to_num(ups.values), 0.0, 1.0)
 
-            mask = usle_v > threshold        # severe pixels; cropland comes from SPAM in valuation
+            # per-country severe threshold (SES-11 policy: T=2 for small-area/low-elevation countries,
+            # else thresh_high). Computed once on the analysis grid (same across scenarios), cached.
+            thr = getattr(p, '_erosion_threshold_raster', None)
+            if thr is None:
+                cb = getattr(p, 'erosion_country_boundary_path', None)
+                if cb:
+                    thr = ef.build_severe_threshold_raster(
+                        usle, p.get_path(cb),
+                        p.get_path(p.erosion_dem_path) if getattr(p, 'erosion_dem_path', None) else None,
+                        thresh_high=thresh_high,
+                        thresh_low=float(getattr(p, 'erosion_threshold_low_t_ha', 2.0)),
+                        small_area_km2=float(getattr(p, 'erosion_small_country_area_km2', 50_000)),
+                        low_elevation_mean_m=float(getattr(p, 'erosion_low_elevation_mean_m', 250)))
+                else:
+                    thr = thresh_high        # flat fallback when no country boundary is provided
+                p._erosion_threshold_raster = thr
+            mask = usle_v > thr              # severe pixels (per-country T); cropland from SPAM in valuation
             with np.errstate(invalid='ignore', divide='ignore'):
                 onfarm = np.where(mask & (avoided_v + usle_v > 0), avoided_v / (avoided_v + usle_v), 0.0)
             combined = np.where(mask, 1.0 - (1.0 - onfarm) * (1.0 - ups_v), 0.0)
@@ -263,14 +281,15 @@ def task_erosion_prevention(p):
                                           os.path.join(p.cur_dir, '%s_%s.tif' % (name, suffix)))
             n += 1
     p.erosion_prevention_dir = p.cur_dir
-    print('  erosion prevention: %d maps -> ps_onfarm_/ps_combined_ on EPSG:%d (severe, threshold=%.1f)'
-          % (n, analysis_crs.to_epsg(), threshold))
+    per_country = getattr(p, 'erosion_country_boundary_path', None) is not None
+    print('  erosion prevention: %d maps -> ps_onfarm_/ps_combined_ on EPSG:%d (severe T=%s)'
+          % (n, analysis_crs.to_epsg(), 'per-country 11/2' if per_country else '%.1f flat' % thresh_high))
     return True
 
 
 def task_erosion_valuation(p):
     """DYNAMIC step 4: per (scenario, year) compute the per-ee_r50_aez18 erosion protection LEVEL
-    (his exact formula, validated to ~1.02x his country account): for each SPAM crop, protected =
+    (the erosion-model formula, validated to ~1.02x the reference country account): for each SPAM crop, protected =
     combined_PS * yield * area, total = yield * area, summed per zone; level =
     sum(protected*elasticity)/sum(total). Then the shock as ABSOLUTE two-reference differences (x100):
     contemporaneous (scn_Y - base_Y) and fixed-base (scn_Y - base_0), interpolated to annual (0 at
