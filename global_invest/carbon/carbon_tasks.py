@@ -256,13 +256,13 @@ def task_compute_carbon_shock(p):
     # and pollination are comparable on the fixed-base measure (denominator decision). Degrades to
     # NaN if the caller supplied no base map, so shock_pct is never affected.
     #
-    # Prefer a carbon-specific SEALS7 base map (carbon_shock_base_year_lulc_path) over the generic
+    # Prefer a carbon-specific SEALS7 base map (carbon_base_year_lulc_path) over the generic shared
     # base_year_lulc_path: the density lookup is keyed on SEALS7 classes, so a raw-ESA base map would
     # yield all-NaN densities. Align it to the scenario grid first, exactly as the zones raster is
     # aligned above -- same res/origin makes 'near' a lossless clip (and the only correct method for
     # categorical LULC), so a global base map over an AOI sub-window works too.
     base_at_base = None
-    _base_map = getattr(p, 'carbon_shock_base_year_lulc_path', None) or getattr(p, 'base_year_lulc_path', None)
+    _base_map = getattr(p, 'carbon_base_year_lulc_path', None) or getattr(p, 'base_year_lulc_path', None)
     if _base_map:
         _base_map = _base_map if os.path.isabs(_base_map) else p.get_path(_base_map)
         if _yx(_base_map) != _yx(_ref_lulc):

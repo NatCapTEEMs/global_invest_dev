@@ -19,7 +19,7 @@ def add_carbon_tasks(p, parent=None):
 
     Caller sets on p before calling: carbon_shock_scenarios, carbon_shock_base_year,
     carbon_shock_output_path. DYNAMIC also: carbon_lulc_path_template, carbon_shock_years,
-    carbon_shock_base_year_lulc_path, carbon_shock_base_scenario. STATIC also: carbon_shock_end_year.
+    carbon_base_year_lulc_path, carbon_shock_base_scenario. STATIC also: carbon_shock_end_year.
     Standard GTAP-carbon inputs (r50xAEZ boundary, Spawn density, zones) default inside the task via
     p.get_path; override on p only when different.
     """

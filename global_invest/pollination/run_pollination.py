@@ -38,7 +38,7 @@ if __name__ == '__main__':
     # map itself into fine_processed_inputs (it is NOT in base_data). Note the two base years: the SEALS
     # land-cover base is seals_key_base_year (2020) while the GTAP/ES anchor is key_base_year (2023);
     # the pollination baseline follows the ES anchor, matching William's lulc_esa_seals7_2023.tif.
-    p.pollination_baseline_lulc_path = os.path.join(
+    p.base_year_lulc_path = os.path.join(
         os.path.expanduser('~'), 'Files', 'gtap_invest', 'projects', 'ngfs', 'ngfs_pnas',
         'intermediate', 'fine_processed_inputs', 'lulc', 'esa', 'seals7', 'lulc_esa_seals7_2023.tif')
 

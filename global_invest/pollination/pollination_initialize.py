@@ -19,7 +19,7 @@ def add_pollination_tasks(p, parent=None):
 
     Caller sets on p before calling: pollination_shock_scenarios, pollination_shock_base_year,
     pollination_shock_output_path. DYNAMIC also: pollination_shock_years (SEALS-map anchor years, from
-    seals_years), pollination_lulc_path_template, pollination_baseline_lulc_path,
+    seals_years), pollination_lulc_path_template, pollination_base_year_lulc_path,
     pollination_shock_base_scenario. STATIC also: pollination_shock_end_year. Standard GTAP r50xAEZ
     boundary defaults inside the task via p.get_path; override on p only when different.
     """

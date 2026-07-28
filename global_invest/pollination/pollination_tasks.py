@@ -16,7 +16,7 @@ def task_compute_pollination_shock(p):
 
     Caller sets on p: pollination_shock_years (SEALS anchor years, from seals_years),
     pollination_shock_base_year, pollination_shock_scenarios, pollination_lulc_path_template
-    ({scenario}/{year}) or scenario_lulc_paths, pollination_baseline_lulc_path,
+    ({scenario}/{year}) or scenario_lulc_paths, pollination_base_year_lulc_path (or the shared base_year_lulc_path),
     pollination_shock_output_path. Optional: pollination_shock_base_scenario, pollination_shock_acts,
     region_boundary_path.
     """
@@ -44,8 +44,10 @@ def task_compute_pollination_shock(p):
                                      for y in anchor_years if glob.glob(tmpl.format(scenario=s, year=y))}
                                  for s in [base_scn] + scenarios}
 
+    # base-year SEALS7 map: per-ES override, else the shared generic -- same concept/pattern carbon reads.
+    _base_map = getattr(p, 'pollination_base_year_lulc_path', None) or getattr(p, 'base_year_lulc_path', None)
     # denominator (unpaired 2023 value) is year-independent -> compute once
-    denom = pf.baseline_denominator(cfg, p.pollination_baseline_lulc_path, base_year)
+    denom = pf.baseline_denominator(cfg, _base_map, base_year)
 
     # value[scenario][year] = per-region % change of that scenario's year-map vs the 2023 baseline (stable ag)
     value = {}
@@ -53,7 +55,7 @@ def task_compute_pollination_shock(p):
         for scen in [base_scn] + scenarios:
             value.setdefault(scen, {})[year] = pf.scenario_region_pct_change(
                 cfg, scenario=f'{scen}_{year}', lulc_path=p.scenario_lulc_paths[scen][year],
-                baseline_lulc_path=p.pollination_baseline_lulc_path,
+                baseline_lulc_path=_base_map,
                 denominator_path=denom, correspondence_gpkg=p.region_boundary_path,
                 target_year=base_year)
 

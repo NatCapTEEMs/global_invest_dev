@@ -41,6 +41,7 @@ def task_compute_erosion_shock(p):
     n_years = end_year - base_year
     scenario_map = getattr(p, 'erosion_scenario_map', EROSION_SCENARIO_MAP)
     scenarios = list(p.erosion_shock_scenarios)
+    sectors = getattr(p, 'erosion_shock_acts', EROSION_SECTORS)   # GTAP sectors, standardized name (was erosion_sectors)
 
     ero_path = getattr(p, 'erosion_dependency_path', None) or os.path.join(
         p.input_dir, 'raw_dependencies', 'erosion_prevention_dependency.csv')
@@ -64,7 +65,7 @@ def task_compute_erosion_shock(p):
             frac = (year - base_year) / n_years
             for (aez_id, reg), val in shock.items():
                 endw = 'AEZ%d' % int(aez_id)
-                for sector in EROSION_SECTORS:
+                for sector in sectors:
                     rows.append({'ENDW': endw, 'ACTS': sector, 'REG': reg,
                                  'scenario': our_scn, 'year': year, 'shock_pct': val * frac})
 
@@ -299,7 +300,7 @@ def task_erosion_valuation(p):
 
     Caller sets on p: scenario_lulc_paths (incl. the base scenario), seals_years (anchor years),
     erosion_shock_base_year, erosion_shock_end_year, erosion_shock_output_path; erosion_prevention_dir
-    (set by step 3); erosion_zone_boundary_path (ee_r50_aez18 correspondence gpkg with ee_r50_aez18_id,
+    (set by step 3); region_boundary_path (ee_r50_aez18 correspondence gpkg with ee_r50_aez18_id,
     aez18_id, gtapv7_r50_label); erosion_yield_stack_path, erosion_area_stack_path,
     erosion_bandmap_csv_path, erosion_elasticity_csv_path; base scenario via
     erosion_shock_base_scenario (default baseline_ignore_damages).
@@ -314,7 +315,7 @@ def task_erosion_valuation(p):
     base_year = int(p.erosion_shock_base_year); end_year = int(p.erosion_shock_end_year)
     base_scn = getattr(p, 'erosion_shock_base_scenario', 'baseline_ignore_damages')
     fallback_elast = float(getattr(p, 'erosion_elasticity_fallback', 0.08))
-    sectors = getattr(p, 'erosion_sectors', EROSION_SECTORS)
+    sectors = getattr(p, 'erosion_shock_acts', EROSION_SECTORS)
 
     yield_stack = p.get_path(p.erosion_yield_stack_path)
     area_stack = p.get_path(p.erosion_area_stack_path)
@@ -322,7 +323,9 @@ def task_erosion_valuation(p):
     bcol = next(c for c in bandmap.columns if 'band' in c.lower())
     crcol = next(c for c in bandmap.columns if c.lower() in ('crop', 'crop_name', 'name'))
     elast_map = ef.load_erosion_elasticity_map(p.get_path(p.erosion_elasticity_csv_path))
-    zones = gpd.read_file(p.get_path(p.erosion_zone_boundary_path))
+    if not getattr(p, 'region_boundary_path', None):
+        p.region_boundary_path = p.get_path('gtap_invest/region_boundaries/ee_r50_aez18_correspondence.gpkg')
+    zones = gpd.read_file(p.get_path(p.region_boundary_path))
     zid_col = next(c for c in zones.columns if c.lower() == 'ee_r50_aez18_id')
     aez_col = next(c for c in zones.columns if c.lower() == 'aez18_id')
     reg_col = next(c for c in zones.columns if c.lower() == 'gtapv7_r50_label')
