@@ -24,6 +24,9 @@ def add_carbon_tasks(p, parent=None):
     p.get_path; override on p only when different.
     """
     dynamic = len(str(getattr(p, 'seals_years', '') or '').split()) >= 2
-    task = carbon_tasks.task_compute_carbon_shock if dynamic else carbon_tasks.task_compute_carbon_shock_static
-    p.compute_carbon_shock_task = p.add_task(task, parent=parent)
+    if not dynamic:   # <2 SEALS map years -> read the frozen dependency table
+        p.compute_carbon_shock_task = p.add_task(carbon_tasks.task_compute_carbon_shock_static, parent=parent)
+        return p
+    # dynamic: recompute from the SEALS maps (one task for carbon; cf. erosion's multi-task chain)
+    p.compute_carbon_shock_task = p.add_task(carbon_tasks.task_compute_carbon_shock, parent=parent)
     return p

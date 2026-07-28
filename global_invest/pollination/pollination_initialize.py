@@ -24,7 +24,9 @@ def add_pollination_tasks(p, parent=None):
     boundary defaults inside the task via p.get_path; override on p only when different.
     """
     dynamic = len(str(getattr(p, 'seals_years', '') or '').split()) >= 2
-    task = (pollination_tasks.task_compute_pollination_shock if dynamic
-            else pollination_tasks.task_compute_pollination_shock_static)
-    p.compute_pollination_shock_task = p.add_task(task, parent=parent)
+    if not dynamic:   # <2 SEALS map years -> read the frozen dependency table
+        p.compute_pollination_shock_task = p.add_task(pollination_tasks.task_compute_pollination_shock_static, parent=parent)
+        return p
+    # dynamic: recompute from the SEALS maps (one task for pollination; cf. erosion's multi-task chain)
+    p.compute_pollination_shock_task = p.add_task(pollination_tasks.task_compute_pollination_shock, parent=parent)
     return p
