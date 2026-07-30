@@ -1,0 +1,96 @@
+---
+title: "Erosion-control ecosystem-service shock"
+format: html
+---
+
+## Purpose
+
+Turn the pipeline's own 300 m SEALS land-use maps into a per-region, per-year **crop-productivity
+shock** for the eight crop sectors (`PDR`, `WHT`, `GRO`, `V_F`, `OSD`, `C_B`, `PFB`, `OCR`), so the
+economic model responds to the soil protection each scenario's land cover actually provides rather
+than to a frozen table.
+
+Land cover enters soil loss only through the cover-management factor, so scenario differences in this
+module are land-driven by construction.
+
+## Method
+
+The biophysics is InVEST's Sediment Delivery Ratio model, run per scenario and anchor year. It yields
+two rasters that everything downstream is built from: **USLE**, the soil loss under actual land cover,
+and **RKLS**, the loss the same pixel would suffer bare. Their difference is the erosion the land cover
+prevents.
+
+Turning that into an economic shock needs a coefficient linking erosion to yield. No method avoids
+this, so it is the key calibration for erosion regardless of which variant is used.
+
+We report **two** formulations side by side, because they answer different questions and neither is
+strictly better.
+
+### A — "damage" (the conservative reading)
+
+Only *severe* erosion is assumed to harm yield. A pixel is severe where USLE exceeds a per-country
+soil-loss tolerance: 2 t/ha/yr for small or low-lying countries, 11 otherwise. Cropland is SEALS7
+class 2. For each zone,
+
+$$\text{level}_A = -100 \, \alpha \, p_{crop}, \qquad p_{crop} = \frac{\text{severe cropland area}}{\text{total cropland area}}$$
+
+with a single flat $\alpha$. This is thresholded, binary, on-farm only, and weighted by cropland
+*area*. Because land cover carries no crop detail, method A is necessarily **uniform across sectors** —
+it cannot tell wheat land from vegetable land.
+
+### B — "service" (the comprehensive reading)
+
+All erosion prevention counts, everywhere on cropland, and off-site protection is included. The
+prevention share combines the on-farm fraction $1 - \text{USLE}/\text{RKLS}$ with an upstream term
+obtained by D8 flow-accumulating prevented and potential mass, so vegetation upslope is credited for
+the sediment it stops reaching land below.
+
+Two properties matter. The zone average is **magnitude-weighted**: it aggregates tonnes, not
+percentages, as prevented over potential production-weighted mass. Without this, a pixel preventing
+90 % of almost no erosion would count as much as one preventing 40 % of a great deal. And the
+coefficient is **per crop**, so a crop's own erosion sensitivity is applied to its own prevention
+share before production-weighting across crops.
+
+$$\text{level}_B = 100 \sum_c w_c \, \alpha_c \, \frac{\text{prevented}_c}{\text{potential}_c} \Big/ \sum_c w_c$$
+
+Because crops are mapped to GTAP sectors, B reports a **different shock per sector**: a zone eroding
+mainly under cereals sends that signal to `GRO` rather than spreading it across all eight.
+
+### Sign conventions
+
+A measures damage borne and is negative; B measures protection delivered and is positive. This does
+not affect the shock, because the two differ by a constant that cancels when the baseline is
+subtracted.
+
+## From level to shock
+
+Each level is already a percentage of crop productivity, so the shock is the **absolute** difference
+against the contemporaneous baseline — the nature-off counterfactual in the same year — not a relative
+change. That difference is zero at the base year and interpolated linearly between the 5-year anchors,
+then applied as a factor-productivity term (`afeall`).
+
+A third level is also emitted for comparison and never fed to the economic model: the same prevention
+share kept behind A's severe-pixel gate and weighted by production alone. It differs from B only in how
+exposure is measured, which makes it a useful check on how much the threshold and the weighting matter.
+
+## Crop coefficients
+
+The per-crop coefficients come from a table of erosion-to-yield sensitivities keyed by FAO item names,
+joined to IFPRI SPAM crop groups. The join is one-to-many in places, since SPAM's 46 groups are coarser
+than FAO's item list, so a few resolutions are representative substitutions rather than exact matches
+(all citrus through oranges, all temperate fruit through apples, pigeon pea through dry peas). Four
+SPAM aggregates have no FAO counterpart and inherit their sector's mean; for other cereals that gives
+0.30, matching every named cereal in the table.
+
+## Static fallback
+
+When a service is not listed in `dynamic_es`, the same seam grafts a static task that reads the frozen
+per-scenario dependency table instead. That table carries a single 2050 endpoint computed on older land
+cover, so intermediate years are a synthetic ramp rather than real per-year values — which is why the
+dynamic path exists.
+
+## Compute
+
+The SDR model is multi-hour and memory-heavy per global map, so resolution follows the run modality:
+a 6.45 km analysis grid locally, native SEALS resolution on a cluster. `run_erosion.py` runs the chain
+standalone, which is the practical way to iterate on it without invoking the economic model.

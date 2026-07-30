@@ -9,28 +9,33 @@ import os
 import glob
 import numpy as np
 import pandas as pd
+from global_invest import utilities
 
 
 def task_compute_pollination_shock(p):
     """Per-scenario 300 m LULC at each SEALS anchor year -> V_F/OSD shock, piecewise-interp to annual.
 
-    Caller sets on p: pollination_shock_years (SEALS anchor years, from seals_years),
-    pollination_shock_base_year, pollination_shock_scenarios, pollination_lulc_path_template
+    Caller sets on p: es_shock_years (SEALS anchor years, from seals_years),
+    es_shock_base_year, es_shock_scenarios, es_lulc_path_template
     ({scenario}/{year}) or scenario_lulc_paths, pollination_base_year_lulc_path (or the shared base_year_lulc_path),
-    pollination_shock_output_path. Optional: pollination_shock_base_scenario, pollination_shock_acts,
+    pollination_shock_output_path. Optional: es_shock_base_scenario, pollination_shock_acts,
     region_boundary_path.
     """
+    # Default into the es_shocks parent dir. Runtime, not build time: p.es_shock_dir is
+    # published by that task, which ProjectFlow runs before this one.
+    if not getattr(p, 'pollination_shock_output_path', None):
+        p.pollination_shock_output_path = os.path.join(getattr(p, 'es_shock_dir', None) or p.project_dir, 'pollination_interpolated.csv')
     if not p.run_this:
         return
     # Imported here, not at module top, so the static fallback task can run without crop_benefits
     # (only this dynamic path, via pollination_functions, needs it).
     from global_invest.pollination import pollination_functions as pf
 
-    base_scn     = getattr(p, 'pollination_shock_base_scenario', 'baseline_ignore_dependencies')
-    base_year    = int(p.pollination_shock_base_year)
+    base_scn     = getattr(p, 'es_shock_base_scenario', 'baseline_ignore_dependencies')
+    base_year    = int(p.es_shock_base_year)
     acts         = getattr(p, 'pollination_shock_acts', ('V_F', 'OSD'))
-    scenarios    = list(p.pollination_shock_scenarios)
-    anchor_years = sorted(y for y in map(int, p.pollination_shock_years) if y > base_year)
+    scenarios    = list(p.es_shock_scenarios)
+    anchor_years = sorted(y for y in map(int, p.es_shock_years) if y > base_year)
     end_year     = anchor_years[-1]
 
     if not getattr(p, 'region_boundary_path', None):
@@ -39,13 +44,20 @@ def task_compute_pollination_shock(p):
     cfg = pf.configure_crop_benefits(p, base_year)            # crop_benefits Config -> our base_data + task dir
 
     if not getattr(p, 'scenario_lulc_paths', None):
-        tmpl = p.pollination_lulc_path_template
+        tmpl = p.es_lulc_path_template
         p.scenario_lulc_paths = {s: {y: glob.glob(tmpl.format(scenario=s, year=y))[0]
                                      for y in anchor_years if glob.glob(tmpl.format(scenario=s, year=y))}
                                  for s in [base_scn] + scenarios}
 
-    # base-year SEALS7 map: per-ES override, else the shared generic -- same concept/pattern carbon reads.
-    _base_map = getattr(p, 'pollination_base_year_lulc_path', None) or getattr(p, 'base_year_lulc_path', None)
+    # base-year SEALS7 map: per-ES override, else the ES-shared attr. NEVER p.base_year_lulc_path, which
+    # SEALS OWNS and overwrites at runtime with its raw-ESA source (a raw-ESA base map would make the
+    # SEALS7-keyed sufficiency lookup produce garbage). Unlike carbon's optional fixed-base extra, this
+    # base-year value IS pollination's primary denominator (feeds both fixedbase and contemp), so it is
+    # mandatory -- fail loudly rather than silently emit a wrong/empty shock.
+    _base_map = getattr(p, 'pollination_base_year_lulc_path', None) or getattr(p, 'es_base_year_lulc_path', None)
+    if not _base_map:
+        raise ValueError('pollination base-year LULC not set: point p.es_base_year_lulc_path (or '
+                         'p.pollination_base_year_lulc_path) at the SEALS7 base-year map.')
     # denominator (unpaired 2023 value) is year-independent -> compute once
     denom = pf.baseline_denominator(cfg, _base_map, base_year)
 
@@ -92,15 +104,6 @@ def task_compute_pollination_shock(p):
     return True
 
 
-# our scenario -> raw_dependencies scenario name(s), with fallbacks (stress_test reuses current_policies).
-POLLINATION_SCENARIO_MAP = {
-    'below_2c': ['below_2c'], 'current_policies': ['current_policies'],
-    'delayed_transition': ['delayed_transition'], 'fragmented_world': ['fragmented_world'],
-    'low_demand': ['low_demand'], 'ndcs': ['ndcs'],
-    'net_zero': ['net_zero', 'net_zero_2050'], 'stress_test': ['current_policies'],
-}
-
-
 def task_compute_pollination_shock_static(p):
     """Static per-scenario pollination shock -> V_F/OSD, linear ramp 0->end_year, from the frozen table.
 
@@ -110,18 +113,22 @@ def task_compute_pollination_shock_static(p):
     dependencies, just the old label kept in this CSV), ramping that difference linearly from 0 at
     base_year. NEVER writes back to raw_dependencies -- output goes to p.pollination_shock_output_path
     (pollination_interpolated.csv), the same file the dynamic task writes. Caller sets:
-    pollination_shock_base_year, pollination_shock_end_year, pollination_shock_scenarios,
+    es_shock_base_year, es_shock_end_year, es_shock_scenarios,
     pollination_shock_output_path; scenario->raw via p.pollination_scenario_map (default);
     sectors via p.pollination_shock_acts (default ('V_F', 'OSD'), matching the dynamic task).
     """
+    # Default into the es_shocks parent dir. Runtime, not build time: p.es_shock_dir is
+    # published by that task, which ProjectFlow runs before this one.
+    if not getattr(p, 'pollination_shock_output_path', None):
+        p.pollination_shock_output_path = os.path.join(getattr(p, 'es_shock_dir', None) or p.project_dir, 'pollination_interpolated.csv')
     if not p.run_this:
         return
 
-    base_year = int(p.pollination_shock_base_year)
-    end_year = int(p.pollination_shock_end_year)
+    base_year = int(p.es_shock_base_year)
+    end_year = int(p.es_shock_end_year)
     n_years = end_year - base_year
-    scenario_map = getattr(p, 'pollination_scenario_map', POLLINATION_SCENARIO_MAP)
-    scenarios = list(p.pollination_shock_scenarios)
+    scenario_map = getattr(p, 'pollination_scenario_map', utilities.ES_SCENARIO_MAP)
+    scenarios = list(p.es_shock_scenarios)
     acts = getattr(p, 'pollination_shock_acts', ('V_F', 'OSD'))
 
     poll_path = getattr(p, 'pollination_dependency_path', None) or os.path.join(

@@ -1,9 +1,9 @@
 """Erosion-control ES science helpers (sediment-retention shock).
 
 STATIC helpers (read_erosion_dependency, find_scenario): parse the frozen per-scenario dependency table
-(raw_dependencies/erosion_prevention_dependency.csv). DYNAMIC helpers (#26): the SPAM->elasticity
-crosswalk (load_erosion_elasticity_map, get_erosion_elasticity, SPAM_ALIAS_MAP) and the per-country
-severe-threshold policy (build_severe_threshold_raster) used by the dynamic prevention/valuation tasks.
+(raw_dependencies/erosion_prevention_dependency.csv). DYNAMIC helpers (#26): the SPAM->coefficient
+crosswalk (load_erosion_yield_coefficients, get_erosion_yield_coefficient, SPAM_ALIAS_MAP) and the per-country
+severe-threshold policy (build_severe_threshold_raster) used by the dynamic exposure and shock tasks.
 """
 import numpy as np
 import pandas as pd
@@ -31,30 +31,47 @@ def find_scenario(df, candidates):
 
 
 # ---------------------------------------------------------------------------
-# DYNAMIC valuation helpers (#26): SPAM crop -> supply-elasticity crosswalk.
-# The 4-letter SPAM band codes are aliased to the elasticity table's crop names.
+# DYNAMIC helpers (#26): SPAM crop -> erosion-to-yield coefficient crosswalk.
+# The 4-letter SPAM band codes are aliased to the coefficient table's crop names.
 # ---------------------------------------------------------------------------
+# SPAM2020 crop code -> candidate keys in the crop-coefficient table, tried in order.
+# The FIRST alias of each entry is the EXACT FAO item name as it appears in
+# elasticity_crops_fao_revised.csv; the looser stems after it are kept as fallbacks for other tables.
+# This matters: the lookup is exact-match, so stems alone ("maize") never hit the FAO names
+# ("Maize (corn)") and every crop silently took the 0.08 fallback -- which is the table MINIMUM, not
+# its average (mean 0.163), so the miss biased the erosion shock low across the board.
+# Six SPAM codes have NO counterpart in the table and correctly keep the default: grou (groundnut),
+# ocer, orts, pige, vege and rest -- the n.e.c. aggregates FAO does not carry.
 SPAM_ALIAS_MAP = {
-    "whea": ["wheat"], "rice": ["rice"], "maiz": ["maize", "corn"], "barl": ["barley"],
-    "sorg": ["sorghum"], "mill": ["millet", "small millet"], "pmil": ["pearl millet"],
-    "pota": ["potato"], "cass": ["cassava"], "soyb": ["soybean", "soy"],
-    "grou": ["groundnut", "peanut"], "cott": ["cotton"], "sugc": ["sugarcane"],
-    "bana": ["banana"], "plnt": ["plantain"], "coco": ["cocoa"],
-    "coff": ["arabica coffee", "coffee"], "rcof": ["robusta coffee"], "teas": ["tea"],
-    "toba": ["tobacco"], "toma": ["tomato"], "onio": ["onion"],
-    "vege": ["vegetable", "other vegetables"], "sunf": ["sunflower"], "rape": ["rapeseed", "canola"],
-    "sesa": ["sesame"], "citr": ["citrus"], "lent": ["lentil"], "bean": ["bean"],
-    "chic": ["chickpea"], "cowp": ["cowpea"], "pige": ["pigeon pea"], "yams": ["yams"],
-    "swpo": ["sweet potato"], "sugb": ["sugarbeet"], "oilp": ["oilpalm", "oil palm"],
-    "cnut": ["coconut"], "ocer": ["other cereals"], "orts": ["other roots"],
-    "opul": ["other pulses"], "ooil": ["other oil crops"], "ofib": ["other fibre crops"],
-    "rubb": ["rubber"], "trof": ["other tropical fruit"], "temf": ["temperate fruit"],
-    "rest": ["rest of crops"],
+    "whea": ["wheat"], "rice": ["rice"], "maiz": ["maize (corn)", "maize", "corn"],
+    "barl": ["barley"], "sorg": ["sorghum"], "mill": ["millet", "small millet"],
+    "pmil": ["millet", "pearl millet"], "pota": ["potatoes", "potato"],
+    "cass": ["cassava, fresh", "cassava"], "soyb": ["soya beans", "soybean", "soy"],
+    "grou": ["groundnut", "peanut"], "cott": ["seed cotton, unginned", "cotton"],
+    "sugc": ["sugar cane", "sugarcane"], "bana": ["bananas", "banana"],
+    "plnt": ["plantains and cooking bananas", "plantain"], "coco": ["cocoa beans", "cocoa"],
+    "coff": ["coffee, green", "arabica coffee", "coffee"], "rcof": ["coffee, green", "robusta coffee"],
+    "teas": ["tea leaves", "tea"], "toba": ["unmanufactured tobacco", "tobacco"],
+    "toma": ["tomatoes", "tomato"],
+    "onio": ["onions and shallots, dry (excluding dehydrated)", "onion"],
+    "vege": ["vegetable", "other vegetables"], "sunf": ["sunflower seed", "sunflower"],
+    "rape": ["rape or colza seed", "rapeseed", "canola"], "sesa": ["sesame seed", "sesame"],
+    "citr": ["oranges", "citrus"], "lent": ["lentils, dry", "lentil"],
+    "bean": ["beans, dry", "bean"], "chic": ["chick peas, dry", "chickpea"],
+    "cowp": ["cow peas, dry", "cowpea"], "pige": ["peas, dry", "pigeon pea"], "yams": ["yams"],
+    "swpo": ["sweet potatoes", "sweet potato"], "sugb": ["sugar beet", "sugarbeet"],
+    "oilp": ["oil palm fruit", "oilpalm", "oil palm"], "cnut": ["coconuts, in shell", "coconut"],
+    "ocer": ["other cereals"], "orts": ["other roots"],
+    "opul": ["other pulses n.e.c.", "other pulses"], "ooil": ["castor oil seeds", "other oil crops"],
+    "ofib": ["agave fibres, raw, n.e.c.", "other fibre crops"],
+    "rubb": ["natural rubber in primary forms", "rubber"],
+    "trof": ["other tropical fruits, n.e.c.", "other tropical fruit"],
+    "temf": ["apples", "temperate fruit"], "rest": ["rest of crops"],
 }
 
 
-def load_erosion_elasticity_map(elasticity_csv):
-    """Return {crop_key (lowercased) -> supply elasticity in [0,1]} from the elasticity CSV.
+def load_erosion_yield_coefficients(elasticity_csv):
+    """Return {crop_key (lowercased) -> erosion-to-yield coefficient in [0,1]} from the coefficient CSV.
 
     Accepts a crop-name column among crop/monfreda_crop/item/item_name plus an 'elasticity' column.
     """
@@ -70,17 +87,64 @@ def load_erosion_elasticity_map(elasticity_csv):
     return dict(zip(df['__k'], df['elasticity']))
 
 
-def get_erosion_elasticity(crop_key, elast_map, fallback=0.08):
-    """crop_key -> elasticity: direct hit, else SPAM alias, else the flat fallback."""
+def get_erosion_yield_coefficient(crop_key, coef_map, fallback=0.08):
+    """crop_key -> erosion-to-yield coefficient: direct hit, else SPAM alias, else the flat fallback."""
     k = str(crop_key).strip().lower()
-    v = elast_map.get(k, np.nan)
+    v = coef_map.get(k, np.nan)
     if np.isfinite(v):
         return float(np.clip(v, 0.0, 1.0))
     for alias in SPAM_ALIAS_MAP.get(k, []):
-        v2 = elast_map.get(str(alias).strip().lower(), np.nan)
+        v2 = coef_map.get(str(alias).strip().lower(), np.nan)
         if np.isfinite(v2):
             return float(np.clip(v2, 0.0, 1.0))
     return float(np.clip(fallback, 0.0, 1.0))
+
+
+def build_seals7_biophysical_table(src_csv, out_csv):
+    """Re-key a biophysical table from ESA lucodes onto SEALS7 classes, for InVEST SDR.
+
+    SDR matches the table's `lucode` against the LULC raster's values, but the shipped table is keyed on
+    ESA-CCI codes while our maps are SEALS7 (1-7), so SDR would match nothing. The table already carries
+    a `seals_lucode` column, and usle_c/usle_p are CONSTANT within each SEALS class (verified: min == max
+    for all 7), so the collapse is unambiguous -- no area weighting to choose. Returns the written path.
+    """
+    df = pd.read_csv(src_csv)
+    df.columns = [str(c).strip().lower() for c in df.columns]
+    if 'seals_lucode' not in df.columns:
+        raise ValueError('%s has no seals_lucode column, so it cannot be re-keyed onto SEALS7 classes; '
+                         'supply an already-SEALS-keyed table via p.erosion_biophysical_table_path.'
+                         % src_csv)
+    df = df.dropna(subset=['seals_lucode'])
+    out = (df.groupby(df['seals_lucode'].astype(int))[['usle_c', 'usle_p']].mean()
+             .reset_index().rename(columns={'seals_lucode': 'lucode'}))
+    out['description'] = ['seals7_class_%d' % c for c in out['lucode']]
+    out.to_csv(out_csv, index=False)
+    return out_csv
+
+
+def repair_watersheds(src_path, out_path):
+    """Repair self-intersecting watershed rings so InVEST SDR can finish.
+
+    SDR's last step (_generate_report) unions the watershed polygons to test for overlap, and GEOS
+    RAISES TopologyException on an invalid ring rather than warning -- so a single bad geometry kills a
+    run whose rasters are already computed. HydroBASINS reprojected to an equal-area CRS carries ring
+    self-intersections (1192 of 16397 in hybas_global_lev06_v1c), which is why this never showed up on a
+    clipped AOI: the small subset happened to exclude them.
+
+    make_valid (not buffer(0), which can silently drop slivers) clears all of them, leaves the union
+    computable, and preserves total area. Returns out_path.
+    """
+    import geopandas as gpd
+
+    gdf = gpd.read_file(src_path, engine='pyogrio')
+    invalid = ~gdf.geometry.is_valid
+    if invalid.any():
+        gdf.loc[invalid, 'geometry'] = gdf.loc[invalid, 'geometry'].make_valid()
+        gdf = gdf[gdf.geometry.notna() & ~gdf.geometry.is_empty]
+    gdf.to_file(out_path, driver='GPKG')
+    print('  erosion watersheds: repaired %d of %d invalid geometries -> %s'
+          % (int(invalid.sum()), len(gdf), out_path))
+    return out_path
 
 
 def build_severe_threshold_raster(grid_da, country_boundary_path, dem_path=None,
@@ -99,7 +163,7 @@ def build_severe_threshold_raster(grid_da, country_boundary_path, dem_path=None,
     from rasterio.features import rasterize
     from rasterio.enums import Resampling
 
-    gdf = gpd.read_file(country_boundary_path).to_crs(grid_da.rio.crs)
+    gdf = gpd.read_file(country_boundary_path, engine='pyogrio').to_crs(grid_da.rio.crs)
     gdf = gdf[gdf.geometry.notnull()].reset_index(drop=True)
     gdf['iid'] = range(1, len(gdf) + 1)
     shape, transform = grid_da.shape, grid_da.rio.transform()

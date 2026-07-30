@@ -9,22 +9,19 @@ from global_invest.pollination import pollination_tasks
 
 
 def add_pollination_tasks(p, parent=None):
-    """Graft the pollination ES-shock task onto p, dispatching STATIC vs DYNAMIC on SEALS-map availability.
+    """Graft the pollination ES-shock task onto p, dispatching STATIC vs DYNAMIC on p.dynamic_es.
 
-    DYNAMIC (>=2 SEALS map years in p.seals_years): recompute the sufficiency shock from our SEALS maps
-    at each anchor year (task_compute_pollination_shock). STATIC (<2, the fallback -- the dynamic
-    recompute needs >=2 anchors to measure change): read the frozen
+    DYNAMIC ('pollination' in p.dynamic_es): recompute the sufficiency shock from our SEALS maps at each
+    p.es_shock_years anchor (task_compute_pollination_shock). STATIC (the default): read the frozen
     raw_dependencies/pollination_dependency.csv (task_compute_pollination_shock_static). Mirrors
-    add_erosion_tasks / add_carbon_tasks; both paths write pollination_interpolated.csv.
+    add_erosion_tasks / add_terrestrial_carbon_tasks; both paths write pollination_interpolated.csv.
 
-    Caller sets on p before calling: pollination_shock_scenarios, pollination_shock_base_year,
-    pollination_shock_output_path. DYNAMIC also: pollination_shock_years (SEALS-map anchor years, from
-    seals_years), pollination_lulc_path_template, pollination_base_year_lulc_path,
-    pollination_shock_base_scenario. STATIC also: pollination_shock_end_year. Standard GTAP r50xAEZ
-    boundary defaults inside the task via p.get_path; override on p only when different.
+    Caller sets only the shared es_shock_* config (see run_ngfs_pnas STEP 6). Everything
+    pollination-specific defaults in the task: the output CSV into p.es_shock_dir, the r50xAEZ
+    boundary via p.get_path.
     """
-    dynamic = len(str(getattr(p, 'seals_years', '') or '').split()) >= 2
-    if not dynamic:   # <2 SEALS map years -> read the frozen dependency table
+    dynamic = 'pollination' in getattr(p, 'dynamic_es', [])
+    if not dynamic:   # not requested dynamic -> read the frozen dependency table
         p.compute_pollination_shock_task = p.add_task(pollination_tasks.task_compute_pollination_shock_static, parent=parent)
         return p
     # dynamic: recompute from the SEALS maps (one task for pollination; cf. erosion's multi-task chain)

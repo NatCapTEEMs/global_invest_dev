@@ -301,7 +301,7 @@ def stack_layers_to_csv(
         print(f"Summary written to: {output_path}")
 
 
-def generate_carbon_density_raster(lulc_path, cz_path, carbon_density_lookup_table_path, out_path):
+def generate_terrestrial_carbon_density_raster(lulc_path, cz_path, terrestrial_carbon_density_lookup_table_path, out_path):
     """
     Generate a carbon density raster by mapping carbon zone and LULC combinations
     to values from a carbon lookup table.
@@ -312,7 +312,7 @@ def generate_carbon_density_raster(lulc_path, cz_path, carbon_density_lookup_tab
         Path to the land use land cover (LULC) raster.
     cz_path : str
         Path to the carbon zone raster.
-    carbon_density_lookup_table_path : str
+    terrestrial_carbon_density_lookup_table_path : str
         Path to a long/tidy CSV with one row per (carbon_zone_id, lulc_id) and a single
         carbon_density_mean value column (NOT a wide table indexed by carbon_zone_id).
     out_path : str
@@ -320,7 +320,7 @@ def generate_carbon_density_raster(lulc_path, cz_path, carbon_density_lookup_tab
     """
     # Read lookup table from CSV
 
-    carbon_table = pd.read_csv(carbon_density_lookup_table_path, index_col=False)
+    carbon_table = pd.read_csv(terrestrial_carbon_density_lookup_table_path, index_col=False)
 
     lulc_filename = os.path.basename(lulc_path)
 
@@ -381,7 +381,7 @@ def summarize_raster_by_region(value_raster_path, region_boundary_path, out_path
         Output path for the CSV summary.
     """
     # Load vector data
-    regions = gpd.read_file(region_boundary_path)
+    regions = gpd.read_file(region_boundary_path, engine='pyogrio')
 
     # Open the raster once
     with rasterio.open(value_raster_path) as src:

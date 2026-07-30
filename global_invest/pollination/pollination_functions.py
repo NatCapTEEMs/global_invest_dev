@@ -79,7 +79,7 @@ def scenario_region_pct_change(cfg, scenario, lulc_path, baseline_lulc_path,
 
 def _zonal_pct_change(diff_path, denominator_path, correspondence_gpkg, region_id_field='ee_r50_aez18_id'):
     """(sum diff*area / sum baseline*area) * 100 per r50xAEZ zone, keyed to (ENDW, REG)."""
-    gdf = gpd.read_file(correspondence_gpkg)
+    gdf = gpd.read_file(correspondence_gpkg, engine='pyogrio')
     if gdf.crs is None or gdf.crs.to_epsg() != 4326:
         gdf = gdf.to_crs(4326)
     gdf[region_id_field] = gdf[region_id_field].astype(int)
