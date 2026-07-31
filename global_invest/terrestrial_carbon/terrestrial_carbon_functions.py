@@ -19,7 +19,7 @@ import pandas as pd
 import numpy as np
 from tqdm import tqdm
 import geopandas as gpd
-
+import pyogrio
 
 # =============================================================================
 # define functions
@@ -142,6 +142,7 @@ def combine_two_float_rasters(
 
     gc.collect()
     print(f"Combined raster saved to: {out_path}")
+
 
 
 def reproject_raster(
@@ -301,7 +302,7 @@ def stack_layers_to_csv(
         print(f"Summary written to: {output_path}")
 
 
-def generate_terrestrial_carbon_density_raster(lulc_path, cz_path, terrestrial_carbon_density_lookup_table_path, out_path):
+def generate_carbon_density_raster(lulc_path, cz_path, carbon_density_lookup_table_path, out_path):
     """
     Generate a carbon density raster by mapping carbon zone and LULC combinations
     to values from a carbon lookup table.
@@ -312,15 +313,18 @@ def generate_terrestrial_carbon_density_raster(lulc_path, cz_path, terrestrial_c
         Path to the land use land cover (LULC) raster.
     cz_path : str
         Path to the carbon zone raster.
-    terrestrial_carbon_density_lookup_table_path : str
-        Path to a long/tidy CSV with one row per (carbon_zone_id, lulc_id) and a single
-        carbon_density_mean value column (NOT a wide table indexed by carbon_zone_id).
+    carbon_density_lookup_table_path : str
+        Path to a LONG/TIDY CSV with one row per (carbon_zone_id, lulc_id) and a single
+        carbon_density_mean value column. NOT a wide table indexed by carbon_zone_id with
+        one column per LULC type: the lookup below filters on a `lulc_id` COLUMN and reads
+        `carbon_density_mean`, so a wide table matches nothing and, because an empty match
+        is skipped rather than raised, yields an all-NoData raster instead of an error.
     out_path : str
         Output path for the resulting carbon density raster.
     """
     # Read lookup table from CSV
 
-    carbon_table = pd.read_csv(terrestrial_carbon_density_lookup_table_path, index_col=False)
+    carbon_table = pd.read_csv(carbon_density_lookup_table_path, index_col=False)
 
     lulc_filename = os.path.basename(lulc_path)
 
@@ -365,7 +369,6 @@ def generate_terrestrial_carbon_density_raster(lulc_path, cz_path, terrestrial_c
     gc.collect()
     print(f"Saved: {out_path}")
 
-
 def summarize_raster_by_region(value_raster_path, region_boundary_path, out_path):
     """
     Summarize value raster by polygon regions from a vector file (e.g., GPKG).
@@ -377,11 +380,11 @@ def summarize_raster_by_region(value_raster_path, region_boundary_path, out_path
         Path to the value raster (e.g., carbon density).
     region_boundary_path : str
         Path to the vector file (GeoPackage) containing polygon regions.
-    out_path : str
+    out_csv_path : str
         Output path for the CSV summary.
     """
     # Load vector data
-    regions = gpd.read_file(region_boundary_path, engine='pyogrio')
+    regions = gpd.read_file(region_boundary_path)
 
     # Open the raster once
     with rasterio.open(value_raster_path) as src:
@@ -390,48 +393,35 @@ def summarize_raster_by_region(value_raster_path, region_boundary_path, out_path
             print(f"Reprojecting vector data from {regions.crs} to match raster CRS {raster_crs}")
             regions = regions.to_crs(raster_crs)
 
-        x_res, y_res = src.res
-        is_geographic = raster_crs.is_geographic if raster_crs else False
-
-        # Calculate pixel area
-        if is_geographic:
-            pixel_area_m2 = (111_320 ** 2) * abs(x_res * y_res)
-        else:
-            pixel_area_m2 = abs(x_res * y_res)
-
         results = []
-
+        id_list = []
         for idx, row in tqdm(regions.iterrows(), total=len(regions), desc="Summarizing polygons"):
             geom = [row.geometry]
-
+            id_list.append(row.get("id", idx))
             try:
                 masked, _ = mask(src, geom, crop=True, nodata=np.nan, all_touched=True)
                 values = masked[0]
                 values = values[~np.isnan(values)]
 
-                if values.size == 0:
-                    continue
-
-                area_m2 = values.size * pixel_area_m2
+                area_m2 = values.size
 
                 stats = {
-                    # key zones by the stable ee_r50_aez18_id as int (gpkg stores it as string), not gpkg row
-                    # position; fall back to the old row.get("id", idx) for callers whose gpkg lacks the column
-                    "region_id": int(row["ee_r50_aez18_id"]) if "ee_r50_aez18_id" in row.index else row.get("id", idx),
+                    "index_id": row.get("id", idx),
                     "mean": values.mean(),
                     "min": values.min(),
                     "max": values.max(),
                     "count": values.size,
-                    "area_m2": area_m2,
-                    "area_ha": area_m2 / 10_000,
-                    "area_km2": area_m2 / 1_000_000,
+                    "total": values.sum()
                 }
                 results.append(stats)
 
             except Exception as e:
                 print(f"Error processing region {idx}: {e}")
                 continue
-
+    regions["index_id"] =id_list
     df = pd.DataFrame(results)
+    df = regions.merge(df, on="index_id", how="right")
+    df = df.drop(columns=["index_id","geometry"])
+    df['year'] = '2019'
     df.to_csv(out_path, index=False)
     print(f"Summary written to: {out_path}")
