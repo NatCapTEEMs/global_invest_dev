@@ -69,8 +69,9 @@ if __name__ == '__main__':
     p.es_shock_base_scenario = 'baseline_ignore_damages'       # the nature-off counterfactual
     p.erosion_shock_output_path = os.path.join(p.project_dir, 'erosion_interpolated.csv')
 
-    # Both methods are computed and reported side by side; this only picks which becomes shock_pct.
-    p.erosion_method = 'service'
+    # Every method is computed and reported side by side, and erosion_method only picks which one
+    # becomes shock_pct. Left unset so this inherits the task default rather than pinning a second
+    # copy of it here, which is how the standalone runner and the pipeline drift apart.
 
     erosion_initialize.add_erosion_tasks(p)
 

@@ -6,9 +6,10 @@ erosion-affected crop sectors -> erosion_interpolated.csv. UNCAPPED here -- the 
 later on the COMBINED value in build_combined_afeall_cc_es.
 
 DYNAMIC (#26; task_erosion_sdr -> upstream -> exposure -> shock): recompute the shock from our SEALS
-maps via InVEST SDR -> D8 upstream -> prevention shares -> per-zone crop-productivity shock, by TWO
+maps via InVEST SDR -> D8 upstream -> prevention shares -> per-zone crop-productivity shock, by THREE
 methods reported side by side (A = 'damage', thresholded/area; B = 'service', threshold-free and
-magnitude-weighted with a per-crop coefficient; see task_erosion_shock). add_erosion_tasks (erosion_initialize) dispatches static vs dynamic on p.dynamic_es.
+magnitude-weighted with a per-crop coefficient; B-thresholded = 'service_threshold', B restricted to a
+FIXED severe-pixel set and the DEFAULT; see task_erosion_shock). add_erosion_tasks (erosion_initialize) dispatches static vs dynamic on p.dynamic_es.
 """
 import os
 import pandas as pd
@@ -51,8 +52,9 @@ SPAM_CROP_TO_GTAP_SECTOR = {
 # SEALS7 cropland class, the cropland definition method A weights by.
 CROPLAND_SEALS7_CLASS = 2
 # The erosion -> yield bridge: the fraction of yield lost per unit of erosion exposure. Converting
-# biophysical erosion into an economic productivity shock requires such a coefficient, so both methods
-# rest on one. Method A applies this flat value to its thresholded area share. Method B reads a
+# biophysical erosion into an economic productivity shock requires such a coefficient, so all three
+# methods rest on one. Method A applies this flat value to its thresholded area share. The service
+# methods read a
 # per-crop coefficient from elasticity_crops_fao_revised.csv (see alpha_for in task_erosion_shock) and
 # falls back here only when neither the crop nor its sector has a value.
 EROSION_ALPHA = 0.08
@@ -75,6 +77,10 @@ def task_erosion_sdr(p):
     erosion_biophysical_table_path (SEALS7 lucode -> usle_c/usle_p); erosion_analysis_grid_path
     (6.45 km reference raster; local only). SDR knobs via p.erosion_sdr_params (defaults below).
     """
+    # Published before the run_this guard: a skipped task (skip_existing with the dir already there)
+    # still needs downstream to find these outputs, and a task body that returns early would leave
+    # the attribute unset and fail the next task with an AttributeError.
+    p.erosion_sdr_dir = p.cur_dir      # downstream tasks read usle_/rkls_/avoided_erosion_ from here
     if not p.run_this:
         return
     import glob
@@ -133,7 +139,6 @@ def task_erosion_sdr(p):
                              lulc_path=lulc_grid, watersheds_path=watersheds,
                              biophysical_table_path=biophysical, **sdr_params))
             n += 1
-    p.erosion_sdr_dir = p.cur_dir      # downstream tasks read usle_/rkls_/avoided_erosion_ from here
     print('  erosion SDR: %d scenario x year maps (%s grid) -> usle_/rkls_ in %s'
           % (n, 'native SEALS' if native else '6.45 km', p.cur_dir))
     return True
@@ -148,6 +153,9 @@ def task_erosion_upstream(p):
 
     Caller sets on p: erosion_dem_path (aligned to the SDR grid here) + the step-1 outputs.
     """
+    # Published before the run_this guard, as in steps 1 and 3: a skipped task must still tell the
+    # exposure task where its rasters are, or a resumed run dies on an AttributeError.
+    p.erosion_upstream_dir = p.cur_dir
     if not p.run_this:
         return
     import numpy as np
@@ -193,24 +201,38 @@ def task_erosion_upstream(p):
             pgp.numpy_array_to_raster(ups, -9999.0, ps, (gt[0], gt[3]), wkt,
                                       os.path.join(p.cur_dir, 'upstream_%s.tif' % suffix))
             n += 1
-    p.erosion_upstream_dir = p.cur_dir
     print('  erosion upstream: %d maps -> upstream_<scn>_<yr>.tif in %s' % (n, p.cur_dir))
     return True
 
 
 def task_erosion_exposure(p):
-    """DYNAMIC step 3: per (scenario, year), on-farm PS = avoided/(avoided+usle) on severe pixels
-    (usle > threshold); combined = 1 - (1-onfarm)(1-upstream), zeroed off severe pixels. Reads
-    usle/avoided (p.erosion_sdr_dir) and upstream (p.erosion_upstream_dir); writes ps_gated_<scn>_<yr>.tif
-    (on-farm is an intermediate for the combined union -- only combined is valued downstream).
+    """DYNAMIC step 3: per (scenario, year), turn the SDR outputs into the pixel fields the level
+    functions consume, on the equal-area analysis grid.
 
-    NB: the cropland restriction is NOT applied here -- it comes from SPAM production being zero
-    off-cropland in task_erosion_shock, which puts PS on all
-    severe pixels. The PS is a direct, validated formula; the SPAM weighting step is deferred to
-    the shock task. The severe threshold follows the per-country SES-11 policy (T=2 for small-area
-    <50,000 km2 or low-elevation <250 m countries, else 11) when p.erosion_country_boundary_path
-    (+ p.erosion_dem_path for the elevation rule) is set; otherwise flat p.erosion_severe_threshold_t_ha.
+    Reads usle/avoided (p.erosion_sdr_dir) and upstream (p.erosion_upstream_dir). On-farm PS =
+    avoided/(avoided+usle), which is identically 1 - USLE/RKLS; combined = 1 - (1-onfarm)(1-upstream),
+    the serial-filter union (a tonne must escape both on-site and downslope retention to be lost).
+    Writes six rasters:
+      ps_gated              combined, zeroed off severe pixels    -> B-thresholded (the default)
+      ps_continuous         combined across all land              -> B
+      rkls_grid             potential (bare-soil) erosion         -> the service methods' weight
+      cropland_frac         SEALS cropland fraction               -> method A denominator
+      severe_cropland_frac  the same, zeroed off severe pixels    -> method A numerator
+      severe_mask           the severe gate itself, so a level function can restrict BOTH halves of
+                            a ratio to it. Gating only the numerator measures how much severe erosion
+                            a zone HAS rather than how well it is protected.
+
+    No cropland restriction is applied here. It is deferred to the shock task, where SPAM production
+    is zero off cropland and multiplies through every term, so non-cropland drops out on its own and
+    a binary mask would add nothing.
+
+    The severe threshold follows the per-country SES-11 policy (T=2 for small-area <50,000 km2 or
+    low-elevation <250 m countries, else 11) when p.erosion_country_boundary_path (+ p.erosion_dem_path
+    for the elevation rule) is set; otherwise flat p.erosion_severe_threshold_t_ha.
     """
+    # Published before the run_this guard, for the same reason as step 1: a skipped task must still
+    # tell the shock task where its rasters are.
+    p.erosion_exposure_dir = p.cur_dir
     if not p.run_this:
         return
     import numpy as np
@@ -307,8 +329,12 @@ def task_erosion_exposure(p):
             _write(rkls_v, 'rkls_grid')                # method B magnitude weight
             _write(cropfrac, 'cropland_frac')          # method A denominator
             _write(np.where(mask, cropfrac, 0.0), 'severe_cropland_frac')   # method A numerator
+
+            # The severe gate itself, so a level function can restrict BOTH halves of a ratio to it.
+            # A severe pixel can legitimately have zero protection, so this cannot be recovered by
+            # testing ps_gated > 0.
+            _write(mask.astype('float32'), 'severe_mask')
             n += 1
-    p.erosion_exposure_dir = p.cur_dir
     per_country = getattr(p, 'erosion_country_boundary_path', None) is not None
     print('  erosion prevention: %d maps -> ps_gated_ on EPSG:%d (severe T=%s)'
           % (n, analysis_crs.to_epsg(), 'per-country 11/2' if per_country else '%.1f flat' % thresh_high))
@@ -316,28 +342,40 @@ def task_erosion_exposure(p):
 
 
 def task_erosion_shock(p):
-    """DYNAMIC step 4: per-ee_r50_aez18 crop-productivity LEVELS by TWO methods, reported side by side.
+    """DYNAMIC step 4: per-ee_r50_aez18 crop-productivity LEVELS by three methods, reported side by side.
 
-    Both share the SDR front-end (USLE, RKLS, avoided) and both bridge erosion to yield with the same
+    All share the SDR front-end (USLE, RKLS, avoided) and all bridge erosion to yield with the same
     coefficient, so they differ only in how erosion exposure is measured:
-      A ("damage", the paper's current numbers)  level = -100 * alpha * p_crop, where p_crop is the
-        severe share of the zone's cropland AREA and severe = USLE > the per-country T (2/11).
-        Thresholded, binary, on-farm only, one flat alpha, and necessarily uniform across sectors.
-      B ("service", threshold-free)              level = +100 * mean over crops of alpha_crop * the
-        prevention share, prevention = prevented tonnes / potential tonnes including the upstream D8
-        term, so the average is weighted by the erosion actually at stake. Continuous, off-site,
-        per-crop coefficients, and reported per GTAP sector.
-    The two carry OPPOSITE signs -- A measures damage borne, B protection delivered -- which does not
-    affect the shock, since they differ by a constant that cancels in scenario-minus-baseline.
-    A third PRESERVED level (a prevention share kept behind A's severe-pixel gate, weighted by
-    production alone) is emitted for comparison and never fed to GTAP. p.erosion_method
-    ('damage'|'service', default 'service') selects which becomes shock_pct, the column GTAP consumes.
+      A ("damage")                    level = -100 * alpha * p_crop, where p_crop is the severe share
+        of the zone's cropland AREA and severe = USLE > the per-country T (2/11). Thresholded, binary,
+        on-farm only, one flat alpha, and necessarily uniform across sectors.
+      B ("service", threshold-free)   level = +100 * mean over crops of alpha_crop * the prevention
+        share, prevention = prevented tonnes / potential tonnes including the upstream D8 term.
+        Continuous and per-crop, but composed across ALL land, which saturates it: the union
+        1-(1-onfarm)(1-upstream) sits near 1 over the ~98% of land that is not severely eroding, so
+        the level reaches a median of 0.9988 with about half of pixels pinned at the ceiling, where
+        no improvement in land cover can register.
+      B-thresholded ("service_threshold", the DEFAULT)   B confined to SEVERE pixels, with that set
+        taken from the base scenario and held FIXED, so the shock measures protection change and not a
+        change of population. Measured offline against the ZAF rasters: min -0.0001 (no negative
+        outliers), about twice B's mean signal, and it responds in more zones. A scenario-VARYING set
+        put -18% into a paddy-rice zone; fixing it removed that entirely. Recovers roughly three times B's spatial variation
+        on the same rasters, and matches how the published account of this method builds it.
+    A is signed negative (damage borne) and B positive (protection delivered), but BOTH increase with
+    better land condition, so they are positively correlated by construction and neither is a sign
+    flip of the other. They are differently shaped functions of the erosion field, not offsets of one
+    another, so their difference does not cancel.
+    A fourth PRESERVED level (a prevention share behind A's severe gate, weighted by production alone)
+    is emitted for comparison and never fed to GTAP. Its numerator is gated while its denominator is
+    not, which makes it track erosion PREVALENCE rather than protection, and inverts its orientation.
+    p.erosion_method ('damage'|'service'|'service_threshold', default 'service_threshold') selects
+    which becomes shock_pct, the column GTAP consumes.
 
     Each level is differenced ABSOLUTELY against the contemporaneous baseline (the level is already a %
     of crop productivity) and ramped 0 at base_year through the anchors. Writes the 8-sector per-zone
     CSV at p.erosion_shock_output_path: the shared ENDW, ACTS, REG, scenario, year, shock_pct,
     shock_pct_contemp, shock_pct_fixedbase plus shock_pct_damage, shock_pct_service and
-    shock_pct_prevention_thresholded.
+    shock_pct_service_threshold.
 
     Caller sets on p: scenario_lulc_paths (incl. the base scenario), es_shock_years (anchors),
     es_shock_base_year, es_shock_end_year; erosion_exposure_dir (set by step 3);
@@ -477,25 +515,27 @@ def task_erosion_shock(p):
         lvl = -100.0 * alpha * p_crop
         return {s: lvl for s in sectors}
 
-    def level_service(scn, yr):
-        """METHOD B ("service") -- threshold-free, magnitude-weighted, crop-specific. Credits the continuous
-        prevention share (on-farm 1-USLE/RKLS composed with the upstream D8 term) across ALL cropland,
-        weighted by the erosion actually prevented: per crop, prevented tonnes / potential tonnes, so a
-        near-zero-erosion pixel cannot earn credit for preventing ~all of nothing. Each crop's share is
-        bridged to yield by its OWN alpha and production-weighted across crops -- the one place B goes
-        beyond A, which applies a single flat alpha.
+    def _service_level(ps, rkls):
+        """Production-weighted prevention level per GTAP sector, shared by B and B-thresholded.
 
-        Sign convention is the opposite of A (a service delivered, not damage borne), which does NOT
-        affect the shock: the two differ by a constant that cancels in scenario-minus-baseline."""
-        ps = np.clip(_grid('ps_continuous', scn, yr), 0.0, 1.0)
-        rkls = _grid('rkls_grid', scn, yr)
+        Per crop, the prevention share is prevented tonnes over potential tonnes, so a pixel with
+        negligible erosion cannot earn credit for preventing almost nothing. Each crop's share is
+        bridged to yield by its OWN alpha and averaged across crops by production. The two callers
+        differ only in the ps field and in whether rkls is restricted to severe pixels."""
         per_sector = {s: [np.zeros(max_id + 1), np.zeros(max_id + 1)] for s in sectors}
         all_num = np.zeros(max_id + 1)
         for crop, prod, _elast in crop_prod:
             potential = _zonal(rkls * prod)
             prevented = _zonal(ps * rkls * prod)
-            share = np.where(potential > 0, prevented / np.where(potential > 0, potential, 1.0), 0.0)
-            weight = _zonal(prod)
+            at_stake = potential > 0
+            share = np.where(at_stake, prevented / np.where(at_stake, potential, 1.0), 0.0)
+            # A zone-crop with nothing at stake carries NO WEIGHT, rather than scoring a share of 0.
+            # Zero would read as "no protection delivered" when it means "no erosion to protect
+            # against", so under a severe threshold a zone that stops eroding between baseline and
+            # scenario would look like its protection collapsed. That produced a -28% shock for paddy
+            # rice in South Africa, a zone with almost no rice and no severe pixels in the scenario.
+            # Dropping it from both sides of the ratio lets it fall back to the all-crop level below.
+            weight = _zonal(prod) * at_stake
             contribution = weight * alpha_for(crop) * share
             all_num += contribution
             sector = crop_sector(crop)
@@ -511,25 +551,47 @@ def task_erosion_shock(p):
             out[s] = lvl.reindex(all_crop.index).fillna(all_crop)
         return out
 
-    def level_prevention_thresholded(scn, yr):
-        """PRESERVED original candidate: threshold-GATED prevention share, production-weighted, scaled by
-        the same per-crop coefficient B uses. It differs from B ONLY in exposure measurement -- it keeps
-        the severe-pixel gate and weights by production alone rather than by production x potential
-        erosion. Reported for comparison, never fed to GTAP."""
-        ps_arr = np.clip(_grid('ps_gated', scn, yr), 0.0, 1.0)
-        protel = np.zeros(max_id + 1)
-        for _crop, prod, elast in crop_prod:
-            protel += _zonal(ps_arr * prod) * elast
-        lvl = _series(protel, tot).clip(0.0, 1.0) * 100.0
-        return {s: lvl for s in sectors}
+    def level_service(scn, yr):
+        """METHOD B ("service") -- threshold-free. Credits the continuous prevention share across ALL
+        land, which saturates it (median 0.9988, about half of pixels pinned at full protection), so
+        it is reported for comparison and no longer feeds GTAP. Signed positive as a service
+        delivered, but it still INCREASES with better land condition exactly as A does."""
+        return _service_level(np.clip(_grid('ps_continuous', scn, yr), 0.0, 1.0),
+                              _grid('rkls_grid', scn, yr))
+
+    def level_service_threshold(scn, yr):
+        """METHOD B THRESHOLDED -- B confined to severely eroding pixels, with the severe set taken
+        from the BASE scenario and held FIXED. NOT the default; see the caveat below.
+
+        NOT yet verified INSIDE the task -- the numbers above come from an offline recomputation
+        against the exposure rasters. The next full pipeline run closes that gap.
+
+        Restricting to severe pixels is what stops B saturating, since the union sits near 1 across
+        the ~98% of land that is not eroding. But a scenario-VARYING severe set makes the shock partly
+        a change of population rather than of protection: the two levels then average over different
+        pixels, and in a zone with only a handful of severe pixels one entering or leaving swings the
+        average. That put -18% into a paddy-rice zone in South Africa. Holding the set fixed makes the
+        difference measure protection alone, and also makes `potential` identical across scenarios,
+        because RKLS carries no cover factor and so does not vary with land use.
+
+        ps_continuous is read here rather than ps_gated: ps_gated is masked to each scenario's OWN
+        severe set, which is exactly what is being held fixed. rkls carries the same fixed mask, so
+        numerator and denominator are restricted together and this stays a prevention share where
+        higher means better. Gating only the numerator would instead measure how much severe erosion a
+        zone HAS. No cropland term is needed: every sum carries prod as a factor, so a pixel with no
+        production contributes nothing regardless."""
+        keep = _grid('severe_mask', base_scn, yr) > 0.5
+        return _service_level(np.where(keep, np.clip(_grid('ps_continuous', scn, yr), 0.0, 1.0), 0.0),
+                              np.where(keep, _grid('rkls_grid', scn, yr), 0.0))
 
     LEVELS = {'damage': level_damage, 'service': level_service,
-              'prevention_thresholded': level_prevention_thresholded}
-    primary = str(getattr(p, 'erosion_method', 'service')).lower()
-    if primary not in ('damage', 'service'):
-        raise ValueError("p.erosion_method must be 'damage' (the deck's Method A) or 'service' "
-                         "(Method B), got %r. The preserved prevention_thresholded variant is "
-                         "reported for comparison but never fed to GTAP." % primary)
+              'service_threshold': level_service_threshold}
+    primary = str(getattr(p, 'erosion_method', 'service_threshold')).lower()
+    if primary not in ('damage', 'service', 'service_threshold'):
+        raise ValueError("p.erosion_method must be 'damage' (the deck's Method A), 'service' "
+                         "(Method B) or 'service_threshold' (B restricted to severely eroding "
+                         "pixels before compositing), got %r. All three are computed and "
+                         "reported side by side; this only selects which becomes shock_pct." % primary)
 
     base_map = p.scenario_lulc_paths.get(base_scn, {})
     all_years = list(range(base_year, end_year + 1))
@@ -571,20 +633,24 @@ def task_erosion_shock(p):
                 for i, yr in enumerate(all_years):
                     rows.append({'ENDW': endw, 'ACTS': sector, 'REG': reg, 'scenario': scn, 'year': yr,
                                  'shock_pct': series[primary][i],
+                                 # Equal to shock_pct by construction here: erosion's level is already
+                                 # a % of crop productivity, so the shock is an absolute difference with
+                                 # no denominator to vary. Emitted anyway because carbon and pollination
+                                 # carry the contemp/fixedbase pair and the viz gates a figure on both.
                                  'shock_pct_contemp': series[primary][i],
                                  'shock_pct_fixedbase': annual_f[i],
                                  'shock_pct_damage': series['damage'][i],
                                  'shock_pct_service': series['service'][i],
-                                 'shock_pct_prevention_thresholded': series['prevention_thresholded'][i]})
+                                 'shock_pct_service_threshold': series['service_threshold'][i]})
 
     out = pd.DataFrame(rows)
     out.to_csv(p.erosion_shock_output_path, index=False)
     end = out[out['year'] == end_year]
     print('  erosion shock (dynamic): %d rows, %d scenarios, %d anchors, alpha=%.3f, primary=%s'
           % (len(out), len(scenarios), len(anchor_years), alpha, primary.upper()))
-    print('     mean shock @%d   A: %+.4f%%   B: %+.4f%%   (preserved, thresholded: %+.4f)'
+    print('     mean shock @%d   A: %+.4f%%   B: %+.4f%%   B-thresholded: %+.4f%%'
           % (end_year, end['shock_pct_damage'].mean(), end['shock_pct_service'].mean(),
-             end['shock_pct_prevention_thresholded'].mean()))
+             end['shock_pct_service_threshold'].mean()))
     return True
 
 def task_compute_erosion_shock_static(p):
