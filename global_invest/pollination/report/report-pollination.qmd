@@ -1,0 +1,117 @@
+---
+title: "Value of Crop Pollination: Gross Ecosystem Product (GEP)"
+author:
+  - name: "Lingling Liu"
+    affiliation: "University of Minnesota"
+  - name: "Subin Poudel"
+    affiliation: "University of Minnesota"
+  - name: "Ryan McWay"
+    affiliation: "University of Minnesota"
+date: "Today..."
+format:
+  pdf:
+    number-sections: true
+    colorlinks: true
+    cite-method: natbib
+bibliography: references.bib
+---
+
+
+<!-- Section:
+        Introduction-->
+# Introduction
+- importance of pollination to crop production
+- as a regulatory service, this is a non-market service (e.g., no price) provided by nature. 
+- Because of human externalities in crop production (pesticidies and toxic fertilizers -- need to find the list of things that threaten pollinators), valuing the service of pollinators is informs farmers of their commerical value. This is important for XX commerical crops -- with a global market value of $XX (X% of global agriculture).
+- Gross-ecosystem product (GEP) is a flow measure of natural capital accounting and provides a means of estimating the commerical value of crop pollination. 
+- We design a formula to estimate GEP for crop pollination globally with spatial 
+- Here are our results for global estimates. Most valuable crops for pollination. Countires with important contribution. 
+- Results showing change in GEP value from 2000 - 2020 (what the trend)
+- How does this compare to other natcap estimates of crop pollination. (fit in the literature)
+
+<!-- Section:
+        Methods-->
+# Methodology for Estimating GEP
+
+- GEP formula: $GEP = \lambda \times P \times Q$
+- Pollination formula: 
+$$
+    GEP = \underbrace{(\text{nature's contribution})}_{\lambda} \times \underbrace{(\text{crop price})}_{P} \times \underbrace{(\text{crop yield}) \times (\text{pollinator sufficency ratio}) \times (\text{pollinator dependency ratio})}_{Q}
+$$
+
+- Define each part. 
+- Discuss imprtance of each addition in relation to GEP value. 
+- Discuss the units: ideally at pixel level and then aggregate zonally to level you desire (e.g., nationally)
+- Discuss alternative methods to estimate crop pollination and there disadvantage
+
+<!-- Section:
+        Data-->
+# Data 
+
+## Crop Yields
+- MapSpam
+    - Resolution
+    - Time span
+    - Crops this covers
+    - Method
+- EarthStat
+    - Resolution
+    - Time span
+    - Crops this covers
+    - Method
+
+## Pollination Suffiency and Dependency
+- Chaplin-Kramer method for pollinator sufficency 
+    - Discussion of the methodology here
+    - Requires lulc maps -- discuss what used and resolution 
+- Dependency ratios from source in natcap module
+    - Discuss how this is determined (method)
+    - Perhaps point to an appendix section with the list of crop and their dependency ratio in descending order.
+
+## Crop Prices
+- FAO prices - a lot of missing values for USD
+- exchange rates - world bank - convert SLC, LCU into USD.
+- For remaining missing values, use a simple AR(1) to impute missing values. 
+
+<!-- Section:
+        Results-->
+# Results
+- Four grid figure: a map for each year of mapspam with gep values (2000, 2005, 2010, 2020)
+- A map of % change in gep value from 2000 to 2020 (twenty year change)
+- Table with global values by crop for 2000, 2005, 2010, 2020 and % change from 2000-2020 
+    - Either all 65 or the top 25 + Rest of Crops summed
+- Same table but for countries (Again, limit list to top + ROW aggregate at bottom)
+- Discussion of the datasets produced that are now public access (global raster maps for pollination gep by crop)
+
+- Some examples (applications)
+    - Specific to a country, year, crop combo that may be important (coffee or another important cash crop)
+
+<!-- Section:
+        Robustness-->
+# Robustness
+- EarthStat comparision for 2000
+- If you remove the imputed values. 
+- Comparision of Agr. GDP
+- Comparision of Agr. GEP (Syalla et al.)
+- Other values of crop pollination as a NatCap value or other non-dollar values for global or sub-national levels that we can compare to. Comparision in terms of yeild from crop pollination
+
+<!-- Section:
+        Conclusion-->
+# Conclusion 
+
+
+<!-- Section:
+        References-->
+# References
+
+::: {#refs}
+:::
+
+<!-- Section:
+        Appendix-->
+
+# Appendix
+
+## A1: Pollinator Dependency Ratios
+
+table with crop dependency ratios. 
