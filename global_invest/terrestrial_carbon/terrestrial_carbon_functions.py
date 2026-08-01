@@ -423,5 +423,10 @@ def summarize_raster_by_region(value_raster_path, region_boundary_path, out_path
     df = regions.merge(df, on="index_id", how="right")
     df = df.drop(columns=["index_id","geometry"])
     df['year'] = '2019'
+    # Stable key. Zones whose raster window is empty are dropped above, so row POSITION in this CSV
+    # does not correspond to row position in the boundary file, and anything aligning on position
+    # silently pairs the wrong zones. Emit the boundary's own id so consumers can join on a value.
+    if 'ee_r50_aez18_id' in df.columns:
+        df['region_id'] = df['ee_r50_aez18_id'].astype(int)
     df.to_csv(out_path, index=False)
     print(f"Summary written to: {out_path}")
