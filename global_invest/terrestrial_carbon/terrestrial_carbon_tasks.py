@@ -309,7 +309,7 @@ def task_compute_terrestrial_carbon_shock(p):
     """Turn per-scenario 300 m LULC into a carbon ES-productivity shock -- region-agnostic.
 
     At each SEALS anchor year in es_shock_years (5-year MAgPIE steps), build a carbon-density
-    raster (generate_terrestrial_carbon_density_raster) for the baseline scenario and each scenario, and take
+    raster (generate_carbon_density_raster) for the baseline scenario and each scenario, and take
     its mean tC/ha per polygon of p.region_boundary_path (summarize_raster_by_region -- untouched,
     generic; the polygon geometry is identical across scenarios, so the mean is sufficient and area
     cancels). The shock at year Y is (mean_scenario_Y - mean_baseline_Y) / mean_baseline_Y * 100 per
@@ -366,7 +366,7 @@ def task_compute_terrestrial_carbon_shock(p):
     if not scenarios:
         scenarios = [s for s in p.scenario_lulc_paths if s != base_scn]
 
-    # generate_terrestrial_carbon_density_raster asserts LULC and carbon-zones share a grid. The zones raster is
+    # generate_carbon_density_raster asserts LULC and carbon-zones share a grid. The zones raster is
     # global 300 m; a SEALS LULC map may be a sub-window (single-country or short-horizon test AOI).
     # When they differ, align the zones to the end-year LULC extent once -- same resolution and an
     # aligned grid, so nearest is a lossless clip -- so the task works at any extent, not only global.
@@ -385,7 +385,7 @@ def task_compute_terrestrial_carbon_shock(p):
     def zone_mean(scenario, year):
         dens = os.path.join(p.cur_dir, 'carbon_density_%s_%d.tif' % (scenario, year))
         if not os.path.exists(dens):
-            terrestrial_carbon_functions.generate_terrestrial_carbon_density_raster(
+            terrestrial_carbon_functions.generate_carbon_density_raster(
                 lulc_path=p.scenario_lulc_paths[scenario][year],
                 cz_path=p.terrestrial_carbon_zones_path,
                 terrestrial_carbon_density_lookup_table_path=p.terrestrial_carbon_density_lookup_table_path,
