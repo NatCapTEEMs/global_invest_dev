@@ -388,7 +388,8 @@ def task_compute_terrestrial_carbon_shock(p):
             terrestrial_carbon_functions.generate_carbon_density_raster(
                 lulc_path=p.scenario_lulc_paths[scenario][year],
                 cz_path=p.terrestrial_carbon_zones_path,
-                terrestrial_carbon_density_lookup_table_path=p.terrestrial_carbon_density_lookup_table_path,
+                # develop's parameter name; the p attribute keeps ours (see the merge of this module)
+                carbon_density_lookup_table_path=p.terrestrial_carbon_density_lookup_table_path,
                 out_path=dens)
         summ = os.path.join(p.cur_dir, 'carbon_by_zone_%s_%d.csv' % (scenario, year))
         if not os.path.exists(summ):
