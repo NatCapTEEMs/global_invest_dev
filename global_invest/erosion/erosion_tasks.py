@@ -1,5 +1,18 @@
 """Erosion-control ES-shock tasks (static + dynamic), on the add_<es>_tasks seam like carbon/pollination.
 
+METHOD SOURCE: the prevention-share erosion valuation in `global_erosion_gep`. That is where the
+science comes from -- the on-farm share AE/(AE+USLE), the upstream share, the union
+1 - (1-onfarm)(1-upstream) that avoids double-counting, the restriction to cropland AND
+severely-eroding pixels, the per-country SES-11 soil-loss-tolerance policy, and the aggregation
+weighted by crop production with per-crop erosion-yield elasticities. The biophysics below that is
+InVEST SDR plus pygeoprocessing's D8 routing.
+
+What differs here: that version runs one static 2019 map, so this recomputes the whole chain PER
+SCENARIO AND YEAR on the SEALS maps and aggregates to r50xAEZ rather than to countries -- and, because
+scenarios exist here and not there, holds the severe-pixel set FIXED to the base scenario (a set that
+moves between scenarios would make part of the shock a change in WHICH pixels are averaged rather than
+a change in protection; see level_service_threshold).
+
 STATIC (task_compute_erosion_shock_static): read raw_dependencies/erosion_prevention_dependency.csv, subtract
 the baseline reference, linearly ramp 0 -> the scenario value over the horizon, apply to the 8
 erosion-affected crop sectors -> erosion_interpolated.csv. UNCAPPED here -- the cap is applied
