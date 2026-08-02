@@ -62,14 +62,21 @@ def task_compute_pollination_shock(p):
     denom = pf.baseline_denominator(cfg, _base_map, base_year)
 
     # value[scenario][year] = per-region % change of that scenario's year-map vs the 2023 baseline (stable ag)
-    value = {}
+    # level_usd = per-region ABSOLUTE baseline pollination value in base-year USD. It is the denominator
+    # of that % change, so it is already computed; emitting it is what lets GEP consume this task's
+    # output instead of running a second chain over the same rasters. Scenario-invariant by construction
+    # (the denominator is the unpaired baseline), so one copy is kept rather than one per scenario-year.
+    value, level_usd = {}, None
     for year in anchor_years:
         for scen in [base_scn] + scenarios:
-            value.setdefault(scen, {})[year] = pf.scenario_region_pct_change(
+            pct, lvl = pf.scenario_region_pct_change(
                 cfg, scenario=f'{scen}_{year}', lulc_path=p.scenario_lulc_paths[scen][year],
                 baseline_lulc_path=_base_map,
                 denominator_path=denom, correspondence_gpkg=p.region_boundary_path,
                 target_year=base_year)
+            value.setdefault(scen, {})[year] = pct
+            if level_usd is None:
+                level_usd = lvl
 
     # ES shock numerator = scenario minus baseline_ignore_dependencies value at each anchor (S_y - B_y); interp annually.
     # TWO denominators emitted under explicit names (carbon uses the SAME names) for the #14 diagnostic:
@@ -91,16 +98,24 @@ def task_compute_pollination_shock(p):
             annual   = np.interp(all_years, [base_year] + anchor_years, [0.0] + list(s.values))
             annual_c = np.interp(all_years, [base_year] + anchor_years,
                                  [0.0] + list(anchor_contemp.loc[(endw, reg)].values))
+            base_usd = float(level_usd.get((endw, reg), float('nan'))) if level_usd is not None else float('nan')
             for year, v, vc in zip(all_years, annual, annual_c):
                 for sector in acts:
                     rows.append({'ENDW': endw, 'ACTS': sector, 'REG': reg, 'scenario': scen,
                                  'year': year, 'shock_pct': vc,
-                                 'shock_pct_fixedbase': v, 'shock_pct_contemp': vc})
+                                 'shock_pct_fixedbase': v, 'shock_pct_contemp': vc,
+                                 'value_usd_base': base_usd})
 
     out = pd.DataFrame(rows)
     out.to_csv(p.pollination_shock_output_path, index=False)
     print('  pollination shock: %d rows, %d scenarios (shock_pct=shock_pct_contemp=/baseline-year value, shock_pct_fixedbase=/2023 value) -> %s'
           % (len(out), out['scenario'].nunique() if rows else 0, p.pollination_shock_output_path))
+    # GEP hand-off: the absolute base-year pollination value per zone, in base-year USD. Not read by
+    # GTAP (build_combined_afeall takes shock_pct only) -- emitted so the GEP chain can consume this
+    # task rather than recomputing the same rasters.
+    if level_usd is not None and len(level_usd):
+        print('  pollination value (GEP): %d zones, total %.4g base-year USD -> column value_usd_base'
+              % (len(level_usd), float(level_usd.sum())))
     return True
 
 

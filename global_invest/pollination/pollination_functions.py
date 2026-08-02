@@ -61,7 +61,10 @@ def baseline_denominator(cfg, baseline_lulc_path, target_year):
 
 def scenario_region_pct_change(cfg, scenario, lulc_path, baseline_lulc_path,
                                denominator_path, correspondence_gpkg, target_year):
-    """Per-region % change of pollination value, scenario vs 2023 baseline (stable cropland only)."""
+    """Per-region % change of pollination value, scenario vs 2023 baseline (stable cropland only).
+
+    Returns (pct_change, baseline_value_usd); see _zonal_pct_change for why the level comes free.
+    """
     stab, b_stab = f'{scenario}_stab', f'{BASELINE_LABEL}_stab_{scenario}'
     for suff_scen, lulc, other in [(stab, lulc_path, baseline_lulc_path),
                                    (b_stab, baseline_lulc_path, lulc_path)]:
@@ -78,7 +81,16 @@ def scenario_region_pct_change(cfg, scenario, lulc_path, baseline_lulc_path,
 
 
 def _zonal_pct_change(diff_path, denominator_path, correspondence_gpkg, region_id_field='ee_r50_aez18_id'):
-    """(sum diff*area / sum baseline*area) * 100 per r50xAEZ zone, keyed to (ENDW, REG)."""
+    """Per r50xAEZ zone, keyed to (ENDW, REG): the % change AND the absolute baseline value.
+
+    Returns (pct_change, baseline_value_usd) as two aligned Series.
+
+    The second is the GEP quantity and costs nothing to emit: it is the DENOMINATOR of the first
+    (sum of the baseline pollination-value raster x pixel area over the zone, in target-year USD),
+    so it is already computed here and was previously discarded. GEP wants the level, GTAP wants
+    the ratio; returning both means one task serves both rather than two chains recomputing the
+    same rasters. See task_compute_pollination_shock, which writes it as `value_usd_base`.
+    """
     gdf = gpd.read_file(correspondence_gpkg, engine='pyogrio')
     if gdf.crs is None or gdf.crs.to_epsg() != 4326:
         gdf = gdf.to_crs(4326)
@@ -97,12 +109,13 @@ def _zonal_pct_change(diff_path, denominator_path, correspondence_gpkg, region_i
         out_shape=shape, transform=transform, fill=0, dtype=np.int32)
     area = build_area_km2_raster(meta)
 
-    out = {}
+    out, level = {}, {}
     for rid, sub in gdf.drop_duplicates(region_id_field).set_index(region_id_field).iterrows():
         mask = zones == rid
         denom = np.nansum(base[mask] * area[mask]) if mask.any() else 0.0
         if not denom:
             continue
-        out[(f"AEZ{int(sub['aez18_id'])}", sub['gtapv7_r50_label'])] = \
-            np.nansum(diff[mask] * area[mask]) / denom * 100.0
-    return pd.Series(out)
+        key = (f"AEZ{int(sub['aez18_id'])}", sub['gtapv7_r50_label'])
+        out[key] = np.nansum(diff[mask] * area[mask]) / denom * 100.0
+        level[key] = denom
+    return pd.Series(out), pd.Series(level)
