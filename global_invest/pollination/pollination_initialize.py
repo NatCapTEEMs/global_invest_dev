@@ -3,7 +3,7 @@
 Consumers (ngfs_pnas, nff_global) set the project-specific inputs on p, then call
 add_pollination_tasks(p) after their SEALS stitch task to graft the dynamic pollination ES-shock
 computation. The science lives in pollination_functions.py / pollination_tasks.py; this file only
-wires it into a tree, so every consumer grafts pollination the same way (mirrors add_carbon_tasks).
+wires it into a tree, so every consumer grafts pollination the same way (mirrors add_terrestrial_carbon_tasks).
 """
 from global_invest.pollination import pollination_tasks
 

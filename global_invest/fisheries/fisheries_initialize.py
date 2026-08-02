@@ -1,4 +1,4 @@
-"""Standard task-tree seam for the fisheries ES model (mirrors add_pollination_tasks / add_carbon_tasks).
+"""Standard task-tree seam for the fisheries ES model (mirrors add_pollination_tasks / add_terrestrial_carbon_tasks).
 
 Fisheries is STATIC (marine, by RCP), so add_fisheries_tasks grafts a task that reads the pre-computed
 cwon_shocks.har FI headers rather than recomputing from SEALS maps. Consumers (ngfs_pnas, nff_global)

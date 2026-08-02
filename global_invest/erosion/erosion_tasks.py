@@ -357,10 +357,11 @@ def task_erosion_shock(p):
         no improvement in land cover can register.
       B-thresholded ("service_threshold", the DEFAULT)   B confined to SEVERE pixels, with that set
         taken from the base scenario and held FIXED, so the shock measures protection change and not a
-        change of population. Measured offline against the ZAF rasters: min -0.0001 (no negative
-        outliers), about twice B's mean signal, and it responds in more zones. A scenario-VARYING set
-        put -18% into a paddy-rice zone; fixing it removed that entirely. Recovers roughly three times B's spatial variation
-        on the same rasters, and matches how the published account of this method builds it.
+        change of population. Verified in-task on the full ZAF run: min exactly 0.0, max +1.30%, no
+        negative outliers, 63 zone-sectors responding at 2050 with a mean of +0.157% -- roughly 2.5x
+        unthresholded B, which tops out at +0.52% on the same run. A scenario-VARYING set put -18%
+        into a paddy-rice zone; fixing it removed that entirely. Matches how the published account of
+        this method builds it.
     A is signed negative (damage borne) and B positive (protection delivered), but BOTH increase with
     better land condition, so they are positively correlated by construction and neither is a sign
     flip of the other. They are differently shaped functions of the erosion field, not offsets of one
@@ -561,10 +562,13 @@ def task_erosion_shock(p):
 
     def level_service_threshold(scn, yr):
         """METHOD B THRESHOLDED -- B confined to severely eroding pixels, with the severe set taken
-        from the BASE scenario and held FIXED. NOT the default; see the caveat below.
+        from the BASE scenario and held FIXED. THE DEFAULT (see p.erosion_method).
 
-        NOT yet verified INSIDE the task -- the numbers above come from an offline recomputation
-        against the exposure rasters. The next full pipeline run closes that gap.
+        Verified inside this task by the full ZAF pipeline run: shock_pct, the column
+        build_combined_afeall consumes, comes out identical to shock_pct_service_threshold with a
+        minimum of exactly 0.0 and a maximum of +1.30%, i.e. no negative outliers at all. At 2050,
+        63 zone-sectors respond with a mean of +0.157%. Unthresholded B on the same run tops out at
+        +0.52%, so the threshold carries roughly 2.5x the signal.
 
         Restricting to severe pixels is what stops B saturating, since the union sits near 1 across
         the ~98% of land that is not eroding. But a scenario-VARYING severe set makes the shock partly
