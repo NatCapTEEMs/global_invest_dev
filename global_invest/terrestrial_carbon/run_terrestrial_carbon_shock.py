@@ -1,7 +1,7 @@
 """Standalone runner for the dynamic terrestrial-carbon ES SHOCK.
 
 Named _shock to sit alongside run_terrestrial_carbon.py, which runs the GEP valuation
-through terrestrial_carbon_initialization. Different entry points into the same module:
+through terrestrial_carbon_initialize. Different entry points into the same module:
 that one values the carbon stock, this one produces the GTAP productivity shock.
 
 Mirrors run_pollination.py / run_erosion.py / run_fisheries.py: build a ProjectFlow, point it at the

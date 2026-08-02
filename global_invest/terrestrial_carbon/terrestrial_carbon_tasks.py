@@ -9,7 +9,7 @@ import numpy as np
 
 from global_invest import utilities
 from global_invest.terrestrial_carbon import terrestrial_carbon_functions
-from global_invest.terrestrial_carbon import terrestrial_carbon_initialization
+from global_invest.terrestrial_carbon import terrestrial_carbon_initialize
 
 
 def terrestrial_carbon(p):
@@ -280,7 +280,7 @@ def gep_load_results(p):
     
     # Learn the paths by creating a temp task treep
     p_temp = hb.ProjectFlow()
-    terrestrial_carbon_initialization.build_gep_service_calculation_task_tree(p_temp)
+    terrestrial_carbon_initialize.build_gep_service_calculation_task_tree(p_temp)
     p_temp.set_all_tasks_to_skip_if_dir_exists()
     p_temp.execute()
     

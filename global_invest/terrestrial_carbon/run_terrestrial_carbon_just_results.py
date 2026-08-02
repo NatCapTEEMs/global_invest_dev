@@ -2,7 +2,7 @@ import os
 import pandas as pd
 import hazelbean as hb
 
-from global_invest.terrestrial_carbon import terrestrial_carbon_initialization
+from global_invest.terrestrial_carbon import terrestrial_carbon_initialize
 
 if __name__ == '__main__':
 
@@ -14,7 +14,7 @@ if __name__ == '__main__':
     p.set_project_dir(p.project_dir) # Set the project directory in the ProjectFlow object. Also defines p.input_dir, p.intermediate_dir, and p.output_dir based on the project_dir.
 
     # Task tree
-    terrestrial_carbon_initialization.build_gep_service_results_task_tree(p) # Defines the actual logic of the model. Navigate into here to see what the model does.
+    terrestrial_carbon_initialize.build_gep_service_results_task_tree(p) # Defines the actual logic of the model. Navigate into here to see what the model does.
 
     # Project level attributes
     p.df_countries_csv_path = p.get_path('cartographic', 'ee', 'ee_r264_correspondence.csv') # ProjectFlow downloads all files automatically via the p.get_path() function.
@@ -26,7 +26,7 @@ if __name__ == '__main__':
     p.carbon_prices_path = os.path.join(p.base_data_dir, 'terrestrial_carbon', 'carbon_prices.xlsx')
     p.carbon_price = "rental scc r2%"
     p.results = {}  # All results will be stored here by each child task.
-    terrestrial_carbon_initialization.initialize_paths(p)
+    terrestrial_carbon_initialize.initialize_paths(p)
 
     # Run the model
     hb.log('Created ProjectFlow object at ' + p.project_dir + '\n    from script ' + p.calling_script + '\n    with base_data set at ' + p.base_data_dir)
