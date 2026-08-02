@@ -3,6 +3,22 @@
 add_erosion_tasks dispatches STATIC (read the pre-computed erosion dependency table) vs DYNAMIC (recompute
 from the SEALS maps via InVEST SDR, #26) on whether 'erosion' is listed in p.dynamic_es. Consumers
 (ngfs_pnas) set the shared es_shock_* config on p, then call add_erosion_tasks(p) alongside the other seams.
+
+BRINGING THE GEP VALUATION IN LATER -- the recipe, so nobody has to work it out twice.
+`global_erosion_gep` (the prevention-share GEP valuation this method comes from) is already written to
+this repo's layout and drops in beside these tasks. Checked against it:
+
+  * erosion_functions.py -- its 28 functions vs the 7 here: ZERO name collisions. Straight append.
+  * erosion_tasks.py     -- its 3 tasks vs the 5 here:      ZERO name collisions. Straight append.
+  * erosion_initialize.py -- take its build_erosion_task_tree / _calculation_ / _results_ variants;
+    DROP its two-line add_erosion_tasks, which only aliases build_erosion_task_tree. Consumers call
+    build_erosion_task_tree directly, exactly as terrestrial_carbon does with build_gep_task_tree.
+    add_erosion_tasks below stays the ES-shock entry point.
+  * erosion_utils.py -- new file, no collision.
+  * ⚠ THE ONE REAL BLOCKER: three module-level `.mkdir(parents=True)` calls (its lines ~118, ~389,
+    ~1446) run AT IMPORT against hardcoded cluster paths. Move them inside the functions that write
+    there before appending, or importing global_invest.erosion starts creating directories. Its other
+    81 module-level statements are plain Path constants and are harmless.
 """
 from global_invest.erosion import erosion_tasks
 
