@@ -1,501 +1,181 @@
+"""Dynamic pollination ES-shock task (V_F, OSD).
+
+Runs William Sidemo-Holm's crop_benefits pollination chain on our SEALS 300 m maps at EACH SEALS
+anchor year (seals_years), then piecewise-linearly interpolates the shock to annual values. Writes
+pollination_interpolated.csv -- the file build_combined_afeall_cc_es reads -- into the shared ES-shock
+directory (p.es_shock_dir). Grafted when 'pollination' is in include_es.
+"""
 import os
-import hazelbean as hb
-from global_invest.commercial_agriculture import crop_provision_functions
+import glob
+import numpy as np
+import pandas as pd
+from global_invest import utilities
 
-def build_gep_task_tree(p):
+
+def task_compute_pollination_shock(p):
+    """Per-scenario 300 m LULC at each SEALS anchor year -> V_F/OSD shock, piecewise-interp to annual.
+
+    Caller sets on p: es_shock_years (SEALS anchor years, from seals_years),
+    es_shock_base_year, es_shock_scenarios, es_lulc_path_template
+    ({scenario}/{year}) or scenario_lulc_paths, pollination_base_year_lulc_path (or the shared base_year_lulc_path),
+    pollination_shock_output_path. Optional: es_shock_base_scenario, pollination_shock_acts,
+    region_boundary_path.
     """
-    Build the default task tree for commercial agriculture.
+    # Default into the es_shocks parent dir. Runtime, not build time: p.es_shock_dir is
+    # published by that task, which ProjectFlow runs before this one.
+    if not getattr(p, 'pollination_shock_output_path', None):
+        p.pollination_shock_output_path = os.path.join(getattr(p, 'es_shock_dir', None) or p.project_dir, 'pollination_interpolated.csv')
+    if not p.run_this:
+        return
+    # Imported here, not at module top, so the static fallback task can run without crop_benefits
+    # (only this dynamic path, via pollination_functions, needs it).
+    from global_invest.pollination import pollination_functions as pf
+
+    base_scn     = getattr(p, 'es_shock_base_scenario', 'baseline_ignore_dependencies')
+    base_year    = int(p.es_shock_base_year)
+    acts         = getattr(p, 'pollination_shock_acts', ('V_F', 'OSD'))
+    scenarios    = list(p.es_shock_scenarios)
+    anchor_years = sorted(y for y in map(int, p.es_shock_years) if y > base_year)
+    end_year     = anchor_years[-1]
+
+    if not getattr(p, 'region_boundary_path', None):
+        p.region_boundary_path = p.get_path('gtap_invest/region_boundaries/ee_r50_aez18_correspondence.gpkg')
+
+    cfg = pf.configure_crop_benefits(p, base_year)            # crop_benefits Config -> our base_data + task dir
+
+    if not getattr(p, 'scenario_lulc_paths', None):
+        tmpl = p.es_lulc_path_template
+        p.scenario_lulc_paths = {s: {y: glob.glob(tmpl.format(scenario=s, year=y))[0]
+                                     for y in anchor_years if glob.glob(tmpl.format(scenario=s, year=y))}
+                                 for s in [base_scn] + scenarios}
+
+    # base-year SEALS7 map: per-ES override, else the ES-shared attr. NEVER p.base_year_lulc_path, which
+    # SEALS OWNS and overwrites at runtime with its raw-ESA source (a raw-ESA base map would make the
+    # SEALS7-keyed sufficiency lookup produce garbage). Unlike carbon's optional fixed-base extra, this
+    # base-year value IS pollination's primary denominator (feeds both fixedbase and contemp), so it is
+    # mandatory -- fail loudly rather than silently emit a wrong/empty shock.
+    _base_map = getattr(p, 'pollination_base_year_lulc_path', None) or getattr(p, 'es_base_year_lulc_path', None)
+    if not _base_map:
+        raise ValueError('pollination base-year LULC not set: point p.es_base_year_lulc_path (or '
+                         'p.pollination_base_year_lulc_path) at the SEALS7 base-year map.')
+    # denominator (unpaired 2023 value) is year-independent -> compute once
+    denom = pf.baseline_denominator(cfg, _base_map, base_year)
+
+    # value[scenario][year] = per-region % change of that scenario's year-map vs the 2023 baseline (stable ag)
+    # level_usd = per-region ABSOLUTE baseline pollination value in base-year USD. It is the denominator
+    # of that % change, so it is already computed; emitting it is what lets GEP consume this task's
+    # output instead of running a second chain over the same rasters. Scenario-invariant by construction
+    # (the denominator is the unpaired baseline), so one copy is kept rather than one per scenario-year.
+    value, level_usd = {}, None
+    for year in anchor_years:
+        for scen in [base_scn] + scenarios:
+            pct, lvl = pf.scenario_region_pct_change(
+                cfg, scenario=f'{scen}_{year}', lulc_path=p.scenario_lulc_paths[scen][year],
+                baseline_lulc_path=_base_map,
+                denominator_path=denom, correspondence_gpkg=p.region_boundary_path,
+                target_year=base_year)
+            value.setdefault(scen, {})[year] = pct
+            if level_usd is None:
+                level_usd = lvl
+
+    # ES shock numerator = scenario minus baseline_ignore_dependencies value at each anchor (S_y - B_y); interp annually.
+    # TWO denominators emitted under explicit names (carbon uses the SAME names) for the #14 diagnostic:
+    #   shock_pct_fixedbase = (S_y - B_y) / B0    -- B0 = base-year (2023) value, denominator FIXED across years
+    #   shock_pct_contemp   = (S_y - B_y) / B_y   -- B_y = baseline year-y value = (poll_scenario - poll_base)/poll_base
+    #   shock_pct           = GTAP-primary = shock_pct_contemp (÷B_y), matching carbon. afeall is a productivity
+    #                         deviation from the baseline path (scenarios take productivity as given from BAU), so
+    #                         normalize by the year-y baseline, not the fixed 2023 value.
+    # contemp is an EXACT rescale of fixedbase (no extra rasters): (sum B_y*area)/(sum B0*area) = 1 + value[base_scn][y]/100,
+    # so contemp = fixedbase / that factor. Guards only exact-zero; near-zero baselines handled after seeing #14.
+    all_years, rows = list(range(base_year, end_year + 1)), []
+    for scen in scenarios:
+        anchor_shock = pd.DataFrame({y: value[scen][y] - value[base_scn][y] for y in anchor_years}).dropna()
+        # reindex the growth factor onto anchor_shock's own zones, so contemp has exactly the same rows
+        base_factor = pd.DataFrame({y: 1.0 + value[base_scn][y] / 100.0
+                                    for y in anchor_years}).reindex(anchor_shock.index).replace(0, np.nan)
+        anchor_contemp = anchor_shock / base_factor
+        for (endw, reg), s in anchor_shock.iterrows():
+            annual   = np.interp(all_years, [base_year] + anchor_years, [0.0] + list(s.values))
+            annual_c = np.interp(all_years, [base_year] + anchor_years,
+                                 [0.0] + list(anchor_contemp.loc[(endw, reg)].values))
+            base_usd = float(level_usd.get((endw, reg), float('nan'))) if level_usd is not None else float('nan')
+            for year, v, vc in zip(all_years, annual, annual_c):
+                for sector in acts:
+                    rows.append({'ENDW': endw, 'ACTS': sector, 'REG': reg, 'scenario': scen,
+                                 'year': year, 'shock_pct': vc,
+                                 'shock_pct_fixedbase': v, 'shock_pct_contemp': vc,
+                                 'value_usd_base': base_usd})
+
+    out = pd.DataFrame(rows)
+    out.to_csv(p.pollination_shock_output_path, index=False)
+    print('  pollination shock: %d rows, %d scenarios (shock_pct=shock_pct_contemp=/baseline-year value, shock_pct_fixedbase=/2023 value) -> %s'
+          % (len(out), out['scenario'].nunique() if rows else 0, p.pollination_shock_output_path))
+    # GEP hand-off: the absolute base-year pollination value per zone, in base-year USD. Not read by
+    # GTAP (build_combined_afeall takes shock_pct only) -- emitted so the GEP chain can consume this
+    # task rather than recomputing the same rasters.
+    if level_usd is not None and len(level_usd):
+        print('  pollination value (GEP): %d zones, total %.4g base-year USD -> column value_usd_base'
+              % (len(level_usd), float(level_usd.sum())))
+    return True
+
+
+def task_compute_pollination_shock_static(p):
+    """Static per-scenario pollination shock -> V_F/OSD, linear ramp 0->end_year, from the frozen table.
+
+    The fallback add_pollination_tasks selects when <2 SEALS map years exist. READS
+    input_dir/raw_dependencies/pollination_dependency.csv (override p.pollination_dependency_path) and
+    subtracts the baseline_ignore_damages row (the frozen table's nature-off baseline; == ignore
+    dependencies, just the old label kept in this CSV), ramping that difference linearly from 0 at
+    base_year. NEVER writes back to raw_dependencies -- output goes to p.pollination_shock_output_path
+    (pollination_interpolated.csv), the same file the dynamic task writes. Caller sets:
+    es_shock_base_year, es_shock_end_year, es_shock_scenarios,
+    pollination_shock_output_path; scenario->raw via p.pollination_scenario_map (default);
+    sectors via p.pollination_shock_acts (default ('V_F', 'OSD'), matching the dynamic task).
     """
-    p.pollination_task = p.add_task(pollination)
-    # p.commercial_agriculture_preprocess_task = p.add_task(gep_preprocess, parent=p.commercial_agriculture_task)  
-    p.add_task(gep_calculation, parent=p.pollination_task)  
-    
-    return p
-
-def pollination(p):
-    """
-    Parent task for commercial agriculture.
-    """
-    # p.fao_input_path = p.get_path(os.path.join(p.base_data_dir, 'fao', 'Value_of_Production_E_All_Data.csv'))
-    pass 
-
-def pollination_biophysical(p):
-
-    # TODOO CURRENTLY SAVES IN WEIRD WORISPACE PLACE
-    # C:\Files\Research\cge\gtap_invest\gtap_invest_dev\gtap_invest\workspace_poll_suff\lulc_esa_gtap1_rcp45_ssp2_2030_SR_RnD_20p
-
-    baseline_scenario_label = 'lulc_esa_gtap1_baseline_' + str(p.base_year)
-    p.baseline_clipped_lulc_path = os.path.join(p.stitched_lulc_esa_scenarios_dir, baseline_scenario_label + '.tif')
-    if p.run_this:
-
-        luc_scenario_path = p.base_year_lulc_path
-        # base_year_lulc_label = 'lulc_esa_gtap1_baseline_' + str(p.base_year)
-
-
-        final_raster_path = os.path.join(p.cur_dir, 'poll_suff_ag_coverage_prop_' + baseline_scenario_label + '.tif')
-        if not hb.path_exists(final_raster_path):
-            L.info('Running global_invest_main.make_poll_suff on LULC: ' + str(luc_scenario_path) + ' and saving results to ' + str(final_raster_path))
-            current_landuse_path = os.path.join(p.stitched_lulc_esa_scenarios, baseline_scenario_label + '.tif')
-
-
-            # base_year_lulc_label = 'lulc_seals7_gtap1_baseline_' + str(p.base_year)
-            # esa_include_string = 'lulc_esa_gtap1_' + luh_scenario_label + '_' + str(year) + '_' + policy_scenario_label
-            # p.lulc_projected_stitched_path = os.path.join(p.cur_dir, esa_include_string + '.tif')
-            #
-
-            pollination_sufficiency = 'fix' # TODOO
-            pollination_sufficiency.make_poll_suff.execute(current_landuse_path, p.cur_dir)
-
-            created_raster_path = os.path.join(p.cur_dir, 'churn\poll_suff_hab_ag_coverage_rasters', "poll_suff_ag_coverage_prop_10s_" + baseline_scenario_label + ".tif")
-
-            hb.copy_shutil_flex(created_raster_path, final_raster_path)
-
-        for luh_scenario_label in p.luh_scenario_labels:
-            for scenario_year in p.scenario_years:
-                for policy_scenario_label in p.policy_scenario_labels:
-                    current_scenario_label = luh_scenario_label + '_' + str(scenario_year) + '_' + policy_scenario_label
-                    final_raster_path = os.path.join(p.cur_dir, 'poll_suff_ag_coverage_prop_gtap1_' + current_scenario_label + '.tif')
-                    current_landuse_path = os.path.join(p.stitched_lulc_esa_scenarios, 'lulc_esa_gtap1_' + current_scenario_label + '.tif')
-
-                    if not hb.path_exists(final_raster_path):
-
-
-                        L.info('Running pollination model for ' + current_scenario_label + ' from ' + current_landuse_path + ' to ' + final_raster_path)
-
-                        pollination_sufficiency.make_poll_suff.execute(current_landuse_path, p.cur_dir)
-
-                        # After it finishes, move the file to the root dir and get rid of the cruft.
-                        created_raster_path = os.path.join(p.cur_dir, 'churn\poll_suff_hab_ag_coverage_rasters',  'poll_suff_ag_coverage_prop_10s_lulc_esa_gtap1_' + current_scenario_label + '.tif')
-                        hb.copy_shutil_flex(created_raster_path, final_raster_path)
-                    else:
-                        L.info('Skipping running pollination model for ' + current_scenario_label + ' from ' + current_landuse_path + ' to ' + final_raster_path)
-
-def pollination_shock(p):
-    """Convert pollination into shockfile."""
-    # # OLD SHORTCUT
-    # p.policy_scenario_labels = [p.policy_scenario_labels[0], p.policy_scenario_labels[8]]
-
-    ### Thought: think again about adding a penalty to only crediting pollination losses in bau
-    p.pollination_shock_change_per_region_path = os.path.join(p.cur_dir, 'pollination_shock_change_per_region.gpkg')
-    p.pollination_shock_csv_path = os.path.join(p.cur_dir, 'pollination_shock.csv')
-    p.crop_data_dir = r"C:\Users\jajohns\Files\Research\base_data\crops\earthstat\crop_production"
-    p.crop_prices_dir = r"C:\Users\jajohns\Files\Research\base_data\pyramids\crops\price"
-    # p.pollination_biophysical_dir = r"C:\Users\jajohns\Files\Research\cge\gtap_invest\projects\feedback_with_policies\intermediate\pollination_biophysical"
-    p.pollination_dependence_spreadsheet_input_path = r"C:\Users\jajohns\Files\Research\cge\gtap_invest\base_data\pollination\rspb20141799supp3.xls" # Note had to fix pol.dep for cofee and greenbroadbean as it was 25 not .25
-
-    p.crop_value_baseline_path = os.path.join(p.cur_dir, 'crop_value_baseline.tif')
-    p.crop_value_no_pollination_path = os.path.join(p.cur_dir, 'crop_value_no_pollination.tif')
-    p.crop_value_max_lost_path = os.path.join(p.cur_dir, 'crop_value_max_lost.tif')
-    p.crop_value_max_lost_10s_path = os.path.join(p.cur_dir, 'crop_value_max_lost_10s.tif')
-    p.crop_value_baseline_10s_path = os.path.join(p.cur_dir, 'crop_value_baseline_10s.tif')
-
-    if p.run_this:
-        df = None
-
-        # # TODO HACK: scenario subset
-        # p.policy_scenario_labels = p.gtap_bau_and_combined_labels
-
-        ###########################################
-        ###### Calculate base-data necessary to do conversion of biophysical to shockfile
-        ###########################################
-
-        if not all([hb.path_exists(i) for i in [p.crop_value_baseline_path,
-                                                p.crop_value_no_pollination_path,
-                                                p.crop_value_max_lost_path,]]):
-            df = pd.read_excel(p.pollination_dependence_spreadsheet_input_path, sheet_name='Crop nutrient content')
-
-            crop_names = list(df['Crop map file name'])[:-3] # Drop last three which were custom addons in manuscript and don't seem to have earthstat data for.
-            pollination_dependence = list(df['poll.dep'])
-            crop_value_baseline = np.zeros(hb.get_shape_from_dataset_path(p.ha_per_cell_300sec_path))
-            crop_value_no_pollination = np.zeros(hb.get_shape_from_dataset_path(p.ha_per_cell_300sec_path))
-            for c, crop_name in enumerate(crop_names):
-                L.info('Calculating value yield effect from pollination for ' + str(crop_name) + ' with pollination dependence ' + str(pollination_dependence[c]))
-                crop_price_path = os.path.join(p.crop_prices_dir, crop_name + '_prices_per_ton.tif')
-                crop_price = hb.as_array(crop_price_path)
-                crop_price = np.where(crop_price > 0, crop_price, 0.0)
-                crop_yield = hb.as_array(os.path.join(p.crop_data_dir, crop_name + '_HarvAreaYield_Geotiff', crop_name + '_Production.tif'))
-                crop_yield = np.where(crop_yield > 0, crop_yield, 0.0)
-
-                crop_value_baseline += (crop_yield * crop_price)
-                crop_value_no_pollination += (crop_yield * crop_price) * (1 - float(pollination_dependence[c]))
-
-            crop_value_max_lost = crop_value_baseline - crop_value_no_pollination
-            #
-            # crop_value_baseline_path = os.path.join(p.cur_dir, 'crop_value_baseline.tif')
-            # crop_value_no_pollination_path = os.path.join(p.cur_dir, 'crop_value_no_pollination.tif')
-            # crop_value_max_lost_path = os.path.join(p.cur_dir, 'crop_value_max_lost.tif')
-
-            hb.save_array_as_geotiff(crop_value_baseline, p.crop_value_baseline_path, p.match_300sec_path, ndv=-9999, data_type=6)
-            hb.save_array_as_geotiff(crop_value_no_pollination, p.crop_value_no_pollination_path, p.match_300sec_path, ndv=-9999, data_type=6)
-            hb.save_array_as_geotiff(crop_value_max_lost, p.crop_value_max_lost_path, p.match_300sec_path, ndv=-9999, data_type=6)
-
-
-        ### Resample the base data to match LULC
-        global_bb = hb.get_bounding_box(p.base_year_lulc_path)
-        stitched_bb = hb.get_bounding_box(p.baseline_clipped_lulc_path)
-        if stitched_bb != global_bb:
-            current_path = os.path.join(p.cur_dir, 'crop_value_max_lost_clipped.tif')
-            hb.clip_raster_by_bb(p.crop_value_max_lost_path, stitched_bb, current_path)
-            p.crop_value_max_lost_path = current_path
-
-        if not hb.path_exists(p.crop_value_baseline_10s_path):
-            hb.resample_to_match(p.crop_value_baseline_path, p.baseline_clipped_lulc_path, p.crop_value_baseline_10s_path, ndv=-9999., output_data_type=6)
-
-
-        if not hb.path_exists(p.crop_value_max_lost_10s_path):
-            hb.resample_to_match(p.crop_value_max_lost_path, p.baseline_clipped_lulc_path, p.crop_value_max_lost_10s_path, ndv=-9999., output_data_type=6)
-
-
-        ###########################################
-        ###### Calculate crop_value_pollinator_adjusted.
-        ###########################################
-
-        # Incorporate the "sufficient pollination threshold" of 30%
-        # TODOO Go through and systematically pull into config files to initialize model and write output summary of what were used.
-        sufficient_pollination_threshold = 0.3
-
-        ### BASELINE crop_value_pollinator_adjusted:
-        policy_scenario_label = 'gtap1_baseline_' + str(p.base_year)
-        current_output_excel_path = os.path.join(p.cur_dir, 'crop_value_pollinator_adjusted_' + policy_scenario_label + '_zonal_stats.xlsx')
-        suff_path = os.path.join(p.pollination_biophysical_dir, 'poll_suff_ag_coverage_prop_lulc_esa_' + policy_scenario_label + '.tif')
-        crop_value_pollinator_adjusted_path = os.path.join(p.cur_dir, 'crop_value_pollinator_adjusted_' + policy_scenario_label + '.tif')
-
-        if not hb.path_exists(crop_value_pollinator_adjusted_path):
-            hb.raster_calculator_af_flex([p.crop_value_baseline_10s_path, p.crop_value_max_lost_10s_path, suff_path, p.base_year_simplified_lulc_path], lambda baseline_value, max_loss, suff, lulc:
-                    np.where((max_loss > 0) & (suff < sufficient_pollination_threshold) & (lulc == 2), baseline_value - max_loss * (1 - (1/sufficient_pollination_threshold) * suff),
-                        np.where((max_loss > 0) & (suff >= sufficient_pollination_threshold) & (lulc == 2), baseline_value, -9999.)), output_path=crop_value_pollinator_adjusted_path)
-
-        # Do zonal statistics on outputed raster by AEZ-REG. Note that we need sum and count for when/if we calculate mean ON GRIDCELLS WITH AG.
-        if not hb.path_exists(current_output_excel_path):
-            df = hb.zonal_statistics_flex(crop_value_pollinator_adjusted_path,
-                                          p.gtap37_aez18_path,
-                                          zone_ids_raster_path=p.zone_ids_raster_path,
-                                          id_column_label='pyramid_id',
-                                          zones_raster_data_type=5,
-                                          values_raster_data_type=6,
-                                          zones_ndv=-9999,
-                                          values_ndv=-9999,
-                                          all_touched=None,
-                                          stats_to_retrieve='sums_counts',
-                                          assert_projections_same=False, )
-            generated_scenario_label = 'gtap1_baseline_2014'
-            df.rename(columns={'sums': generated_scenario_label + '_sum', 'counts': generated_scenario_label + '_count'}, inplace=True)
-            df.to_excel(current_output_excel_path)
-        else:
-            generated_scenario_label = 'gtap1_baseline_2014'
-            df = pd.read_excel(current_output_excel_path, index_col=0)
-            df.rename(columns={'sums': generated_scenario_label + '_sum', 'counts': generated_scenario_label + '_count'}, inplace=True)
-        merged_df = df
-
-        ### SCENARIO crop_value_pollinator_adjusted
-        for luh_scenario_label in p.luh_scenario_labels:
-            for scenario_year in p.scenario_years:
-                for policy_scenario_label in p.policy_scenario_labels:
-                    current_output_excel_path = os.path.join(p.cur_dir, 'crop_value_pollinator_adjusted_' + policy_scenario_label + '_zonal_stats.xlsx')
-                    suff_path = os.path.join(p.pollination_biophysical_dir, 'poll_suff_ag_coverage_prop_gtap1_' + luh_scenario_label
-                                                + '_' + str(scenario_year) + '_' + policy_scenario_label + '.tif')
-                    lulc_path = os.path.join(p.stitched_lulc_esa_scenarios_dir, 'lulc_seals7_gtap1_' + luh_scenario_label
-                                                + '_' + str(scenario_year) + '_' + policy_scenario_label + '.tif')
-
-                    crop_value_pollinator_adjusted_path = os.path.join(p.cur_dir, 'crop_value_pollinator_adjusted_' + policy_scenario_label + '.tif')
-
-                    if not hb.path_exists(crop_value_pollinator_adjusted_path):
-                        hb.raster_calculator_af_flex([p.crop_value_baseline_10s_path, p.crop_value_max_lost_10s_path, suff_path, lulc_path], lambda baseline_value, max_loss, suff, lulc:
-                                np.where((max_loss > 0) & (suff < sufficient_pollination_threshold) & (lulc == 2), baseline_value - max_loss * (1 - (1/sufficient_pollination_threshold) * suff),
-                                        np.where((max_loss > 0) & (suff >= sufficient_pollination_threshold) & (lulc == 2), baseline_value, -9999.)), output_path=crop_value_pollinator_adjusted_path)
-
-
-                        # TODOOO: Continue thinking about what the right shock is overall. Is it the average on NEW land? Or the aggregate value
-                        # To isolate the effect, maybe calculate the average value of crop loss on cells that are cultivated in both scenarios? Start on a dask function that does that?
-
-                    if not hb.path_exists(current_output_excel_path):
-                        df = hb.zonal_statistics_flex(crop_value_pollinator_adjusted_path,
-                                                      p.gtap37_aez18_path,
-                                                      zone_ids_raster_path=p.zone_ids_raster_path,
-                                                      id_column_label='pyramid_id',
-                                                      zones_raster_data_type=5,
-                                                      values_raster_data_type=6,
-                                                      zones_ndv=-9999,
-                                                      values_ndv=-9999,
-                                                      all_touched=None,
-                                                      stats_to_retrieve='sums_counts',
-                                                      assert_projections_same=False, )
-
-                        generated_scenario_label = 'gtap2_' + luh_scenario_label + '_' + str(scenario_year) + '_' + policy_scenario_label
-                        df.rename(columns={'sums': generated_scenario_label + '_sum', 'counts': generated_scenario_label + '_count'}, inplace=True)
-                        df.to_excel(current_output_excel_path)
-                    else:
-                        generated_scenario_label = 'gtap2_' + luh_scenario_label + '_' + str(scenario_year) + '_' + policy_scenario_label
-                        df = pd.read_excel(current_output_excel_path, index_col=0)
-                        df.rename(columns={'sums': generated_scenario_label + '_sum', 'counts': generated_scenario_label + '_count', generated_scenario_label + '_total': generated_scenario_label + '_sum',}, inplace=True)
-                    merged_df = pd.merge(merged_df, df, how='outer', left_index=True, right_index=True)
-
-        ###########################################
-        ###### Calculate change from scenario to baseline, on and not on existing ag
-        ###########################################
-
-        baseline_policy_scenario_label = 'gtap1_baseline_' + str(p.base_year)
-        baseline_crop_value_pollinator_adjusted_path = os.path.join(p.cur_dir, 'crop_value_pollinator_adjusted_' + baseline_policy_scenario_label + '.tif')
-        for luh_scenario_label in p.luh_scenario_labels:
-            for scenario_year in p.scenario_years:
-                for policy_scenario_label in p.policy_scenario_labels:
-
-                    # Calculate difference between scenario and BASELINE for crop value adjusted
-                    bau_crop_value_pollinator_adjusted_path = os.path.join(p.cur_dir, 'crop_value_pollinator_adjusted_BAU.tif')
-                    current_crop_value_pollinator_adjusted_path = os.path.join(p.cur_dir, 'crop_value_pollinator_adjusted_' + policy_scenario_label + '.tif')
-
-                    crop_value_difference_from_baseline_path = os.path.join(p.cur_dir, 'crop_value_difference_from_baseline_' + policy_scenario_label + '.tif')
-                    if not hb.path_exists(crop_value_difference_from_baseline_path):
-                        hb.dask_compute([baseline_crop_value_pollinator_adjusted_path, current_crop_value_pollinator_adjusted_path], lambda x, y: y - x, crop_value_difference_from_baseline_path)
-
-                    # Zonal stats for difference from Baseline
-                    current_output_excel_path = os.path.join(p.cur_dir, 'crop_value_difference_from_baseline_' + policy_scenario_label + '_zonal_stats.xlsx')
-                    if not hb.path_exists(current_output_excel_path):
-                        df = hb.zonal_statistics_flex(crop_value_difference_from_baseline_path,
-                                                      p.gtap37_aez18_path,
-                                                      zone_ids_raster_path=p.zone_ids_raster_path,
-                                                      id_column_label='pyramid_id',
-                                                      zones_raster_data_type=5,
-                                                      values_raster_data_type=6,
-                                                      zones_ndv=-9999,
-                                                      values_ndv=-9999,
-                                                      all_touched=None,
-                                                      stats_to_retrieve='sums_counts',
-                                                      assert_projections_same=False, )
-                        generated_scenario_label = 'gtap2_' + luh_scenario_label + '_' + str(scenario_year) + '_' + policy_scenario_label
-                        df.rename(columns={'sums': generated_scenario_label + '_sum', 'counts': generated_scenario_label + '_count'}, inplace=True)
-                        df.to_excel(current_output_excel_path)
-
-                    # Calc difference between scenario and BASELINE for crop_value on grid-cells that were agri in both lulc maps.
-                    lulc_path = os.path.join(p.stitched_lulc_esa_scenarios_dir, 'lulc_seals7_gtap1_' + luh_scenario_label + '_' + str(scenario_year) + '_' + policy_scenario_label + '.tif')
-                    crop_value_difference_from_baseline_existing_ag_path = os.path.join(p.cur_dir, 'crop_value_difference_from_baseline_existing_ag_' + policy_scenario_label + '.tif')
-
-                    def op(x, y, w, z):
-                        r = dask.array.where((w == 2) & (z == 2), y - x, 0.)
-                        rr = (z * 0.0) + r # HACK. Dask.array.where was returning a standard xarray rather than a rioxarray. This dumb hack makes it inherit the rioxarray parameters of z
-                        return rr
-
-                    if not hb.path_exists(crop_value_difference_from_baseline_existing_ag_path):
-                        op_paths = [
-                            baseline_crop_value_pollinator_adjusted_path,
-                            crop_value_pollinator_adjusted_path,
-                            lulc_path,
-                            p.base_year_simplified_lulc_path,
-                        ]
-
-                        hb.dask_compute(op_paths, op, crop_value_difference_from_baseline_existing_ag_path)
-
-                    # Zonal stats for difference from Baseline
-                    current_output_excel_path = os.path.join(p.cur_dir, 'crop_value_difference_from_baseline_existing_ag_' + policy_scenario_label + '_zonal_stats.xlsx')
-                    if not hb.path_exists(current_output_excel_path):
-                        df = hb.zonal_statistics_flex(crop_value_difference_from_baseline_existing_ag_path,
-                                                      p.gtap37_aez18_path,
-                                                      zone_ids_raster_path=p.zone_ids_raster_path,
-                                                      id_column_label='pyramid_id',
-                                                      zones_raster_data_type=5,
-                                                      values_raster_data_type=6,
-                                                      zones_ndv=-9999,
-                                                      values_ndv=-9999,
-                                                      all_touched=None,
-                                                      stats_to_retrieve='sums_counts',
-                                                      assert_projections_same=False, )
-                        generated_scenario_label = 'gtap2_' + luh_scenario_label + '_' + str(scenario_year) + '_' + policy_scenario_label + '_existing_ag'
-                        df.rename(columns={'sums': generated_scenario_label + '_sum', 'counts': generated_scenario_label + '_count'}, inplace=True)
-                        df.to_excel(current_output_excel_path)
-                    else:
-                        df = pd.read_excel(current_output_excel_path, index_col=0)
-                    merged_df = pd.merge(merged_df, df, how='outer', left_index=True, right_index=True)
-
-                    # Also need to compute the value on that cropland that was cropland in both
-                    # crop_value_baseline_existing_ag_path = os.path.join(p.cur_dir, 'crop_value_baseline_existing_ag_' + policy_scenario_label + '.tif')
-
-                    def op(y, w, z):
-                        r = dask.array.where((w == 2) & (z == 2), y, 0.)
-                        rr = (z * 0.0) + r  # HACK. Dask.array.where was returning a standard xarray rather than a rioxarray. This dumb hack makes it inherit the rioxarray parameters of z
-                        return rr
-                    
-                    crop_value_baseline_existing_ag_path  = 'fix' # TODOO
-
-                    if not hb.path_exists(crop_value_baseline_existing_ag_path):
-                        op_paths = [
-                            baseline_crop_value_pollinator_adjusted_path,
-                            lulc_path,
-                            p.base_year_simplified_lulc_path,
-                        ]
-
-                        hb.dask_compute(op_paths, op, crop_value_baseline_existing_ag_path)
-
-                    # Zonal stats for difference from Baseline
-                    current_output_excel_path = os.path.join(p.cur_dir, 'crop_value_baseline_existing_ag_' + policy_scenario_label + '_zonal_stats.xlsx')
-                    if not hb.path_exists(current_output_excel_path):
-                        df = hb.zonal_statistics_flex(crop_value_baseline_existing_ag_path,
-                                                      p.gtap37_aez18_path,
-                                                      zone_ids_raster_path=p.zone_ids_raster_path,
-                                                      id_column_label='pyramid_id',
-                                                      zones_raster_data_type=5,
-                                                      values_raster_data_type=6,
-                                                      zones_ndv=-9999,
-                                                      values_ndv=-9999,
-                                                      all_touched=None,
-                                                      stats_to_retrieve='sums_counts',
-                                                      assert_projections_same=False, )
-                        generated_scenario_label = 'crop_value_baseline_existing_ag_compared_to_' + luh_scenario_label + '_' + str(scenario_year) + '_' + policy_scenario_label
-                        df.rename(columns={'sums': generated_scenario_label + '_sum', 'counts': generated_scenario_label + '_count'}, inplace=True)
-                        df.to_excel(current_output_excel_path)
-                    else:
-                        df = pd.read_excel(current_output_excel_path, index_col=0)
-                    merged_df = pd.merge(merged_df, df, how='outer', left_index=True, right_index=True)
-
-
-                    if policy_scenario_label != 'BAU':
-                        pass
-
-                        # Calc difference between scenario and BAU for crop_value adjusted
-                        # IMPORTANT NOTE: This is really just for plotting and visualization. The shockfiles themselves are all defined relative to the baseline, not relative to bau.
-                        crop_value_difference_from_bau_path = os.path.join(p.cur_dir, 'crop_value_difference_from_bau_' + policy_scenario_label + '.tif')
-                        bau_lulc_path = os.path.join(p.stitched_lulc_esa_scenarios_dir, 'lulc_seals7_gtap1_' + luh_scenario_label + '_' + str(scenario_year) + '_BAU.tif')
-                        if not hb.path_exists(crop_value_difference_from_bau_path):
-                            hb.dask_compute([bau_crop_value_pollinator_adjusted_path, current_crop_value_pollinator_adjusted_path], lambda x, y: y - x, crop_value_difference_from_bau_path)
-
-                        # Zonal stats for difference from BAU
-                        current_output_excel_path = os.path.join(p.cur_dir, 'crop_value_difference_from_bau_' + policy_scenario_label + '_zonal_stats.xlsx')
-                        if not hb.path_exists(current_output_excel_path):
-                            df = hb.zonal_statistics_flex(crop_value_difference_from_bau_path,
-                                                          p.gtap37_aez18_path,
-                                                          zone_ids_raster_path=p.zone_ids_raster_path,
-                                                          id_column_label='pyramid_id',
-                                                          zones_raster_data_type=5,
-                                                          values_raster_data_type=6,
-                                                          zones_ndv=-9999,
-                                                          values_ndv=-9999,
-                                                          all_touched=None,
-                                                          stats_to_retrieve='sums_counts',
-                                                          assert_projections_same=False, )
-                            generated_scenario_label = 'gtap2_crop_value_difference_from_bau_' + luh_scenario_label + '_' + str(scenario_year) + '_' + policy_scenario_label
-                            df.rename(columns={'sums': generated_scenario_label + '_sum', 'counts': generated_scenario_label + '_count'}, inplace=True)
-                            df.to_excel(current_output_excel_path)
-                        else:
-                            df = pd.read_excel(current_output_excel_path, index_col=0)
-                        merged_df = pd.merge(merged_df, df, how='outer', left_index=True, right_index=True)
-
-                        # Calc difference between scenario and BAU for crop_value adjusted ON EXISTING AG
-                        # ie for crop_value on grid-cells that were agri in both lulc maps.
-                        lulc_path = os.path.join(p.stitched_lulc_esa_scenarios_dir, 'lulc_seals7_gtap1_' + luh_scenario_label + '_' + str(scenario_year) + '_' + policy_scenario_label + '.tif')
-                        crop_value_difference_from_bau_existing_ag_path = os.path.join(p.cur_dir, 'crop_value_difference_from_bau_existing_ag_' + policy_scenario_label + '.tif')
-
-                        def op(x, y, w, z):
-                            r = dask.array.where((w == 2) & (z == 2), y - x, 0.)
-                            rr = (z * 0.0) + r  # HACK. Dask.array.where was returning a standard xarray rather than a rioxarray. This dumb hack makes it inherit the rioxarray parameters of z
-                            return rr
-
-                        if not hb.path_exists(crop_value_difference_from_bau_existing_ag_path):
-                            op_paths = [
-                                bau_crop_value_pollinator_adjusted_path,
-                                crop_value_pollinator_adjusted_path,
-                                lulc_path,
-                                bau_lulc_path,
-                            ]
-
-                            hb.dask_compute(op_paths, op, crop_value_difference_from_bau_existing_ag_path)
-
-                        current_output_excel_path = os.path.join(p.cur_dir, 'crop_value_difference_from_bau_existing_ag_' + policy_scenario_label + '_zonal_stats.xlsx')
-                        if not hb.path_exists(current_output_excel_path):
-                            df = hb.zonal_statistics_flex(crop_value_difference_from_bau_existing_ag_path,
-                                                          p.gtap37_aez18_path,
-                                                          zone_ids_raster_path=p.zone_ids_raster_path,
-                                                          id_column_label='pyramid_id',
-                                                          zones_raster_data_type=5,
-                                                          values_raster_data_type=6,
-                                                          zones_ndv=-9999,
-                                                          values_ndv=-9999,
-                                                          all_touched=None,
-                                                          stats_to_retrieve='sums_counts',
-                                                          assert_projections_same=False, )
-
-
-                            generated_scenario_label = 'gtap2_crop_value_difference_from_bau_existing_ag_' + luh_scenario_label + '_' + str(scenario_year) + '_' + policy_scenario_label
-                            df.rename(columns={'sums': generated_scenario_label + '_sum', 'counts': generated_scenario_label + '_count'}, inplace=True)
-                            df.to_excel(current_output_excel_path)
-                        else:
-                            df = pd.read_excel(current_output_excel_path, index_col=0)
-                        merged_df = pd.merge(merged_df, df, how='outer', left_index=True, right_index=True)
-
-        ###########################################
-        ###### Calculate the actual shock as the mean change.
-        ###########################################
-
-        scenario_shock_column_names_to_keep = []
-        # scenario_shock_column_names_to_keep = ['pyramid_id', 'pyramid_ids_concatenated', 'pyramid_ids_multiplied', 'gtap37v10_pyramid_id', 'aez_pyramid_id', 'gtap37v10_pyramid_name', 'ISO3', 'AZREG', 'AEZ_COMM']
-        if not hb.path_exists(p.pollination_shock_csv_path):
-            baseline_generated_scenario_label = 'gtap1_baseline_2014'
-            baseline_generated_scenario_label_existing_ag = 'gtap1_baseline_2014_existing_ag'
-
-            scenario_shock_column_names_to_keep.append(baseline_generated_scenario_label + '_sum')
-            # scenario_shock_column_names_to_keep.append(baseline_generated_scenario_label_existing_ag + '_sum')
-
-            for luh_scenario_label in p.luh_scenario_labels:
-                for scenario_year in p.scenario_years:
-                    for policy_scenario_label in p.policy_scenario_labels:
-
-                        generated_label = 'gtap2_' + luh_scenario_label + '_' + str(scenario_year) + '_' + policy_scenario_label + '_pollination_shock'
-                        merged_df[generated_label] = merged_df[generated_scenario_label + '_sum'] / merged_df[baseline_generated_scenario_label + '_sum']
-                        scenario_shock_column_names_to_keep.append(generated_label)
-
-                        # # NOTE: When calculating the value only on existing cells, cannot use the sum / sum method above. Need to use the new rasters created ad calculate their mean.
-                        # generated_scenario_label = 'gtap2_' + luh_scenario_label + '_' + str(scenario_year) + '_' + policy_scenario_label + '_existing_ag'
-                        # merged_df[generated_scenario_label + '_mean'] = merged_df[generated_scenario_label_existing_ag + '_sum'] / merged_df[baseline_generated_scenario_label_existing_ag + '_count']
-
-                        # TODOOO: ALMOST got the full sim ready to run on the new pollination method but didn't finish getting the averages here calculated.
-
-                        # generated_scenario_label_existing_ag = 'gtap2_' + luh_scenario_label + '_' + str(scenario_year) + '_' + policy_scenario_label + '_existing_ag'
-                        # generated_label = 'gtap2_' + luh_scenario_label + '_' + str(scenario_year) + '_' + policy_scenario_label + '_pollination_shock'
-                        # merged_df[generated_label] = merged_df[generated_scenario_label_existing_ag + '_sum'] / merged_df[baseline_generated_scenario_label_existing_ag + '_sum']
-                        # scenario_shock_column_names_to_keep.append(generated_label)
-
-                        # generated_scenario_existing_ag_label = 'gtap2_crop_value_difference_from_baseline_existing_ag_' + luh_scenario_label + '_' + str(scenario_year) + '_' + policy_scenario_label
-                        # generated_label = 'gtap2_' + luh_scenario_label + '_' + str(scenario_year) + '_' + policy_scenario_label + '_pollination_shock_existing_ag'
-                        #
-                        # merged_df[generated_label] = merged_df[generated_scenario_existing_ag_label + '_sum'] / merged_df[baseline_generated_scenario_label + '_sum']
-
-                        # # Also subtract the difference with BAU for each other policy
-                        # if policy_scenario_label != 'BAU':
-                        #     bau_label = 'gtap2_' + luh_scenario_label + '_' + str(scenario_year) + '_BAU_pollination_shock'
-                        #     scenario_label = 'gtap2_' + luh_scenario_label + '_' + str(scenario_year) + '_' + policy_scenario_label + '_pollination_shock'
-                        #     new_label = luh_scenario_label + '_' + str(scenario_year) + '_' + policy_scenario_label + '_shock_minus_bau'
-                        #     merged_df[new_label] = merged_df[scenario_label] - merged_df[bau_label]
-                        #
-                        #     # generated_scenario_existing_ag_label = 'gtap2_crop_value_difference_from_bau_existing_ag_' + luh_scenario_label + '_' + str(scenario_year) + '_' + policy_scenario_label
-                        #     # merged_df[generated_scenario_existing_ag_label + '_mean'] = merged_df[generated_scenario_existing_ag_label + '_sum'] / merged_df[generated_scenario_existing_ag_label + '_count']
-                        #     # merged_df[generated_scenario_existing_ag_label + '_mean_minus_baseline'] = merged_df[generated_scenario_existing_ag_label + '_mean'] - merged_df[baseline_generated_scenario_label + '_mean']
-                        #
-                        #
-                        #     generated_bau_label  = 'gtap2_' + luh_scenario_label + '_' + str(scenario_year) + '_BAU'
-                        #     generated_scenario_label = 'gtap2_' + luh_scenario_label + '_' + str(scenario_year) + '_' + policy_scenario_label
-                        #
-                        #     generated_bau_existing_ag_label  = 'gtap2_' + luh_scenario_label + '_' + str(scenario_year) + '_BAU'
-                        #     merged_df[generated_scenario_label + '_sum_div_bau'] = merged_df[generated_scenario_label + '_sum'] / merged_df[generated_bau_label + '_sum']
-                        #
-                        #     generated_scenario_existing_ag_label = 'gtap2_crop_value_difference_from_bau_existing_ag_' + luh_scenario_label + '_' + str(scenario_year) + '_' + policy_scenario_label
-                        #     # merged_df[generated_scenario_existing_ag_label + '_mean_minus_bau'] = merged_df[generated_scenario_existing_ag_label + '_mean'] - merged_df[generated_scenario_existing_ag_label + '_mean']
-                        #
-                        #     # merged_df[generated_scenario_existing_ag_label + '_sum_div_bau'] = merged_df[generated_scenario_existing_ag_label + '_sum'] / merged_df[generated_bau_existing_ag_label + '_sum']
-                        #
-                        #     generated_scenario_label= 'gtap2_crop_value_difference_from_bau_' + luh_scenario_label + '_' + str(scenario_year) + '_' + policy_scenario_label
-
-
-            # write to csv and gpkg
-            merged_df.to_csv(hb.suri(p.pollination_shock_csv_path, 'comprehensive'))
-            gdf = gpd.read_file(p.gtap37_aez18_path)
-            gdf = gdf.merge(merged_df, left_on='pyramid_id', right_index=True, how='outer')
-            gdf.to_file(hb.suri(p.pollination_shock_change_per_region_path, 'comprehensive'), driver='GPKG')
-
-            merged_df = merged_df[scenario_shock_column_names_to_keep]
-            merged_df.to_csv(p.pollination_shock_csv_path)
-            gdf = gpd.read_file(p.gtap37_aez18_path)
-            gdf = gdf.merge(merged_df, left_on='pyramid_id', right_index=True, how='outer')
-            gdf.to_file(p.pollination_shock_change_per_region_path, driver='GPKG')
-
-def gep_calculation(p):
-    r = crop_provision_functions.calculate_gep(p.base_data_dir)
-
-    (df_gep_by_country_year_crop, df_gep_by_year_country, df_gep_by_year) = r
+    # Default into the es_shocks parent dir. Runtime, not build time: p.es_shock_dir is
+    # published by that task, which ProjectFlow runs before this one.
+    if not getattr(p, 'pollination_shock_output_path', None):
+        p.pollination_shock_output_path = os.path.join(getattr(p, 'es_shock_dir', None) or p.project_dir, 'pollination_interpolated.csv')
+    if not p.run_this:
+        return
+
+    base_year = int(p.es_shock_base_year)
+    end_year = int(p.es_shock_end_year)
+    n_years = end_year - base_year
+    scenario_map = getattr(p, 'pollination_scenario_map', utilities.ES_SCENARIO_MAP)
+    scenarios = list(p.es_shock_scenarios)
+    acts = getattr(p, 'pollination_shock_acts', ('V_F', 'OSD'))
+
+    poll_path = getattr(p, 'pollination_dependency_path', None) or os.path.join(
+        p.input_dir, 'raw_dependencies', 'pollination_dependency.csv')
+    if not os.path.exists(poll_path):
+        print('  pollination shock: dependency csv not found (%s) -- skipping' % poll_path)
+        return
+
+    df = pd.read_csv(poll_path)
+    df = df[df['ENDW'] != 'AEZ0']  # AEZ0 not valid in GTAP
+    base = df[df['scenario'] == 'baseline_ignore_damages'].set_index(['ENDW', 'REG'])['value'].astype(float)
+
+    rows = []
+    for our_scn in scenarios:
+        candidates = scenario_map.get(our_scn)
+        raw_scn = next((c for c in candidates if c in df['scenario'].values), None) if candidates else None
+        if not raw_scn:
+            continue
+        scn_vals = df[df['scenario'] == raw_scn].set_index(['ENDW', 'REG'])['value'].astype(float)
+        common = base.index.intersection(scn_vals.index)
+        shock = (scn_vals.loc[common] - base.loc[common]).dropna()
+        for year in range(base_year, end_year + 1):
+            frac = (year - base_year) / n_years
+            for (endw, reg), val in shock.items():
+                for sector in acts:
+                    rows.append({'ENDW': endw, 'ACTS': sector, 'REG': reg,
+                                 'scenario': our_scn, 'year': year, 'shock_pct': val * frac})
+
+    out = pd.DataFrame(rows)
+    out.to_csv(p.pollination_shock_output_path, index=False)
+    nz = out[(out['year'] == end_year) & (out['shock_pct'] != 0)] if len(out) else out
+    print('  pollination shock: %d rows, %d scenarios, %d nonzero @%d (static, uncapped) -> %s'
+          % (len(out), out['scenario'].nunique() if len(out) else 0, len(nz), end_year,
+             p.pollination_shock_output_path))
+    return True

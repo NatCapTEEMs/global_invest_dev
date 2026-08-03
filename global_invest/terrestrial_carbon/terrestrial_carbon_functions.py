@@ -314,8 +314,11 @@ def generate_carbon_density_raster(lulc_path, cz_path, carbon_density_lookup_tab
     cz_path : str
         Path to the carbon zone raster.
     carbon_density_lookup_table_path : str
-        Path to CSV file containing the carbon density lookup table,
-        indexed by carbon_zone_id with columns for LULC types.
+        Path to a LONG/TIDY CSV with one row per (carbon_zone_id, lulc_id) and a single
+        carbon_density_mean value column. NOT a wide table indexed by carbon_zone_id with
+        one column per LULC type: the lookup below filters on a `lulc_id` COLUMN and reads
+        `carbon_density_mean`, so a wide table matches nothing and, because an empty match
+        is skipped rather than raised, yields an all-NoData raster instead of an error.
     out_path : str
         Output path for the resulting carbon density raster.
     """
@@ -420,5 +423,10 @@ def summarize_raster_by_region(value_raster_path, region_boundary_path, out_path
     df = regions.merge(df, on="index_id", how="right")
     df = df.drop(columns=["index_id","geometry"])
     df['year'] = '2019'
+    # Stable key. Zones whose raster window is empty are dropped above, so row POSITION in this CSV
+    # does not correspond to row position in the boundary file, and anything aligning on position
+    # silently pairs the wrong zones. Emit the boundary's own id so consumers can join on a value.
+    if 'ee_r50_aez18_id' in df.columns:
+        df['region_id'] = df['ee_r50_aez18_id'].astype(int)
     df.to_csv(out_path, index=False)
     print(f"Summary written to: {out_path}")
