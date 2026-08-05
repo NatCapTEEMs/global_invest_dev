@@ -142,6 +142,18 @@ def task_summarize_carbon_by_region(p):
     return result
 
 
+def gep_preprocess(p):
+    """
+    Preprocessing tasks are assumed NOT to be run by the user. Instead, it is assumed that the output of a preprocess
+    task is an input to the actual model, saved at the canonical project attribute p.terrestrial_carbon_input_path.
+    These are preprocessing tasks are still provided for reference, but are not intended to be run directly by the user.
+    We will "promote" the data outputed by a preprocess task to the base_data_dir provided to users.
+    For terrestrial carbon the preprocessing is the carbon-density build (Spawn + carbon zones), which is shared by
+    both the GEP valuation and the ES shock.
+    """
+    pass # NYI
+
+
 def gep_calculation(p):
     """ GEP calculation task for terrestrial carbon."""
     # Define at least the primary output for the service, which for this project is gep_by_country_base_year.
