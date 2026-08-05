@@ -14,9 +14,12 @@ def initialize_paths(p):
     # p.countries_simplified_gdf = hb.read_vector(p.countries_simplified_vector_path)  # Read the vector file for the countries.
 
 def build_gep_service_calculation_task_tree(p):
-    """Build the default task tree for terrestrial carbon."""
-    p.task_convert_carbon_density_maps_dtype = p.add_task(terrestrial_carbon_tasks.task_convert_carbon_density_maps_dtype)
-    p.task_combine_two_carbon_density_maps = p.add_task(terrestrial_carbon_tasks.task_combine_two_carbon_density_maps)
+    """Build the default task tree for terrestrial carbon.
+
+    The raw Spawn density build (convert dtype + combine aboveground/belowground) is a one-off
+    base-data job, not part of the per-run tree -- its product (the total biomass-carbon density
+    raster) is consumed from base_data by task_reproject_total_carbon_density.
+    """
     p.task_reproject_total_carbon_density = p.add_task(terrestrial_carbon_tasks.task_reproject_total_carbon_density)
     p.task_compute_carbon_density_table = p.add_task(terrestrial_carbon_tasks.task_compute_carbon_density_table)
     p.task_generate_carbon_density_raster_base_year = p.add_task(terrestrial_carbon_tasks.task_generate_carbon_density_raster_base_year)
@@ -47,18 +50,6 @@ def build_gep_service_task_tree(p):
     p = build_gep_service_calculation_task_tree(p)
     p.terrestrial_carbon_gep_result_task = p.add_task(terrestrial_carbon_tasks.gep_result)
 
-    return p
-
-
-def build_gep_task_tree(p):
-    """
-    Build the default task tree forthe GEP application. In this case, it's very similar to the standard task tree
-    but i've included it here for consistency with other models.
-    """
-    p.terrestrial_carbon_gep_preprocess_task = p.add_task(terrestrial_carbon_tasks.gep_preprocess, parent=p.terrestrial_carbon_task)
-    p.terrestrial_carbon_gep_calculation_task = p.add_task(terrestrial_carbon_tasks.gep_calculation, parent=p.terrestrial_carbon_task)
-    p.terrestrial_carbon_gep_result_task = p.add_task(terrestrial_carbon_tasks.gep_result, parent=p.terrestrial_carbon_task)
-    p.terrestrial_carbon_gep_results_distribution_task = p.add_task(terrestrial_carbon_tasks.gep_results_distribution, parent=p.terrestrial_carbon_task)
     return p
 
 

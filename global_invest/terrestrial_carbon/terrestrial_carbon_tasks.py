@@ -82,8 +82,10 @@ def task_reproject_total_carbon_density(p):
     Task to reproject the total carbon density raster to the project's coordinate reference system (CRS).
     """
 
-    # Input and output paths
-    # p.total_carbon_density_path = p.get_path(os.path.join(p.task_combine_two_carbon_density_maps, "total_biomass_carbon_2010_float.tif")) Defined above
+    # Input: the total biomass-carbon density raster. This is a one-off base-data product (raw Spawn
+    # aboveground+belowground already converted and combined), consumed from base_data rather than
+    # rebuilt per run. Overridable via p.total_carbon_density_path.
+    p.total_carbon_density_path = getattr(p, 'total_carbon_density_path', None) or p.get_path('carbon_storage', 'spawn_total_biomass_carbon_2010.tif')
     p.reprojected_total_carbon_density_path = os.path.join(p.cur_dir, "total_biomass_carbon_2010_float_reprojected.tif")
 
     # Run the function
