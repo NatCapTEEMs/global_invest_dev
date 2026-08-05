@@ -47,6 +47,8 @@ def build_gep_service_task_tree(p):
     p = build_gep_service_calculation_task_tree(p)
     p.terrestrial_carbon_gep_result_task = p.add_task(terrestrial_carbon_tasks.gep_result)
 
+    return p
+
 
 def build_gep_task_tree(p):
     """
