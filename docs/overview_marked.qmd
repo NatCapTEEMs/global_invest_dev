@@ -1,0 +1,81 @@
+---
+title: "Global InVEST"
+subtitle: "Ecosystem-service valuation (GEP) and scenario shocks"
+format:
+    revealjs:
+        theme: simple
+        margin: 10
+        self-contained: true
+        scrollable: true
+        code-fold: show
+        slide-number: true
+        preview-links: auto
+        css: styles.css
+        incremental: true
+        auto-stretch: true
+        width: 1920
+        height: 1080
+---
+
+# What global_invest is
+
+## One module per ecosystem service, two outputs
+
+::: r-fit-text
+- `global_invest` holds one folder per ecosystem service, each on the same file convention
+- Every service produces **both**:
+  - a **GEP valuation** — the value of the service, per country
+  - an **NGFS shock** — the change in the service under a scenario, for GTAP
+- Both come from the same five files per service, so the science is written once
+:::
+
+## The five-file convention
+
+::: r-fit-text
+- `run_<svc>.py` — standalone GEP run · `run_<svc>_shock.py` — standalone shock run
+- `<svc>_tasks.py` — ProjectFlow tasks · `<svc>_functions.py` — the science functions
+- `<svc>_initialize.py` — the task-tree builders + `add_<svc>_tasks(p, parent=None)` shock seam
+- `<svc>_method.qmd` — the method write-up
+:::
+
+# The services
+
+## Five services
+
+::: r-fit-text
+- **terrestrial_carbon** — carbon stock × price
+- **pollination** — crop value attributable to pollinators
+- **erosion** — sediment retention / avoided on-farm and downstream damage
+- **fisheries** — CWoN-based fisheries shock (valuation external)
+- **coastal_carbon** — coastal (blue-carbon) stock × price
+:::
+
+# GEP valuation
+
+## Value = P × Q × λ
+
+::: r-fit-text
+- _[outline — to fill in with Chiara]_
+- Reports per **iso3**, via one shared zone→iso3 aggregation
+- Price is a config seam (e.g. carbon: `carbon_prices.xlsx`), not hardcoded science
+- Example result — global terrestrial carbon GEP, base year 2019: **_[pending science check]_**
+:::
+
+# Scenario shocks
+
+## SEALS maps → GTAP
+
+::: r-fit-text
+- _[outline — to fill in with Chiara]_
+- `add_<svc>_tasks(p, parent)` grafts the shock task into a consumer pipeline (ngfs_pnas, nff_global)
+- Static (frozen table) vs dynamic (recompute from SEALS 300 m maps) dispatch on `p.dynamic_es`
+- Emits per r50×AEZ zone → interpolated CSV → GTAP shock
+:::
+
+# Roadmap
+
+## Status
+
+::: r-fit-text
+- _[outline — to fill in with Chiara]_
+:::

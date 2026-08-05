@@ -1,0 +1,5 @@
+/* Slide overrides for the global_invest revealjs deck, on top of the `simple` theme.
+ * House style: white slides, dark-green headers, full-sentence bullets. */
+.reveal h1, .reveal h2, .reveal h3 { color: #1b5e20; }   /* dark green */
+.reveal { color: #202020; }
+.reveal .slides { text-align: left; }
