@@ -56,6 +56,14 @@ format:
 - The shock is computed either statically, from a frozen dependency table, or dynamically, recomputed from the SEALS 300 m land-use maps at each anchor year; the choice is dispatched on `p.dynamic_es`.
 - Shocks are emitted per r50×AEZ zone and interpolated across years into the CSV that GTAP consumes.
 
+# Two outputs, two uses
+
+## The shock moves the model; the value calibrates it
+
+- The shock (the change in a service between scenarios) enters the economic model as a productivity shock: less pollination lowers crop yields, and changes in carbon or erosion shift land and crop productivity.
+- The GEP value (price × quantity × λ) is an accounting measure that sits alongside GDP; it does not itself enter the model.
+- The same GEP value can also calibrate the model: how much a given change in a service matters economically, and the value of natural capital held as a stock on the balance sheet.
+
 # Roadmap
 
 ## Where things stand
