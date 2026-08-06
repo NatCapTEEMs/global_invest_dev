@@ -172,11 +172,8 @@ def gep_calculation(p):
     service_results = {}
     p.results['terrestrial_carbon'] = service_results
     p.results['terrestrial_carbon']['gep_by_country_base_year'] = os.path.join(p.cur_dir, "gep_by_country_base_year.csv")
-
-    # Optional additional results.
-    p.results['terrestrial_carbon']['gep_by_country_year'] = os.path.join(p.cur_dir, "gep_by_country_year.csv")
-    p.results['terrestrial_carbon']['gep_by_country_year'] = os.path.join(p.cur_dir, "gep_by_country_year.csv")
-    p.results['terrestrial_carbon']['gep_by_year'] = os.path.join(p.cur_dir, "gep_by_year.csv")
+    # Only register results this task actually writes. Per-year results (gep_by_country_year, gep_by_year)
+    # belong to a multi-year run and are registered there, not in this base-year valuation.
 
     # Check if all results exist
     if hb.path_all_exist(list(service_results.values())):
