@@ -87,6 +87,8 @@ def task_reproject_total_carbon_density(p):
     # rebuilt per run. Overridable via p.total_carbon_density_path.
     p.total_carbon_density_path = getattr(p, 'total_carbon_density_path', None) or p.get_path('carbon_storage', 'spawn_total_biomass_carbon_2010.tif')
     p.reprojected_total_carbon_density_path = os.path.join(p.cur_dir, "total_biomass_carbon_2010_float_reprojected.tif")
+    if hb.path_exists(p.reprojected_total_carbon_density_path):
+        return True
 
     # Run the function
     result = terrestrial_carbon_functions.reproject_raster(
@@ -104,6 +106,8 @@ def task_reproject_total_carbon_density(p):
 def task_compute_carbon_density_table(p):
 
     p.carbon_density_lookup_table_path = os.path.join(p.cur_dir, "carbon_density_lookup_table.csv")
+    if hb.path_exists(p.carbon_density_lookup_table_path):
+        return True
 
     result = terrestrial_carbon_functions.stack_layers_to_csv(
         group_layer1_path=p.base_year_lulc_path,
@@ -120,6 +124,8 @@ def task_compute_carbon_density_table(p):
 def task_generate_carbon_density_raster_base_year(p):
 
     p.carbon_density_raster_base_year_path = os.path.join(p.cur_dir, "projected_carbon_density_2019.tif")
+    if hb.path_exists(p.carbon_density_raster_base_year_path):
+        return True
     result = terrestrial_carbon_functions.generate_carbon_density_raster(
         lulc_path=p.base_year_lulc_path,
         cz_path=p.carbon_zones_path,
@@ -131,12 +137,16 @@ def task_generate_carbon_density_raster_base_year(p):
 def task_generate_carbon_density_raster_per_cell_base_year(p):
     p.ha_per_cell_10sec_ref_path = p.get_path('pyramids', 'ha_per_cell_10sec.tif')
     p.projected_carbon_density_2019_per_cell_path = os.path.join(p.cur_dir, 'projected_carbon_density_2019_per_cell.tif')
+    if hb.path_exists(p.projected_carbon_density_2019_per_cell_path):
+        return True
     hb.multiply(p.carbon_density_raster_base_year_path, p.ha_per_cell_10sec_ref_path, p.projected_carbon_density_2019_per_cell_path)
     return True
 
 
 def task_summarize_carbon_by_region(p):
     p.carbon_by_region_base_year_path = os.path.join(p.cur_dir, "gep_by_country_base_year.csv")
+    if hb.path_exists(p.carbon_by_region_base_year_path):
+        return True
     result = terrestrial_carbon_functions.summarize_raster_by_region(
         value_raster_path=p.projected_carbon_density_2019_per_cell_path,
         region_boundary_path=p.gdf_countries_vector_path,
