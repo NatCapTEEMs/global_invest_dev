@@ -4,77 +4,62 @@ subtitle: "Ecosystem-service valuation (GEP) and scenario shocks"
 format:
     revealjs:
         theme: simple
-        margin: 10
+        margin: 0.08
         scrollable: true
         code-fold: show
         slide-number: true
         preview-links: auto
         css: styles.css
         incremental: true
-        auto-stretch: true
-        width: 1920
-        height: 1080
 ---
 
 # What global_invest is
 
 ## One module, two outputs per service
 
-::: r-fit-text
 - `global_invest` holds one folder per ecosystem service, all on the same file convention.
 - Every service produces two things from the same source files: a **GEP valuation** (the value of the service, per country) and an **NGFS scenario shock** (the change in the service under a scenario, for GTAP).
 - Writing the science once and exposing it two ways keeps the valuation and the shock from drifting apart.
-:::
 
 ## The five-file convention
 
-::: r-fit-text
 - `run_<svc>.py` runs the standalone GEP valuation; `run_<svc>_shock.py` runs the standalone shock.
 - `<svc>_tasks.py` holds the ProjectFlow tasks; `<svc>_functions.py` holds the science functions the tasks call.
 - `<svc>_initialize.py` holds the task-tree builders plus `add_<svc>_tasks(p, parent=None)`, the seam consumers graft the shock onto.
 - `<svc>_method.qmd` documents the method.
-:::
 
 # The services
 
 ## Five ecosystem services
 
-::: r-fit-text
 - **terrestrial_carbon** — carbon stock from land cover and carbon density, valued at a carbon price.
 - **pollination** — the share of crop value attributable to pollinators.
 - **erosion** — sediment retention, valued as avoided on-farm and downstream damage.
 - **fisheries** — a fisheries shock from the CWoN accounts; its valuation is external to the module.
 - **coastal_carbon** — coastal (blue-carbon) stock, valued at a carbon price.
-:::
 
 # GEP valuation
 
 ## Value = price × quantity × λ
 
-::: r-fit-text
 - Each service values its flow as price × quantity × λ, where λ is the share of the value attributable to nature.
 - Quantity comes from the biophysical model (for carbon, the stock implied by land cover and carbon density); the price is read from a configuration seam, not hardcoded in the science (carbon reads `carbon_prices.xlsx`).
 - Every service reports on a common iso3 country key, through one shared zone-to-country aggregation, so the services can be summed into a national GEP.
 - The terrestrial-carbon valuation now runs end to end and writes a per-country GEP for 2019; the headline magnitude is under validation.
-:::
 
 # Scenario shocks
 
 ## SEALS land-use maps to GTAP
 
-::: r-fit-text
 - The same service also produces a scenario shock: how the service changes between a policy scenario and its nature-off counterfactual.
 - `add_<svc>_tasks(p, parent)` grafts the shock task into a consumer pipeline (ngfs_pnas, nff_global) without duplicating the science.
 - The shock is computed either statically, from a frozen dependency table, or dynamically, recomputed from the SEALS 300 m land-use maps at each anchor year; the choice is dispatched on `p.dynamic_es`.
 - Shocks are emitted per r50×AEZ zone and interpolated across years into the CSV that GTAP consumes.
-:::
 
 # Roadmap
 
 ## Where things stand
 
-::: r-fit-text
 - terrestrial_carbon is the reference implementation: the run files are split by purpose, the density is consumed from base data, and the GEP valuation runs end to end.
 - pollination, erosion, fisheries, and coastal_carbon are being conformed to the same structure.
 - Next: complete the per-service GEP valuations, wire the shared zone-to-iso3 aggregation, and publish combined GEP and shock results.
-:::
