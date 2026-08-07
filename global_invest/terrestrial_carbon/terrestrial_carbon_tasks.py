@@ -248,19 +248,8 @@ def gep_result(p):
         quarto_command = f"quarto render {results_qmd_project_path}"
         hb.log(f"Running quarto command: {quarto_command}")     
 
-        """Run quarto with debug information"""
-        # Set environment for more verbose output
-        env = os.environ.copy()
-        env['QUARTO_LOG_LEVEL'] = 'DEBUG'
-        
         cmd = ['quarto', 'render', results_qmd_project_path, '--verbose']
-        
-        # print(f"Running command: {' '.join(results_qmd_project_path)}")
-        print(f"Working directory: {os.getcwd()}")
-        print(f"File exists: {os.path.exists(results_qmd_project_path)}")
-        
-        
-        
+
         process = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE,
@@ -294,19 +283,6 @@ def gep_load_results(p):
     p.results.setdefault('terrestrial_carbon', {})
     p.results['terrestrial_carbon']['gep_by_country_base_year'] = result_path
         
-def gep_results_distribution(p):
-    """Distribute the results of the GEP calculation."""
-    # This task is intended to copy the results to the output directory.
-    hb.log("Distributing GEP results...")
-    
-    for key, value in p.results['terrestrial_carbon'].items():
-        output_path = os.path.join(p.output_dir, key)
-        hb.path_copy(value, output_path)
-        hb.log(f"Distributed {key} to {output_path}")
-    
-    hb.log("GEP results distribution complete.")
-
-
 # =============================================================================
 # ES-shock tasks. These feed the GTAP shock; the GEP valuation above is a separate
 # consumer of the same carbon-density front-end. Neither depends on the other.
@@ -338,7 +314,6 @@ def task_compute_terrestrial_carbon_shock(p):
         p.terrestrial_carbon_shock_output_path = os.path.join(getattr(p, 'es_shock_dir', None) or p.project_dir, 'terrestrial_carbon_interpolated.csv')
     if not p.run_this:
         return
-    import pandas as pd
     import geopandas as gpd
 
     base_scn     = getattr(p, 'es_shock_base_scenario', 'baseline_ignore_dependencies')
@@ -377,7 +352,6 @@ def task_compute_terrestrial_carbon_shock(p):
     # global 300 m; a SEALS LULC map may be a sub-window (single-country or short-horizon test AOI).
     # When they differ, align the zones to the end-year LULC extent once -- same resolution and an
     # aligned grid, so nearest is a lossless clip -- so the task works at any extent, not only global.
-    import hazelbean as hb
     from osgeo import gdal
     def _yx(path):
         ds = gdal.Open(path)
@@ -493,8 +467,6 @@ def task_compute_terrestrial_carbon_shock_static(p):
         p.terrestrial_carbon_shock_output_path = os.path.join(getattr(p, 'es_shock_dir', None) or p.project_dir, 'terrestrial_carbon_interpolated.csv')
     if not p.run_this:
         return
-    import pandas as pd
-
     base_year = int(p.es_shock_base_year)
     end_year = int(p.es_shock_end_year)
     n_years = end_year - base_year
