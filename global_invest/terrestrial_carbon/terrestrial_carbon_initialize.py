@@ -28,6 +28,16 @@ def build_gep_service_calculation_task_tree(p):
 
     return p
 
+def build_gep_service_results_task_tree(p):
+    """Results-only ('load') run: load the GEP results from a PRIOR calculation run and render the report.
+    Requires the calculation to have run already; fails loudly if the results are missing (does NOT recompute).
+    """
+    p.terrestrial_carbon_gep_load_results_task = p.add_task(terrestrial_carbon_tasks.gep_load_results)
+    p.terrestrial_carbon_gep_result_task = p.add_task(terrestrial_carbon_tasks.gep_result)
+
+    return p
+
+
 def build_gep_service_task_tree(p):
     """Full GEP run: the calculation chain plus the results/report task."""
     p = build_gep_service_calculation_task_tree(p)

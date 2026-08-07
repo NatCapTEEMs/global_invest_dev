@@ -9,7 +9,6 @@ import numpy as np
 
 from global_invest import utilities
 from global_invest.terrestrial_carbon import terrestrial_carbon_functions
-from global_invest.terrestrial_carbon import terrestrial_carbon_initialize
 
 
 def terrestrial_carbon(p):
@@ -283,15 +282,17 @@ def gep_result(p):
         hb.path_remove(results_qmd_project_path)
         
 def gep_load_results(p):
-    
-    # Learn the paths by creating a temp task treep
-    p_temp = hb.ProjectFlow()
-    terrestrial_carbon_initialize.build_gep_service_calculation_task_tree(p_temp)
-    p_temp.set_all_tasks_to_skip_if_dir_exists()
-    p_temp.execute()
-    
-    print(p_temp.results)
-    pass
+    """Load the GEP results computed by a PRIOR calculation run, so the report can render without
+    recomputing. Fails loudly if they are not present -- run the calculation (run_terrestrial_carbon.py)
+    or promote the results into base_data first. This is the 'results-only' entry point.
+    """
+    result_path = os.path.join(p.intermediate_dir, 'gep_calculation', 'gep_by_country_base_year.csv')
+    if not hb.path_exists(result_path):
+        raise FileNotFoundError(
+            f"terrestrial_carbon GEP results not found at {result_path}. "
+            f"Run the calculation first (run_terrestrial_carbon.py), then re-run results.")
+    p.results.setdefault('terrestrial_carbon', {})
+    p.results['terrestrial_carbon']['gep_by_country_base_year'] = result_path
         
 def gep_results_distribution(p):
     """Distribute the results of the GEP calculation."""
