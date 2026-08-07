@@ -10,9 +10,6 @@ def initialize_paths(p):
     p.gdf_countries = p.gdf_countries_vector_path
     p.gdf_countries_simplified = p.gdf_countries_vector_simplified_path
 
-    # p.gdf_countries = hb.read_vector(p.gdf_countries_vector_path)  # Read the vector file for the countries.
-    # p.countries_simplified_gdf = hb.read_vector(p.countries_simplified_vector_path)  # Read the vector file for the countries.
-
 def build_gep_service_calculation_task_tree(p):
     """Build the default task tree for terrestrial carbon.
 
@@ -39,16 +36,7 @@ def build_gep_service_results_task_tree(p):
 
 
 def build_gep_service_task_tree(p):
-    """If you just want to load results, eg for reporting, this task tree inspects a different task tree and to learn paths and then loads results."""
-
-
-    # QUESTION!!!! If a task truly already inspects itself to not rerun, what's the difference between loading and just executing the tree on
-    # an existing project? The difference is that load will do more error checking and FAIL rather than recalculate if it didn't find, also reporting
-    # that it didn't find it and giving information about how to put the data in so it does find it in the base data or a manually-built project data.
-    # I might want to have methods for automatically putting an archive into the right spot and also extended functionality for finding results in base_data
-    # and functionality for promoting project results to base data per the new documentation in ee_dev.
-    # Actually, maybe it's just that load_results is more useful for notebooks?
-
+    """Full GEP run: the calculation chain plus the results/report task."""
     p = build_gep_service_calculation_task_tree(p)
     p.terrestrial_carbon_gep_result_task = p.add_task(terrestrial_carbon_tasks.gep_result)
 
@@ -69,7 +57,7 @@ def add_terrestrial_carbon_tasks(p, parent=None):
     (task_compute_terrestrial_carbon_shock_static). Mirrors add_erosion_tasks / add_pollination_tasks;
     both paths write terrestrial_carbon_interpolated.csv.
 
-    Caller sets only the shared es_shock_* config (see run_ngfs_pnas STEP 6). Everything
+    Caller sets only the shared es_shock_* config. Everything
     carbon-specific defaults in the task: the output CSV into p.es_shock_dir, the r50xAEZ boundary /
     Spawn density / carbon zones via p.get_path.
     """
