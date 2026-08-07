@@ -4,11 +4,24 @@ import hazelbean as hb
 from global_invest.terrestrial_carbon import terrestrial_carbon_tasks
 
 def initialize_paths(p):
-    p.df_countries = pd.read_csv(p.df_countries_csv_path)
+    """Resolve the terrestrial-carbon GEP inputs on p, all via get_path (machine-agnostic, and one source
+    of truth for every run file / consumer instead of a block duplicated in each). carbon_zones is the
+    SAME raster the shock task uses (base_data/carbon_storage), so the GEP valuation and the shock never
+    diverge. carbon_price defaults here but the caller may override it before calling.
+    """
+    p.df_countries_csv_path = p.get_path('cartographic', 'ee', 'ee_r264_correspondence.csv')
+    p.gdf_countries_vector_path = p.get_path('cartographic', 'ee', 'ee_r264_correspondence.gpkg')
+    p.gdf_countries_vector_simplified_path = p.get_path('cartographic', 'ee', 'ee_r264_simplified300sec.gpkg')
+    p.carbon_zones_path = p.get_path('carbon_storage', 'carbon_zones_rasterized.tif')
+    p.base_year_lulc_path = p.get_path('lulc', 'esa', 'lulc_esa_2019.tif')
+    p.carbon_prices_path = p.get_path('terrestrial_carbon', 'carbon_prices.xlsx')
+    p.carbon_price = getattr(p, 'carbon_price', 'rental scc r2%')
 
-    # Notice optimization here: the GDFs are still just path_strings. hb.read_vector takes the string as an input and converts it to a GeoDataFrame when needed.
+    p.df_countries = pd.read_csv(p.df_countries_csv_path)
+    # The GDFs stay as path strings; hb.read_vector converts to a GeoDataFrame on demand.
     p.gdf_countries = p.gdf_countries_vector_path
     p.gdf_countries_simplified = p.gdf_countries_vector_simplified_path
+    return p
 
 def build_gep_service_calculation_task_tree(p):
     """Build the default task tree for terrestrial carbon.
