@@ -477,9 +477,9 @@ def task_compute_terrestrial_carbon_shock(p):
 def task_compute_terrestrial_carbon_shock_static(p):
     """Static per-scenario carbon shock -> FRS, linear ramp 0->end_year, from the frozen dependency table.
 
-    The fallback add_terrestrial_carbon_tasks selects when <2 SEALS map years exist (the dynamic recompute needs >=2
-    anchor maps to measure change). READS input_dir/raw_dependencies/carbon_storage_dependency.csv
-    (override p.terrestrial_carbon_dependency_path) and subtracts the baseline_ignore_dependencies row at 2050
+    add_terrestrial_carbon_tasks grafts this (instead of the dynamic recompute) when 'terrestrial_carbon' is NOT
+    in p.dynamic_es. READS input_dir/raw_dependencies/carbon_storage_dependency.csv
+    (override p.terrestrial_carbon_dependency_path) and subtracts the p.es_shock_base_scenario row at the end year
     (percentage_change x100), ramping that difference linearly from 0 at base_year. NEVER writes back to
     raw_dependencies -- the output goes to p.terrestrial_carbon_shock_output_path (terrestrial_carbon_interpolated.csv),
     the same file the dynamic task writes, so build_combined_afeall_cc_es is agnostic to which one ran.
@@ -501,6 +501,7 @@ def task_compute_terrestrial_carbon_shock_static(p):
     scenario_map = getattr(p, 'terrestrial_carbon_scenario_map', utilities.ES_SCENARIO_MAP)
     scenarios = list(p.es_shock_scenarios)
     acts = getattr(p, 'terrestrial_carbon_shock_acts', 'FRS')
+    base_scn = getattr(p, 'es_shock_base_scenario', 'baseline_ignore_dependencies')  # config-driven, matches the dynamic task
 
     carb_path = getattr(p, 'terrestrial_carbon_dependency_path', None) or os.path.join(
         p.input_dir, 'raw_dependencies', 'carbon_storage_dependency.csv')
@@ -509,7 +510,7 @@ def task_compute_terrestrial_carbon_shock_static(p):
         return
 
     df = pd.read_csv(carb_path)
-    base = df[(df['scenario'] == 'baseline_ignore_dependencies') & (df['year'] == 2050)]
+    base = df[(df['scenario'] == base_scn) & (df['year'] == end_year)]
     base_vals = base.set_index(['ENDW', 'REG'])['percentage_change'].astype(float) * 100
 
     rows = []
@@ -518,7 +519,7 @@ def task_compute_terrestrial_carbon_shock_static(p):
         raw_scn = next((c for c in candidates if c in df['scenario'].values), None) if candidates else None
         if not raw_scn:
             continue
-        scn = df[(df['scenario'] == raw_scn) & (df['year'] == 2050)]
+        scn = df[(df['scenario'] == raw_scn) & (df['year'] == end_year)]
         scn_vals = scn.set_index(['ENDW', 'REG'])['percentage_change'].astype(float) * 100
         common = base_vals.index.intersection(scn_vals.index)
         shock = (scn_vals.loc[common] - base_vals.loc[common]).dropna()

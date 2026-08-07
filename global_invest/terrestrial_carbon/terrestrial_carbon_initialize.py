@@ -64,10 +64,13 @@ def add_terrestrial_carbon_tasks(p, parent=None):
     carbon-specific defaults in the task: the output CSV into p.es_shock_dir, the r50xAEZ boundary /
     Spawn density / carbon zones via p.get_path.
     """
+    # skip_existing=1 makes the shock re-runnable via ProjectFlow (dir present -> p.run_this=0 and the task
+    # publishes its output path then returns), matching the calc chain and erosion. Cached intermediates
+    # inside the task are a second layer for partial re-runs.
     dynamic = 'terrestrial_carbon' in getattr(p, 'dynamic_es', [])
     if not dynamic:   # not requested dynamic -> read the frozen dependency table
-        p.compute_terrestrial_carbon_shock_task = p.add_task(terrestrial_carbon_tasks.task_compute_terrestrial_carbon_shock_static, parent=parent)
+        p.compute_terrestrial_carbon_shock_task = p.add_task(terrestrial_carbon_tasks.task_compute_terrestrial_carbon_shock_static, parent=parent, skip_existing=1)
         return p
     # dynamic: recompute from the SEALS maps (one task for carbon; cf. erosion's multi-task chain)
-    p.compute_terrestrial_carbon_shock_task = p.add_task(terrestrial_carbon_tasks.task_compute_terrestrial_carbon_shock, parent=parent)
+    p.compute_terrestrial_carbon_shock_task = p.add_task(terrestrial_carbon_tasks.task_compute_terrestrial_carbon_shock, parent=parent, skip_existing=1)
     return p
