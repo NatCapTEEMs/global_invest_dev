@@ -7,6 +7,7 @@ import csv
 import numpy as np
 
 
+from global_invest import utilities
 from global_invest.terrestrial_carbon import terrestrial_carbon_functions
 
 
@@ -488,13 +489,8 @@ def task_compute_terrestrial_carbon_shock_static(p):
 
     rows = []
     for our_scn in scenarios:
-        candidates = scenario_map.get(our_scn, [our_scn])  # identity default; consumer maps per scenario
-        raw_scn = next((c for c in candidates if c in df['scenario'].values), None)
-        if not raw_scn:
-            hb.log("WARNING terrestrial_carbon shock: scenario '%s' (tried %s) has no matching row in the "
-                   "dependency table (present: %s) -- skipping it, so GTAP gets NO carbon shock for that "
-                   "scenario. Set p.terrestrial_carbon_scenario_map if the table uses a different label."
-                   % (our_scn, candidates, sorted(df['scenario'].unique())))
+        raw_scn = utilities.resolve_raw_scenario(df['scenario'].values, scenario_map, our_scn, 'terrestrial_carbon', log=hb.log)
+        if raw_scn is None:
             continue
         scn = df[(df['scenario'] == raw_scn) & (df['year'] == end_year)]
         scn_vals = scn.set_index(['ENDW', 'REG'])['percentage_change'].astype(float) * 100

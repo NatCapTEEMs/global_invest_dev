@@ -1,7 +1,8 @@
 """Erosion-control ES science helpers (sediment-retention shock).
 
-STATIC helpers (read_erosion_dependency, find_scenario): parse the frozen per-scenario dependency table
-(raw_dependencies/erosion_prevention_dependency.csv). DYNAMIC helpers (#26): the SPAM->coefficient
+STATIC helper (read_erosion_dependency): parse the frozen per-scenario dependency table
+(raw_dependencies/erosion_prevention_dependency.csv). Scenario-name resolution is shared across services
+in global_invest.utilities.resolve_raw_scenario. DYNAMIC helpers (#26): the SPAM->coefficient
 crosswalk (load_erosion_yield_coefficients, get_erosion_yield_coefficient, SPAM_ALIAS_MAP) and the per-country
 severe-threshold policy (build_severe_threshold_raster) used by the dynamic exposure and shock tasks.
 """
@@ -20,14 +21,6 @@ def read_erosion_dependency(ero_path):
     base = df[df['scenario'] == 'baseline_ignore_damages']
     base_vals = base.set_index(['aez18_id', 'gtapv7_r50_label'])['value'].astype(float).fillna(0)
     return df, base_vals
-
-
-def find_scenario(df, candidates):
-    """First candidate present in df['scenario'], else None."""
-    for c in candidates:
-        if c in df['scenario'].values:
-            return c
-    return None
 
 
 # ---------------------------------------------------------------------------

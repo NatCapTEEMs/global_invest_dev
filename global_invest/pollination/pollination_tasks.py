@@ -9,6 +9,7 @@ import os
 import glob
 import numpy as np
 import pandas as pd
+from global_invest import utilities
 
 
 def task_compute_pollination_shock(p):
@@ -159,13 +160,8 @@ def task_compute_pollination_shock_static(p):
 
     rows = []
     for our_scn in scenarios:
-        candidates = scenario_map.get(our_scn, [our_scn])  # identity default; consumer maps per scenario
-        raw_scn = next((c for c in candidates if c in df['scenario'].values), None)
-        if not raw_scn:
-            print("  WARNING pollination shock: scenario '%s' (tried %s) has no matching row in the "
-                  "dependency table (present: %s) -- skipping it, so GTAP gets NO pollination shock for "
-                  "that scenario. Set p.pollination_scenario_map if the table uses a different label."
-                  % (our_scn, candidates, sorted(df['scenario'].unique())))
+        raw_scn = utilities.resolve_raw_scenario(df['scenario'].values, scenario_map, our_scn, 'pollination')
+        if raw_scn is None:
             continue
         scn_vals = df[df['scenario'] == raw_scn].set_index(['ENDW', 'REG'])['value'].astype(float)
         common = base.index.intersection(scn_vals.index)

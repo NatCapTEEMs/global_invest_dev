@@ -27,6 +27,7 @@ FIXED severe-pixel set and the DEFAULT; see task_erosion_shock). add_erosion_tas
 import os
 import pandas as pd
 
+from global_invest import utilities
 from global_invest.erosion import erosion_functions as ef
 
 # 8 crop sectors whose productivity depends on erosion control (sediment retention).
@@ -703,13 +704,8 @@ def task_compute_erosion_shock_static(p):
 
     rows = []
     for our_scn in scenarios:
-        candidates = scenario_map.get(our_scn, [our_scn])  # identity default; consumer maps per scenario
-        raw_scn = ef.find_scenario(df, candidates)
-        if not raw_scn:
-            print("  WARNING erosion shock: scenario '%s' (tried %s) has no matching row in the "
-                  "dependency table (present: %s) -- skipping it, so GTAP gets NO erosion shock for that "
-                  "scenario. Set p.erosion_scenario_map if the table uses a different label."
-                  % (our_scn, candidates, sorted(df['scenario'].unique())))
+        raw_scn = utilities.resolve_raw_scenario(df['scenario'].values, scenario_map, our_scn, 'erosion')
+        if raw_scn is None:
             continue
         scn_vals = df[df['scenario'] == raw_scn].set_index(
             ['aez18_id', 'gtapv7_r50_label'])['value'].astype(float).fillna(0)
