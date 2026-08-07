@@ -9,7 +9,6 @@ import os
 import glob
 import numpy as np
 import pandas as pd
-from global_invest import utilities
 
 
 def task_compute_pollination_shock(p):
@@ -129,7 +128,9 @@ def task_compute_pollination_shock_static(p):
     base_year. NEVER writes back to raw_dependencies -- output goes to p.pollination_shock_output_path
     (pollination_interpolated.csv), the same file the dynamic task writes. Caller sets:
     es_shock_base_year, es_shock_end_year, es_shock_scenarios,
-    pollination_shock_output_path; scenario->raw via p.pollination_scenario_map (default);
+    pollination_shock_output_path; scenario->raw via p.pollination_scenario_map (default: identity --
+    each scenario maps to its own name; a scenario the table labels differently is warned about loudly
+    and skipped rather than silently zeroed, so set the map for those);
     sectors via p.pollination_shock_acts (default ('V_F', 'OSD'), matching the dynamic task).
     """
     # Default into the es_shocks parent dir. Runtime, not build time: p.es_shock_dir is
@@ -142,7 +143,7 @@ def task_compute_pollination_shock_static(p):
     base_year = int(p.es_shock_base_year)
     end_year = int(p.es_shock_end_year)
     n_years = end_year - base_year
-    scenario_map = getattr(p, 'pollination_scenario_map', utilities.ES_SCENARIO_MAP)
+    scenario_map = getattr(p, 'pollination_scenario_map', {})
     scenarios = list(p.es_shock_scenarios)
     acts = getattr(p, 'pollination_shock_acts', ('V_F', 'OSD'))
 
@@ -158,9 +159,13 @@ def task_compute_pollination_shock_static(p):
 
     rows = []
     for our_scn in scenarios:
-        candidates = scenario_map.get(our_scn)
-        raw_scn = next((c for c in candidates if c in df['scenario'].values), None) if candidates else None
+        candidates = scenario_map.get(our_scn, [our_scn])  # identity default; consumer maps per scenario
+        raw_scn = next((c for c in candidates if c in df['scenario'].values), None)
         if not raw_scn:
+            print("  WARNING pollination shock: scenario '%s' (tried %s) has no matching row in the "
+                  "dependency table (present: %s) -- skipping it, so GTAP gets NO pollination shock for "
+                  "that scenario. Set p.pollination_scenario_map if the table uses a different label."
+                  % (our_scn, candidates, sorted(df['scenario'].unique())))
             continue
         scn_vals = df[df['scenario'] == raw_scn].set_index(['ENDW', 'REG'])['value'].astype(float)
         common = base.index.intersection(scn_vals.index)

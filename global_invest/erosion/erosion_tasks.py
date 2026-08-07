@@ -26,7 +26,6 @@ FIXED severe-pixel set and the DEFAULT; see task_erosion_shock). add_erosion_tas
 """
 import os
 import pandas as pd
-from global_invest import utilities
 
 from global_invest.erosion import erosion_functions as ef
 
@@ -676,7 +675,9 @@ def task_compute_erosion_shock_static(p):
     Caller sets on p before calling: es_shock_scenarios, es_shock_base_year,
     es_shock_end_year, erosion_shock_output_path. Dependency csv defaults to
     input_dir/raw_dependencies/erosion_prevention_dependency.csv (override p.erosion_dependency_path);
-    scenario->raw name via p.erosion_scenario_map (default utilities.ES_SCENARIO_MAP).
+    scenario->raw name via p.erosion_scenario_map (default: identity -- each scenario maps to its own
+    name; a scenario the table labels differently is warned about loudly and skipped rather than
+    silently zeroed, so set the map for those).
     """
     # Default into the es_shocks parent dir. Runtime, not build time: p.es_shock_dir is
     # published by that task, which ProjectFlow runs before this one.
@@ -688,7 +689,7 @@ def task_compute_erosion_shock_static(p):
     base_year = int(p.es_shock_base_year)
     end_year = int(p.es_shock_end_year)
     n_years = end_year - base_year
-    scenario_map = getattr(p, 'erosion_scenario_map', utilities.ES_SCENARIO_MAP)
+    scenario_map = getattr(p, 'erosion_scenario_map', {})
     scenarios = list(p.es_shock_scenarios)
     sectors = getattr(p, 'erosion_shock_acts', EROSION_SECTORS)   # GTAP sectors, standardized name (was erosion_sectors)
 
@@ -702,9 +703,13 @@ def task_compute_erosion_shock_static(p):
 
     rows = []
     for our_scn in scenarios:
-        candidates = scenario_map.get(our_scn)
-        raw_scn = ef.find_scenario(df, candidates) if candidates else None
+        candidates = scenario_map.get(our_scn, [our_scn])  # identity default; consumer maps per scenario
+        raw_scn = ef.find_scenario(df, candidates)
         if not raw_scn:
+            print("  WARNING erosion shock: scenario '%s' (tried %s) has no matching row in the "
+                  "dependency table (present: %s) -- skipping it, so GTAP gets NO erosion shock for that "
+                  "scenario. Set p.erosion_scenario_map if the table uses a different label."
+                  % (our_scn, candidates, sorted(df['scenario'].unique())))
             continue
         scn_vals = df[df['scenario'] == raw_scn].set_index(
             ['aez18_id', 'gtapv7_r50_label'])['value'].astype(float).fillna(0)

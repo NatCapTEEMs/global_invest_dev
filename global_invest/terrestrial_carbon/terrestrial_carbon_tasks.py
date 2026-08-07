@@ -7,7 +7,6 @@ import csv
 import numpy as np
 
 
-from global_invest import utilities
 from global_invest.terrestrial_carbon import terrestrial_carbon_functions
 
 
@@ -458,7 +457,9 @@ def task_compute_terrestrial_carbon_shock_static(p):
     raw_dependencies -- the output goes to p.terrestrial_carbon_shock_output_path (terrestrial_carbon_interpolated.csv),
     the same file the dynamic task writes, so build_combined_afeall_cc_es is agnostic to which one ran.
     Caller sets: es_shock_base_year, es_shock_end_year, es_shock_scenarios,
-    terrestrial_carbon_shock_output_path; scenario->raw name via p.terrestrial_carbon_scenario_map (default utilities.ES_SCENARIO_MAP);
+    terrestrial_carbon_shock_output_path; scenario->raw name via p.terrestrial_carbon_scenario_map
+    (default: identity -- each scenario maps to its own name; a scenario the table labels differently is
+    warned about loudly and skipped rather than silently zeroed, so set the map for those);
     sector via p.terrestrial_carbon_shock_acts (default 'FRS', matching the dynamic task).
     """
     # Default into the es_shocks parent dir. Runtime, not build time: p.es_shock_dir is
@@ -470,7 +471,7 @@ def task_compute_terrestrial_carbon_shock_static(p):
     base_year = int(p.es_shock_base_year)
     end_year = int(p.es_shock_end_year)
     n_years = end_year - base_year
-    scenario_map = getattr(p, 'terrestrial_carbon_scenario_map', utilities.ES_SCENARIO_MAP)
+    scenario_map = getattr(p, 'terrestrial_carbon_scenario_map', {})
     scenarios = list(p.es_shock_scenarios)
     acts = getattr(p, 'terrestrial_carbon_shock_acts', 'FRS')
     base_scn = getattr(p, 'es_shock_base_scenario', 'baseline_ignore_dependencies')  # config-driven, matches the dynamic task
@@ -487,9 +488,13 @@ def task_compute_terrestrial_carbon_shock_static(p):
 
     rows = []
     for our_scn in scenarios:
-        candidates = scenario_map.get(our_scn)
-        raw_scn = next((c for c in candidates if c in df['scenario'].values), None) if candidates else None
+        candidates = scenario_map.get(our_scn, [our_scn])  # identity default; consumer maps per scenario
+        raw_scn = next((c for c in candidates if c in df['scenario'].values), None)
         if not raw_scn:
+            hb.log("WARNING terrestrial_carbon shock: scenario '%s' (tried %s) has no matching row in the "
+                   "dependency table (present: %s) -- skipping it, so GTAP gets NO carbon shock for that "
+                   "scenario. Set p.terrestrial_carbon_scenario_map if the table uses a different label."
+                   % (our_scn, candidates, sorted(df['scenario'].unique())))
             continue
         scn = df[(df['scenario'] == raw_scn) & (df['year'] == end_year)]
         scn_vals = scn.set_index(['ENDW', 'REG'])['percentage_change'].astype(float) * 100
