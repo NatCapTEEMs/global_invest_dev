@@ -16,6 +16,7 @@ def initialize_paths(p):
     p.base_year_lulc_path = p.get_path('lulc', 'esa', 'lulc_esa_2019.tif')
     p.carbon_prices_path = p.get_path('terrestrial_carbon', 'carbon_prices.xlsx')
     p.carbon_price = getattr(p, 'carbon_price', 'rental scc r2%')
+    p.base_year = getattr(p, 'base_year', 2019)  # GEP valuation reference year; caller may override
 
     p.df_countries = pd.read_csv(p.df_countries_csv_path)
     # The GDFs stay as path strings; hb.read_vector converts to a GeoDataFrame on demand.

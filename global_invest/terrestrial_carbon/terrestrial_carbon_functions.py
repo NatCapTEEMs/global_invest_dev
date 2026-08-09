@@ -2,24 +2,16 @@
 # imports
 # =============================================================================
 import os
-import re
+import gc
+import numpy as np
+import pandas as pd
+import geopandas as gpd
 import rasterio
 from rasterio.mask import mask
-from rasterio.enums import Resampling
-import rasterio.warp
-import rasterio.features
-import rasterio.vrt
-import numpy as np
-from tqdm import tqdm
-import gc
 import rioxarray as rxr
 import dask.array as da
 import dask.dataframe as dd
-import pandas as pd
-import numpy as np
 from tqdm import tqdm
-import geopandas as gpd
-import pyogrio
 
 # =============================================================================
 # define functions
@@ -244,35 +236,30 @@ def stack_layers_to_csv(
         x_start = i * step
         x_end = (i + 1) * step if i < (num_slices - 1) else total_width
 
-        try:
-            sliced_layers = [layer.isel(x=slice(x_start, x_end)) for layer in layers]
-            flattened = [sl.values.reshape(-1).astype("float32") for sl in sliced_layers]
+        sliced_layers = [layer.isel(x=slice(x_start, x_end)) for layer in layers]
+        flattened = [sl.values.reshape(-1).astype("float32") for sl in sliced_layers]
 
-            if len(set(arr.shape[0] for arr in flattened)) != 1:
-                print(f"Skipping slice {i + 1} due to shape mismatch.")
-                continue
+        if len(set(arr.shape[0] for arr in flattened)) != 1:
+            raise ValueError("Slice %d: the grouping and value layers have mismatched pixel counts %s -- "
+                             "the three rasters are not on the same grid." % (i + 1, [arr.shape[0] for arr in flattened]))
 
-            stacked = da.stack(flattened, axis=1)
-            df = dd.from_dask_array(stacked, columns=layer_names)
-            df_pd = df.compute().dropna(subset=group_cols + [value_col])
+        stacked = da.stack(flattened, axis=1)
+        df = dd.from_dask_array(stacked, columns=layer_names)
+        df_pd = df.compute().dropna(subset=group_cols + [value_col])
 
-            if df_pd.empty:
-                continue
-
-            summary = df_pd.groupby(group_cols)[value_col].agg(
-                mean="mean",
-                min="min",
-                max="max",
-                count="count"
-            ).reset_index()
-
-            dfs.append(summary)
-            del df_pd, summary, df, stacked, flattened
-            gc.collect()
-
-        except Exception as e:
-            print(f"Slice {i + 1} failed: {e}")
+        if df_pd.empty:   # slice is all-nodata -- nothing to summarize, expected at raster edges
             continue
+
+        summary = df_pd.groupby(group_cols)[value_col].agg(
+            mean="mean",
+            min="min",
+            max="max",
+            count="count"
+        ).reset_index()
+
+        dfs.append(summary)
+        del df_pd, summary, df, stacked, flattened
+        gc.collect()
 
     if dfs:
         final = pd.concat(dfs)
@@ -338,12 +325,8 @@ def generate_carbon_density_raster(lulc_path, cz_path, carbon_density_lookup_tab
 
         with rasterio.open(out_path, "w", **profile) as out_dst:
             for ji, window in tqdm(block_indices, desc=f"Processing {lulc_filename}"):
-                try:
-                    lulc_block = lulc_src.read(1, window=window)
-                    carbon_zone_block = cz_src.read(1, window=window)
-                except rasterio.errors.RasterioIOError as e:
-                    print(f"Skipping corrupt tile in {lulc_filename} at {window}: {e}")
-                    continue
+                lulc_block = lulc_src.read(1, window=window)
+                carbon_zone_block = cz_src.read(1, window=window)
 
                 carbon_block = np.full_like(lulc_block, np.nan, dtype=np.float32)
 
@@ -369,19 +352,21 @@ def generate_carbon_density_raster(lulc_path, cz_path, carbon_density_lookup_tab
     gc.collect()
     print(f"Saved: {out_path}")
 
-def summarize_raster_by_region(value_raster_path, region_boundary_path, out_path):
+def summarize_raster_by_region(value_raster_path, region_boundary_path, out_path, year):
     """
-    Summarize value raster by polygon regions from a vector file (e.g., GPKG).
-    Includes mean, min, max, count, and area (m², ha, km²) for each region.
+    Summarize a value raster by the polygon regions of a vector file (e.g. GPKG): per-region
+    mean, min, max, pixel count, and sum of the raster values.
 
     Parameters
     ----------
     value_raster_path : str
-        Path to the value raster (e.g., carbon density).
+        Path to the value raster (e.g. carbon density).
     region_boundary_path : str
-        Path to the vector file (GeoPackage) containing polygon regions.
-    out_csv_path : str
+        Path to the vector file (GeoPackage) containing the polygon regions.
+    out_path : str
         Output path for the CSV summary.
+    year : int
+        The year the value raster represents; written to the `year` column (base year for a GEP run).
     """
     # Load vector data
     regions = gpd.read_file(region_boundary_path)
@@ -396,33 +381,24 @@ def summarize_raster_by_region(value_raster_path, region_boundary_path, out_path
         results = []
         id_list = []
         for idx, row in tqdm(regions.iterrows(), total=len(regions), desc="Summarizing polygons"):
-            geom = [row.geometry]
             id_list.append(row.get("id", idx))
-            try:
-                masked, _ = mask(src, geom, crop=True, nodata=np.nan, all_touched=True)
-                values = masked[0]
-                values = values[~np.isnan(values)]
-
-                area_m2 = values.size
-
-                stats = {
-                    "index_id": row.get("id", idx),
-                    "mean": values.mean(),
-                    "min": values.min(),
-                    "max": values.max(),
-                    "count": values.size,
-                    "total": values.sum()
-                }
-                results.append(stats)
-
-            except Exception as e:
-                print(f"Error processing region {idx}: {e}")
+            masked, _ = mask(src, [row.geometry], crop=True, nodata=np.nan, all_touched=True)
+            values = masked[0][~np.isnan(masked[0])]
+            if values.size == 0:   # zone's raster window is all-nodata -> drop it (see key note below)
                 continue
-    regions["index_id"] =id_list
+            results.append({
+                "index_id": row.get("id", idx),
+                "mean": values.mean(),
+                "min": values.min(),
+                "max": values.max(),
+                "count": values.size,
+                "total": values.sum(),
+            })
+    regions["index_id"] = id_list
     df = pd.DataFrame(results)
     df = regions.merge(df, on="index_id", how="right")
-    df = df.drop(columns=["index_id","geometry"])
-    df['year'] = '2019'
+    df = df.drop(columns=["index_id", "geometry"])
+    df['year'] = year
     # Stable key. Zones whose raster window is empty are dropped above, so row POSITION in this CSV
     # does not correspond to row position in the boundary file, and anything aligning on position
     # silently pairs the wrong zones. Emit the boundary's own id so consumers can join on a value.
