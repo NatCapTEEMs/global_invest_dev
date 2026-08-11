@@ -5,13 +5,11 @@ terrestrial_carbon_interpolated.csv. Mirrors run_pollination.py / run_erosion.py
 nff_global) do NOT use this script -- they graft add_terrestrial_carbon_tasks(p) into their own task
 tree. This is for standalone smoke tests. For the GEP valuation, see run_terrestrial_carbon.py.
 
-The upstream density-preparation tasks (task_convert_carbon_density_maps_dtype ->
-task_combine_two_carbon_density_maps -> task_reproject_total_carbon_density ->
-task_compute_carbon_density_table) are NOT run here -- they build the carbon-density lookup the shock
-consumes out of the raw Spawn biomass rasters, a one-off base-data job rather than part of the
-per-scenario shock. Requires base_data/carbon_storage/ (carbon_zones_rasterized.tif and the SEALS7
-density lookup, both resolved inside the task via p.get_path) plus SEALS 300 m maps for the base
-scenario and each scenario x anchor year.
+The raw-Spawn density build (scale to Mg/ha, add aboveground+belowground, reproject to the LULC grid)
+is a one-off base-data job, not part of this shock -- see howto/rebuild_spawn_total_carbon_density.md.
+Requires base_data/carbon_storage/ (carbon_zones_rasterized.tif and the SEALS7 density lookup, both
+resolved inside the task via p.get_path) plus SEALS 300 m maps for the base scenario and each scenario
+x anchor year.
 
 base_data_dir is resolved by ProjectFlow (default / machine.env) -- do not hardcode it here.
 """

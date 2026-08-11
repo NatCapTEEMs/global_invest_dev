@@ -24,6 +24,15 @@ def initialize_paths(p):
     p.gdf_countries_simplified = p.gdf_countries_vector_simplified_path
     return p
 
+def build_gep_service_preprocess_task_tree(p):
+    """Base-data preprocessing: (re)build carbon_storage/spawn_total_biomass_carbon_2010.tif (scale raw
+    Spawn to Mg C/ha, reproject, add aboveground+belowground). One-off job, kept OUT of the default run;
+    run on demand, its product is promoted to base_data and consumed from there by the calculation tree.
+    """
+    p.terrestrial_carbon_gep_preprocess_task = p.add_task(terrestrial_carbon_tasks.gep_preprocess, skip_existing=1)
+    return p
+
+
 def build_gep_service_calculation_task_tree(p):
     """Build the default task tree for terrestrial carbon.
 

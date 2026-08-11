@@ -10,69 +10,13 @@ import numpy as np
 from global_invest import utilities
 from global_invest.terrestrial_carbon import terrestrial_carbon_functions
 
+SPAWN_INTEGER_SCALE = 0.1  # raw Spawn tiles store carbon as integers x10; x0.1 recovers Mg C/ha
+
 
 def terrestrial_carbon(p):
     """
     Parent task for terrestrial carbon.
     """
-    return True
-
-
-def task_convert_carbon_density_maps_dtype(p):
-    """
-    Task to convert all uint TIFF carbon density rasters in a folder
-    to float32 with scaled values, saving them with '_float' suffix.
-
-    Parameters
-    ----------
-    p : ProjectFlow
-        Must contain p.base_data_dir (input folder path).
-    """
-    input_folder = p.get_path('terrestrial_carbon', 'spawn_2020')
-    output_folder = p.cur_dir
-
-    raw_carbon_density_maps = [
-        f for f in os.listdir(input_folder)
-        if f.endswith("biomass_carbon_2010.tif") and not f.startswith("._")
-    ]
-
-    for file in raw_carbon_density_maps:
-        input_path = os.path.join(input_folder, file)
-
-        name_root, ext = os.path.splitext(file)
-        output_name = f"{name_root}_float{ext}"
-        output_path = os.path.join(output_folder, output_name)
-
-        terrestrial_carbon_functions.convert_uint_to_float_raster(
-            input_path=input_path,
-            output_path=output_path,
-            scale_factor=0.1,
-            compress="lzw"
-        )
-
-    print("Finished converting all carbon density rasters to float.")
-
-
-
-def task_combine_two_carbon_density_maps(p):
-    """
-    Task to combine aboveground and belowground biomass carbon maps using functions.
-    """
-
-    # Input and output paths
-    p.agb_path = p.get_path(os.path.join(p.task_convert_carbon_density_maps_dtype_dir,"aboveground_biomass_carbon_2010_float.tif"))
-    p.bgb_path = p.get_path(os.path.join(p.task_convert_carbon_density_maps_dtype_dir,"belowground_biomass_carbon_2010_float.tif"))
-    p.total_carbon_output_path = os.path.join(p.cur_dir, "total_biomass_carbon_2010_float.tif")
-
-    # Run the function
-    result = terrestrial_carbon_functions.combine_two_float_rasters(
-        raster1_path=p.agb_path,
-        raster2_path=p.bgb_path,
-        out_path=p.total_carbon_output_path,
-        operation=lambda a, b: a + b,  # Default operation: addition
-        fill_value=np.nan,
-        compress="lzw")
-
     return True
 
 
@@ -155,15 +99,34 @@ def task_summarize_carbon_by_region(p):
 
 
 def gep_preprocess(p):
+    """Rebuild the base-data carbon-density raster (carbon_storage/spawn_total_biomass_carbon_2010.tif)
+    that both the GEP valuation and the shock consume. A one-off base-data job: registered only in
+    build_gep_service_preprocess_task_tree, NOT in the default run, and its product is promoted to
+    base_data/carbon_storage and read from there by the per-run tasks.
+
+    total = aboveground + belowground (Mg C/ha). When the raw Spawn tiles (uint, carbon stored x10) are
+    present under base_data/terrestrial_carbon/spawn_2020, first scale them to Mg C/ha and reproject onto
+    the base-year LULC grid to (re)make the *_projected rasters; otherwise start from the projected
+    rasters already in carbon_storage. All raster ops go through hazelbean.
     """
-    Preprocessing tasks are assumed NOT to be run by the user. Instead, it is assumed that the output of a preprocess
-    task is an input to the actual model, saved at the canonical project attribute p.terrestrial_carbon_input_path.
-    These are preprocessing tasks are still provided for reference, but are not intended to be run directly by the user.
-    We will "promote" the data outputed by a preprocess task to the base_data_dir provided to users.
-    For terrestrial carbon the preprocessing is the carbon-density build (Spawn + carbon zones), which is shared by
-    both the GEP valuation and the ES shock.
-    """
-    pass # NYI
+    p.spawn_total_carbon_density_path = os.path.join(p.base_data_dir, 'carbon_storage', 'spawn_total_biomass_carbon_2010.tif')
+    if not p.run_this:
+        return True
+
+    carbon_storage_dir = os.path.join(p.base_data_dir, 'carbon_storage')
+    spawn_raw_dir = os.path.join(p.base_data_dir, 'terrestrial_carbon', 'spawn_2020')
+    projected = {}
+    for band in ('aboveground', 'belowground'):
+        projected[band] = os.path.join(carbon_storage_dir, 'spawn_%s_biomass_carbon_2010_projected.tif' % band)
+        raw = os.path.join(spawn_raw_dir, 'spawn_%s_biomass_carbon_2010.tif' % band)
+        if os.path.exists(raw):   # raw Spawn present -> (re)build the projected raster from it
+            scaled = os.path.join(p.cur_dir, 'spawn_%s_biomass_carbon_2010_scaled.tif' % band)
+            hb.raster_calculator_flex(raw, lambda a: a * SPAWN_INTEGER_SCALE, scaled)
+            hb.reproject_dataset_to_match(scaled, p.base_year_lulc_path, projected[band], 'near')
+
+    hb.raster_calculator_flex([projected['aboveground'], projected['belowground']],
+                              lambda a, b: a + b, p.spawn_total_carbon_density_path)
+    return True
 
 
 def gep_calculation(p):
