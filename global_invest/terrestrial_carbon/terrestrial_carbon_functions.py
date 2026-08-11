@@ -20,53 +20,6 @@ from tqdm import tqdm
 # base-data job, not part of the per-run tree; it lives in howto/rebuild_spawn_total_carbon_density.md
 # and the run consumes its finished product (spawn_total_biomass_carbon_2010.tif) from base_data.
 
-def reproject_raster(
-    input_path,
-    reference_path,
-    output_path,
-    compress="lzw",
-    chunks={"x": 1024, "y": 1024},
-    overwrite=False
-    ):
-    """
-    Reproject a raster to match the CRS, resolution, and extent of a reference raster.
-
-    Parameters
-    ----------
-    input_path : str
-        Path to the raster to reproject.
-    reference_path : str
-        Path to the reference raster.
-    output_path : str
-        Path to save the reprojected raster.
-    compress : str
-        Compression method for output (default: 'lzw').
-    chunks : dict
-        Chunk size for Dask loading (default: {"x": 1024, "y": 1024}).
-    overwrite : bool
-        Whether to overwrite an existing file.
-    """
-    if os.path.exists(output_path) and not overwrite:
-        raise FileExistsError(f"{output_path} exists. Use overwrite=True to replace it.")
-
-    ref = rxr.open_rasterio(reference_path, masked=True, chunks=chunks).squeeze("band", drop=True)
-    target = rxr.open_rasterio(input_path, masked=True, chunks=chunks).squeeze("band", drop=True)
-
-    reprojected = target.rio.reproject_match(ref)
-
-    reprojected.rio.to_raster(
-        output_path,
-        compress=compress,
-        tiled=True,
-        blockxsize=256,
-        blockysize=256
-    )
-
-    print(f"Reprojected raster saved to: {output_path}")
-    del ref, target, reprojected
-    gc.collect()
-
-
 def stack_layers_to_csv(
     group_layer1_path,
     group_layer2_path,

@@ -33,16 +33,13 @@ def task_reproject_total_carbon_density(p):
     if not p.run_this:
         return True
 
-    # Run the function
-    result = terrestrial_carbon_functions.reproject_raster(
-        input_path=p.total_carbon_density_path,
-        reference_path=p.base_year_lulc_path,
-        output_path=p.reprojected_total_carbon_density_path,
-        compress="lzw",
-        chunks={"x": 1024, "y": 1024},
-        overwrite=False
-        )
-
+    # Align the density raster to the base-year LULC grid. output_data_type=6 (Float32) keeps the
+    # carbon values -- without it the grid-matcher inherits the LULC uint8 dtype and rounds them; with
+    # it, plus 'near' and NaN nodata, the output is bit-for-bit identical to the previous rioxarray
+    # reproject_match (verified cell-by-cell against the cached run).
+    hb.resample_to_match(p.total_carbon_density_path, p.base_year_lulc_path,
+                         p.reprojected_total_carbon_density_path,
+                         resample_method='near', output_data_type=6, src_ndv=np.nan, ndv=np.nan)
     return True
 
 
