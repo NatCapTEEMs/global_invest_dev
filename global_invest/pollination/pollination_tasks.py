@@ -155,6 +155,11 @@ def task_compute_pollination_shock_static(p):
         return
 
     df = pd.read_csv(poll_path)
+    # Normalise the one year-suffixed label so pollination's table presents the same scenario names as
+    # the other services (carbon is plain everywhere, erosion strips '_2050' on read). net_zero_2050 is
+    # the only alias here, so target it explicitly rather than a blunt '_2050' strip that would silently
+    # mangle any future label carrying that suffix. Keeps the consumer's scenario_map at identity.
+    df['scenario'] = df['scenario'].replace({'net_zero_2050': 'net_zero'})
     df = df[df['ENDW'] != 'AEZ0']  # AEZ0 not valid in GTAP
     base = df[df['scenario'] == 'baseline_ignore_damages'].set_index(['ENDW', 'REG'])['value'].astype(float)
 
