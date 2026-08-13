@@ -29,7 +29,8 @@ keywords: [template, demo]
 bibliography: references.bib
 ---
 
-This section outlines how we value carbon sequestration as an ecosystem service within the GEP framework.The analysis focuses specifically on carbon sequestration provided by terrestrial ecosystems, which is appraised in terms of its contribution to climate change mitigation. By quantifying the carbon sequestration capacity of these ecosystems, we aim to capture their role in reducing atmospheric greenhouse gas concentrations, thereby contributing to global climate regulation.
+This section outlines how we value carbon sequestration as an ecosystem service within the GEP framework. The analysis focuses specifically on carbon sequestration provided by terrestrial ecosystems, which is appraised in terms of its contribution to climate change mitigation. By quantifying the carbon sequestration capacity of these ecosystems, we aim to capture their role in reducing atmospheric greenhouse gas concentrations, thereby contributing to global climate regulation.
+
 
 
 # Methods
@@ -57,7 +58,7 @@ $$
 $$
 
 
-where $P_C(t)$ denotes the social cost of carbon in year $t$, and $\lambda$ represents net discount rate equal to
+where $P_C(t)$ denotes the social cost of carbon in year $t$, and $r$ represents the net discount rate equal to
 the difference between the discount rate and the rate of growth of carbon prices. This formulation reflects the rental valuation approach, capturing the annualized benefit of temporarily storing one metric ton of CO2 for one year. This measure represents the annualized marginal damage cost of emitting an additional metric ton of CO2, thereby aligning our valuation approach with established climate policy frameworks and principles of intertemporal cost-benefit analysis. We adopt a carbon price of \$678.33 per metric ton of carbon (C), corresponding to the mean social cost of CO2 estimated by @rennert_comprehensive_2022. This value is employed for $P_C(t)$, the carbon price at time $t$. Furthermore, a discount rate of 2% is applied, following the same source. Based on these parameters, the annual carbon rental rate is calculated to be approximately $13.43 per ton of C.
 
 ## Valuation
@@ -65,7 +66,7 @@ the difference between the discount rate and the rate of growth of carbon prices
 After estimating both the quantity and price of carbon sequestration, the economic value of carbon sequestration, is calculated as:
 
 $$
-\text{GEP}_{\text{carbon storage and sequestration}}} = Q \cdot P \cdot \lambda= \text{Carbon Storage} \times \text{Rental SCC} \times 1
+\text{GEP}_{\text{carbon storage and sequestration}} = Q \cdot P \cdot \lambda = \text{Carbon Storage} \times \text{Rental SCC} \times 1
 $$
 
 where $Q$ represents the quantity of carbon storage (in metric tons), and $P$ denotes the annual rental SCC per ton. This formulation aligns with the GEP framework, translating biophysical carbon sequestration into monetary value.
