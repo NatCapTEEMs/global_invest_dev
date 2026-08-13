@@ -56,8 +56,7 @@ def task_compute_carbon_density_table(p):
         output_path=p.carbon_density_lookup_table_path,
         group1_name="lulc_id",
         group2_name="carbon_zone_id",
-        value_name="carbon_density",
-        num_slices=100)
+        value_name="carbon_density")
     return True
 
 

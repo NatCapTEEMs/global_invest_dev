@@ -2,13 +2,9 @@
 # imports
 # =============================================================================
 import os
-import gc
 import numpy as np
 import pandas as pd
 import geopandas as gpd
-import rioxarray as rxr
-import dask.array as da
-import dask.dataframe as dd
 from tqdm import tqdm
 import hazelbean as hb
 
@@ -24,13 +20,12 @@ def stack_layers_to_csv(
     group_layer2_path,
     value_layer_path,
     output_path="stacked_summary.csv",
-    num_slices=100,
     group1_name="group1",
     group2_name="group2",
     value_name="value"
 ):
     """
-    Stack three raster layers, summarize the third by grouping over the first two, and write to CSV.
+    Summarize a value raster by grouping over two category rasters, and write to CSV.
 
     Parameters
     ----------
@@ -42,8 +37,6 @@ def stack_layers_to_csv(
         Path to the value raster layer to be summarized.
     output_path : str
         Output CSV file path.
-    num_slices : int
-        Number of vertical slices to process in chunks.
     group1_name : str
         Column name for the first group layer.
     group2_name : str
@@ -51,77 +44,43 @@ def stack_layers_to_csv(
     value_name : str
         Column name for the value layer.
     """
-    print("Loading raster layers...")
-    layer1 = rxr.open_rasterio(group_layer1_path, masked=True, chunks={"x": 1024, "y": 1024}).squeeze("band")
-    layer2 = rxr.open_rasterio(group_layer2_path, masked=True, chunks={"x": 1024, "y": 1024}).squeeze("band")
-    layer3 = rxr.open_rasterio(value_layer_path, masked=True, chunks={"x": 1024, "y": 1024}).squeeze("band")
-    gc.collect()
+    from osgeo import gdal
+    # hb.iterblocks streams the value raster block by block; the two category rasters share its grid, so
+    # read them at the same window (raw gdal -- hb has no aligned multi-raster block reader). A cell is
+    # kept only where all three are valid, matching the old masked=True + dropna. Groupby per block, then
+    # combine: only ~thousands of (g1, g2) pairs, so the accumulator stays tiny and nothing 33 GB is
+    # written (unlike composite-key + zonal).
+    ds1 = gdal.Open(group_layer1_path); g1b = ds1.GetRasterBand(1)   # hold the datasets, else the band handle dies
+    ds2 = gdal.Open(group_layer2_path); g2b = ds2.GetRasterBand(1)
+    ndv1, ndv2 = g1b.GetNoDataValue(), g2b.GetNoDataValue()
+    dsv = gdal.Open(value_layer_path); ndv_val = dsv.GetRasterBand(1).GetNoDataValue()
 
-    layers = [layer1, layer2, layer3]
-    layer_names = [group1_name, group2_name, value_name]
-    group_cols = layer_names[:-1]
-    value_col = layer_names[-1]
+    parts = []
+    for offset, value_block in tqdm(hb.iterblocks((value_layer_path, 1)), desc="Summarizing blocks"):
+        w = (offset['xoff'], offset['yoff'], offset['win_xsize'], offset['win_ysize'])
+        v = value_block.astype('float32').ravel()
+        g1 = g1b.ReadAsArray(*w).ravel()
+        g2 = g2b.ReadAsArray(*w).ravel()
 
-    total_width = layer1.sizes["x"]
-    step = total_width // num_slices
-    dfs = []
-
-    print("Processing raster slices...")
-    for i in tqdm(range(num_slices), desc="Slicing and summarizing"):
-        x_start = i * step
-        x_end = (i + 1) * step if i < (num_slices - 1) else total_width
-
-        sliced_layers = [layer.isel(x=slice(x_start, x_end)) for layer in layers]
-        flattened = [sl.values.reshape(-1).astype("float32") for sl in sliced_layers]
-
-        if len(set(arr.shape[0] for arr in flattened)) != 1:
-            raise ValueError("Slice %d: the grouping and value layers have mismatched pixel counts %s -- "
-                             "the three rasters are not on the same grid." % (i + 1, [arr.shape[0] for arr in flattened]))
-
-        stacked = da.stack(flattened, axis=1)
-        df = dd.from_dask_array(stacked, columns=layer_names)
-        df_pd = df.compute().dropna(subset=group_cols + [value_col])
-
-        if df_pd.empty:   # slice is all-nodata -- nothing to summarize, expected at raster edges
+        keep = ~np.isnan(v)
+        if ndv_val is not None: keep &= v != ndv_val
+        if ndv1 is not None: keep &= g1 != ndv1
+        if ndv2 is not None: keep &= g2 != ndv2
+        if not keep.any():   # block is all-nodata -- expected at raster edges
             continue
 
-        summary = df_pd.groupby(group_cols)[value_col].agg(
-            mean="mean",
-            min="min",
-            max="max",
-            count="count"
-        ).reset_index()
+        block = pd.DataFrame({group1_name: g1[keep], group2_name: g2[keep], value_name: v[keep]})
+        parts.append(block.groupby([group1_name, group2_name], as_index=False)[value_name]
+                     .agg(_sum='sum', _min='min', _max='max', _count='count'))
 
-        dfs.append(summary)
-        del df_pd, summary, df, stacked, flattened
-        gc.collect()
-
-    if dfs:
-        final = pd.concat(dfs)
-        final["weighted_sum"] = final["mean"] * final["count"]
-        final_summary = (
-            final.groupby(group_cols, as_index=False)
-            .agg({
-                "weighted_sum": "sum",
-                "count": "sum",
-                "min": "min",
-                "max": "max"
-            })
-        )
-
-        # Calculate final weighted mean
-        final_summary["mean"] = final_summary["weighted_sum"] / final_summary["count"]
-
-        # Clean up and reorder
-        final_summary = final_summary[[group1_name, group2_name, "mean", "min", "max", "count"]]
-        final_summary = final_summary.rename(columns={
-            "mean": f"{value_col}_mean",
-            "min": f"{value_col}_min",
-            "max": f"{value_col}_max",
-            "count": f"{value_col}_count"
-        })
-        final_summary.to_csv(output_path, index=False)
-        print(f"Summary written to: {output_path}")
+    summary = pd.concat(parts).groupby([group1_name, group2_name], as_index=False).agg(
+        _sum=('_sum', 'sum'), _min=('_min', 'min'), _max=('_max', 'max'), _count=('_count', 'sum'))
+    summary[f'{value_name}_mean'] = summary['_sum'] / summary['_count']
+    summary = summary.rename(columns={'_min': f'{value_name}_min', '_max': f'{value_name}_max',
+                                      '_count': f'{value_name}_count'})
+    summary[[group1_name, group2_name, f'{value_name}_mean', f'{value_name}_min',
+             f'{value_name}_max', f'{value_name}_count']].to_csv(output_path, index=False)
+    print(f"Summary written to: {output_path}")
 
 
 def generate_carbon_density_raster(lulc_path, cz_path, carbon_density_lookup_table_path, out_path):
