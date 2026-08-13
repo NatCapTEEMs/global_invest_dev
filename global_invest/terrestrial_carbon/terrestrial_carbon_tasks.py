@@ -91,7 +91,7 @@ def task_summarize_carbon_by_region(p):
         value_raster_path=p.projected_carbon_density_2019_per_cell_path,
         region_boundary_path=p.gdf_countries_vector_path,
         out_path=p.carbon_by_region_base_year_path,
-        year=p.base_year)
+        year=p.base_year, id_column='ee_r264_id')
     return result
 
 
@@ -335,7 +335,7 @@ def task_compute_terrestrial_carbon_shock(p):
                 out_path=dens)
         summ = os.path.join(p.cur_dir, 'carbon_by_zone_%s_%d.csv' % (scenario, year))
         if not os.path.exists(summ):
-            terrestrial_carbon_functions.summarize_raster_by_region(dens, p.region_boundary_path, summ, year=year)
+            terrestrial_carbon_functions.summarize_raster_by_region(dens, p.region_boundary_path, summ, year=year, id_column='ee_r50_aez18_id')
         return pd.read_csv(summ).set_index('region_id')[val_col]
 
     # summarize_raster_by_region keys each zone by the stable ee_r50_aez18_id (see terrestrial_carbon_functions),

@@ -6,8 +6,6 @@ import gc
 import numpy as np
 import pandas as pd
 import geopandas as gpd
-import rasterio
-from rasterio.mask import mask
 import rioxarray as rxr
 import dask.array as da
 import dask.dataframe as dd
@@ -161,56 +159,41 @@ def generate_carbon_density_raster(lulc_path, cz_path, carbon_density_lookup_tab
     hb.raster_calculator_flex([lulc_path, cz_path], carbon_density, out_path, datatype=6, ndv=np.nan)
     print(f"Saved: {out_path}")
 
-def summarize_raster_by_region(value_raster_path, region_boundary_path, out_path, year):
+def summarize_raster_by_region(value_raster_path, region_boundary_path, out_path, year, id_column):
     """
-    Summarize a value raster by the polygon regions of a vector file (e.g. GPKG): per-region
-    mean, min, max, pixel count, and sum of the raster values.
+    Per-polygon total / mean / pixel count of a value raster, via hb.zonal_statistics_flex.
 
     Parameters
     ----------
     value_raster_path : str
-        Path to the value raster (e.g. carbon density).
+        Path to the value raster (per-cell carbon stock for the GEP total, carbon density for the shock).
     region_boundary_path : str
-        Path to the vector file (GeoPackage) containing the polygon regions.
+        Path to the vector (GeoPackage) of polygon regions.
     out_path : str
         Output path for the CSV summary.
     year : int
-        The year the value raster represents; written to the `year` column (base year for a GEP run).
+        The year the value raster represents; written to the `year` column.
+    id_column : str
+        The vector column holding a unique integer id per polygon to key the zonal statistics on
+        ('ee_r264_id' for the country valuation, 'ee_r50_aez18_id' for the shock zones).
     """
-    # Load vector data
     regions = gpd.read_file(region_boundary_path)
+    # zones_raster_data_type=5 (Int32) so ids past 255 don't saturate (r264 runs to 264, r50xAEZ higher);
+    # all_touched=True matches the old per-polygon masking. Returns a frame indexed by zone id, with a
+    # zone 0 = everything outside every polygon.
+    zone_ids_raster = os.path.splitext(out_path)[0] + '_zone_ids.tif'
+    stats = hb.zonal_statistics_flex(
+        value_raster_path, region_boundary_path, zone_ids_raster_path=zone_ids_raster,
+        id_column_label=id_column, zones_raster_data_type=5, all_touched=True,
+        stats_to_retrieve='sums_counts', assert_projections_same=False, verbose=False)
+    stats = stats[(stats.index != 0) & (stats['counts'] > 0)]   # drop background + empty zones
 
-    # Open the raster once
-    with rasterio.open(value_raster_path) as src:
-        raster_crs = src.crs
-        if regions.crs != raster_crs:
-            print(f"Reprojecting vector data from {regions.crs} to match raster CRS {raster_crs}")
-            regions = regions.to_crs(raster_crs)
-
-        results = []
-        id_list = []
-        for idx, row in tqdm(regions.iterrows(), total=len(regions), desc="Summarizing polygons"):
-            id_list.append(row.get("id", idx))
-            masked, _ = mask(src, [row.geometry], crop=True, nodata=np.nan, all_touched=True)
-            values = masked[0][~np.isnan(masked[0])]
-            if values.size == 0:   # zone's raster window is all-nodata -> drop it (see key note below)
-                continue
-            results.append({
-                "index_id": row.get("id", idx),
-                "mean": values.mean(),
-                "min": values.min(),
-                "max": values.max(),
-                "count": values.size,
-                "total": values.sum(),
-            })
-    regions["index_id"] = id_list
-    df = pd.DataFrame(results)
-    df = regions.merge(df, on="index_id", how="right")
-    df = df.drop(columns=["index_id", "geometry"])
+    df = regions.assign(_zid=regions[id_column].astype('int64')).merge(
+        stats, left_on='_zid', right_index=True, how='right').drop(columns=['_zid', 'geometry'])
+    df = df.rename(columns={'sums': 'total', 'counts': 'count'})
+    df['mean'] = df['total'] / df['count']
     df['year'] = year
-    # Stable key. Zones whose raster window is empty are dropped above, so row POSITION in this CSV
-    # does not correspond to row position in the boundary file, and anything aligning on position
-    # silently pairs the wrong zones. Emit the boundary's own id so consumers can join on a value.
+    # Emit the boundary's own id so consumers join on a value, never on row position.
     if 'ee_r50_aez18_id' in df.columns:
         df['region_id'] = df['ee_r50_aez18_id'].astype(int)
     df.to_csv(out_path, index=False)
