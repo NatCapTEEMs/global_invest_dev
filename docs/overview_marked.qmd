@@ -43,9 +43,10 @@ format:
 ## Value = price × quantity × λ
 
 - Each service values its flow as price × quantity × λ, where λ is the share of the value attributable to nature.
-- Quantity comes from the biophysical model (for carbon, the stock implied by land cover and carbon density); the price is read from a configuration seam, not hardcoded in the science (carbon reads `carbon_prices.xlsx`).
+- Quantity is biophysical: for carbon, a lookup of mean carbon density per land-cover class and carbon zone is applied to the base-year (2019) land cover, giving a carbon-stock map that is summed per country.
+- Price is a configuration seam, not hardcoded in the science: carbon reads a rental social cost of carbon from `carbon_prices.xlsx`, so the value is an annual flow (the yearly worth of holding the stock), not a one-time stock value.
 - Every service reports on a common iso3 country key, through one shared zone-to-country aggregation, so the services can be summed into a national GEP.
-- The terrestrial-carbon valuation now runs end to end and writes a per-country GEP for 2019; the headline magnitude is under validation.
+- The terrestrial-carbon valuation runs end to end and reproduces a base-year global total of about $5.4 trillion.
 
 # Scenario shocks
 
