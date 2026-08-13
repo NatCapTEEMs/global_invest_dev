@@ -12,6 +12,7 @@ import rioxarray as rxr
 import dask.array as da
 import dask.dataframe as dd
 from tqdm import tqdm
+import hazelbean as hb
 
 # =============================================================================
 # define functions
@@ -145,47 +146,19 @@ def generate_carbon_density_raster(lulc_path, cz_path, carbon_density_lookup_tab
     out_path : str
         Output path for the resulting carbon density raster.
     """
-    # Read lookup table from CSV
+    # (carbon_zone_id, lulc_id) -> carbon_density_mean. The ids are whole numbers (stored as float in the
+    # table, uint in the rasters), so key on int64 to match by value; a pair absent from the table
+    # reindexes to NaN, exactly the old "no match -> leave NoData" behaviour.
+    lut = pd.read_csv(carbon_density_lookup_table_path, index_col=False)
+    lut = lut.astype({'carbon_zone_id': 'int64', 'lulc_id': 'int64'}).set_index(
+        ['carbon_zone_id', 'lulc_id'])['carbon_density_mean'].astype('float32')
 
-    carbon_table = pd.read_csv(carbon_density_lookup_table_path, index_col=False)
+    def carbon_density(lulc_block, cz_block):
+        idx = pd.MultiIndex.from_arrays([cz_block.astype('int64').ravel(), lulc_block.astype('int64').ravel()])
+        return lut.reindex(idx).to_numpy('float32').reshape(lulc_block.shape)
 
-    lulc_filename = os.path.basename(lulc_path)
-
-    with rasterio.open(lulc_path) as lulc_src, rasterio.open(cz_path) as cz_src:
-        assert lulc_src.shape == cz_src.shape, f"Shape mismatch between rasters: {lulc_filename}"
-
-        profile = lulc_src.profile
-        profile.update(dtype=rasterio.float32, nodata=np.nan)
-
-        block_indices = list(lulc_src.block_windows(1))
-
-        with rasterio.open(out_path, "w", **profile) as out_dst:
-            for ji, window in tqdm(block_indices, desc=f"Processing {lulc_filename}"):
-                lulc_block = lulc_src.read(1, window=window)
-                carbon_zone_block = cz_src.read(1, window=window)
-
-                carbon_block = np.full_like(lulc_block, np.nan, dtype=np.float32)
-
-                for carbon_zone_id in np.unique(carbon_zone_block):
-                    for lulc_id in np.unique(lulc_block):
-                        # Filter the lookup table for the matching carbon zone and lulc
-                        match = carbon_table[
-                            (carbon_table["carbon_zone_id"] == carbon_zone_id) &
-                            (carbon_table["lulc_id"] == lulc_id)
-                            ]
-
-                        # Skip if no match found
-                        if match.empty:
-                            continue
-
-                        value = match["carbon_density_mean"].values[0]
-
-                        mask = (carbon_zone_block == carbon_zone_id) & (lulc_block == lulc_id)
-                        carbon_block[mask] = value
-
-                out_dst.write(carbon_block, 1, window=window)
-
-    gc.collect()
+    # datatype=6 (Float32) + ndv=NaN: without them raster_calculator_flex would inherit the LULC uint8.
+    hb.raster_calculator_flex([lulc_path, cz_path], carbon_density, out_path, datatype=6, ndv=np.nan)
     print(f"Saved: {out_path}")
 
 def summarize_raster_by_region(value_raster_path, region_boundary_path, out_path, year):
