@@ -110,12 +110,33 @@ def generate_carbon_density_raster(lulc_path, cz_path, carbon_density_lookup_tab
     lut = lut.astype({'carbon_zone_id': 'int64', 'lulc_id': 'int64'}).set_index(
         ['carbon_zone_id', 'lulc_id'])['carbon_density_mean'].astype('float32')
 
+    # Tally what the lookup actually matched, so a wholesale mismatch raises instead of flowing on as an
+    # all-NoData raster. The concrete trap: an ESA-classed map (ids 10..220) against the SEALS7-keyed
+    # lookup (ids 1..7) matches nothing, the density raster is all NaN, the zonal means drop every zone,
+    # and downstream emits an empty shock CSV -- GTAP then runs a silent zero. Per-pair misses stay NaN
+    # (a legitimately absent combination is not an error); only zero matches over valid cells raises.
+    lulc_ndv = hb.get_ndv_from_path(lulc_path)
+    seen_lulc_ids = set()
+    counts = {'valid': 0, 'matched': 0}
+
     def carbon_density(lulc_block, cz_block):
         idx = pd.MultiIndex.from_arrays([cz_block.astype('int64').ravel(), lulc_block.astype('int64').ravel()])
-        return lut.reindex(idx).to_numpy('float32').reshape(lulc_block.shape)
+        out = lut.reindex(idx).to_numpy('float32').reshape(lulc_block.shape)
+        valid = lulc_block != lulc_ndv if lulc_ndv is not None else np.ones(lulc_block.shape, dtype=bool)
+        seen_lulc_ids.update(np.unique(lulc_block[valid]).tolist())
+        counts['valid'] += int(valid.sum())
+        counts['matched'] += int(np.isfinite(out).sum())
+        return out
 
     # datatype=6 (Float32) + ndv=NaN: without them raster_calculator_flex would inherit the LULC uint8.
     hb.raster_calculator_flex([lulc_path, cz_path], carbon_density, out_path, datatype=6, ndv=np.nan)
+    if counts['valid'] > 0 and counts['matched'] == 0:
+        raise ValueError(
+            f"carbon density lookup matched ZERO of {counts['valid']} valid cells: the LULC raster "
+            f"{lulc_path} carries classes {sorted(seen_lulc_ids)[:20]} but the lookup "
+            f"{carbon_density_lookup_table_path} is keyed on lulc_id {sorted(set(lut.index.get_level_values('lulc_id')))} "
+            f"(likely an ESA-classed map fed to the SEALS7-keyed lookup, or a wrong carbon-zones raster). "
+            f"Refusing to emit an all-NoData density raster.")
     print(f"Saved: {out_path}")
 
 def summarize_raster_by_region(value_raster_path, region_boundary_path, out_path, year, id_column):

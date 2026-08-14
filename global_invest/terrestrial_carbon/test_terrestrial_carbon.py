@@ -8,6 +8,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from global_invest.terrestrial_carbon import terrestrial_carbon_functions as tcf
 from global_invest.terrestrial_carbon import terrestrial_carbon_tasks as tct
@@ -62,6 +63,126 @@ def test_stack_groups_by_two_rasters_with_mean_and_count(tmp_path):
 
 
 # --- task_compute_terrestrial_carbon_shock_static (linear ramp, differencing, loud skip) ----------
+
+# --- task_compute_terrestrial_carbon_shock (dynamic, synthetic scene) -----------------------------
+#
+# 4x4 raster, global extent: columns are 90 deg wide, rows 45 deg tall. Zone A = column 0
+# (box inset to -175..-95 so all_touched can't bleed into column 1), zone B = column 2; columns 1/3
+# belong to no zone. One carbon zone (101) everywhere; densities: class 1 -> 100, 2 -> 10, 3 -> 20 tC/ha.
+#
+#                 zone A (col 0) mean      zone B (col 2) mean
+#   base 2020            100                     100
+#   baseline 2030        100                     100
+#   baseline 2050         80  (one px cls 3)     100
+#   below_2c 2030         55  (two px cls 2)     100
+#   below_2c 2050         10  (all cls 2)         55  (two px cls 2)
+#
+# contemp = (scn_Y - base_Y)/base_Y; fixedbase = (scn_Y - base_Y)/base_2020. The drifting baseline
+# (80 vs 100 at 2050) makes the two measures differ: zone A 2050 contemp -87.5 vs fixedbase -70.
+
+def _shock_scene(tmp_path):
+    from osgeo import gdal
+    import geopandas as gpd
+    from shapely.geometry import box
+
+    cz = tmp_path / 'cz.tif'
+    _write_tif(cz, np.full((4, 4), 101), gdal.GDT_UInt32)
+    pd.DataFrame({'lulc_id': [1, 2, 3], 'carbon_zone_id': [101, 101, 101],
+                  'carbon_density_mean': [100.0, 10.0, 20.0]}).to_csv(tmp_path / 'lut.csv', index=False)
+
+    def lulc(name, array):
+        path = tmp_path / f'lulc_{name}.tif'
+        _write_tif(path, array, gdal.GDT_Byte)
+        return str(path)
+
+    ones = np.ones((4, 4), dtype=np.uint8)
+    base_2020 = lulc('base_2020', ones)
+    baseline_2030 = lulc('baseline_2030', ones)
+    a = ones.copy(); a[3, 0] = 3
+    baseline_2050 = lulc('baseline_2050', a)
+    a = ones.copy(); a[0:2, 0] = 2
+    below_2030 = lulc('below_2c_2030', a)
+    a = ones.copy(); a[:, 0] = 2; a[0:2, 2] = 2
+    below_2050 = lulc('below_2c_2050', a)
+
+    regions = tmp_path / 'zones.gpkg'
+    gpd.GeoDataFrame({'ee_r50_aez18_id': [1, 2], 'aez18_id': [1, 2],
+                      'gtapv7_r50_label': ['usa', 'chn'],
+                      'geometry': [box(-175, -85, -95, 85), box(5, -85, 85, 85)]},
+                     crs='EPSG:4326').to_file(str(regions), driver='GPKG')
+
+    return SimpleNamespace(
+        run_this=True, cur_dir=str(tmp_path),
+        es_shock_base_year=2020, es_shock_years=[2030, 2050],
+        es_shock_base_scenario='baseline', es_shock_scenarios=['below_2c'],
+        scenario_lulc_paths={'baseline': {2030: baseline_2030, 2050: baseline_2050},
+                             'below_2c': {2030: below_2030, 2050: below_2050}},
+        es_base_year_lulc_path=base_2020,
+        region_boundary_path=str(regions),
+        terrestrial_carbon_zones_path=str(cz),
+        terrestrial_carbon_density_lookup_table_path=str(tmp_path / 'lut.csv'),
+        terrestrial_carbon_shock_output_path=str(tmp_path / 'terrestrial_carbon_interpolated.csv'))
+
+
+def test_dynamic_shock_per_zone_interpolation_and_both_measures(tmp_path):
+    p = _shock_scene(tmp_path)
+    tct.task_compute_terrestrial_carbon_shock(p)
+    df = pd.read_csv(p.terrestrial_carbon_shock_output_path)
+
+    assert set(df['scenario'].unique()) == {'below_2c'}
+    assert set(df['ACTS'].unique()) == {'FRS'}
+    # zone labels ride through from the boundary's aez18_id / gtapv7_r50_label columns
+    assert set(zip(df['ENDW'], df['REG'])) == {('AEZ1', 'usa'), ('AEZ2', 'chn')}
+    # every year base..end, per zone
+    assert sorted(df[df['ENDW'] == 'AEZ1']['year']) == list(range(2020, 2051))
+
+    a = df[df['ENDW'] == 'AEZ1'].set_index('year')
+    b = df[df['ENDW'] == 'AEZ2'].set_index('year')
+    approx = lambda v: pytest.approx(v, abs=1e-6)
+
+    # anchors: contemporaneous (scn_Y - base_Y)/base_Y * 100 per zone
+    assert a.loc[2030, 'shock_pct'] == approx(-45.0)     # (55-100)/100
+    assert a.loc[2050, 'shock_pct'] == approx(-87.5)     # (10-80)/80: drifted baseline denominator
+    assert b.loc[2030, 'shock_pct'] == approx(0.0)
+    assert b.loc[2050, 'shock_pct'] == approx(-45.0)     # (55-100)/100
+
+    # piecewise interpolation: 0 at base_year, linear between anchors
+    assert a.loc[2020, 'shock_pct'] == approx(0.0)
+    assert a.loc[2025, 'shock_pct'] == approx(-22.5)     # midpoint 2020->2030
+    assert a.loc[2040, 'shock_pct'] == approx(-66.25)    # midpoint 2030->2050
+    assert b.loc[2040, 'shock_pct'] == approx(-22.5)
+
+    # fixed-base measure divides by the BASE-YEAR baseline density (100), not base_Y
+    assert a.loc[2050, 'shock_pct_fixedbase'] == approx(-70.0)   # (10-80)/100
+    assert a.loc[2030, 'shock_pct_fixedbase'] == approx(-45.0)   # same as contemp while baseline holds
+    # shock_pct is the GTAP-primary alias for the contemporaneous measure
+    assert (df['shock_pct'] == df['shock_pct_contemp']).all()
+
+
+# --- guard: an ESA-classed map against the SEALS7-keyed lookup must raise, not silently zero ------
+
+def test_generate_density_raises_when_lookup_matches_nothing(tmp_path):
+    from osgeo import gdal
+    lulc, cz, out = tmp_path / 'lulc.tif', tmp_path / 'cz.tif', tmp_path / 'dens.tif'
+    _write_tif(lulc, [[10, 30], [190, 210]], gdal.GDT_Byte)        # ESA class ids
+    _write_tif(cz, [[101, 101], [101, 101]], gdal.GDT_UInt32)
+    pd.DataFrame({'lulc_id': [1, 2, 3], 'carbon_zone_id': [101, 101, 101],   # SEALS7-keyed lookup
+                  'carbon_density_mean': [100.0, 10.0, 20.0]}).to_csv(tmp_path / 'lut.csv', index=False)
+
+    with pytest.raises(ValueError, match='matched ZERO'):
+        tcf.generate_carbon_density_raster(str(lulc), str(cz), str(tmp_path / 'lut.csv'), str(out))
+
+
+def test_dynamic_shock_esa_base_map_raises_not_silent_zero(tmp_path):
+    from osgeo import gdal
+    p = _shock_scene(tmp_path)
+    esa = tmp_path / 'lulc_esa_2020.tif'
+    _write_tif(esa, np.full((4, 4), 10, dtype=np.uint8) * np.array([[1, 3, 19, 21]]), gdal.GDT_Byte)
+    p.es_base_year_lulc_path = str(esa)                            # the real-world wrong-wiring trap
+
+    with pytest.raises(ValueError, match='matched ZERO'):
+        tct.task_compute_terrestrial_carbon_shock(p)
+
 
 def test_static_shock_ramps_differences_and_skips_absent(tmp_path):
     dep = tmp_path / 'carbon_storage_dependency.csv'
