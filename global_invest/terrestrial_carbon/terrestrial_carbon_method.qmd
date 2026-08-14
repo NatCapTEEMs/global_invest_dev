@@ -39,14 +39,13 @@ This section outlines how we value carbon sequestration as an ecosystem service 
 ## Estimating Quantity
 
 
-We followed the methodology outlined in @johnson2023investing to quantify global carbon sequestration. To estimate the quantity of carbon sequestered, we implemented a two-stage modeling framework, as illustrated in @fig-carbon-workflow.
+We followed the methodology outlined in @johnson2023investing to quantify global carbon sequestration. To estimate the quantity of carbon sequestered, we implemented a two-stage modeling framework, as illustrated in panels (a) and (b) of @fig-carbon-workflow.
 
 First, we utilized an advanced global carbon density map developed by @spawn2020harmonized to update the carbon pool. This dataset consists of harmonized vegetation-specific maps that integrate both aboveground and belowground biomass into a single, comprehensive spatial representation for the year 2010, thereby enabling more accurate assessments of carbon stocks across diverse ecosystems. To construct the carbon pool table or carbon density lookup table, we combined the 300 m land use and land cover (LULC) data from the European Space Agency Climate Change Initiative Land Cover (ESA CCI LC) with the carbon zone map employed by @gibbs2008new. This integrated methodology enhances both the spatial resolution and contextual relevance of carbon stock estimations.
 
 Second, we applied the updated carbon density lookup table and the carbon zone map to a time series of LULC data, also derived from ESA CCI LC, to enable dynamic assessments of carbon storage over time.
 
-![Workflow for quantifying the global carbon sequestration. (a) The Data Preparation phase integrates the carbon zone map employed by @gibbs2008new, global ESA LULC data for 2010, and carbon density data from @spawn2020harmonized to generate a carbon density lookup table.
-(b) The Time-Series Application phase applies the carbon density lookup table to sequential ESA LULC maps to estimate globally annual carbon density values.](figures/GEP_carbon_workflow.png){#fig-carbon-workflow width=100%}
+![Workflow for quantifying and valuing global carbon storage. (a) The Data Preparation phase integrates the carbon zone map employed by @gibbs2008new, base-year ESA LULC data, and carbon density data from @spawn2020harmonized to generate a carbon density lookup table. (b) The Application phase applies the lookup table to the base-year LULC and carbon zone maps to obtain per-cell carbon density, then multiplies by cell area to obtain per-cell carbon stocks. The same chain applies to any LULC time series for dynamic assessment. (c) The Valuation phase sums carbon stocks per country and multiplies by the annual rental social cost of carbon to yield GEP by country.](figures/GEP_carbon_workflow.png){#fig-carbon-workflow width=100%}
 
 
 ## Estimating Price
