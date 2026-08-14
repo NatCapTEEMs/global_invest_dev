@@ -1,18 +1,14 @@
+# Only what the tasks below use. The old header also imported rasterstats (not in hazelbean_env, so
+# the module could not even be imported), rasterio, gdal/ogr, numpy, csv, tqdm and the unused
+# coastal_carbon_functions -- all dead weight from the terrestrial clone.
 import os
 import sys
-import pandas as pd
-import hazelbean as hb
-import geopandas as gpd
 import subprocess
-import csv
-import numpy as np
-from tqdm import tqdm
-import rasterio
-from rasterstats import zonal_stats
-from osgeo import gdal, ogr
 
+import pandas as pd
+import geopandas as gpd
+import hazelbean as hb
 
-from global_invest.coastal_carbon import coastal_carbon_functions
 from global_invest.coastal_carbon import coastal_carbon_initialization
 
 
@@ -78,11 +74,9 @@ def gep_calculation(p):
     service_results = {}
     p.results['coastal_carbon'] = service_results
     p.results['coastal_carbon']['gep_by_country_base_year'] = os.path.join(p.cur_dir, "gep_by_country_base_year.csv")
-
-    # Optional additional results.
-    p.results['coastal_carbon']['gep_by_country_year'] = os.path.join(p.cur_dir, "gep_by_country_year.csv")
-    p.results['coastal_carbon']['gep_by_country_year'] = os.path.join(p.cur_dir, "gep_by_country_year.csv")
-    p.results['coastal_carbon']['gep_by_year'] = os.path.join(p.cur_dir, "gep_by_year.csv")
+    # Only register results this task actually writes. Per-year results (gep_by_country_year, gep_by_year)
+    # belong to a multi-year run and are registered there, not in this base-year valuation. Registering
+    # them here (as before) broke the path_all_exist skip below and the results contract downstream.
 
     # Check if all results exist
     if hb.path_all_exist(list(service_results.values())):

@@ -1,3 +1,46 @@
+"""coastal_carbon wiring -- READ BEFORE CHANGING THIS MODULE.
+
+The copy of coastal_carbon on develop is an early clone of terrestrial_carbon and CANNOT run
+(reviewed file by file 2026-08; findings verified against the code, not fixed here -- see below for why):
+- build_gep_service_calculation_task_tree registers SEVEN tasks that do not exist in
+  coastal_carbon_tasks.py (task_convert_carbon_density_maps_dtype through
+  task_summarize_carbon_by_region) -> AttributeError at build time.
+- gep_calculation consumes p.carbon_by_region_base_year_path, which no coastal task writes
+  (a dangling clone of the terrestrial chain), so the valuation has no quantity input.
+- task_calculate_mangrove_area_within_countries reads p.gdf_countries__marine_vector_path
+  (double underscore) while the run file sets p.gdf_countries_marine_vector_path; it also
+  attaches country geometry to a groupby result by row position (misaligned geometries),
+  writes into p.project_dir instead of p.cur_dir, and has no run_this guard.
+- initialize_paths reads p.df_countries_csv_path, which run_coastal_carbon.py never sets
+  (it sets the marine r566 paths) -> AttributeError in the main runner.
+- gep_result renders a coastal_carbon_results.qmd that does not exist in this module, and
+  creates directories at the module source path; gep_load_results is a temp-tree stub.
+- coastal_carbon_functions.py (63 KB) is never called from any task: it holds one-off
+  tile-merge/preprocessing scripts (its import, together with rasterstats -- absent from
+  hazelbean_env, so the tasks module could not even be imported -- was pruned on this branch).
+  developing.py is scratch that executes hardcoded personal paths at import. Both are dead
+  weight in this copy.
+- build_gep_service_task_tree lacks `return p` (same bug fixed in terrestrial_carbon).
+
+The `develop_yanxu` branch carries a full REWORK of this module that supersedes this copy:
+per-ecosystem task trees (mangrove + salt marsh implemented, seagrass stubbed) composed into
+build_gep_service_calculation_task_tree, real area->stock->storage-value chains, a
+coastal_carbon_results.qmd + references.bib, developing.py deleted, the functions file cut to
+what the tasks use, and a gep_calculation that already enforces the r250-only rule via the
+canonical `ee_r264_label == iso3_r250_label` filter (see global_invest/utilities.py).
+
+THEREFORE this branch deliberately does NOT restructure this module in parallel -- that would
+duplicate the rework and guarantee add/add merge conflicts. Changes here are limited to the
+national-GEP double-count fix and the results-contract fix in gep_calculation (needed while
+this copy is live) plus this review record. Fold-in recipe when the rework merges:
+- take the develop_yanxu side wholesale for tasks/initialization/functions/run files;
+- re-check its gep_calculation keeps the r250 canonical filter (it does at time of writing);
+- conform its manual `_task_outputs_exist` guards to ProjectFlow-native skip
+  (`p.add_task(..., skip_existing=1)` + `if not p.run_this: return` after publishing paths);
+- de-hardcode the personal base_data_dir in its run files (resolve via machine.env/get_path);
+- rename `_initialization.py` -> `_initialize.py` to match the other services, and update
+  coastal_carbon/test_coastal_carbon.py to the reworked valuation interface.
+"""
 import pandas as pd
 import hazelbean as hb
 
