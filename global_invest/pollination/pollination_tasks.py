@@ -107,6 +107,7 @@ def task_compute_pollination_shock(p):
                                  'value_usd_base': base_usd})
 
     out = pd.DataFrame(rows)
+    utilities.assert_shock_table_sound(out, scenarios, 'pollination')
     out.to_csv(p.pollination_shock_output_path, index=False)
     print('  pollination shock: %d rows, %d scenarios (shock_pct=shock_pct_contemp=/baseline-year value, shock_pct_fixedbase=/2023 value) -> %s'
           % (len(out), out['scenario'].nunique() if rows else 0, p.pollination_shock_output_path))
@@ -179,6 +180,7 @@ def task_compute_pollination_shock_static(p):
                                  'scenario': our_scn, 'year': year, 'shock_pct': val * frac})
 
     out = pd.DataFrame(rows)
+    utilities.assert_shock_table_sound(out, scenarios, 'pollination')
     out.to_csv(p.pollination_shock_output_path, index=False)
     nz = out[(out['year'] == end_year) & (out['shock_pct'] != 0)] if len(out) else out
     print('  pollination shock: %d rows, %d scenarios, %d nonzero @%d (static, uncapped) -> %s'

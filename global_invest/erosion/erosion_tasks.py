@@ -661,6 +661,7 @@ def task_erosion_shock(p):
                                  'shock_pct_service_threshold': series['service_threshold'][i]})
 
     out = pd.DataFrame(rows)
+    utilities.assert_shock_table_sound(out, scenarios, 'erosion')
     out.to_csv(p.erosion_shock_output_path, index=False)
     end = out[out['year'] == end_year]
     print('  erosion shock (dynamic): %d rows, %d scenarios, %d anchors, alpha=%.3f, primary=%s'
@@ -720,6 +721,7 @@ def task_compute_erosion_shock_static(p):
                                  'scenario': our_scn, 'year': year, 'shock_pct': val * frac})
 
     out = pd.DataFrame(rows)
+    utilities.assert_shock_table_sound(out, scenarios, 'erosion')
     out.to_csv(p.erosion_shock_output_path, index=False)
     nz = out[(out['year'] == end_year) & (out['shock_pct'] != 0)] if len(out) else out
     print('  erosion shock: %d rows, %d scenarios, %d nonzero @%d (static, uncapped) -> %s'

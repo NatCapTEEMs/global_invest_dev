@@ -6,6 +6,7 @@ Writes the per-region FSH shock CSV the same way carbon/pollination write theirs
 build_combined_afeall reads it identically. Ported verbatim from the old prepare_es_shocks fisheries
 block onto the seam (Chiara's 'static ES go through the seam too' restructuring).
 """
+from global_invest import utilities
 import os
 import pandas as pd
 
@@ -128,6 +129,7 @@ def task_compute_fisheries_shock(p):
     out = pd.DataFrame(rows)
     if len(out):
         out['shock_pct'] = out['shock_pct'].clip(-FISH_CAP, FISH_CAP)
+    utilities.assert_shock_table_sound(out, scenarios, 'fisheries')
     out.to_csv(p.fisheries_shock_output_path, index=False)
     print('  fisheries shock: %d rows, %d scenarios (%s, capped +-%.0f%%) -> %s'
           % (len(out), out['scenario'].nunique() if len(out) else 0,

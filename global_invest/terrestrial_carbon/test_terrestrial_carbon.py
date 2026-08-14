@@ -184,7 +184,7 @@ def test_dynamic_shock_esa_base_map_raises_not_silent_zero(tmp_path):
         tct.task_compute_terrestrial_carbon_shock(p)
 
 
-def test_static_shock_ramps_differences_and_skips_absent(tmp_path):
+def _static_dep_table(tmp_path):
     dep = tmp_path / 'carbon_storage_dependency.csv'
     # end-year (2050) rows only; base = baseline_ignore_dependencies. percentage_change is scaled x100.
     pd.DataFrame({
@@ -194,18 +194,37 @@ def test_static_shock_ramps_differences_and_skips_absent(tmp_path):
         'REG': ['usa', 'usa', 'usa', 'usa'],
         'percentage_change': [0.10, 0.20, 0.15, 0.20],   # below_2c - base: AEZ1 +0.05 -> +5 pts, AEZ2 0
     }).to_csv(dep, index=False)
+    return dep
+
+
+def test_static_shock_ramps_and_differences(tmp_path):
+    dep = _static_dep_table(tmp_path)
     out = tmp_path / 'terrestrial_carbon_interpolated.csv'
     p = SimpleNamespace(run_this=True, es_shock_base_year=2020, es_shock_end_year=2050,
-                        es_shock_scenarios=['below_2c', 'net_zero'],   # net_zero absent from table
+                        es_shock_scenarios=['below_2c'],
                         terrestrial_carbon_dependency_path=str(dep),
                         terrestrial_carbon_shock_output_path=str(out))
 
     tct.task_compute_terrestrial_carbon_shock_static(p)
 
     df = pd.read_csv(out)
-    assert set(df['scenario'].unique()) == {'below_2c'}       # net_zero absent -> skipped, not zeroed
     aez1 = df[df['ENDW'] == 'AEZ1'].set_index('year')['shock_pct']
     assert abs(aez1.loc[2050] - 5.0) < 1e-9                    # full shock at end year
     assert abs(aez1.loc[2020] - 0.0) < 1e-9                    # 0 at base year
     assert abs(aez1.loc[2035] - 2.5) < 1e-9                    # linear ramp at the midpoint
     assert abs(df[df['ENDW'] == 'AEZ2'].set_index('year')['shock_pct'].loc[2050]) < 1e-9  # AEZ2 shock 0
+
+
+def test_static_shock_missing_scenario_is_fatal_at_the_write(tmp_path):
+    # CONTRACT (invariant, assert_shock_table_sound): a requested scenario absent from the dependency
+    # table used to warn-and-skip, leaving GTAP a silent zero. It still warns during the loop, but the
+    # write now REFUSES, naming the scenario. The loud skip is the diagnostic; the raise is the stop.
+    dep = _static_dep_table(tmp_path)
+    out = tmp_path / 'terrestrial_carbon_interpolated.csv'
+    p = SimpleNamespace(run_this=True, es_shock_base_year=2020, es_shock_end_year=2050,
+                        es_shock_scenarios=['below_2c', 'net_zero'],   # net_zero absent from table
+                        terrestrial_carbon_dependency_path=str(dep),
+                        terrestrial_carbon_shock_output_path=str(out))
+
+    with pytest.raises(ValueError, match='net_zero'):
+        tct.task_compute_terrestrial_carbon_shock_static(p)

@@ -402,6 +402,7 @@ def task_compute_terrestrial_carbon_shock(p):
                              'shock_pct_fixedbase': vf, 'shock_pct_contemp': vc})
 
     out = pd.DataFrame(rows)
+    utilities.assert_shock_table_sound(out, scenarios, 'terrestrial_carbon')
     out.to_csv(p.terrestrial_carbon_shock_output_path, index=False)
     print('  carbon shock: %d rows, %d scenarios (shock_pct=shock_pct_contemp=/base_Y, shock_pct_fixedbase=/base_%d) -> %s'
           % (len(out), out['scenario'].nunique() if rows else 0, base_year, p.terrestrial_carbon_shock_output_path))
@@ -463,6 +464,7 @@ def task_compute_terrestrial_carbon_shock_static(p):
                              'scenario': our_scn, 'year': year, 'shock_pct': val * frac})
 
     out = pd.DataFrame(rows)
+    utilities.assert_shock_table_sound(out, scenarios, 'terrestrial_carbon')
     out.to_csv(p.terrestrial_carbon_shock_output_path, index=False)
     nz = out[(out['year'] == end_year) & (out['shock_pct'] != 0)] if len(out) else out
     print('  carbon shock: %d rows, %d scenarios, %d nonzero @%d (static, uncapped) -> %s'
