@@ -2,7 +2,7 @@
 
 The only part of this module the current branch changes is gep_calculation (r250-only sum + the
 results contract), so that is what is tested -- on synthetic data, since no coastal project data is
-local. The rest of the module cannot build (see the docstring atop coastal_carbon_initialization.py);
+local. The rest of the module cannot build (see the docstring atop coastal_carbon_initialize.py);
 when the develop_yanxu rework merges, update this test to its valuation interface.
 """
 from types import SimpleNamespace

@@ -9,7 +9,7 @@ import pandas as pd
 import geopandas as gpd
 import hazelbean as hb
 
-from global_invest.coastal_carbon import coastal_carbon_initialization
+from global_invest.coastal_carbon import coastal_carbon_initialize
 
 
 def coastal_carbon(p):
@@ -188,7 +188,7 @@ def gep_load_results(p):
 
     # Learn the paths by creating a temp task treep
     p_temp = hb.ProjectFlow()
-    coastal_carbon_initialization.build_gep_service_calculation_task_tree(p_temp)
+    coastal_carbon_initialize.build_gep_service_calculation_task_tree(p_temp)
     p_temp.set_all_tasks_to_skip_if_dir_exists()
     p_temp.execute()
 

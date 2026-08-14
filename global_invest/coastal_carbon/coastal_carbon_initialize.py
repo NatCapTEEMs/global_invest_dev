@@ -38,8 +38,11 @@ this copy is live) plus this review record. Fold-in recipe when the rework merge
 - conform its manual `_task_outputs_exist` guards to ProjectFlow-native skip
   (`p.add_task(..., skip_existing=1)` + `if not p.run_this: return` after publishing paths);
 - de-hardcode the personal base_data_dir in its run files (resolve via machine.env/get_path);
-- rename `_initialization.py` -> `_initialize.py` to match the other services, and update
-  coastal_carbon/test_coastal_carbon.py to the reworked valuation interface.
+- this file was RENAMED from coastal_carbon_initialization.py on this branch (to match the
+  other services' `_initialize.py`), so the rework's edits to the old filename arrive as a
+  modify/delete conflict: resolve by taking the rework's CONTENT into THIS filename and
+  updating its imports; then update coastal_carbon/test_coastal_carbon.py to the reworked
+  valuation interface.
 """
 import pandas as pd
 import hazelbean as hb
