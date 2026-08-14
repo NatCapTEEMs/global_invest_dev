@@ -215,6 +215,41 @@ def test_static_shock_ramps_and_differences(tmp_path):
     assert abs(df[df['ENDW'] == 'AEZ2'].set_index('year')['shock_pct'].loc[2050]) < 1e-9  # AEZ2 shock 0
 
 
+def test_static_shock_base_resolves_across_spellings(tmp_path):
+    # The frozen tables spell the nature-off baseline two ways. With the base rows labelled
+    # 'baseline_ignore_damages' and the config saying 'baseline_ignore_dependencies', the
+    # consumer's scenario_map carries both candidates and the base must resolve -- an exact-match
+    # miss here used to give an empty base -> empty output -> silent GTAP zero.
+    dep = tmp_path / 'carbon_storage_dependency.csv'
+    pd.DataFrame({
+        'scenario': ['baseline_ignore_damages', 'baseline_ignore_damages', 'below_2c', 'below_2c'],
+        'year': [2050] * 4,
+        'ENDW': ['AEZ1', 'AEZ2', 'AEZ1', 'AEZ2'],
+        'REG': ['usa'] * 4,
+        'percentage_change': [0.10, 0.20, 0.15, 0.20],
+    }).to_csv(dep, index=False)
+    out = tmp_path / 'terrestrial_carbon_interpolated.csv'
+    p = SimpleNamespace(run_this=True, es_shock_base_year=2020, es_shock_end_year=2050,
+                        es_shock_base_scenario='baseline_ignore_dependencies',
+                        es_shock_scenarios=['below_2c'],
+                        terrestrial_carbon_scenario_map={
+                            'baseline_ignore_dependencies': ['baseline_ignore_dependencies',
+                                                             'baseline_ignore_damages']},
+                        terrestrial_carbon_dependency_path=str(dep),
+                        terrestrial_carbon_shock_output_path=str(out))
+
+    tct.task_compute_terrestrial_carbon_shock_static(p)
+
+    df = pd.read_csv(out)
+    assert abs(df[df['ENDW'] == 'AEZ1'].set_index('year')['shock_pct'].loc[2050] - 5.0) < 1e-9
+
+    # Without the map the base cannot resolve, and that is FATAL, not an empty output.
+    p2 = SimpleNamespace(**{**vars(p), 'terrestrial_carbon_scenario_map': {},
+                            'terrestrial_carbon_shock_output_path': str(tmp_path / 'out2.csv')})
+    with pytest.raises(ValueError, match='BASE'):
+        tct.task_compute_terrestrial_carbon_shock_static(p2)
+
+
 def test_static_shock_missing_scenario_is_fatal_at_the_write(tmp_path):
     # CONTRACT (invariant, assert_shock_table_sound): a requested scenario absent from the dependency
     # table used to warn-and-skip, leaving GTAP a silent zero. It still warns during the loop, but the

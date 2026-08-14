@@ -35,6 +35,27 @@ def resolve_raw_scenario(scenario_labels, scenario_map, our_scn, service, log=pr
     return raw
 
 
+def resolve_base_scenario(scenario_labels, scenario_map, base_scn, service, log=print):
+    """Resolve the BASE scenario name against a dependency table's labels, via the same candidate
+    mechanism as resolve_raw_scenario (the consumer's scenario_map supplies alternate spellings,
+    e.g. the frozen tables spell the nature-off baseline both 'baseline_ignore_dependencies' and
+    'baseline_ignore_damages').
+
+    Unlike a data scenario, an unresolvable base is FATAL rather than skippable: it is the
+    subtraction reference, so without it every shock in the table is meaningless -- an exact-match
+    miss here previously yielded an empty base, an empty output, and a silent GTAP zero.
+    """
+    raw = resolve_raw_scenario(scenario_labels, scenario_map, base_scn, service, log=log)
+    if raw is None:
+        raise ValueError(
+            "%s shock: BASE scenario '%s' (tried %s) has no row in the dependency table "
+            "(present: %s). The base is the subtraction reference -- refusing to compute shocks "
+            "without it. Set p.%s_scenario_map with the table's spelling."
+            % (service, base_scn, scenario_map.get(base_scn, [base_scn]),
+               sorted(set(scenario_labels)), service))
+    return raw
+
+
 # example utility function
 
 def convert_currency(value, from_currency, to_currency, exchange_rate):

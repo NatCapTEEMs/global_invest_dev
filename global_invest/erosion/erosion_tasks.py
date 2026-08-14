@@ -701,7 +701,14 @@ def task_compute_erosion_shock_static(p):
         print('  erosion shock: dependency csv not found (%s) -- skipping' % ero_path)
         return
 
-    df, base_vals = ef.read_erosion_dependency(ero_path)
+    df = ef.read_erosion_dependency(ero_path)
+    # Resolve the configured base through the candidate mechanism (fatal if absent) -- the erosion
+    # table spells the nature-off baseline 'baseline_ignore_damages' while the shared config may say
+    # 'baseline_ignore_dependencies'; the consumer's scenario_map carries both spellings.
+    base_scn = getattr(p, 'es_shock_base_scenario', 'baseline_ignore_damages')
+    raw_base = utilities.resolve_base_scenario(df['scenario'].values, scenario_map, base_scn, 'erosion')
+    base_vals = df[df['scenario'] == raw_base].set_index(
+        ['aez18_id', 'gtapv7_r50_label'])['value'].astype(float).fillna(0)
 
     rows = []
     for our_scn in scenarios:

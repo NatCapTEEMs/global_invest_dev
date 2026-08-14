@@ -445,7 +445,11 @@ def task_compute_terrestrial_carbon_shock_static(p):
         return
 
     df = pd.read_csv(carb_path)
-    base = df[(df['scenario'] == base_scn) & (df['year'] == end_year)]
+    # The base resolves through the same candidate mechanism as the scenarios (and FATALLY if it
+    # can't): the frozen tables spell the nature-off baseline two ways across services, and an
+    # exact-match miss here gave an empty base -> empty output -> silent GTAP zero.
+    raw_base = utilities.resolve_base_scenario(df['scenario'].values, scenario_map, base_scn, 'terrestrial_carbon', log=hb.log)
+    base = df[(df['scenario'] == raw_base) & (df['year'] == end_year)]
     base_vals = base.set_index(['ENDW', 'REG'])['percentage_change'].astype(float) * 100
 
     rows = []

@@ -11,16 +11,15 @@ import pandas as pd
 
 
 def read_erosion_dependency(ero_path):
-    """Load + normalize the erosion dependency table; return (df, base_vals).
+    """Load + normalize the erosion dependency table; return the df.
 
-    base_vals = the baseline_ignore_damages row values (per aez18_id x r50 region), i.e. the
-    subtraction reference each scenario is measured against.
+    Base extraction happens in the CALLER after resolving the configured base scenario through
+    utilities.resolve_base_scenario (this function previously hardcoded 'baseline_ignore_damages'
+    as the base, silently ignoring p.es_shock_base_scenario -- right only by spelling coincidence).
     """
     df = pd.read_csv(ero_path)
     df['scenario'] = df['scenario'].str.replace('_2050', '').str.replace('2023.0', 'baseline_2023')
-    base = df[df['scenario'] == 'baseline_ignore_damages']
-    base_vals = base.set_index(['aez18_id', 'gtapv7_r50_label'])['value'].astype(float).fillna(0)
-    return df, base_vals
+    return df
 
 
 # ---------------------------------------------------------------------------

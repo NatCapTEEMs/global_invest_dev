@@ -162,7 +162,12 @@ def task_compute_pollination_shock_static(p):
     # mangle any future label carrying that suffix. Keeps the consumer's scenario_map at identity.
     df['scenario'] = df['scenario'].replace({'net_zero_2050': 'net_zero'})
     df = df[df['ENDW'] != 'AEZ0']  # AEZ0 not valid in GTAP
-    base = df[df['scenario'] == 'baseline_ignore_damages'].set_index(['ENDW', 'REG'])['value'].astype(float)
+    # Honour the configured base and resolve it through the candidate mechanism (fatal if absent).
+    # The previous hardcoded 'baseline_ignore_damages' was right only because this table happens to
+    # use that spelling; it silently ignored p.es_shock_base_scenario.
+    base_scn = getattr(p, 'es_shock_base_scenario', 'baseline_ignore_damages')
+    raw_base = utilities.resolve_base_scenario(df['scenario'].values, scenario_map, base_scn, 'pollination')
+    base = df[df['scenario'] == raw_base].set_index(['ENDW', 'REG'])['value'].astype(float)
 
     rows = []
     for our_scn in scenarios:

@@ -23,3 +23,16 @@ def test_resolve_scenario_absent_warns_loudly_and_returns_none():
     assert got is None                        # never a silent match
     assert len(msgs) == 1                      # and it warned
     assert 'net_zero' in msgs[0] and 'terrestrial_carbon' in msgs[0] and 'below_2c' in msgs[0]
+
+
+def test_resolve_base_scenario_tries_candidates_and_is_fatal_when_absent():
+    import pytest
+    # The frozen tables spell the nature-off baseline two ways; the consumer map carries both,
+    # and the first candidate present in the table wins.
+    m = {'baseline_ignore_dependencies': ['baseline_ignore_dependencies', 'baseline_ignore_damages']}
+    assert utilities.resolve_base_scenario(
+        ['baseline_ignore_damages', 'below_2c'], m, 'baseline_ignore_dependencies', 'erosion') \
+        == 'baseline_ignore_damages'
+    # A base that resolves to nothing is FATAL (it is the subtraction reference), never a skip.
+    with pytest.raises(ValueError, match='BASE'):
+        utilities.resolve_base_scenario(['below_2c'], {}, 'baseline_ignore_dependencies', 'erosion')
