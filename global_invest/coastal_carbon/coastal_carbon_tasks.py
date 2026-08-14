@@ -86,9 +86,9 @@ def gep_calculation(p):
 
     # Check if all results exist
     if hb.path_all_exist(list(service_results.values())):
-        hb.log("All results already exist. Skipping GEP calculation for terrestrial carbon.")
+        hb.log("All results already exist. Skipping GEP calculation for coastal carbon.")
     else:
-        hb.log("Starting GEP calculation for terrestrial carbon.")
+        hb.log("Starting GEP calculation for coastal carbon.")
 
         # Optimization here,
         # p.gdf_countries = hb.read_vector(p.gdf_countries)
@@ -96,51 +96,36 @@ def gep_calculation(p):
 
         # 1. Read and process data
         df_carbon_q264 = pd.read_csv(p.carbon_by_region_base_year_path)
+        # 1. Per-region (r264) quantity -> aggregate to one row per COUNTRY (r250).
         df_carbon_q250 = (
             df_carbon_q264
-            .groupby(['iso3_r250_id', 'year'])['total']
+            .groupby(['iso3_r250_id', 'year'], as_index=False)['total']
             .sum()
-            .reset_index()
-            .sort_values('total', ascending=False)  # Sort by highest total first
-            .drop_duplicates('iso3_r250_id', keep='first')  # Keep the first (highest) entry per ID
+            .rename(columns={'total': 'coastal_carbon_quantity'})
         )
-        df_carbon_q = df_carbon_q250.rename(columns={'total': 'coastal_carbon_quantity'})
-        df_carbon_p = pd.read_excel(p.carbon_prices_path)
-        df_carbon_p = df_carbon_p[[p.carbon_price, 'year']]
-        df_gep_by_country_base_year_coastal_carbon = df_carbon_q.merge(df_carbon_p,how='left',on='year') # marge on year to get the carbon price
-        df_gep_by_country_base_year_coastal_carbon['coastal_carbon_gep'] = df_gep_by_country_base_year_coastal_carbon['coastal_carbon_quantity'] * df_gep_by_country_base_year_coastal_carbon[p.carbon_price]
-        df_gep_by_country_base_year_coastal_carbon = df_gep_by_country_base_year_coastal_carbon.merge(df_carbon_q264,how='left',on='iso3_r250_id')
-        df_gep_by_country_base_year_coastal_carbon['year'] = df_gep_by_country_base_year_coastal_carbon['year_x']
+        # 2. Country-level (r250) GEP = quantity * price. ONE row per country: source of truth for the
+        #    CSV, the national total and every aggregation. Summing the r264-expanded table instead would
+        #    double-count split countries (China spans 6 r264 rows, India 6, etc.) -- the same bug fixed
+        #    in terrestrial_carbon. Only the map below touches r264, and it never sums.
+        df_carbon_p = pd.read_excel(p.carbon_prices_path)[[p.carbon_price, 'year']]
+        df_gep_250 = df_carbon_q250.merge(df_carbon_p, how='left', on='year')
+        df_gep_250['coastal_carbon_gep'] = df_gep_250['coastal_carbon_quantity'] * df_gep_250[p.carbon_price]
 
-        cols_to_keep = [
-            'ee_r264_id',
-            'iso3_r250_id',
-            'ee_r264_label',
-            'iso3_r250_label',
-            'ee_r264_name',
-            'iso3_r250_name',
-            'continent',
-            'region_un',
-            'region_wb',
-            'income_grp',
-            'subregion',
-            'year',
-            'coastal_carbon_quantity',
-            p.carbon_price,
-            'coastal_carbon_gep',
-        ]
-
-        df_gep_by_country_base_year = df_gep_by_country_base_year_coastal_carbon[cols_to_keep]
-
-
-        # Write to CSVs
+        # Attach per-country attributes (one row per iso3 from the correspondence) and write the CSV.
+        attr_cols = ['iso3_r250_id', 'iso3_r250_label', 'iso3_r250_name',
+                     'continent', 'region_un', 'region_wb', 'income_grp', 'subregion']
+        keep_cols = attr_cols + ['year', 'coastal_carbon_quantity', p.carbon_price, 'coastal_carbon_gep']
+        df_gep_by_country_base_year = df_gep_250.merge(
+            df_carbon_q264[attr_cols].drop_duplicates('iso3_r250_id'), how='left', on='iso3_r250_id')[keep_cols]
         hb.df_write(df_gep_by_country_base_year, p.results['coastal_carbon']['gep_by_country_base_year'])
 
-        # Use geopandas to merge the df_gep_by_country_base_year with the  to get the country names and other attributes
-        gdf_gep_by_country_base_year = hb.df_merge(p.gdf_countries_simplified, df_gep_by_country_base_year, how='outer', left_on='ee_r264_id', right_on='ee_r264_id')
+        # 3. Map only: attach each country's GEP to the r264 boundary geometry (each sub-region shows its
+        #    country's value). These rows are for plotting and must never be summed.
+        df_regions = df_carbon_q264.merge(df_gep_250[['iso3_r250_id', 'coastal_carbon_gep']], how='left', on='iso3_r250_id')
+        gdf_gep_by_country_base_year = hb.df_merge(p.gdf_countries_simplified, df_regions, how='outer', left_on='ee_r264_id', right_on='ee_r264_id')
         gdf_gep_by_country_base_year.to_file(p.results['coastal_carbon']['gep_by_country_base_year'].replace('.csv', '.gpkg'), driver='GPKG')
 
-        # Then sum the values across all countries.
+        # 4. National total = sum over the one-row-per-country table.
         value_gep_base_year = df_gep_by_country_base_year['coastal_carbon_gep'].sum()
 
         hb.log(f"Total GEP value for base year 2019: {value_gep_base_year}")
