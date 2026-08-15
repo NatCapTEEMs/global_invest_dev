@@ -339,11 +339,10 @@ def _calculate_storage_value(p, stock_csv_path, pool_columns,
         return out_path
 
     if not stock_csv_path or not os.path.exists(stock_csv_path):
-        hb.log(
-            f"{ecosystem_label} storage value: skipped, stock CSV missing "
-            f"({stock_csv_path!r})"
-        )
-        return None
+        raise FileNotFoundError(
+            f"{ecosystem_label} storage value: stock CSV missing ({stock_csv_path!r}) -- the stock "
+            f"task upstream in the same tree must produce it; a silent skip here would drop the "
+            f"ecosystem's per-pool value output without a trace.")
 
     df_stock = pd.read_csv(stock_csv_path)
 
@@ -443,10 +442,10 @@ def task_calculate_salt_marsh_storage_value(p):
 #
 # Extent = WCMC013-014 SeagrassPtPy v7.1 (p.seagrass_vector_path, set in
 # initialize_paths); the per-country intersection keeps the GENUS attribute so
-# the stock task can apply Gomis 2025 per-genus pool densities. The area task
-# soft-skips (log + return) when the extent file is absent, so a run without
-# the seagrass data still completes -- note that this understates the coastal
-# GEP total rather than failing it.
+# the stock task can apply Gomis 2025 per-genus pool densities. A missing
+# extent RAISES: excluding seagrass is done by building the tree with
+# include_seagrass=False, never by letting a data gap silently understate the
+# coastal GEP total.
 # ----------------------------------------------------------------------------
 
 def task_calculate_seagrass_area_within_countries(p):
@@ -477,11 +476,10 @@ def task_calculate_seagrass_area_within_countries(p):
         return
 
     if not getattr(p, 'seagrass_vector_path', None) or not os.path.exists(p.seagrass_vector_path):
-        hb.log(
-            "task_calculate_seagrass_area_within_countries: skipped, "
-            f"p.seagrass_vector_path not set or file missing ({p.seagrass_vector_path!r})."
-        )
-        return
+        raise FileNotFoundError(
+            "seagrass extent not found (p.seagrass_vector_path=%r). A built seagrass tree with no "
+            "data would silently understate the coastal GEP total; to exclude seagrass, build the "
+            "tree with include_seagrass=False instead." % (getattr(p, 'seagrass_vector_path', None),))
 
     gdf_countries_marine_vector = gpd.read_file(p.gdf_countries_marine_vector_path)
     gdf_seagrass = gpd.read_file(p.seagrass_vector_path, columns=['GENUS', 'FAMILY'])
@@ -566,11 +564,9 @@ def task_calculate_seagrass_carbon_stock(p):
 
     if not getattr(p, 'seagrass_within_countries_path', None) or \
             not os.path.exists(p.seagrass_within_countries_path):
-        hb.log(
-            "task_calculate_seagrass_carbon_stock: skipped, "
-            "polygon-level GPKG missing (run task_calculate_seagrass_area_within_countries first)."
-        )
-        return
+        raise FileNotFoundError(
+            "seagrass polygon-level GPKG missing -- task_calculate_seagrass_area_within_countries "
+            "must run first (same tree). Skipping here would silently zero seagrass in the total.")
 
     gdf = gpd.read_file(p.seagrass_within_countries_path)
     print(f"Read {len(gdf)} seagrass-within-country polygons")

@@ -112,9 +112,9 @@ def build_seagrass_carbon_calculation_task_tree(p):
     """Add seagrass area, stock, and storage-value tasks to the task tree.
 
     Implemented: WCMC v7.1 extent -> per-country intersection (GENUS kept) ->
-    genus-aware Gomis 2025 pool densities -> storage value. The area task
-    soft-skips when the extent file is absent (run completes, coastal GEP
-    then excludes seagrass).
+    genus-aware Gomis 2025 pool densities -> storage value. A missing extent
+    RAISES in the area task; exclude seagrass by not building this tree
+    (include_seagrass=False), never via a silent data-gap skip.
     """
     p.task_calculate_seagrass_area = p.add_task(
         coastal_carbon_tasks.task_calculate_seagrass_area_within_countries, skip_existing=1
