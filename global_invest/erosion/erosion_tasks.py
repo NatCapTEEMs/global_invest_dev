@@ -106,7 +106,7 @@ def task_erosion_sdr(p):
         tmpl = p.es_lulc_path_template
         years = [int(y) for y in getattr(p, 'es_shock_years', [])]
         scens = list(getattr(p, 'es_shock_scenarios', []))
-        base = getattr(p, 'es_shock_base_scenario', 'baseline_ignore_damages')
+        base = utilities.required_base_scenario(p, 'erosion')
         if base not in scens:
             scens = scens + [base]
         p.scenario_lulc_paths = {}
@@ -410,7 +410,7 @@ def task_erosion_shock(p):
     from global_invest.erosion import erosion_functions as ef
 
     base_year = int(p.es_shock_base_year); end_year = int(p.es_shock_end_year)
-    base_scn = getattr(p, 'es_shock_base_scenario', 'baseline_ignore_damages')
+    base_scn = utilities.required_base_scenario(p, 'erosion')
     fallback_coef = float(getattr(p, 'erosion_yield_coefficient_fallback', 0.08))
     alpha = float(getattr(p, 'erosion_alpha', EROSION_ALPHA))
     # Method B lets the erosion->yield coefficient vary by crop; A applies the flat alpha to all.
@@ -705,7 +705,7 @@ def task_compute_erosion_shock_static(p):
     # Resolve the configured base through the candidate mechanism (fatal if absent) -- the erosion
     # table spells the nature-off baseline 'baseline_ignore_damages' while the shared config may say
     # 'baseline_ignore_dependencies'; the consumer's scenario_map carries both spellings.
-    base_scn = getattr(p, 'es_shock_base_scenario', 'baseline_ignore_damages')
+    base_scn = utilities.required_base_scenario(p, 'erosion')
     raw_base = utilities.resolve_base_scenario(df['scenario'].values, scenario_map, base_scn, 'erosion')
     base_vals = df[df['scenario'] == raw_base].set_index(
         ['aez18_id', 'gtapv7_r50_label'])['value'].astype(float).fillna(0)

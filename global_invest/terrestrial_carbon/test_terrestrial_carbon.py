@@ -201,6 +201,7 @@ def test_static_shock_ramps_and_differences(tmp_path):
     dep = _static_dep_table(tmp_path)
     out = tmp_path / 'terrestrial_carbon_interpolated.csv'
     p = SimpleNamespace(run_this=True, es_shock_base_year=2020, es_shock_end_year=2050,
+                        es_shock_base_scenario='baseline_ignore_dependencies',
                         es_shock_scenarios=['below_2c'],
                         terrestrial_carbon_dependency_path=str(dep),
                         terrestrial_carbon_shock_output_path=str(out))
@@ -257,6 +258,7 @@ def test_static_shock_missing_scenario_is_fatal_at_the_write(tmp_path):
     dep = _static_dep_table(tmp_path)
     out = tmp_path / 'terrestrial_carbon_interpolated.csv'
     p = SimpleNamespace(run_this=True, es_shock_base_year=2020, es_shock_end_year=2050,
+                        es_shock_base_scenario='baseline_ignore_dependencies',
                         es_shock_scenarios=['below_2c', 'net_zero'],   # net_zero absent from table
                         terrestrial_carbon_dependency_path=str(dep),
                         terrestrial_carbon_shock_output_path=str(out))

@@ -276,7 +276,7 @@ def task_compute_terrestrial_carbon_shock(p):
         return
     import geopandas as gpd
 
-    base_scn     = getattr(p, 'es_shock_base_scenario', 'baseline_ignore_dependencies')
+    base_scn     = utilities.required_base_scenario(p, 'terrestrial_carbon')
     base_year    = int(p.es_shock_base_year)          # interp 0-anchor, set by the caller from config
     anchor_years = sorted(y for y in map(int, p.es_shock_years) if y > base_year)  # SEALS anchors (seals_years)
     end_year     = anchor_years[-1]
@@ -436,7 +436,7 @@ def task_compute_terrestrial_carbon_shock_static(p):
     scenario_map = getattr(p, 'terrestrial_carbon_scenario_map', {})
     scenarios = list(p.es_shock_scenarios)
     acts = getattr(p, 'terrestrial_carbon_shock_acts', 'FRS')
-    base_scn = getattr(p, 'es_shock_base_scenario', 'baseline_ignore_dependencies')  # config-driven, matches the dynamic task
+    base_scn = utilities.required_base_scenario(p, 'terrestrial_carbon')  # consumer-named, no library default
 
     carb_path = getattr(p, 'terrestrial_carbon_dependency_path', None) or os.path.join(
         p.input_dir, 'raw_dependencies', 'carbon_storage_dependency.csv')

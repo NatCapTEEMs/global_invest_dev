@@ -31,7 +31,7 @@ def task_compute_pollination_shock(p):
     # (only this dynamic path, via pollination_functions, needs it).
     from global_invest.pollination import pollination_functions as pf
 
-    base_scn     = getattr(p, 'es_shock_base_scenario', 'baseline_ignore_dependencies')
+    base_scn     = utilities.required_base_scenario(p, 'pollination')
     base_year    = int(p.es_shock_base_year)
     acts         = getattr(p, 'pollination_shock_acts', ('V_F', 'OSD'))
     scenarios    = list(p.es_shock_scenarios)
@@ -165,7 +165,7 @@ def task_compute_pollination_shock_static(p):
     # Honour the configured base and resolve it through the candidate mechanism (fatal if absent).
     # The previous hardcoded 'baseline_ignore_damages' was right only because this table happens to
     # use that spelling; it silently ignored p.es_shock_base_scenario.
-    base_scn = getattr(p, 'es_shock_base_scenario', 'baseline_ignore_damages')
+    base_scn = utilities.required_base_scenario(p, 'pollination')
     raw_base = utilities.resolve_base_scenario(df['scenario'].values, scenario_map, base_scn, 'pollination')
     base = df[df['scenario'] == raw_base].set_index(['ENDW', 'REG'])['value'].astype(float)
 

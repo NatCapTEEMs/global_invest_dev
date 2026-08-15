@@ -35,6 +35,23 @@ def resolve_raw_scenario(scenario_labels, scenario_map, our_scn, service, log=pr
     return raw
 
 
+def required_base_scenario(p, service):
+    """Return p.es_shock_base_scenario, raising if the consumer never set it.
+
+    The library carries NO default spelling: the frozen tables spell the nature-off baseline
+    differently per service (baseline_ignore_dependencies vs baseline_ignore_damages), so any
+    baked-in default is wrong for someone -- before this, seven call sites defaulted it three
+    different ways. The consumer names its base once (e.g. from its scenarios CSV) and
+    resolve_base_scenario matches it against each table's actual labels.
+    """
+    base_scn = getattr(p, 'es_shock_base_scenario', None)
+    if not base_scn:
+        raise ValueError(
+            '%s shock: p.es_shock_base_scenario is not set. The consumer must name its base '
+            'scenario explicitly (the library carries no default spelling).' % service)
+    return base_scn
+
+
 def resolve_base_scenario(scenario_labels, scenario_map, base_scn, service, log=print):
     """Resolve the BASE scenario name against a dependency table's labels, via the same candidate
     mechanism as resolve_raw_scenario (the consumer's scenario_map supplies alternate spellings,
