@@ -10,9 +10,9 @@ to match the other services.
 Conform state relative to the terrestrial_carbon template:
 - [x] input paths live HERE as get_path REFERENCE paths (no absolute paths, no per-run-file
       duplication) -- one source of truth for every runner and the results report.
-- [ ] replace the tasks' manual `_task_outputs_exist` / `_final_result_exists` guards with
-      ProjectFlow-native skip (`p.add_task(..., skip_existing=1)` + publish paths, then
-      `if not p.run_this: return`).
+- [x] ProjectFlow-native skip: data tasks registered with skip_existing=1; each publishes its
+      output paths then `if not p.run_this: return`. _task_outputs_exist survives only as an
+      internal sub-step cache; the pipeline-wide _final_result_exists short-circuit is gone.
 - [ ] hazelbean-first pass over the raster ops (rasterio/rasterstats -> hb equivalents),
       each swap verified against the cached output.
 - [ ] number-verify the chain against the coastal source data (NatCapTEEMs Drive).
@@ -77,13 +77,13 @@ def initialize_paths(p):
 def build_mangrove_carbon_calculation_task_tree(p):
     """Add mangrove area, stock, and storage-value tasks to the task tree."""
     p.task_calculate_mangrove_area = p.add_task(
-        coastal_carbon_tasks.task_calculate_mangrove_area_within_countries
+        coastal_carbon_tasks.task_calculate_mangrove_area_within_countries, skip_existing=1
     )
     p.task_calculate_mangrove_carbon_stock = p.add_task(
-        coastal_carbon_tasks.task_calculate_mangrove_carbon_stock
+        coastal_carbon_tasks.task_calculate_mangrove_carbon_stock, skip_existing=1
     )
     p.task_calculate_mangrove_storage_value = p.add_task(
-        coastal_carbon_tasks.task_calculate_mangrove_storage_value
+        coastal_carbon_tasks.task_calculate_mangrove_storage_value, skip_existing=1
     )
     return p
 
@@ -91,13 +91,13 @@ def build_mangrove_carbon_calculation_task_tree(p):
 def build_marsh_carbon_calculation_task_tree(p):
     """Add salt marsh area, stock, and storage-value tasks to the task tree."""
     p.task_calculate_salt_marsh_area = p.add_task(
-        coastal_carbon_tasks.task_calculate_salt_marsh_area_within_countries
+        coastal_carbon_tasks.task_calculate_salt_marsh_area_within_countries, skip_existing=1
     )
     p.task_calculate_salt_marsh_carbon_stock = p.add_task(
-        coastal_carbon_tasks.task_calculate_salt_marsh_carbon_stock
+        coastal_carbon_tasks.task_calculate_salt_marsh_carbon_stock, skip_existing=1
     )
     p.task_calculate_salt_marsh_storage_value = p.add_task(
-        coastal_carbon_tasks.task_calculate_salt_marsh_storage_value
+        coastal_carbon_tasks.task_calculate_salt_marsh_storage_value, skip_existing=1
     )
     return p
 
@@ -111,13 +111,13 @@ def build_seagrass_carbon_calculation_task_tree(p):
     then excludes seagrass).
     """
     p.task_calculate_seagrass_area = p.add_task(
-        coastal_carbon_tasks.task_calculate_seagrass_area_within_countries
+        coastal_carbon_tasks.task_calculate_seagrass_area_within_countries, skip_existing=1
     )
     p.task_calculate_seagrass_carbon_stock = p.add_task(
-        coastal_carbon_tasks.task_calculate_seagrass_carbon_stock
+        coastal_carbon_tasks.task_calculate_seagrass_carbon_stock, skip_existing=1
     )
     p.task_calculate_seagrass_storage_value = p.add_task(
-        coastal_carbon_tasks.task_calculate_seagrass_storage_value
+        coastal_carbon_tasks.task_calculate_seagrass_storage_value, skip_existing=1
     )
     return p
 
@@ -147,7 +147,7 @@ def build_gep_service_calculation_task_tree(p, include_seagrass=False):
 
     # Cross-ecosystem aggregation
     p.task_combine_ecosystem_areas = p.add_task(
-        coastal_carbon_tasks.task_combine_ecosystem_areas
+        coastal_carbon_tasks.task_combine_ecosystem_areas, skip_existing=1
     )
     p.task_gep_calculation = p.add_task(
         coastal_carbon_tasks.gep_calculation

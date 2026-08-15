@@ -16,25 +16,12 @@ from global_invest.coastal_carbon import coastal_carbon_functions
 def _task_outputs_exist(*paths):
     """Return True if every given path is non-empty and exists on disk.
 
-    Used as a skip-if-already-done guard at the top of each task so reruns
-    only re-do work for missing outputs. Pass primary output paths only,
-    not intermediates.
+    INTERNAL sub-step cache only (heavy intermediates inside a task, the r566 stage in
+    gep_calculation). Task-level skipping is ProjectFlow-native: tasks are registered with
+    skip_existing=1, so a task whose directory exists gets p.run_this=0, publishes its output
+    paths and returns -- delete the task's directory to force a rerun.
     """
     return all(bool(p) and os.path.exists(p) for p in paths)
-
-
-def _final_result_exists(p):
-    """True if the final coastal-carbon GEP CSV (iso3_r250 aggregation) exists.
-
-    Pipeline-wide short-circuit: every data task checks this first and
-    returns early if the gep_calculation final output is already on disk.
-    To force a full rerun, delete the file in <intermediate>/gep_calculation/.
-    """
-    gep_csv = os.path.join(
-        p.intermediate_dir, "gep_calculation",
-        "gep_by_country_base_year.csv",
-    )
-    return _task_outputs_exist(gep_csv)
 
 
 def task_calculate_mangrove_area_within_countries(p):
@@ -42,15 +29,11 @@ def task_calculate_mangrove_area_within_countries(p):
     Calculate mangrove area within each country's marine EEZ.
     Uses Global Mangrove Watch (GMW) vector data.
     """
-    if _final_result_exists(p):
-        hb.log("task_calculate_mangrove_area_within_countries: skipped (final GEP result exists)")
-        return
     p.mangrove_area_by_countries_base_year_path = os.path.join(
         p.cur_dir, "mangrove_area_by_countries2019.gpkg"
     )
     csv_path = p.mangrove_area_by_countries_base_year_path.replace('.gpkg', '.csv')
-    if _task_outputs_exist(p.mangrove_area_by_countries_base_year_path, csv_path):
-        hb.log(f"task_calculate_mangrove_area_within_countries: skipped (outputs exist)")
+    if not p.run_this:
         return
 
     gdf_countries_marine_vector = gpd.read_file(p.gdf_countries_marine_vector_path)
@@ -120,7 +103,7 @@ def task_calculate_mangrove_area_within_countries(p):
     # Create GeoDataFrame with country geometries
     mangrove_area_by_countries_base_year = gpd.GeoDataFrame(
         mangrove_area_by_countries_base_year,
-        geometry=gdf_countries_marine_vector.geometry,
+        geometry="geometry",   # the merge on eemarine_r566_id already brought each country's geometry; never attach by row position
         crs=gdf_countries_marine_vector.crs
     )
 
@@ -136,15 +119,11 @@ def task_calculate_salt_marsh_area_within_countries(p):
     Calculate salt marsh area within each country's marine EEZ.
     Uses zonal statistics on salt marsh raster data.
     """
-    if _final_result_exists(p):
-        hb.log("task_calculate_salt_marsh_area_within_countries: skipped (final GEP result exists)")
-        return
     p.salt_marsh_area_by_countries_base_year_path = os.path.join(
         p.cur_dir, "salt_marsh_area_by_countries2019.gpkg"
     )
     csv_path = p.salt_marsh_area_by_countries_base_year_path.replace('.gpkg', '.csv')
-    if _task_outputs_exist(p.salt_marsh_area_by_countries_base_year_path, csv_path):
-        hb.log("task_calculate_salt_marsh_area_within_countries: skipped (outputs exist)")
+    if not p.run_this:
         return
 
     # Read salt marsh vector data
@@ -238,7 +217,7 @@ def task_calculate_salt_marsh_area_within_countries(p):
     # Create GeoDataFrame
     salt_marsh_area_by_countries = gpd.GeoDataFrame(
         salt_marsh_area_by_countries,
-        geometry=gdf_countries_marine_vector.geometry,
+        geometry="geometry",   # the merge on eemarine_r566_id already brought each country's geometry; never attach by row position
         crs=gdf_countries_marine_vector.crs
     )
 
@@ -284,14 +263,10 @@ def task_calculate_mangrove_carbon_stock(p):
       - BGB: AGB x IPCC 2014 zone-specific ratio (uses p.precipitation_path if set)
       - SOC: Sanderman 2018 raster at p.mangrove_soc_path (fallback otherwise)
     """
-    if _final_result_exists(p):
-        hb.log("task_calculate_mangrove_carbon_stock: skipped (final GEP result exists)")
-        return
     p.mangrove_carbon_stock_path = os.path.join(
         p.cur_dir, "mangrove_carbon_stock_by_countries2019.csv"
     )
-    if _task_outputs_exist(p.mangrove_carbon_stock_path):
-        hb.log("task_calculate_mangrove_carbon_stock: skipped (output exists)")
+    if not p.run_this:
         return
 
     _build_country_id_raster_if_needed(p)
@@ -420,8 +395,8 @@ def task_calculate_mangrove_storage_value(p):
             mangrove_agb_storage_value, mangrove_bgb_storage_value,
             mangrove_soil_storage_value, mangrove_storage_value.
     """
-    if _final_result_exists(p):
-        hb.log("task_calculate_mangrove_storage_value: skipped (final GEP result exists)")
+    p.mangrove_storage_value_path = os.path.join(p.cur_dir, "mangrove_storage_value_by_countries2019.csv")
+    if not p.run_this:
         return
     p.mangrove_storage_value_path = _calculate_storage_value(
         p,
@@ -445,8 +420,8 @@ def task_calculate_salt_marsh_storage_value(p):
         salt_marsh_agb_storage_value, salt_marsh_bgb_storage_value,
         salt_marsh_soil_storage_value, salt_marsh_storage_value.
     """
-    if _final_result_exists(p):
-        hb.log("task_calculate_salt_marsh_storage_value: skipped (final GEP result exists)")
+    p.salt_marsh_storage_value_path = os.path.join(p.cur_dir, "salt_marsh_storage_value_by_countries2019.csv")
+    if not p.run_this:
         return
     p.salt_marsh_storage_value_path = _calculate_storage_value(
         p,
@@ -490,9 +465,6 @@ def task_calculate_seagrass_area_within_countries(p):
     seagrass_area_by_countries2019.{gpkg,csv}
         Country-level area total.
     """
-    if _final_result_exists(p):
-        hb.log("task_calculate_seagrass_area_within_countries: skipped (final GEP result exists)")
-        return
     p.seagrass_within_countries_path = os.path.join(
         p.cur_dir, "seagrass_within_countries2019.gpkg"
     )
@@ -500,9 +472,7 @@ def task_calculate_seagrass_area_within_countries(p):
         p.cur_dir, "seagrass_area_by_countries2019.gpkg"
     )
     csv_path = p.seagrass_area_by_countries_base_year_path.replace('.gpkg', '.csv')
-    if _task_outputs_exist(p.seagrass_within_countries_path,
-                           p.seagrass_area_by_countries_base_year_path, csv_path):
-        hb.log("task_calculate_seagrass_area_within_countries: skipped (outputs exist)")
+    if not p.run_this:
         return
 
     if not getattr(p, 'seagrass_vector_path', None) or not os.path.exists(p.seagrass_vector_path):
@@ -567,7 +537,7 @@ def task_calculate_seagrass_area_within_countries(p):
     area_by_country['area_ha'] = area_by_country['area_ha'].fillna(0)
     area_by_country = gpd.GeoDataFrame(
         area_by_country,
-        geometry=gdf_countries_marine_vector.geometry,
+        geometry="geometry",   # the merge on eemarine_r566_id already brought each country's geometry; never attach by row position
         crs=gdf_countries_marine_vector.crs,
     )
 
@@ -587,14 +557,10 @@ def task_calculate_seagrass_carbon_stock(p):
     polygon, then aggregates to country level. Non-marine genera (Trapa, Myriophyllum,
     Valisneria, Najas, etc.) are zeroed out before aggregation.
     """
-    if _final_result_exists(p):
-        hb.log("task_calculate_seagrass_carbon_stock: skipped (final GEP result exists)")
-        return
     p.seagrass_carbon_stock_path = os.path.join(
         p.cur_dir, "seagrass_carbon_stock_by_countries2019.csv"
     )
-    if _task_outputs_exist(p.seagrass_carbon_stock_path):
-        hb.log("task_calculate_seagrass_carbon_stock: skipped (output exists)")
+    if not p.run_this:
         return
 
     if not getattr(p, 'seagrass_within_countries_path', None) or \
@@ -652,8 +618,8 @@ def task_calculate_seagrass_storage_value(p):
         seagrass_agb_storage_value, seagrass_bgb_storage_value,
         seagrass_soil_storage_value, seagrass_storage_value.
     """
-    if _final_result_exists(p):
-        hb.log("task_calculate_seagrass_storage_value: skipped (final GEP result exists)")
+    p.seagrass_storage_value_path = os.path.join(p.cur_dir, "seagrass_storage_value_by_countries2019.csv")
+    if not p.run_this:
         return
     p.seagrass_storage_value_path = _calculate_storage_value(
         p,
@@ -679,14 +645,10 @@ def task_calculate_salt_marsh_carbon_stock(p):
       - SOC: Maxwell et al. 2024 MarSOC raster at p.salt_marsh_soc_path (if set);
              fallback to latitude step function if path is missing or file absent.
     """
-    if _final_result_exists(p):
-        hb.log("task_calculate_salt_marsh_carbon_stock: skipped (final GEP result exists)")
-        return
     p.salt_marsh_carbon_stock_path = os.path.join(
         p.cur_dir, "salt_marsh_carbon_stock_by_countries2019.csv"
     )
-    if _task_outputs_exist(p.salt_marsh_carbon_stock_path):
-        hb.log("task_calculate_salt_marsh_carbon_stock: skipped (output exists)")
+    if not p.run_this:
         return
 
     _build_country_id_raster_if_needed(p)
@@ -730,12 +692,8 @@ def task_combine_ecosystem_areas(p):
     single dataset. Seagrass is optional: skipped silently if its area / stock
     CSVs do not exist (e.g. include_seagrass=False on the run script).
     """
-    if _final_result_exists(p):
-        hb.log("task_combine_ecosystem_areas: skipped (final GEP result exists)")
-        return
     p.combined_area_path = os.path.join(p.cur_dir, "combined_ecosystem_areas.csv")
-    if _task_outputs_exist(p.combined_area_path):
-        hb.log("task_combine_ecosystem_areas: skipped (output exists)")
+    if not p.run_this:
         return
 
     # Read mangrove areas
@@ -888,8 +846,8 @@ def gep_calculation(p):
     # valuation (same contract fix as terrestrial_carbon).
 
     final_csv = p.results['coastal_carbon']['gep_by_country_base_year']
-    if _task_outputs_exist(final_csv):
-        hb.log("gep_calculation: skipped (final output exists)")
+    if hb.path_all_exist(list(service_results.values())):
+        hb.log("gep_calculation: skipped (all registered results exist)")
         return
 
     r566_csv = p.results['coastal_carbon']['gep_by_country_base_year_r566']
