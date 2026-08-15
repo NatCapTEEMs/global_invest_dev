@@ -103,12 +103,12 @@ def build_marsh_carbon_calculation_task_tree(p):
 
 
 def build_seagrass_carbon_calculation_task_tree(p):
-    """
-    Add seagrass area, stock, and storage-value tasks to the task tree.
+    """Add seagrass area, stock, and storage-value tasks to the task tree.
 
-    Seagrass tasks are currently stubs that print a NotImplemented notice and
-    return early. To activate, replace the stubs in coastal_carbon_tasks.py
-    with real implementations following the mangrove or salt marsh pattern.
+    Implemented: WCMC v7.1 extent -> per-country intersection (GENUS kept) ->
+    genus-aware Gomis 2025 pool densities -> storage value. The area task
+    soft-skips when the extent file is absent (run completes, coastal GEP
+    then excludes seagrass).
     """
     p.task_calculate_seagrass_area = p.add_task(
         coastal_carbon_tasks.task_calculate_seagrass_area_within_countries
@@ -137,8 +137,8 @@ def build_gep_service_calculation_task_tree(p, include_seagrass=False):
     ----------
     p : hb.ProjectFlow
     include_seagrass : bool
-        If True, append the seagrass stub tree. Defaults to False since the
-        seagrass tasks are not yet implemented.
+        If True, append the seagrass tree (implemented; needs the WCMC v7.1
+        extent staged -- the run files pass True).
     """
     build_mangrove_carbon_calculation_task_tree(p)
     build_marsh_carbon_calculation_task_tree(p)

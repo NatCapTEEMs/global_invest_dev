@@ -463,16 +463,14 @@ def task_calculate_salt_marsh_storage_value(p):
 
 
 # ----------------------------------------------------------------------------
-# Seagrass tasks: stubs for the eventual seagrass storage flow.
+# Seagrass tasks: implemented (area -> genus-aware stock -> storage value).
 #
-# The pipeline does not currently process seagrass extent or carbon stocks.
-# These three tasks exist so that build_seagrass_carbon_calculation_task_tree
-# is structurally complete; each one prints a clear NotImplemented notice and
-# returns early. To activate seagrass:
-#   1. Provide an extent path on p (e.g. p.seagrass_vector_path) using
-#      WCMC013-014_SeagrassPtPy2021 or similar.
-#   2. Replace each stub with a real implementation following the mangrove or
-#      salt marsh pattern (rasterize -> stream stock -> apply rental SCC).
+# Extent = WCMC013-014 SeagrassPtPy v7.1 (p.seagrass_vector_path, set in
+# initialize_paths); the per-country intersection keeps the GENUS attribute so
+# the stock task can apply Gomis 2025 per-genus pool densities. The area task
+# soft-skips (log + return) when the extent file is absent, so a run without
+# the seagrass data still completes -- note that this understates the coastal
+# GEP total rather than failing it.
 # ----------------------------------------------------------------------------
 
 def task_calculate_seagrass_area_within_countries(p):
