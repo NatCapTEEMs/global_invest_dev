@@ -101,9 +101,9 @@ def _shock_scene(tmp_path):
     a = ones.copy(); a[3, 0] = 3
     baseline_2050 = lulc('baseline_2050', a)
     a = ones.copy(); a[0:2, 0] = 2
-    below_2030 = lulc('below_2c_2030', a)
+    below_2030 = lulc('scn_a_2030', a)
     a = ones.copy(); a[:, 0] = 2; a[0:2, 2] = 2
-    below_2050 = lulc('below_2c_2050', a)
+    below_2050 = lulc('scn_a_2050', a)
 
     regions = tmp_path / 'zones.gpkg'
     gpd.GeoDataFrame({'ee_r50_aez18_id': [1, 2], 'aez18_id': [1, 2],
@@ -114,9 +114,9 @@ def _shock_scene(tmp_path):
     return SimpleNamespace(
         run_this=True, cur_dir=str(tmp_path),
         es_shock_base_year=2020, es_shock_years=[2030, 2050],
-        es_shock_base_scenario='baseline', es_shock_scenarios=['below_2c'],
+        es_shock_base_scenario='baseline', es_shock_scenarios=['scn_a'],
         scenario_lulc_paths={'baseline': {2030: baseline_2030, 2050: baseline_2050},
-                             'below_2c': {2030: below_2030, 2050: below_2050}},
+                             'scn_a': {2030: below_2030, 2050: below_2050}},
         es_base_year_lulc_path=base_2020,
         region_boundary_path=str(regions),
         terrestrial_carbon_zones_path=str(cz),
@@ -129,7 +129,7 @@ def test_dynamic_shock_per_zone_interpolation_and_both_measures(tmp_path):
     tct.task_compute_terrestrial_carbon_shock(p)
     df = pd.read_csv(p.terrestrial_carbon_shock_output_path)
 
-    assert set(df['scenario'].unique()) == {'below_2c'}
+    assert set(df['scenario'].unique()) == {'scn_a'}
     assert set(df['ACTS'].unique()) == {'FRS'}
     # zone labels ride through from the boundary's aez18_id / gtapv7_r50_label columns
     assert set(zip(df['ENDW'], df['REG'])) == {('AEZ1', 'usa'), ('AEZ2', 'chn')}
@@ -188,7 +188,7 @@ def _static_dep_table(tmp_path):
     dep = tmp_path / 'carbon_storage_dependency.csv'
     # end-year (2050) rows only; base = baseline_ignore_dependencies. percentage_change is scaled x100.
     pd.DataFrame({
-        'scenario': ['baseline_ignore_dependencies', 'baseline_ignore_dependencies', 'below_2c', 'below_2c'],
+        'scenario': ['baseline_ignore_dependencies', 'baseline_ignore_dependencies', 'scn_a', 'scn_a'],
         'year': [2050, 2050, 2050, 2050],
         'ENDW': ['AEZ1', 'AEZ2', 'AEZ1', 'AEZ2'],
         'REG': ['usa', 'usa', 'usa', 'usa'],
@@ -202,7 +202,7 @@ def test_static_shock_ramps_and_differences(tmp_path):
     out = tmp_path / 'terrestrial_carbon_interpolated.csv'
     p = SimpleNamespace(run_this=True, es_shock_base_year=2020, es_shock_end_year=2050,
                         es_shock_base_scenario='baseline_ignore_dependencies',
-                        es_shock_scenarios=['below_2c'],
+                        es_shock_scenarios=['scn_a'],
                         terrestrial_carbon_dependency_path=str(dep),
                         terrestrial_carbon_shock_output_path=str(out))
 
@@ -223,7 +223,7 @@ def test_static_shock_base_resolves_across_spellings(tmp_path):
     # miss here used to give an empty base -> empty output -> silent GTAP zero.
     dep = tmp_path / 'carbon_storage_dependency.csv'
     pd.DataFrame({
-        'scenario': ['baseline_ignore_damages', 'baseline_ignore_damages', 'below_2c', 'below_2c'],
+        'scenario': ['baseline_ignore_damages', 'baseline_ignore_damages', 'scn_a', 'scn_a'],
         'year': [2050] * 4,
         'ENDW': ['AEZ1', 'AEZ2', 'AEZ1', 'AEZ2'],
         'REG': ['usa'] * 4,
@@ -232,7 +232,7 @@ def test_static_shock_base_resolves_across_spellings(tmp_path):
     out = tmp_path / 'terrestrial_carbon_interpolated.csv'
     p = SimpleNamespace(run_this=True, es_shock_base_year=2020, es_shock_end_year=2050,
                         es_shock_base_scenario='baseline_ignore_dependencies',
-                        es_shock_scenarios=['below_2c'],
+                        es_shock_scenarios=['scn_a'],
                         terrestrial_carbon_scenario_map={
                             'baseline_ignore_dependencies': ['baseline_ignore_dependencies',
                                                              'baseline_ignore_damages']},
@@ -259,9 +259,9 @@ def test_static_shock_missing_scenario_is_fatal_at_the_write(tmp_path):
     out = tmp_path / 'terrestrial_carbon_interpolated.csv'
     p = SimpleNamespace(run_this=True, es_shock_base_year=2020, es_shock_end_year=2050,
                         es_shock_base_scenario='baseline_ignore_dependencies',
-                        es_shock_scenarios=['below_2c', 'net_zero'],   # net_zero absent from table
+                        es_shock_scenarios=['scn_a', 'scn_b'],   # net_zero absent from table
                         terrestrial_carbon_dependency_path=str(dep),
                         terrestrial_carbon_shock_output_path=str(out))
 
-    with pytest.raises(ValueError, match='net_zero'):
+    with pytest.raises(ValueError, match='scn_b'):
         tct.task_compute_terrestrial_carbon_shock_static(p)
