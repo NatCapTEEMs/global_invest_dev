@@ -4,21 +4,16 @@ add_erosion_tasks dispatches STATIC (read the pre-computed erosion dependency ta
 from the SEALS maps via InVEST SDR, #26) on whether 'erosion' is listed in p.dynamic_es. Consumers
 (ngfs_pnas) set the shared es_shock_* config on p, then call add_erosion_tasks(p) alongside the other seams.
 
-BRINGING THE GEP VALUATION IN LATER -- the recipe, so nobody has to work it out twice.
-`global_erosion_gep` (the prevention-share GEP valuation this method comes from) is already written to
-this repo's layout and drops in beside these tasks. Checked against it:
-
-  * erosion_functions.py -- its 28 functions vs the 7 here: ZERO name collisions. Straight append.
-  * erosion_tasks.py     -- its 3 tasks vs the 5 here:      ZERO name collisions. Straight append.
-  * erosion_initialize.py -- take its build_erosion_task_tree / _calculation_ / _results_ variants;
-    DROP its two-line add_erosion_tasks, which only aliases build_erosion_task_tree. Consumers call
-    build_erosion_task_tree directly, exactly as terrestrial_carbon does with build_gep_task_tree.
-    add_erosion_tasks below stays the ES-shock entry point.
-  * erosion_utils.py -- new file, no collision.
-  * ⚠ THE ONE REAL BLOCKER: three module-level `.mkdir(parents=True)` calls (its lines ~118, ~389,
-    ~1446) run AT IMPORT against hardcoded cluster paths. Move them inside the functions that write
-    there before appending, or importing global_invest.erosion starts creating directories. Its other
-    81 module-level statements are plain Path constants and are harmless.
+THE GEP VALUATION IS FOLDED IN (2026-08-16, per the recipe that used to live here): the
+prevention-share valuation from `global_erosion_gep` -- InVEST SDR -> on-farm/upstream prevention
+shares -> per-country GEP -> maps/figures. Its functions/tasks were appended to
+erosion_functions.py / erosion_tasks.py (zero name collisions; the one duplicate, SPAM_ALIAS_MAP,
+kept OUR corrected exact-FAO-name version), erosion_utils.py arrived as a new file, and every
+import-time side effect was made lazy (output-dir mkdirs, natcap imports, the root-logging/gdal
+env block -- see the fold separator in erosion_functions.py). Its builders are exposed below under
+the template names (build_gep_service_*); its two-line add_erosion_tasks alias was dropped --
+add_erosion_tasks here stays the ES-shock seam. ⚠ The GEP chain is cluster-scale (global InVEST
+SDR): folded and import-clean, NOT yet number-verified -- see the tracker.
 """
 from global_invest.erosion import erosion_tasks
 
@@ -69,4 +64,27 @@ def add_erosion_tasks(p, parent=None):
     p.erosion_upstream_task = p.add_task(erosion_tasks.task_erosion_upstream, parent=parent, skip_existing=1)
     p.erosion_exposure_task = p.add_task(erosion_tasks.task_erosion_exposure, parent=parent, skip_existing=1)
     p.erosion_shock_task    = p.add_task(erosion_tasks.task_erosion_shock, parent=parent)
+    return p
+
+
+# ---------------------------------------------------------------------------------------------
+# GEP task trees (folded from global_erosion_gep; template names, cf. terrestrial_carbon).
+# ---------------------------------------------------------------------------------------------
+def build_gep_service_calculation_task_tree(p):
+    """GEP calculation tree: InVEST SDR run + prevention-share per-country GEP valuation."""
+    p.task_run_invest_sdr = p.add_task(erosion_tasks.task_run_invest_sdr)
+    p.task_compute_prevention_shares = p.add_task(erosion_tasks.task_compute_prevention_shares)
+    return p
+
+
+def build_gep_service_results_task_tree(p):
+    """Results-only: render maps/figures from an existing prevention-share run."""
+    p.task_generate_maps_and_figures = p.add_task(erosion_tasks.task_generate_maps_and_figures)
+    return p
+
+
+def build_gep_service_task_tree(p):
+    """Full GEP run: SDR + valuation + maps/figures."""
+    p = build_gep_service_calculation_task_tree(p)
+    p.task_generate_maps_and_figures = p.add_task(erosion_tasks.task_generate_maps_and_figures)
     return p
