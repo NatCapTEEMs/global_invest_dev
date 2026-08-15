@@ -10,6 +10,7 @@ import rasterio
 from rasterstats import zonal_stats
 from tqdm import tqdm
 
+from global_invest import utilities
 from global_invest.coastal_carbon import coastal_carbon_functions
 
 
@@ -949,84 +950,6 @@ def gep_calculation(p):
 
 
 def gep_result(p):
-    """Display the results of the GEP calculation."""
-
-    # Set the quarto path
-    os.environ['QUARTO_PYTHON'] = sys.executable
-
-    # Get the list of current services run
-    services_run = list(p.results.keys())
-
-    # Imply from the service name the file_path for the results_qmd
-    module_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-
-    for service_label in services_run:
-        print(service_label)
-        results_qmd_path = os.path.join(
-            module_root, service_label, f'{service_label}_results.qmd'
-        )
-        results_qmd_project_path = os.path.join(p.cur_dir, f'{service_label}_results.qmd')
-        if not os.path.exists(results_qmd_path):
-            raise FileNotFoundError(f"Results QMD template not found: {results_qmd_path}")
-        hb.create_directories(results_qmd_project_path)
-        hb.path_copy(results_qmd_path, results_qmd_project_path)
-
-        # Also copy any bibliography/CSL/template assets sitting next to the QMD
-        # source so Quarto's citeproc filter can resolve them in cur_dir.
-        qmd_src_dir = os.path.dirname(results_qmd_path)
-        copied_sidecar_paths = []
-        for sidecar_name in os.listdir(qmd_src_dir):
-            if sidecar_name.endswith(('.bib', '.csl', '.bst', '.yml', '.yaml')):
-                if sidecar_name in ('_quarto.yml', '_quarto.yaml'):
-                    continue
-                src = os.path.join(qmd_src_dir, sidecar_name)
-                dst = os.path.join(p.cur_dir, sidecar_name)
-                if os.path.isfile(src):
-                    hb.path_copy(src, dst)
-                    copied_sidecar_paths.append(dst)
-
-        quarto_command = f"quarto render {results_qmd_project_path}"
-        hb.log(f"Running quarto command: {quarto_command}")
-
-        # Set environment for more verbose output
-        env = os.environ.copy()
-        env['QUARTO_LOG_LEVEL'] = 'DEBUG'
-        repo_root = os.path.dirname(module_root)
-        env['GLOBAL_INVEST_REPO_ROOT'] = repo_root
-        existing_pythonpath = env.get('PYTHONPATH')
-        env['PYTHONPATH'] = (
-            repo_root if not existing_pythonpath
-            else repo_root + os.pathsep + existing_pythonpath
-        )
-
-        cmd = ['quarto', 'render', results_qmd_project_path, '--verbose']
-
-        print(f"Working directory: {os.getcwd()}")
-        print(f"File exists: {os.path.exists(results_qmd_project_path)}")
-
-        process = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            env=env,
-            text=True,
-            bufsize=1,
-            universal_newlines=True
-        )
-
-        # Read line by line as they come
-        while True:
-            line = process.stdout.readline()
-            if not line and process.poll() is not None:
-                break
-            if line:
-                print(line.rstrip())
-                sys.stdout.flush()
-
-        if process.returncode != 0:
-            raise subprocess.CalledProcessError(process.returncode, cmd)
-
-        # Remove temporary files
-        hb.path_remove(results_qmd_project_path)
-        for sidecar in copied_sidecar_paths:
-            hb.path_remove(sidecar)
+    """Render the results report(s). Shared implementation in utilities (this module's variant --
+    sidecar copying, PYTHONPATH, crash-loudly -- became the shared one)."""
+    utilities.render_service_results(p)

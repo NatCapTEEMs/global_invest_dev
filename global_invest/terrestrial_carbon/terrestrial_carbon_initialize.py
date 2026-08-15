@@ -1,6 +1,7 @@
 import pandas as pd
 import hazelbean as hb
 
+from global_invest import utilities
 from global_invest.terrestrial_carbon import terrestrial_carbon_tasks
 
 def initialize_paths(p):
@@ -9,19 +10,13 @@ def initialize_paths(p):
     SAME raster the shock task uses (base_data/carbon_storage), so the GEP valuation and the shock never
     diverge. carbon_price defaults here but the caller may override it before calling.
     """
-    p.df_countries_csv_path = p.get_path('cartographic', 'ee', 'ee_r264_correspondence.csv')
-    p.gdf_countries_vector_path = p.get_path('cartographic', 'ee', 'ee_r264_correspondence.gpkg')
-    p.gdf_countries_vector_simplified_path = p.get_path('cartographic', 'ee', 'ee_r264_simplified300sec.gpkg')
+    utilities.initialize_country_paths(p)   # shared r264 block (csv/gpkg/simplified + df_countries)
     p.carbon_zones_path = p.get_path('carbon_storage', 'carbon_zones_rasterized.tif')
     p.base_year_lulc_path = p.get_path('lulc', 'esa', 'lulc_esa_2019.tif')
     p.carbon_prices_path = p.get_path('terrestrial_carbon', 'carbon_prices.xlsx')
     p.carbon_price = getattr(p, 'carbon_price', 'rental scc r2%')
     p.base_year = getattr(p, 'base_year', 2019)  # GEP valuation reference year; caller may override
 
-    p.df_countries = pd.read_csv(p.df_countries_csv_path)
-    # The GDFs stay as path strings; hb.read_vector converts to a GeoDataFrame on demand.
-    p.gdf_countries = p.gdf_countries_vector_path
-    p.gdf_countries_simplified = p.gdf_countries_vector_simplified_path
     return p
 
 def build_gep_service_preprocess_task_tree(p):

@@ -139,42 +139,8 @@ def generate_carbon_density_raster(lulc_path, cz_path, carbon_density_lookup_tab
             f"Refusing to emit an all-NoData density raster.")
     print(f"Saved: {out_path}")
 
-def summarize_raster_by_region(value_raster_path, region_boundary_path, out_path, year, id_column):
-    """
-    Per-polygon total / mean / pixel count of a value raster, via hb.zonal_statistics_flex.
+# Promoted to global_invest.utilities on its second caller (pollination GEP); re-exported here
+# so existing imports keep working.
+from global_invest.utilities import summarize_raster_by_region  # noqa: F401
 
-    Parameters
-    ----------
-    value_raster_path : str
-        Path to the value raster (per-cell carbon stock for the GEP total, carbon density for the shock).
-    region_boundary_path : str
-        Path to the vector (GeoPackage) of polygon regions.
-    out_path : str
-        Output path for the CSV summary.
-    year : int
-        The year the value raster represents; written to the `year` column.
-    id_column : str
-        The vector column holding a unique integer id per polygon to key the zonal statistics on
-        ('ee_r264_id' for the country valuation, 'ee_r50_aez18_id' for the shock zones).
-    """
-    regions = gpd.read_file(region_boundary_path)
-    # zones_raster_data_type=5 (Int32) so ids past 255 don't saturate (r264 runs to 264, r50xAEZ higher);
-    # all_touched=True matches the old per-polygon masking. Returns a frame indexed by zone id, with a
-    # zone 0 = everything outside every polygon.
-    zone_ids_raster = os.path.splitext(out_path)[0] + '_zone_ids.tif'
-    stats = hb.zonal_statistics_flex(
-        value_raster_path, region_boundary_path, zone_ids_raster_path=zone_ids_raster,
-        id_column_label=id_column, zones_raster_data_type=5, all_touched=True,
-        stats_to_retrieve='sums_counts', assert_projections_same=False, verbose=False)
-    stats = stats[(stats.index != 0) & (stats['counts'] > 0)]   # drop background + empty zones
 
-    df = regions.assign(_zid=regions[id_column].astype('int64')).merge(
-        stats, left_on='_zid', right_index=True, how='right').drop(columns=['_zid', 'geometry'])
-    df = df.rename(columns={'sums': 'total', 'counts': 'count'})
-    df['mean'] = df['total'] / df['count']
-    df['year'] = year
-    # Emit the boundary's own id so consumers join on a value, never on row position.
-    if 'ee_r50_aez18_id' in df.columns:
-        df['region_id'] = df['ee_r50_aez18_id'].astype(int)
-    df.to_csv(out_path, index=False)
-    print(f"Summary written to: {out_path}")

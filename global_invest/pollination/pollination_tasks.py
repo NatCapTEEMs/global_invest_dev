@@ -9,6 +9,7 @@ import os
 import glob
 import numpy as np
 import pandas as pd
+import hazelbean as hb
 from global_invest import utilities
 
 
@@ -192,3 +193,80 @@ def task_compute_pollination_shock_static(p):
           % (len(out), out['scenario'].nunique() if len(out) else 0, len(nz), end_year,
              p.pollination_shock_output_path))
     return True
+
+
+# =============================================================================
+# GEP valuation tasks. The ES shock above and the valuation below are separate
+# consumers of the same crop_benefits science; neither depends on the other.
+# The value raster (poll_value_global_<year>usd.tif, a crop_benefits output) is
+# USD per cell with crop prices and pollination dependence already embedded
+# upstream, so lambda = 1 and no price join happens here: quantity IS value.
+# =============================================================================
+
+def task_summarize_pollination_value_by_region(p):
+    """GEP quantity stage: per-r264-region sum of the pollination value raster (USD per cell)."""
+    p.pollination_value_by_region_path = os.path.join(p.cur_dir, "pollination_value_by_region.csv")
+    if not p.run_this:
+        return
+    utilities.summarize_raster_by_region(
+        value_raster_path=p.pollination_value_raster_path,
+        region_boundary_path=p.gdf_countries_vector_path,
+        out_path=p.pollination_value_by_region_path,
+        year=p.base_year, id_column='ee_r264_id')
+    return True
+
+
+def gep_calculation(p):
+    """GEP valuation for pollination: r264 region values -> ONE row per country (r250)."""
+    service_results = {}
+    p.results['pollination'] = service_results
+    p.results['pollination']['gep_by_country_base_year'] = os.path.join(p.cur_dir, "gep_by_country_base_year.csv")
+    # Only register results this task actually writes (per-year results belong to a multi-year run).
+
+    if hb.path_all_exist(list(service_results.values())):
+        hb.log("All results already exist. Skipping GEP calculation for pollination.")
+        return
+    hb.log("Starting GEP calculation for pollination.")
+
+    # 1. Per-region (r264) USD value -> aggregate to one row per COUNTRY (r250). Summing the
+    #    r264-expanded table instead would double-count split countries (see utilities docstring).
+    df_q264 = pd.read_csv(p.pollination_value_by_region_path)
+    df_250 = (df_q264.groupby(['iso3_r250_id', 'year'], as_index=False)['total'].sum()
+              .rename(columns={'total': 'pollination_gep'}))
+
+    # 2. Attach per-country attributes and write the per-country CSV (source of truth for every sum).
+    attr_cols = ['iso3_r250_id', 'iso3_r250_label', 'iso3_r250_name',
+                 'continent', 'region_un', 'region_wb', 'income_grp', 'subregion']
+    keep_cols = attr_cols + ['year', 'pollination_gep']
+    df_gep = df_250.merge(df_q264[attr_cols].drop_duplicates('iso3_r250_id'),
+                          how='left', on='iso3_r250_id')[keep_cols]
+    hb.df_write(df_gep, service_results['gep_by_country_base_year'])
+
+    # 3. Map only: r264-expanded, each sub-region carries its country's value, never summed
+    #    (carbon template; the repo-wide map convention is the open flag-3 decision).
+    df_regions = df_q264.merge(df_250[['iso3_r250_id', 'pollination_gep']], how='left', on='iso3_r250_id')
+    gdf = hb.df_merge(p.gdf_countries_simplified, df_regions, how='outer',
+                      left_on='ee_r264_id', right_on='ee_r264_id')
+    gdf.to_file(service_results['gep_by_country_base_year'].replace('.csv', '.gpkg'), driver='GPKG')
+
+    # 4. National total = sum over the one-row-per-country table.
+    value_gep_base_year = df_gep['pollination_gep'].sum()
+    hb.log(f"Total pollination GEP for base year {p.base_year}: {value_gep_base_year}")
+    return value_gep_base_year
+
+
+def gep_load_results(p):
+    """Load GEP results from a PRIOR calculation run so the report renders without recomputing.
+    Fails loudly if absent (run run_pollination.py first). The results-only entry point."""
+    result_path = os.path.join(p.intermediate_dir, 'gep_calculation', 'gep_by_country_base_year.csv')
+    if not hb.path_exists(result_path):
+        raise FileNotFoundError(
+            f"pollination GEP results not found at {result_path}. "
+            f"Run the calculation first (run_pollination.py), then re-run results.")
+    p.results.setdefault('pollination', {})
+    p.results['pollination']['gep_by_country_base_year'] = result_path
+
+
+def gep_result(p):
+    """Render the results report(s). Shared implementation in utilities."""
+    utilities.render_service_results(p)

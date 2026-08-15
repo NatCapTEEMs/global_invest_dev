@@ -1,0 +1,137 @@
+---
+format:
+  html:
+    embed-resources: true
+    standalone: true
+execute:
+  echo: false          # results report shows tables/figures, not code
+  warning: false
+---
+
+# Pollination Results
+
+Text describing it. To be written by the service team (science source: the crop_benefits repo).
+
+```{python}
+#| output: false
+
+### SETUP CODE: Runs the whole model if it doesn't exist, else loads the results.
+
+import os
+import pandas as pd
+import hazelbean as hb
+
+from global_invest.pollination import pollination_initialize
+
+if __name__ == '__main__':
+
+    p = hb.ProjectFlow()
+    p.project_name = 'gep_pollination'
+    p.project_dir = os.path.join(os.path.expanduser('~'), 'Files', 'global_invest', 'projects', p.project_name)
+    p.set_project_dir(p.project_dir)
+
+    pollination_initialize.build_gep_service_calculation_task_tree(p)
+
+    p.results = {}
+    pollination_initialize.initialize_paths(p)
+
+    hb.log('Created ProjectFlow object at ' + p.project_dir + '\n    from script ' + p.calling_script + '\n    with base_data set at ' + p.base_data_dir)
+    p.execute()
+```
+
+```{python}
+#| output: false
+
+### DISPLAY SETUP CODE
+
+import matplotlib.pyplot as plt
+import pandas as pd
+import os
+import hazelbean as hb
+
+pd.set_option('display.float_format', '{:,.2f}'.format)
+pd.set_option('display.max_rows', 1000)
+from IPython.display import Image, display
+
+service_label = 'pollination'
+
+for k, v in p.results[service_label].items():
+    df = hb.df_read(v)
+    setattr(p, k, df)
+
+    if k == 'gep_by_country_base_year':
+        total_pollination_value = df['pollination_gep'].sum()
+        p.gep_by_country_base_year_table = df[['iso3_r250_name', 'pollination_gep']]
+
+        if 'income_grp' in df.columns:
+            p.gep_by_income_grp_base_year_table = df.groupby('income_grp', as_index=False)['pollination_gep'].sum()
+        if 'region_un' in df.columns:
+            p.gep_by_region_un_base_year_table = df.groupby('region_un', as_index=False)['pollination_gep'].sum()
+        if 'continent' in df.columns:
+            p.gep_by_continent_base_year_table = df.groupby('continent', as_index=False)['pollination_gep'].sum()
+        if 'subregion' in df.columns:
+            p.gep_by_subregion_base_year_table = df.groupby('subregion', as_index=False)['pollination_gep'].sum()
+
+        out_dir = os.path.join(p.intermediate_dir, service_label, 'gep_result')
+        hb.create_directories(out_dir)
+        p.gep_by_country_base_year_table.to_csv(os.path.join(out_dir, 'gep_by_country_base_year_table.csv'), index=False)
+        hb.df_write(p.gep_by_income_grp_base_year_table, os.path.join(out_dir, 'gep_by_income_grp_base_year_table.csv'))
+        hb.df_write(p.gep_by_region_un_base_year_table, os.path.join(out_dir, 'gep_by_region_un_base_year_table.csv'))
+        hb.df_write(p.gep_by_continent_base_year_table, os.path.join(out_dir, 'gep_by_continent_base_year_table.csv'))
+        hb.df_write(p.gep_by_subregion_base_year_table, os.path.join(out_dir, 'gep_by_subregion_base_year_table.csv'))
+
+        import numpy as np
+        import matplotlib as mpl
+
+        gpkg_path = p.results[service_label]['gep_by_country_base_year'].replace('.csv', '.gpkg')
+        gdf = hb.read_vector(gpkg_path)
+        gdf = gdf[['iso3_r250_id', 'iso3_r250_name', 'pollination_gep', 'geometry']]
+
+        borders = gdf.copy()
+        borders['geometry'] = borders['geometry'].boundary
+
+        norm = mpl.colors.LogNorm(vmin=gdf['pollination_gep'][gdf['pollination_gep'] > 0].min(), vmax=gdf['pollination_gep'].max())
+
+        fig, ax = plt.subplots(figsize=(15, 10))
+        gdf.plot(column='pollination_gep', cmap='OrRd', legend=False, norm=norm, ax=ax)
+        borders.plot(ax=ax, color='black', linewidth=0.5)
+
+        sm = plt.cm.ScalarMappable(cmap='OrRd', norm=norm)
+        sm._A = []
+        cbar = fig.colorbar(sm, ax=ax, orientation='vertical', fraction=0.03, pad=0.02)
+        cbar.set_label("Gross Ecosystem Product (GEP) in Base Year")
+        cbar.ax.yaxis.set_major_formatter(mpl.ticker.FuncFormatter(lambda x, _: f'{int(x):,}'))
+
+        ax.set_title('Pollination GEP by Country in Base Year')
+        ax.set_axis_off()
+        plt.savefig(os.path.join(out_dir, 'gep_by_country_base_year_map.png'), bbox_inches='tight', dpi=300)
+        plt.close()
+```
+
+The analysis finds that insect pollination generates a total gross ecosystem product of $`{python} f"{total_pollination_value:,.2f}"` in the base year (`{python} f"{int(p.base_year)}"`). The value raster carries crop prices and per-crop pollination dependence already, so the per-country value is a direct spatial sum. Below we present the results in various aggregations, ending with the GEP by country in the base year.
+
+```{python}
+display(Image(os.path.join(p.intermediate_dir, service_label, 'gep_result', 'gep_by_country_base_year_map.png')))
+```
+
+## GEP by Income Group in Base Year
+```{python}
+display(p.gep_by_income_grp_base_year_table)
+```
+## GEP by Region in Base Year
+```{python}
+display(p.gep_by_region_un_base_year_table)
+```
+## GEP by Continent in Base Year
+```{python}
+display(p.gep_by_continent_base_year_table)
+```
+## GEP by Subregion in Base Year
+```{python}
+display(p.gep_by_subregion_base_year_table)
+```
+
+## GEP by Country in Base Year
+```{python}
+display(p.gep_by_country_base_year_table)
+```

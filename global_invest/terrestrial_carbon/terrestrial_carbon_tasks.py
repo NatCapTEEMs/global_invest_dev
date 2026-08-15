@@ -183,53 +183,11 @@ def gep_calculation(p):
         return value_gep_base_year
 
 def gep_result(p):
-    """Display the results of the GEP calculation."""
-    
-    # Set the quarto path to wherever the current script is running. This means that the environment used needs to have quarto, which may not be true on e.g. codespaces.
-    os.environ['QUARTO_PYTHON'] = sys.executable
-    
-    # Get the  list of current services run
-    services_run = list(p.results.keys())
-    
-    # Additional groupbys = []
-    
-    # Imply from the service name the file_path for the results_qmd
-    module_root = hb.get_projectflow_module_root()
-    
-    for service_label in services_run:
-        results_qmd_path = os.path.join(module_root, service_label, f'{service_label}_results.qmd')    
-        results_qmd_project_path = os.path.join(p.cur_dir, f'{service_label}_results.qmd')
-        hb.create_directories(results_qmd_project_path)  # Ensure the directory exists   
-        
-        # Copy it to the project dir for cmd line processing (but will be removed again later because it makes confusion when people try to edit it and then rerun the script which won't of course update the results.)
-        hb.path_copy(results_qmd_path, results_qmd_project_path)
-        
-        
-        quarto_command = f"quarto render {results_qmd_project_path}"
-        hb.log(f"Running quarto command: {quarto_command}")     
+    """Render the results report(s). Shared implementation in utilities (superset of the old
+    per-module copies: missing qmd raises, bib/csl sidecars copied, repo root on PYTHONPATH,
+    non-zero quarto exit raises)."""
+    utilities.render_service_results(p)
 
-        cmd = ['quarto', 'render', results_qmd_project_path, '--verbose']
-
-        process = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,  # Combine stderr into stdout
-            text=True,
-            bufsize=1,  # Line buffering
-            universal_newlines=True
-        )
-        
-        # Read line by line as they come
-        while True:
-            line = process.stdout.readline()
-            if not line and process.poll() is not None:
-                break
-            if line:
-                print(line.rstrip())
-                sys.stdout.flush()  # Force immediate display
-        # remove results_qmd_project_path
-        hb.path_remove(results_qmd_project_path)
-        
 def gep_load_results(p):
     """Load the GEP results computed by a PRIOR calculation run, so the report can render without
     recomputing. Fails loudly if they are not present -- run the calculation (run_terrestrial_carbon.py)
