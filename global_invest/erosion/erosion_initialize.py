@@ -106,20 +106,22 @@ def add_erosion_tasks(p, parent=None):
 # GEP task trees (folded from global_erosion_gep; template names, cf. terrestrial_carbon).
 # ---------------------------------------------------------------------------------------------
 def build_gep_service_calculation_task_tree(p):
-    """GEP calculation tree: InVEST SDR run + prevention-share per-country GEP valuation."""
-    p.task_run_invest_sdr = p.add_task(erosion_tasks.task_run_invest_sdr)
+    """GEP calculation tree: InVEST SDR run + prevention-share per-country GEP valuation.
+    skip_existing=1 on the SDR task (dir present -> paths published, work skipped); the valuation
+    registers plain and skips on its registered result, like every service's gep_calculation."""
+    p.task_run_invest_sdr = p.add_task(erosion_tasks.task_run_invest_sdr, skip_existing=1)
     p.task_compute_prevention_shares = p.add_task(erosion_tasks.task_compute_prevention_shares)
     return p
 
 
 def build_gep_service_results_task_tree(p):
     """Results-only: render maps/figures from an existing prevention-share run."""
-    p.task_generate_maps_and_figures = p.add_task(erosion_tasks.task_generate_maps_and_figures)
+    p.task_generate_maps_and_figures = p.add_task(erosion_tasks.task_generate_maps_and_figures, skip_existing=1)
     return p
 
 
 def build_gep_service_task_tree(p):
     """Full GEP run: SDR + valuation + maps/figures."""
     p = build_gep_service_calculation_task_tree(p)
-    p.task_generate_maps_and_figures = p.add_task(erosion_tasks.task_generate_maps_and_figures)
+    p.task_generate_maps_and_figures = p.add_task(erosion_tasks.task_generate_maps_and_figures, skip_existing=1)
     return p

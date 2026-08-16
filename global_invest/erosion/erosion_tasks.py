@@ -745,46 +745,60 @@ def task_compute_erosion_shock_static(p):
 
 
 def task_run_invest_sdr(p):
+    """Section A: run InVEST SDR to produce the erosion rasters (USLE, avoided erosion) that
+    Section B consumes. ProjectFlow-idiomatic: outputs default into THIS task's dir (caller may
+    override erosion_sdr_output_dir), the paths Section B reads are PUBLISHED on p before the
+    run_this guard (so a skipped rerun still feeds downstream), and the builders register this
+    with skip_existing=1 -- delete the task dir to force a rerun.
     """
-    Task wrapper for Section A: run InVEST SDR to produce the sediment
-    delivery / erosion rasters (USLE, avoided erosion) that Section B
-    consumes. Originally step1_sdr_invest_run.ipynb.
-    """
+    if not getattr(p, 'erosion_sdr_output_dir', None):
+        p.erosion_sdr_output_dir = p.cur_dir
+    if not getattr(p, 'erosion_watersheds_sanitized_path', None):
+        p.erosion_watersheds_sanitized_path = os.path.join(p.erosion_sdr_output_dir, 'wshed_sanitized.gpkg')
+    # Publish Section A's outputs under the names configure_prevention_shares reads off p --
+    # explicit task chaining instead of the source repo's copy-between-stage-dirs convention
+    # (whose input defaults even carry a different date suffix than the outputs).
+    _sfx = getattr(p, 'erosion_sdr_results_suffix', '2019_revised_dec_14')
+    p.erosion_usle_path = os.path.join(p.erosion_sdr_output_dir, f'usle_{_sfx}.tif')
+    p.erosion_avoided_erosion_path = os.path.join(p.erosion_sdr_output_dir, f'avoided_erosion_{_sfx}.tif')
+    if not p.run_this:
+        return
     ef.configure_sdr(p)
     p.erosion_sdr_args, p.erosion_sdr_file_registry = ef.run_invest_sdr()
     return True
 
 
 def task_compute_prevention_shares(p):
+    """Section B: combine on-farm (AE/(AE+USLE)) and upstream prevention shares into the
+    union-of-protection PS_combined, then country-crop protected production and the GEP valuation
+    (onfarm / upstream / combined) -> integrated_country_gep.csv + the PS rasters the maps task
+    reads. ProjectFlow-idiomatic: outputs default into THIS task's dir via erosion_gep_output_dir
+    (the same attr configure_maps chains on), USLE/avoided arrive from task_run_invest_sdr's
+    published attrs, and the registered result is the skip check (like every gep_calculation).
     """
-    Task wrapper for Section B: combine on-farm (AE/(AE+USLE)) and
-    upstream prevention shares into the union-of-protection PS_combined,
-    then compute country-crop protected production and the GEP valuation
-    (onfarm / upstream / combined). Originally Combine_PS_SES11_3_3_2026.ipynb.
-    Writes integrated_country_gep.csv and the PS rasters that
-    task_generate_maps_and_figures() maps.
-    """
-    ef.configure_prevention_shares(p)
-
+    if not getattr(p, 'erosion_gep_output_dir', None):
+        p.erosion_gep_output_dir = p.cur_dir
     service_results = p.results.setdefault('erosion', {})
     service_results['integrated_country_gep'] = os.path.join(
-        ef.OUT_DIR, "integrated_country_gep.csv")
-
-    if hb.path_all_exist([service_results['integrated_country_gep']]):
+        p.erosion_gep_output_dir, "integrated_country_gep.csv")
+    if not p.run_this:
+        return
+    if hb.path_all_exist(list(service_results.values())):
         hb.log("integrated_country_gep.csv already exists. Skipping prevention-share calculation for erosion.")
-    else:
-        ef.integrate_and_write()
-
+        return True
+    ef.configure_prevention_shares(p)
+    ef.integrate_and_write()
     return True
 
 
 def task_generate_maps_and_figures(p):
-    """
-    Task wrapper for Section C: publication-ready choropleths, raster
-    previews, and supporting charts built from
-    task_compute_prevention_shares()'s outputs. Originally
-    combined_maps_figures_SES_final_3_5_26.ipynb.
-    """
+    """Section C: publication-ready choropleths, raster previews and charts from Section B's
+    outputs (found via the shared erosion_gep_output_dir attr). Figures default into THIS task's
+    dir; skip_existing at registration."""
+    if not getattr(p, 'erosion_figures_dir', None):
+        p.erosion_figures_dir = p.cur_dir
+    if not p.run_this:
+        return
     ef.configure_maps(p)
     ef.generate_all_maps_and_figures()
     return True

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+import hazelbean as hb
 
 
 def read_erosion_dependency(ero_path):
@@ -408,11 +409,12 @@ def _assert_exists(path: Path, label: str):
 
 
 def _dem_wkt(dem_path: Path) -> str:
-    """Return DEM CRS as WKT. We trust DEM CRS as the canonical target CRS."""
-    with rasterio.open(dem_path) as ds:
-        if ds.crs is None:
-            raise ValueError(f"DEM has no CRS: {dem_path}")
-        return ds.crs.to_wkt()
+    """Return DEM CRS as WKT. We trust DEM CRS as the canonical target CRS. (hazelbean raster-info;
+    swap verified by the bit-identical section-A rerun.)"""
+    wkt = hb.get_raster_info_hb(str(dem_path))['projection']
+    if not wkt:
+        raise ValueError(f"DEM has no CRS: {dem_path}")
+    return wkt
 
 
 def sanitize_watersheds_for_report(
