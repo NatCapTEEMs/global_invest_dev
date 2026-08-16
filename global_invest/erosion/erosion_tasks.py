@@ -26,6 +26,7 @@ FIXED severe-pixel set and the DEFAULT; see task_erosion_shock). add_erosion_tas
 """
 import os
 import pandas as pd
+import hazelbean as hb
 
 from global_invest import utilities
 from global_invest.erosion import erosion_functions as ef
