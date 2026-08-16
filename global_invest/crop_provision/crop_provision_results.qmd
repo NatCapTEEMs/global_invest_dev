@@ -68,7 +68,7 @@ import pandas as pd
 import os
 import hazelbean as hb
 from global_invest.crop_provision import crop_provision_functions
-from global_invest.crop_provision import crop_provision_defaults
+from global_invest.crop_provision import crop_provision_tasks
 
 pd.set_option('display.float_format', '{:,.2f}'.format)
 pd.set_option('display.max_rows', 1000)  # Set max rows to display
