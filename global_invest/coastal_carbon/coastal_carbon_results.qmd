@@ -60,7 +60,7 @@ for repo_root in repo_root_candidates:
             sys.path.insert(0, repo_root)
         break
 
-from global_invest.coastal_carbon import coastal_carbon_initialization
+from global_invest.coastal_carbon import coastal_carbon_initialize
 
 if __name__ == '__main__':
 
@@ -70,15 +70,12 @@ if __name__ == '__main__':
     p.project_dir = os.path.join(
         os.path.expanduser('~'), 'Files', 'global_invest', 'projects', p.project_name
     )
-    p.base_data_dir = (
-        "/Users/long/Library/CloudStorage/GoogleDrive-yxlong@umn.edu/"
-        "Shared drives/NatCapTEEMs/Files/base_data/submissions"
-    )
+    # base_data_dir resolves via ProjectFlow default / machine.env (never hardcoded).
     p.set_project_dir(p.project_dir)
 
     # Task tree. Use the calculation-only tree here; the full tree includes
     # this Quarto render task and would recurse during report generation.
-    coastal_carbon_initialization.build_gep_service_calculation_task_tree(p, include_seagrass=True)
+    coastal_carbon_initialize.build_gep_service_calculation_task_tree(p, include_seagrass=True)
 
     # Project level attributes - Data Paths
 
@@ -143,7 +140,7 @@ if __name__ == '__main__':
     p.results = {}
 
     # Initialize paths
-    coastal_carbon_initialization.initialize_paths(p)
+    coastal_carbon_initialize.initialize_paths(p)
 
     # Run the model
     hb.log(

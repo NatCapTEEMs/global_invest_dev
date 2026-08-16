@@ -18,10 +18,7 @@ if __name__ == '__main__':
     # Task tree
     extractive_materials_provision_initialize.build_gep_service_task_tree(p) # Defines the actual logic of the model. Navigate into here to see what the model does.
 
-    # Project level attributes
-    p.df_countries_csv_path = p.get_path('cartographic', 'ee', 'ee_r264_correspondence.csv') # ProjectFlow downloads all files automatically via the p.get_path() function. 
-    p.gdf_countries_vector_path = p.get_path('cartographic', 'ee', 'ee_r264_correspondence.gpkg') 
-    p.gdf_countries_vector_simplified_path = p.get_path('cartographic', 'ee', 'ee_r264_simplified30sec.gpkg') 
+    # Inputs resolve in initialize_paths (one source of truth; shared country block).
     p.results = {}  # All results will be stored here by each child task.
     extractive_materials_provision_initialize.initialize_paths(p)
 
