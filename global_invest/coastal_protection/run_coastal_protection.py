@@ -1,7 +1,6 @@
 import os
 import pandas as pd
 import hazelbean as hb
-import pyogrio
 
 from global_invest.coastal_protection import coastal_protection_initialize
 
@@ -15,16 +14,12 @@ if __name__ == '__main__':
     p.project_name = 'gep_coastal_protection'  # Determines the folder created to store intermediate and final results.
     p.project_dir = os.path.join(os.path.expanduser('~'), 'Files', 'global_invest', 'projects', p.project_name) # Put it in the right location relative to the user's home directory.
     # base_data_dir resolves via ProjectFlow default / machine.env (never hardcoded).
-    p.df_gdp_inflation_deflator_path = os.path.join(p.base_data_dir, 'gdp_inflation_delator', 'GDP_inflation_deflator.xlsx')
     p.set_project_dir(p.project_dir) # Set the project directory in the ProjectFlow object. Also defines p.input_dir, p.intermediate_dir, and p.output_dir based on the project_dir.
-    
+
     # Task tree
     coastal_protection_initialize.build_gep_service_task_tree(p) # Defines the actual logic of the model. Navigate into here to see what the model does.
 
-    # Project level attributes
-    p.df_countries_csv_path = p.get_path('cartographic', 'ee', 'ee_r264_correspondence.csv') # ProjectFlow downloads all files automatically via the p.get_path() function. 
-    p.gdf_countries_vector_path = p.get_path('cartographic', 'ee', 'ee_r264_correspondence.gpkg') 
-    p.gdf_countries_vector_simplified_path = p.get_path('cartographic', 'ee', 'ee_r264_simplified30sec.gpkg') 
+    # Inputs resolve in initialize_paths (one source of truth; shared country block).
     p.results = {}  # All results will be stored here by each child task.
     coastal_protection_initialize.initialize_paths(p)
 

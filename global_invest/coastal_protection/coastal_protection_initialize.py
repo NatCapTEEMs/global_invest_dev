@@ -1,17 +1,19 @@
 import pandas as pd
 import hazelbean as hb
 
+from global_invest import utilities
 from global_invest.coastal_protection import coastal_protection_tasks
 
 def initialize_paths(p):
-    p.df_countries = pd.read_csv(p.df_countries_csv_path)  
-    
-    # Notice optimization here: the GDFs are still just path_strings. hb.read_vector takes the string as an input and converts it to a GeoDataFrame when needed.
-    p.gdf_countries = p.gdf_countries_vector_path 
-    p.gdf_countries_simplified = p.gdf_countries_vector_simplified_path 
-    
-    # p.gdf_countries = hb.read_vector(p.gdf_countries_vector_path)  # Read the vector file for the countries.
-    # p.countries_simplified_gdf = hb.read_vector(p.countries_simplified_vector_path)  # Read the vector file for the countries.
+    """One source of truth for the inputs (shared country block + service data, get_path references)."""
+    utilities.initialize_country_paths(p, simplified='30sec')
+
+    # Service data staged into base_data from the drive's submissions folders (see base_data CHANGELOG).
+    p.cwon_input_ref_path = p.get_path('coastal_protection', 'data_mangroves_2019.xlsx')
+    p.coral_reef_ref_path = p.get_path('coastal_protection', 'coral_reefs_annual_expected_benefit_nfamara.xlsx')
+    # The drive's submissions folder spells this 'gdp_inflation_delator' (sic); staged locally under
+    # the corrected name. Filename case is exact so it resolves on case-sensitive filesystems too.
+    p.df_gdp_inflation_deflator_path = p.get_path('gdp_inflation_deflator', 'GDP_Inflation_deflator.xlsx')
 
 def build_gep_service_calculation_task_tree(p):
     """Build the default task tree for commercial agriculture."""
