@@ -18,6 +18,41 @@ SDR): folded and import-clean, NOT yet number-verified -- see the tracker.
 from global_invest.erosion import erosion_tasks
 
 
+def initialize_paths(p):
+    """Resolve the erosion GEP inputs on p via get_path REFERENCE paths (the configure_* functions
+    read these attrs at run time; their built-in defaults point at the source repo's cluster layout
+    and are never used once this ran). Section-A (InVEST SDR) inputs are fully staged in base_data
+    at the 6.45 km analysis grid. The three section-B valuation CSVs (FAO GPV / FAO prices / WB GDP
+    2019) and the upstream-prevention rasters are the service owner's artifacts, not yet in
+    base_data: resolved tolerantly so section A runs; the valuation crashes loudly until they are
+    staged (requested via the erosion submission).
+    """
+    import os
+    # Section A -- InVEST SDR.
+    p.erosion_dem_path = p.get_path('global_invest', 'sdr', 'global_dem_reproj.tif')
+    p.erosion_sdr_input_dir = os.path.dirname(p.erosion_dem_path)
+    p.erosion_lulc_path = p.get_path('global_invest', 'sdr', 'lulc_esa_2019_reproj_6p45km.tif')
+    p.erosion_biophysical_table_path = p.get_path('global_invest', 'sdr', 'expanded_biophysical_table_gura.csv')
+    p.erosion_erodibility_path = p.get_path('soil', 'erodibility_30s.tif')
+    p.erosion_erosivity_path = p.get_path('soil', 'erosivity_30s.tif')
+    p.erosion_watersheds_path = p.get_path('global_invest', 'sdr', 'hybas_global_lev06_v1c.gpkg')
+    # Section B -- prevention shares + valuation.
+    p.erosion_yield_stack_path = p.get_path('global_invest', 'sdr', 'spam2020_yield_stack_TA.tif')
+    p.erosion_area_stack_path = p.get_path('global_invest', 'sdr', 'spam2020_harvested_area_stack_TA.tif')
+    p.erosion_bandmap_csv_path = p.get_path('global_invest', 'sdr', 'spam2020_bandmap.csv')
+    p.erosion_elasticity_csv_path = p.get_path('global_invest', 'sdr', 'elasticity_crops_fao_revised.csv')
+    p.erosion_elevation_path = p.erosion_dem_path
+    p.erosion_country_boundary_path = p.get_path('cartographic', 'ee', 'ee_r250.gpkg')
+    p.erosion_fao_gpv_iso3_csv_path = p.get_path('global_invest', 'sdr', 'faostat_gpv_2019_iso3.csv',
+                                                 raise_error_if_fail=False)
+    p.erosion_fao_prices_csv_path = p.get_path('global_invest', 'sdr', 'faostat_prices_2019_completed_revised.csv',
+                                               raise_error_if_fail=False)
+    p.erosion_gdp_csv_path = p.get_path('global_invest', 'sdr', 'worldbank_gdp_2019.csv',
+                                        raise_error_if_fail=False)
+    return p
+
+
+
 def add_erosion_tasks(p, parent=None):
     """Graft the erosion ES-shock tasks onto p, dispatching STATIC vs DYNAMIC on p.dynamic_es.
 
