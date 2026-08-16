@@ -30,13 +30,15 @@ format:
 
 # The services
 
-## Five ecosystem services
+## Eleven service modules
 
 - **terrestrial_carbon** — carbon stock from land cover and carbon density, valued at a carbon price.
+- **coastal_carbon** — blue-carbon stock (mangrove, salt marsh, seagrass), valued at a carbon price.
 - **pollination** — the share of crop value attributable to pollinators.
 - **erosion** — sediment retention, valued as avoided on-farm and downstream damage.
 - **fisheries** — a fisheries shock from the CWoN accounts; its valuation is external to the module.
-- **coastal_carbon** — coastal (blue-carbon) stock, valued at a carbon price.
+- **landslide_mitigation** — soil/sediment retention against landslides (folded from the author's v0.2.0 release).
+- **Five accounting services** — crop, livestock, coastal protection, extractive materials, renewable energy: national-accounts valuations on the shared country key.
 
 # GEP valuation
 
@@ -67,8 +69,11 @@ format:
 
 # Roadmap
 
-## Where things stand
+## Where things stand (verified numbers only)
 
-- terrestrial_carbon is the reference implementation: the run files are split by purpose, the density is consumed from base data, and the GEP valuation runs end to end.
-- pollination, erosion, fisheries, and coastal_carbon are being conformed to the same structure.
-- Next: complete the per-service GEP valuations, wire the shared zone-to-iso3 aggregation, and publish combined GEP and shock results.
+- terrestrial_carbon is the reference implementation; its GEP replicates the manuscript to the dollar ($5.365T, 2019).
+- coastal_carbon's verification run is complete and replicates the author's design exactly: **$22.84bn EEZ-only**, **$102.18bn over all rows** — which side of the shoreline belongs in coastal GEP (and how to avoid double-counting with terrestrial carbon) is an open design decision.
+- Accounting services verified by rerun: crop ≈ $678bn (FAOSTAT thousand-USD units, to be labeled), coastal protection $36.72bn, extractive $99.54bn (exact match to the author's reference; its 0.49 factor needs a documented source). Livestock is quarantined on three owner-level defects.
+- pollination's GEP runs on the template; raster-side $18.28B (2023) vs FAO-side $515B poses the definitional question for the service team.
+- erosion and landslide_mitigation are folded and verified structurally; their numbers wait on the authors' submissions.
+- Open repo-wide decisions: the choropleth convention (r264 vs dissolved r250), the coastal shoreline convention, subsistence subgroups from the service sheet.
