@@ -12,7 +12,7 @@ print(sys.executable)
 from osgeo import gdal
 print(gdal.__version__)
 
-from global_invest.coastal_protection import coastal_protection_initialization
+from global_invest.coastal_protection import coastal_protection_initialize
 from global_invest.coastal_protection import coastal_protection_functions
 
 
@@ -228,7 +228,7 @@ def gep_load_results(p):
     
     # Learn the paths by creating a temp task treep
     p_temp = hb.ProjectFlow()
-    coastal_protection_initialization.build_gep_service_calculation_task_tree(p_temp)
+    coastal_protection_initialize.build_gep_service_calculation_task_tree(p_temp)
     p_temp.set_all_tasks_to_skip_if_dir_exists()
     p_temp.execute()
     

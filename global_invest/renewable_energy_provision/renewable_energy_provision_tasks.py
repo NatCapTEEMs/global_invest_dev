@@ -7,7 +7,7 @@ import csv
 import numpy as np
 from pathlib import Path
 
-from global_invest.renewable_energy_provision import renewable_energy_provision_initialization
+from global_invest.renewable_energy_provision import renewable_energy_provision_initialize
 from global_invest.renewable_energy_provision import renewable_energy_provision_functions
 # from global_invest.renewable_energy_provision import renewable_energy_provision_defaults
 
@@ -242,7 +242,7 @@ def gep_load_results(p):
     
     # Learn the paths by creating a temp task treep
     p_temp = hb.ProjectFlow()
-    renewable_energy_provision_initialization.build_gep_service_calculation_task_tree(p_temp)
+    renewable_energy_provision_initialize.build_gep_service_calculation_task_tree(p_temp)
     p_temp.set_all_tasks_to_skip_if_dir_exists()
     p_temp.execute()
     
