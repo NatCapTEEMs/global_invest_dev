@@ -4,23 +4,53 @@ add_erosion_tasks dispatches STATIC (read the pre-computed erosion dependency ta
 from the SEALS maps via InVEST SDR, #26) on whether 'erosion' is listed in p.dynamic_es. Consumers
 (ngfs_pnas) set the shared es_shock_* config on p, then call add_erosion_tasks(p) alongside the other seams.
 
-BRINGING THE GEP VALUATION IN LATER -- the recipe, so nobody has to work it out twice.
-`global_erosion_gep` (the prevention-share GEP valuation this method comes from) is already written to
-this repo's layout and drops in beside these tasks. Checked against it:
-
-  * erosion_functions.py -- its 28 functions vs the 7 here: ZERO name collisions. Straight append.
-  * erosion_tasks.py     -- its 3 tasks vs the 5 here:      ZERO name collisions. Straight append.
-  * erosion_initialize.py -- take its build_erosion_task_tree / _calculation_ / _results_ variants;
-    DROP its two-line add_erosion_tasks, which only aliases build_erosion_task_tree. Consumers call
-    build_erosion_task_tree directly, exactly as terrestrial_carbon does with build_gep_task_tree.
-    add_erosion_tasks below stays the ES-shock entry point.
-  * erosion_utils.py -- new file, no collision.
-  * ⚠ THE ONE REAL BLOCKER: three module-level `.mkdir(parents=True)` calls (its lines ~118, ~389,
-    ~1446) run AT IMPORT against hardcoded cluster paths. Move them inside the functions that write
-    there before appending, or importing global_invest.erosion starts creating directories. Its other
-    81 module-level statements are plain Path constants and are harmless.
+THE GEP VALUATION IS FOLDED IN (2026-08-16, per the recipe that used to live here): the
+prevention-share valuation from `global_erosion_gep` -- InVEST SDR -> on-farm/upstream prevention
+shares -> per-country GEP -> maps/figures. Its functions/tasks were appended to
+erosion_functions.py / erosion_tasks.py (zero name collisions; the one duplicate, SPAM_ALIAS_MAP,
+kept OUR corrected exact-FAO-name version), erosion_utils.py arrived as a new file, and every
+import-time side effect was made lazy (output-dir mkdirs, natcap imports, the root-logging/gdal
+env block -- see the fold separator in erosion_functions.py). Its builders are exposed below under
+the template names (build_gep_service_*); its two-line add_erosion_tasks alias was dropped --
+add_erosion_tasks here stays the ES-shock seam. ⚠ The GEP chain is cluster-scale (global InVEST
+SDR): folded and import-clean, NOT yet number-verified -- see the tracker.
 """
 from global_invest.erosion import erosion_tasks
+
+
+def initialize_paths(p):
+    """Resolve the erosion GEP inputs on p via get_path REFERENCE paths (the configure_* functions
+    read these attrs at run time; their built-in defaults point at the source repo's cluster layout
+    and are never used once this ran). Section-A (InVEST SDR) inputs are fully staged in base_data
+    at the 6.45 km analysis grid. The three section-B valuation CSVs (FAO GPV / FAO prices / WB GDP
+    2019) and the upstream-prevention rasters are the service owner's artifacts, not yet in
+    base_data: resolved tolerantly so section A runs; the valuation crashes loudly until they are
+    staged (requested via the erosion submission).
+    """
+    import os
+    # Section A -- InVEST SDR.
+    p.erosion_dem_path = p.get_path('global_invest', 'sdr', 'global_dem_reproj.tif')
+    p.erosion_sdr_input_dir = os.path.dirname(p.erosion_dem_path)
+    p.erosion_lulc_path = p.get_path('global_invest', 'sdr', 'lulc_esa_2019_reproj_6p45km.tif')
+    p.erosion_biophysical_table_path = p.get_path('global_invest', 'sdr', 'expanded_biophysical_table_gura.csv')
+    p.erosion_erodibility_path = p.get_path('soil', 'erodibility_30s.tif')
+    p.erosion_erosivity_path = p.get_path('soil', 'erosivity_30s.tif')
+    p.erosion_watersheds_path = p.get_path('global_invest', 'sdr', 'hybas_global_lev06_v1c.gpkg')
+    # Section B -- prevention shares + valuation.
+    p.erosion_yield_stack_path = p.get_path('global_invest', 'sdr', 'spam2020_yield_stack_TA.tif')
+    p.erosion_area_stack_path = p.get_path('global_invest', 'sdr', 'spam2020_harvested_area_stack_TA.tif')
+    p.erosion_bandmap_csv_path = p.get_path('global_invest', 'sdr', 'spam2020_bandmap.csv')
+    p.erosion_elasticity_csv_path = p.get_path('global_invest', 'sdr', 'elasticity_crops_fao_revised.csv')
+    p.erosion_elevation_path = p.erosion_dem_path
+    p.erosion_country_boundary_path = p.get_path('cartographic', 'ee', 'ee_r250.gpkg')
+    p.erosion_fao_gpv_iso3_csv_path = p.get_path('global_invest', 'sdr', 'faostat_gpv_2019_iso3.csv',
+                                                 raise_error_if_fail=False)
+    p.erosion_fao_prices_csv_path = p.get_path('global_invest', 'sdr', 'faostat_prices_2019_completed_revised.csv',
+                                               raise_error_if_fail=False)
+    p.erosion_gdp_csv_path = p.get_path('global_invest', 'sdr', 'worldbank_gdp_2019.csv',
+                                        raise_error_if_fail=False)
+    return p
+
 
 
 def add_erosion_tasks(p, parent=None):
@@ -69,4 +99,29 @@ def add_erosion_tasks(p, parent=None):
     p.erosion_upstream_task = p.add_task(erosion_tasks.task_erosion_upstream, parent=parent, skip_existing=1)
     p.erosion_exposure_task = p.add_task(erosion_tasks.task_erosion_exposure, parent=parent, skip_existing=1)
     p.erosion_shock_task    = p.add_task(erosion_tasks.task_erosion_shock, parent=parent)
+    return p
+
+
+# ---------------------------------------------------------------------------------------------
+# GEP task trees (folded from global_erosion_gep; template names, cf. terrestrial_carbon).
+# ---------------------------------------------------------------------------------------------
+def build_gep_service_calculation_task_tree(p):
+    """GEP calculation tree: InVEST SDR run + prevention-share per-country GEP valuation.
+    skip_existing=1 on the SDR task (dir present -> paths published, work skipped); the valuation
+    registers plain and skips on its registered result, like every service's gep_calculation."""
+    p.task_run_invest_sdr = p.add_task(erosion_tasks.task_run_invest_sdr, skip_existing=1)
+    p.task_compute_prevention_shares = p.add_task(erosion_tasks.task_compute_prevention_shares)
+    return p
+
+
+def build_gep_service_results_task_tree(p):
+    """Results-only: render maps/figures from an existing prevention-share run."""
+    p.task_generate_maps_and_figures = p.add_task(erosion_tasks.task_generate_maps_and_figures, skip_existing=1)
+    return p
+
+
+def build_gep_service_task_tree(p):
+    """Full GEP run: SDR + valuation + maps/figures."""
+    p = build_gep_service_calculation_task_tree(p)
+    p.task_generate_maps_and_figures = p.add_task(erosion_tasks.task_generate_maps_and_figures, skip_existing=1)
     return p

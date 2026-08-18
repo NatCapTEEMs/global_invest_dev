@@ -3,20 +3,14 @@ import sys
 import pandas as pd
 import hazelbean as hb
 import subprocess
-import csv       
-import numpy as np
-from pathlib import Path
 
-from global_invest.renewable_energy_provision import renewable_energy_provision_initialization
+from global_invest.renewable_energy_provision import renewable_energy_provision_initialize
 from global_invest.renewable_energy_provision import renewable_energy_provision_functions
-# from global_invest.renewable_energy_provision import renewable_energy_provision_defaults
 
 def renewable_energy_provision(p):
     """
-    Parent task for commercial agriculture.
+    Parent task for renewable energy provision. Inputs resolve in initialize_paths.
     """
-    p.fao_input_ref_path = os.path.join('global_invest', 'renewable_energy_provision', 'Value_of_Production_E_All_Data.csv')
-    p.cwon_crop_coefficients_ref_path = os.path.join('global_invest', 'renewable_energy_provision', "CWON2024_crop_coef.csv")
 
 def gep_preprocess(p):
     """
@@ -56,8 +50,6 @@ def gep_calculation(p):
 
         print('Calculating Gross Ecosystem Product (GEP) for Renewable Energy Production.')
         # set dir
-        # hb.create_shortcut
-        data_dir = hb.Path(p.base_data_dir, 'global_invest', 'renewable_energy_provision')
         output_dir = hb.Path(p.cur_dir)
 
         #############
@@ -65,8 +57,7 @@ def gep_calculation(p):
         #############
 
         # load data
-        df_path = os.path.join(data_dir, 'IRENA_prod_by_country.csv')
-        df = pd.read_csv(df_path)
+        df = pd.read_csv(p.irena_production_ref_path)
 
         # aggregate generation technologies
         aggregated_df = (
@@ -88,8 +79,7 @@ def gep_calculation(p):
 
         # Load World Bank data
 
-        wb_path = os.path.join(data_dir, 'WB_price_data.csv')
-        wb_df = pd.read_csv(wb_path)
+        wb_df = pd.read_csv(p.wb_price_ref_path)
 
         # Convert Price from cents/kWh to USD/GWh
         wb_df['Price'] = wb_df['Price'] * 10000
@@ -111,9 +101,7 @@ def gep_calculation(p):
         ########################
 
         # load resource rent data
-        alpha_data_name = 'CWON_resource_rent_data.csv'
-        alpha_path = os.path.join(data_dir, alpha_data_name)
-        a_df = pd.read_csv(alpha_path)
+        a_df = pd.read_csv(p.cwon_resource_rent_ref_path)
 
         merge_cols = ['Country', 'Year']
 
@@ -242,7 +230,7 @@ def gep_load_results(p):
     
     # Learn the paths by creating a temp task treep
     p_temp = hb.ProjectFlow()
-    renewable_energy_provision_initialization.build_gep_service_calculation_task_tree(p_temp)
+    renewable_energy_provision_initialize.build_gep_service_calculation_task_tree(p_temp)
     p_temp.set_all_tasks_to_skip_if_dir_exists()
     p_temp.execute()
     

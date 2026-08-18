@@ -1,0 +1,21 @@
+project:
+  type: book
+  output-dir: ../HTML_global_invest_docs
+
+book:
+  title: "Global InVEST"
+  subtitle: "Ecosystem-service valuation (GEP) and scenario shocks"
+  author: "NatCapTEEMs"
+  date: today
+  page-navigation: true
+  search: true
+  chapters:
+    - index.qmd
+
+# overview_marked.qmd is deliberately absent: it is a generated revealjs deck
+# (the *_marked.qmd convention), not a book chapter.
+
+format:
+  html:
+    theme: yeti
+    toc: true

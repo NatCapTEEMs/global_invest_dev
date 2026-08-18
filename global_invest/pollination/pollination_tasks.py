@@ -9,6 +9,7 @@ import os
 import glob
 import numpy as np
 import pandas as pd
+import hazelbean as hb
 from global_invest import utilities
 
 
@@ -31,7 +32,7 @@ def task_compute_pollination_shock(p):
     # (only this dynamic path, via pollination_functions, needs it).
     from global_invest.pollination import pollination_functions as pf
 
-    base_scn     = getattr(p, 'es_shock_base_scenario', 'baseline_ignore_dependencies')
+    base_scn     = utilities.required_base_scenario(p, 'pollination')
     base_year    = int(p.es_shock_base_year)
     acts         = getattr(p, 'pollination_shock_acts', ('V_F', 'OSD'))
     scenarios    = list(p.es_shock_scenarios)
@@ -107,6 +108,7 @@ def task_compute_pollination_shock(p):
                                  'value_usd_base': base_usd})
 
     out = pd.DataFrame(rows)
+    utilities.assert_shock_table_sound(out, scenarios, 'pollination')
     out.to_csv(p.pollination_shock_output_path, index=False)
     print('  pollination shock: %d rows, %d scenarios (shock_pct=shock_pct_contemp=/baseline-year value, shock_pct_fixedbase=/2023 value) -> %s'
           % (len(out), out['scenario'].nunique() if rows else 0, p.pollination_shock_output_path))
@@ -129,7 +131,9 @@ def task_compute_pollination_shock_static(p):
     base_year. NEVER writes back to raw_dependencies -- output goes to p.pollination_shock_output_path
     (pollination_interpolated.csv), the same file the dynamic task writes. Caller sets:
     es_shock_base_year, es_shock_end_year, es_shock_scenarios,
-    pollination_shock_output_path; scenario->raw via p.pollination_scenario_map (default);
+    pollination_shock_output_path; scenario->raw via p.pollination_scenario_map (default: identity --
+    each scenario maps to its own name; a scenario the table labels differently is warned about loudly
+    and skipped rather than silently zeroed, so set the map for those);
     sectors via p.pollination_shock_acts (default ('V_F', 'OSD'), matching the dynamic task).
     """
     # Default into the es_shocks parent dir. Runtime, not build time: p.es_shock_dir is
@@ -142,7 +146,7 @@ def task_compute_pollination_shock_static(p):
     base_year = int(p.es_shock_base_year)
     end_year = int(p.es_shock_end_year)
     n_years = end_year - base_year
-    scenario_map = getattr(p, 'pollination_scenario_map', utilities.ES_SCENARIO_MAP)
+    scenario_map = getattr(p, 'pollination_scenario_map', {})
     scenarios = list(p.es_shock_scenarios)
     acts = getattr(p, 'pollination_shock_acts', ('V_F', 'OSD'))
 
@@ -153,14 +157,23 @@ def task_compute_pollination_shock_static(p):
         return
 
     df = pd.read_csv(poll_path)
+    # Normalise the one year-suffixed label so pollination's table presents the same scenario names as
+    # the other services (carbon is plain everywhere, erosion strips '_2050' on read). net_zero_2050 is
+    # the only alias here, so target it explicitly rather than a blunt '_2050' strip that would silently
+    # mangle any future label carrying that suffix. Keeps the consumer's scenario_map at identity.
+    df['scenario'] = df['scenario'].replace({'net_zero_2050': 'net_zero'})
     df = df[df['ENDW'] != 'AEZ0']  # AEZ0 not valid in GTAP
-    base = df[df['scenario'] == 'baseline_ignore_damages'].set_index(['ENDW', 'REG'])['value'].astype(float)
+    # Honour the configured base and resolve it through the candidate mechanism (fatal if absent).
+    # The previous hardcoded 'baseline_ignore_damages' was right only because this table happens to
+    # use that spelling; it silently ignored p.es_shock_base_scenario.
+    base_scn = utilities.required_base_scenario(p, 'pollination')
+    raw_base = utilities.resolve_base_scenario(df['scenario'].values, scenario_map, base_scn, 'pollination')
+    base = df[df['scenario'] == raw_base].set_index(['ENDW', 'REG'])['value'].astype(float)
 
     rows = []
     for our_scn in scenarios:
-        candidates = scenario_map.get(our_scn)
-        raw_scn = next((c for c in candidates if c in df['scenario'].values), None) if candidates else None
-        if not raw_scn:
+        raw_scn = utilities.resolve_raw_scenario(df['scenario'].values, scenario_map, our_scn, 'pollination')
+        if raw_scn is None:
             continue
         scn_vals = df[df['scenario'] == raw_scn].set_index(['ENDW', 'REG'])['value'].astype(float)
         common = base.index.intersection(scn_vals.index)
@@ -173,9 +186,87 @@ def task_compute_pollination_shock_static(p):
                                  'scenario': our_scn, 'year': year, 'shock_pct': val * frac})
 
     out = pd.DataFrame(rows)
+    utilities.assert_shock_table_sound(out, scenarios, 'pollination')
     out.to_csv(p.pollination_shock_output_path, index=False)
     nz = out[(out['year'] == end_year) & (out['shock_pct'] != 0)] if len(out) else out
     print('  pollination shock: %d rows, %d scenarios, %d nonzero @%d (static, uncapped) -> %s'
           % (len(out), out['scenario'].nunique() if len(out) else 0, len(nz), end_year,
              p.pollination_shock_output_path))
     return True
+
+
+# =============================================================================
+# GEP valuation tasks. The ES shock above and the valuation below are separate
+# consumers of the same crop_benefits science; neither depends on the other.
+# The value raster (poll_value_global_<year>usd.tif, a crop_benefits output) is
+# USD per cell with crop prices and pollination dependence already embedded
+# upstream, so lambda = 1 and no price join happens here: quantity IS value.
+# =============================================================================
+
+def task_summarize_pollination_value_by_region(p):
+    """GEP quantity stage: per-r264-region sum of the pollination value raster (USD per cell)."""
+    p.pollination_value_by_region_path = os.path.join(p.cur_dir, "pollination_value_by_region.csv")
+    if not p.run_this:
+        return
+    utilities.summarize_raster_by_region(
+        value_raster_path=p.pollination_value_raster_path,
+        region_boundary_path=p.gdf_countries_vector_path,
+        out_path=p.pollination_value_by_region_path,
+        year=p.base_year, id_column='ee_r264_id')
+    return True
+
+
+def gep_calculation(p):
+    """GEP valuation for pollination: r264 region values -> ONE row per country (r250)."""
+    service_results = {}
+    p.results['pollination'] = service_results
+    p.results['pollination']['gep_by_country_base_year'] = os.path.join(p.cur_dir, "gep_by_country_base_year.csv")
+    # Only register results this task actually writes (per-year results belong to a multi-year run).
+
+    if hb.path_all_exist(list(service_results.values())):
+        hb.log("All results already exist. Skipping GEP calculation for pollination.")
+        return
+    hb.log("Starting GEP calculation for pollination.")
+
+    # 1. Per-region (r264) USD value -> aggregate to one row per COUNTRY (r250). Summing the
+    #    r264-expanded table instead would double-count split countries (see utilities docstring).
+    df_q264 = pd.read_csv(p.pollination_value_by_region_path)
+    df_250 = (df_q264.groupby(['iso3_r250_id', 'year'], as_index=False)['total'].sum()
+              .rename(columns={'total': 'pollination_gep'}))
+
+    # 2. Attach per-country attributes and write the per-country CSV (source of truth for every sum).
+    attr_cols = ['iso3_r250_id', 'iso3_r250_label', 'iso3_r250_name',
+                 'continent', 'region_un', 'region_wb', 'income_grp', 'subregion']
+    keep_cols = attr_cols + ['year', 'pollination_gep']
+    df_gep = df_250.merge(df_q264[attr_cols].drop_duplicates('iso3_r250_id'),
+                          how='left', on='iso3_r250_id')[keep_cols]
+    hb.df_write(df_gep, service_results['gep_by_country_base_year'])
+
+    # 3. Map only: r264-expanded, each sub-region carries its country's value, never summed
+    #    (carbon template; the repo-wide map convention is the open flag-3 decision).
+    df_regions = df_q264.merge(df_250[['iso3_r250_id', 'pollination_gep']], how='left', on='iso3_r250_id')
+    gdf = hb.df_merge(p.gdf_countries_simplified, df_regions, how='outer',
+                      left_on='ee_r264_id', right_on='ee_r264_id')
+    gdf.to_file(service_results['gep_by_country_base_year'].replace('.csv', '.gpkg'), driver='GPKG')
+
+    # 4. National total = sum over the one-row-per-country table.
+    value_gep_base_year = df_gep['pollination_gep'].sum()
+    hb.log(f"Total pollination GEP for base year {p.base_year}: {value_gep_base_year}")
+    return value_gep_base_year
+
+
+def gep_load_results(p):
+    """Load GEP results from a PRIOR calculation run so the report renders without recomputing.
+    Fails loudly if absent (run run_pollination.py first). The results-only entry point."""
+    result_path = os.path.join(p.intermediate_dir, 'gep_calculation', 'gep_by_country_base_year.csv')
+    if not hb.path_exists(result_path):
+        raise FileNotFoundError(
+            f"pollination GEP results not found at {result_path}. "
+            f"Run the calculation first (run_pollination.py), then re-run results.")
+    p.results.setdefault('pollination', {})
+    p.results['pollination']['gep_by_country_base_year'] = result_path
+
+
+def gep_result(p):
+    """Render the results report(s). Shared implementation in utilities."""
+    utilities.render_service_results(p)

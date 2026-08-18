@@ -9,7 +9,8 @@ import numpy as np
 
 from global_invest import utilities
 from global_invest.terrestrial_carbon import terrestrial_carbon_functions
-from global_invest.terrestrial_carbon import terrestrial_carbon_initialize
+
+SPAWN_INTEGER_SCALE = 0.1  # raw Spawn tiles store carbon as integers x10; x0.1 recovers Mg C/ha
 
 
 def terrestrial_carbon(p):
@@ -19,89 +20,34 @@ def terrestrial_carbon(p):
     return True
 
 
-def task_convert_carbon_density_maps_dtype(p):
-    """
-    Task to convert all uint TIFF carbon density rasters in a folder
-    to float32 with scaled values, saving them with '_float' suffix.
-
-    Parameters
-    ----------
-    p : ProjectFlow
-        Must contain p.base_data_dir (input folder path).
-    """
-    input_folder = p.get_path('terrestrial_carbon', 'spawn_2020')
-    output_folder = p.cur_dir
-
-    raw_carbon_density_maps = [
-        f for f in os.listdir(input_folder)
-        if f.endswith("biomass_carbon_2010.tif") and not f.startswith("._")
-    ]
-
-    for file in raw_carbon_density_maps:
-        input_path = os.path.join(input_folder, file)
-
-        name_root, ext = os.path.splitext(file)
-        output_name = f"{name_root}_float{ext}"
-        output_path = os.path.join(output_folder, output_name)
-
-        terrestrial_carbon_functions.convert_uint_to_float_raster(
-            input_path=input_path,
-            output_path=output_path,
-            scale_factor=0.1,
-            compress="lzw"
-        )
-
-    print("Finished converting all carbon density rasters to float.")
-
-
-
-def task_combine_two_carbon_density_maps(p):
-    """
-    Task to combine aboveground and belowground biomass carbon maps using functions.
-    """
-
-    # Input and output paths
-    p.agb_path = p.get_path(os.path.join(p.task_convert_carbon_density_maps_dtype_dir,"aboveground_biomass_carbon_2010_float.tif"))
-    p.bgb_path = p.get_path(os.path.join(p.task_convert_carbon_density_maps_dtype_dir,"belowground_biomass_carbon_2010_float.tif"))
-    p.total_carbon_output_path = os.path.join(p.cur_dir, "total_biomass_carbon_2010_float.tif")
-
-    # Run the function
-    result = terrestrial_carbon_functions.combine_two_float_rasters(
-        raster1_path=p.agb_path,
-        raster2_path=p.bgb_path,
-        out_path=p.total_carbon_output_path,
-        operation=lambda a, b: a + b,  # Default operation: addition
-        fill_value=np.nan,
-        compress="lzw")
-
-    return True
-
-
 def task_reproject_total_carbon_density(p):
     """
     Task to reproject the total carbon density raster to the project's coordinate reference system (CRS).
     """
 
-    # Input and output paths
-    # p.total_carbon_density_path = p.get_path(os.path.join(p.task_combine_two_carbon_density_maps, "total_biomass_carbon_2010_float.tif")) Defined above
+    # Input: the total biomass-carbon density raster. This is a one-off base-data product (raw Spawn
+    # aboveground+belowground already converted and combined), consumed from base_data rather than
+    # rebuilt per run. Overridable via p.total_carbon_density_path.
+    p.total_carbon_density_path = getattr(p, 'total_carbon_density_path', None) or p.get_path('carbon_storage', 'spawn_total_biomass_carbon_2010.tif')
     p.reprojected_total_carbon_density_path = os.path.join(p.cur_dir, "total_biomass_carbon_2010_float_reprojected.tif")
+    if not p.run_this:
+        return True
 
-    # Run the function
-    result = terrestrial_carbon_functions.reproject_raster(
-        input_path=p.total_carbon_density_path,
-        reference_path=p.base_year_lulc_path,
-        output_path=p.reprojected_total_carbon_density_path,
-        compress="lzw",
-        chunks={"x": 1024, "y": 1024},
-        overwrite=False
-        )
-
+    # Align the density raster to the base-year LULC grid. output_data_type=6 (Float32) keeps the
+    # carbon values -- without it the grid-matcher inherits the LULC uint8 dtype and rounds them; with
+    # it, plus 'near' and NaN nodata, the output is bit-for-bit identical to the previous rioxarray
+    # reproject_match (verified cell-by-cell against the cached run).
+    hb.resample_to_match(p.total_carbon_density_path, p.base_year_lulc_path,
+                         p.reprojected_total_carbon_density_path,
+                         resample_method='near', output_data_type=6, src_ndv=np.nan, ndv=np.nan)
     return True
 
 
 def task_compute_carbon_density_table(p):
 
     p.carbon_density_lookup_table_path = os.path.join(p.cur_dir, "carbon_density_lookup_table.csv")
+    if not p.run_this:
+        return True
 
     result = terrestrial_carbon_functions.stack_layers_to_csv(
         group_layer1_path=p.base_year_lulc_path,
@@ -110,14 +56,15 @@ def task_compute_carbon_density_table(p):
         output_path=p.carbon_density_lookup_table_path,
         group1_name="lulc_id",
         group2_name="carbon_zone_id",
-        value_name="carbon_density",
-        num_slices=100)
+        value_name="carbon_density")
     return True
 
 
 def task_generate_carbon_density_raster_base_year(p):
 
     p.carbon_density_raster_base_year_path = os.path.join(p.cur_dir, "projected_carbon_density_2019.tif")
+    if not p.run_this:
+        return True
     result = terrestrial_carbon_functions.generate_carbon_density_raster(
         lulc_path=p.base_year_lulc_path,
         cz_path=p.carbon_zones_path,
@@ -129,17 +76,53 @@ def task_generate_carbon_density_raster_base_year(p):
 def task_generate_carbon_density_raster_per_cell_base_year(p):
     p.ha_per_cell_10sec_ref_path = p.get_path('pyramids', 'ha_per_cell_10sec.tif')
     p.projected_carbon_density_2019_per_cell_path = os.path.join(p.cur_dir, 'projected_carbon_density_2019_per_cell.tif')
+    if not p.run_this:
+        return True
     hb.multiply(p.carbon_density_raster_base_year_path, p.ha_per_cell_10sec_ref_path, p.projected_carbon_density_2019_per_cell_path)
     return True
 
 
 def task_summarize_carbon_by_region(p):
     p.carbon_by_region_base_year_path = os.path.join(p.cur_dir, "gep_by_country_base_year.csv")
+    if not p.run_this:
+        return True
     result = terrestrial_carbon_functions.summarize_raster_by_region(
         value_raster_path=p.projected_carbon_density_2019_per_cell_path,
         region_boundary_path=p.gdf_countries_vector_path,
-        out_path=p.carbon_by_region_base_year_path)
+        out_path=p.carbon_by_region_base_year_path,
+        year=p.base_year, id_column='ee_r264_id')
     return result
+
+
+def gep_preprocess(p):
+    """Rebuild the base-data carbon-density raster (carbon_storage/spawn_total_biomass_carbon_2010.tif)
+    that both the GEP valuation and the shock consume. A one-off base-data job: registered only in
+    build_gep_service_preprocess_task_tree, NOT in the default run, and its product is promoted to
+    base_data/carbon_storage and read from there by the per-run tasks.
+
+    total = aboveground + belowground (Mg C/ha). When the raw Spawn tiles (uint, carbon stored x10) are
+    present under base_data/terrestrial_carbon/spawn_2020, first scale them to Mg C/ha and reproject onto
+    the base-year LULC grid to (re)make the *_projected rasters; otherwise start from the projected
+    rasters already in carbon_storage. All raster ops go through hazelbean.
+    """
+    p.spawn_total_carbon_density_path = os.path.join(p.base_data_dir, 'carbon_storage', 'spawn_total_biomass_carbon_2010.tif')
+    if not p.run_this:
+        return True
+
+    carbon_storage_dir = os.path.join(p.base_data_dir, 'carbon_storage')
+    spawn_raw_dir = os.path.join(p.base_data_dir, 'terrestrial_carbon', 'spawn_2020')
+    projected = {}
+    for band in ('aboveground', 'belowground'):
+        projected[band] = os.path.join(carbon_storage_dir, 'spawn_%s_biomass_carbon_2010_projected.tif' % band)
+        raw = os.path.join(spawn_raw_dir, 'spawn_%s_biomass_carbon_2010.tif' % band)
+        if os.path.exists(raw):   # raw Spawn present -> (re)build the projected raster from it
+            scaled = os.path.join(p.cur_dir, 'spawn_%s_biomass_carbon_2010_scaled.tif' % band)
+            hb.raster_calculator_flex(raw, lambda a: a * SPAWN_INTEGER_SCALE, scaled)
+            hb.reproject_dataset_to_match(scaled, p.base_year_lulc_path, projected[band], 'near')
+
+    hb.raster_calculator_flex([projected['aboveground'], projected['belowground']],
+                              lambda a, b: a + b, p.spawn_total_carbon_density_path)
+    return True
 
 
 def gep_calculation(p):
@@ -148,11 +131,8 @@ def gep_calculation(p):
     service_results = {}
     p.results['terrestrial_carbon'] = service_results
     p.results['terrestrial_carbon']['gep_by_country_base_year'] = os.path.join(p.cur_dir, "gep_by_country_base_year.csv")
-
-    # Optional additional results.
-    p.results['terrestrial_carbon']['gep_by_country_year'] = os.path.join(p.cur_dir, "gep_by_country_year.csv")
-    p.results['terrestrial_carbon']['gep_by_country_year'] = os.path.join(p.cur_dir, "gep_by_country_year.csv")
-    p.results['terrestrial_carbon']['gep_by_year'] = os.path.join(p.cur_dir, "gep_by_year.csv")
+    # Only register results this task actually writes. Per-year results (gep_by_country_year, gep_by_year)
+    # belong to a multi-year run and are registered there, not in this base-year valuation.
 
     # Check if all results exist
     if hb.path_all_exist(list(service_results.values())):
@@ -164,142 +144,63 @@ def gep_calculation(p):
         # p.gdf_countries = hb.read_vector(p.gdf_countries)
         # p.gdf_countries = hb.read_vector(p.gdf_countries_simplified)
 
-        # 1. Read and process data
+        # 1. Per-region (r264) carbon quantity -> aggregate to one row per COUNTRY (r250).
         df_carbon_q264 = pd.read_csv(p.carbon_by_region_base_year_path)
         df_carbon_q250 = (
             df_carbon_q264
-            .groupby(['iso3_r250_id', 'year'])['total']
+            .groupby(['iso3_r250_id', 'year'], as_index=False)['total']
             .sum()
-            .reset_index()
-            .sort_values('total', ascending=False)  # Sort by highest total first
-            .drop_duplicates('iso3_r250_id', keep='first')  # Keep the first (highest) entry per ID
+            .rename(columns={'total': 'terrestrial_carbon_quantity'})
         )
-        df_carbon_q = df_carbon_q250.rename(columns={'total': 'terrestrial_carbon_quantity'})
-        df_carbon_p = pd.read_excel(p.carbon_prices_path)
-        df_carbon_p = df_carbon_p[[p.carbon_price, 'year']]
-        df_gep_by_country_base_year_terrestrial_carbon = df_carbon_q.merge(df_carbon_p,how='left',on='year') # marge on year to get the carbon price
-        df_gep_by_country_base_year_terrestrial_carbon['terrestrial_carbon_gep'] = df_gep_by_country_base_year_terrestrial_carbon['terrestrial_carbon_quantity'] * df_gep_by_country_base_year_terrestrial_carbon[p.carbon_price]
-        df_gep_by_country_base_year_terrestrial_carbon = df_gep_by_country_base_year_terrestrial_carbon.merge(df_carbon_q264,how='left',on='iso3_r250_id')
-        df_gep_by_country_base_year_terrestrial_carbon['year'] = df_gep_by_country_base_year_terrestrial_carbon['year_x']
 
-        cols_to_keep = [
-            'ee_r264_id',
-            'iso3_r250_id',
-            'ee_r264_label',
-            'iso3_r250_label',
-            'ee_r264_name',
-            'iso3_r250_name',
-            'continent',
-            'region_un',
-            'region_wb',
-            'income_grp',
-            'subregion',
-            'year',
-            'terrestrial_carbon_quantity',
-            p.carbon_price,
-            'terrestrial_carbon_gep',
-        ]
+        # 2. Country-level (r250) GEP = quantity * price. ONE row per country: this is the source of truth
+        #    for the CSV, the national total and every aggregation. The r264-expanded table (used for the
+        #    map below) repeats a country's GEP across its sub-regions -- China spans 6 r264 rows, India 6,
+        #    France/Turkey/UK/Pakistan 2 -- so summing it double-counts split countries (~23% too high).
+        #    Only the map ever touches the r264 rows, and it never sums them.
+        df_carbon_p = pd.read_excel(p.carbon_prices_path)[[p.carbon_price, 'year']]
+        df_gep_250 = df_carbon_q250.merge(df_carbon_p, how='left', on='year')
+        df_gep_250['terrestrial_carbon_gep'] = df_gep_250['terrestrial_carbon_quantity'] * df_gep_250[p.carbon_price]
 
-        df_gep_by_country_base_year = df_gep_by_country_base_year_terrestrial_carbon[cols_to_keep]
-
-
-        # Write to CSVs
+        # Attach per-country attributes (one row per iso3 from the correspondence) and write the per-country CSV.
+        attr_cols = ['iso3_r250_id', 'iso3_r250_label', 'iso3_r250_name',
+                     'continent', 'region_un', 'region_wb', 'income_grp', 'subregion']
+        keep_cols = attr_cols + ['year', 'terrestrial_carbon_quantity', p.carbon_price, 'terrestrial_carbon_gep']
+        df_gep_by_country_base_year = df_gep_250.merge(
+            df_carbon_q264[attr_cols].drop_duplicates('iso3_r250_id'), how='left', on='iso3_r250_id')[keep_cols]
         hb.df_write(df_gep_by_country_base_year, p.results['terrestrial_carbon']['gep_by_country_base_year'])
 
-        # Use geopandas to merge the df_gep_by_country_base_year with the  to get the country names and other attributes
-        gdf_gep_by_country_base_year = hb.df_merge(p.gdf_countries_simplified, df_gep_by_country_base_year, how='outer', left_on='ee_r264_id', right_on='ee_r264_id')
+        # 3. Map only: attach each country's GEP to the r264 boundary geometry for the choropleth (each
+        #    sub-region shows its country's value). These rows are for plotting and must never be summed.
+        df_regions = df_carbon_q264.merge(df_gep_250[['iso3_r250_id', 'terrestrial_carbon_gep']], how='left', on='iso3_r250_id')
+        gdf_gep_by_country_base_year = hb.df_merge(p.gdf_countries_simplified, df_regions, how='outer', left_on='ee_r264_id', right_on='ee_r264_id')
         gdf_gep_by_country_base_year.to_file(p.results['terrestrial_carbon']['gep_by_country_base_year'].replace('.csv', '.gpkg'), driver='GPKG')
 
-        # Then sum the values across all countries.
+        # 4. National total = sum over the one-row-per-country table.
         value_gep_base_year = df_gep_by_country_base_year['terrestrial_carbon_gep'].sum()
-
         hb.log(f"Total GEP value for base year 2019: {value_gep_base_year}")
 
         return value_gep_base_year
 
 def gep_result(p):
-    """Display the results of the GEP calculation."""
-    
-    # Set the quarto path to wherever the current script is running. This means that the environment used needs to have quarto, which may not be true on e.g. codespaces.
-    os.environ['QUARTO_PYTHON'] = sys.executable
-    
-    # Get the  list of current services run
-    services_run = list(p.results.keys())
-    
-    # Additional groupbys = []
-    
-    # Imply from the service name the file_path for the results_qmd
-    module_root = hb.get_projectflow_module_root()
-    
-    for service_label in services_run:
-        results_qmd_path = os.path.join(module_root, service_label, f'{service_label}_results.qmd')    
-        results_qmd_project_path = os.path.join(p.cur_dir, f'{service_label}_results.qmd')
-        hb.create_directories(results_qmd_project_path)  # Ensure the directory exists   
-        
-        # Copy it to the project dir for cmd line processing (but will be removed again later because it makes confusion when people try to edit it and then rerun the script which won't of course update the results.)
-        hb.path_copy(results_qmd_path, results_qmd_project_path)
-        
-        
-        quarto_command = f"quarto render {results_qmd_project_path}"
-        hb.log(f"Running quarto command: {quarto_command}")     
+    """Render the results report(s). Shared implementation in utilities (superset of the old
+    per-module copies: missing qmd raises, bib/csl sidecars copied, repo root on PYTHONPATH,
+    non-zero quarto exit raises)."""
+    utilities.render_service_results(p)
 
-        """Run quarto with debug information"""
-        # Set environment for more verbose output
-        env = os.environ.copy()
-        env['QUARTO_LOG_LEVEL'] = 'DEBUG'
-        
-        cmd = ['quarto', 'render', results_qmd_project_path, '--verbose']
-        
-        # print(f"Running command: {' '.join(results_qmd_project_path)}")
-        print(f"Working directory: {os.getcwd()}")
-        print(f"File exists: {os.path.exists(results_qmd_project_path)}")
-        
-        
-        
-        process = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,  # Combine stderr into stdout
-            text=True,
-            bufsize=1,  # Line buffering
-            universal_newlines=True
-        )
-        
-        # Read line by line as they come
-        while True:
-            line = process.stdout.readline()
-            if not line and process.poll() is not None:
-                break
-            if line:
-                print(line.rstrip())
-                sys.stdout.flush()  # Force immediate display
-        # remove results_qmd_project_path
-        hb.path_remove(results_qmd_project_path)
-        
 def gep_load_results(p):
-    
-    # Learn the paths by creating a temp task treep
-    p_temp = hb.ProjectFlow()
-    terrestrial_carbon_initialize.build_gep_service_calculation_task_tree(p_temp)
-    p_temp.set_all_tasks_to_skip_if_dir_exists()
-    p_temp.execute()
-    
-    print(p_temp.results)
-    pass
+    """Load the GEP results computed by a PRIOR calculation run, so the report can render without
+    recomputing. Fails loudly if they are not present -- run the calculation (run_terrestrial_carbon.py)
+    or promote the results into base_data first. This is the 'results-only' entry point.
+    """
+    result_path = os.path.join(p.intermediate_dir, 'gep_calculation', 'gep_by_country_base_year.csv')
+    if not hb.path_exists(result_path):
+        raise FileNotFoundError(
+            f"terrestrial_carbon GEP results not found at {result_path}. "
+            f"Run the calculation first (run_terrestrial_carbon.py), then re-run results.")
+    p.results.setdefault('terrestrial_carbon', {})
+    p.results['terrestrial_carbon']['gep_by_country_base_year'] = result_path
         
-def gep_results_distribution(p):
-    """Distribute the results of the GEP calculation."""
-    # This task is intended to copy the results to the output directory.
-    hb.log("Distributing GEP results...")
-    
-    for key, value in p.results['terrestrial_carbon'].items():
-        output_path = os.path.join(p.output_dir, key)
-        hb.path_copy(value, output_path)
-        hb.log(f"Distributed {key} to {output_path}")
-    
-    hb.log("GEP results distribution complete.")
-
-
 # =============================================================================
 # ES-shock tasks. These feed the GTAP shock; the GEP valuation above is a separate
 # consumer of the same carbon-density front-end. Neither depends on the other.
@@ -331,10 +232,9 @@ def task_compute_terrestrial_carbon_shock(p):
         p.terrestrial_carbon_shock_output_path = os.path.join(getattr(p, 'es_shock_dir', None) or p.project_dir, 'terrestrial_carbon_interpolated.csv')
     if not p.run_this:
         return
-    import pandas as pd
     import geopandas as gpd
 
-    base_scn     = getattr(p, 'es_shock_base_scenario', 'baseline_ignore_dependencies')
+    base_scn     = utilities.required_base_scenario(p, 'terrestrial_carbon')
     base_year    = int(p.es_shock_base_year)          # interp 0-anchor, set by the caller from config
     anchor_years = sorted(y for y in map(int, p.es_shock_years) if y > base_year)  # SEALS anchors (seals_years)
     end_year     = anchor_years[-1]
@@ -370,7 +270,6 @@ def task_compute_terrestrial_carbon_shock(p):
     # global 300 m; a SEALS LULC map may be a sub-window (single-country or short-horizon test AOI).
     # When they differ, align the zones to the end-year LULC extent once -- same resolution and an
     # aligned grid, so nearest is a lossless clip -- so the task works at any extent, not only global.
-    import hazelbean as hb
     from osgeo import gdal
     def _yx(path):
         ds = gdal.Open(path)
@@ -393,7 +292,7 @@ def task_compute_terrestrial_carbon_shock(p):
                 out_path=dens)
         summ = os.path.join(p.cur_dir, 'carbon_by_zone_%s_%d.csv' % (scenario, year))
         if not os.path.exists(summ):
-            terrestrial_carbon_functions.summarize_raster_by_region(dens, p.region_boundary_path, summ)
+            terrestrial_carbon_functions.summarize_raster_by_region(dens, p.region_boundary_path, summ, year=year, id_column='ee_r50_aez18_id')
         return pd.read_csv(summ).set_index('region_id')[val_col]
 
     # summarize_raster_by_region keys each zone by the stable ee_r50_aez18_id (see terrestrial_carbon_functions),
@@ -461,6 +360,7 @@ def task_compute_terrestrial_carbon_shock(p):
                              'shock_pct_fixedbase': vf, 'shock_pct_contemp': vc})
 
     out = pd.DataFrame(rows)
+    utilities.assert_shock_table_sound(out, scenarios, 'terrestrial_carbon')
     out.to_csv(p.terrestrial_carbon_shock_output_path, index=False)
     print('  carbon shock: %d rows, %d scenarios (shock_pct=shock_pct_contemp=/base_Y, shock_pct_fixedbase=/base_%d) -> %s'
           % (len(out), out['scenario'].nunique() if rows else 0, base_year, p.terrestrial_carbon_shock_output_path))
@@ -470,14 +370,16 @@ def task_compute_terrestrial_carbon_shock(p):
 def task_compute_terrestrial_carbon_shock_static(p):
     """Static per-scenario carbon shock -> FRS, linear ramp 0->end_year, from the frozen dependency table.
 
-    The fallback add_terrestrial_carbon_tasks selects when <2 SEALS map years exist (the dynamic recompute needs >=2
-    anchor maps to measure change). READS input_dir/raw_dependencies/carbon_storage_dependency.csv
-    (override p.terrestrial_carbon_dependency_path) and subtracts the baseline_ignore_dependencies row at 2050
+    add_terrestrial_carbon_tasks grafts this (instead of the dynamic recompute) when 'terrestrial_carbon' is NOT
+    in p.dynamic_es. READS input_dir/raw_dependencies/carbon_storage_dependency.csv
+    (override p.terrestrial_carbon_dependency_path) and subtracts the p.es_shock_base_scenario row at the end year
     (percentage_change x100), ramping that difference linearly from 0 at base_year. NEVER writes back to
     raw_dependencies -- the output goes to p.terrestrial_carbon_shock_output_path (terrestrial_carbon_interpolated.csv),
     the same file the dynamic task writes, so build_combined_afeall_cc_es is agnostic to which one ran.
     Caller sets: es_shock_base_year, es_shock_end_year, es_shock_scenarios,
-    terrestrial_carbon_shock_output_path; scenario->raw name via p.terrestrial_carbon_scenario_map (default utilities.ES_SCENARIO_MAP);
+    terrestrial_carbon_shock_output_path; scenario->raw name via p.terrestrial_carbon_scenario_map
+    (default: identity -- each scenario maps to its own name; a scenario the table labels differently is
+    warned about loudly and skipped rather than silently zeroed, so set the map for those);
     sector via p.terrestrial_carbon_shock_acts (default 'FRS', matching the dynamic task).
     """
     # Default into the es_shocks parent dir. Runtime, not build time: p.es_shock_dir is
@@ -486,14 +388,13 @@ def task_compute_terrestrial_carbon_shock_static(p):
         p.terrestrial_carbon_shock_output_path = os.path.join(getattr(p, 'es_shock_dir', None) or p.project_dir, 'terrestrial_carbon_interpolated.csv')
     if not p.run_this:
         return
-    import pandas as pd
-
     base_year = int(p.es_shock_base_year)
     end_year = int(p.es_shock_end_year)
     n_years = end_year - base_year
-    scenario_map = getattr(p, 'terrestrial_carbon_scenario_map', utilities.ES_SCENARIO_MAP)
+    scenario_map = getattr(p, 'terrestrial_carbon_scenario_map', {})
     scenarios = list(p.es_shock_scenarios)
     acts = getattr(p, 'terrestrial_carbon_shock_acts', 'FRS')
+    base_scn = utilities.required_base_scenario(p, 'terrestrial_carbon')  # consumer-named, no library default
 
     carb_path = getattr(p, 'terrestrial_carbon_dependency_path', None) or os.path.join(
         p.input_dir, 'raw_dependencies', 'carbon_storage_dependency.csv')
@@ -502,16 +403,19 @@ def task_compute_terrestrial_carbon_shock_static(p):
         return
 
     df = pd.read_csv(carb_path)
-    base = df[(df['scenario'] == 'baseline_ignore_dependencies') & (df['year'] == 2050)]
+    # The base resolves through the same candidate mechanism as the scenarios (and FATALLY if it
+    # can't): the frozen tables spell the nature-off baseline two ways across services, and an
+    # exact-match miss here gave an empty base -> empty output -> silent GTAP zero.
+    raw_base = utilities.resolve_base_scenario(df['scenario'].values, scenario_map, base_scn, 'terrestrial_carbon', log=hb.log)
+    base = df[(df['scenario'] == raw_base) & (df['year'] == end_year)]
     base_vals = base.set_index(['ENDW', 'REG'])['percentage_change'].astype(float) * 100
 
     rows = []
     for our_scn in scenarios:
-        candidates = scenario_map.get(our_scn)
-        raw_scn = next((c for c in candidates if c in df['scenario'].values), None) if candidates else None
-        if not raw_scn:
+        raw_scn = utilities.resolve_raw_scenario(df['scenario'].values, scenario_map, our_scn, 'terrestrial_carbon', log=hb.log)
+        if raw_scn is None:
             continue
-        scn = df[(df['scenario'] == raw_scn) & (df['year'] == 2050)]
+        scn = df[(df['scenario'] == raw_scn) & (df['year'] == end_year)]
         scn_vals = scn.set_index(['ENDW', 'REG'])['percentage_change'].astype(float) * 100
         common = base_vals.index.intersection(scn_vals.index)
         shock = (scn_vals.loc[common] - base_vals.loc[common]).dropna()
@@ -522,6 +426,7 @@ def task_compute_terrestrial_carbon_shock_static(p):
                              'scenario': our_scn, 'year': year, 'shock_pct': val * frac})
 
     out = pd.DataFrame(rows)
+    utilities.assert_shock_table_sound(out, scenarios, 'terrestrial_carbon')
     out.to_csv(p.terrestrial_carbon_shock_output_path, index=False)
     nz = out[(out['year'] == end_year) & (out['shock_pct'] != 0)] if len(out) else out
     print('  carbon shock: %d rows, %d scenarios, %d nonzero @%d (static, uncapped) -> %s'

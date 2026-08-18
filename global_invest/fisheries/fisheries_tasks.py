@@ -6,6 +6,7 @@ Writes the per-region FSH shock CSV the same way carbon/pollination write theirs
 build_combined_afeall reads it identically. Ported verbatim from the old prepare_es_shocks fisheries
 block onto the seam (Chiara's 'static ES go through the seam too' restructuring).
 """
+from global_invest import utilities
 import os
 import pandas as pd
 
@@ -126,6 +127,11 @@ def task_compute_fisheries_shock(p):
                                  'year': year, 'shock_pct': val, 'fisheries_header': hdr})
 
     out = pd.DataFrame(rows)
+    # Assert BEFORE the cap: the clip silently absorbs whatever the CWoN table delivers, so a
+    # contaminated source value would otherwise be clamped to +-2 and look healthy -- the same
+    # silent-failure shape the assertion exists to catch. After the clip the magnitude check
+    # could never fire.
+    utilities.assert_shock_table_sound(out, scenarios, 'fisheries')
     if len(out):
         out['shock_pct'] = out['shock_pct'].clip(-FISH_CAP, FISH_CAP)
     out.to_csv(p.fisheries_shock_output_path, index=False)

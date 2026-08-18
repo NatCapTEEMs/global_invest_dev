@@ -1,17 +1,17 @@
 import pandas as pd
 import hazelbean as hb
 
+from global_invest import utilities
 from global_invest.extractive_materials_provision import extractive_materials_provision_tasks
 
 def initialize_paths(p):
-    p.df_countries = pd.read_csv(p.df_countries_csv_path)  
-    
-    # Notice optimization here: the GDFs are still just path_strings. hb.read_vector takes the string as an input and converts it to a GeoDataFrame when needed.
-    p.gdf_countries = p.gdf_countries_vector_path 
-    p.gdf_countries_simplified = p.gdf_countries_vector_simplified_path 
-    
-    # p.gdf_countries = hb.read_vector(p.gdf_countries_vector_path)  # Read the vector file for the countries.
-    # p.countries_simplified_gdf = hb.read_vector(p.countries_simplified_vector_path)  # Read the vector file for the countries.
+    """One source of truth for the inputs (shared country block + service data, get_path references)."""
+    utilities.initialize_country_paths(p, simplified='30sec')
+
+    # World Bank series staged into base_data from the drive's submissions folder (see base_data CHANGELOG):
+    # mineral rents (% of GDP) and GDP (current USD).
+    p.wb_mineral_input_ref_path = p.get_path('extractive_materials_provision', 'API_NY.GDP.MINR.RT.ZS_DS2_en_csv_v2_6559.csv')
+    p.wb_GDP_ref_path = p.get_path('extractive_materials_provision', 'API_NY.GDP.MKTP.CD_DS2_en_csv_v2_130122.csv')
 
 def build_gep_service_calculation_task_tree(p):
     """Build the default task tree for commercial agriculture."""

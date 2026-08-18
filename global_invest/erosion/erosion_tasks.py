@@ -26,8 +26,9 @@ FIXED severe-pixel set and the DEFAULT; see task_erosion_shock). add_erosion_tas
 """
 import os
 import pandas as pd
-from global_invest import utilities
+import hazelbean as hb
 
+from global_invest import utilities
 from global_invest.erosion import erosion_functions as ef
 
 # 8 crop sectors whose productivity depends on erosion control (sediment retention).
@@ -106,7 +107,7 @@ def task_erosion_sdr(p):
         tmpl = p.es_lulc_path_template
         years = [int(y) for y in getattr(p, 'es_shock_years', [])]
         scens = list(getattr(p, 'es_shock_scenarios', []))
-        base = getattr(p, 'es_shock_base_scenario', 'baseline_ignore_damages')
+        base = utilities.required_base_scenario(p, 'erosion')
         if base not in scens:
             scens = scens + [base]
         p.scenario_lulc_paths = {}
@@ -410,7 +411,7 @@ def task_erosion_shock(p):
     from global_invest.erosion import erosion_functions as ef
 
     base_year = int(p.es_shock_base_year); end_year = int(p.es_shock_end_year)
-    base_scn = getattr(p, 'es_shock_base_scenario', 'baseline_ignore_damages')
+    base_scn = utilities.required_base_scenario(p, 'erosion')
     fallback_coef = float(getattr(p, 'erosion_yield_coefficient_fallback', 0.08))
     alpha = float(getattr(p, 'erosion_alpha', EROSION_ALPHA))
     # Method B lets the erosion->yield coefficient vary by crop; A applies the flat alpha to all.
@@ -661,6 +662,7 @@ def task_erosion_shock(p):
                                  'shock_pct_service_threshold': series['service_threshold'][i]})
 
     out = pd.DataFrame(rows)
+    utilities.assert_shock_table_sound(out, scenarios, 'erosion')
     out.to_csv(p.erosion_shock_output_path, index=False)
     end = out[out['year'] == end_year]
     print('  erosion shock (dynamic): %d rows, %d scenarios, %d anchors, alpha=%.3f, primary=%s'
@@ -676,7 +678,9 @@ def task_compute_erosion_shock_static(p):
     Caller sets on p before calling: es_shock_scenarios, es_shock_base_year,
     es_shock_end_year, erosion_shock_output_path. Dependency csv defaults to
     input_dir/raw_dependencies/erosion_prevention_dependency.csv (override p.erosion_dependency_path);
-    scenario->raw name via p.erosion_scenario_map (default utilities.ES_SCENARIO_MAP).
+    scenario->raw name via p.erosion_scenario_map (default: identity -- each scenario maps to its own
+    name; a scenario the table labels differently is warned about loudly and skipped rather than
+    silently zeroed, so set the map for those).
     """
     # Default into the es_shocks parent dir. Runtime, not build time: p.es_shock_dir is
     # published by that task, which ProjectFlow runs before this one.
@@ -688,7 +692,7 @@ def task_compute_erosion_shock_static(p):
     base_year = int(p.es_shock_base_year)
     end_year = int(p.es_shock_end_year)
     n_years = end_year - base_year
-    scenario_map = getattr(p, 'erosion_scenario_map', utilities.ES_SCENARIO_MAP)
+    scenario_map = getattr(p, 'erosion_scenario_map', {})
     scenarios = list(p.es_shock_scenarios)
     sectors = getattr(p, 'erosion_shock_acts', EROSION_SECTORS)   # GTAP sectors, standardized name (was erosion_sectors)
 
@@ -698,13 +702,19 @@ def task_compute_erosion_shock_static(p):
         print('  erosion shock: dependency csv not found (%s) -- skipping' % ero_path)
         return
 
-    df, base_vals = ef.read_erosion_dependency(ero_path)
+    df = ef.read_erosion_dependency(ero_path)
+    # Resolve the configured base through the candidate mechanism (fatal if absent) -- the erosion
+    # table spells the nature-off baseline 'baseline_ignore_damages' while the shared config may say
+    # 'baseline_ignore_dependencies'; the consumer's scenario_map carries both spellings.
+    base_scn = utilities.required_base_scenario(p, 'erosion')
+    raw_base = utilities.resolve_base_scenario(df['scenario'].values, scenario_map, base_scn, 'erosion')
+    base_vals = df[df['scenario'] == raw_base].set_index(
+        ['aez18_id', 'gtapv7_r50_label'])['value'].astype(float).fillna(0)
 
     rows = []
     for our_scn in scenarios:
-        candidates = scenario_map.get(our_scn)
-        raw_scn = ef.find_scenario(df, candidates) if candidates else None
-        if not raw_scn:
+        raw_scn = utilities.resolve_raw_scenario(df['scenario'].values, scenario_map, our_scn, 'erosion')
+        if raw_scn is None:
             continue
         scn_vals = df[df['scenario'] == raw_scn].set_index(
             ['aez18_id', 'gtapv7_r50_label'])['value'].astype(float).fillna(0)
@@ -719,9 +729,77 @@ def task_compute_erosion_shock_static(p):
                                  'scenario': our_scn, 'year': year, 'shock_pct': val * frac})
 
     out = pd.DataFrame(rows)
+    utilities.assert_shock_table_sound(out, scenarios, 'erosion')
     out.to_csv(p.erosion_shock_output_path, index=False)
     nz = out[(out['year'] == end_year) & (out['shock_pct'] != 0)] if len(out) else out
     print('  erosion shock: %d rows, %d scenarios, %d nonzero @%d (static, uncapped) -> %s'
           % (len(out), out['scenario'].nunique() if len(out) else 0, len(nz), end_year,
              p.erosion_shock_output_path))
+    return True
+
+
+# =============================================================================
+# GEP valuation tasks (folded from global_erosion_gep): InVEST SDR -> prevention
+# shares -> per-country GEP -> maps/figures. The ES-shock tasks above and this
+# valuation are separate consumers of the same erosion science.
+# =============================================================================
+
+
+def task_run_invest_sdr(p):
+    """Section A: run InVEST SDR to produce the erosion rasters (USLE, avoided erosion) that
+    Section B consumes. ProjectFlow-idiomatic: outputs default into THIS task's dir (caller may
+    override erosion_sdr_output_dir), the paths Section B reads are PUBLISHED on p before the
+    run_this guard (so a skipped rerun still feeds downstream), and the builders register this
+    with skip_existing=1 -- delete the task dir to force a rerun.
+    """
+    if not getattr(p, 'erosion_sdr_output_dir', None):
+        p.erosion_sdr_output_dir = p.cur_dir
+    if not getattr(p, 'erosion_watersheds_sanitized_path', None):
+        p.erosion_watersheds_sanitized_path = os.path.join(p.erosion_sdr_output_dir, 'wshed_sanitized.gpkg')
+    # Publish Section A's outputs under the names configure_prevention_shares reads off p --
+    # explicit task chaining instead of the source repo's copy-between-stage-dirs convention
+    # (whose input defaults even carry a different date suffix than the outputs).
+    _sfx = getattr(p, 'erosion_sdr_results_suffix', '2019_revised_dec_14')
+    p.erosion_usle_path = os.path.join(p.erosion_sdr_output_dir, f'usle_{_sfx}.tif')
+    p.erosion_avoided_erosion_path = os.path.join(p.erosion_sdr_output_dir, f'avoided_erosion_{_sfx}.tif')
+    if not p.run_this:
+        return
+    ef.configure_sdr(p)
+    p.erosion_sdr_args, p.erosion_sdr_file_registry = ef.run_invest_sdr()
+    return True
+
+
+def task_compute_prevention_shares(p):
+    """Section B: combine on-farm (AE/(AE+USLE)) and upstream prevention shares into the
+    union-of-protection PS_combined, then country-crop protected production and the GEP valuation
+    (onfarm / upstream / combined) -> integrated_country_gep.csv + the PS rasters the maps task
+    reads. ProjectFlow-idiomatic: outputs default into THIS task's dir via erosion_gep_output_dir
+    (the same attr configure_maps chains on), USLE/avoided arrive from task_run_invest_sdr's
+    published attrs, and the registered result is the skip check (like every gep_calculation).
+    """
+    if not getattr(p, 'erosion_gep_output_dir', None):
+        p.erosion_gep_output_dir = p.cur_dir
+    service_results = p.results.setdefault('erosion', {})
+    service_results['integrated_country_gep'] = os.path.join(
+        p.erosion_gep_output_dir, "integrated_country_gep.csv")
+    if not p.run_this:
+        return
+    if hb.path_all_exist(list(service_results.values())):
+        hb.log("integrated_country_gep.csv already exists. Skipping prevention-share calculation for erosion.")
+        return True
+    ef.configure_prevention_shares(p)
+    ef.integrate_and_write()
+    return True
+
+
+def task_generate_maps_and_figures(p):
+    """Section C: publication-ready choropleths, raster previews and charts from Section B's
+    outputs (found via the shared erosion_gep_output_dir attr). Figures default into THIS task's
+    dir; skip_existing at registration."""
+    if not getattr(p, 'erosion_figures_dir', None):
+        p.erosion_figures_dir = p.cur_dir
+    if not p.run_this:
+        return
+    ef.configure_maps(p)
+    ef.generate_all_maps_and_figures()
     return True

@@ -3,18 +3,21 @@ import sys
 import pandas as pd
 import hazelbean as hb
 import subprocess
-import csv
 
-from global_invest.extractive_materials_provision import extractive_materials_provision_initialization
+from global_invest.extractive_materials_provision import extractive_materials_provision_initialize
 from global_invest.extractive_materials_provision import extractive_materials_provision_functions
+
+# Applied to (mineral rents share x GDP) in the valuation. Provenance UNDOCUMENTED as of 2026-08-16:
+# no source in the code, the drive submission, or its raw_data notes -- open question for the service
+# owner. Do not change without an owner-blessed source; the staged reference output embeds it.
+MINERAL_RENT_GEP_FACTOR = 0.49
 
 
 def extractive_materials_provision(p):
     """
     Parent task for commercial agriculture.
     """
-    p.wb_mineral_input_ref_path = os.path.join(p.base_data_dir, 'extractive_materials_provision', 'API_NY.GDP.MINR.RT.ZS_DS2_en_csv_v2_6559.csv')
-    p.wb_GDP_ref_path = os.path.join(p.base_data_dir, 'extractive_materials_provision', "API_NY.GDP.MKTP.CD_DS2_en_csv_v2_130122.csv")
+    pass  # Inputs resolve in initialize_paths.
 
 def gep_preprocess(p):
     """
@@ -56,7 +59,7 @@ def gep_calculation(p):
 
         df_mineral_gdp_values = df_mineral_values.merge(df_gdp_values, on=['Country Code', 'year'], how='left')
 
-        df_mineral_gdp_values['extractive_materials_provision_gep'] = (df_mineral_gdp_values['mineral_rent'] / 100) * df_mineral_gdp_values['GDP_currentUSD']*0.49
+        df_mineral_gdp_values['extractive_materials_provision_gep'] = (df_mineral_gdp_values['mineral_rent'] / 100) * df_mineral_gdp_values['GDP_currentUSD'] * MINERAL_RENT_GEP_FACTOR
 
         df_mineral_gdp_values['Value'] = df_mineral_gdp_values['extractive_materials_provision_gep']
 
@@ -179,7 +182,7 @@ def gep_load_results(p):
     
     # Learn the paths by creating a temp task treep
     p_temp = hb.ProjectFlow()
-    extractive_materials_provision_initialization.build_gep_service_calculation_task_tree(p_temp)
+    extractive_materials_provision_initialize.build_gep_service_calculation_task_tree(p_temp)
     p_temp.set_all_tasks_to_skip_if_dir_exists()
     p_temp.execute()
     

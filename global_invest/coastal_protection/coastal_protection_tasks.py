@@ -3,25 +3,15 @@ import sys
 import pandas as pd
 import hazelbean as hb
 import subprocess
-import csv
-import pyogrio
 
-import sys
-print(sys.executable)
-
-from osgeo import gdal
-print(gdal.__version__)
-
-from global_invest.coastal_protection import coastal_protection_initialization
+from global_invest.coastal_protection import coastal_protection_initialize
 from global_invest.coastal_protection import coastal_protection_functions
 
 
 def coastal_protection(p):
     """
-    Parent task for mangrove coastal protection.
+    Parent task for mangrove coastal protection. Inputs resolve in initialize_paths.
     """
-    p.cwon_input_ref_path = os.path.join(p.base_data_dir, 'coastal_protection', 'data_mangroves_2019.xlsx')
-    p.coral_reef_ref_path = os.path.join(p.base_data_dir, 'coastal_protection', 'coral_reefs_annual_expected_benefit_nfamara.xlsx')
 
 
 def gep_preprocess(p):
@@ -39,8 +29,8 @@ def gep_calculation(p):
     """ GEP calculation task for coastal protection."""
     # Define at least the primary output for the service, which for this project is gep_by_country_base_year.   
     service_results = {}
-    p.results['coastal_protection'] = service_results  
-    p.results['coastal_protection']['gep_by_country_base_year'] = os.path.join(p.project_dir, 'gep_by_country_base_year.csv')
+    p.results['coastal_protection'] = service_results
+    p.results['coastal_protection']['gep_by_country_base_year'] = os.path.join(p.cur_dir, 'gep_by_country_base_year.csv')
             
     # Check if all results exist
     if hb.path_all_exist(list(service_results.values())):
@@ -162,7 +152,6 @@ def gep_calculation(p):
         value_gep_base_year = df_gep_by_country_base_year['coastal_protection_gep'].sum() 
         
         hb.log(f"Total GEP value for base year 2019: {value_gep_base_year}")
-        #Total GEP value for base year 2019: 73004611295.3582
         return value_gep_base_year
 
 def gep_result(p):
@@ -228,7 +217,7 @@ def gep_load_results(p):
     
     # Learn the paths by creating a temp task treep
     p_temp = hb.ProjectFlow()
-    coastal_protection_initialization.build_gep_service_calculation_task_tree(p_temp)
+    coastal_protection_initialize.build_gep_service_calculation_task_tree(p_temp)
     p_temp.set_all_tasks_to_skip_if_dir_exists()
     p_temp.execute()
     

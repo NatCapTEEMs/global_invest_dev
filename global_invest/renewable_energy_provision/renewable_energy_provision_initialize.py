@@ -1,17 +1,18 @@
 import pandas as pd
 import hazelbean as hb
 
+from global_invest import utilities
 from global_invest.renewable_energy_provision import renewable_energy_provision_tasks
 
 def initialize_paths(p):
-    p.df_countries = pd.read_csv(p.df_countries_csv_path)  
-    
-    # Notice optimization here: the GDFs are still just path_strings. hb.read_vector takes the string as an input and converts it to a GeoDataFrame when needed.
-    p.gdf_countries = p.gdf_countries_vector_path 
-    p.gdf_countries_simplified = p.gdf_countries_vector_simplified_path 
-    
-    # p.gdf_countries = hb.read_vector(p.gdf_countries_vector_path)  # Read the vector file for the countries.
-    # p.countries_simplified_gdf = hb.read_vector(p.countries_simplified_vector_path)  # Read the vector file for the countries.
+    """One source of truth for the inputs (shared country block + service data, get_path references)."""
+    utilities.initialize_country_paths(p, simplified='30sec')
+
+    # IRENA generation, WB prices, CWON resource rents. This service's data lives under the
+    # drive's base_data/global_invest/ prefix, unlike the other accounting services (see CHANGELOG).
+    p.irena_production_ref_path = p.get_path('global_invest', 'renewable_energy_provision', 'IRENA_prod_by_country.csv')
+    p.wb_price_ref_path = p.get_path('global_invest', 'renewable_energy_provision', 'WB_price_data.csv')
+    p.cwon_resource_rent_ref_path = p.get_path('global_invest', 'renewable_energy_provision', 'CWON_resource_rent_data.csv')
 
 def build_gep_service_calculation_task_tree(p, parent=None):
     """Build the default task tree for commercial agriculture."""
