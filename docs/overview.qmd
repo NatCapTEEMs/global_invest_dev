@@ -225,3 +225,9 @@ format:
 - **Renewable owner:** code or CSVs.
 - **The room:** pollination's definition, the shoreline convention, crop's units, the map dissolve, base year 2019, subsistence scope, marine carbon's fate.
 - **Every service team:** complete your SI-table row (status, value info, relationships to other services); name leads for the unclaimed services; confirm the next-in-line services for the library.
+
+## What happens with your answers
+
+- Every answer starts an already-scoped step, most of them mechanical: reference outputs trigger exact-replication verification (erosion, landslide, livestock), decisions trigger one-pass conversions (crop's units, the map dissolve), and the definitional calls trigger the regenerations that are already written up (pollination at 2019, the shoreline diagnostic).
+- Nothing lands in a notes file. The questions live in a tracked document with an owner per item, and each one closes with a verified number or a recorded decision.
+- What you saw today — every number reproducible, every gap named — is the state your answers extend to the whole account. The goal for the next session like this one: no questions slide at all.
