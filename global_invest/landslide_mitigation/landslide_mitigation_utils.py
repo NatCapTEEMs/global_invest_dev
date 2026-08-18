@@ -110,7 +110,8 @@ def warp_to_reference(
         print(f'Warping: {os.path.basename(str(src_path))} -> {os.path.basename(dst_path)}')
 
     os.makedirs(os.path.dirname(dst_path), exist_ok=True)
-    result_ds = gdal.Warp(dst_path, src_path, options=warp_options)
+    # str() both: this GDAL build's binding rejects pathlib.Path for src (wrong GDALDatasetShadow).
+    result_ds = gdal.Warp(str(dst_path), str(src_path), options=warp_options)
     if result_ds is None:
         raise RuntimeError(f'gdal.Warp failed: {src_path} -> {dst_path}')
     result_ds = None
