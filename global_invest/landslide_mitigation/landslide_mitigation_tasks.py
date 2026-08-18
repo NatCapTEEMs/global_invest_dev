@@ -44,7 +44,7 @@ from matplotlib.lines import Line2D
 """
 input_data_tasks.py
 
-Raw sources read from p.base_data_dir (input_data_raw/), except ESA-CCI
+Raw sources read from p.landslide_input_data_dir (input_data_raw/), except ESA-CCI
 which reads from p.shared_base_data_dir (shared base_data, used across
 projects). All reprojected outputs write into p.input_data_dir.
 """
@@ -71,7 +71,7 @@ def build_ease_grid_reference(p):
     and builds an empty reference raster on that exact grid.
     """
     if p.run_this:
-        gpd_path = os.path.join(p.base_data_dir, 'nsidc_proj', 'EASE2_M01km.gpd')
+        gpd_path = os.path.join(p.landslide_input_data_dir, 'nsidc_proj', 'EASE2_M01km.gpd')
         grid = parse_gpd_grid_definition(gpd_path)
 
         out_path = os.path.join(p.input_data_dir, 'ease_grid_reference.tif')
@@ -128,7 +128,7 @@ def reproject_dem(p):
 
 def reproject_gaez(p):
     if p.run_this:
-        src_path = os.path.join(p.base_data_dir, 'fao_gaez', 'GAEZ-V5.AEZ57.tif')
+        src_path = os.path.join(p.landslide_input_data_dir, 'fao_gaez', 'GAEZ-V5.AEZ57.tif')
         out_path = os.path.join(p.input_data_dir, 'gaez_zones_1km.tif')
         if os.path.exists(out_path) and not p.force_run:
             p.gaez_path = out_path
@@ -242,7 +242,7 @@ def reproject_uglc_events(p):
     """
     if p.run_this:
  
-        src_path = os.path.join(p.base_data_dir, 'uglc', 'UGLC_point.csv')
+        src_path = os.path.join(p.landslide_input_data_dir, 'uglc', 'UGLC_point.csv')
         out_path = os.path.join(p.input_data_dir, 'uglc_points_ease.gpkg')
         if os.path.exists(out_path) and not p.force_run:
             p.uglc_path = out_path
@@ -328,7 +328,7 @@ def reproject_landscan_population(p):
     if p.run_this:
         for year in p.data_processing_range:
             src_path = os.path.join(
-                p.base_data_dir, 'landscan', f'landscan-global-{year}.tif'
+                p.landslide_input_data_dir, 'landscan', f'landscan-global-{year}.tif'
             )
             if not os.path.exists(src_path):
                 p.L.warning(f'LandScan {year} not found, skipping year.')
@@ -375,7 +375,7 @@ def reproject_soilgrids_properties(p):
 
             depth_paths_local = {
                 depth: os.path.join(
-                    p.base_data_dir, 'soilgrids', f'{prop_code}_{depth}_mean.tif'
+                    p.landslide_input_data_dir, 'soilgrids', f'{prop_code}_{depth}_mean.tif'
                 )
                 for depth in DEPTH_WEIGHTS_0_30CM
             }
@@ -408,7 +408,7 @@ def reproject_soilgrids_properties(p):
 def reproject_worldclim_bio12(p):
     """Mean annual precipitation (mm), 1970-2000 climate normal."""
     if p.run_this:
-        src_path = os.path.join(p.base_data_dir, 'worldclim', 'wc2.1_30s_bio_12.tif')
+        src_path = os.path.join(p.landslide_input_data_dir, 'worldclim', 'wc2.1_30s_bio_12.tif')
         out_path = os.path.join(p.input_data_dir, 'worldclim_bio12_1km.tif')
         
         if os.path.exists(out_path) and not p.force_run:
@@ -465,7 +465,7 @@ def reproject_hihydrosoil_ksat(p):
             return p
 
         depth_paths_local = {
-            depth: os.path.join(p.base_data_dir, 'hihydrosoil', f'Ksat_{depth}_M_250m.tif')
+            depth: os.path.join(p.landslide_input_data_dir, 'hihydrosoil', f'Ksat_{depth}_M_250m.tif')
             for depth in DEPTH_WEIGHTS_0_30CM
         }
         for depth, path in depth_paths_local.items():
@@ -494,7 +494,7 @@ def reproject_hihydrosoil_ksat(p):
 def reproject_soil_depth(p):
     if p.run_this:
         src_path = os.path.join(
-            p.base_data_dir, 'Global_Soil_Regolith_Sediment_1304', 'data',
+            p.landslide_input_data_dir, 'Global_Soil_Regolith_Sediment_1304', 'data',
             'average_soil_and_sedimentary-deposit_thickness.tif'
         )
         out_path = os.path.join(p.input_data_dir, 'soil_depth_1km.tif')
@@ -525,7 +525,7 @@ def reproject_grip_roads(p):
     """
     if p.run_this:
         src_path = os.path.join(
-            p.base_data_dir, 'GRIP4_density_total', 'grip4_total_dens_m_km2.asc'
+            p.landslide_input_data_dir, 'GRIP4_density_total', 'grip4_total_dens_m_km2.asc'
         )
         out_path = os.path.join(p.input_data_dir, 'road_density_1km.tif')
         if os.path.exists(out_path) and not p.force_run:
@@ -575,7 +575,7 @@ def reproject_rain_daily(p):
  
         for year in p.data_processing_range:
             src_path = os.path.join(
-                p.base_data_dir, 'era5_land_precip_annual_tif',
+                p.landslide_input_data_dir, 'era5_land_precip_annual_tif',
                 f'era5_max_daily_mm_{year}.tif'
             )
             if not os.path.exists(src_path):
@@ -2027,9 +2027,9 @@ def build_vsl_raster(p):
         # ---- 1. Parse OECD VSL CSV ----
         # NOTE: has commas/special characters in
         # the name as downloaded, glob to avoid a brittle hardcoded match.
-        oecd_candidates = glob.glob(os.path.join(p.base_data_dir, 'oecd_vsl', '*.csv'))
+        oecd_candidates = glob.glob(os.path.join(p.landslide_input_data_dir, 'oecd_vsl', '*.csv'))
         if not oecd_candidates:
-            raise FileNotFoundError(f'No CSV found in {p.base_data_dir}/oecd_vsl/')
+            raise FileNotFoundError(f'No CSV found in {p.landslide_input_data_dir}/oecd_vsl/')
         oecd_path = oecd_candidates[0]
  
         oecd = pd.read_csv(oecd_path)
