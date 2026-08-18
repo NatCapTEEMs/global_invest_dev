@@ -11,6 +11,7 @@ if __name__ == '__main__':
     p.project_name = 'gep_landslide_mitigation'
     p.project_dir = os.path.join(os.path.expanduser('~'), 'Files', 'global_invest', 'projects', p.project_name)
     p.set_project_dir(p.project_dir)
+    p.run_in_parallel = True  # the tree builder's iterators read this (author's runner set it; the fold dropped it)
 
     landslide_mitigation_initialize.build_gep_service_task_tree(p)
 
