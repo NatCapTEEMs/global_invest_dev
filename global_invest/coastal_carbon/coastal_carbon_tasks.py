@@ -25,7 +25,7 @@ def _task_outputs_exist(*paths):
     return all(bool(p) and os.path.exists(p) for p in paths)
 
 
-def task_calculate_mangrove_area_within_countries(p):
+def mangrove_area_within_countries(p):
     """
     Calculate mangrove area within each country's marine EEZ.
     Uses Global Mangrove Watch (GMW) vector data.
@@ -115,7 +115,7 @@ def task_calculate_mangrove_area_within_countries(p):
     print(f"✅ Saved mangrove area by countries: {p.mangrove_area_by_countries_base_year_path}")
 
 
-def task_calculate_salt_marsh_area_within_countries(p):
+def salt_marsh_area_within_countries(p):
     """
     Calculate salt marsh area within each country's marine EEZ.
     Uses zonal statistics on salt marsh raster data.
@@ -254,7 +254,7 @@ def _build_country_id_raster_if_needed(p):
         )
 
 
-def task_calculate_mangrove_carbon_stock(p):
+def mangrove_carbon_stock(p):
     """
     Compute per-country mangrove carbon stocks via per-pixel density x ha_per_cell.
 
@@ -383,12 +383,12 @@ def _calculate_storage_value(p, stock_csv_path, pool_columns,
     return out_path
 
 
-def task_calculate_mangrove_storage_value(p):
+def mangrove_storage_value(p):
     """
     Per-country mangrove storage value (USD), per pool.
 
     Stage split:
-      - Physical part (upstream task_calculate_mangrove_carbon_stock):
+      - Physical part (upstream mangrove_carbon_stock):
             mangrove_agb_c_total_mg, mangrove_bgb_c_total_mg,
             mangrove_soil_c_total_mg, mangrove_total_c_stock_mg.
       - GEP part (this task): each pool stock x rental SCC ->
@@ -412,7 +412,7 @@ def task_calculate_mangrove_storage_value(p):
     )
 
 
-def task_calculate_salt_marsh_storage_value(p):
+def salt_marsh_storage_value(p):
     """
     Per-country salt marsh storage value (USD), per pool.
 
@@ -448,7 +448,7 @@ def task_calculate_salt_marsh_storage_value(p):
 # coastal GEP total.
 # ----------------------------------------------------------------------------
 
-def task_calculate_seagrass_area_within_countries(p):
+def seagrass_area_within_countries(p):
     """
     Calculate seagrass area within each country's marine EEZ.
 
@@ -545,12 +545,12 @@ def task_calculate_seagrass_area_within_countries(p):
     print(f"✅ Saved seagrass area by countries: {p.seagrass_area_by_countries_base_year_path}")
 
 
-def task_calculate_seagrass_carbon_stock(p):
+def seagrass_carbon_stock(p):
     """
     Per-country seagrass carbon stocks (Mg C) using Gomis et al. 2025 genus-specific
     biomass densities and a Fourqurean et al. 2012 soil constant scaled to 1 m depth.
 
-    Reads the polygon-level GPKG produced by task_calculate_seagrass_area_within_countries
+    Reads the polygon-level GPKG produced by seagrass_area_within_countries
     (carries GENUS + eemarine_r566_id + area_ha), looks up per-genus carbon density via
     seagrass_carbon.calculate_pool_densities_array, multiplies density x area per
     polygon, then aggregates to country level. Non-marine genera (Trapa, Myriophyllum,
@@ -565,7 +565,7 @@ def task_calculate_seagrass_carbon_stock(p):
     if not getattr(p, 'seagrass_within_countries_path', None) or \
             not os.path.exists(p.seagrass_within_countries_path):
         raise FileNotFoundError(
-            "seagrass polygon-level GPKG missing -- task_calculate_seagrass_area_within_countries "
+            "seagrass polygon-level GPKG missing -- seagrass_area_within_countries "
             "must run first (same tree). Skipping here would silently zero seagrass in the total.")
 
     gdf = gpd.read_file(p.seagrass_within_countries_path)
@@ -607,7 +607,7 @@ def task_calculate_seagrass_carbon_stock(p):
     )
 
 
-def task_calculate_seagrass_storage_value(p):
+def seagrass_storage_value(p):
     """
     Per-country seagrass storage value (USD), per pool.
 
@@ -632,7 +632,7 @@ def task_calculate_seagrass_storage_value(p):
     )
 
 
-def task_calculate_salt_marsh_carbon_stock(p):
+def salt_marsh_carbon_stock(p):
     """
     Compute per-country salt marsh carbon stocks via per-pixel density x ha_per_cell.
 
@@ -683,7 +683,7 @@ def task_calculate_salt_marsh_carbon_stock(p):
     print(f"✅ Saved salt marsh carbon stock by countries: {p.salt_marsh_carbon_stock_path}")
 
 
-def task_combine_ecosystem_areas(p):
+def combined_ecosystem_areas(p):
     """
     Combine mangrove, salt marsh, and seagrass areas plus carbon stocks into a
     single dataset. Seagrass is optional: skipped silently if its area / stock
@@ -722,7 +722,7 @@ def task_combine_ecosystem_areas(p):
         )
     else:
         hb.log(
-            "task_combine_ecosystem_areas: seagrass area CSV not found "
+            "combined_ecosystem_areas: seagrass area CSV not found "
             f"({seagrass_area_csv!r}); seagrass area set to 0."
         )
 
@@ -787,7 +787,7 @@ def task_combine_ecosystem_areas(p):
             df_combined[col] = 0
         if has_seagrass_area:
             hb.log(
-                "task_combine_ecosystem_areas: seagrass area present but seagrass "
+                "combined_ecosystem_areas: seagrass area present but seagrass "
                 f"stock CSV missing ({seagrass_stock_path!r}); seagrass stock columns set to 0."
             )
 

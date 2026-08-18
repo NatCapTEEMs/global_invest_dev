@@ -13,7 +13,7 @@ import hazelbean as hb
 from global_invest import utilities
 
 
-def task_compute_pollination_shock(p):
+def pollination_shock(p):
     """Per-scenario 300 m LULC at each SEALS anchor year -> V_F/OSD shock, piecewise-interp to annual.
 
     Caller sets on p: es_shock_years (SEALS anchor years, from seals_years),
@@ -121,7 +121,7 @@ def task_compute_pollination_shock(p):
     return True
 
 
-def task_compute_pollination_shock_static(p):
+def pollination_shock_static(p):
     """Static per-scenario pollination shock -> V_F/OSD, linear ramp 0->end_year, from the frozen table.
 
     The fallback add_pollination_tasks selects when <2 SEALS map years exist. READS
@@ -203,7 +203,7 @@ def task_compute_pollination_shock_static(p):
 # upstream, so lambda = 1 and no price join happens here: quantity IS value.
 # =============================================================================
 
-def task_summarize_pollination_value_by_region(p):
+def pollination_value_by_region(p):
     """GEP quantity stage: per-r264-region sum of the pollination value raster (USD per cell)."""
     p.pollination_value_by_region_path = os.path.join(p.cur_dir, "pollination_value_by_region.csv")
     if not p.run_this:

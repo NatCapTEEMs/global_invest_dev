@@ -40,11 +40,11 @@ class TestESSeams(unittest.TestCase):
 
     SEAMS = {
         'terrestrial_carbon': (terrestrial_carbon_initialize.add_terrestrial_carbon_tasks,
-                               'task_compute_terrestrial_carbon_shock'),
+                               'terrestrial_carbon_shock'),
         'pollination':        (pollination_initialize.add_pollination_tasks,
-                               'task_compute_pollination_shock'),
+                               'pollination_shock'),
         'erosion':            (erosion_initialize.add_erosion_tasks,
-                               'task_erosion_shock'),
+                               'erosion_shock'),
     }
 
     def test_dynamic_path_registers_the_shock_task(self):
@@ -69,15 +69,15 @@ class TestESSeams(unittest.TestCase):
         p = FakeProjectFlow(dynamic_es=['erosion'])
         erosion_initialize.add_erosion_tasks(p)
         self.assertEqual(p.registered,
-                         ['task_erosion_sdr', 'task_erosion_upstream',
-                          'task_erosion_exposure', 'task_erosion_shock'],
+                         ['erosion_sdr', 'erosion_upstream',
+                          'erosion_exposure', 'erosion_shock'],
                          'the erosion chain must be SDR -> upstream -> exposure -> shock')
 
     def test_fisheries_is_static_only(self):
         """Marine, so it never reads a SEALS map and has no dynamic branch -- but the seam is the same."""
         p = FakeProjectFlow(dynamic_es=['fisheries'])
         fisheries_initialize.add_fisheries_tasks(p)
-        self.assertEqual(p.registered, ['task_compute_fisheries_shock'])
+        self.assertEqual(p.registered, ['fisheries_shock'])
 
     def test_every_seam_takes_the_same_signature(self):
         """Consumers call these uniformly: add_<es>_tasks(p, parent=...)."""

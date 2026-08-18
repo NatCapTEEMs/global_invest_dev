@@ -57,7 +57,7 @@ def test_pollination_gep_sums_split_country_once(tmp_path):
                         gdf_countries_vector_path=str(tmp_path / 'regions.gpkg'),
                         gdf_countries_simplified=str(tmp_path / 'regions.gpkg'))
 
-    pt.task_summarize_pollination_value_by_region(p)
+    pt.pollination_value_by_region(p)
     total = pt.gep_calculation(p)
 
     assert total == 68.0                              # split country counted once, not 128

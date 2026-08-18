@@ -48,7 +48,7 @@ FISH_VALUE_OVERRIDES = {('FI26', 'nor'): 0.4767}
 FISH_SECTORS = ('FSH',)
 
 
-def task_compute_fisheries_shock(p):
+def fisheries_shock(p):
     """Static marine-fisheries shock -> FSH, constant across years, mapped by RCP header.
 
     Caller sets on p before calling: es_shock_scenarios, es_shock_base_year,

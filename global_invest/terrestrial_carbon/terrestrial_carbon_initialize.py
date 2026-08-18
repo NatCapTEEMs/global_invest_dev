@@ -31,15 +31,15 @@ def build_gep_service_calculation_task_tree(p):
 
     The raw Spawn density build (convert dtype + combine aboveground/belowground) is a one-off
     base-data job, not part of the per-run tree -- its product (the total biomass-carbon density
-    raster) is consumed from base_data by task_reproject_total_carbon_density.
+    raster) is consumed from base_data by total_carbon_density.
     """
     # skip_existing=1 makes the chain re-runnable: each task's dir already present -> p.run_this=0 and
     # the task publishes its paths then returns early (cf. erosion's SDR chain).
-    p.task_reproject_total_carbon_density = p.add_task(terrestrial_carbon_tasks.task_reproject_total_carbon_density, skip_existing=1)
-    p.task_compute_carbon_density_table = p.add_task(terrestrial_carbon_tasks.task_compute_carbon_density_table, skip_existing=1)
-    p.task_generate_carbon_density_raster_base_year = p.add_task(terrestrial_carbon_tasks.task_generate_carbon_density_raster_base_year, skip_existing=1)
-    p.task_generate_carbon_density_raster_per_cell_base_year = p.add_task(terrestrial_carbon_tasks.task_generate_carbon_density_raster_per_cell_base_year, skip_existing=1)
-    p.task_summarize_carbon_by_region = p.add_task(terrestrial_carbon_tasks.task_summarize_carbon_by_region, skip_existing=1)
+    p.total_carbon_density = p.add_task(terrestrial_carbon_tasks.total_carbon_density, skip_existing=1)
+    p.carbon_density_table = p.add_task(terrestrial_carbon_tasks.carbon_density_table, skip_existing=1)
+    p.carbon_density_raster_base_year = p.add_task(terrestrial_carbon_tasks.carbon_density_raster_base_year, skip_existing=1)
+    p.carbon_density_raster_per_cell_base_year = p.add_task(terrestrial_carbon_tasks.carbon_density_raster_per_cell_base_year, skip_existing=1)
+    p.carbon_by_region = p.add_task(terrestrial_carbon_tasks.carbon_by_region, skip_existing=1)
     p.task_gep_calculation = p.add_task(terrestrial_carbon_tasks.gep_calculation)
 
     return p
@@ -71,9 +71,9 @@ def add_terrestrial_carbon_tasks(p, parent=None):
     """Graft the carbon ES-shock task onto p, dispatching STATIC vs DYNAMIC on p.dynamic_es.
 
     DYNAMIC ('terrestrial_carbon' in p.dynamic_es): recompute the carbon-density shock from our SEALS
-    maps at each p.es_shock_years anchor (task_compute_terrestrial_carbon_shock). STATIC (the default):
+    maps at each p.es_shock_years anchor (terrestrial_carbon_shock). STATIC (the default):
     read the frozen raw_dependencies/carbon_storage_dependency.csv
-    (task_compute_terrestrial_carbon_shock_static). Mirrors add_erosion_tasks / add_pollination_tasks;
+    (terrestrial_carbon_shock_static). Mirrors add_erosion_tasks / add_pollination_tasks;
     both paths write terrestrial_carbon_interpolated.csv.
 
     Caller sets only the shared es_shock_* config. Everything
@@ -85,8 +85,8 @@ def add_terrestrial_carbon_tasks(p, parent=None):
     # inside the task are a second layer for partial re-runs.
     dynamic = 'terrestrial_carbon' in getattr(p, 'dynamic_es', [])
     if not dynamic:   # not requested dynamic -> read the frozen dependency table
-        p.compute_terrestrial_carbon_shock_task = p.add_task(terrestrial_carbon_tasks.task_compute_terrestrial_carbon_shock_static, parent=parent, skip_existing=1)
+        p.terrestrial_carbon_shock_task = p.add_task(terrestrial_carbon_tasks.terrestrial_carbon_shock_static, parent=parent, skip_existing=1)
         return p
     # dynamic: recompute from the SEALS maps (one task for carbon; cf. erosion's multi-task chain)
-    p.compute_terrestrial_carbon_shock_task = p.add_task(terrestrial_carbon_tasks.task_compute_terrestrial_carbon_shock, parent=parent, skip_existing=1)
+    p.terrestrial_carbon_shock_task = p.add_task(terrestrial_carbon_tasks.terrestrial_carbon_shock, parent=parent, skip_existing=1)
     return p

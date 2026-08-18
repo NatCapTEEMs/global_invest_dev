@@ -56,7 +56,7 @@ def initialize_paths(p):
 def add_erosion_tasks(p, parent=None):
     """Graft the erosion ES-shock tasks onto p, dispatching STATIC vs DYNAMIC on p.dynamic_es.
 
-    STATIC (the default): read the pre-computed dependency table -> task_compute_erosion_shock_static.
+    STATIC (the default): read the pre-computed dependency table -> erosion_shock_static.
     DYNAMIC ('erosion' in p.dynamic_es): recompute per scenario x year from our
     SEALS maps -- SDR -> upstream (D8) -> exposure -> shock. The shock task emits the
     shock the same two ways as carbon/pollination, as ABSOLUTE differences of the productivity-share
@@ -70,7 +70,7 @@ def add_erosion_tasks(p, parent=None):
     """
     dynamic = 'erosion' in getattr(p, 'dynamic_es', [])
     if not dynamic:
-        p.compute_erosion_shock_task = p.add_task(erosion_tasks.task_compute_erosion_shock_static, parent=parent)
+        p.erosion_shock_task = p.add_task(erosion_tasks.erosion_shock_static, parent=parent)
         return p
     # DYNAMIC-only inputs. Unlike the other services, the SDR chain needs a dozen rasters/tables, so they
     # resolve here rather than in every consumer's run file. Already in base_data:
@@ -95,10 +95,10 @@ def add_erosion_tasks(p, parent=None):
     # coefficients, the crop-sector map or the method selector.
     # ⚠ Consequence: a task killed MID-WRITE leaves a dir that now looks complete and will be skipped.
     # If a run dies inside sdr/upstream/exposure, delete that task's dir before relaunching.
-    p.erosion_sdr_task      = p.add_task(erosion_tasks.task_erosion_sdr, parent=parent, skip_existing=1)
-    p.erosion_upstream_task = p.add_task(erosion_tasks.task_erosion_upstream, parent=parent, skip_existing=1)
-    p.erosion_exposure_task = p.add_task(erosion_tasks.task_erosion_exposure, parent=parent, skip_existing=1)
-    p.erosion_shock_task    = p.add_task(erosion_tasks.task_erosion_shock, parent=parent)
+    p.erosion_sdr_task      = p.add_task(erosion_tasks.erosion_sdr, parent=parent, skip_existing=1)
+    p.erosion_upstream_task = p.add_task(erosion_tasks.erosion_upstream, parent=parent, skip_existing=1)
+    p.erosion_exposure_task = p.add_task(erosion_tasks.erosion_exposure, parent=parent, skip_existing=1)
+    p.erosion_shock_task    = p.add_task(erosion_tasks.erosion_shock, parent=parent)
     return p
 
 
@@ -109,19 +109,19 @@ def build_gep_service_calculation_task_tree(p):
     """GEP calculation tree: InVEST SDR run + prevention-share per-country GEP valuation.
     skip_existing=1 on the SDR task (dir present -> paths published, work skipped); the valuation
     registers plain and skips on its registered result, like every service's gep_calculation."""
-    p.task_run_invest_sdr = p.add_task(erosion_tasks.task_run_invest_sdr, skip_existing=1)
-    p.task_compute_prevention_shares = p.add_task(erosion_tasks.task_compute_prevention_shares)
+    p.invest_sdr = p.add_task(erosion_tasks.invest_sdr, skip_existing=1)
+    p.prevention_shares = p.add_task(erosion_tasks.prevention_shares)
     return p
 
 
 def build_gep_service_results_task_tree(p):
     """Results-only: render maps/figures from an existing prevention-share run."""
-    p.task_generate_maps_and_figures = p.add_task(erosion_tasks.task_generate_maps_and_figures, skip_existing=1)
+    p.maps_and_figures = p.add_task(erosion_tasks.maps_and_figures, skip_existing=1)
     return p
 
 
 def build_gep_service_task_tree(p):
     """Full GEP run: SDR + valuation + maps/figures."""
     p = build_gep_service_calculation_task_tree(p)
-    p.task_generate_maps_and_figures = p.add_task(erosion_tasks.task_generate_maps_and_figures, skip_existing=1)
+    p.maps_and_figures = p.add_task(erosion_tasks.maps_and_figures, skip_existing=1)
     return p

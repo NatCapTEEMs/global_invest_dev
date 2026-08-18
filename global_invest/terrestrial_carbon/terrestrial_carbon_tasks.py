@@ -20,7 +20,7 @@ def terrestrial_carbon(p):
     return True
 
 
-def task_reproject_total_carbon_density(p):
+def total_carbon_density(p):
     """
     Task to reproject the total carbon density raster to the project's coordinate reference system (CRS).
     """
@@ -43,7 +43,7 @@ def task_reproject_total_carbon_density(p):
     return True
 
 
-def task_compute_carbon_density_table(p):
+def carbon_density_table(p):
 
     p.carbon_density_lookup_table_path = os.path.join(p.cur_dir, "carbon_density_lookup_table.csv")
     if not p.run_this:
@@ -60,7 +60,7 @@ def task_compute_carbon_density_table(p):
     return True
 
 
-def task_generate_carbon_density_raster_base_year(p):
+def carbon_density_raster_base_year(p):
 
     p.carbon_density_raster_base_year_path = os.path.join(p.cur_dir, "projected_carbon_density_2019.tif")
     if not p.run_this:
@@ -73,7 +73,7 @@ def task_generate_carbon_density_raster_base_year(p):
     return True
 
 
-def task_generate_carbon_density_raster_per_cell_base_year(p):
+def carbon_density_raster_per_cell_base_year(p):
     p.ha_per_cell_10sec_ref_path = p.get_path('pyramids', 'ha_per_cell_10sec.tif')
     p.projected_carbon_density_2019_per_cell_path = os.path.join(p.cur_dir, 'projected_carbon_density_2019_per_cell.tif')
     if not p.run_this:
@@ -82,7 +82,7 @@ def task_generate_carbon_density_raster_per_cell_base_year(p):
     return True
 
 
-def task_summarize_carbon_by_region(p):
+def carbon_by_region(p):
     p.carbon_by_region_base_year_path = os.path.join(p.cur_dir, "gep_by_country_base_year.csv")
     if not p.run_this:
         return True
@@ -206,7 +206,7 @@ def gep_load_results(p):
 # consumer of the same carbon-density front-end. Neither depends on the other.
 # =============================================================================
 
-def task_compute_terrestrial_carbon_shock(p):
+def terrestrial_carbon_shock(p):
     """Turn per-scenario 300 m LULC into a carbon ES-productivity shock -- region-agnostic.
 
     At each SEALS anchor year in es_shock_years (5-year MAgPIE steps), build a carbon-density
@@ -367,7 +367,7 @@ def task_compute_terrestrial_carbon_shock(p):
     return True
 
 
-def task_compute_terrestrial_carbon_shock_static(p):
+def terrestrial_carbon_shock_static(p):
     """Static per-scenario carbon shock -> FRS, linear ramp 0->end_year, from the frozen dependency table.
 
     add_terrestrial_carbon_tasks grafts this (instead of the dynamic recompute) when 'terrestrial_carbon' is NOT

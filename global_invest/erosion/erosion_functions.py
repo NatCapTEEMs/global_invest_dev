@@ -289,7 +289,7 @@ def configure_sdr(p):
     """
     Override the Section-A (InVEST SDR) module-level path constants from the
     ProjectFlow object, if the project set them. Called by
-    erosion_tasks.task_run_invest_sdr() before run_invest_sdr().
+    erosion_tasks.invest_sdr() before run_invest_sdr().
     """
     global ROOT, BASE_IN, BASE_OUT, BIOPHYS_CSV, DEM_TIF, LULC_TIF, K_TIF, R_TIF
     global WATERSHEDS_RAW, WATERSHEDS_SANITIZED, WATERSHEDS_SAN_LAYER, DRAINAGE_PATH
@@ -1523,7 +1523,7 @@ def configure_prevention_shares(p):
     """
     Override the Section-B (on-farm + upstream prevention share GEP
     valuation) module-level constants from the ProjectFlow object.
-    Called by erosion_tasks.task_compute_prevention_shares() before
+    Called by erosion_tasks.prevention_shares() before
     integrate_and_write().
 
     NOTE (organizational quirk to flag to Justin/Chiara): the original
@@ -2315,7 +2315,7 @@ def configure_maps(p):
     USD_TO_MILLIONS / TOP_N onto erosion_utils, since
     plot_publication_choropleth_categorical() (which lives there) reads
     those as module globals. Called by
-    erosion_tasks.task_generate_maps_and_figures() before
+    erosion_tasks.maps_and_figures() before
     generate_all_maps_and_figures().
 
     NOTE (organizational quirk to flag to Justin/Chiara): the original

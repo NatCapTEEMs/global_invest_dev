@@ -239,7 +239,7 @@ SHOCK_ABS_MAX = 500.0
 def assert_shock_table_sound(df, requested_scenarios, label, abs_max=SHOCK_ABS_MAX):
     """Raise if the ES shock table `df` violates what must hold before it is written.
 
-    Called immediately before to_csv in each task_compute_<es>_shock*, so the failure surfaces where
+    Called immediately before to_csv in each <es>_shock / <es>_shock_static, so the failure surfaces where
     the table was built rather than as a wrong number in a GTAP solve days later.
 
     Checks, in the order they would bite:

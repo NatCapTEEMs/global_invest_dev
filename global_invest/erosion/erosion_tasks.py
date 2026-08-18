@@ -13,16 +13,16 @@ scenarios exist here and not there, holds the severe-pixel set FIXED to the base
 moves between scenarios would make part of the shock a change in WHICH pixels are averaged rather than
 a change in protection; see level_service_threshold).
 
-STATIC (task_compute_erosion_shock_static): read raw_dependencies/erosion_prevention_dependency.csv, subtract
+STATIC (erosion_shock_static): read raw_dependencies/erosion_prevention_dependency.csv, subtract
 the baseline reference, linearly ramp 0 -> the scenario value over the horizon, apply to the 8
 erosion-affected crop sectors -> erosion_interpolated.csv. UNCAPPED here -- the cap is applied
 later on the COMBINED value in build_combined_afeall_cc_es.
 
-DYNAMIC (#26; task_erosion_sdr -> upstream -> exposure -> shock): recompute the shock from our SEALS
+DYNAMIC (#26; erosion_sdr -> upstream -> exposure -> shock): recompute the shock from our SEALS
 maps via InVEST SDR -> D8 upstream -> prevention shares -> per-zone crop-productivity shock, by THREE
 methods reported side by side (A = 'damage', thresholded/area; B = 'service', threshold-free and
 magnitude-weighted with a per-crop coefficient; B-thresholded = 'service_threshold', B restricted to a
-FIXED severe-pixel set and the DEFAULT; see task_erosion_shock). add_erosion_tasks (erosion_initialize) dispatches static vs dynamic on p.dynamic_es.
+FIXED severe-pixel set and the DEFAULT; see erosion_shock). add_erosion_tasks (erosion_initialize) dispatches static vs dynamic on p.dynamic_es.
 """
 import os
 import pandas as pd
@@ -69,7 +69,7 @@ CROPLAND_SEALS7_CLASS = 2
 # biophysical erosion into an economic productivity shock requires such a coefficient, so all three
 # methods rest on one. Method A applies this flat value to its thresholded area share. The service
 # methods read a
-# per-crop coefficient from elasticity_crops_fao_revised.csv (see alpha_for in task_erosion_shock) and
+# per-crop coefficient from elasticity_crops_fao_revised.csv (see alpha_for in erosion_shock) and
 # falls back here only when neither the crop nor its sector has a value.
 EROSION_ALPHA = 0.08
 
@@ -80,7 +80,7 @@ EROSION_ALPHA = 0.08
 # inside the functions so module import stays light.
 # ---------------------------------------------------------------------------
 
-def task_erosion_sdr(p):
+def erosion_sdr(p):
     """DYNAMIC step 1: per (scenario, anchor year), resample the SEALS map to the erosion analysis
     grid (p.modality: local -> 6.45 km reference grid, sc/msi -> native SEALS resolution) and run
     InVEST SDR. Outputs per map, in p.cur_dir/<scn>_<yr>/: usle_<scn>_<yr>.tif (actual erosion) and
@@ -158,7 +158,7 @@ def task_erosion_sdr(p):
     return True
 
 
-def task_erosion_upstream(p):
+def erosion_upstream(p):
     """DYNAMIC step 2: per (scenario, year), upstream prevention share = acc(avoided) / acc(rkls),
     D8 flow-accumulation of avoided-mass over potential-mass (the pixel-area weight cancels in the
     ratio). Recomputed per scenario because the upslope land cover changes. Reads the SDR outputs
@@ -219,7 +219,7 @@ def task_erosion_upstream(p):
     return True
 
 
-def task_erosion_exposure(p):
+def erosion_exposure(p):
     """DYNAMIC step 3: per (scenario, year), turn the SDR outputs into the pixel fields the level
     functions consume, on the equal-area analysis grid.
 
@@ -355,7 +355,7 @@ def task_erosion_exposure(p):
     return True
 
 
-def task_erosion_shock(p):
+def erosion_shock(p):
     """DYNAMIC step 4: per-ee_r50_aez18 crop-productivity LEVELS by three methods, reported side by side.
 
     All share the SDR front-end (USLE, RKLS, avoided) and all bridge erosion to yield with the same
@@ -672,7 +672,7 @@ def task_erosion_shock(p):
              end['shock_pct_service_threshold'].mean()))
     return True
 
-def task_compute_erosion_shock_static(p):
+def erosion_shock_static(p):
     """Static per-scenario erosion shock -> 8 crop sectors, linear ramp 0->end_year.
 
     Caller sets on p before calling: es_shock_scenarios, es_shock_base_year,
@@ -745,7 +745,7 @@ def task_compute_erosion_shock_static(p):
 # =============================================================================
 
 
-def task_run_invest_sdr(p):
+def invest_sdr(p):
     """Section A: run InVEST SDR to produce the erosion rasters (USLE, avoided erosion) that
     Section B consumes. ProjectFlow-idiomatic: outputs default into THIS task's dir (caller may
     override erosion_sdr_output_dir), the paths Section B reads are PUBLISHED on p before the
@@ -769,12 +769,12 @@ def task_run_invest_sdr(p):
     return True
 
 
-def task_compute_prevention_shares(p):
+def prevention_shares(p):
     """Section B: combine on-farm (AE/(AE+USLE)) and upstream prevention shares into the
     union-of-protection PS_combined, then country-crop protected production and the GEP valuation
     (onfarm / upstream / combined) -> integrated_country_gep.csv + the PS rasters the maps task
     reads. ProjectFlow-idiomatic: outputs default into THIS task's dir via erosion_gep_output_dir
-    (the same attr configure_maps chains on), USLE/avoided arrive from task_run_invest_sdr's
+    (the same attr configure_maps chains on), USLE/avoided arrive from invest_sdr's
     published attrs, and the registered result is the skip check (like every gep_calculation).
     """
     if not getattr(p, 'erosion_gep_output_dir', None):
@@ -792,7 +792,7 @@ def task_compute_prevention_shares(p):
     return True
 
 
-def task_generate_maps_and_figures(p):
+def maps_and_figures(p):
     """Section C: publication-ready choropleths, raster previews and charts from Section B's
     outputs (found via the shared erosion_gep_output_dir attr). Figures default into THIS task's
     dir; skip_existing at registration."""

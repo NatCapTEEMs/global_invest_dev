@@ -14,5 +14,5 @@ def add_fisheries_tasks(p, parent=None):
     the SEALS maps and has no dynamic path: p.dynamic_es does not apply to it. cwon_shocks.har defaults
     via base_data_dir / aggregation_label; the per-region FSH shock CSV lands in p.es_shock_dir.
     """
-    p.compute_fisheries_shock_task = p.add_task(fisheries_tasks.task_compute_fisheries_shock, parent=parent)
+    p.fisheries_shock_task = p.add_task(fisheries_tasks.fisheries_shock, parent=parent)
     return p

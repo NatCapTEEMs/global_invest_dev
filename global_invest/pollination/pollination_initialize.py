@@ -28,8 +28,8 @@ def initialize_paths(p):
 
 def build_gep_service_calculation_task_tree(p):
     """GEP calculation tree: value raster -> per-r264 sums -> r250 one-row-per-country valuation."""
-    p.task_summarize_pollination_value_by_region = p.add_task(
-        pollination_tasks.task_summarize_pollination_value_by_region, skip_existing=1)
+    p.pollination_value_by_region = p.add_task(
+        pollination_tasks.pollination_value_by_region, skip_existing=1)
     p.task_gep_calculation = p.add_task(pollination_tasks.gep_calculation)
     return p
 
@@ -56,8 +56,8 @@ def add_pollination_tasks(p, parent=None):
     """Graft the pollination ES-shock task onto p, dispatching STATIC vs DYNAMIC on p.dynamic_es.
 
     DYNAMIC ('pollination' in p.dynamic_es): recompute the sufficiency shock from our SEALS maps at each
-    p.es_shock_years anchor (task_compute_pollination_shock). STATIC (the default): read the frozen
-    raw_dependencies/pollination_dependency.csv (task_compute_pollination_shock_static). Mirrors
+    p.es_shock_years anchor (pollination_shock). STATIC (the default): read the frozen
+    raw_dependencies/pollination_dependency.csv (pollination_shock_static). Mirrors
     add_erosion_tasks / add_terrestrial_carbon_tasks; both paths write pollination_interpolated.csv.
 
     Caller sets only the shared es_shock_* config (see run_ngfs_pnas STEP 6). Everything
@@ -66,8 +66,8 @@ def add_pollination_tasks(p, parent=None):
     """
     dynamic = 'pollination' in getattr(p, 'dynamic_es', [])
     if not dynamic:   # not requested dynamic -> read the frozen dependency table
-        p.compute_pollination_shock_task = p.add_task(pollination_tasks.task_compute_pollination_shock_static, parent=parent)
+        p.pollination_shock_task = p.add_task(pollination_tasks.pollination_shock_static, parent=parent)
         return p
     # dynamic: recompute from the SEALS maps (one task for pollination; cf. erosion's multi-task chain)
-    p.compute_pollination_shock_task = p.add_task(pollination_tasks.task_compute_pollination_shock, parent=parent)
+    p.pollination_shock_task = p.add_task(pollination_tasks.pollination_shock, parent=parent)
     return p
