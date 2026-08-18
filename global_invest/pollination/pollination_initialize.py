@@ -19,7 +19,7 @@ def initialize_paths(p):
     crop_benefits recipe and set p.base_year = 2019 before quoting a manuscript-aligned number.
     """
     p.base_year = getattr(p, 'base_year', 2023)
-    p.pollination_value_raster_path = p.get_path('crop_benefits', f'poll_value_global_{p.base_year}usd.tif')
+    p.pollination_value_raster_path = p.get_path('global_invest', 'pollination', f'poll_value_global_{p.base_year}usd.tif')
     utilities.initialize_country_paths(p)   # shared r264 block (csv/gpkg/simplified + df_countries)
     return p
 

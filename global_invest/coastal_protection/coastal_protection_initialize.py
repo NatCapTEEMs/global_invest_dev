@@ -9,11 +9,11 @@ def initialize_paths(p):
     utilities.initialize_country_paths(p, simplified='30sec')
 
     # Service data staged into base_data from the drive's submissions folders (see base_data CHANGELOG).
-    p.cwon_input_ref_path = p.get_path('coastal_protection', 'data_mangroves_2019.xlsx')
-    p.coral_reef_ref_path = p.get_path('coastal_protection', 'coral_reefs_annual_expected_benefit_nfamara.xlsx')
+    p.cwon_input_ref_path = p.get_path('global_invest', 'coastal_protection', 'data_mangroves_2019.xlsx')
+    p.coral_reef_ref_path = p.get_path('global_invest', 'coastal_protection', 'coral_reefs_annual_expected_benefit_nfamara.xlsx')
     # The drive's submissions folder spells this 'gdp_inflation_delator' (sic); staged locally under
     # the corrected name. Filename case is exact so it resolves on case-sensitive filesystems too.
-    p.df_gdp_inflation_deflator_path = p.get_path('gdp_inflation_deflator', 'GDP_Inflation_deflator.xlsx')
+    p.df_gdp_inflation_deflator_path = p.get_path('global_invest', 'gdp_inflation_deflator', 'GDP_Inflation_deflator.xlsx')
 
 def build_gep_service_calculation_task_tree(p):
     """Build the default task tree for commercial agriculture."""
