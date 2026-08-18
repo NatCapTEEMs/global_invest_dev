@@ -11,12 +11,11 @@ if __name__ == '__main__':
     p.project_name = 'gep_landslide_mitigation'
     p.project_dir = os.path.join(os.path.expanduser('~'), 'Files', 'global_invest', 'projects', p.project_name)
     p.set_project_dir(p.project_dir)
-    p.run_in_parallel = True  # the tree builder's iterators read this (author's runner set it; the fold dropped it)
 
-    landslide_mitigation_initialize.build_gep_service_task_tree(p)
-
+    # The tree builder's iterators read run configuration, so initialize before building the tree.
     p.results = {}
     landslide_mitigation_initialize.initialize_paths(p)
+    landslide_mitigation_initialize.build_gep_service_task_tree(p)
 
     hb.log('Created ProjectFlow object at ' + p.project_dir + '\n    from script ' + p.calling_script
            + '\n    with base_data set at ' + p.base_data_dir)

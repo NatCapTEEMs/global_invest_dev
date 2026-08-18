@@ -10,14 +10,35 @@ STATUS: folded + import-clean; NOT yet run here and NOT number-verified -- the c
 the release-day appendix tables (the older gep xlsx predates the v0.2.0 method change); exact
 replication waits on a machine-readable v0.2.0 output from the author. Numbers provisional.
 """
+import hazelbean as hb
+
 from global_invest.landslide_mitigation import landslide_mitigation_tasks
 
 
 def initialize_paths(p):
     """Landslide inputs via get_path reference paths (base_data/landslide_mitigation/input_data_raw,
-    staged from the author's TEEMs-drive migration). The source tasks resolve their own inputs off
-    p.base_data_dir-relative references; this pins the roots."""
+    staged from the author's TEEMs-drive migration), plus the source run script's full configuration
+    block. The first-run crashes came from porting that block one attribute at a time; it lives here
+    whole now, source lines 84-114."""
     p.landslide_input_data_dir = p.get_path('landslide_mitigation', 'input_data_raw')
+    p.shared_base_data_dir = p.base_data_dir
+
+    p.force_run = False
+    p.L = hb.get_logger('landslide_mitigation_workflow')
+
+    p.processing_resolution = 2000
+    p.run_in_parallel = True
+    p.num_workers = 8
+
+    p.data_processing_range = range(2007, 2020)
+    p.modeling_range = range(2007, 2019)
+    p.prediction_years = [2019]
+    p.max_location_accuracy_m = 1000
+    p.control_ratio = 25
+    p.c_root_scenarios = {
+        'observed': 'observed',
+        'full_impacts': 0,
+    }
     return p
 
 
