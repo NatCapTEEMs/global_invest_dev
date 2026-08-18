@@ -13,7 +13,7 @@ def initialize_paths(p):
     p.coral_reef_ref_path = p.get_path('global_invest', 'coastal_protection', 'coral_reefs_annual_expected_benefit_nfamara.xlsx')
     # The drive's submissions folder spells this 'gdp_inflation_delator' (sic); staged locally under
     # the corrected name. Filename case is exact so it resolves on case-sensitive filesystems too.
-    p.df_gdp_inflation_deflator_path = p.get_path('global_invest', 'gdp_inflation_deflator', 'GDP_Inflation_deflator.xlsx')
+    p.df_gdp_inflation_deflator_path = p.get_path('global_invest', 'coastal_protection', 'gdp_inflation_deflator', 'GDP_Inflation_deflator.xlsx')
 
 def build_gep_service_calculation_task_tree(p):
     """Build the default task tree for commercial agriculture."""
