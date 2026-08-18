@@ -29,12 +29,12 @@ format:
 
 # What global_invest is
 
-## One module, two outputs per service
+## One module per service: GEP always, a shock where the science allows
 
 - The library holds one folder per ecosystem service, all on the same file convention.
-- Each service exposes two outputs from the same science: a GEP valuation per country, and an NGFS scenario shock for the GTAP pipeline.
-- Writing the science once and exposing it two ways keeps the valuation and the shock from drifting apart.
-- The library carries no consumer scenario names. Consumers inject their naming through scenario maps and required configuration.
+- Every service produces a GEP valuation per country (fisheries' still comes from the external CWoN accounts today). Services whose science supports it also produce a scenario shock for the macroeconomic pipeline; not all can be made into shocks.
+- Where both outputs exist, they are written from the same science, so the valuation and the shock cannot drift apart.
+- The library is scenario agnostic. Consumers inject their naming through scenario maps and required configuration.
 
 ## The template every service follows
 
@@ -125,6 +125,7 @@ format:
 - [State: shock-only by design; the valuation is external (CWoN). The shock file derives from DBEM (Cheung 2021), built by Erwin.]{.state}
 - **Q1 (Erwin):** the RCP8.5 shock series stands in for the RCP7.0 scenario because no 7.0 series exists. Defensible, but currently discoverable rather than stated. Please bless it or name a replacement.
 - **Q2 (Erwin):** the exact CWoN vintage behind the HAR file, for the record.
+- **Q3 (Erwin, new):** every service is expected to have a GEP eventually, and fisheries' valuation still lives in the external CWoN accounts. Should the fisheries GEP be brought into the library, and from which CWoN table?
 
 # The accounting services
 
