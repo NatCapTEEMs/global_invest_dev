@@ -174,6 +174,30 @@ format:
 - Kosovo's row in the shared correspondence carries the country name "Serbia" with the correct label XKX. One cell, fixed upstream, and every name-join and map legend stops lying. Who owns the correspondence generation?
 - The drive folder `gdp_inflation_delator` is missing an f. We staged under the corrected spelling; the drive folder should be renamed to match. Who owns submissions?
 
+# The service sheet itself
+
+## Status per the sheet's own tracking (asks to each team)
+
+- Three services have NO SI table yet: **Water Supply, Livestock, River Flood Mitigation**. Six more are marked Incomplete: Water Quality, Coastal Protection, Pest Control, Timber, Extractive Materials, Fire Protection.
+- **Storm Mitigation has no status at all** in the sheet, and Fuelwood's feasibility reads "Unknown" — can their teams say where they stand?
+- Timber's draft is In Progress; everyone else reports a shared draft. When does Timber's land?
+- Five services are feasible only as case studies, not globally: Water Quality, Pest Control, Health, Peak Flow Mitigation, Moisture Recycling. Is case-study coverage acceptable for the account, or do these wait?
+
+## The sheet's own missing-info flags, by service
+
+- **Value info missing:** Pollination and Fish Provision (the sheet says so itself, which matches our 28-times definitional question).
+- **Quantity and price info missing:** Coastal Protection — likely the same gap behind our $73bn-vs-$36.72bn question.
+- **Method and data missing:** Health Benefits (value method and data), Fire Protection (price data sources), Air Filtration (value and coverage).
+- **"Relationship to other services" missing:** Water Quality, Non-Timber Forest Products, Timber — the same double-counting concern our shoreline question raises for carbon.
+- Ask: each named team fills its row before the account integrates its service.
+
+## Leads, priorities, and hygiene
+
+- The sheet itself lists a category "Feasible ES with no assigned lead" — can leads be named today for the unclaimed services?
+- Which sheet services should enter the library NEXT? Our suggestion for sequencing: the three with complete SI tables and global feasibility that have no module yet (Local Climate Regulation, Recreation, Extractive Energy).
+- The sheet's label typos (wind_enery_provision and siblings) should be fixed before any code inherits them.
+- The CAS and UMN member columns already name people per service — we will read owners from there unless told otherwise.
+
 # What we need from you
 
 ## The take-away list, by person
@@ -187,3 +211,4 @@ format:
 - **Extractive owner:** the source of 0.49.
 - **Renewable owner:** code or CSVs.
 - **The room:** pollination's definition, the shoreline convention, crop's units, the map dissolve, base year 2019, subsistence scope, marine carbon's fate.
+- **Every service team:** complete your SI-table row (status, value info, relationships to other services); name leads for the unclaimed services; confirm the next-in-line services for the library.
