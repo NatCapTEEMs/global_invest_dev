@@ -1,6 +1,6 @@
 ---
 title: "Global InVEST"
-subtitle: "The GEP service library: verified state and the open questions. Lab presentation, 24 August 2026."
+subtitle: "The GEP service library: state and open questions. Lab presentation, 24 August 2026."
 format:
     revealjs:
         theme: simple
@@ -20,14 +20,12 @@ format:
 - Ecosystems supply services the economy depends on, from pollination and soil retention to coastal protection and carbon storage, yet none of them appear in standard national accounts.
 - What is not measured goes unmanaged: the loss of these services surfaces only later, as lower yields, higher damages and higher prices.
 - The Gross Ecosystem Product (GEP) account values what ecosystems supply, country by country and service by service, so natural capital can be tracked alongside GDP.
-- The same service models also drive scenario analysis: how climate and land-use scenarios change the services economies depend on, feeding the NGFS and GTAP pipelines.
+- The same service models also drive scenario analysis: how climate and land-use scenarios change the services economies depend on, feeding the macroeconomic pipelines.
 
 ## Why one reviewed library
 
-- Each GEP service model was developed by a different contributor in a different repository, with its own layout, path conventions and aggregation habits.
-- Numbers from that landscape are hard to trust. The survey found hardcoded personal paths, modules cloned from other services without respecification, silent country joins and reports that could not be reproduced.
+- Different GEP service models were developed by different contributors in different repositories, with their own layout, path conventions and aggregation choices.
 - One home with one template makes every service runnable by anyone, verifiable by rerun, and consumable by both the GEP account and the economic models.
-- The discipline this enables has already corrected headline numbers, including one claim of our own.
 
 # What global_invest is
 
