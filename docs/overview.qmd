@@ -177,6 +177,15 @@ format:
 - **Subsistence:** crop, livestock, and fisheries carry subsistence subgroups in the service sheet. In scope or not, per service?
 - **The universe crosswalk:** the sheet lists roughly 26 services; the library covers ten. We propose a tested crosswalk table (sheet label to module to output) instead of restructuring modules to mirror the sheet. And the sheet's label typos should be fixed before anything inherits them.
 
+## The PM team's August 31 pass maps onto today
+
+- Colleen's housekeeping email (due August 31) asks every group for consistent parameters and clean write-ups. Today's answers complete most of it a week early.
+- **2019 dollars:** confirms our base year; pollination's regeneration will follow Marta's conversion guidance once its definition is settled.
+- **CWON rental rates, not GTAP:** renewable and fisheries already use CWON. For extractive, this is context for the 0.49 question — if that factor is a rental-rate choice, the CWON guidance may answer it.
+- **EPA VSL:** landslide values mortality, so one more ask for Matt — which VSL does v0.2.0 use?
+- **Zeros vs NAs:** our verification hit exactly this — extractive has 9 countries NA for missing WB data (documented), and coastal_protection currently fills unmatched countries with zero in a merge, which needs the true-zero-or-NA review the email asks for. We will do that pass on our modules.
+- **Discount rate 2 percent with 1 and 3 sensitivity:** the carbon services' rental SCC embeds a discounting choice — worth confirming it matches.
+
 ## One data fix and one naming fix
 
 - Kosovo's row in the shared correspondence carries the country name "Serbia" with the correct label XKX. One cell corrected upstream makes every name-join and map legend right. Who owns the correspondence generation?
