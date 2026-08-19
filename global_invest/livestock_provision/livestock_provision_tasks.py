@@ -56,7 +56,7 @@ def gep_calculation(p):
             p.cwon_crop_coefficients_path = p.get_path(p.cwon_crop_coefficients_ref_path)
 
         if not getattr(p, 'livestock_provision_subservices', None):
-            p.commercial_attribute_subservices = livestock_provision_defaults.DEFAULT_LIVESTOCK_ITEMS
+            p.commercial_attribute_subservices = livestock_provision_defaults.OWNER_LIVESTOCK_VALUE_CODES
 
         # 1. Read and process data
         df_crop_value = livestock_provision_functions.read_crop_values(p.fao_input_path, p.commercial_attribute_subservices)

@@ -1,6 +1,6 @@
 ---
 title: "Global InVEST"
-subtitle: "The GEP service library: state and open questions. Lab presentation, 24 August 2026."
+subtitle: "The GEP service library: state and open questions."
 format:
     revealjs:
         theme: simple
@@ -148,7 +148,7 @@ format:
 
 ## livestock_provision: three decisions before the numbers can be trusted
 
-- [State: conformed and running, but QUARANTINED: the numbers are known wrong. Tonight we located the owner's method repo, and it answers more than we hoped.]{.state}
+- [State: QUARANTINED numbers, but the owner's method repo answers more than we hoped — and step 1 of his method is already implemented as a draft: with his 65 FAO item codes replacing the stale 29-name list, India recovers from zero to $136bn, China reads $838bn, and the world total $2.29T, all PROVISIONAL pending his lambda. The old name list matched only 13 of its own 29 items against current FAO files.]{.state}
 - **Q1 (owner): We found your meat/milk/other item grouping — is it current, and does milk belong as it suggests?** The library's 29-item meats-and-eggs list (which captures 4 percent of India's FAO livestock value) appears to be a stale fork of your method.
 - **Q2 (owner): Is the intended nature share the GLEAM-3 feed-share lambda — ecosystem feed over total feed, per country — as your lambda.py computes?** If so, the answer is neither crop's coefficients nor pasture rents, and we implement exactly that.
 - **Q3 (owner): Can you share the GLEAM input (gleam3_dmi.xlsx) and one per-country output table?** The GLEAM file lives on a personal disk and the repo commits no output; with both, we implement your method in the library and verify by exact replication.
