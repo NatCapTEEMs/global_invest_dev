@@ -27,20 +27,21 @@ def run_project(p):
     # same attributes are set by the run script (e.g. run_ngfs_pnas.py).
     # -------------------------------------------------------------------
     # SEALS 300 m maps, one per scenario x anchor year; resolved by globbing this template.
+    # Read the same way the GEP runner reads its maps: a base_data-relative reference. Stage the
+    # maps under base_data/lulc/esa/seals7/scenarios/ for standalone runs; a consumer pipeline
+    # overrides p.es_lulc_path_template with its own project's maps before grafting.
     p.es_lulc_path_template = os.path.join(
-        os.path.expanduser('~'), 'Files', 'gtap_invest', 'projects', 'ngfs', 'ngfs_pnas',
-        'intermediate', 'stitched_lulc_simplified_scenarios',
-        'lulc_esa_seals7_*_magpie_{scenario}_{year}.tif')
+        p.get_path('lulc', 'esa', 'seals7', 'scenarios'),
+        'lulc_esa_seals7_*_{scenario}_{year}.tif')
 
     # MUST be a SEALS7-classified base map (classes 1-7), not a raw ESA map:
     # run_pollination_sufficiency_300m selects the SEALS class scheme whenever the scenario label is
-    # not the literal "2020", so an ESA-coded raster here would be silently misread. SEALS writes this
-    # map itself into fine_processed_inputs (it is NOT in base_data). Note the two base years: the SEALS
-    # land-cover base is seals_key_base_year (2020) while the GTAP/ES anchor is key_base_year (2023);
-    # the pollination baseline follows the ES anchor, matching William's lulc_esa_seals7_2023.tif.
-    p.base_year_lulc_path = os.path.join(
-        os.path.expanduser('~'), 'Files', 'gtap_invest', 'projects', 'ngfs', 'ngfs_pnas',
-        'intermediate', 'fine_processed_inputs', 'lulc', 'esa', 'seals7', 'lulc_esa_seals7_2023.tif')
+    # not the literal "2020", so an ESA-coded raster here would be silently misread. Same
+    # base_data-relative convention as the scenario maps: stage it under base_data/lulc/esa/seals7/;
+    # a consumer pipeline overrides with its own copy. Note the two base years: the SEALS land-cover
+    # base is seals_key_base_year (2020) while the GTAP/ES anchor is key_base_year (2023); the
+    # pollination baseline follows the ES anchor.
+    p.base_year_lulc_path = p.get_path('lulc', 'esa', 'seals7', 'lulc_esa_seals7_2023.tif')
 
     # Reaches the dynamic chain. Without this, add_pollination_tasks grafts the static task instead and
     # this script would read the frozen dependency CSV rather than recomputing from the maps above.

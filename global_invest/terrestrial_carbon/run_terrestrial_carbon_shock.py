@@ -40,20 +40,18 @@ if __name__ == '__main__':
     # Config -- edit for a local smoke test. In a consumer pipeline these
     # same attributes are set by the run script (e.g. run_ngfs_pnas.py STEP 6).
     # -------------------------------------------------------------------
-    _ngfs = os.path.join(os.path.expanduser('~'), 'Files', 'gtap_invest', 'projects', 'ngfs', 'ngfs_pnas')
-
     # SEALS 300 m maps, one per scenario x anchor year; resolved by globbing this template.
+    # Read the same way the GEP runner reads its maps: a base_data-relative reference. Stage the
+    # maps under base_data/lulc/esa/seals7/scenarios/ for standalone runs; a consumer pipeline
+    # overrides p.es_lulc_path_template with its own project's maps before grafting.
     p.es_lulc_path_template = os.path.join(
-        _ngfs, 'intermediate', 'stitched_lulc_simplified_scenarios',
-        'lulc_esa_seals7_*_magpie_{scenario}_{year}.tif')
+        p.get_path('lulc', 'esa', 'seals7', 'scenarios'),
+        'lulc_esa_seals7_*_{scenario}_{year}.tif')
 
-    # MUST be the SEALS7-classified base map, not a raw ESA map: the density lookup is keyed on
-    # SEALS7 classes, so an ESA-coded raster here yields all-NoData densities. SEALS writes this
-    # itself into fine_processed_inputs (it is NOT in base_data). Never p.base_year_lulc_path,
-    # which SEALS owns and overwrites at runtime with its raw-ESA source.
-    p.es_base_year_lulc_path = os.path.join(
-        _ngfs, 'intermediate', 'fine_processed_inputs', 'lulc', 'esa', 'seals7',
-        'lulc_esa_seals7_2023.tif')
+    # MUST be the SEALS7-classified base map, not a raw ESA map (the density lookup is keyed on
+    # SEALS7 classes). Same base_data-relative convention: stage it under base_data/lulc/esa/seals7/;
+    # consumers override with their pipeline's own copy.
+    p.es_base_year_lulc_path = p.get_path('lulc', 'esa', 'seals7', 'lulc_esa_seals7_2023.tif')
 
     # Reaches the dynamic chain. Without this, add_terrestrial_carbon_tasks grafts the static task
     # instead, and this would read the frozen dependency CSV rather than recomputing from the maps.

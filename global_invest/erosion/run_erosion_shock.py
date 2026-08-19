@@ -41,22 +41,18 @@ def run_project(p):
     # Config -- edit for a local smoke test. In a consumer pipeline these
     # same attributes are set by the run script (e.g. run_ngfs_pnas.py).
     # -------------------------------------------------------------------
-    _ngfs = os.path.join(os.path.expanduser('~'), 'Files', 'gtap_invest', 'projects', 'ngfs', 'ngfs_pnas')
-
     # SEALS 300 m maps, one per scenario x anchor year; resolved by globbing this template. The base
     # scenario is globbed with the same pattern, so it must be present for the differencing to work.
     #
     # GLOBAL maps, deliberately. The analysis grid is global 6.45 km either way, so SDR costs the same
     # ~25M pixels whether the LULC spans the world or a small AOI -- an AOI run just leaves the grid
-    # almost entirely nodata and pays the same price. Global also makes the result comparable to the
-    # frozen raw_dependencies/erosion_prevention_dependency.csv, which is global 2050 per r50xAEZ18, so
-    # method A can be checked against the paper's own numbers (the #26 proof).
-    # READ-ONLY use of the preserved archive: it holds only 2050, hence the single anchor below. The
-    # long_test project has both 2035 and 2050 but only over a small AOI; use it if the interpolation
-    # between anchors is what needs exercising.
+    # almost entirely nodata and pays the same price.
+    # Read the same way the GEP runner reads its maps: a base_data-relative reference. Stage the
+    # maps under base_data/lulc/esa/seals7/scenarios/ for standalone runs; a consumer pipeline
+    # overrides p.es_lulc_path_template with its own project's maps before grafting.
     p.es_lulc_path_template = os.path.join(
-        _ngfs, 'intermediate_static_20260718', 'stitched_lulc_simplified_scenarios',
-        'lulc_esa_seals7_*_magpie_{scenario}_{year}.tif')
+        p.get_path('lulc', 'esa', 'seals7', 'scenarios'),
+        'lulc_esa_seals7_*_{scenario}_{year}.tif')
 
     # Reaches the dynamic chain. Without this, add_erosion_tasks grafts the static task instead and
     # none of the SDR work runs.
