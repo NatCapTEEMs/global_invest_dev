@@ -82,7 +82,7 @@ def initialize_paths(p):
 
 def build_mangrove_carbon_calculation_task_tree(p):
     """Add mangrove area, stock, and storage-value tasks to the task tree."""
-    p.task_calculate_mangrove_area = p.add_task(
+    p.mangrove_area_within_countries = p.add_task(
         coastal_carbon_tasks.mangrove_area_within_countries, skip_existing=1
     )
     p.mangrove_carbon_stock = p.add_task(
@@ -96,7 +96,7 @@ def build_mangrove_carbon_calculation_task_tree(p):
 
 def build_marsh_carbon_calculation_task_tree(p):
     """Add salt marsh area, stock, and storage-value tasks to the task tree."""
-    p.task_calculate_salt_marsh_area = p.add_task(
+    p.salt_marsh_area_within_countries = p.add_task(
         coastal_carbon_tasks.salt_marsh_area_within_countries, skip_existing=1
     )
     p.salt_marsh_carbon_stock = p.add_task(
@@ -116,7 +116,7 @@ def build_seagrass_carbon_calculation_task_tree(p):
     RAISES in the area task; exclude seagrass by not building this tree
     (include_seagrass=False), never via a silent data-gap skip.
     """
-    p.task_calculate_seagrass_area = p.add_task(
+    p.seagrass_area_within_countries = p.add_task(
         coastal_carbon_tasks.seagrass_area_within_countries, skip_existing=1
     )
     p.seagrass_carbon_stock = p.add_task(
