@@ -135,7 +135,8 @@ format:
 - [State: shock-only by design; the valuation is external (CWoN). The shock file derives from DBEM (Cheung 2021), built by Erwin.]{.state}
 - **Q1 (Erwin): Do you bless the RCP8.5-for-RCP7.0 substitution, or name a replacement?** The 8.5 series stands in because no 7.0 series exists — defensible, but currently discoverable rather than stated.
 - **Q2 (Erwin): Which CWoN vintage is behind the HAR file?** For the record and the methods writeup.
-- **Q3 (Erwin, new):** every service is expected to have a GEP eventually, and fisheries' valuation still lives in the external CWoN accounts. Should the fisheries GEP be brought into the library, and from which CWoN table?
+- **Q3 (Erwin, new): Should the fisheries GEP come into the library — and from which source?** Every service is expected to have a GEP eventually; fisheries' valuation is still external.
+- Found tonight in the project's own repos: a commercial fisheries GEP exists as an R pipeline (FishStatJ to GEP), and the subsistence repo already carries a per-country output table — so the in-library GEP has source material, and the subsistence scope question has an existing product to evaluate.
 
 # The accounting services
 
@@ -147,10 +148,10 @@ format:
 
 ## livestock_provision: three decisions before the numbers can be trusted
 
-- [State: conformed and running, but QUARANTINED: the numbers are known wrong.]{.state}
-- **Q1 (owner): Which FAO items belong in the livestock list — and does milk?** The current 29 items are meats and eggs only, so India's captured value is 4 percent of its FAO livestock total.
-- **Q2 (owner): Should livestock use CWON's pasture rent shares instead of crop's coefficients?** The module currently reads the crop coefficient file, a leftover of cloning.
-- **Q3 (owner): Can you bless a reference output we can verify against once the country join is fixed?** The join currently drops countries that have both value and coefficient on file (India ends at zero); the fix is mechanical but changes numbers, and we will not trust the result without an anchor.
+- [State: conformed and running, but QUARANTINED: the numbers are known wrong. Tonight we located the owner's method repo, and it answers more than we hoped.]{.state}
+- **Q1 (owner): We found your meat/milk/other item grouping — is it current, and does milk belong as it suggests?** The library's 29-item meats-and-eggs list (which captures 4 percent of India's FAO livestock value) appears to be a stale fork of your method.
+- **Q2 (owner): Is the intended nature share the GLEAM-3 feed-share lambda — ecosystem feed over total feed, per country — as your lambda.py computes?** If so, the answer is neither crop's coefficients nor pasture rents, and we implement exactly that.
+- **Q3 (owner): Can you share the GLEAM input (gleam3_dmi.xlsx) and one per-country output table?** The GLEAM file lives on a personal disk and the repo commits no output; with both, we implement your method in the library and verify by exact replication.
 
 ## coastal_protection: two candidate totals, one run to settle it
 
