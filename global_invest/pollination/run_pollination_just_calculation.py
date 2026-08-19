@@ -1,22 +1,22 @@
 """Calculation-only pollination GEP run: summarize + valuation, without the results report.
 Same thin-runner shape as run_pollination.py."""
-import os
 import hazelbean as hb
 
 from global_invest.pollination import pollination_initialize
 
+def build_task_tree(p):
+    # This project's task tree: delegates unchanged to the shared library builder.
+    pollination_initialize.build_gep_service_calculation_task_tree(p)
+
+
 if __name__ == '__main__':
 
-    p = hb.ProjectFlow()
-    p.project_name = 'gep_pollination'
-    p.project_dir = os.path.join(os.path.expanduser('~'), 'Files', 'global_invest', 'projects', p.project_name)
-    p.set_project_dir(p.project_dir)
+    p = hb.ProjectFlow(project_name='gep_pollination', run_mode='check')
 
-    pollination_initialize.build_gep_service_calculation_task_tree(p)
+    build_task_tree(p)
 
     p.results = {}
     pollination_initialize.initialize_paths(p)
 
-    hb.log('Created ProjectFlow object at ' + p.project_dir + '\n    from script ' + p.calling_script
-           + '\n    with base_data set at ' + p.base_data_dir)
+    hb.log('Created ProjectFlow object at ' + p.project_dir + '\n    from script ' + p.calling_script)
     p.execute()

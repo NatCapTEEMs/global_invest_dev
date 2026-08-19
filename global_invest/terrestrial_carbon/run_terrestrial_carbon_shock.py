@@ -7,7 +7,7 @@ tree. This is for standalone smoke tests. For the GEP valuation, see run_terrest
 
 The raw-Spawn density build (scale to Mg/ha, add aboveground+belowground, reproject to the LULC grid)
 is a one-off base-data job, not part of this shock -- see howto/rebuild_spawn_total_carbon_density.md.
-Requires base_data/carbon_storage/ (carbon_zones_rasterized.tif and the SEALS7 density lookup, both
+Requires base_data/global_invest/terrestrial_carbon/ (carbon_zones_rasterized.tif and the SEALS7 density lookup, both
 resolved inside the task via p.get_path) plus SEALS 300 m maps for the base scenario and each scenario
 x anchor year.
 

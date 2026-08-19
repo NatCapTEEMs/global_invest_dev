@@ -19,12 +19,14 @@ import hazelbean as hb
 from global_invest.fisheries import fisheries_initialize
 
 
+def build_task_tree(p):
+    # This runner's tree IS the consumer seam: graft the tasks exactly as a pipeline would.
+    fisheries_initialize.add_fisheries_tasks(p)
+
+
 if __name__ == '__main__':
 
-    p = hb.ProjectFlow()
-    p.project_name = 'gep_fisheries'
-    p.project_dir = os.path.join(os.path.expanduser('~'), 'Files', 'global_invest', 'projects', p.project_name)
-    p.set_project_dir(p.project_dir)
+    p = hb.ProjectFlow(project_name='gep_fisheries', run_mode='check')
 
     # -------------------------------------------------------------------
     # Config -- edit for a local smoke test. In a consumer pipeline these
@@ -39,7 +41,7 @@ if __name__ == '__main__':
     p.es_shock_base_scenario = 'baseline_ignore_damages'
     p.fisheries_shock_output_path = os.path.join(p.project_dir, 'fisheries_interpolated.csv')
 
-    fisheries_initialize.add_fisheries_tasks(p)
+    build_task_tree(p)
 
     hb.log('Created ProjectFlow object at ' + p.project_dir + '\n    from script ' + p.calling_script)
     p.execute()

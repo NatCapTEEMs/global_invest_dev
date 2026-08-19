@@ -15,12 +15,14 @@ import hazelbean as hb
 from global_invest.pollination import pollination_initialize
 
 
+def build_task_tree(p):
+    # This runner's tree IS the consumer seam: graft the tasks exactly as a pipeline would.
+    pollination_initialize.add_pollination_tasks(p)
+
+
 if __name__ == '__main__':
 
-    p = hb.ProjectFlow()
-    p.project_name = 'gep_pollination_shock'   # separate project dir from the GEP runner's gep_pollination
-    p.project_dir = os.path.join(os.path.expanduser('~'), 'Files', 'global_invest', 'projects', p.project_name)
-    p.set_project_dir(p.project_dir)
+    p = hb.ProjectFlow(project_name='gep_pollination_shock', run_mode='check')
 
     # -------------------------------------------------------------------
     # Config -- edit for a local smoke test. In a consumer pipeline these
@@ -51,7 +53,7 @@ if __name__ == '__main__':
     p.es_shock_scenarios = ['below_2c']
     p.pollination_shock_output_path = os.path.join(p.project_dir, 'pollination_interpolated.csv')
 
-    pollination_initialize.add_pollination_tasks(p)
+    build_task_tree(p)
 
     hb.log('Created ProjectFlow object at ' + p.project_dir + '\n    from script ' + p.calling_script)
     p.execute()

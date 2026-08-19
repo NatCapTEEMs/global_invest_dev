@@ -6,23 +6,23 @@ resolved in coastal_carbon_initialize.initialize_paths (one source of truth for 
 base_data_dir is resolved by ProjectFlow (its default, overridable per machine via
 ~/.config/hazelbean/machine.env), never hardcoded here.
 """
-import os
 import hazelbean as hb
 
 from global_invest.coastal_carbon import coastal_carbon_initialize
 
+def build_task_tree(p):
+    # This project's task tree: delegates unchanged to the shared library builder.
+    coastal_carbon_initialize.build_gep_service_task_tree(p, include_seagrass=True)
+
+
 if __name__ == '__main__':
 
-    p = hb.ProjectFlow()
-    p.project_name = 'gep_coastal_carbon'
-    p.project_dir = os.path.join(os.path.expanduser('~'), 'Files', 'global_invest', 'projects', p.project_name)
-    p.set_project_dir(p.project_dir)  # Sets p.base_data_dir (default / machine.env), p.input_dir, p.intermediate_dir, p.output_dir.
+    p = hb.ProjectFlow(project_name='gep_coastal_carbon', run_mode='check')
 
-    coastal_carbon_initialize.build_gep_service_task_tree(p, include_seagrass=True)
+    build_task_tree(p)
 
     p.results = {}
     coastal_carbon_initialize.initialize_paths(p)
 
-    hb.log('Created ProjectFlow object at ' + p.project_dir + '\n    from script ' + p.calling_script
-           + '\n    with base_data set at ' + p.base_data_dir)
+    hb.log('Created ProjectFlow object at ' + p.project_dir + '\n    from script ' + p.calling_script)
     p.execute()
