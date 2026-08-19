@@ -91,7 +91,7 @@ format:
 ## terrestrial_carbon: solid
 
 - [State: GEP replicates the manuscript to the dollar, $5.365T at 2019. The strongest number in the library.]{.state}
-- One correction to know about: the published total was overstated 23.5 percent by a double-count of split countries (China entered six times). The corrected aggregation reproduces the manuscript exactly.
+- One correction to know about: a double-count in the CODE overstated its total by 23.5 percent (split countries entered once per sub-region — China six times). The published manuscript was right all along; the corrected aggregation reproduces it to the dollar, which is how the fix was validated.
 - **No open questions.** This service is the template the others are held to.
 
 ## coastal_carbon: which side of the shoreline?
@@ -103,7 +103,7 @@ format:
 
 ## Marine carbon: unbuilt and unowned
 
-- [State: the service sheet lists Terrestrial, Coastal, and Marine carbon. Marine appears in no repository and has no named owner.]{.state}
+- [State: the service sheet lists Terrestrial, Coastal, and Marine carbon. We found no marine module in any repository and could not identify a lead — correct us if either exists.]{.state}
 - **Q1:** is marine carbon in scope for the account at all, and on what horizon?
 - **Q2:** if yes, who owns it, and which data product drives it?
 - **Q3:** most open-ocean carbon sits in the high seas, inside no country's EEZ. Which attribution convention should a per-country account use?
@@ -179,14 +179,14 @@ format:
 
 ## One data fix and one naming fix
 
-- Kosovo's row in the shared correspondence carries the country name "Serbia" with the correct label XKX. One cell, fixed upstream, and every name-join and map legend stops lying. Who owns the correspondence generation?
+- Kosovo's row in the shared correspondence carries the country name "Serbia" with the correct label XKX. One cell corrected upstream makes every name-join and map legend right. Who owns the correspondence generation?
 - The drive folder `gdp_inflation_delator` is missing an f. We staged under the corrected spelling; the drive folder should be renamed to match. Who owns submissions?
 
 # The service sheet itself
 
 ## Status per the sheet's own tracking (asks to each team)
 
-- Three services have NO SI table yet: **Water Supply, Livestock, River Flood Mitigation**. Six more are marked Incomplete: Water Quality, Coastal Protection, Pest Control, Timber, Extractive Materials, Fire Protection.
+- Per the sheet's own status column, three services list their SI table as not filled: **Water Supply, Livestock, River Flood Mitigation**. Six more are marked Incomplete: Water Quality, Coastal Protection, Pest Control, Timber, Extractive Materials, Fire Protection. (If the sheet is out of date, telling us is the fastest fix.)
 - **Storm Mitigation has no status at all** in the sheet, and Fuelwood's feasibility reads "Unknown" — can their teams say where they stand?
 - Timber's draft is In Progress; everyone else reports a shared draft. When does Timber's land?
 - Five services are feasible only as case studies, not globally: Water Quality, Pest Control, Health, Peak Flow Mitigation, Moisture Recycling. Is case-study coverage acceptable for the account, or do these wait?
