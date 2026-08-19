@@ -140,15 +140,26 @@ def render_service_results(p):
             hb.path_remove(sidecar)
 
 
+# The frozen dependency tables spell the SAME nature-off baseline two ways (carbon:
+# baseline_ignore_dependencies; pollination/erosion: baseline_ignore_damages). That is
+# table-internal vocabulary, not one project's naming, so the equivalence is normalized here at
+# the point of reading -- the library's own stated principle -- instead of re-encoded in every
+# consumer's scenario_map. An explicit scenario_map entry still wins.
+NATURE_OFF_SPELLINGS = ('baseline_ignore_dependencies', 'baseline_ignore_damages')
+
+
 def resolve_raw_scenario(scenario_labels, scenario_map, our_scn, service, log=print):
     """Map our scenario name to the label its dependency table uses; shared by every ES static shock task.
 
-    scenario_map defaults to identity (our_scn -> [our_scn]); the first candidate present in
-    scenario_labels wins. If none is present, warn loudly -- naming the labels that ARE present -- and
-    return None so the caller skips the scenario rather than emitting a silent zero into GTAP. log is the
-    caller's logger (hb.log or print).
+    scenario_map defaults to identity (our_scn -> [our_scn]) -- except that the two nature-off
+    spellings are mutual aliases by default, since the frozen tables themselves disagree on it.
+    The first candidate present in scenario_labels wins. If none is present, warn loudly --
+    naming the labels that ARE present -- and return None so the caller skips the scenario rather
+    than emitting a silent zero into GTAP. log is the caller's logger (hb.log or print).
     """
-    candidates = scenario_map.get(our_scn, [our_scn])
+    default_candidates = [our_scn] + [s for s in NATURE_OFF_SPELLINGS
+                                      if our_scn in NATURE_OFF_SPELLINGS and s != our_scn]
+    candidates = scenario_map.get(our_scn, default_candidates)
     raw = next((c for c in candidates if c in scenario_labels), None)
     if raw is None:
         log("  WARNING %s shock: scenario '%s' (tried %s) has no row in the dependency table "
