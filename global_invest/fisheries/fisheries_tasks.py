@@ -104,8 +104,8 @@ def task_compute_fisheries_shock(p):
 
     rows = []
     for scen in scenarios:
-        hdr = header_map.get(scen)
-        if hdr is None or hdr not in fi_data:
+        hdr = header_map.get(scen, scen)   # identity fallback: FI-native labels pass straight through
+        if hdr not in fi_data:
             continue
         overrides = getattr(p, 'fisheries_value_overrides', FISH_VALUE_OVERRIDES)
         for reg, series in fi_data[hdr].items():

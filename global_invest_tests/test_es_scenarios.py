@@ -82,6 +82,23 @@ def test_no_policy_row_fails_loudly(tmp_path):
         utilities.hydrate_es_scenarios(p)
 
 
+def test_static_table_service_file_without_bau_or_map_columns(tmp_path):
+    # The fisheries shape: policy rows naming the frozen table's own headers, an aggregation
+    # column, and NO bau row / map columns -- those simply aren't derived, nothing raises.
+    fisheries_csv = """scenario_label,scenario_type,baseline_reference_label,key_base_year,years,aggregation_label
+FI26,policy,,2023,2050,v12-s26-r50
+FI45,policy,,2023,2050,v12-s26-r50
+"""
+    p = fake_p(tmp_path, csv_text=None, preset={'es_scenario_definitions_filename': 'es_scenarios_fisheries_test.csv'})
+    (tmp_path / 'input' / 'es_scenarios_fisheries_test.csv').write_text(fisheries_csv)
+    utilities.hydrate_es_scenarios(p)
+    assert p.es_shock_scenarios == ['FI26', 'FI45']
+    assert p.es_shock_base_year == 2023 and p.es_shock_years == [2050] and p.es_shock_end_year == 2050
+    assert p.aggregation_label == 'v12-s26-r50'
+    assert getattr(p, 'es_shock_base_scenario', None) is None      # no bau row: not derived
+    assert getattr(p, 'es_lulc_path_template', None) is None       # no map columns: not derived
+
+
 def test_alternate_scenarios_file_via_filename_attribute(tmp_path):
     p = fake_p(tmp_path, csv_text=None, preset={'es_scenario_definitions_filename': 'my_scenarios.csv'})
     alternate = CSV.replace('bau_shift', 'bau_myvariant')

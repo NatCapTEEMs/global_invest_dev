@@ -12,10 +12,9 @@ InVEST, seconds rather than hours.
 Requires:
   - base_data/<aggregation_label>/cwon_shocks.har with the FI26 / FI45 / FI85 headers
 """
-import os
-
 import hazelbean as hb
 
+from global_invest import utilities
 from global_invest.fisheries import fisheries_initialize
 
 
@@ -26,18 +25,13 @@ def build_task_tree(p):
 
 def run_project(p):
 
-    # -------------------------------------------------------------------
-    # Config -- edit for a local smoke test. In a consumer pipeline these
-    # same attributes are set by the run script (e.g. run_ngfs_pnas.py).
-    # -------------------------------------------------------------------
-    p.aggregation_label = 'v12-s26-r50'         # locates cwon_shocks.har under base_data
-
-    p.es_shock_years         = [2050]
-    p.es_shock_base_year     = 2023             # interp 0-anchor (GTAP base year)
-    p.es_shock_end_year      = 2050
-    p.es_shock_scenarios     = ['below_2c']
-    p.es_shock_base_scenario = 'baseline_ignore_damages'
-    p.fisheries_shock_output_path = os.path.join(p.project_dir, 'fisheries_interpolated.csv')
+    # Fisheries is the static marine service: no maps, no dynamic path -- scenarios name the CWoN
+    # table's own FI headers, so this reads its own scenarios file rather than the seals-map one
+    # (the task's header map falls back to identity, so FI-native labels flow straight through).
+    # The shared es_shock_* seam attributes come from that CSV as a defaults layer: anything the
+    # caller already set on p wins. The output CSV needs no line here -- the task defaults it.
+    p.es_scenario_definitions_filename = 'es_scenarios_fisheries_test.csv'
+    utilities.hydrate_es_scenarios(p)
 
     build_task_tree(p)
 

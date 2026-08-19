@@ -370,6 +370,12 @@ def hydrate_es_scenarios(p, log=print):
       es_shock_end_year       max(es_shock_years)
       es_lulc_path_template   dirname resolved via get_path, {scenario}/{year} pattern rejoined
       es_base_year_lulc_path  resolved via get_path
+      aggregation_label       first non-null, when the column is present
+
+    Mirroring es_config's empty-cell rule, a column that is absent (or has no values) is simply
+    not derived: a static-table service like fisheries has no bau row and no map columns -- its
+    file carries only labels, years and the aggregation -- and whatever a task then misses fails
+    as a named AttributeError in that task, not silently.
 
     Map references also seed from input_template when a fixture with that relative path ships
     there (the tiny standard-seals test maps), so the standalone smoke test is self-contained;
@@ -397,8 +403,14 @@ def hydrate_es_scenarios(p, log=print):
         if not p.es_shock_scenarios:
             raise ValueError(f"{file_name} has no scenario_type == 'policy' row -- "
                              'the shock would silently compute nothing.')
-    if unset('es_shock_base_scenario'):
-        p.es_shock_base_scenario = str(df.loc[df['scenario_type'] == 'bau', 'scenario_label'].iloc[0])
+    def column_values(label):
+        # A column that is absent, or present with no values, is "not applicable" -- same
+        # semantics as an empty es_config cell.
+        return df[label].dropna() if label in df.columns else pd.Series(dtype=object)
+
+    bau_labels = df.loc[df['scenario_type'] == 'bau', 'scenario_label']
+    if unset('es_shock_base_scenario') and len(bau_labels):
+        p.es_shock_base_scenario = str(bau_labels.iloc[0])
     if unset('es_shock_base_year'):
         p.es_shock_base_year = int(df['key_base_year'].dropna().iloc[0])
     if unset('es_shock_years'):
@@ -406,14 +418,17 @@ def hydrate_es_scenarios(p, log=print):
         p.es_shock_years = [int(y) for y in str(year_cells.iloc[0]).split(' ')]
     if unset('es_shock_end_year'):
         p.es_shock_end_year = max(p.es_shock_years)
-    if unset('es_lulc_path_template'):
-        ref = str(df['es_lulc_path_template'].dropna().iloc[0])
-        for scenario in [p.es_shock_base_scenario] + list(p.es_shock_scenarios):
+    if unset('es_lulc_path_template') and len(column_values('es_lulc_path_template')):
+        ref = str(column_values('es_lulc_path_template').iloc[0])
+        base_scenario = getattr(p, 'es_shock_base_scenario', None)
+        for scenario in ([base_scenario] if base_scenario else []) + list(p.es_shock_scenarios):
             for year in p.es_shock_years:
                 seed_input_template(p, ref.format(scenario=scenario, year=year), log, required=False)
         p.es_lulc_path_template = os.path.join(p.get_path(os.path.dirname(ref)), os.path.basename(ref))
-    if unset('es_base_year_lulc_path'):
-        ref = str(df['es_base_year_lulc_path'].dropna().iloc[0])
+    if unset('es_base_year_lulc_path') and len(column_values('es_base_year_lulc_path')):
+        ref = str(column_values('es_base_year_lulc_path').iloc[0])
         seed_input_template(p, ref, log, required=False)
         p.es_base_year_lulc_path = p.get_path(ref)
+    if unset('aggregation_label') and len(column_values('aggregation_label')):
+        p.aggregation_label = str(column_values('aggregation_label').iloc[0])
     return p
