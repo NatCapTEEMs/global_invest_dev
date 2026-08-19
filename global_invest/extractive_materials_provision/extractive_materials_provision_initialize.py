@@ -10,8 +10,8 @@ def initialize_paths(p):
 
     # World Bank series staged into base_data from the drive's submissions folder (see base_data CHANGELOG):
     # mineral rents (% of GDP) and GDP (current USD).
-    p.wb_mineral_input_ref_path = p.get_path('extractive_materials_provision', 'API_NY.GDP.MINR.RT.ZS_DS2_en_csv_v2_6559.csv')
-    p.wb_GDP_ref_path = p.get_path('extractive_materials_provision', 'API_NY.GDP.MKTP.CD_DS2_en_csv_v2_130122.csv')
+    p.wb_mineral_input_ref_path = p.get_path('global_invest', 'extractive_materials_provision', 'API_NY.GDP.MINR.RT.ZS_DS2_en_csv_v2_6559.csv')
+    p.wb_GDP_ref_path = p.get_path('global_invest', 'extractive_materials_provision', 'API_NY.GDP.MKTP.CD_DS2_en_csv_v2_130122.csv')
 
 def build_gep_service_calculation_task_tree(p):
     """Build the default task tree for commercial agriculture."""

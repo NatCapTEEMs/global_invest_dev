@@ -38,28 +38,28 @@ def initialize_paths(p):
 
     # Ecosystem extents: Global Mangrove Watch v3 (2019), salt marsh processed from GWL_FCS30D,
     # seagrass UNEP-WCMC013-014 v7.1 (GENUS attribute consumed by the seagrass stock task).
-    p.mangrove_vector_path = p.get_path('coastal_carbon', 'gmw_v3_2019_vec', 'gmw_v3_2019_vec.shp')
-    p.salt_marsh_vector_path = p.get_path('coastal_carbon', 'global_salt_marsh2019.gpkg')
-    p.seagrass_vector_path = p.get_path('coastal_carbon', '014_001_WCMC013-014_SeagrassPtPy2021_v7_1',
+    p.mangrove_vector_path = p.get_path('global_invest', 'coastal_carbon', 'gmw_v3_2019_vec', 'gmw_v3_2019_vec.shp')
+    p.salt_marsh_vector_path = p.get_path('global_invest', 'coastal_carbon', 'global_salt_marsh2019.gpkg')
+    p.seagrass_vector_path = p.get_path('global_invest', 'coastal_carbon', '014_001_WCMC013-014_SeagrassPtPy2021_v7_1',
                                         '01_Data', 'WCMC013_014_Seagrasses_Py_v7_1.shp')
 
     # Rasters: Sanderman et al. 2018 mangrove SOC (top 1 m, Mg C/ha; Zenodo 7727569, median
     # typology 2019-2020, EPSG:4326) and optional mean annual precipitation (mm/yr) for the
     # tropical wet/dry split in the IPCC BGB:AGB ratio (absent -> all tropics wet, 0.49).
-    p.mangrove_soc_path = p.get_path('coastal_carbon',
+    p.mangrove_soc_path = p.get_path('global_invest', 'coastal_carbon',
                                      'soc.tha_tnc.mangroves.typology_m_30m_b0..100cm_2019_2020_go_epsg.4326_v1.2.tif')
     # Maxwell et al. 2024 tidal-marsh SOC (top 1 m, Mg C/ha; Zenodo 10940066, pred0+pred30 summed
     # to one 0-100 cm GeoTIFF). OPTIONAL inputs resolve with raise_error_if_fail=False: the stock
     # tasks carry documented fallbacks when these files are absent (latitude step fn for marsh SOC;
     # all-tropics-wet BGB ratio for precipitation), so a missing file is a configuration, not an error.
-    p.salt_marsh_soc_path = p.get_path('coastal_carbon', 'maxwell_2024_marsoc_0_100cm.tif',
+    p.salt_marsh_soc_path = p.get_path('global_invest', 'coastal_carbon', 'maxwell_2024_marsoc_0_100cm.tif',
                                        raise_error_if_fail=False)
-    p.precipitation_path = p.get_path('coastal_carbon', 'mean_annual_precipitation_mm.tif',
+    p.precipitation_path = p.get_path('global_invest', 'coastal_carbon', 'mean_annual_precipitation_mm.tif',
                                       raise_error_if_fail=False)
     p.ha_per_cell_10sec_path = p.get_path('pyramids', 'ha_per_cell_10sec.tif')
 
     # Valuation inputs.
-    p.carbon_prices_path = p.get_path('coastal_carbon', 'carbon_prices.xlsx')
+    p.carbon_prices_path = p.get_path('global_invest', 'coastal_carbon', 'carbon_prices.xlsx')
     p.carbon_price = getattr(p, 'carbon_price', 'rental scc r2%')
 
     # Coastal aggregates on the MARINE surface: override the shared aliases with the r566 vector

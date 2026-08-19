@@ -20,21 +20,12 @@ import hazelbean as hb
 from global_invest.terrestrial_carbon import terrestrial_carbon_initialize
 
 
-def build_task_tree(p):
-    # This project's task tree: delegates unchanged to the shared library builder,
-    # which reads p.dynamic_es (set by the caller below) to decide whether to graft
-    # the dynamic recompute chain or the static frozen-CSV task.
-    terrestrial_carbon_initialize.add_terrestrial_carbon_tasks(p)
-
-
 if __name__ == '__main__':
 
-    # One call does the whole directory setup: it validates run_mode and infers the
-    # project dir git-aware from this repo -- ~/Files/global_invest/projects/
-    # gep_terrestrial_carbon, the same path the hand-built one produced.
-    # run_mode: 'check' resumes in place | 'fresh_intermediate' rebuilds all
-    # computation but keeps input/ (test projects only) | 'full' timestamps a new dir.
-    p = hb.ProjectFlow(project_name='gep_terrestrial_carbon', run_mode='check')
+    p = hb.ProjectFlow()
+    p.project_name = 'gep_terrestrial_carbon'
+    p.project_dir = os.path.join(os.path.expanduser('~'), 'Files', 'global_invest', 'projects', p.project_name)
+    p.set_project_dir(p.project_dir)
 
     # -------------------------------------------------------------------
     # Config -- edit for a local smoke test. In a consumer pipeline these
@@ -67,7 +58,7 @@ if __name__ == '__main__':
     p.terrestrial_carbon_shock_output_path = os.path.join(p.project_dir, 'terrestrial_carbon_interpolated.csv')
     p.results = {}
 
-    build_task_tree(p)
+    terrestrial_carbon_initialize.add_terrestrial_carbon_tasks(p)
 
     hb.log('Created ProjectFlow object at ' + p.project_dir + '\n    from script ' + p.calling_script)
     p.execute()

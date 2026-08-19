@@ -29,25 +29,25 @@ def initialize_paths(p):
     """
     import os
     # Section A -- InVEST SDR.
-    p.erosion_dem_path = p.get_path('global_invest', 'sdr', 'global_dem_reproj.tif')
+    p.erosion_dem_path = p.get_path('global_invest', 'erosion', 'global_dem_reproj.tif')
     p.erosion_sdr_input_dir = os.path.dirname(p.erosion_dem_path)
-    p.erosion_lulc_path = p.get_path('global_invest', 'sdr', 'lulc_esa_2019_reproj_6p45km.tif')
-    p.erosion_biophysical_table_path = p.get_path('global_invest', 'sdr', 'expanded_biophysical_table_gura.csv')
+    p.erosion_lulc_path = p.get_path('global_invest', 'erosion', 'lulc_esa_2019_reproj_6p45km.tif')
+    p.erosion_biophysical_table_path = p.get_path('global_invest', 'erosion', 'expanded_biophysical_table_gura.csv')
     p.erosion_erodibility_path = p.get_path('soil', 'erodibility_30s.tif')
     p.erosion_erosivity_path = p.get_path('soil', 'erosivity_30s.tif')
-    p.erosion_watersheds_path = p.get_path('global_invest', 'sdr', 'hybas_global_lev06_v1c.gpkg')
+    p.erosion_watersheds_path = p.get_path('global_invest', 'erosion', 'hybas_global_lev06_v1c.gpkg')
     # Section B -- prevention shares + valuation.
-    p.erosion_yield_stack_path = p.get_path('global_invest', 'sdr', 'spam2020_yield_stack_TA.tif')
-    p.erosion_area_stack_path = p.get_path('global_invest', 'sdr', 'spam2020_harvested_area_stack_TA.tif')
-    p.erosion_bandmap_csv_path = p.get_path('global_invest', 'sdr', 'spam2020_bandmap.csv')
-    p.erosion_elasticity_csv_path = p.get_path('global_invest', 'sdr', 'elasticity_crops_fao_revised.csv')
+    p.erosion_yield_stack_path = p.get_path('global_invest', 'erosion', 'spam2020_yield_stack_TA.tif')
+    p.erosion_area_stack_path = p.get_path('global_invest', 'erosion', 'spam2020_harvested_area_stack_TA.tif')
+    p.erosion_bandmap_csv_path = p.get_path('global_invest', 'erosion', 'spam2020_bandmap.csv')
+    p.erosion_elasticity_csv_path = p.get_path('global_invest', 'erosion', 'elasticity_crops_fao_revised.csv')
     p.erosion_elevation_path = p.erosion_dem_path
     p.erosion_country_boundary_path = p.get_path('cartographic', 'ee', 'ee_r250.gpkg')
-    p.erosion_fao_gpv_iso3_csv_path = p.get_path('global_invest', 'sdr', 'faostat_gpv_2019_iso3.csv',
+    p.erosion_fao_gpv_iso3_csv_path = p.get_path('global_invest', 'erosion', 'faostat_gpv_2019_iso3.csv',
                                                  raise_error_if_fail=False)
-    p.erosion_fao_prices_csv_path = p.get_path('global_invest', 'sdr', 'faostat_prices_2019_completed_revised.csv',
+    p.erosion_fao_prices_csv_path = p.get_path('global_invest', 'erosion', 'faostat_prices_2019_completed_revised.csv',
                                                raise_error_if_fail=False)
-    p.erosion_gdp_csv_path = p.get_path('global_invest', 'sdr', 'worldbank_gdp_2019.csv',
+    p.erosion_gdp_csv_path = p.get_path('global_invest', 'erosion', 'worldbank_gdp_2019.csv',
                                         raise_error_if_fail=False)
     return p
 
@@ -76,18 +76,18 @@ def add_erosion_tasks(p, parent=None):
     # resolve here rather than in every consumer's run file. Already in base_data:
     p.erosion_erosivity_path = p.get_path('soil', 'erosivity_30s.tif')
     p.erosion_erodibility_path = p.get_path('soil', 'erodibility_30s.tif')
-    p.erosion_watersheds_path = p.get_path('global_invest', 'sdr', 'hybas_global_lev06_v1c.gpkg')
-    p.erosion_biophysical_table_path = p.get_path('global_invest', 'sdr', 'expanded_biophysical_table_gura.csv')
+    p.erosion_watersheds_path = p.get_path('global_invest', 'erosion', 'hybas_global_lev06_v1c.gpkg')
+    p.erosion_biophysical_table_path = p.get_path('global_invest', 'erosion', 'expanded_biophysical_table_gura.csv')
     # (zone boundary: erosion reads the shared p.region_boundary_path, defaulted in-task like carbon/pollination)
     # Provisioned into base_data/global_invest/sdr/ (erosion-specific 6.45 km grid + DEM + country
     # boundary + SPAM2020 yield/area stacks + bandmap + crop-coefficient table):
-    p.erosion_analysis_grid_path = p.get_path('global_invest', 'sdr', 'erosion_analysis_grid_6p45km.tif')
-    p.erosion_dem_path = p.get_path('global_invest', 'sdr', 'global_dem_reproj.tif')
+    p.erosion_analysis_grid_path = p.get_path('global_invest', 'erosion', 'erosion_analysis_grid_6p45km.tif')
+    p.erosion_dem_path = p.get_path('global_invest', 'erosion', 'global_dem_reproj.tif')
     p.erosion_country_boundary_path = p.get_path('cartographic', 'ee', 'ee_r264_correspondence.gpkg')  # standard per-country set (as carbon)
-    p.erosion_yield_stack_path = p.get_path('global_invest', 'sdr', 'spam2020_yield_stack_TA.tif')
-    p.erosion_area_stack_path = p.get_path('global_invest', 'sdr', 'spam2020_harvested_area_stack_TA.tif')
-    p.erosion_bandmap_csv_path = p.get_path('global_invest', 'sdr', 'spam2020_bandmap.csv')
-    p.erosion_elasticity_csv_path = p.get_path('global_invest', 'sdr', 'elasticity_crops_fao_revised.csv')
+    p.erosion_yield_stack_path = p.get_path('global_invest', 'erosion', 'spam2020_yield_stack_TA.tif')
+    p.erosion_area_stack_path = p.get_path('global_invest', 'erosion', 'spam2020_harvested_area_stack_TA.tif')
+    p.erosion_bandmap_csv_path = p.get_path('global_invest', 'erosion', 'spam2020_bandmap.csv')
+    p.erosion_elasticity_csv_path = p.get_path('global_invest', 'erosion', 'elasticity_crops_fao_revised.csv')
     # skip_existing=1 on the three EXPENSIVE steps makes the chain resumable: InVEST SDR and the D8
     # routing each cost minutes per scenario-year and their outputs are deterministic, so re-running them
     # on every relaunch wastes the whole iteration. The final shock task deliberately does NOT skip --
