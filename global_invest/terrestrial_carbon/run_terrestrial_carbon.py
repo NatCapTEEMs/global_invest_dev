@@ -3,9 +3,6 @@
 Consumers (ngfs_pnas, nff_global) do NOT use this script -- they graft add_terrestrial_carbon_tasks(p)
 into their own task tree. This is for standalone GEP runs and smoke tests. For the standalone GTAP
 productivity shock, see run_terrestrial_carbon_shock.py (one run file per purpose, no MODE switch).
-
-base_data_dir is resolved by ProjectFlow (its default, overridable per machine via
-~/.config/hazelbean/machine.env) -- do not hardcode it here.
 """
 import pandas as pd
 import hazelbean as hb
@@ -16,22 +13,28 @@ from global_invest.terrestrial_carbon import terrestrial_carbon_initialize
 def build_task_tree(p):
     # Add the tasks to the ProjectFlow object p. This is the main logic of the model.
     terrestrial_carbon_initialize.build_gep_service_task_tree(p)
-
-
-if __name__ == '__main__':
     
-    # ProjectFlow object
-    p = hb.ProjectFlow(project_name='gep_terrestrial_carbon', run_mode='check')
-
+def run_project(p):
     # Task tree
     build_task_tree(p) # Defines the actual logic of the model. Navigate into here to see what the model does.
 
     # Project-level attributes: every input path is resolved in initialize_paths 
     p.results = {}  # All results will be stored here by each child task.
     terrestrial_carbon_initialize.initialize_paths(p)
+    
+    hb.log('Created ProjectFlow object at ' + p.project_dir +
+           '\n    with base_data set at ' + p.base_data_dir)
 
-    # Run the model
-    hb.log('Created ProjectFlow object at ' + p.project_dir + '\n    from script ' + p.calling_script)
     p.execute()
+
+    return p    
+
+if __name__ == '__main__':
+    
+    # Create ProjectFlow object
+    p = hb.ProjectFlow(project_name='gep_terrestrial_carbon', run_mode='check')
+
+    # Run the project
+    run_project(p)
 
     result = 'Done!'
