@@ -15,9 +15,11 @@ from global_invest import utilities
 
 def fake_p(tmp_path, csv_text, preset=None):
     p = types.SimpleNamespace()
-    csv = tmp_path / 'es_config.csv'
-    csv.write_text(csv_text)
-    p.get_path = lambda *a, **k: str(csv) if a[-1] == 'es_config.csv' else '/resolved/' + '/'.join(a)
+    input_dir = tmp_path / 'input'
+    input_dir.mkdir(exist_ok=True)
+    (input_dir / 'es_config.csv').write_text(csv_text)
+    p.input_dir = str(input_dir)
+    p.get_path = lambda *a, **k: '/resolved/' + '/'.join(a)
     for k, v in (preset or {}).items():
         setattr(p, k, v)
     return p
@@ -47,13 +49,12 @@ def test_caller_set_values_are_never_overridden(tmp_path):
     assert p.base_year == 2023
 
 
-def test_project_local_copy_wins(tmp_path):
-    p = fake_p(tmp_path, CSV)
-    local_dir = tmp_path / 'input'
-    local_dir.mkdir()
-    (local_dir / 'es_config.csv').write_text(
-        "service,attribute,value\nterrestrial_carbon,carbon_price,rental scc r1%\n")
-    p.input_dir = str(local_dir)
-    utilities.hydrate_es_config(p, 'terrestrial_carbon')
-    assert p.carbon_price == 'rental scc r1%'
-    assert not hasattr(p, 'base_year')
+def test_template_seeds_into_empty_input_dir(tmp_path):
+    p = types.SimpleNamespace()
+    p.input_dir = str(tmp_path / 'fresh_input')
+    p.get_path = lambda *a, **k: '/resolved/' + '/'.join(a)
+    utilities.hydrate_es_config(p, 'terrestrial_carbon', log=lambda *a: None)
+    import os
+    assert os.path.exists(os.path.join(p.input_dir, 'es_config.csv'))
+    assert p.carbon_price == 'rental scc r2%'
+    assert p.base_year == 2019

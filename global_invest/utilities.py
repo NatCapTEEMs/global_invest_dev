@@ -284,26 +284,29 @@ def assert_shock_table_sound(df, requested_scenarios, label, abs_max=SHOCK_ABS_M
 
 def hydrate_es_config(p, service, log=print):
     """Fill a service's per-ES configuration onto p from es_config.csv (long format:
-    service, attribute, value -- one shared file for the whole library, each service its rows).
+    service, attribute, value -- one shared table for the whole library, each service its rows).
 
     DEFAULTS layer, never an override: an attribute already set on p (by a consumer pipeline
     or a caller) is left untouched, so the seam contract is unchanged. Attributes ending in
     _path resolve through p.get_path (base_data-relative references); values that parse as
     integers become ints; everything else stays a string.
 
-    Resolution follows the seals input chain: a project-local copy at <input_dir>/es_config.csv
-    wins (edit that one to configure a single project), else the shared canonical copy at
-    base_data/global_invest/default_inputs/ (promoted to the drive; the repo's tracked copy is
-    the source of truth for edits to the defaults themselves).
+    The csv follows the house input chain (same as ngfs/seals): the tracked template at
+    global_invest/input_template/es_config.csv is SEEDED into the project's input/ on first
+    use, and the run always reads the project's own input/ copy -- edit that copy to configure
+    a single project. Note the standard caveat: a stale input/ copy shadows an updated
+    template; delete it (or use a fresh project) to pick up template changes.
     """
     import os
+    import shutil
     import pandas as pd
-    local = os.path.join(getattr(p, 'input_dir', ''), 'es_config.csv')
-    if getattr(p, 'input_dir', None) and os.path.exists(local):
-        csv_path = local
-    else:
-        csv_path = p.get_path('global_invest', 'default_inputs', 'es_config.csv')
-    df = pd.read_csv(csv_path)
+    template_path = os.path.join(os.path.dirname(__file__), 'input_template', 'es_config.csv')
+    local_path = os.path.join(p.input_dir, 'es_config.csv')
+    if not os.path.exists(local_path):
+        os.makedirs(p.input_dir, exist_ok=True)
+        shutil.copy(template_path, local_path)
+        log(f'Seeded es_config.csv into {p.input_dir} from the tracked template.')
+    df = pd.read_csv(local_path)
     for _, row in df[df['service'] == service].iterrows():
         attribute, value = row['attribute'], row['value']
         if getattr(p, attribute, None) is not None:
