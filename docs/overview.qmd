@@ -62,7 +62,9 @@ format:
 
 - Five files per service: thin runners, tasks, science functions, initialize, and a method document that renders from the code.
 - One runner per task tree, and every run file shares one anatomy, decided with Justin and applied across the library: build_task_tree names the pipeline, and the run is configured where it is constructed.
-- initialize_paths resolves every input a service needs, in one place: the code names what it needs relative to the shared base data, and each machine finds its own copy.
+- Configuration is data, in two shared CSVs. es_config.csv holds one row per service in the GEP formula's own vocabulary (quantity, price, attribution, land base, base year, price convention) plus the crosswalk to the status sheet; es_scenarios_test.csv holds the standard SEALS scenarios and ships the matching test maps, so a standalone shock run works on any machine.
+- The library fills only what the caller left unset. A pipeline such as ngfs_pnas drives the same tasks from its own scenarios file, and its values always win.
+- initialize_paths resolves the science inputs a service needs, in one place: the code names what it needs relative to the shared base data, and each machine finds its own copy.
 - Aggregation is on r250, one row per country. The r264 crosswalk is used only for maps.
 
 # Where things stand
@@ -86,7 +88,7 @@ format:
 ## Verification discipline, and what it caught
 
 - Run first, conform second, and verify every conform step against the cached run. An additive gate audits each branch against develop.
-- Write-time invariants check every shock table before it is written, and a canonical-row rule guards every country aggregation.
+- Write-time invariants check every shock table before it is written, a canonical-row rule guards every country aggregation, and every row of the configuration table is under test from the moment it is added.
 - Caught so far: a 23.5 percent double-count in the carbon GEP, a two-spelling baseline bug, and a stale-input trap in the erosion chaining.
 - It also caught one claim of our own: the coastal report's numbers are the EEZ-only aggregation by design, matched exactly by our run.
 - What the next slides ask for is the layer replication cannot supply: it proves our code reproduces your results, not that the results are right. None of it is criticism — most questions exist because verification found exactly where a decision, a source, or an input is missing.
