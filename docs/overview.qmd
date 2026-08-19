@@ -82,14 +82,9 @@ format:
 - Write-time invariants check every shock table before it is written, and a canonical-row rule guards every country aggregation.
 - Caught so far: a 23.5 percent double-count in the carbon GEP, a two-spelling baseline bug, and a stale-input trap in the erosion chaining.
 - It also caught one claim of our own: the coastal report's numbers are the EEZ-only aggregation by design, matched exactly by our run.
+- What the next slides ask for is the layer replication cannot supply: it proves our code reproduces your results, not that the results are right. None of it is criticism — most questions exist because verification found exactly where a decision, a source, or an input is missing.
 
 # The questions, service by service
-
-## How to read the next slides
-
-- Each service slide opens with its verified state in one line, then the specific questions only this room can answer.
-- The verification standard is replication. Replication proves our code reproduces your results; it cannot prove the results are right. That second layer is you.
-- Nothing here is a criticism. Most questions exist because verification worked: it found exactly where a decision, a source, or an input version is missing.
 
 # The carbon services
 
