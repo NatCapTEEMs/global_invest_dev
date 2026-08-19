@@ -67,6 +67,21 @@ format:
 - initialize_paths resolves the science inputs a service needs, in one place: the code names what it needs relative to the shared base data, and each machine finds its own copy.
 - Aggregation is on r250, one row per country. The r264 crosswalk is used only for maps.
 
+## The configuration table itself (es_config.csv)
+
+- One row per service; the columns are the GEP formula's roles — Q = quantity input, P = price input, λ = attribution input, land = the LULC base — plus the crosswalk to this group's status sheet. An empty cell means the role does not apply.
+
+| service | sheet crosswalk | base year | price convention | Q | P | λ | land |
+|---|---|---|---|---|---|---|---|
+| terrestrial_carbon | global_climate_regulation / terrestrial | 2019 | rental scc r2% | carbon zones raster | prices xlsx | | esa 2019 |
+| coastal_carbon | global_climate_regulation / coastal | 2019 | rental scc r2% | | prices xlsx | | |
+| pollination | pollination | 2023 | | value raster | | | |
+| renewable_energy | wind + solar + geothermal | | | IRENA production | WB prices | CWON rents | |
+| extractive_materials | extractive_materials_provision | | | WB GDP | | WB rents share | |
+| coastal_protection | coastal_protection | | | CWoN mangroves | | | |
+
+- Five more rows (crop and livestock as the sheet's commercial subgroups, fish_provision, erosion_control, landslide) carry their crosswalk today and gain cells as their configuration moves in. Every row is under test the moment it is edited.
+
 # Where things stand
 
 ## Services and totals (base year 2019, verified)
@@ -223,7 +238,7 @@ format:
 
 - The sheet itself lists a category "Feasible ES with no assigned lead" — can leads be named today for the unclaimed services?
 - Which sheet services should enter the library NEXT? Our suggestion for sequencing: the three with complete SI tables and global feasibility that have no module yet (Local Climate Regulation, Recreation, Extractive Energy).
-- The sheet's label typos (wind_enery_provision and siblings) should be fixed before any code inherits them.
+- The sheet's label typos (wind_enery_provision and siblings) now need a coordinated fix: our configuration table's crosswalk cells reproduce them faithfully, because a crosswalk key must match the sheet as written. Ask: fix the three labels in the sheet, and we update our three cells in the same change — a two-place lockstep edit, since either alone breaks the join.
 - The CAS and UMN member columns already name people per service — we will read owners from there unless told otherwise.
 
 # What we need from you
