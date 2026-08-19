@@ -18,7 +18,7 @@ def task_compute_pollination_shock(p):
 
     Caller sets on p: es_shock_years (SEALS anchor years, from seals_years),
     es_shock_base_year, es_shock_scenarios, es_lulc_path_template
-    ({scenario}/{year}) or scenario_lulc_paths, pollination_base_year_lulc_path (or the shared base_year_lulc_path),
+    ({scenario}/{year}) or scenario_lulc_paths, pollination_base_year_lulc_path (or the shared es_base_year_lulc_path),
     pollination_shock_output_path. Optional: es_shock_base_scenario, pollination_shock_acts,
     region_boundary_path.
     """

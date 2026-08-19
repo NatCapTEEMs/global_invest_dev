@@ -387,30 +387,32 @@ def hydrate_es_scenarios(p, log=print):
     file_name = getattr(p, 'es_scenario_definitions_filename', None) or 'es_scenarios_test.csv'
     df = pd.read_csv(seed_input_template(p, file_name, log))
 
-    def wants(attribute):
+    def unset(attribute):
+        # The defaults-layer contract in one predicate: hydrate only what the caller
+        # (e.g. a consumer pipeline) has not already set on p.
         return getattr(p, attribute, None) is None
 
-    if wants('es_shock_scenarios'):
+    if unset('es_shock_scenarios'):
         p.es_shock_scenarios = [str(s) for s in df.loc[df['scenario_type'] == 'policy', 'scenario_label']]
         if not p.es_shock_scenarios:
             raise ValueError(f"{file_name} has no scenario_type == 'policy' row -- "
                              'the shock would silently compute nothing.')
-    if wants('es_shock_base_scenario'):
+    if unset('es_shock_base_scenario'):
         p.es_shock_base_scenario = str(df.loc[df['scenario_type'] == 'bau', 'scenario_label'].iloc[0])
-    if wants('es_shock_base_year'):
+    if unset('es_shock_base_year'):
         p.es_shock_base_year = int(df['key_base_year'].dropna().iloc[0])
-    if wants('es_shock_years'):
+    if unset('es_shock_years'):
         year_cells = df.loc[df['scenario_type'] != 'baseline', 'years'].dropna()
         p.es_shock_years = [int(y) for y in str(year_cells.iloc[0]).split(' ')]
-    if wants('es_shock_end_year'):
+    if unset('es_shock_end_year'):
         p.es_shock_end_year = max(p.es_shock_years)
-    if wants('es_lulc_path_template'):
+    if unset('es_lulc_path_template'):
         ref = str(df['es_lulc_path_template'].dropna().iloc[0])
         for scenario in [p.es_shock_base_scenario] + list(p.es_shock_scenarios):
             for year in p.es_shock_years:
                 seed_input_template(p, ref.format(scenario=scenario, year=year), log, required=False)
         p.es_lulc_path_template = os.path.join(p.get_path(os.path.dirname(ref)), os.path.basename(ref))
-    if wants('es_base_year_lulc_path'):
+    if unset('es_base_year_lulc_path'):
         ref = str(df['es_base_year_lulc_path'].dropna().iloc[0])
         seed_input_template(p, ref, log, required=False)
         p.es_base_year_lulc_path = p.get_path(ref)

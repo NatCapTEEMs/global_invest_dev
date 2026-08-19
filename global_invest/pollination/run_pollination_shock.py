@@ -1,17 +1,25 @@
 """Standalone runner for the dynamic pollination ES shock.
 
-Mirrors run_terrestrial_carbon.py / run_erosion.py: build a ProjectFlow, point it at the SEALS 300 m maps and
-base_data, graft add_pollination_tasks, execute. Consumers (ngfs_pnas, nff_global) do NOT use this
-script -- they graft the same seam into their own task tree. This exists for standalone smoke tests
-of the pollination model on one or two scenarios.
+Mirrors run_terrestrial_carbon_shock.py / run_erosion_shock.py: build a ProjectFlow, graft
+add_pollination_tasks, execute. Consumers (ngfs_pnas, nff_global) do NOT use this script -- they
+graft the same seam into their own task tree and set the es_shock_* seam attributes from their own
+scenarios CSV. This exists for standalone smoke tests of the pollination model on one or two
+scenarios.
+
+Scenario configuration (scenarios, years, the SEALS7 map references) comes from
+input_template/es_scenarios_test.csv via hydrate_es_scenarios -- edit the project's input/ copy, or
+point p.es_scenario_definitions_filename at another file. The shipped CSV uses the standard seals
+scenario names, and the matching maps ship as input_template fixtures, so this runs self-contained.
+The base-year map MUST be SEALS7-classified (classes 1-7), not raw ESA: the sufficiency task selects
+the SEALS class scheme whenever the scenario label is not the literal "2020", so an ESA-coded raster
+would be silently misread. The shipped fixture is SEALS7.
 
 Requires (Track 2) under base_data/crop_benefits/:
   - poll_value_global_<base_year>usd.tif      baseline pollination value raster (fixed, all scenarios)
 """
-import os
-
 import hazelbean as hb
 
+from global_invest import utilities
 from global_invest.pollination import pollination_initialize
 
 
@@ -21,36 +29,14 @@ def build_task_tree(p):
 
 
 def run_project(p):
-
-    # -------------------------------------------------------------------
-    # Config -- edit for a local smoke test. In a consumer pipeline these
-    # same attributes are set by the run script (e.g. run_ngfs_pnas.py).
-    # -------------------------------------------------------------------
-    # SEALS 300 m maps, one per scenario x anchor year; resolved by globbing this template.
-    # Read the same way the GEP runner reads its maps: a base_data-relative reference. Stage the
-    # maps under base_data/lulc/esa/seals7/scenarios/ for standalone runs; a consumer pipeline
-    # overrides p.es_lulc_path_template with its own project's maps before grafting.
-    p.es_lulc_path_template = os.path.join(
-        p.get_path('lulc', 'esa', 'seals7', 'scenarios'),
-        'lulc_esa_seals7_*_{scenario}_{year}.tif')
-
-    # MUST be a SEALS7-classified base map (classes 1-7), not a raw ESA map:
-    # run_pollination_sufficiency_300m selects the SEALS class scheme whenever the scenario label is
-    # not the literal "2020", so an ESA-coded raster here would be silently misread. Same
-    # base_data-relative convention as the scenario maps: stage it under base_data/lulc/esa/seals7/;
-    # a consumer pipeline overrides with its own copy. Note the two base years: the SEALS land-cover
-    # base is seals_key_base_year (2020) while the GTAP/ES anchor is key_base_year (2023); the
-    # pollination baseline follows the ES anchor.
-    p.base_year_lulc_path = p.get_path('lulc', 'esa', 'seals7', 'lulc_esa_seals7_2023.tif')
-
-    # Reaches the dynamic chain. Without this, add_pollination_tasks grafts the static task instead and
-    # this script would read the frozen dependency CSV rather than recomputing from the maps above.
+    # Reaches the dynamic chain. Without this, add_pollination_tasks grafts the static task instead
+    # and this script would read the frozen dependency CSV rather than recomputing from the maps.
     p.dynamic_es = ['pollination']
 
-    p.es_shock_years     = [2030, 2040, 2050]   # SEALS anchor years (= seals_years)
-    p.es_shock_base_year = 2023                 # interp 0-anchor (GTAP base year)
-    p.es_shock_scenarios = ['below_2c']
-    p.pollination_shock_output_path = os.path.join(p.project_dir, 'pollination_interpolated.csv')
+    # The shared es_shock_* seam attributes, from the scenarios CSV as a defaults layer:
+    # anything the caller already set on p wins. The output CSV needs no line here -- the
+    # task defaults it into the project dir.
+    utilities.hydrate_es_scenarios(p)
 
     build_task_tree(p)
 
