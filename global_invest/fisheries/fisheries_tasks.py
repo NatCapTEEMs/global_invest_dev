@@ -20,6 +20,20 @@ from global_invest.fisheries import fisheries_functions as ff
 # derived from the scenario's RCP and scenario NAMES need no translation at all.
 RCP_FI_MAP = {'rcp26': 'FI26', 'rcp45': 'FI45', 'rcp60': 'FI85', 'rcp70': 'FI85', 'rcp85': 'FI85'}
 
+def resolve_fisheries_header(scen, header_map, climate_labels):
+    """FI header for a scenario: explicit map (consumer) -> the scenario's RCP (scenarios CSV)
+    -> identity (FI-native labels pass straight through)."""
+    return header_map.get(scen) or RCP_FI_MAP.get(climate_labels.get(scen), scen)
+
+
+def fisheries_headers_to_read(header_map):
+    """The HAR headers to read: the union of the consumer map's targets and every RCP-derivable
+    header. Must NOT depend on header_map alone -- with the legacy default deleted, an empty map
+    would read no headers and every scenario would be dropped regardless of what the RCP
+    derivation resolves (found by the ngfs session: 9/9 scenarios -> 0/9 in simulation)."""
+    return tuple(sorted(set(header_map.values()) | set(RCP_FI_MAP.values())))
+
+
 FISH_HEADER_MAP = {
     'below_2c': 'FI26', 'net_zero': 'FI26', 'low_demand': 'FI26',
     'ndcs': 'FI45', 'delayed_transition': 'FI45',
@@ -76,7 +90,7 @@ def fisheries_shock(p):
         print('  fisheries shock: cwon_shocks.har not found (%s) -- skipping' % cwon_path)
         return
 
-    fi_data = ff.read_fisheries_headers(cwon_path, headers=tuple(sorted(set(header_map.values()))))
+    fi_data = ff.read_fisheries_headers(cwon_path, headers=fisheries_headers_to_read(header_map))
 
     # Read each year's own value from the FI annual series -- the honest default, no artificial freeze.
     # For the current cwon_shocks.har every year 2023..2050 already equals the 2050 value (the series is a
@@ -111,9 +125,7 @@ def fisheries_shock(p):
 
     rows = []
     for scen in scenarios:
-        # Resolution order: explicit map (consumer) -> the scenario's RCP (scenarios CSV) ->
-        # identity (FI-native labels pass straight through).
-        hdr = header_map.get(scen) or RCP_FI_MAP.get(climate_labels.get(scen), scen)
+        hdr = resolve_fisheries_header(scen, header_map, climate_labels)
         if hdr not in fi_data:
             continue
         overrides = getattr(p, 'fisheries_value_overrides', FISH_VALUE_OVERRIDES)
