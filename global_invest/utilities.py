@@ -431,4 +431,12 @@ def hydrate_es_scenarios(p, log=print):
         p.es_base_year_lulc_path = p.get_path(ref)
     if unset('aggregation_label') and len(column_values('aggregation_label')):
         p.aggregation_label = str(column_values('aggregation_label').iloc[0])
+    if unset('es_shock_climate_labels') and len(column_values('climate_label')):
+        # scenario -> climate (rcp) label, for services whose science keys on the RCP rather
+        # than the scenario (fisheries maps this to its FI headers) -- so scenario NAMES never
+        # need a per-service translation in the library.
+        non_baseline = df[df['scenario_type'] != 'baseline']
+        p.es_shock_climate_labels = {
+            str(row['scenario_label']): str(row['climate_label'])
+            for _, row in non_baseline.iterrows() if pd.notna(row.get('climate_label'))}
     return p

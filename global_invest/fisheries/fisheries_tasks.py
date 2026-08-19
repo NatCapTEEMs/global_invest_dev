@@ -14,6 +14,12 @@ from global_invest.fisheries import fisheries_functions as ff
 
 # NGFS scenario -> fisheries RCP header. RCP2.6=FI26 (below_2c/net_zero/low_demand),
 # RCP4.5=FI45 (ndcs/delayed_transition), RCP7.0=FI85 (current_policies/fragmented_world/stress_test).
+# RCP -> FI header. The headers ARE RCP-named (FI26=RCP2.6, FI45=RCP4.5, FI85=RCP8.5; FI85 also
+# serves RCP7.0 as the closest available -- provenance #16). When the scenarios CSV carries a
+# climate_label column (hydrate_es_scenarios publishes p.es_shock_climate_labels), the header is
+# derived from the scenario's RCP and scenario NAMES need no translation at all.
+RCP_FI_MAP = {'rcp26': 'FI26', 'rcp45': 'FI45', 'rcp60': 'FI85', 'rcp70': 'FI85', 'rcp85': 'FI85'}
+
 FISH_HEADER_MAP = {
     'below_2c': 'FI26', 'net_zero': 'FI26', 'low_demand': 'FI26',
     'ndcs': 'FI45', 'delayed_transition': 'FI45',
@@ -61,6 +67,7 @@ def task_compute_fisheries_shock(p):
     end_year = int(p.es_shock_end_year)
     scenarios = list(p.es_shock_scenarios)
     header_map = getattr(p, 'fisheries_header_map', FISH_HEADER_MAP)
+    climate_labels = getattr(p, 'es_shock_climate_labels', None) or {}
 
     cwon_path = getattr(p, 'cwon_shocks_path', None) or os.path.join(
         p.base_data_dir, 'gtappy', 'cge_releases', 'gtapv7-aez-rd', 'data',
@@ -104,7 +111,9 @@ def task_compute_fisheries_shock(p):
 
     rows = []
     for scen in scenarios:
-        hdr = header_map.get(scen, scen)   # identity fallback: FI-native labels pass straight through
+        # Resolution order: explicit map (consumer) -> the scenario's RCP (scenarios CSV) ->
+        # identity (FI-native labels pass straight through).
+        hdr = header_map.get(scen) or RCP_FI_MAP.get(climate_labels.get(scen), scen)
         if hdr not in fi_data:
             continue
         overrides = getattr(p, 'fisheries_value_overrides', FISH_VALUE_OVERRIDES)

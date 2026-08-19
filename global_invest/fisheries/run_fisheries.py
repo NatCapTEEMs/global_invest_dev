@@ -25,12 +25,11 @@ def build_task_tree(p):
 
 def run_project(p):
 
-    # Fisheries is the static marine service: no maps, no dynamic path -- scenarios name the CWoN
-    # table's own FI headers, so this reads its own scenarios file rather than the seals-map one
-    # (the task's header map falls back to identity, so FI-native labels flow straight through).
-    # The shared es_shock_* seam attributes come from that CSV as a defaults layer: anything the
-    # caller already set on p wins. The output CSV needs no line here -- the task defaults it.
-    p.es_scenario_definitions_filename = 'es_scenarios_fisheries_test.csv'
+    # The shared es_shock_* seam attributes come from the SAME scenarios CSV as every other
+    # service, as a defaults layer: anything the caller already set on p wins. Fisheries is the
+    # static marine service (no maps, no dynamic path); it keys on the scenario's RCP, which the
+    # CSV's climate_label column provides, so scenario names need no translation. The output CSV
+    # needs no line here -- the task defaults it.
     utilities.hydrate_es_scenarios(p)
 
     build_task_tree(p)

@@ -27,10 +27,10 @@ def fake_p(tmp_path, csv_text=None, preset=None):
     return p
 
 
-CSV = """scenario_label,scenario_type,baseline_reference_label,key_base_year,years,es_lulc_path_template,es_base_year_lulc_path
-baseline_luh2-message,baseline,,2017,2017,lulc/esa/seals7/scenarios/lulc_esa_seals7_{scenario}_{year}.tif,lulc/esa/seals7/lulc_esa_seals7_2017.tif
-ssp2_rcp45_luh2-message_bau,bau,baseline_luh2-message,2017,2030 2050,lulc/esa/seals7/scenarios/lulc_esa_seals7_{scenario}_{year}.tif,lulc/esa/seals7/lulc_esa_seals7_2017.tif
-ssp2_rcp45_luh2-message_bau_shift,policy,baseline_luh2-message,2017,2030 2050,lulc/esa/seals7/scenarios/lulc_esa_seals7_{scenario}_{year}.tif,lulc/esa/seals7/lulc_esa_seals7_2017.tif
+CSV = """scenario_label,scenario_type,climate_label,baseline_reference_label,key_base_year,years,aggregation_label,es_lulc_path_template,es_base_year_lulc_path
+baseline_luh2-message,baseline,rcp45,,2017,2017,v12-s26-r50,lulc/esa/seals7/scenarios/lulc_esa_seals7_{scenario}_{year}.tif,lulc/esa/seals7/lulc_esa_seals7_2017.tif
+ssp2_rcp45_luh2-message_bau,bau,rcp45,baseline_luh2-message,2017,2030 2050,v12-s26-r50,lulc/esa/seals7/scenarios/lulc_esa_seals7_{scenario}_{year}.tif,lulc/esa/seals7/lulc_esa_seals7_2017.tif
+ssp2_rcp45_luh2-message_bau_shift,policy,rcp45,baseline_luh2-message,2017,2030 2050,v12-s26-r50,lulc/esa/seals7/scenarios/lulc_esa_seals7_{scenario}_{year}.tif,lulc/esa/seals7/lulc_esa_seals7_2017.tif
 """
 
 
@@ -45,6 +45,10 @@ def test_derivation_follows_the_standard_seals_vocabulary(tmp_path):
     assert p.es_lulc_path_template == os.path.join(
         '/resolved/lulc/esa/seals7/scenarios', 'lulc_esa_seals7_{scenario}_{year}.tif')
     assert p.es_base_year_lulc_path == '/resolved/lulc/esa/seals7/lulc_esa_seals7_2017.tif'
+    assert p.aggregation_label == 'v12-s26-r50'
+    # scenario -> rcp, for RCP-keyed services (fisheries): names never need translation.
+    assert p.es_shock_climate_labels == {'ssp2_rcp45_luh2-message_bau': 'rcp45',
+                                         'ssp2_rcp45_luh2-message_bau_shift': 'rcp45'}
 
 
 def test_caller_set_values_are_never_overridden(tmp_path):
@@ -82,21 +86,20 @@ def test_no_policy_row_fails_loudly(tmp_path):
         utilities.hydrate_es_scenarios(p)
 
 
-def test_static_table_service_file_without_bau_or_map_columns(tmp_path):
-    # The fisheries shape: policy rows naming the frozen table's own headers, an aggregation
-    # column, and NO bau row / map columns -- those simply aren't derived, nothing raises.
-    fisheries_csv = """scenario_label,scenario_type,baseline_reference_label,key_base_year,years,aggregation_label
-FI26,policy,,2023,2050,v12-s26-r50
-FI45,policy,,2023,2050,v12-s26-r50
+def test_file_without_bau_or_optional_columns_derives_only_what_exists(tmp_path):
+    # es_config's empty-cell rule for columns: a file with policy rows only and none of the
+    # optional columns (bau, maps, climate, aggregation) hydrates what it has, nothing raises.
+    minimal_csv = """scenario_label,scenario_type,key_base_year,years
+some_policy,policy,2023,2050
 """
-    p = fake_p(tmp_path, csv_text=None, preset={'es_scenario_definitions_filename': 'es_scenarios_fisheries_test.csv'})
-    (tmp_path / 'input' / 'es_scenarios_fisheries_test.csv').write_text(fisheries_csv)
+    p = fake_p(tmp_path, minimal_csv.replace('scenario_label', 'scenario_label'))
+    (tmp_path / 'input' / 'es_scenarios_test.csv').write_text(minimal_csv)
     utilities.hydrate_es_scenarios(p)
-    assert p.es_shock_scenarios == ['FI26', 'FI45']
+    assert p.es_shock_scenarios == ['some_policy']
     assert p.es_shock_base_year == 2023 and p.es_shock_years == [2050] and p.es_shock_end_year == 2050
-    assert p.aggregation_label == 'v12-s26-r50'
     assert getattr(p, 'es_shock_base_scenario', None) is None      # no bau row: not derived
     assert getattr(p, 'es_lulc_path_template', None) is None       # no map columns: not derived
+    assert getattr(p, 'es_shock_climate_labels', None) is None     # no climate column: not derived
 
 
 def test_alternate_scenarios_file_via_filename_attribute(tmp_path):
