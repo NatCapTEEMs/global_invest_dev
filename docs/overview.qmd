@@ -122,6 +122,7 @@ format:
 - [State: the full chain runs end to end and reconciles internally at $15.54bn, PROVISIONAL. Sections A and B verified structurally; the valuation runs on interim inputs we built ourselves.]{.state}
 - **Q1 (the author): Can you share the exact FAO production-value and price series the submitted paper used?** Our chain runs on stand-in series we built ourselves; every number moves when yours replace them.
 - **Q2 (the author): Can you share a per-country output table from the submission run?** With it we verify by exact replication, the same bar extractive already passed.
+- Both asks may be one answer: the July thread says the full run lives at `/projects/standard/jajohns/shared/sediment_gep` on MSI — pointing us there, or copying it to the drive, settles both questions.
 
 ## landslide_mitigation: a reference to verify against
 
