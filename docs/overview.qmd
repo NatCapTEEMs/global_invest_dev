@@ -59,7 +59,7 @@ format:
 | renewable_energy | $170.83bn | rerun identical; drive references disagree |
 | pollination | $18.28B raster side (2023) | FAO side $515B, definition open |
 | erosion | $15.54bn PROVISIONAL | internal reconciliation; awaits submission |
-| landslide_mitigation | first full run in progress | no machine-readable reference yet |
+| landslide_mitigation | input stage complete; full run resumes on the cluster | no machine-readable reference yet |
 | fisheries | shock only | valuation external (CWoN) |
 
 ## Verification discipline, and what it caught
@@ -112,7 +112,7 @@ format:
 
 ## landslide_mitigation: a reference to verify against
 
-- [State: folded from the v0.2.0 release, 50.5 GiB staged, first full run in progress. No valid reference exists: the only machine-readable output predates the method revision.]{.state}
+- [State: folded from the v0.2.0 release, 50.5 GiB staged. The first run completed the input stage (all twelve global reprojections and the event panels); the compute-heavy remainder resumes on the cluster, where this run belongs. The only machine-readable output predates the method revision.]{.state}
 - **Q1 (Matt): Can you export one machine-readable per-country output from a v0.2.0 run — a CSV is enough?** With it we run, diff, and the service reaches the verified bar.
 - **Q2 (Matt): Which input versions did the release-day run use?**
 
