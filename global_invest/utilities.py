@@ -291,11 +291,18 @@ def hydrate_es_config(p, service, log=print):
     _path resolve through p.get_path (base_data-relative references); values that parse as
     integers become ints; everything else stays a string.
 
-    The csv resolves like any library data: base_data/global_invest/default_inputs/ (canonical,
-    promoted to the drive), with the repo's tracked copy as the source of truth for edits.
+    Resolution follows the seals input chain: a project-local copy at <input_dir>/es_config.csv
+    wins (edit that one to configure a single project), else the shared canonical copy at
+    base_data/global_invest/default_inputs/ (promoted to the drive; the repo's tracked copy is
+    the source of truth for edits to the defaults themselves).
     """
+    import os
     import pandas as pd
-    csv_path = p.get_path('global_invest', 'default_inputs', 'es_config.csv')
+    local = os.path.join(getattr(p, 'input_dir', ''), 'es_config.csv')
+    if getattr(p, 'input_dir', None) and os.path.exists(local):
+        csv_path = local
+    else:
+        csv_path = p.get_path('global_invest', 'default_inputs', 'es_config.csv')
     df = pd.read_csv(csv_path)
     for _, row in df[df['service'] == service].iterrows():
         attribute, value = row['attribute'], row['value']

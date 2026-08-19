@@ -45,3 +45,15 @@ def test_caller_set_values_are_never_overridden(tmp_path):
     utilities.hydrate_es_config(p, 'terrestrial_carbon')
     assert p.carbon_price == 'rental scc r3%'
     assert p.base_year == 2023
+
+
+def test_project_local_copy_wins(tmp_path):
+    p = fake_p(tmp_path, CSV)
+    local_dir = tmp_path / 'input'
+    local_dir.mkdir()
+    (local_dir / 'es_config.csv').write_text(
+        "service,attribute,value\nterrestrial_carbon,carbon_price,rental scc r1%\n")
+    p.input_dir = str(local_dir)
+    utilities.hydrate_es_config(p, 'terrestrial_carbon')
+    assert p.carbon_price == 'rental scc r1%'
+    assert not hasattr(p, 'base_year')
