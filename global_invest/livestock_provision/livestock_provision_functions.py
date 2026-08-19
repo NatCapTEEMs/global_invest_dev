@@ -5,7 +5,6 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import hazelbean as hb
-from global_invest.livestock_provision import livestock_provision_defaults
 
 def read_crop_values(path: str, items):
     """
