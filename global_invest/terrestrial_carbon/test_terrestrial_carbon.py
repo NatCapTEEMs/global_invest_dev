@@ -117,7 +117,7 @@ def _shock_scene(tmp_path):
         es_shock_base_scenario='baseline', es_shock_scenarios=['scn_a'],
         scenario_lulc_paths={'baseline': {2030: baseline_2030, 2050: baseline_2050},
                              'scn_a': {2030: below_2030, 2050: below_2050}},
-        es_base_year_lulc_path=base_2020,
+        es_gep_lulc_input_path=base_2020,
         region_boundary_path=str(regions),
         terrestrial_quantity_input_path=str(cz),
         terrestrial_carbon_density_lookup_table_path=str(tmp_path / 'lut.csv'),
@@ -146,7 +146,7 @@ def test_dynamic_shock_per_zone_interpolation_and_both_measures(tmp_path):
     assert b.loc[2030, 'shock_pct'] == approx(0.0)
     assert b.loc[2050, 'shock_pct'] == approx(-45.0)     # (55-100)/100
 
-    # piecewise interpolation: 0 at base_year, linear between anchors
+    # piecewise interpolation: 0 at gep_base_year, linear between anchors
     assert a.loc[2020, 'shock_pct'] == approx(0.0)
     assert a.loc[2025, 'shock_pct'] == approx(-22.5)     # midpoint 2020->2030
     assert a.loc[2040, 'shock_pct'] == approx(-66.25)    # midpoint 2030->2050
@@ -178,7 +178,7 @@ def test_dynamic_shock_esa_base_map_raises_not_silent_zero(tmp_path):
     p = _shock_scene(tmp_path)
     esa = tmp_path / 'lulc_esa_2020.tif'
     _write_tif(esa, np.full((4, 4), 10, dtype=np.uint8) * np.array([[1, 3, 19, 21]]), gdal.GDT_Byte)
-    p.es_base_year_lulc_path = str(esa)                            # the real-world wrong-wiring trap
+    p.es_gep_lulc_input_path = str(esa)                            # the real-world wrong-wiring trap
 
     with pytest.raises(ValueError, match='matched ZERO'):
         tct.task_compute_terrestrial_carbon_shock(p)

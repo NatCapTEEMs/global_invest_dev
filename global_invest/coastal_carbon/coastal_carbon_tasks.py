@@ -346,15 +346,15 @@ def _calculate_storage_value(p, stock_csv_path, pool_columns,
 
     df_stock = pd.read_csv(stock_csv_path)
 
-    df_carbon_p = pd.read_excel(p.price_input_path)
-    df_carbon_p = df_carbon_p[['year', p.price_convention]]
-    base_year = 2019
+    df_carbon_p = pd.read_excel(p.gep_price_input_path)
+    df_carbon_p = df_carbon_p[['year', p.gep_price_convention]]
+    gep_base_year = 2019
     rental_scc = float(
-        df_carbon_p.loc[df_carbon_p['year'] == base_year, p.price_convention].iloc[0]
+        df_carbon_p.loc[df_carbon_p['year'] == gep_base_year, p.gep_price_convention].iloc[0]
     )
 
-    df_stock['year'] = base_year
-    df_stock[p.price_convention] = rental_scc
+    df_stock['year'] = gep_base_year
+    df_stock[p.gep_price_convention] = rental_scc
 
     # Physical -> GEP per pool
     for stock_col, value_col in pool_columns.items():
@@ -863,18 +863,18 @@ def gep_calculation(p):
         df_areas = pd.read_csv(p.combined_area_path)
         df_areas['year'] = 2019
 
-        df_carbon_p = pd.read_excel(p.price_input_path)
-        df_carbon_p = df_carbon_p[['year', p.price_convention]]
+        df_carbon_p = pd.read_excel(p.gep_price_input_path)
+        df_carbon_p = df_carbon_p[['year', p.gep_price_convention]]
         df_gep = df_areas.merge(df_carbon_p, on='year', how='left')
 
         df_gep['mangrove_storage_value'] = (
-            df_gep['mangrove_total_c_stock_mg'] * df_gep[p.price_convention]
+            df_gep['mangrove_total_c_stock_mg'] * df_gep[p.gep_price_convention]
         )
         df_gep['salt_marsh_storage_value'] = (
-            df_gep['salt_marsh_total_c_stock_mg'] * df_gep[p.price_convention]
+            df_gep['salt_marsh_total_c_stock_mg'] * df_gep[p.gep_price_convention]
         )
         df_gep['seagrass_storage_value'] = (
-            df_gep['seagrass_total_c_stock_mg'] * df_gep[p.price_convention]
+            df_gep['seagrass_total_c_stock_mg'] * df_gep[p.gep_price_convention]
         )
         df_gep['coastal_carbon_storage_value'] = (
             df_gep['mangrove_storage_value']
