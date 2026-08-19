@@ -32,31 +32,17 @@ format:
 ## One module per service: GEP always, a shock where the science allows
 
 - The library holds one folder per ecosystem service, all on the same file convention.
-- Ten of the eleven services carry their GEP valuation in the library; fisheries' is still external. Whether each number is verified, provisional, or quarantined is the per-service story below. Services whose science supports it also produce a scenario shock for the macroeconomic pipeline; not all can be made into shocks.
+- Ten of the eleven services carry their GEP valuation in the library; fisheries' is still external.
+- Services whose science supports it also produce a scenario shock for the macroeconomic pipeline; not all can be made into shocks.
 - Where both outputs exist, they are written from the same science, so the valuation and the shock cannot drift apart.
 - The library is scenario agnostic. Consumers inject their naming through scenario maps and required configuration.
 
 ## The template every service follows
 
 - Five files per service: thin runners, tasks, science functions, initialize, and a method document that renders from the code.
-- One runner per task tree, with no mode switches inside a runner.
-- initialize_paths is the single source of truth for inputs, resolved as reference paths so the same code runs on any machine.
+- One runner per task tree.
+- initialize_paths resolves every input a service needs, in one place: the code names what it needs relative to the shared base data, and each machine finds its own copy.
 - Aggregation is on r250, one row per country. The r264 crosswalk is used only for maps.
-- Every number is verified by running the model, never by trusting a report.
-
-## How run files are organized: the devstack's three axes
-
-- The devstack now documents a standard for every run file (examples/run_templates in earth_economy_devstack). Three independent axes describe a run, and only the first is numbered.
-- **Configuration, levels 1 to 4:** level 1 is one task with inline constants. Level 2 is a task tree, constants still inline. Level 3 turns variants into rows of a scenarios CSV and wraps the run in an importable run_project(p). Level 4 adds a parameters CSV so machine-specific values leave the code entirely.
-- **Code layout:** single file or split into siblings (tasks, science, utilities, tree builder). A choice that scales with module size, not a grade.
-- **Ownership:** self-contained, or downstream — importing someone else's package and never editing it.
-
-## Where global_invest sits on those axes
-
-- **Configuration: level 2 today.** Each runner builds one tree with its few constants inline. The lift to level 3 is agreed and mechanical; the conversion has started with terrestrial carbon.
-- **Layout: split, by design.** Five files per service; science never lives in a run file.
-- **Ownership: both sides.** Self-contained for standalone GEP runs, and the upstream for downstream users — the macroeconomic pipelines import the services and graft their tasks without editing the library.
-- The template every service follows is this spec applied eleven times, which is why the whole library moves up the ladder together.
 
 # Where things stand
 
