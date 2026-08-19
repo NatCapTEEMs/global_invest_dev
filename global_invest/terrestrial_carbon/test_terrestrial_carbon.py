@@ -244,11 +244,20 @@ def test_static_shock_base_resolves_across_spellings(tmp_path):
     df = pd.read_csv(out)
     assert abs(df[df['ENDW'] == 'AEZ1'].set_index('year')['shock_pct'].loc[2050] - 5.0) < 1e-9
 
-    # Without the map the base cannot resolve, and that is FATAL, not an empty output.
+    # Without any consumer map the two nature-off spellings are mutual aliases BY DEFAULT
+    # (the tables' own vocabulary, normalized at the point of reading) -- same output.
     p2 = SimpleNamespace(**{**vars(p), 'terrestrial_carbon_scenario_map': {},
                             'terrestrial_carbon_shock_output_path': str(tmp_path / 'out2.csv')})
+    tct.terrestrial_carbon_shock_static(p2)
+    df2 = pd.read_csv(tmp_path / 'out2.csv')
+    assert abs(df2[df2['ENDW'] == 'AEZ1'].set_index('year')['shock_pct'].loc[2050] - 5.0) < 1e-9
+
+    # A base under a name that is in the table under NEITHER spelling stays FATAL.
+    p3 = SimpleNamespace(**{**vars(p), 'terrestrial_carbon_scenario_map': {},
+                            'es_shock_base_scenario': 'no_such_base',
+                            'terrestrial_carbon_shock_output_path': str(tmp_path / 'out3.csv')})
     with pytest.raises(ValueError, match='BASE'):
-        tct.terrestrial_carbon_shock_static(p2)
+        tct.terrestrial_carbon_shock_static(p3)
 
 
 def test_static_shock_missing_scenario_is_fatal_at_the_write(tmp_path):
