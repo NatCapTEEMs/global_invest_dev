@@ -25,7 +25,7 @@ format:
 ## Why one reviewed library
 
 - Different GEP service models were developed by different contributors in different repositories, with their own layout, path conventions and aggregation choices.
-- One home with one template makes every service runnable by anyone, verifiable by rerun, and consumable by both the GEP account and the economic models.
+- One home with one template makes every service runnable by anyone, verifiable by rerun, and consumable by the GEP account.
 
 # What global_invest is
 
