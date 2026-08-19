@@ -282,6 +282,33 @@ def assert_shock_table_sound(df, requested_scenarios, label, abs_max=SHOCK_ABS_M
     return True
 
 
+def seed_input_template(p, file_name, log=print, required=True):
+    """Return the project's input/ copy of a tracked input_template file, seeding it on first use.
+
+    The house input chain (same as ngfs/seals): the tracked template under
+    global_invest/input_template/ is copied into the project's input/ if absent, and the run
+    always reads the input/ copy -- edit that copy to configure a single project. file_name may
+    be a relative path (e.g. the lulc test fixtures); the nesting is recreated under input/.
+    Standard caveat: a stale input/ copy shadows an updated template; delete it (or use a fresh
+    project) to pick up template changes.
+
+    required=False is for files that only OPTIONALLY ship as fixtures (a production machine
+    resolves the same reference in base_data instead): a missing template is skipped, and the
+    later get_path on the reference stays the loud failure if it resolves nowhere at all.
+    """
+    import os
+    import shutil
+    template_path = os.path.join(os.path.dirname(__file__), 'input_template', file_name)
+    local_path = os.path.join(p.input_dir, file_name)
+    if not os.path.exists(local_path):
+        if not required and not os.path.exists(template_path):
+            return local_path
+        os.makedirs(os.path.dirname(local_path), exist_ok=True)
+        shutil.copy(template_path, local_path)
+        log(f'Seeded {file_name} into {p.input_dir} from the tracked template.')
+    return local_path
+
+
 def hydrate_es_config(p, service, log=print):
     """Fill a service's per-ES configuration onto p from es_config.csv (wide format:
     one row per service, one column per attribute -- one shared table for the whole library;
@@ -298,16 +325,8 @@ def hydrate_es_config(p, service, log=print):
     a single project. Note the standard caveat: a stale input/ copy shadows an updated
     template; delete it (or use a fresh project) to pick up template changes.
     """
-    import os
-    import shutil
     import pandas as pd
-    template_path = os.path.join(os.path.dirname(__file__), 'input_template', 'es_config.csv')
-    local_path = os.path.join(p.input_dir, 'es_config.csv')
-    if not os.path.exists(local_path):
-        os.makedirs(p.input_dir, exist_ok=True)
-        shutil.copy(template_path, local_path)
-        log(f'Seeded es_config.csv into {p.input_dir} from the tracked template.')
-    df = pd.read_csv(local_path)
+    df = pd.read_csv(seed_input_template(p, 'es_config.csv', log))
     rows = df[df['service'] == service]
     if rows.empty:
         log(f"es_config.csv has no row for service '{service}' -- nothing hydrated.")
@@ -329,4 +348,70 @@ def hydrate_es_config(p, service, log=print):
             except (TypeError, ValueError):
                 value = str(value)
         setattr(p, attribute, value)
+    return p
+
+
+def hydrate_es_scenarios(p, log=print):
+    """Set the shared es_shock_* seam attributes from a scenarios CSV -- the same derivation a
+    consumer pipeline performs on its own scenarios file (run_ngfs_pnas.py STEP 6), so a
+    standalone module run is data-driven exactly the way a pipeline run is. One shared CSV for
+    the whole library because these attributes are identical for every service; per-service
+    configuration stays in es_config.csv.
+
+    Columns follow the standard seals scenarios.csv vocabulary (scenario_label, scenario_type,
+    baseline_reference_label, key_base_year, years) plus the two map-reference columns; the
+    shipped es_scenarios_test.csv uses the standard seals scenario names, so its maps are the
+    ones a standard seals run writes. The derivation:
+
+      es_shock_scenarios      scenario_label of every scenario_type == 'policy' row
+      es_shock_base_scenario  scenario_label of the scenario_type == 'bau' row (the comparison base)
+      es_shock_base_year      int(key_base_year)
+      es_shock_years          the first non-baseline row's years, space-delimited ints
+      es_shock_end_year       max(es_shock_years)
+      es_lulc_path_template   dirname resolved via get_path, {scenario}/{year} pattern rejoined
+      es_base_year_lulc_path  resolved via get_path
+
+    Map references also seed from input_template when a fixture with that relative path ships
+    there (the tiny standard-seals test maps), so the standalone smoke test is self-contained;
+    get_path finds input/ before base_data, and a production machine without fixtures resolves
+    the same references in base_data.
+
+    DEFAULTS layer, never an override: an attribute the caller already set on p wins, which is
+    the same seam contract consumers rely on (they set these from their own scenarios CSV and
+    never read this one). The CSV follows the same input chain as es_config.csv (tracked
+    template seeded into the project's input/; the run reads the input/ copy). Set
+    p.es_scenario_definitions_filename to run a different scenarios file.
+    """
+    import os
+    import pandas as pd
+    file_name = getattr(p, 'es_scenario_definitions_filename', None) or 'es_scenarios_test.csv'
+    df = pd.read_csv(seed_input_template(p, file_name, log))
+
+    def wants(attribute):
+        return getattr(p, attribute, None) is None
+
+    if wants('es_shock_scenarios'):
+        p.es_shock_scenarios = [str(s) for s in df.loc[df['scenario_type'] == 'policy', 'scenario_label']]
+        if not p.es_shock_scenarios:
+            raise ValueError(f"{file_name} has no scenario_type == 'policy' row -- "
+                             'the shock would silently compute nothing.')
+    if wants('es_shock_base_scenario'):
+        p.es_shock_base_scenario = str(df.loc[df['scenario_type'] == 'bau', 'scenario_label'].iloc[0])
+    if wants('es_shock_base_year'):
+        p.es_shock_base_year = int(df['key_base_year'].dropna().iloc[0])
+    if wants('es_shock_years'):
+        year_cells = df.loc[df['scenario_type'] != 'baseline', 'years'].dropna()
+        p.es_shock_years = [int(y) for y in str(year_cells.iloc[0]).split(' ')]
+    if wants('es_shock_end_year'):
+        p.es_shock_end_year = max(p.es_shock_years)
+    if wants('es_lulc_path_template'):
+        ref = str(df['es_lulc_path_template'].dropna().iloc[0])
+        for scenario in [p.es_shock_base_scenario] + list(p.es_shock_scenarios):
+            for year in p.es_shock_years:
+                seed_input_template(p, ref.format(scenario=scenario, year=year), log, required=False)
+        p.es_lulc_path_template = os.path.join(p.get_path(os.path.dirname(ref)), os.path.basename(ref))
+    if wants('es_base_year_lulc_path'):
+        ref = str(df['es_base_year_lulc_path'].dropna().iloc[0])
+        seed_input_template(p, ref, log, required=False)
+        p.es_base_year_lulc_path = p.get_path(ref)
     return p

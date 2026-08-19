@@ -1,0 +1,4 @@
+scenario_label,scenario_type,baseline_reference_label,key_base_year,years,es_lulc_path_template,es_base_year_lulc_path
+baseline_luh2-message,baseline,,2017,2017,lulc/esa/seals7/scenarios/lulc_esa_seals7_{scenario}_{year}.tif,lulc/esa/seals7/lulc_esa_seals7_2017.tif
+ssp2_rcp45_luh2-message_bau,bau,baseline_luh2-message,2017,2030 2050,lulc/esa/seals7/scenarios/lulc_esa_seals7_{scenario}_{year}.tif,lulc/esa/seals7/lulc_esa_seals7_2017.tif
+ssp2_rcp45_luh2-message_bau_shift,policy,baseline_luh2-message,2017,2030 2050,lulc/esa/seals7/scenarios/lulc_esa_seals7_{scenario}_{year}.tif,lulc/esa/seals7/lulc_esa_seals7_2017.tif
