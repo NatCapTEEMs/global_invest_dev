@@ -1,0 +1,7 @@
+service,attribute,value
+terrestrial_carbon,sheet_label,global_climate_regulation
+terrestrial_carbon,carbon_zones_path,global_invest/terrestrial_carbon/carbon_zones_rasterized.tif
+terrestrial_carbon,base_year_lulc_path,lulc/esa/lulc_esa_2019.tif
+terrestrial_carbon,carbon_prices_path,global_invest/terrestrial_carbon/carbon_prices.xlsx
+terrestrial_carbon,carbon_price,rental scc r2%
+terrestrial_carbon,base_year,2019

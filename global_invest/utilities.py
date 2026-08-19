@@ -280,3 +280,33 @@ def assert_shock_table_sound(df, requested_scenarios, label, abs_max=SHOCK_ABS_M
     if problems:
         raise ValueError('%s shock table is unsound:\n  - %s' % (label, '\n  - '.join(problems)))
     return True
+
+
+def hydrate_es_config(p, service, log=print):
+    """Fill a service's per-ES configuration onto p from es_config.csv (long format:
+    service, attribute, value -- one shared file for the whole library, each service its rows).
+
+    DEFAULTS layer, never an override: an attribute already set on p (by a consumer pipeline
+    or a caller) is left untouched, so the seam contract is unchanged. Attributes ending in
+    _path resolve through p.get_path (base_data-relative references); values that parse as
+    integers become ints; everything else stays a string.
+
+    The csv resolves like any library data: base_data/global_invest/default_inputs/ (canonical,
+    promoted to the drive), with the repo's tracked copy as the source of truth for edits.
+    """
+    import pandas as pd
+    csv_path = p.get_path('global_invest', 'default_inputs', 'es_config.csv')
+    df = pd.read_csv(csv_path)
+    for _, row in df[df['service'] == service].iterrows():
+        attribute, value = row['attribute'], row['value']
+        if getattr(p, attribute, None) is not None:
+            continue
+        if attribute.endswith('_path'):
+            value = p.get_path(value)
+        else:
+            try:
+                value = int(value)
+            except (TypeError, ValueError):
+                value = str(value)
+        setattr(p, attribute, value)
+    return p
