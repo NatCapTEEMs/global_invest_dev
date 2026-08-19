@@ -202,3 +202,4 @@ global_invest/coastal_carbon/developing.py
 
 # Quarto render artifacts (any dir)
 *_files/
+.claude/
