@@ -32,7 +32,7 @@ format:
 ## One module per service: GEP always, a shock where the science allows
 
 - The library holds one folder per ecosystem service, all on the same file convention.
-- Every service produces a GEP valuation per country (fisheries' is the one not in the library yet). Services whose science supports it also produce a scenario shock for the macroeconomic pipeline; not all can be made into shocks.
+- Ten of the eleven services carry their GEP valuation in the library; fisheries' is still external. Whether each number is verified, provisional, or quarantined is the per-service story below. Services whose science supports it also produce a scenario shock for the macroeconomic pipeline; not all can be made into shocks.
 - Where both outputs exist, they are written from the same science, so the valuation and the shock cannot drift apart.
 - The library is scenario agnostic. Consumers inject their naming through scenario maps and required configuration.
 
@@ -73,7 +73,7 @@ format:
 | renewable_energy | $170.83bn | rerun identical; drive references disagree |
 | pollination | $18.28B raster side (2023) | FAO side $515B, definition open |
 | erosion | $15.54bn PROVISIONAL | internal reconciliation; awaits submission |
-| landslide_mitigation | first run pending | data staging |
+| landslide_mitigation | first full run in progress | no machine-readable reference yet |
 | fisheries | shock only | valuation external (CWoN) |
 
 ## Verification discipline, and what it caught
