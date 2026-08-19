@@ -11,9 +11,9 @@ def initialize_paths(p):
     diverge. carbon_price defaults here but the caller may override it before calling.
     """
     utilities.initialize_country_paths(p)   # shared r264 block (csv/gpkg/simplified + df_countries)
-    p.carbon_zones_path = p.get_path('carbon_storage', 'carbon_zones_rasterized.tif')
+    p.carbon_zones_path = p.get_path('global_invest', 'terrestrial_carbon', 'carbon_zones_rasterized.tif')
     p.base_year_lulc_path = p.get_path('lulc', 'esa', 'lulc_esa_2019.tif')
-    p.carbon_prices_path = p.get_path('terrestrial_carbon', 'carbon_prices.xlsx')
+    p.carbon_prices_path = p.get_path('global_invest', 'terrestrial_carbon', 'carbon_prices.xlsx')
     p.carbon_price = getattr(p, 'carbon_price', 'rental scc r2%')
     p.base_year = getattr(p, 'base_year', 2019)  # GEP valuation reference year; caller may override
 

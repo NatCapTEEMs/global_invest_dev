@@ -28,7 +28,7 @@ def task_reproject_total_carbon_density(p):
     # Input: the total biomass-carbon density raster. This is a one-off base-data product (raw Spawn
     # aboveground+belowground already converted and combined), consumed from base_data rather than
     # rebuilt per run. Overridable via p.total_carbon_density_path.
-    p.total_carbon_density_path = getattr(p, 'total_carbon_density_path', None) or p.get_path('carbon_storage', 'spawn_total_biomass_carbon_2010.tif')
+    p.total_carbon_density_path = getattr(p, 'total_carbon_density_path', None) or p.get_path('global_invest', 'terrestrial_carbon', 'spawn_total_biomass_carbon_2010.tif')
     p.reprojected_total_carbon_density_path = os.path.join(p.cur_dir, "total_biomass_carbon_2010_float_reprojected.tif")
     if not p.run_this:
         return True
@@ -249,9 +249,9 @@ def task_compute_terrestrial_carbon_shock(p):
     if not getattr(p, 'region_boundary_path', None):
         p.region_boundary_path = p.get_path('gtap_invest/region_boundaries/ee_r50_aez18_correspondence.gpkg')
     if not getattr(p, 'terrestrial_carbon_zones_path', None):
-        p.terrestrial_carbon_zones_path = p.get_path('carbon_storage', 'carbon_zones_rasterized.tif')
+        p.terrestrial_carbon_zones_path = p.get_path('global_invest', 'terrestrial_carbon', 'carbon_zones_rasterized.tif')
     if not getattr(p, 'terrestrial_carbon_density_lookup_table_path', None):
-        p.terrestrial_carbon_density_lookup_table_path = p.get_path('carbon_storage', 'carbon_density_lookup_seals7_spawn.csv')
+        p.terrestrial_carbon_density_lookup_table_path = p.get_path('global_invest', 'terrestrial_carbon', 'carbon_density_lookup_seals7_spawn.csv')
     # Resolve the LULC map per scenario by globbing es_lulc_path_template ({scenario}/{year}
     # placeholders) when the caller didn't pre-build scenario_lulc_paths. Globbing lives here so a
     # project passes only a template string, not a path-building task.
