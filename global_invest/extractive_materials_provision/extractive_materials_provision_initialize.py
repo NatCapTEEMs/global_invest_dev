@@ -8,10 +8,10 @@ def initialize_paths(p):
     """One source of truth for the inputs (shared country block + service data, get_path references)."""
     utilities.initialize_country_paths(p, simplified='30sec')
 
-    # World Bank series staged into base_data from the drive's submissions folder (see base_data CHANGELOG):
-    # mineral rents (% of GDP) and GDP (current USD).
-    p.wb_mineral_input_ref_path = p.get_path('global_invest', 'extractive_materials_provision', 'API_NY.GDP.MINR.RT.ZS_DS2_en_csv_v2_6559.csv')
-    p.wb_GDP_ref_path = p.get_path('global_invest', 'extractive_materials_provision', 'API_NY.GDP.MKTP.CD_DS2_en_csv_v2_130122.csv')
+    # World Bank series staged into base_data from the drive's submissions folder (see base_data
+    # CHANGELOG), via es_config.csv as a defaults layer: GDP in current USD (quantity -- the base
+    # being attributed) and mineral rents as % of GDP (attribution -- the share).
+    utilities.hydrate_es_config(p, 'extractive_materials_provision')
 
 def build_gep_service_calculation_task_tree(p):
     """Build the default task tree for commercial agriculture."""

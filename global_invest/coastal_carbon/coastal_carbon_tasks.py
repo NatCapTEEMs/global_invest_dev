@@ -348,7 +348,7 @@ def _calculate_storage_value(p, stock_csv_path, pool_columns,
 
     df_carbon_p = pd.read_excel(p.gep_price_input_path)
     df_carbon_p = df_carbon_p[['year', p.gep_price_convention]]
-    gep_base_year = 2019
+    gep_base_year = p.gep_base_year
     rental_scc = float(
         df_carbon_p.loc[df_carbon_p['year'] == gep_base_year, p.gep_price_convention].iloc[0]
     )

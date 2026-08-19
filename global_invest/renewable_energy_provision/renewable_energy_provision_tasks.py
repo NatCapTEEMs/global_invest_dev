@@ -57,7 +57,7 @@ def gep_calculation(p):
         #############
 
         # load data
-        df = pd.read_csv(p.irena_production_ref_path)
+        df = pd.read_csv(p.gep_quantity_input_path)
 
         # aggregate generation technologies
         aggregated_df = (
@@ -79,7 +79,7 @@ def gep_calculation(p):
 
         # Load World Bank data
 
-        wb_df = pd.read_csv(p.wb_price_ref_path)
+        wb_df = pd.read_csv(p.gep_price_input_path)
 
         # Convert Price from cents/kWh to USD/GWh
         wb_df['Price'] = wb_df['Price'] * 10000
@@ -101,7 +101,7 @@ def gep_calculation(p):
         ########################
 
         # load resource rent data
-        a_df = pd.read_csv(p.cwon_resource_rent_ref_path)
+        a_df = pd.read_csv(p.gep_attribution_input_path)
 
         merge_cols = ['Country', 'Year']
 

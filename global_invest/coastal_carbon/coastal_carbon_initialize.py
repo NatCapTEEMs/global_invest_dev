@@ -58,9 +58,9 @@ def initialize_paths(p):
                                       raise_error_if_fail=False)
     p.ha_per_cell_10sec_path = p.get_path('pyramids', 'ha_per_cell_10sec.tif')
 
-    # Valuation inputs.
-    p.gep_price_input_path = p.get_path('global_invest', 'coastal_carbon', 'carbon_prices.xlsx')
-    p.gep_price_convention = getattr(p, 'gep_price_convention', 'rental scc r2%')
+    # Valuation configuration (price input, price convention, base year) comes from
+    # es_config.csv as a defaults layer: anything the caller already set on p wins.
+    utilities.hydrate_es_config(p, 'coastal_carbon')
 
     # Coastal aggregates on the MARINE surface: override the shared aliases with the r566 vector
     # (initialize_country_paths set the terrestrial r264 ones; the r264 csv still feeds the final

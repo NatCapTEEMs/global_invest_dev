@@ -43,7 +43,7 @@ def gep_calculation(p):
         p.gdf_countries = hb.read_vector(p.gdf_countries_vector_path)
 
         # 1. Read and process data
-        df_mangrove_value = coastal_protection_functions.read_mangrove_values(p.cwon_input_ref_path)
+        df_mangrove_value = coastal_protection_functions.read_mangrove_values(p.gep_quantity_input_path)
         df_coral_reef_value = coastal_protection_functions.read_coral_reef_values(p.coral_reef_ref_path)
 
         # LEARNING POINT: I wasted lots of time not realizing the a how='right' operates differently than I expect. The left had IDs that were not in right under r264_id, but they thus had the a 

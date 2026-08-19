@@ -209,7 +209,7 @@ def task_summarize_pollination_value_by_region(p):
     if not p.run_this:
         return
     utilities.summarize_raster_by_region(
-        value_raster_path=p.pollination_value_raster_path,
+        value_raster_path=p.gep_quantity_input_path,
         region_boundary_path=p.gdf_countries_vector_path,
         out_path=p.pollination_value_by_region_path,
         year=p.base_year, id_column='ee_r264_id')
