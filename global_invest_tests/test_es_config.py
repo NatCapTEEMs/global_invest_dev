@@ -1,4 +1,4 @@
-"""The es_config.csv hydration: fills a service's configuration as a DEFAULTS layer.
+"""The es_config.csv hydration (wide: one row per service, one column per attribute): fills a service's configuration as a DEFAULTS layer.
 
 Pins the three contract properties: attributes arrive with the csv's values (paths resolved
 through get_path, integers typed), a value the caller already set is never overridden, and
@@ -25,11 +25,9 @@ def fake_p(tmp_path, csv_text, preset=None):
     return p
 
 
-CSV = """service,attribute,value
-terrestrial_carbon,carbon_zones_path,global_invest/terrestrial_carbon/carbon_zones_rasterized.tif
-terrestrial_carbon,carbon_price,rental scc r2%
-terrestrial_carbon,base_year,2019
-other_service,base_year,1999
+CSV = """service,carbon_zones_path,carbon_price,base_year,special_path
+terrestrial_carbon,global_invest/terrestrial_carbon/carbon_zones_rasterized.tif,rental scc r2%,2019,
+other_service,,,1999,some/other/file.tif
 """
 
 
@@ -39,7 +37,7 @@ def test_hydrates_paths_types_and_scopes_to_the_service(tmp_path):
     assert p.carbon_zones_path == '/resolved/global_invest/terrestrial_carbon/carbon_zones_rasterized.tif'
     assert p.carbon_price == 'rental scc r2%'
     assert p.base_year == 2019 and isinstance(p.base_year, int)
-    assert not hasattr(p, 'other_base_year')
+    assert not hasattr(p, 'special_path')  # empty cell for this service: skipped
 
 
 def test_caller_set_values_are_never_overridden(tmp_path):

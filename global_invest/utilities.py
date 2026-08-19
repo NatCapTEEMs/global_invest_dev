@@ -283,8 +283,9 @@ def assert_shock_table_sound(df, requested_scenarios, label, abs_max=SHOCK_ABS_M
 
 
 def hydrate_es_config(p, service, log=print):
-    """Fill a service's per-ES configuration onto p from es_config.csv (long format:
-    service, attribute, value -- one shared table for the whole library, each service its rows).
+    """Fill a service's per-ES configuration onto p from es_config.csv (wide format:
+    one row per service, one column per attribute -- one shared table for the whole library;
+    a cell left empty means the attribute does not apply to that service and is skipped).
 
     DEFAULTS layer, never an override: an attribute already set on p (by a consumer pipeline
     or a caller) is left untouched, so the seam contract is unchanged. Attributes ending in
@@ -307,15 +308,24 @@ def hydrate_es_config(p, service, log=print):
         shutil.copy(template_path, local_path)
         log(f'Seeded es_config.csv into {p.input_dir} from the tracked template.')
     df = pd.read_csv(local_path)
-    for _, row in df[df['service'] == service].iterrows():
-        attribute, value = row['attribute'], row['value']
+    rows = df[df['service'] == service]
+    if rows.empty:
+        log(f"es_config.csv has no row for service '{service}' -- nothing hydrated.")
+        return p
+    row = rows.iloc[0]
+    for attribute in df.columns:
+        if attribute == 'service':
+            continue
+        value = row[attribute]
+        if pd.isna(value):
+            continue
         if getattr(p, attribute, None) is not None:
             continue
         if attribute.endswith('_path'):
-            value = p.get_path(value)
+            value = p.get_path(str(value))
         else:
             try:
-                value = int(value)
+                value = int(float(value))
             except (TypeError, ValueError):
                 value = str(value)
         setattr(p, attribute, value)
