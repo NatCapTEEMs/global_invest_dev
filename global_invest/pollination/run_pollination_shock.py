@@ -20,9 +20,7 @@ def build_task_tree(p):
     pollination_initialize.add_pollination_tasks(p)
 
 
-if __name__ == '__main__':
-
-    p = hb.ProjectFlow(project_name='gep_pollination_shock', run_mode='check')
+def run_project(p):
 
     # -------------------------------------------------------------------
     # Config -- edit for a local smoke test. In a consumer pipeline these
@@ -57,3 +55,16 @@ if __name__ == '__main__':
 
     hb.log('Created ProjectFlow object at ' + p.project_dir + '\n    from script ' + p.calling_script)
     p.execute()
+
+    return p
+
+
+if __name__ == '__main__':
+
+    # Create ProjectFlow object
+    p = hb.ProjectFlow(project_name='gep_pollination_shock', run_mode='check')
+
+    # Run the project
+    run_project(p)
+
+    result = 'Done!'
