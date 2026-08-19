@@ -51,7 +51,7 @@ def task_compute_carbon_density_table(p):
 
     result = terrestrial_carbon_functions.stack_layers_to_csv(
         group_layer1_path=p.base_year_lulc_path,
-        group_layer2_path=p.carbon_zones_path,
+        group_layer2_path=p.quantity_input_path,
         value_layer_path=p.reprojected_total_carbon_density_path,
         output_path=p.carbon_density_lookup_table_path,
         group1_name="lulc_id",
@@ -67,7 +67,7 @@ def task_generate_carbon_density_raster_base_year(p):
         return True
     result = terrestrial_carbon_functions.generate_carbon_density_raster(
         lulc_path=p.base_year_lulc_path,
-        cz_path=p.carbon_zones_path,
+        cz_path=p.quantity_input_path,
         carbon_density_lookup_table_path=p.carbon_density_lookup_table_path,
         out_path=p.carbon_density_raster_base_year_path)
     return True
@@ -158,14 +158,14 @@ def gep_calculation(p):
         #    map below) repeats a country's GEP across its sub-regions -- China spans 6 r264 rows, India 6,
         #    France/Turkey/UK/Pakistan 2 -- so summing it double-counts split countries (~23% too high).
         #    Only the map ever touches the r264 rows, and it never sums them.
-        df_carbon_p = pd.read_excel(p.carbon_prices_path)[[p.carbon_price, 'year']]
+        df_carbon_p = pd.read_excel(p.price_input_path)[[p.price_convention, 'year']]
         df_gep_250 = df_carbon_q250.merge(df_carbon_p, how='left', on='year')
-        df_gep_250['terrestrial_carbon_gep'] = df_gep_250['terrestrial_carbon_quantity'] * df_gep_250[p.carbon_price]
+        df_gep_250['terrestrial_carbon_gep'] = df_gep_250['terrestrial_carbon_quantity'] * df_gep_250[p.price_convention]
 
         # Attach per-country attributes (one row per iso3 from the correspondence) and write the per-country CSV.
         attr_cols = ['iso3_r250_id', 'iso3_r250_label', 'iso3_r250_name',
                      'continent', 'region_un', 'region_wb', 'income_grp', 'subregion']
-        keep_cols = attr_cols + ['year', 'terrestrial_carbon_quantity', p.carbon_price, 'terrestrial_carbon_gep']
+        keep_cols = attr_cols + ['year', 'terrestrial_carbon_quantity', p.price_convention, 'terrestrial_carbon_gep']
         df_gep_by_country_base_year = df_gep_250.merge(
             df_carbon_q264[attr_cols].drop_duplicates('iso3_r250_id'), how='left', on='iso3_r250_id')[keep_cols]
         hb.df_write(df_gep_by_country_base_year, p.results['terrestrial_carbon']['gep_by_country_base_year'])
@@ -222,7 +222,7 @@ def task_compute_terrestrial_carbon_shock(p):
 
     Caller sets on p: es_shock_years (SEALS anchor years, from seals_years),
     scenario_lulc_paths {scenario: {year: path}} or es_lulc_path_template, es_shock_scenarios,
-    region_boundary_path, terrestrial_carbon_zones_path, terrestrial_carbon_density_lookup_table_path,
+    region_boundary_path, terrestrial_quantity_input_path, terrestrial_carbon_density_lookup_table_path,
     terrestrial_carbon_shock_output_path. Optional: terrestrial_carbon_shock_{base_scenario, base_year,
     endw_col, reg_col, value_col, acts}.
     """
@@ -248,8 +248,8 @@ def task_compute_terrestrial_carbon_shock(p):
     # map); the caller overrides only when different, so project wiring stays a couple of lines.
     if not getattr(p, 'region_boundary_path', None):
         p.region_boundary_path = p.get_path('gtap_invest/region_boundaries/ee_r50_aez18_correspondence.gpkg')
-    if not getattr(p, 'terrestrial_carbon_zones_path', None):
-        p.terrestrial_carbon_zones_path = p.get_path('global_invest', 'terrestrial_carbon', 'carbon_zones_rasterized.tif')
+    if not getattr(p, 'terrestrial_quantity_input_path', None):
+        p.terrestrial_quantity_input_path = p.get_path('global_invest', 'terrestrial_carbon', 'carbon_zones_rasterized.tif')
     if not getattr(p, 'terrestrial_carbon_density_lookup_table_path', None):
         p.terrestrial_carbon_density_lookup_table_path = p.get_path('global_invest', 'terrestrial_carbon', 'carbon_density_lookup_seals7_spawn.csv')
     # Resolve the LULC map per scenario by globbing es_lulc_path_template ({scenario}/{year}
@@ -275,18 +275,18 @@ def task_compute_terrestrial_carbon_shock(p):
         ds = gdal.Open(path)
         return (ds.RasterYSize, ds.RasterXSize)
     _ref_lulc = p.scenario_lulc_paths[base_scn][end_year]
-    if _yx(p.terrestrial_carbon_zones_path) != _yx(_ref_lulc):
+    if _yx(p.terrestrial_quantity_input_path) != _yx(_ref_lulc):
         _aligned_cz = os.path.join(p.cur_dir, 'carbon_zones_aligned.tif')
         if not os.path.exists(_aligned_cz):
-            hb.resample_to_match(p.terrestrial_carbon_zones_path, _ref_lulc, _aligned_cz, resample_method='near')
-        p.terrestrial_carbon_zones_path = _aligned_cz
+            hb.resample_to_match(p.terrestrial_quantity_input_path, _ref_lulc, _aligned_cz, resample_method='near')
+        p.terrestrial_quantity_input_path = _aligned_cz
 
     def zone_mean(scenario, year):
         dens = os.path.join(p.cur_dir, 'carbon_density_%s_%d.tif' % (scenario, year))
         if not os.path.exists(dens):
             terrestrial_carbon_functions.generate_carbon_density_raster(
                 lulc_path=p.scenario_lulc_paths[scenario][year],
-                cz_path=p.terrestrial_carbon_zones_path,
+                cz_path=p.terrestrial_quantity_input_path,
                 # develop's parameter name; the p attribute keeps ours (see the merge of this module)
                 carbon_density_lookup_table_path=p.terrestrial_carbon_density_lookup_table_path,
                 out_path=dens)

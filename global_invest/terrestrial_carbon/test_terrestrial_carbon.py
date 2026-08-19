@@ -119,7 +119,7 @@ def _shock_scene(tmp_path):
                              'scn_a': {2030: below_2030, 2050: below_2050}},
         es_base_year_lulc_path=base_2020,
         region_boundary_path=str(regions),
-        terrestrial_carbon_zones_path=str(cz),
+        terrestrial_quantity_input_path=str(cz),
         terrestrial_carbon_density_lookup_table_path=str(tmp_path / 'lut.csv'),
         terrestrial_carbon_shock_output_path=str(tmp_path / 'terrestrial_carbon_interpolated.csv'))
 

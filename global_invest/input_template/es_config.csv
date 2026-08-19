@@ -1,2 +1,2 @@
-service,sheet_label,base_year,carbon_price,carbon_zones_path,base_year_lulc_path,carbon_prices_path
-terrestrial_carbon,global_climate_regulation,2019,rental scc r2%,global_invest/terrestrial_carbon/carbon_zones_rasterized.tif,lulc/esa/lulc_esa_2019.tif,global_invest/terrestrial_carbon/carbon_prices.xlsx
+service,sheet_label,base_year,price_convention,quantity_input_path,price_input_path,attribution_input_path,base_year_lulc_path
+terrestrial_carbon,global_climate_regulation,2019,rental scc r2%,global_invest/terrestrial_carbon/carbon_zones_rasterized.tif,global_invest/terrestrial_carbon/carbon_prices.xlsx,,lulc/esa/lulc_esa_2019.tif

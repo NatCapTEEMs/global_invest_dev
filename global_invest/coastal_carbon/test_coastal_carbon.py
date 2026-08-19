@@ -45,7 +45,7 @@ def test_gep_calculation_eez_only_and_one_row_per_country(tmp_path):
 
     p = SimpleNamespace(cur_dir=str(tmp_path), results={},
                         combined_area_path=str(tmp_path / 'combined_areas.csv'),
-                        carbon_prices_path=str(tmp_path / 'carbon_prices.xlsx'), carbon_price='p',
+                        price_input_path=str(tmp_path / 'carbon_prices.xlsx'), price_convention='p',
                         gdf_countries_marine_vector_path=str(tmp_path / 'marine.gpkg'),
                         df_countries_csv_path=str(tmp_path / 'ee_r264_correspondence.csv'))
 

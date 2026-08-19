@@ -28,7 +28,7 @@ from global_invest.coastal_carbon import coastal_carbon_tasks
 def initialize_paths(p):
     """Resolve every coastal-carbon input on p via get_path (machine-agnostic reference paths;
     base_data_dir itself comes from ProjectFlow default / machine.env). One source of truth for
-    all run files and the results report. p.carbon_price may be overridden before calling.
+    all run files and the results report. p.price_convention may be overridden before calling.
     """
     # Country boundaries: marine EEZ (r566) for the per-region chains, terrestrial r264 for the
     # final iso3_r250 aggregation in gep_calculation.
@@ -59,8 +59,8 @@ def initialize_paths(p):
     p.ha_per_cell_10sec_path = p.get_path('pyramids', 'ha_per_cell_10sec.tif')
 
     # Valuation inputs.
-    p.carbon_prices_path = p.get_path('global_invest', 'coastal_carbon', 'carbon_prices.xlsx')
-    p.carbon_price = getattr(p, 'carbon_price', 'rental scc r2%')
+    p.price_input_path = p.get_path('global_invest', 'coastal_carbon', 'carbon_prices.xlsx')
+    p.price_convention = getattr(p, 'price_convention', 'rental scc r2%')
 
     # Coastal aggregates on the MARINE surface: override the shared aliases with the r566 vector
     # (initialize_country_paths set the terrestrial r264 ones; the r264 csv still feeds the final

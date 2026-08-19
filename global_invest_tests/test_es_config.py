@@ -25,7 +25,7 @@ def fake_p(tmp_path, csv_text, preset=None):
     return p
 
 
-CSV = """service,carbon_zones_path,carbon_price,base_year,special_path
+CSV = """service,quantity_input_path,price_convention,base_year,special_path
 terrestrial_carbon,global_invest/terrestrial_carbon/carbon_zones_rasterized.tif,rental scc r2%,2019,
 other_service,,,1999,some/other/file.tif
 """
@@ -34,16 +34,16 @@ other_service,,,1999,some/other/file.tif
 def test_hydrates_paths_types_and_scopes_to_the_service(tmp_path):
     p = fake_p(tmp_path, CSV)
     utilities.hydrate_es_config(p, 'terrestrial_carbon')
-    assert p.carbon_zones_path == '/resolved/global_invest/terrestrial_carbon/carbon_zones_rasterized.tif'
-    assert p.carbon_price == 'rental scc r2%'
+    assert p.quantity_input_path == '/resolved/global_invest/terrestrial_carbon/carbon_zones_rasterized.tif'
+    assert p.price_convention == 'rental scc r2%'
     assert p.base_year == 2019 and isinstance(p.base_year, int)
     assert not hasattr(p, 'special_path')  # empty cell for this service: skipped
 
 
 def test_caller_set_values_are_never_overridden(tmp_path):
-    p = fake_p(tmp_path, CSV, preset={'carbon_price': 'rental scc r3%', 'base_year': 2023})
+    p = fake_p(tmp_path, CSV, preset={'price_convention': 'rental scc r3%', 'base_year': 2023})
     utilities.hydrate_es_config(p, 'terrestrial_carbon')
-    assert p.carbon_price == 'rental scc r3%'
+    assert p.price_convention == 'rental scc r3%'
     assert p.base_year == 2023
 
 
@@ -54,5 +54,5 @@ def test_template_seeds_into_empty_input_dir(tmp_path):
     utilities.hydrate_es_config(p, 'terrestrial_carbon', log=lambda *a: None)
     import os
     assert os.path.exists(os.path.join(p.input_dir, 'es_config.csv'))
-    assert p.carbon_price == 'rental scc r2%'
+    assert p.price_convention == 'rental scc r2%'
     assert p.base_year == 2019
