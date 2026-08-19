@@ -1,6 +1,27 @@
 ---
 title: "Global InVEST"
 subtitle: "The GEP service library: state and open questions."
+# The deck's numbers, one home: edit here and every slide referencing {{< meta ... >}} updates.
+terrestrial_total: "$5.365T"
+coastal_eez: "$22.84bn"
+coastal_all: "$102.18bn"
+coastal_mangrove: "$4.03bn"
+coastal_report: "$26.65bn"
+crop_total: "$678bn"
+cp_total: "$36.72bn"
+cp_alt: "$73.0bn"
+extractive_total: "$99.54bn"
+extractive_alt: "$203bn"
+extractive_factor: "0.49"
+renewable_total: "$170.83bn"
+renewable_ref: "$134.6bn"
+poll_raster: "$18.28B"
+poll_fao: "$515B"
+erosion_total: "$15.54bn"
+livestock_ind: "$136bn"
+livestock_chn: "$838bn"
+livestock_world: "$2.29T"
+
 format:
     revealjs:
         theme: simple
@@ -40,7 +61,7 @@ format:
 ## The template every service follows
 
 - Five files per service: thin runners, tasks, science functions, initialize, and a method document that renders from the code.
-- One runner per task tree.
+- One runner per task tree, and every run file shares one anatomy, decided with Justin and applied across the library: build_task_tree names the pipeline, and the run is configured where it is constructed.
 - initialize_paths resolves every input a service needs, in one place: the code names what it needs relative to the shared base data, and each machine finds its own copy.
 - Aggregation is on r250, one row per country. The r264 crosswalk is used only for maps.
 
@@ -50,15 +71,15 @@ format:
 
 | Service | Total | Verified against |
 |---|---|---|
-| terrestrial_carbon | $5.365T | the manuscript, to the dollar |
-| coastal_carbon | $22.84bn EEZ-only, $102.18bn all rows | the author's design, mangrove exact |
-| crop_provision | ≈ $678bn (thousand-USD units) | the July reference, to the float, twice |
+| terrestrial_carbon | {{< meta terrestrial_total >}} | the manuscript, to the dollar |
+| coastal_carbon | {{< meta coastal_eez >}} EEZ-only, {{< meta coastal_all >}} all rows | the author's design, mangrove exact |
+| crop_provision | ≈ {{< meta crop_total >}} (thousand-USD units) | the July reference, to the float, twice |
 | livestock_provision | quarantined | three owner-level defects |
-| coastal_protection | $36.72bn | fresh baseline, rerun identical |
-| extractive_materials | $99.54bn | the author's reference, exact |
-| renewable_energy | $170.83bn | rerun identical; drive references disagree |
-| pollination | $18.28B raster side (2023) | FAO side $515B, definition open |
-| erosion | $15.54bn PROVISIONAL | internal reconciliation; awaits submission |
+| coastal_protection | {{< meta cp_total >}} | fresh baseline, rerun identical |
+| extractive_materials | {{< meta extractive_total >}} | the author's reference, exact |
+| renewable_energy | {{< meta renewable_total >}} | rerun identical; drive references disagree |
+| pollination | {{< meta poll_raster >}} raster side (2023) | FAO side {{< meta poll_fao >}}, definition open |
+| erosion | {{< meta erosion_total >}} PROVISIONAL | internal reconciliation; awaits submission |
 | landslide_mitigation | input stage complete; full run resumes on the cluster | no machine-readable reference yet |
 | fisheries | shock only | valuation external (CWoN) |
 
@@ -76,15 +97,15 @@ format:
 
 ## terrestrial_carbon: solid
 
-- [State: GEP replicates the manuscript to the dollar, $5.365T at 2019. The strongest number in the library.]{.state}
+- [State: GEP replicates the manuscript to the dollar, {{< meta terrestrial_total >}} at 2019. The strongest number in the library.]{.state}
 - One correction to know about: a double-count in the CODE overstated its total by 23.5 percent (split countries entered once per sub-region — China six times). The published manuscript was right all along; the corrected aggregation reproduces it to the dollar, which is how the fix was validated.
 - **No open questions.** This service is the template the others are held to.
 
 ## coastal_carbon: which side of the shoreline?
 
-- [State: replicates the author's design exactly, mangrove component to the cent. One run, two totals: $22.84bn counting ocean-side rows only, $102.18bn counting both sides.]{.state}
+- [State: replicates the author's design exactly, mangrove component to the cent. One run, two totals: {{< meta coastal_eez >}} counting ocean-side rows only, {{< meta coastal_all >}} counting both sides.]{.state}
 - **Q1 (design, Yanxu):** was EEZ-only chosen to avoid double-counting the land-side pixels with terrestrial carbon? The land side carries 97.5 percent of mangrove and 84 percent of salt marsh area, so the convention moves the total 4.5 times.
-- **Q2 (inputs, Yanxu):** which exact seagrass and salt marsh input versions produced the report's $26.65bn? Our replication gives $22.84bn with mangrove matching exactly, and the report's own seagrass area (62.21 Mha) exceeds the published range it cites (16 to 26.7 Mha).
+- **Q2 (inputs, Yanxu):** which exact seagrass and salt marsh input versions produced the report's {{< meta coastal_report >}}? Our replication gives {{< meta coastal_eez >}} with mangrove matching exactly, and the report's own seagrass area (62.21 Mha) exceeds the published range it cites (16 to 26.7 Mha).
 - **Q3 (the room): If both sides should count, who owns the terrestrial-side mask that prevents double-counting?**
 
 ## Marine carbon: unbuilt and unowned
@@ -99,13 +120,13 @@ format:
 ## pollination: which definition is the GEP?
 
 - [State: built on the template and running; aggregation verified. Two defensible definitions, 28 times apart.]{.state}
-- **Q1 (the room):** is pollination's GEP the service nature currently delivers ($18.28B, the sufficiency-weighted raster) or the production value at stake ($515B, dependence-weighted FAO value)? The country ranking is identical; only the definition differs.
+- **Q1 (the room):** is pollination's GEP the service nature currently delivers ({{< meta poll_raster >}}, the sufficiency-weighted raster) or the production value at stake ({{< meta poll_fao >}}, dependence-weighted FAO value)? The country ranking is identical; only the definition differs.
 - **Q2:** the rasters on hand are 2023 and the account values at 2019. We regenerate at 2019 once the definition is settled. Does anyone object to that ordering?
 - A consistency note for the discussion: erosion's GEP records the habitat-supplied share, so the raster-side definition is the internally consistent choice.
 
 ## erosion: real inputs wanted
 
-- [State: the full chain runs end to end and reconciles internally at $15.54bn, PROVISIONAL. Sections A and B verified structurally; the valuation runs on interim inputs we built ourselves.]{.state}
+- [State: the full chain runs end to end and reconciles internally at {{< meta erosion_total >}}, PROVISIONAL. Sections A and B verified structurally; the valuation runs on interim inputs we built ourselves.]{.state}
 - **Q1 (the author): Can you share the exact FAO production-value and price series the submitted paper used?** Our chain runs on stand-in series we built ourselves; every number moves when yours replace them.
 - **Q2 (the author): Can you share a per-country output table from the submission run?** With it we verify by exact replication, the same bar extractive already passed.
 - Both asks may be one answer: the July thread says the full run lives at `/projects/standard/jajohns/shared/sediment_gep` on MSI — pointing us there, or copying it to the drive, settles both questions.
@@ -129,31 +150,31 @@ format:
 ## crop_provision: right numbers, unlabeled units
 
 - [State: replicates its reference to the float, twice. The most verified accounting service.]{.state}
-- **Q1 (the room): Label crop's thousand-USD column, or convert it to plain USD and regenerate the reference?** The column is FAOSTAT-native thousand-USD — the global sum reads 678,413,996 and means $678bn, and nothing says so. Our recommendation is convert: every other service is plain USD, and a cross-service sum is a factor-1000 trap today.
+- **Q1 (the room): Label crop's thousand-USD column, or convert it to plain USD and regenerate the reference?** The column is FAOSTAT-native thousand-USD — the global sum reads 678,413,996 and means {{< meta crop_total >}}, and nothing says so. Our recommendation is convert: every other service is plain USD, and a cross-service sum is a factor-1000 trap today.
 - **Q2 (the room): Who can confirm whether FAOSTAT's production values already include imputed subsistence output?** If they do, the subsistence question becomes labeling rather than new modeling. We will check the coverage definition; we need the intended scope confirmed.
 
 ## livestock_provision: three decisions before the numbers can be trusted
 
-- [State: QUARANTINED numbers, but the owner's method repo answers more than we hoped — and step 1 of his method is already implemented as a draft: with his 65 FAO item codes replacing the stale 29-name list, India recovers from zero to $136bn, China reads $838bn, and the world total $2.29T, all PROVISIONAL pending his lambda. The old name list matched only 13 of its own 29 items against current FAO files.]{.state}
+- [State: QUARANTINED numbers, but the owner's method repo answers more than we hoped — and step 1 of his method is already implemented as a draft: with his 65 FAO item codes replacing the stale 29-name list, India recovers from zero to {{< meta livestock_ind >}}, China reads {{< meta livestock_chn >}}, and the world total {{< meta livestock_world >}}, all PROVISIONAL pending his lambda. The old name list matched only 13 of its own 29 items against current FAO files.]{.state}
 - **Q1 (owner): We found your meat/milk/other item grouping — is it current, and does milk belong as it suggests?** The library's 29-item meats-and-eggs list (which captures 4 percent of India's FAO livestock value) appears to be a stale fork of your method.
 - **Q2 (owner): Is the intended nature share the GLEAM-3 feed-share lambda — ecosystem feed over total feed, per country — as your lambda.py computes?** If so, the answer is neither crop's coefficients nor pasture rents, and we implement exactly that.
 - **Q3 (owner): Can you share the GLEAM input (gleam3_dmi.xlsx) and one per-country output table?** The GLEAM file lives on a personal disk and the repo commits no output; with both, we implement your method in the library and verify by exact replication.
 
 ## coastal_protection: two candidate totals, one run to settle it
 
-- [State: verified by identical rerun at $36.72bn (2019, mangrove and coral avoided damage).]{.state}
-- **Q1 (owner): Which data or code state produced the $73.0bn recorded in the code's own comment?** It is almost exactly twice our verified $36.72bn, and published anchors fit both. If that run's inputs still exist, one rerun settles it.
+- [State: verified by identical rerun at {{< meta cp_total >}} (2019, mangrove and coral avoided damage).]{.state}
+- **Q1 (owner): Which data or code state produced the {{< meta cp_alt >}} recorded in the code's own comment?** It is almost exactly twice our verified {{< meta cp_total >}}, and published anchors fit both. If that run's inputs still exist, one rerun settles it.
 - Our leading suspect, for what it is worth: coral rows already at year 2019 double-counted by the 2012-to-2019 deflation step.
 
 ## extractive_materials: what does 0.49 mean?
 
 - [State: exact per-country replication of the reference, including the rendered tables.]{.state}
-- **Q1 (owner): What is the source or derivation of the 0.49 factor?** The valuation multiplies mineral rents times GDP by it, unsourced in code, submission, and notes; without it the total would be $203bn instead of $99.54bn. The arithmetic is verified; the meaning of the number is not.
+- **Q1 (owner): What is the source or derivation of the 0.49 factor?** The valuation multiplies mineral rents times GDP by it, unsourced in code, submission, and notes; without it the total would be {{< meta extractive_alt >}} instead of {{< meta extractive_total >}}. The arithmetic is verified; the meaning of the number is not.
 
 ## renewable_energy: code and references disagree
 
-- [State: conformed and rerun-identical at $170.83bn (wind 110.31, solar 53.95, geothermal 6.56).]{.state}
-- **Q1 (owner): Which is blessed — the code's $170.83bn or the drive CSVs' $134.6bn?** More than 100 countries differ per source, both cannot be right, and the folder's "gepNEW" method note suggests the CSVs predate a revision.
+- [State: conformed and rerun-identical at {{< meta renewable_total >}} (wind 110.31, solar 53.95, geothermal 6.56).]{.state}
+- **Q1 (owner): Which is blessed — the code's {{< meta renewable_total >}} or the drive CSVs' {{< meta renewable_ref >}}?** More than 100 countries differ per source, both cannot be right, and the folder's "gepNEW" method note suggests the CSVs predate a revision.
 - **Q2 (the room): Does the crosswalk satisfy the sheet's wind/solar/geothermal split, or does anyone want separate modules?** The module already computes all three and writes per-source tables.
 
 # Cross-cutting decisions
@@ -191,7 +212,7 @@ format:
 ## The sheet's own missing-info flags, by service
 
 - **Value info missing:** Pollination and Fish Provision (the sheet says so itself, which matches our 28-times definitional question).
-- **Quantity and price info missing:** Coastal Protection — likely the same gap behind our $73bn-vs-$36.72bn question.
+- **Quantity and price info missing:** Coastal Protection — likely the same gap behind our $73bn-vs-{{< meta cp_total >}} question.
 - **Method and data missing:** Health Benefits (value method and data), Fire Protection (price data sources), Air Filtration (value and coverage).
 - **"Relationship to other services" missing:** Water Quality, Non-Timber Forest Products, Timber — the same double-counting concern our shoreline question raises for carbon.
 - Ask: each named team fills its row before the account integrates its service.
@@ -207,12 +228,12 @@ format:
 
 ## The take-away list, by person
 
-- **Yanxu:** the shoreline rationale, and the seagrass and marsh input versions behind $26.65bn.
+- **Yanxu:** the shoreline rationale, and the seagrass and marsh input versions behind {{< meta coastal_report >}}.
 - **Matt:** one machine-readable v0.2.0 output, and its input versions.
 - **Erwin:** bless the RCP substitution; name the CWoN vintage.
 - **Erosion author:** the submission's valuation inputs and a reference output.
 - **Livestock owner:** the item list, the pasture rents, a blessed reference.
-- **Coastal-protection owner:** which run produced $73.0bn.
+- **Coastal-protection owner:** which run produced {{< meta cp_alt >}}.
 - **Extractive owner:** the source of 0.49.
 - **Renewable owner:** code or CSVs.
 - **The room:** pollination's definition, the shoreline convention, crop's units, the map dissolve, base year 2019, subsistence scope, marine carbon's fate.
