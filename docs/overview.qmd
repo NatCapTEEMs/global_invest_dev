@@ -80,7 +80,7 @@ format:
 
 ## The template every service follows
 
-- One runner per task tree, and every run file shares one anatomy, decided with Justin and applied across the library: build_task_tree names the pipeline, and the run is configured where it is constructed.
+- One runner per task tree, and every run file shares one anatomy, applied across the library: build_task_tree names the pipeline, and the run is configured where it is constructed.
 - Configuration is data, in two shared CSVs. es_config.csv holds one row per service in the GEP formula's own vocabulary (quantity, price, attribution, land base, base year, price convention) plus the crosswalk to the status sheet; es_scenarios_test.csv holds the standard SEALS scenarios and ships the matching test maps, so a standalone shock run works on any machine.
 - The library fills only what the caller left unset. A pipeline such as ngfs_pnas drives the same tasks from its own scenarios file, and its values always win.
 - Each task's first line publishes the inputs it needs (relative to the shared base data; each machine finds its own copy), so any task grafted anywhere is a working piece — rolling out service by service, terrestrial first.
@@ -118,6 +118,7 @@ format:
 | erosion | {{< meta erosion_total >}} PROVISIONAL | internal reconciliation; awaits submission |
 | landslide_mitigation | input stage complete; full run resumes on the cluster | no machine-readable reference yet |
 | fisheries | shock only | valuation external (CWoN) |
+| recreation | ported this week, awaiting its data | tests pin the method; no external anchor yet |
 
 ## Verification discipline, and what it caught
 
@@ -127,6 +128,23 @@ format:
 - It also caught one claim of our own: the coastal report's numbers are the EEZ-only aggregation by design, matched exactly by our run.
 - Every receipt names its anchor, because the two kinds prove different things. Reproducing our own cached run proves a change moved nothing (every refactor is held to that, to the dollar); an external anchor — the manuscript, an author's replication — proves the number itself. A service without an external anchor says so in this deck rather than borrowing confidence from the first kind.
 - What the next slides ask for is the layer replication cannot supply: it proves our code reproduces your results, not that the results are right. None of it is criticism — most questions exist because verification found exactly where a decision, a source, or an input is missing.
+
+## The test behind each service
+
+| Service | Test module | What it pins |
+|---|---|---|
+| terrestrial_carbon | test_terrestrial_carbon.py | raster math on tiny synthetic GeoTIFFs; the static shock on a synthetic dependency table |
+| coastal_carbon | test_coastal_carbon.py | the two aggregation contracts: only marine EEZ rows are valued, and the r250 collapse |
+| pollination | test_pollination.py | end-to-end on a tiny value raster through real zonal statistics; a split country sums once |
+| erosion | test_erosion.py | the valuation arithmetic itself (loaders mocked): elasticity shock, clipping, floor, GPV shares |
+| recreation | test_recreation.py | every method constant against hand-derived values: matrices, ring kernels, gravity model, allocation |
+| fisheries | test_fisheries_headers.py | climate-label header resolution and the HAR read-list union |
+| landslide_mitigation | — | run knobs pinned in the library tests; the science awaits the cluster run |
+| the five accounting services | — | library-wide contract tests only (next line) — a gap this slide states rather than hides |
+| library-wide | test_es_config / parameters / scenarios / seams / utilities / r250_guard | every shipped CSV row hydrates, every shock seam stays grafted, the split-country guard stays present |
+
+- The library-wide tests are the reason a NEW row or service is born under test: adding a row to a shipped CSV is automatically covered, and clobbering a service's entry point fails the seam test.
+- What is missing, stated plainly: science-level tests for the five accounting services and landslide — each needs a small synthetic pin of its own arithmetic, the way erosion and recreation have.
 
 # The questions, service by service
 
@@ -141,8 +159,8 @@ format:
 ## coastal_carbon: which side of the shoreline?
 
 - [State: replicates the author's design exactly, mangrove component to the cent. One run, two totals: {{< meta coastal_eez >}} counting ocean-side rows only, {{< meta coastal_all >}} counting both sides.]{.state}
-- **Q1 (design, Yanxu):** was EEZ-only chosen to avoid double-counting the land-side pixels with terrestrial carbon? The land side carries 97.5 percent of mangrove and 84 percent of salt marsh area, so the convention moves the total 4.5 times.
-- **Q2 (inputs, Yanxu):** which exact seagrass and salt marsh input versions produced the report's {{< meta coastal_report >}}? Our replication gives {{< meta coastal_eez >}} with mangrove matching exactly, and the report's own seagrass area (62.21 Mha) exceeds the published range it cites (16 to 26.7 Mha).
+- **Q1 (design, coastal team):** was EEZ-only chosen to avoid double-counting the land-side pixels with terrestrial carbon? The land side carries 97.5 percent of mangrove and 84 percent of salt marsh area, so the convention moves the total 4.5 times.
+- **Q2 (inputs, coastal team):** which exact seagrass and salt marsh input versions produced the report's {{< meta coastal_report >}}? Our replication gives {{< meta coastal_eez >}} with mangrove matching exactly, and the report's own seagrass area (62.21 Mha) exceeds the published range it cites (16 to 26.7 Mha).
 - **Q3 (the room): If both sides should count, who owns the terrestrial-side mask that prevents double-counting?**
 
 ## Marine carbon: unbuilt and unowned
@@ -181,17 +199,24 @@ format:
 ## landslide_mitigation: a reference to verify against
 
 - [State: folded from the v0.2.0 release, 50.5 GiB staged. The first run completed the input stage (all twelve global reprojections and the event panels); the compute-heavy remainder resumes on the cluster, where this run belongs. The only machine-readable output predates the method revision.]{.state}
-- **Q1 (Matt): Can you export one machine-readable per-country output from a v0.2.0 run — a CSV is enough?** With it we run, diff, and the service reaches the verified bar.
-- **Q2 (Matt): Which input versions did the release-day run use?**
+- **Q1 (landslide team): Can you export one machine-readable per-country output from a v0.2.0 run — a CSV is enough?** With it we run, diff, and the service reaches the verified bar.
+- **Q2 (landslide team): Which input versions did the release-day run use?**
 
 ## fisheries: one substitution to bless
 
-- [State: shock-only in the library. The shock file derives from DBEM (Cheung 2021), built by Erwin from CWoN inputs; a fisheries GEP valuation exists outside the library in the group's own R pipeline, computed from FAO FishStatJ.]{.state}
-- **Q1 (Erwin): Do you bless the RCP8.5-for-RCP7.0 substitution, or name a replacement?** The 8.5 series stands in because no 7.0 series exists — defensible, but currently discoverable rather than stated.
-- **Q2 (Erwin): Which CWoN vintage is behind the HAR file?** For the record and the methods writeup.
+- [State: shock-only in the library. The shock file derives from DBEM (Cheung 2021), built from CWoN inputs; a fisheries GEP valuation exists outside the library in the group's own R pipeline, computed from FAO FishStatJ.]{.state}
+- **Q1 (fisheries team): Do you bless the RCP8.5-for-RCP7.0 substitution, or name a replacement?** The 8.5 series stands in because no 7.0 series exists — defensible, but currently discoverable rather than stated.
+- **Q2 (fisheries team): Which CWoN vintage is behind the HAR file?** For the record and the methods writeup.
 - **Q3 (fisheries teams): Should the fisheries GEP come into the library — and from which source?** Every service is expected to have a GEP eventually; fisheries' valuation is still external.
-- Settled convention (Chiara, 20 Aug): **fisheries is an ecosystem service and stays in the nature family** — it enters the cc_es pass alongside carbon, pollination and erosion, and is not part of the just_cc runs, even though its shock varies only with the climate pathway. Stated here so the boundary property that makes it unusual (RCP-driven, no land-use map) reads as a characteristic, not an open question.
+- Settled convention (20 Aug): **fisheries is an ecosystem service and stays in the nature family** — it enters the cc_es pass alongside carbon, pollination and erosion, and is not part of the just_cc runs, even though its shock varies only with the climate pathway. Stated here so the boundary property that makes it unusual (RCP-driven, no land-use map) reads as a characteristic, not an open question.
 - Found in the project's own repos: a commercial fisheries GEP exists as an R pipeline (FishStatJ to GEP), and the subsistence repo already carries a per-country output table — so the in-library GEP has source material, and the subsistence scope question has an existing product to evaluate.
+
+## recreation: ported — two things make it verifiable
+
+- [State: the first externally-owned service ported into the library (this week): seven tasks in the house shape, method constants pinned by unit tests, aggregation born on r250. What it does: LULC shares + protected areas + road access rank 1 km sites; a gravity model sends residents (daily) and allocated UNWTO overnights (tourism) into the high-quality sites; visits are valued at national fuel cost times travel distance.]{.state}
+- **Need 1: the data folder.** The pipeline's inputs live in the consortium drive's Recreation/data tree (six LULC share rasters, protected-area and road layers, WorldPop, the UNWTO workbook, the hotels geopackage, a fuel-cost table — all 1 km, so modest). Staged into base_data, the run works anywhere.
+- **Need 2: a reference per-country output.** The source pipeline's results_by_country.csv was not committed; with one copy we diff per-country visits and values and the port reaches the verified bar.
+- One flagged question for the method writeup: the travel-cost distance multiplies the fuel cost (USD per km) by ring distance in the raster's native pixel units — we ported it faithfully and will resolve it against the reference output rather than guess.
 
 # The accounting services
 
@@ -237,9 +262,9 @@ format:
 ## The PM team's August 31 pass maps onto today
 
 - Colleen's housekeeping email (due August 31) asks every group for consistent parameters and clean write-ups. Today's answers complete most of it a week early.
-- **2019 dollars:** confirms our base year; pollination's regeneration will follow Marta's conversion guidance once its definition is settled.
+- **2019 dollars:** confirms our base year; pollination's regeneration will follow the sheet's deflator-conversion guidance once its definition is settled.
 - **CWON rental rates, not GTAP:** renewable and fisheries already use CWON. For extractive, this is context for the 0.49 question — if that factor is a rental-rate choice, the CWON guidance may answer it.
-- **EPA VSL:** landslide values mortality, so one more ask for Matt — which VSL does v0.2.0 use?
+- **EPA VSL:** landslide values mortality, so one more ask for its team — which VSL does v0.2.0 use?
 - **Zeros vs NAs:** our verification hit exactly this — extractive has 9 countries NA for missing WB data (documented), and coastal_protection currently fills unmatched countries with zero in a merge, which needs the true-zero-or-NA review the email asks for. We will do that pass on our modules.
 - **Discount rate 2 percent with 1 and 3 sensitivity:** the carbon services' rental SCC embeds a discounting choice — worth confirming it matches.
 
@@ -268,22 +293,24 @@ format:
 ## Leads, priorities, and hygiene
 
 - The sheet itself lists a category "Feasible ES with no assigned lead" — can leads be named today for the unclaimed services?
-- Which sheet services should enter the library NEXT? Our suggestion for sequencing: the three with complete SI tables and global feasibility that have no module yet (Local Climate Regulation, Recreation, Extractive Energy).
+- Which sheet services should enter the library NEXT? Recreation's module came in this week (previous slide), which leaves two with complete SI tables and global feasibility and no module yet: Local Climate Regulation and Extractive Energy. One blocker found while auditing: the sheet's water-quality repo link points to a fork that does not contain the water-quality code — where does that pipeline actually live?
 - The sheet's label typos (wind_enery_provision and siblings) now need a coordinated fix: our configuration table's crosswalk cells reproduce them faithfully, because a crosswalk key must match the sheet as written. Ask: fix the three labels in the sheet, and we update our three cells in the same change — a two-place lockstep edit, since either alone breaks the join.
 - The CAS and UMN member columns already name people per service — we will read owners from there unless told otherwise.
 
 # What we need from you
 
-## The take-away list, by person
+## The take-away list, by service
 
-- **Yanxu:** the shoreline rationale, and the seagrass and marsh input versions behind {{< meta coastal_report >}}.
-- **Matt:** one machine-readable v0.2.0 output, and its input versions.
-- **Erwin:** bless the RCP substitution; name the CWoN vintage.
-- **Erosion author:** the submission's valuation inputs and a reference output.
-- **Livestock owner:** the item list, the pasture rents, a blessed reference.
-- **Coastal-protection owner:** which run produced {{< meta cp_alt >}}.
-- **Extractive owner:** the source of 0.49.
-- **Renewable owner:** code or CSVs.
+- **coastal_carbon:** the shoreline rationale, and the seagrass and marsh input versions behind {{< meta coastal_report >}}.
+- **landslide_mitigation:** one machine-readable v0.2.0 output, and its input versions.
+- **fisheries:** bless the RCP substitution; name the CWoN vintage.
+- **erosion:** the submission's valuation inputs and a reference output.
+- **livestock_provision:** the item list, the pasture rents, a blessed reference.
+- **coastal_protection:** which run produced {{< meta cp_alt >}}.
+- **extractive_materials:** the source of 0.49.
+- **renewable_energy:** code or CSVs.
+- **recreation:** the Recreation/data folder staged, and one reference results_by_country.csv.
+- **water_quality:** where the pipeline's code actually lives (the sheet's link doesn't contain it).
 - **The room:** pollination's definition, the shoreline convention, crop's units, the map dissolve, base year 2019, subsistence scope, marine carbon's fate, the fisheries GEP's source.
 - **Every service team:** complete your SI-table row (status, value info, relationships to other services); name leads for the unclaimed services; confirm the next-in-line services for the library.
 

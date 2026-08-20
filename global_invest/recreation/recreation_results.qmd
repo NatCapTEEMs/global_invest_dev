@@ -8,9 +8,9 @@ execute:
   warning: false
 ---
 
-# Pollination Results
+# Recreation Results
 
-Text describing it. To be written by the service team (science source: the crop_benefits repo).
+Text describing it. To be written by the service team (science source: the GEP recreation repo).
 
 ```{python}
 #| output: false
@@ -21,16 +21,16 @@ import os
 import pandas as pd
 import hazelbean as hb
 
-from global_invest.pollination import pollination_initialize
+from global_invest.recreation import recreation_initialize
 
 if __name__ == '__main__':
 
     p = hb.ProjectFlow()
-    p.project_name = 'gep_pollination'
+    p.project_name = 'gep_recreation'
     p.project_dir = os.path.join(os.path.expanduser('~'), 'Files', 'global_invest', 'projects', p.project_name)
     p.set_project_dir(p.project_dir)
 
-    pollination_initialize.build_gep_service_calculation_task_tree(p)
+    recreation_initialize.build_gep_service_calculation_task_tree(p)
 
     p.results = {}
 
@@ -52,24 +52,26 @@ pd.set_option('display.float_format', '{:,.2f}'.format)
 pd.set_option('display.max_rows', 1000)
 from IPython.display import Image, display
 
-service_label = 'pollination'
+service_label = 'recreation'
 
 for k, v in p.results[service_label].items():
     df = hb.df_read(v)
     setattr(p, k, df)
 
     if k == 'gep_by_country_base_year':
-        total_pollination_value = df['pollination_gep'].sum()
-        p.gep_by_country_base_year_table = df[['iso3_r250_name', 'pollination_gep']]
+        total_recreation_value = df['recreation_gep'].sum()
+        total_daily_value = df['daily_value'].sum()
+        total_tourist_value = df['tourist_value'].sum()
+        p.gep_by_country_base_year_table = df[['iso3_r250_name', 'daily_value', 'tourist_value', 'recreation_gep']]
 
         if 'income_grp' in df.columns:
-            p.gep_by_income_grp_base_year_table = df.groupby('income_grp', as_index=False)['pollination_gep'].sum()
+            p.gep_by_income_grp_base_year_table = df.groupby('income_grp', as_index=False)['recreation_gep'].sum()
         if 'region_un' in df.columns:
-            p.gep_by_region_un_base_year_table = df.groupby('region_un', as_index=False)['pollination_gep'].sum()
+            p.gep_by_region_un_base_year_table = df.groupby('region_un', as_index=False)['recreation_gep'].sum()
         if 'continent' in df.columns:
-            p.gep_by_continent_base_year_table = df.groupby('continent', as_index=False)['pollination_gep'].sum()
+            p.gep_by_continent_base_year_table = df.groupby('continent', as_index=False)['recreation_gep'].sum()
         if 'subregion' in df.columns:
-            p.gep_by_subregion_base_year_table = df.groupby('subregion', as_index=False)['pollination_gep'].sum()
+            p.gep_by_subregion_base_year_table = df.groupby('subregion', as_index=False)['recreation_gep'].sum()
 
         out_dir = os.path.join(p.intermediate_dir, service_label, 'gep_result')
         hb.create_directories(out_dir)
@@ -84,15 +86,15 @@ for k, v in p.results[service_label].items():
 
         gpkg_path = p.results[service_label]['gep_by_country_base_year'].replace('.csv', '.gpkg')
         gdf = hb.read_vector(gpkg_path)
-        gdf = gdf[['iso3_r250_id', 'iso3_r250_name', 'pollination_gep', 'geometry']]
+        gdf = gdf[['iso3_r250_id', 'recreation_gep', 'geometry']]
 
         borders = gdf.copy()
         borders['geometry'] = borders['geometry'].boundary
 
-        norm = mpl.colors.LogNorm(vmin=gdf['pollination_gep'][gdf['pollination_gep'] > 0].min(), vmax=gdf['pollination_gep'].max())
+        norm = mpl.colors.LogNorm(vmin=gdf['recreation_gep'][gdf['recreation_gep'] > 0].min(), vmax=gdf['recreation_gep'].max())
 
         fig, ax = plt.subplots(figsize=(15, 10))
-        gdf.plot(column='pollination_gep', cmap='OrRd', legend=False, norm=norm, ax=ax)
+        gdf.plot(column='recreation_gep', cmap='OrRd', legend=False, norm=norm, ax=ax)
         borders.plot(ax=ax, color='black', linewidth=0.5)
 
         sm = plt.cm.ScalarMappable(cmap='OrRd', norm=norm)
@@ -101,13 +103,13 @@ for k, v in p.results[service_label].items():
         cbar.set_label("Gross Ecosystem Product (GEP) in Base Year")
         cbar.ax.yaxis.set_major_formatter(mpl.ticker.FuncFormatter(lambda x, _: f'{int(x):,}'))
 
-        ax.set_title('Pollination GEP by Country in Base Year')
+        ax.set_title('Recreation GEP by Country in Base Year')
         ax.set_axis_off()
         plt.savefig(os.path.join(out_dir, 'gep_by_country_base_year_map.png'), bbox_inches='tight', dpi=300)
         plt.close()
 ```
 
-The analysis finds that insect pollination generates a total gross ecosystem product of $`{python} f"{total_pollination_value:,.2f}"` in the base year (`{python} f"{int(p.gep_base_year)}"`). The value raster carries crop prices and per-crop pollination dependence already, so the per-country value is a direct spatial sum. Below we present the results in various aggregations, ending with the GEP by country in the base year.
+The analysis finds that recreation and tourism generate a total gross ecosystem product of $`{python} f"{total_recreation_value:,.2f}"` in the base year (`{python} f"{int(p.gep_base_year)}"`), of which $`{python} f"{total_daily_value:,.2f}"` comes from residents' daily recreation and $`{python} f"{total_tourist_value:,.2f}"` from overnight tourism. Visits are generated by a gravity model from population (residents) and allocated UNWTO overnights (tourists) into high-quality recreation sites, and valued at national per-km fuel costs times travel distance. Below we present the results in various aggregations, ending with the GEP by country in the base year.
 
 ```{python}
 display(Image(os.path.join(p.intermediate_dir, service_label, 'gep_result', 'gep_by_country_base_year_map.png')))

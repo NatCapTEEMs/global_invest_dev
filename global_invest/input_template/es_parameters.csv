@@ -40,6 +40,14 @@ erosion,erosion_shock_acts,"[""PDR"", ""WHT"", ""GRO"", ""V_F"", ""OSD"", ""C_B"
 erosion,erosion_crop_to_sector,"{""rice"": ""PDR"", ""whea"": ""WHT"", ""maiz"": ""GRO"", ""barl"": ""GRO"", ""sorg"": ""GRO"", ""mill"": ""GRO"", ""pmil"": ""GRO"", ""ocer"": ""GRO"", ""bana"": ""V_F"", ""plnt"": ""V_F"", ""citr"": ""V_F"", ""temf"": ""V_F"", ""trof"": ""V_F"", ""vege"": ""V_F"", ""toma"": ""V_F"", ""onio"": ""V_F"", ""pota"": ""V_F"", ""swpo"": ""V_F"", ""yams"": ""V_F"", ""cass"": ""V_F"", ""orts"": ""V_F"", ""soyb"": ""OSD"", ""grou"": ""OSD"", ""sunf"": ""OSD"", ""rape"": ""OSD"", ""sesa"": ""OSD"", ""oilp"": ""OSD"", ""cnut"": ""OSD"", ""ooil"": ""OSD"", ""sugc"": ""C_B"", ""sugb"": ""C_B"", ""cott"": ""PFB"", ""ofib"": ""PFB"", ""coff"": ""OCR"", ""rcof"": ""OCR"", ""coco"": ""OCR"", ""teas"": ""OCR"", ""toba"": ""OCR"", ""rubb"": ""OCR"", ""bean"": ""OCR"", ""lent"": ""OCR"", ""cowp"": ""OCR"", ""pige"": ""OCR"", ""chic"": ""OCR"", ""opul"": ""OCR"", ""rest"": ""OCR""}"
 erosion,erosion_method,service_threshold
 erosion,erosion_native_resolution,false
+recreation,recreation_lulc_share_path_template,global_invest/recreation/lulc/lulc_esa_seals7_2010_1km_{lulc_class}_share.tif
+recreation,recreation_pa_share_path,global_invest/recreation/pa/wdpa_accessible_1km_share.tif
+recreation,recreation_road_distance_path,global_invest/recreation/distance_to_roads/distance_to_road_1km_corrected.tif
+recreation,recreation_road_length_path,global_invest/recreation/grip4_road_length/grip4_road_length_1km.tif
+recreation,recreation_population_path,global_invest/recreation/worldpop/ppp_2010_1km_aligned.tif
+recreation,recreation_fuel_cost_path,global_invest/recreation/feul_cost_per_km_2019_2datasources_iso3.csv
+recreation,recreation_unwto_path,global_invest/recreation/unwto-all-data-download_2022.xlsx
+recreation,recreation_hotels_path,global_invest/recreation/Export_GEO-data_4-University-of-Minnesota.gpkg
 landslide_mitigation,force_run,false
 landslide_mitigation,run_in_parallel,true
 landslide_mitigation,num_workers,8
