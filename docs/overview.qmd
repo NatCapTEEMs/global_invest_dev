@@ -48,6 +48,13 @@ format:
 - Different GEP service models were developed by different contributors in different repositories, with their own layout, path conventions and aggregation choices.
 - One home with one template makes every service runnable by anyone, verifiable by rerun, and consumable by the GEP account.
 
+## Why this matters outside the lab
+
+- Central banks and finance ministries are now asked to price nature risk, and the NGFS scenarios they use carry no ecosystem-service feedback at all — the pipeline this library feeds is the first to put one there.
+- A GEP account changes decisions only if every number can be traced to the model that produced it, so one reviewed library is what makes "verified by rerun" a property of the account rather than a claim about it.
+- The service models do double duty. The valuation answers what nature is worth in a place; the shock answers what happens to the economy when that changes, and the second is what policy instruments actually act on.
+- Where a service is not yet trustworthy we say so — livestock's numbers are known wrong, erosion's are provisional — because an account used in policy inherits every silent error inside it.
+
 # What global_invest is
 
 ## One module per service: GEP always, a shock where the science allows
