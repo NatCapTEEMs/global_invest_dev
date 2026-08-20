@@ -281,10 +281,8 @@ def terrestrial_carbon_shock(p):
     # global 300 m; a SEALS LULC map may be a sub-window (single-country or short-horizon test AOI).
     # When they differ, align the zones to the end-year LULC extent once -- same resolution and an
     # aligned grid, so nearest is a lossless clip -- so the task works at any extent, not only global.
-    from osgeo import gdal
     def _yx(path):
-        ds = gdal.Open(path)
-        return (ds.RasterYSize, ds.RasterXSize)
+        return tuple(hb.get_raster_info_hb(path)['raster_size'])
     _ref_lulc = p.scenario_lulc_paths[base_scn][end_year]
     if _yx(p.terrestrial_quantity_input_path) != _yx(_ref_lulc):
         _aligned_cz = os.path.join(p.cur_dir, 'carbon_zones_aligned.tif')
