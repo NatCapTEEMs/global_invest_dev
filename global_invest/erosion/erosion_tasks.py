@@ -84,6 +84,13 @@ def publish_inputs(p):
     Defaults layer throughout: anything the caller set wins."""
     utilities.hydrate_es_config(p, 'erosion', log=hb.log)
     utilities.hydrate_es_parameters(p, 'erosion', log=hb.log)
+    # Derived from the DEM row (caller wins): configure_* in erosion_functions reads these, and
+    # their own fallbacks point at the author's cluster layout -- without these lines a local
+    # Section-A run would silently reach for MSI paths.
+    if getattr(p, 'erosion_sdr_input_dir', None) is None:
+        p.erosion_sdr_input_dir = os.path.dirname(p.erosion_dem_path)
+    if getattr(p, 'erosion_elevation_path', None) is None:
+        p.erosion_elevation_path = p.erosion_dem_path
     if not hasattr(p, 'results'):
         p.results = {}
     return p

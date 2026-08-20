@@ -13,8 +13,6 @@
 # original notebooks (SDR script called its copy `_assert_exists`) --
 # consolidated here to a single implementation.
 # =============================================================================
-import os
-import gc
 import time
 from pathlib import Path
 
