@@ -21,7 +21,8 @@ table.
 Requires:
   - natcap.invest (conda-forge) for the SDR model, and pygeoprocessing for the D8 routing
   - base_data/global_invest/sdr/: the analysis grid, DEM, watersheds, biophysical table, SPAM2020
-    yield/area stacks, bandmap and crop-coefficient table (all resolved inside add_erosion_tasks)
+    yield/area stacks, bandmap and crop-coefficient table (all es_parameters rows, hydrated by
+    each task's publish_inputs)
   - base_data/soil/: erosivity and erodibility
 
 On the default 6.45 km analysis grid this is a ~25M-pixel global run, which is tractable locally --
