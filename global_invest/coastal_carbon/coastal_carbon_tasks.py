@@ -97,7 +97,6 @@ def mangrove_area_within_countries(p):
     gdf_mangroves_within_countries["area_m2"] = gdf_mangroves_within_countries.geometry.area
     gdf_mangroves_within_countries["area_ha"] = gdf_mangroves_within_countries["area_m2"] / 10000
 
-    # Save detailed intersection
     gdf_mangroves_within_countries_base_year_path = os.path.join(
         p.cur_dir, "mangroves_within_countries2019.gpkg"
     )
@@ -179,7 +178,6 @@ def salt_marsh_area_within_countries(p):
     # Reproject to match countries vector CRS
     gdf_salt_marsh_zonal = gdf_salt_marsh_zonal.to_crs(gdf_countries_marine_vector.crs)
 
-    # Save intermediate result
     salt_marsh_zonal_path = os.path.join(p.cur_dir, "salt_marsh_with_area.gpkg")
     gdf_salt_marsh_zonal.to_file(salt_marsh_zonal_path, driver="GPKG")
 

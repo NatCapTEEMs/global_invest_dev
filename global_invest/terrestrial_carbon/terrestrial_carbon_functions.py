@@ -47,7 +47,7 @@ def stack_layers_to_csv(
     from osgeo import gdal
     # hb.iterblocks streams the value raster block by block; the two category rasters share its grid, so
     # read them at the same window (raw gdal -- hb has no aligned multi-raster block reader). A cell is
-    # kept only where all three are valid, matching the old masked=True + dropna. Groupby per block, then
+    # kept only where all three are valid. Groupby per block, then
     # combine: only ~thousands of (g1, g2) pairs, so the accumulator stays tiny and nothing 33 GB is
     # written (unlike composite-key + zonal).
     ds1 = gdal.Open(group_layer1_path); g1b = ds1.GetRasterBand(1)   # hold the datasets, else the band handle dies
@@ -105,7 +105,7 @@ def generate_carbon_density_raster(lulc_path, cz_path, carbon_density_lookup_tab
     """
     # (carbon_zone_id, lulc_id) -> carbon_density_mean. The ids are whole numbers (stored as float in the
     # table, uint in the rasters), so key on int64 to match by value; a pair absent from the table
-    # reindexes to NaN, exactly the old "no match -> leave NoData" behaviour.
+    # reindexes to NaN: no match -> NoData, never a silent 0.
     lut = pd.read_csv(carbon_density_lookup_table_path, index_col=False)
     lut = lut.astype({'carbon_zone_id': 'int64', 'lulc_id': 'int64'}).set_index(
         ['carbon_zone_id', 'lulc_id'])['carbon_density_mean'].astype('float32')

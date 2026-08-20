@@ -25,7 +25,7 @@ def initialize_paths(p):
     # Configuration comes from the two shared CSVs as a defaults layer: es_config carries the
     # raw-data reference (gep_quantity_input_path -> landslide_mitigation/input_data_raw,
     # staged from the author's TEEMs-drive migration); es_parameters carries the run knobs and
-    # method constants that used to live here as literals.
+    # method constants.
     utilities.hydrate_es_config(p, 'landslide_mitigation')
     utilities.hydrate_es_parameters(p, 'landslide_mitigation')
     p.landslide_input_data_dir = p.gep_quantity_input_path   # the module's descriptive alias

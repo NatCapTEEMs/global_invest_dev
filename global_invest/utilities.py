@@ -12,10 +12,9 @@ and the four 2-way splits. A gap of any other shape is a legitimate sum, not thi
 reached terrestrial_carbon + coastal_carbon and not the other five GEP services.
 """
 
-# The scenario-name mapping that used to live here (our label -> a service's frozen-table label) was
-# NGFS-specific and has moved to the consumer: each service's static shock task now defaults to identity
-# and warns loudly if a scenario is absent from its table, and ngfs_pnas sets p.<service>_scenario_map
-# with its two non-identity entries. A general library should not hardcode one project's scenario names.
+# A general library does not hardcode one project's scenario names: each service's static shock
+# task defaults to identity (plus the nature-off spelling alias below) and warns loudly when a
+# scenario is absent from its table; a consumer supplies p.<service>_scenario_map for its own naming.
 
 def initialize_country_paths(p, simplified='300sec'):
     """Shared country-boundary references every GEP service needs: the r264 correspondence
@@ -66,7 +65,7 @@ def summarize_raster_by_region(value_raster_path, region_boundary_path, out_path
 
     regions = gpd.read_file(region_boundary_path)
     # zones_raster_data_type=5 (Int32) so ids past 255 don't saturate (r264 runs to 264, r50xAEZ
-    # higher); all_touched=True matches the old per-polygon masking. Returns a frame indexed by
+    # higher); all_touched=True. Returns a frame indexed by
     # zone id, with a zone 0 = everything outside every polygon.
     zone_ids_raster = os.path.splitext(out_path)[0] + '_zone_ids.tif'
     stats = hb.zonal_statistics_flex(

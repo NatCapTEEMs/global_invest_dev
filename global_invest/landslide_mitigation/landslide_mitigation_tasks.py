@@ -2045,9 +2045,6 @@ def build_vsl_raster(p):
                   f'(deflated to 2019 constant USD, factor={DEFLATOR_2022_TO_2019:.4f}).')
  
         # ---- 2. Join to correspondence GPKG ----
-        # get_path + the ee/ segment: the old join pointed at cartographic/ee_r264_correspondence.gpkg,
-        # which does not exist -- the file lives under cartographic/ee/ (latent bug, would have failed
-        # on the cluster resume).
         correspondence_path = p.get_path('cartographic', 'ee', 'ee_r264_correspondence.gpkg')
         corr = gpd.read_file(correspondence_path)
         iso3_field = 'iso3'
