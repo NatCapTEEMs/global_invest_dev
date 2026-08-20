@@ -27,8 +27,19 @@ def initialize_paths(p):
     # staged from the author's TEEMs-drive migration); es_parameters carries the run knobs and
     # method constants.
     utilities.hydrate_es_config(p, 'landslide_mitigation')
-    utilities.hydrate_es_parameters(p, 'landslide_mitigation')
+    utilities.hydrate_es_parameters(p, 'landslide_mitigation')   # run knobs + machine keys
     p.landslide_input_data_dir = p.gep_quantity_input_path   # the module's descriptive alias
+    # Method constants (caller-wins): the published science's parameters live in code
+    # (landslide_mitigation_tasks), not in an editable csv cell.
+    t = landslide_mitigation_tasks
+    for attribute, value in (('data_processing_range', t.LANDSLIDE_DATA_PROCESSING_YEARS),
+                             ('modeling_range', t.LANDSLIDE_MODELING_YEARS),
+                             ('prediction_years', t.LANDSLIDE_PREDICTION_YEARS),
+                             ('max_location_accuracy_m', t.LANDSLIDE_MAX_LOCATION_ACCURACY_M),
+                             ('control_ratio', t.LANDSLIDE_CONTROL_RATIO),
+                             ('c_root_scenarios', t.LANDSLIDE_C_ROOT_SCENARIOS)):
+        if getattr(p, attribute, None) is None:
+            setattr(p, attribute, value)
     p.L = hb.get_logger('landslide_mitigation_workflow')
     return p
 
