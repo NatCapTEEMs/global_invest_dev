@@ -42,7 +42,6 @@ extractive_materials_provision_initialize.build_gep_service_calculation_task_tre
 
 # Inputs resolve in initialize_paths (one source of truth; shared country block).
 p.results = {}  # All results will be stored here by each child task.
-extractive_materials_provision_initialize.initialize_paths(p)
 
 # Run the model. This should be instantaneous if you've run the model before.
 hb.log('Created ProjectFlow object at ' + p.project_dir + '\n    from script ' + p.calling_script + '\n    with base_data set at ' + p.base_data_dir)    

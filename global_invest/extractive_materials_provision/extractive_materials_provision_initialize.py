@@ -4,17 +4,8 @@ import hazelbean as hb
 from global_invest import utilities
 from global_invest.extractive_materials_provision import extractive_materials_provision_tasks
 
-def initialize_paths(p):
-    """One source of truth for the inputs (shared country block + service data, get_path references)."""
-    utilities.initialize_country_paths(p, simplified='30sec')
-
-    # World Bank series staged into base_data from the drive's submissions folder (see base_data
-    # CHANGELOG), via es_config.csv as a defaults layer: GDP in current USD (quantity -- the base
-    # being attributed) and mineral rents as % of GDP (attribution -- the share).
-    utilities.hydrate_es_config(p, 'extractive_materials_provision')
-
 def build_gep_service_calculation_task_tree(p):
-    """Build the default task tree for commercial agriculture."""
+    """Build the default GEP task tree."""
     p.extractive_materials_provision_task = p.add_task(extractive_materials_provision_tasks.extractive_materials_provision)
     p.extractive_materials_provision_gep_calculation_task = p.add_task(extractive_materials_provision_tasks.gep_calculation, parent=p.extractive_materials_provision_task)  
     return p

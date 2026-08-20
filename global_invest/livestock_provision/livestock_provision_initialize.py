@@ -4,14 +4,8 @@ import hazelbean as hb
 from global_invest import utilities
 from global_invest.livestock_provision import livestock_provision_tasks
 
-def initialize_paths(p):
-    """One source of truth for the country references (shared block, get_path reference paths) --
-    same fix as crop_provision: initialize_paths used to READ attributes each runner had to set,
-    and the calc runner missed the block."""
-    utilities.initialize_country_paths(p, simplified='30sec')
-
 def build_gep_service_calculation_task_tree(p, parent=None):
-    """Build the default task tree for commercial agriculture."""
+    """Build the default GEP task tree."""
     p.livestock_provision_task = p.add_task(livestock_provision_tasks.livestock_provision, parent=parent)
     p.livestock_provision_gep_calculation_task = p.add_task(livestock_provision_tasks.gep_calculation, parent=p.livestock_provision_task)  
     return p

@@ -46,7 +46,6 @@ p.df_countries_csv_path = p.get_path('cartographic', 'ee', 'ee_r264_corresponden
 p.gdf_countries_vector_path = p.get_path('cartographic', 'ee', 'ee_r264_correspondence.gpkg')
 p.gdf_countries_vector_simplified_path = p.get_path('cartographic', 'ee', 'ee_r264_simplified300sec.gpkg')
 p.results = {}  # All results will be stored here by each child task.
-coastal_protection_initialize.initialize_paths(p)
 
 # Run the model. This should be instantaneous if you've run the model before.
 hb.log('Created ProjectFlow object at ' + p.project_dir + '\n    from script ' + p.calling_script + '\n    with base_data set at ' + p.base_data_dir)

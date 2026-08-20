@@ -2,15 +2,28 @@ import os
 import sys
 import pandas as pd
 import hazelbean as hb
+from global_invest import utilities
 import subprocess
 
 from global_invest.renewable_energy_provision import renewable_energy_provision_initialize
 from global_invest.renewable_energy_provision import renewable_energy_provision_functions
 
+
+def publish_inputs(p):
+    """Every task's first line: the renewable-energy valuation's es_config row (defaults layer -- a caller-set value wins)
+    plus the shared country references and the results registry."""
+    utilities.hydrate_es_config(p, 'renewable_energy_provision', log=hb.log)
+    utilities.hydrate_es_parameters(p, 'renewable_energy_provision', log=hb.log)
+    utilities.initialize_country_paths(p, simplified='30sec')
+    if not hasattr(p, 'results'):
+        p.results = {}
+    return p
+
 def renewable_energy_provision(p):
     """
     Parent task for renewable energy provision. Inputs resolve in initialize_paths.
     """
+    publish_inputs(p)
 
 def gep_preprocess(p):
     """
@@ -19,10 +32,12 @@ def gep_preprocess(p):
     These are preprocessing tasks are still provided for reference, but are not intended to be run directly by the user.
     We will "promote" the data outputed by a preprocess task to the base_data_dir provided to users.
     """
+    publish_inputs(p)
     pass # NYI
 
 def gep_calculation(p):
-    """ GEP calculation task for commercial agriculture."""
+    """ GEP calculation task for renewable energy provision."""
+    publish_inputs(p)
     # Define at least the primary output for the service, which for this project is gep_by_country_base_year.   
     service_results = {}
     p.results['renewable_energy_provision'] = service_results  
@@ -44,9 +59,9 @@ def gep_calculation(p):
             
     # Check if all results exist
     if hb.path_all_exist(list(service_results.values())):
-        hb.log("All results already exist. Skipping GEP calculation for commercial agriculture.")
+        hb.log("All results already exist. Skipping GEP calculation for renewable energy provision.")
     else:
-        hb.log("Starting GEP calculation for commercial agriculture.")
+        hb.log("Starting GEP calculation for renewable energy provision.")
 
         print('Calculating Gross Ecosystem Product (GEP) for Renewable Energy Production.')
         # set dir
@@ -168,6 +183,7 @@ def gep_calculation(p):
 
 def gep_result(p):
     """Display the results of the GEP calculation."""
+    publish_inputs(p)
     
     # Set the quarto path to wherever the current script is running. This means that the environment used needs to have quarto, which may not be true on e.g. codespaces.
     os.environ['QUARTO_PYTHON'] = sys.executable
@@ -227,6 +243,7 @@ def gep_result(p):
     hb.path_remove(results_qmd_project_path)
         
 def gep_load_results(p):
+    publish_inputs(p)
     
     # Learn the paths by creating a temp task treep
     p_temp = hb.ProjectFlow()
@@ -239,6 +256,7 @@ def gep_load_results(p):
         
 def gep_results_distribution(p):
     """Distribute the results of the GEP calculation."""
+    publish_inputs(p)
     # This task is intended to copy the results to the output directory.
     hb.log("Distributing GEP results...")
     

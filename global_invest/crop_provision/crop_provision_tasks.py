@@ -2,6 +2,7 @@ import os
 import sys
 import pandas as pd
 import hazelbean as hb
+from global_invest import utilities
 import subprocess
 import csv
 
@@ -192,10 +193,22 @@ DEFAULT_CROP_ITEMS = [
     "Other sugar crops n.e.c.",
 ]
 
+
+def publish_inputs(p):
+    """Every task's first line: the FAO crop-production valuation's es_config row (defaults layer -- a caller-set value wins)
+    plus the shared country references and the results registry."""
+    utilities.hydrate_es_config(p, 'crop_provision', log=hb.log)
+    utilities.hydrate_es_parameters(p, 'crop_provision', log=hb.log)
+    utilities.initialize_country_paths(p, simplified='30sec')
+    if not hasattr(p, 'results'):
+        p.results = {}
+    return p
+
 def crop_provision(p):
     """
     Parent task for commercial agriculture.
     """
+    publish_inputs(p)
     p.fao_input_ref_path = os.path.join('global_invest', 'crop_provision', 'Value_of_Production_E_All_Data.csv')
     p.cwon_crop_coefficients_ref_path = os.path.join('global_invest', 'crop_provision', "CWON2024_crop_coef.csv")
 
@@ -206,10 +219,12 @@ def gep_preprocess(p):
     These are preprocessing tasks are still provided for reference, but are not intended to be run directly by the user.
     We will "promote" the data outputed by a preprocess task to the base_data_dir provided to users.
     """
+    publish_inputs(p)
     pass # NYI
 
 def gep_calculation(p):
     """ GEP calculation task for commercial agriculture."""
+    publish_inputs(p)
     # Define at least the primary output for the service, which for this project is gep_by_country_base_year.   
     service_results = {}
     p.results['crop_provision'] = service_results  
@@ -325,6 +340,7 @@ def gep_calculation(p):
 
 def gep_result(p):
     """Display the results of the GEP calculation."""
+    publish_inputs(p)
     
     # Set the quarto path to wherever the current script is running. This means that the environment used needs to have quarto, which may not be true on e.g. codespaces.
     os.environ['QUARTO_PYTHON'] = sys.executable
@@ -386,6 +402,7 @@ def gep_result(p):
     hb.path_remove(results_qmd_project_path)
         
 def gep_load_results(p):
+    publish_inputs(p)
     
     # Learn the paths by creating a temp task treep
     p_temp = hb.ProjectFlow()
@@ -398,6 +415,7 @@ def gep_load_results(p):
         
 def gep_results_distribution(p):
     """Distribute the results of the GEP calculation."""
+    publish_inputs(p)
     # This task is intended to copy the results to the output directory.
     hb.log("Distributing GEP results...")
     

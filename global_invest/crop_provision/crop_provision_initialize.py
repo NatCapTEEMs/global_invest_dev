@@ -4,16 +4,8 @@ import hazelbean as hb
 from global_invest import utilities
 from global_invest.crop_provision import crop_provision_tasks
 
-def initialize_paths(p):
-    """One source of truth for the country references (shared block, get_path reference paths).
-    Previously this READ p.* attributes that each run file had to set first -- the main runner
-    duplicated the block and the calc runner missed it, so the calc entry crashed on an
-    AttributeError. Resolution now lives here; the 30sec simplified layer matches what the main
-    runner always used."""
-    utilities.initialize_country_paths(p, simplified='30sec')
-
 def build_gep_service_calculation_task_tree(p, parent=None):
-    """Build the default task tree for commercial agriculture."""
+    """Build the default GEP task tree."""
     
     p.crop_provision_task = p.add_task(crop_provision_tasks.crop_provision, parent=parent)
     p.crop_provision_gep_calculation_task = p.add_task(crop_provision_tasks.gep_calculation, parent=p.crop_provision_task)  

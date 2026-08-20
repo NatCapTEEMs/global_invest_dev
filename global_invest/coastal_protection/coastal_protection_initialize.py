@@ -4,21 +4,8 @@ import hazelbean as hb
 from global_invest import utilities
 from global_invest.coastal_protection import coastal_protection_tasks
 
-def initialize_paths(p):
-    """One source of truth for the inputs (shared country block + service data, get_path references)."""
-    utilities.initialize_country_paths(p, simplified='30sec')
-
-    # The CWoN mangroves workbook (quantity) comes from es_config.csv as a defaults layer; the
-    # coral-reef workbook and the deflator stay here as science/auxiliary inputs (coral is really
-    # a second sheet subgroup -- its own row if the config ever splits by subgroup).
-    utilities.hydrate_es_config(p, 'coastal_protection')
-    p.coral_reef_ref_path = p.get_path('global_invest', 'coastal_protection', 'coral_reefs_annual_expected_benefit_nfamara.xlsx')
-    # The drive's submissions folder spells this 'gdp_inflation_delator' (sic); staged locally under
-    # the corrected name. Filename case is exact so it resolves on case-sensitive filesystems too.
-    p.df_gdp_inflation_deflator_path = p.get_path('global_invest', 'coastal_protection', 'gdp_inflation_deflator', 'GDP_Inflation_deflator.xlsx')
-
 def build_gep_service_calculation_task_tree(p):
-    """Build the default task tree for commercial agriculture."""
+    """Build the default GEP task tree."""
     p.coastal_protection_task = p.add_task(coastal_protection_tasks.coastal_protection)
     p.coastal_protection_gep_calculation_task = p.add_task(coastal_protection_tasks.gep_calculation, parent=p.coastal_protection_task)  
     return p

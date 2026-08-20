@@ -16,8 +16,6 @@ def run_project(p):
     build_task_tree(p)
 
     # Project level attributes
-    p.results = {}  # All results will be stored here by each child task.
-    livestock_provision_initialize.initialize_paths(p)
 
     # Run the model
     hb.log('Created ProjectFlow object at ' + p.project_dir + '\n    from script ' + p.calling_script)    

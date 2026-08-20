@@ -2,16 +2,34 @@ import os
 import sys
 import pandas as pd
 import hazelbean as hb
+from global_invest import utilities
 import subprocess
 
 from global_invest.coastal_protection import coastal_protection_initialize
 from global_invest.coastal_protection import coastal_protection_functions
 
 
+
+def publish_inputs(p):
+    """Every task's first line: the CWoN coastal-protection valuation's es_config row (defaults layer -- a caller-set value wins)
+    plus the shared country references and the results registry."""
+    utilities.hydrate_es_config(p, 'coastal_protection', log=hb.log)
+    utilities.hydrate_es_parameters(p, 'coastal_protection', log=hb.log)
+    utilities.initialize_country_paths(p, simplified='30sec')
+    # Auxiliary science inputs beside the quantity row: the coral-reef workbook (really a second
+    # sheet subgroup) and the GDP deflator (the drive folder spells it 'gdp_inflation_delator',
+    # sic; staged locally under the corrected name, exact case for case-sensitive filesystems).
+    p.coral_reef_ref_path = p.get_path('global_invest', 'coastal_protection', 'coral_reefs_annual_expected_benefit_nfamara.xlsx')
+    p.df_gdp_inflation_deflator_path = p.get_path('global_invest', 'coastal_protection', 'gdp_inflation_deflator', 'GDP_Inflation_deflator.xlsx')
+    if not hasattr(p, 'results'):
+        p.results = {}
+    return p
+
 def coastal_protection(p):
     """
     Parent task for mangrove coastal protection. Inputs resolve in initialize_paths.
     """
+    publish_inputs(p)
 
 
 def gep_preprocess(p):
@@ -21,12 +39,14 @@ def gep_preprocess(p):
     These are preprocessing tasks are still provided for reference, but are not intended to be run directly by the user.
     We will "promote" the data outputed by a preprocess task to the base_data_dir provided to users.
     """
+    publish_inputs(p)
     pass # NYI
 
 
 
 def gep_calculation(p):
     """ GEP calculation task for coastal protection."""
+    publish_inputs(p)
     # Define at least the primary output for the service, which for this project is gep_by_country_base_year.   
     service_results = {}
     p.results['coastal_protection'] = service_results
@@ -156,6 +176,7 @@ def gep_calculation(p):
 
 def gep_result(p):
     """Display the results of the GEP calculation."""
+    publish_inputs(p)
     
     # Set the quarto path to wherever the current script is running. This means that the environment used needs to have quarto, which may not be true on e.g. codespaces.
     os.environ['QUARTO_PYTHON'] = sys.executable
@@ -214,6 +235,7 @@ def gep_result(p):
         hb.path_remove(results_qmd_project_path)
         
 def gep_load_results(p):
+    publish_inputs(p)
     
     # Learn the paths by creating a temp task treep
     p_temp = hb.ProjectFlow()
@@ -226,6 +248,7 @@ def gep_load_results(p):
         
 def gep_results_distribution(p):
     """Distribute the results of the GEP calculation."""
+    publish_inputs(p)
     # This task is intended to copy the results to the output directory.
     hb.log("Distributing GEP results...")
     
