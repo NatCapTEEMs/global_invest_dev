@@ -37,7 +37,7 @@ def configure_crop_benefits(p, target_year):
     which removes the separate country-raster dependency. Sufficiency outputs go to the task dir.
     """
     cfg = load_config(validate=False)
-    cb = os.path.join(p.base_data_dir, 'crop_benefits')
+    cb = p.get_path('crop_benefits')
     # poll_value_global_<year>usd.tif is a PRECOMPUTED baseline input, not built here. It is the
     # output of the crop_benefits raster pipeline, run once over Monfreda yields x CropGrids area x
     # FAO producer prices x pollination-dependence ratios:

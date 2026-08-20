@@ -21,7 +21,6 @@ def initialize_paths(p):
     block. The first-run crashes came from porting that block one attribute at a time; it lives here
     whole now, source lines 84-114."""
     p.landslide_input_data_dir = p.get_path('landslide_mitigation', 'input_data_raw')
-    p.shared_base_data_dir = p.base_data_dir
 
     p.force_run = False
     p.L = hb.get_logger('landslide_mitigation_workflow')

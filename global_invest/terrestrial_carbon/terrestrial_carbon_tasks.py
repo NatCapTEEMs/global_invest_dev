@@ -105,12 +105,15 @@ def gep_preprocess(p):
     the base-year LULC grid to (re)make the *_projected rasters; otherwise start from the projected
     rasters already in carbon_storage. All raster ops go through hazelbean.
     """
+    # base_data joins here are WRITE destinations, deliberately: this one-off task's job is
+    # promoting its product INTO base_data/carbon_storage, where every consumer then finds it
+    # via get_path. Inputs below resolve through get_path as usual.
     p.spawn_total_carbon_density_path = os.path.join(p.base_data_dir, 'carbon_storage', 'spawn_total_biomass_carbon_2010.tif')
     if not p.run_this:
         return True
 
     carbon_storage_dir = os.path.join(p.base_data_dir, 'carbon_storage')
-    spawn_raw_dir = os.path.join(p.base_data_dir, 'terrestrial_carbon', 'spawn_2020')
+    spawn_raw_dir = p.get_path('terrestrial_carbon', 'spawn_2020', raise_error_if_fail=False)
     projected = {}
     for band in ('aboveground', 'belowground'):
         projected[band] = os.path.join(carbon_storage_dir, 'spawn_%s_biomass_carbon_2010_projected.tif' % band)
