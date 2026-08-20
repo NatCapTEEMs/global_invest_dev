@@ -76,7 +76,7 @@ def carbon_density_table(p):
 
 def carbon_density_raster_base_year(p):
     publish_inputs(p)
-    p.carbon_density_raster_base_year_path = os.path.join(p.cur_dir, "projected_carbon_density_2019.tif")
+    p.carbon_density_raster_base_year_path = os.path.join(p.cur_dir, f"projected_carbon_density_{p.gep_base_year}.tif")
     if not p.run_this:
         return True
     result = terrestrial_carbon_functions.generate_carbon_density_raster(
@@ -88,11 +88,12 @@ def carbon_density_raster_base_year(p):
 
 
 def carbon_density_raster_per_cell_base_year(p):
+    publish_inputs(p)
     p.ha_per_cell_10sec_ref_path = p.get_path('pyramids', 'ha_per_cell_10sec.tif')
-    p.projected_carbon_density_2019_per_cell_path = os.path.join(p.cur_dir, 'projected_carbon_density_2019_per_cell.tif')
+    p.carbon_density_per_cell_base_year_path = os.path.join(p.cur_dir, f'projected_carbon_density_{p.gep_base_year}_per_cell.tif')
     if not p.run_this:
         return True
-    hb.multiply(p.carbon_density_raster_base_year_path, p.ha_per_cell_10sec_ref_path, p.projected_carbon_density_2019_per_cell_path)
+    hb.multiply(p.carbon_density_raster_base_year_path, p.ha_per_cell_10sec_ref_path, p.carbon_density_per_cell_base_year_path)
     return True
 
 
@@ -102,7 +103,7 @@ def carbon_by_region(p):
     if not p.run_this:
         return True
     result = terrestrial_carbon_functions.summarize_raster_by_region(
-        value_raster_path=p.projected_carbon_density_2019_per_cell_path,
+        value_raster_path=p.carbon_density_per_cell_base_year_path,
         region_boundary_path=p.gdf_countries_vector_path,
         out_path=p.carbon_by_region_base_year_path,
         year=p.gep_base_year, id_column='ee_r264_id')
@@ -162,9 +163,6 @@ def gep_calculation(p):
     else:
         hb.log("Starting GEP calculation for terrestrial carbon.")
 
-        # Optimization here,
-        # p.gdf_countries = hb.read_vector(p.gdf_countries)
-        # p.gdf_countries = hb.read_vector(p.gdf_countries_simplified)
 
         # 1. Per-region (r264) carbon quantity -> aggregate to one row per COUNTRY (r250).
         df_carbon_q264 = pd.read_csv(p.carbon_by_region_base_year_path)
@@ -200,7 +198,7 @@ def gep_calculation(p):
 
         # 4. National total = sum over the one-row-per-country table.
         value_gep_base_year = df_gep_by_country_base_year['terrestrial_carbon_gep'].sum()
-        hb.log(f"Total GEP value for base year 2019: {value_gep_base_year}")
+        hb.log(f"Total GEP value for base year {p.gep_base_year}: {value_gep_base_year}")
 
         return value_gep_base_year
 

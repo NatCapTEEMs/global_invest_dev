@@ -1,6 +1,3 @@
-import pandas as pd
-import hazelbean as hb
-
 from global_invest import utilities
 from global_invest.terrestrial_carbon import terrestrial_carbon_tasks
 
@@ -27,7 +24,7 @@ def build_gep_service_calculation_task_tree(p):
     p.carbon_density_raster_base_year = p.add_task(terrestrial_carbon_tasks.carbon_density_raster_base_year, skip_existing=1)
     p.carbon_density_raster_per_cell_base_year = p.add_task(terrestrial_carbon_tasks.carbon_density_raster_per_cell_base_year, skip_existing=1)
     p.carbon_by_region = p.add_task(terrestrial_carbon_tasks.carbon_by_region, skip_existing=1)
-    p.task_gep_calculation = p.add_task(terrestrial_carbon_tasks.gep_calculation)
+    p.gep_calculation = p.add_task(terrestrial_carbon_tasks.gep_calculation)
 
     return p
 

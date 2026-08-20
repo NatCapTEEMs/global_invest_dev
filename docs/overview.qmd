@@ -83,7 +83,7 @@ format:
 - One runner per task tree, and every run file shares one anatomy, decided with Justin and applied across the library: build_task_tree names the pipeline, and the run is configured where it is constructed.
 - Configuration is data, in two shared CSVs. es_config.csv holds one row per service in the GEP formula's own vocabulary (quantity, price, attribution, land base, base year, price convention) plus the crosswalk to the status sheet; es_scenarios_test.csv holds the standard SEALS scenarios and ships the matching test maps, so a standalone shock run works on any machine.
 - The library fills only what the caller left unset. A pipeline such as ngfs_pnas drives the same tasks from its own scenarios file, and its values always win.
-- initialize_paths resolves the science inputs a service needs, in one place: the code names what it needs relative to the shared base data, and each machine finds its own copy.
+- Each task's first line publishes the inputs it needs (relative to the shared base data; each machine finds its own copy), so any task grafted anywhere is a working piece — rolling out service by service, terrestrial first.
 - Aggregation is on r250, one row per country. The r264 crosswalk is used only for maps.
 
 ## The configuration table itself (es_config.csv)

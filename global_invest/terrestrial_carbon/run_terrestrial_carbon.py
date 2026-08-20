@@ -4,7 +4,6 @@ Consumers (ngfs_pnas, nff_global) do NOT use this script -- they graft add_terre
 into their own task tree. This is for standalone GEP runs and smoke tests. For the standalone GTAP
 productivity shock, see run_terrestrial_carbon_shock.py (one run file per purpose, no MODE switch).
 """
-import pandas as pd
 import hazelbean as hb
 
 from global_invest.terrestrial_carbon import terrestrial_carbon_initialize
