@@ -52,9 +52,13 @@ def test_pollination_gep_sums_split_country_once(tmp_path):
         crs='EPSG:4326')
     gdf.to_file(str(tmp_path / 'regions.gpkg'), driver='GPKG')
 
-    p = SimpleNamespace(run_this=True, cur_dir=str(tmp_path), results={}, base_year=2023,
+    p = SimpleNamespace(run_this=True, cur_dir=str(tmp_path), results={}, gep_base_year=2023,
+                        input_dir=str(tmp_path / 'input'),
+                        get_path=lambda *a, **k: '/resolved/' + '/'.join(a),
+                        df_countries=pd.DataFrame({'placeholder': [1]}),   # trips the caller-wins guard
                         gep_quantity_input_path=str(tmp_path / 'poll_value.tif'),
-                        gdf_countries_vector_path=str(tmp_path / 'regions.gpkg'),
+                        gep_regions_input_path=str(tmp_path / 'regions.gpkg'),
+                        gep_regions_id_col='ee_r264_id',
                         gdf_countries_simplified=str(tmp_path / 'regions.gpkg'))
 
     pt.pollination_value_by_region(p)
