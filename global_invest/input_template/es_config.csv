@@ -1,13 +1,13 @@
-service,sheet_label,sheet_subgroup,gep_base_year,gep_price_convention,gep_quantity_input_path,gep_price_input_path,gep_attribution_input_path,gep_lulc_input_path
-terrestrial_carbon,global_climate_regulation,terrestrial,2019,rental scc r2%,global_invest/terrestrial_carbon/carbon_zones_rasterized.tif,global_invest/terrestrial_carbon/carbon_prices.xlsx,,lulc/esa/lulc_esa_2019.tif
-coastal_carbon,global_climate_regulation,coastal,2019,rental scc r2%,,global_invest/coastal_carbon/carbon_prices.xlsx,,
-pollination,pollination,,2023,,global_invest/pollination/poll_value_global_2023usd.tif,,,
-renewable_energy_provision,wind_enery_provision solar_enery_provision geothermal_enery_provision,,,,global_invest/renewable_energy_provision/IRENA_prod_by_country.csv,global_invest/renewable_energy_provision/WB_price_data.csv,global_invest/renewable_energy_provision/CWON_resource_rent_data.csv,
-extractive_materials_provision,extractive_materials_provision,,,,global_invest/extractive_materials_provision/API_NY.GDP.MKTP.CD_DS2_en_csv_v2_130122.csv,,global_invest/extractive_materials_provision/API_NY.GDP.MINR.RT.ZS_DS2_en_csv_v2_6559.csv,
-coastal_protection,coastal_protection,,,,global_invest/coastal_protection/data_mangroves_2019.xlsx,,,
-crop_provision,crop_provision,commercial,,,,,,
-livestock_provision,livestock_provision,commercial,,,,,,
-fisheries,fish_provision,,,,,,,
-erosion,erosion_control,,,,,,,
-landslide_mitigation,landslide_mitigation,,,,landslide_mitigation/input_data_raw,,,
-example_service,,,,,,,,lulc/esa/seals7/lulc_esa_seals7_2017.tif
+service,sheet_label,sheet_subgroup,gep_base_year,gep_price_convention,gep_quantity_input_path,gep_price_input_path,gep_attribution_input_path,gep_lulc_input_path,gep_regions_input_path
+terrestrial_carbon,global_climate_regulation,terrestrial,2019,rental scc r2%,global_invest/terrestrial_carbon/carbon_zones_rasterized.tif,global_invest/terrestrial_carbon/carbon_prices.xlsx,,lulc/esa/lulc_esa_2019.tif,cartographic/ee/ee_r264_correspondence.gpkg
+coastal_carbon,global_climate_regulation,coastal,2019,rental scc r2%,,global_invest/coastal_carbon/carbon_prices.xlsx,,,cartographic/ee/eemarine_r566_correspondence.gpkg
+pollination,pollination,,2023,,global_invest/pollination/poll_value_global_2023usd.tif,,,,cartographic/ee/ee_r264_correspondence.gpkg
+renewable_energy_provision,wind_enery_provision solar_enery_provision geothermal_enery_provision,,,,global_invest/renewable_energy_provision/IRENA_prod_by_country.csv,global_invest/renewable_energy_provision/WB_price_data.csv,global_invest/renewable_energy_provision/CWON_resource_rent_data.csv,,cartographic/ee/ee_r264_correspondence.gpkg
+extractive_materials_provision,extractive_materials_provision,,,,global_invest/extractive_materials_provision/API_NY.GDP.MKTP.CD_DS2_en_csv_v2_130122.csv,,global_invest/extractive_materials_provision/API_NY.GDP.MINR.RT.ZS_DS2_en_csv_v2_6559.csv,,cartographic/ee/ee_r264_correspondence.gpkg
+coastal_protection,coastal_protection,,,,global_invest/coastal_protection/data_mangroves_2019.xlsx,,,,cartographic/ee/ee_r264_correspondence.gpkg
+crop_provision,crop_provision,commercial,,,,,,,cartographic/ee/ee_r264_correspondence.gpkg
+livestock_provision,livestock_provision,commercial,,,,,,,cartographic/ee/ee_r264_correspondence.gpkg
+fisheries,fish_provision,,,,,,,,
+erosion,erosion_control,,,,,,,,cartographic/ee/ee_r264_correspondence.gpkg
+landslide_mitigation,landslide_mitigation,,,,landslide_mitigation/input_data_raw,,,,cartographic/ee/ee_r264_correspondence.gpkg
+example_service,,,,,,,,lulc/esa/seals7/lulc_esa_seals7_2017.tif,

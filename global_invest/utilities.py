@@ -25,10 +25,18 @@ def initialize_country_paths(p, simplified='300sec'):
     surface (e.g. coastal's marine r566) overrides the aliases after calling.
     """
     import pandas as pd
+    import hazelbean as hb
 
-    p.df_countries_csv_path = p.get_path('cartographic', 'ee', 'ee_r264_correspondence.csv')
-    p.gdf_countries_vector_path = p.get_path('cartographic', 'ee', 'ee_r264_correspondence.gpkg')
-    p.gdf_countries_vector_simplified_path = p.get_path('cartographic', 'ee', f'ee_r264_simplified{simplified}.gpkg')
+    # The aggregation surface comes from the service's es_config row (gep_regions_input_path --
+    # r264 for the terrestrial services, the marine r566 for coastal), hydrated before this runs
+    # in the publish_inputs pattern; callers not yet on that pattern fall back to r264. The csv
+    # and simplified siblings derive by the house naming convention; when no simplified variant
+    # exists (the marine surface), the correspondence itself serves as the display vector.
+    ref = getattr(p, 'gep_regions_input_path', None) or p.get_path('cartographic', 'ee', 'ee_r264_correspondence.gpkg')
+    p.gdf_countries_vector_path = ref
+    p.df_countries_csv_path = ref.replace('.gpkg', '.csv')
+    simplified_ref = ref.replace('_correspondence.gpkg', f'_simplified{simplified}.gpkg')
+    p.gdf_countries_vector_simplified_path = simplified_ref if hb.path_exists(simplified_ref) else ref
 
     p.df_countries = pd.read_csv(p.df_countries_csv_path)
     # The GDFs stay as path strings; hb.read_vector converts on demand.
