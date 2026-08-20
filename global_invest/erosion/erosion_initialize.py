@@ -18,41 +18,6 @@ SDR): folded and import-clean, NOT yet number-verified -- see the tracker.
 from global_invest.erosion import erosion_tasks
 
 
-def initialize_paths(p):
-    """Resolve the erosion GEP inputs on p via get_path REFERENCE paths (the configure_* functions
-    read these attrs at run time; their built-in defaults point at the source repo's cluster layout
-    and are never used once this ran). Section-A (InVEST SDR) inputs are fully staged in base_data
-    at the 6.45 km analysis grid. The three section-B valuation CSVs (FAO GPV / FAO prices / WB GDP
-    2019) and the upstream-prevention rasters are the service owner's artifacts, not yet in
-    base_data: resolved tolerantly so section A runs; the valuation crashes loudly until they are
-    staged (requested via the erosion submission).
-    """
-    import os
-    # Section A -- InVEST SDR.
-    p.erosion_dem_path = p.get_path('global_invest', 'erosion', 'global_dem_reproj.tif')
-    p.erosion_sdr_input_dir = os.path.dirname(p.erosion_dem_path)
-    p.erosion_lulc_path = p.get_path('global_invest', 'erosion', 'lulc_esa_2019_reproj_6p45km.tif')
-    p.erosion_biophysical_table_path = p.get_path('global_invest', 'erosion', 'expanded_biophysical_table_gura.csv')
-    p.erosion_erodibility_path = p.get_path('soil', 'erodibility_30s.tif')
-    p.erosion_erosivity_path = p.get_path('soil', 'erosivity_30s.tif')
-    p.erosion_watersheds_path = p.get_path('global_invest', 'erosion', 'hybas_global_lev06_v1c.gpkg')
-    # Section B -- prevention shares + valuation.
-    p.erosion_yield_stack_path = p.get_path('global_invest', 'erosion', 'spam2020_yield_stack_TA.tif')
-    p.erosion_area_stack_path = p.get_path('global_invest', 'erosion', 'spam2020_harvested_area_stack_TA.tif')
-    p.erosion_bandmap_csv_path = p.get_path('global_invest', 'erosion', 'spam2020_bandmap.csv')
-    p.erosion_elasticity_csv_path = p.get_path('global_invest', 'erosion', 'elasticity_crops_fao_revised.csv')
-    p.erosion_elevation_path = p.erosion_dem_path
-    p.erosion_country_boundary_path = p.get_path('cartographic', 'ee', 'ee_r250.gpkg')
-    p.erosion_fao_gpv_iso3_csv_path = p.get_path('global_invest', 'erosion', 'faostat_gpv_2019_iso3.csv',
-                                                 raise_error_if_fail=False)
-    p.erosion_fao_prices_csv_path = p.get_path('global_invest', 'erosion', 'faostat_prices_2019_completed_revised.csv',
-                                               raise_error_if_fail=False)
-    p.erosion_gdp_csv_path = p.get_path('global_invest', 'erosion', 'worldbank_gdp_2019.csv',
-                                        raise_error_if_fail=False)
-    return p
-
-
-
 def add_erosion_tasks(p, parent=None):
     """Graft the erosion ES-shock tasks onto p, dispatching STATIC vs DYNAMIC on p.dynamic_es.
 
@@ -72,22 +37,8 @@ def add_erosion_tasks(p, parent=None):
     if not dynamic:
         p.erosion_shock_task = p.add_task(erosion_tasks.erosion_shock_static, parent=parent)
         return p
-    # DYNAMIC-only inputs. Unlike the other services, the SDR chain needs a dozen rasters/tables, so they
-    # resolve here rather than in every consumer's run file. Already in base_data:
-    p.erosion_erosivity_path = p.get_path('soil', 'erosivity_30s.tif')
-    p.erosion_erodibility_path = p.get_path('soil', 'erodibility_30s.tif')
-    p.erosion_watersheds_path = p.get_path('global_invest', 'erosion', 'hybas_global_lev06_v1c.gpkg')
-    p.erosion_biophysical_table_path = p.get_path('global_invest', 'erosion', 'expanded_biophysical_table_gura.csv')
-    # (zone boundary: erosion reads the shared p.region_boundary_path, defaulted in-task like carbon/pollination)
-    # Provisioned into base_data/global_invest/sdr/ (erosion-specific 6.45 km grid + DEM + country
-    # boundary + SPAM2020 yield/area stacks + bandmap + crop-coefficient table):
-    p.erosion_analysis_grid_path = p.get_path('global_invest', 'erosion', 'erosion_analysis_grid_6p45km.tif')
-    p.erosion_dem_path = p.get_path('global_invest', 'erosion', 'global_dem_reproj.tif')
-    p.erosion_country_boundary_path = p.get_path('cartographic', 'ee', 'ee_r264_correspondence.gpkg')  # standard per-country set (as carbon)
-    p.erosion_yield_stack_path = p.get_path('global_invest', 'erosion', 'spam2020_yield_stack_TA.tif')
-    p.erosion_area_stack_path = p.get_path('global_invest', 'erosion', 'spam2020_harvested_area_stack_TA.tif')
-    p.erosion_bandmap_csv_path = p.get_path('global_invest', 'erosion', 'spam2020_bandmap.csv')
-    p.erosion_elasticity_csv_path = p.get_path('global_invest', 'erosion', 'elasticity_crops_fao_revised.csv')
+    # The SDR data references live in es_parameters (erosion rows), hydrated by publish_inputs
+    # in each task -- a builder constructs the tree and configures nothing.
     # skip_existing=1 on the three EXPENSIVE steps makes the chain resumable: InVEST SDR and the D8
     # routing each cost minutes per scenario-year and their outputs are deterministic, so re-running them
     # on every relaunch wastes the whole iteration. The final shock task deliberately does NOT skip --

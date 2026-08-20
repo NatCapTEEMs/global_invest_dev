@@ -18,6 +18,31 @@ coastal_carbon,seagrass_vector_path,global_invest/coastal_carbon/014_001_WCMC013
 coastal_carbon,mangrove_soc_path,global_invest/coastal_carbon/soc.tha_tnc.mangroves.typology_m_30m_b0..100cm_2019_2020_go_epsg.4326_v1.2.tif
 coastal_carbon,salt_marsh_soc_path,global_invest/coastal_carbon/maxwell_2024_marsoc_0_100cm.tif
 coastal_carbon,precipitation_path,global_invest/coastal_carbon/mean_annual_precipitation_mm.tif
+erosion,erosion_dem_path,global_invest/erosion/global_dem_reproj.tif
+erosion,erosion_lulc_path,global_invest/erosion/lulc_esa_2019_reproj_6p45km.tif
+erosion,erosion_biophysical_table_path,global_invest/erosion/expanded_biophysical_table_gura.csv
+erosion,erosion_erodibility_path,soil/erodibility_30s.tif
+erosion,erosion_erosivity_path,soil/erosivity_30s.tif
+erosion,erosion_watersheds_path,global_invest/erosion/hybas_global_lev06_v1c.gpkg
+erosion,erosion_analysis_grid_path,global_invest/erosion/erosion_analysis_grid_6p45km.tif
+erosion,erosion_yield_stack_path,global_invest/erosion/spam2020_yield_stack_TA.tif
+erosion,erosion_area_stack_path,global_invest/erosion/spam2020_harvested_area_stack_TA.tif
+erosion,erosion_bandmap_csv_path,global_invest/erosion/spam2020_bandmap.csv
+erosion,erosion_elasticity_csv_path,global_invest/erosion/elasticity_crops_fao_revised.csv
+erosion,erosion_country_boundary_path,cartographic/ee/ee_r264_correspondence.gpkg
+erosion,erosion_fao_gpv_iso3_csv_path,global_invest/erosion/faostat_gpv_2019_iso3.csv
+erosion,erosion_fao_prices_csv_path,global_invest/erosion/faostat_prices_2019_completed_revised.csv
+erosion,erosion_gdp_csv_path,global_invest/erosion/worldbank_gdp_2019.csv
+erosion,region_boundary_path,gtap_invest/region_boundaries/ee_r50_aez18_correspondence.gpkg
+erosion,erosion_shock_acts,"[""PDR"", ""WHT"", ""GRO"", ""V_F"", ""OSD"", ""C_B"", ""PFB"", ""OCR""]"
+erosion,erosion_crop_to_sector,"{""rice"": ""PDR"", ""whea"": ""WHT"", ""maiz"": ""GRO"", ""barl"": ""GRO"", ""sorg"": ""GRO"", ""mill"": ""GRO"", ""pmil"": ""GRO"", ""ocer"": ""GRO"", ""bana"": ""V_F"", ""plnt"": ""V_F"", ""citr"": ""V_F"", ""temf"": ""V_F"", ""trof"": ""V_F"", ""vege"": ""V_F"", ""toma"": ""V_F"", ""onio"": ""V_F"", ""pota"": ""V_F"", ""swpo"": ""V_F"", ""yams"": ""V_F"", ""cass"": ""V_F"", ""orts"": ""V_F"", ""soyb"": ""OSD"", ""grou"": ""OSD"", ""sunf"": ""OSD"", ""rape"": ""OSD"", ""sesa"": ""OSD"", ""oilp"": ""OSD"", ""cnut"": ""OSD"", ""ooil"": ""OSD"", ""sugc"": ""C_B"", ""sugb"": ""C_B"", ""cott"": ""PFB"", ""ofib"": ""PFB"", ""coff"": ""OCR"", ""rcof"": ""OCR"", ""coco"": ""OCR"", ""teas"": ""OCR"", ""toba"": ""OCR"", ""rubb"": ""OCR"", ""bean"": ""OCR"", ""lent"": ""OCR"", ""cowp"": ""OCR"", ""pige"": ""OCR"", ""chic"": ""OCR"", ""opul"": ""OCR"", ""rest"": ""OCR""}"
+erosion,erosion_method,service_threshold
+erosion,erosion_severe_threshold_t_ha,11.0
+erosion,erosion_threshold_low_t_ha,2.0
+erosion,erosion_small_country_area_km2,50000
+erosion,erosion_low_elevation_mean_m,250
+erosion,erosion_analysis_epsg,8857
+erosion,erosion_yield_coefficient_fallback,0.08
 landslide_mitigation,force_run,false
 landslide_mitigation,run_in_parallel,true
 landslide_mitigation,num_workers,8

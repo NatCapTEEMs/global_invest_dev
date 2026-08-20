@@ -32,8 +32,6 @@ from global_invest import utilities
 from global_invest.erosion import erosion_functions as ef
 
 # 8 crop sectors whose productivity depends on erosion control (sediment retention).
-EROSION_SECTORS = ('PDR', 'WHT', 'GRO', 'V_F', 'OSD', 'C_B', 'PFB', 'OCR')
-
 # SPAM2020 crop code -> GTAP crop sector. Lets method B report a DIFFERENT shock per sector instead of
 # one zone number copied across all eight: each sector aggregates only its own crops, so a zone that
 # erodes mainly under cereals sends that signal to GRO rather than to V_F.
@@ -47,22 +45,8 @@ EROSION_SECTORS = ('PDR', 'WHT', 'GRO', 'V_F', 'OSD', 'C_B', 'PFB', 'OCR')
 # while GTAP's V_F names only the latter two, so those groups need placing: roots and tubers
 # (cass/pota/swpo/yams/orts) go to V_F, pulses (bean/lent/cowp/pige/chic/opul) to OCR. This shifts
 # shock between V_F and OCR only; every crop lands in some sector either way, so no total changes.
-# Crops absent fall back to OCR; override the whole map via p.erosion_crop_to_sector.
-SPAM_CROP_TO_GTAP_SECTOR = {
-    'rice': 'PDR',
-    'whea': 'WHT',
-    'maiz': 'GRO', 'barl': 'GRO', 'sorg': 'GRO', 'mill': 'GRO', 'pmil': 'GRO', 'ocer': 'GRO',
-    'bana': 'V_F', 'plnt': 'V_F', 'citr': 'V_F', 'temf': 'V_F', 'trof': 'V_F', 'vege': 'V_F',
-    'toma': 'V_F', 'onio': 'V_F', 'pota': 'V_F', 'swpo': 'V_F', 'yams': 'V_F', 'cass': 'V_F',
-    'orts': 'V_F',
-    'soyb': 'OSD', 'grou': 'OSD', 'sunf': 'OSD', 'rape': 'OSD', 'sesa': 'OSD', 'oilp': 'OSD',
-    'cnut': 'OSD', 'ooil': 'OSD',
-    'sugc': 'C_B', 'sugb': 'C_B',
-    'cott': 'PFB', 'ofib': 'PFB',
-    'coff': 'OCR', 'rcof': 'OCR', 'coco': 'OCR', 'teas': 'OCR', 'toba': 'OCR', 'rubb': 'OCR',
-    'bean': 'OCR', 'lent': 'OCR', 'cowp': 'OCR', 'pige': 'OCR', 'chic': 'OCR', 'opul': 'OCR',
-    'rest': 'OCR',
-}
+# Crops absent fall back to OCR. The map itself is the erosion_crop_to_sector row in
+# es_parameters (shipped default; a consumer overrides p.erosion_crop_to_sector).
 # SEALS7 cropland class, the cropland definition method A weights by.
 CROPLAND_SEALS7_CLASS = 2
 # The erosion -> yield bridge: the fraction of yield lost per unit of erosion exposure. Converting
@@ -80,6 +64,19 @@ EROSION_ALPHA = 0.08
 # inside the functions so module import stays light.
 # ---------------------------------------------------------------------------
 
+
+def publish_inputs(p):
+    """Every task's first line: erosion's es_config row plus its es_parameters block (the SDR
+    data references, the SES-11 threshold policy, the crop-sector export map, the blank
+    erosion_gep_root machine key the configure_* functions read) and the results registry.
+    Defaults layer throughout: anything the caller set wins."""
+    utilities.hydrate_es_config(p, 'erosion', log=hb.log)
+    utilities.hydrate_es_parameters(p, 'erosion', log=hb.log)
+    if not hasattr(p, 'results'):
+        p.results = {}
+    return p
+
+
 def erosion_sdr(p):
     """DYNAMIC step 1: per (scenario, anchor year), resample the SEALS map to the erosion analysis
     grid (p.modality: local -> 6.45 km reference grid, sc/msi -> native SEALS resolution) and run
@@ -91,6 +88,7 @@ def erosion_sdr(p):
     erosion_biophysical_table_path (SEALS7 lucode -> usle_c/usle_p); erosion_analysis_grid_path
     (6.45 km reference raster; local only). SDR knobs via p.erosion_sdr_params (defaults below).
     """
+    publish_inputs(p)
     # Published before the run_this guard: a skipped task (skip_existing with the dir already there)
     # still needs downstream to find these outputs, and a task body that returns early would leave
     # the attribute unset and fail the next task with an AttributeError.
@@ -167,6 +165,7 @@ def erosion_upstream(p):
 
     Caller sets on p: erosion_dem_path (aligned to the SDR grid here) + the step-1 outputs.
     """
+    publish_inputs(p)
     # Published before the run_this guard, as in steps 1 and 3: a skipped task must still tell the
     # exposure task where its rasters are, or a resumed run dies on an AttributeError.
     p.erosion_upstream_dir = p.cur_dir
@@ -244,6 +243,7 @@ def erosion_exposure(p):
     low-elevation <250 m countries, else 11) when p.erosion_country_boundary_path (+ p.erosion_dem_path
     for the elevation rule) is set; otherwise flat p.erosion_severe_threshold_t_ha.
     """
+    publish_inputs(p)
     # Published before the run_this guard, for the same reason as step 1: a skipped task must still
     # tell the shock task where its rasters are.
     p.erosion_exposure_dir = p.cur_dir
@@ -257,8 +257,8 @@ def erosion_exposure(p):
     from rasterio.enums import Resampling
     from global_invest.erosion import erosion_functions as ef
 
-    thresh_high = float(getattr(p, 'erosion_severe_threshold_t_ha', 11.0))
-    analysis_crs = rioCRS.from_epsg(int(getattr(p, 'erosion_analysis_epsg', 8857)))
+    thresh_high = float(p.erosion_severe_threshold_t_ha)
+    analysis_crs = rioCRS.from_epsg(int(p.erosion_analysis_epsg))
 
     def _to_grid_da(da, template=None):    # reproject an open DataArray to the equal-area analysis grid
         da = da.rio.reproject(analysis_crs, resampling=Resampling.average)
@@ -292,9 +292,9 @@ def erosion_exposure(p):
                         usle, p.get_path(cb),
                         p.get_path(p.erosion_dem_path) if getattr(p, 'erosion_dem_path', None) else None,
                         thresh_high=thresh_high,
-                        thresh_low=float(getattr(p, 'erosion_threshold_low_t_ha', 2.0)),
-                        small_area_km2=float(getattr(p, 'erosion_small_country_area_km2', 50_000)),
-                        low_elevation_mean_m=float(getattr(p, 'erosion_low_elevation_mean_m', 250)))
+                        thresh_low=float(p.erosion_threshold_low_t_ha),
+                        small_area_km2=float(p.erosion_small_country_area_km2),
+                        low_elevation_mean_m=float(p.erosion_low_elevation_mean_m))
                 else:
                     thr = thresh_high        # flat fallback when no country boundary is provided
                 p._erosion_threshold_raster = thr
@@ -362,7 +362,7 @@ def erosion_shock(p):
     coefficient, so they differ only in how erosion exposure is measured:
       A ("damage")                    level = -100 * alpha * p_crop, where p_crop is the severe share
         of the zone's cropland AREA and severe = USLE > the per-country T (2/11). Thresholded, binary,
-        on-farm only, one flat alpha, and necessarily uniform across sectors.
+        on-farm only, one flat alpha, and necessarily uniform across erosion_shock_acts.
       B ("service", threshold-free)   level = +100 * mean over crops of alpha_crop * the prevention
         share, prevention = prevented tonnes / potential tonnes including the upstream D8 term.
         Continuous and per-crop, but composed across ALL land, which saturates it: the union
@@ -372,7 +372,7 @@ def erosion_shock(p):
       B-thresholded ("service_threshold", the DEFAULT)   B confined to SEVERE pixels, with that set
         taken from the base scenario and held FIXED, so the shock measures protection change and not a
         change of population. Verified in-task on the full ZAF run: min exactly 0.0, max +1.30%, no
-        negative outliers, 63 zone-sectors responding at 2050 with a mean of +0.157% -- roughly 2.5x
+        negative outliers, 63 zone-erosion_shock_acts responding at 2050 with a mean of +0.157% -- roughly 2.5x
         unthresholded B, which tops out at +0.52% on the same run. A scenario-VARYING set put -18%
         into a paddy-rice zone; fixing it removed that entirely. Matches how the published account of
         this method builds it.
@@ -387,7 +387,7 @@ def erosion_shock(p):
     which becomes shock_pct, the column GTAP consumes.
 
     Each level is differenced ABSOLUTELY against the contemporaneous baseline (the level is already a %
-    of crop productivity) and ramped 0 at base_year through the anchors. Writes the 8-sector per-zone
+    of crop productivity) and ramped 0 at es_shock_base_year through the anchors. Writes the 8-sector per-zone
     CSV at p.erosion_shock_output_path: the shared ENDW, ACTS, REG, scenario, year, shock_pct,
     shock_pct_contemp, shock_pct_fixedbase plus shock_pct_damage, shock_pct_service and
     shock_pct_service_threshold.
@@ -399,6 +399,7 @@ def erosion_shock(p):
     erosion_elasticity_csv_path; base scenario via es_shock_base_scenario. Optional: erosion_alpha,
     erosion_method.
     """
+    publish_inputs(p)
     # Default into the es_shocks parent dir. Runtime, not build time: p.es_shock_dir is
     # published by that task, which ProjectFlow runs before this one.
     if not getattr(p, 'erosion_shock_output_path', None):
@@ -410,9 +411,9 @@ def erosion_shock(p):
     from rasterio.features import rasterize as rio_rasterize
     from global_invest.erosion import erosion_functions as ef
 
-    base_year = int(p.es_shock_base_year); end_year = int(p.es_shock_end_year)
-    base_scn = utilities.required_base_scenario(p, 'erosion')
-    fallback_coef = float(getattr(p, 'erosion_yield_coefficient_fallback', 0.08))
+    es_shock_base_year = int(p.es_shock_base_year); es_shock_end_year = int(p.es_shock_end_year)
+    base_scenario = utilities.required_base_scenario(p, 'erosion')
+    fallback_coef = float(p.erosion_yield_coefficient_fallback)
     alpha = float(getattr(p, 'erosion_alpha', EROSION_ALPHA))
     # Method B lets the erosion->yield coefficient vary by crop; A applies the flat alpha to all.
     # SOURCE = elasticity_crops_fao_revised.csv (already loaded above as coef_map). Despite the column
@@ -443,12 +444,12 @@ def erosion_shock(p):
         v = _matched.get(crop, _table_alpha(crop))
         return _sector_mean[crop_sector(crop)] if v is _MISS else v
 
-    crop_to_sector = dict(getattr(p, 'erosion_crop_to_sector', None) or SPAM_CROP_TO_GTAP_SECTOR)
+    crop_to_sector = dict(p.erosion_crop_to_sector)
 
     def crop_sector(crop):
         return crop_to_sector.get(crop, 'OCR')     # unmapped SPAM codes fall to other crops
 
-    sectors = tuple(getattr(p, 'erosion_shock_acts', EROSION_SECTORS))
+    erosion_shock_acts = tuple(p.erosion_shock_acts)
 
     yield_stack = p.get_path(p.erosion_yield_stack_path)
     area_stack = p.get_path(p.erosion_area_stack_path)
@@ -456,15 +457,13 @@ def erosion_shock(p):
     bcol = next(c for c in bandmap.columns if 'band' in c.lower())
     crcol = next(c for c in bandmap.columns if c.lower() in ('crop', 'crop_name', 'name'))
     coef_map = ef.load_erosion_yield_coefficients(p.get_path(p.erosion_elasticity_csv_path))
-    if not getattr(p, 'region_boundary_path', None):
-        p.region_boundary_path = p.get_path('gtap_invest/region_boundaries/ee_r50_aez18_correspondence.gpkg')
     zones = gpd.read_file(p.get_path(p.region_boundary_path), engine='pyogrio')
     zid_col = next(c for c in zones.columns if c.lower() == 'ee_r50_aez18_id')
     aez_col = next(c for c in zones.columns if c.lower() == 'aez18_id')
     reg_col = next(c for c in zones.columns if c.lower() == 'gtapv7_r50_label')
     labels = {int(r[zid_col]): ('AEZ%d' % int(r[aez_col]), r[reg_col]) for _, r in zones.iterrows()}
 
-    anchor_years = sorted(int(y) for y in getattr(p, 'es_shock_years', []) if int(y) > base_year) or [end_year]
+    anchor_years = sorted(int(y) for y in getattr(p, 'es_shock_years', []) if int(y) > es_shock_base_year) or [es_shock_end_year]
     # The base scenario is EMITTED too, not just used as the reference. Its rows are the self-difference
     # (base - base), so they are identically 0 -- which is what carbon and pollination already write. GTAP
     # is indifferent (a missing row and an explicit zero both mean "no shock"), but writing it keeps the
@@ -477,7 +476,7 @@ def erosion_shock(p):
     # scenarios). zone_level then only reads ps and does the ps-weighted bincount -- no per-(scenario,year)
     # SPAM reproject or zone re-rasterize.
     def _ps_path(scn, yr): return os.path.join(p.erosion_exposure_dir, 'ps_gated_%s_%d.tif' % (scn, yr))
-    _ref = rxr.open_rasterio(_ps_path(base_scn, anchor_years[0]), masked=True).squeeze()   # any ps: shared grid
+    _ref = rxr.open_rasterio(_ps_path(base_scenario, anchor_years[0]), masked=True).squeeze()   # any ps: shared grid
     zr = zones.to_crs(_ref.rio.crs)
     zone_id = rio_rasterize([(g, int(z)) for g, z in zip(zr.geometry, zr[zid_col])],
                             out_shape=_ref.shape, transform=_ref.rio.transform(), fill=0, dtype='int32')
@@ -500,7 +499,7 @@ def erosion_shock(p):
 
     _matched = {c: _table_alpha(c) for c in {cr for cr, _, _ in crop_prod}}
     _sector_mean = {}
-    for s in sectors:
+    for s in erosion_shock_acts:
         vals = [v for c, v in _matched.items() if v is not _MISS and crop_sector(c) == s]
         _sector_mean[s] = sum(vals) / len(vals) if vals else alpha
 
@@ -523,12 +522,12 @@ def erosion_shock(p):
         """METHOD A ("damage") -- the documented GTAP method behind the paper's frozen
         numbers. p_crop = severe share of the zone's cropland AREA (USLE > the per-country T of 2/11,
         cropland = SEALS7 class 2); level = -100*alpha*p_crop. Binary threshold, flat alpha, no off-site
-        routing. UNIFORM across GTAP sectors by construction: it is measured from LAND COVER, which
+        routing. UNIFORM across the GTAP crop sectors by construction: it is measured from LAND COVER, which
         carries no crop detail, so A cannot distinguish wheat land from vegetable land."""
         p_crop = _series(_zonal(_grid('severe_cropland_frac', scn, yr)),
                          _zonal(_grid('cropland_frac', scn, yr)))
         lvl = -100.0 * alpha * p_crop
-        return {s: lvl for s in sectors}
+        return {s: lvl for s in erosion_shock_acts}
 
     def _service_level(ps, rkls):
         """Production-weighted prevention level per GTAP sector, shared by B and B-thresholded.
@@ -537,7 +536,7 @@ def erosion_shock(p):
         negligible erosion cannot earn credit for preventing almost nothing. Each crop's share is
         bridged to yield by its OWN alpha and averaged across crops by production. The two callers
         differ only in the ps field and in whether rkls is restricted to severe pixels."""
-        per_sector = {s: [np.zeros(max_id + 1), np.zeros(max_id + 1)] for s in sectors}
+        per_sector = {s: [np.zeros(max_id + 1), np.zeros(max_id + 1)] for s in erosion_shock_acts}
         all_num = np.zeros(max_id + 1)
         for crop, prod, _elast in crop_prod:
             potential = _zonal(rkls * prod)
@@ -581,7 +580,7 @@ def erosion_shock(p):
         Verified inside this task by the full ZAF pipeline run: shock_pct, the column
         build_combined_afeall consumes, comes out identical to shock_pct_service_threshold with a
         minimum of exactly 0.0 and a maximum of +1.30%, i.e. no negative outliers at all. At 2050,
-        63 zone-sectors respond with a mean of +0.157%. Unthresholded B on the same run tops out at
+        63 zone-erosion_shock_acts respond with a mean of +0.157%. Unthresholded B on the same run tops out at
         +0.52%, so the threshold carries roughly 2.5x the signal.
 
         Restricting to severe pixels is what stops B saturating, since the union sits near 1 across
@@ -598,26 +597,26 @@ def erosion_shock(p):
         higher means better. Gating only the numerator would instead measure how much severe erosion a
         zone HAS. No cropland term is needed: every sum carries prod as a factor, so a pixel with no
         production contributes nothing regardless."""
-        keep = _grid('severe_mask', base_scn, yr) > 0.5
+        keep = _grid('severe_mask', base_scenario, yr) > 0.5
         return _service_level(np.where(keep, np.clip(_grid('ps_continuous', scn, yr), 0.0, 1.0), 0.0),
                               np.where(keep, _grid('rkls_grid', scn, yr), 0.0))
 
     LEVELS = {'damage': level_damage, 'service': level_service,
               'service_threshold': level_service_threshold}
-    primary = str(getattr(p, 'erosion_method', 'service_threshold')).lower()
+    primary = str(p.erosion_method).lower()
     if primary not in ('damage', 'service', 'service_threshold'):
         raise ValueError("p.erosion_method must be 'damage' (the deck's Method A), 'service' "
                          "(Method B) or 'service_threshold' (B restricted to severely eroding "
                          "pixels before compositing), got %r. All three are computed and "
                          "reported side by side; this only selects which becomes shock_pct." % primary)
 
-    base_map = p.scenario_lulc_paths.get(base_scn, {})
-    all_years = list(range(base_year, end_year + 1))
-    anchors_x = [base_year] + anchor_years
+    base_map = p.scenario_lulc_paths.get(base_scenario, {})
+    all_years = list(range(es_shock_base_year, es_shock_end_year + 1))
+    anchors_x = [es_shock_base_year] + anchor_years
 
     def annual(scn_by_year, base_by_year, sector, zid):
         """ABSOLUTE difference of the % levels for one sector (the level IS a % of crop productivity, so
-        differencing it gives the % productivity change), ramped 0 at base_year through the anchors."""
+        differencing it gives the % productivity change), ramped 0 at es_shock_base_year through the anchors."""
         a = [scn_by_year[y][sector].get(zid, np.nan) - base_by_year[y][sector].get(zid, np.nan)
              for y in anchor_years]
         return np.interp(all_years, anchors_x, [0.0] + a)
@@ -625,20 +624,20 @@ def erosion_shock(p):
     # one pass per method: {sector: level Series} at each anchor, for the baseline and every scenario
     by_method = {}
     for name, fn in LEVELS.items():
-        base_by_year = {y: fn(base_scn, y) for y in anchor_years}
-        base_at_base = fn(base_scn, base_year) if base_year in base_map else None
+        base_by_year = {y: fn(base_scenario, y) for y in anchor_years}
+        base_at_base = fn(base_scenario, es_shock_base_year) if es_shock_base_year in base_map else None
         by_method[name] = (base_by_year, base_at_base,
                            {scn: {y: fn(scn, y) for y in anchor_years} for scn in scenarios})
 
     rows = []
     for scn in scenarios:
         anchor_levels = by_method[primary][2][scn]
-        zids = sorted(set().union(*[set(lv[sectors[0]].index) for lv in anchor_levels.values()]))
+        zids = sorted(set().union(*[set(lv[erosion_shock_acts[0]].index) for lv in anchor_levels.values()]))
         for zid in zids:
             if zid not in labels:
                 continue
             endw, reg = labels[zid]
-            for sector in sectors:
+            for sector in erosion_shock_acts:
                 series = {name: annual(base_and_scn[2][scn], base_and_scn[0], sector, zid)
                           for name, base_and_scn in by_method.items()}
                 base_by_year, base_at_base, scn_levels = by_method[primary]
@@ -664,16 +663,16 @@ def erosion_shock(p):
     out = pd.DataFrame(rows)
     utilities.assert_shock_table_sound(out, scenarios, 'erosion')
     out.to_csv(p.erosion_shock_output_path, index=False)
-    end = out[out['year'] == end_year]
+    end = out[out['year'] == es_shock_end_year]
     print('  erosion shock (dynamic): %d rows, %d scenarios, %d anchors, alpha=%.3f, primary=%s'
           % (len(out), len(scenarios), len(anchor_years), alpha, primary.upper()))
     print('     mean shock @%d   A: %+.4f%%   B: %+.4f%%   B-thresholded: %+.4f%%'
-          % (end_year, end['shock_pct_damage'].mean(), end['shock_pct_service'].mean(),
+          % (es_shock_end_year, end['shock_pct_damage'].mean(), end['shock_pct_service'].mean(),
              end['shock_pct_service_threshold'].mean()))
     return True
 
 def erosion_shock_static(p):
-    """Static per-scenario erosion shock -> 8 crop sectors, linear ramp 0->end_year.
+    """Static per-scenario erosion shock -> 8 crop erosion_shock_acts, linear ramp 0->es_shock_end_year.
 
     Caller sets on p before calling: es_shock_scenarios, es_shock_base_year,
     es_shock_end_year, erosion_shock_output_path. Dependency csv defaults to
@@ -682,6 +681,7 @@ def erosion_shock_static(p):
     name; a scenario the table labels differently is warned about loudly and skipped rather than
     silently zeroed, so set the map for those).
     """
+    publish_inputs(p)
     # Default into the es_shocks parent dir. Runtime, not build time: p.es_shock_dir is
     # published by that task, which ProjectFlow runs before this one.
     if not getattr(p, 'erosion_shock_output_path', None):
@@ -689,12 +689,12 @@ def erosion_shock_static(p):
     if not p.run_this:
         return
 
-    base_year = int(p.es_shock_base_year)
-    end_year = int(p.es_shock_end_year)
-    n_years = end_year - base_year
-    scenario_map = getattr(p, 'erosion_scenario_map', {})
-    scenarios = list(p.es_shock_scenarios)
-    sectors = getattr(p, 'erosion_shock_acts', EROSION_SECTORS)   # GTAP sectors, standardized name (was erosion_sectors)
+    es_shock_base_year = int(p.es_shock_base_year)
+    es_shock_end_year = int(p.es_shock_end_year)
+    n_years = es_shock_end_year - es_shock_base_year
+    erosion_scenario_map = getattr(p, 'erosion_scenario_map', {})
+    es_shock_scenarios = list(p.es_shock_scenarios)
+    erosion_shock_acts = tuple(p.erosion_shock_acts)   # GTAP crop sectors
 
     ero_path = getattr(p, 'erosion_dependency_path', None) or os.path.join(
         p.input_dir, 'raw_dependencies', 'erosion_prevention_dependency.csv')
@@ -705,35 +705,36 @@ def erosion_shock_static(p):
     df = ef.read_erosion_dependency(ero_path)
     # Resolve the configured base through the candidate mechanism (fatal if absent) -- the erosion
     # table spells the nature-off baseline 'baseline_ignore_damages' while the shared config may say
-    # 'baseline_ignore_dependencies'; the consumer's scenario_map carries both spellings.
-    base_scn = utilities.required_base_scenario(p, 'erosion')
-    raw_base = utilities.resolve_base_scenario(df['scenario'].values, scenario_map, base_scn, 'erosion')
+    # 'baseline_ignore_dependencies'; the two spellings are mutual aliases by default
+    # (utilities.NATURE_OFF_SPELLINGS), so no consumer map is needed for this.
+    base_scenario = utilities.required_base_scenario(p, 'erosion')
+    raw_base = utilities.resolve_base_scenario(df['scenario'].values, erosion_scenario_map, base_scenario, 'erosion')
     base_vals = df[df['scenario'] == raw_base].set_index(
         ['aez18_id', 'gtapv7_r50_label'])['value'].astype(float).fillna(0)
 
     rows = []
-    for our_scn in scenarios:
-        raw_scn = utilities.resolve_raw_scenario(df['scenario'].values, scenario_map, our_scn, 'erosion')
+    for our_scn in es_shock_scenarios:
+        raw_scn = utilities.resolve_raw_scenario(df['scenario'].values, erosion_scenario_map, our_scn, 'erosion')
         if raw_scn is None:
             continue
         scn_vals = df[df['scenario'] == raw_scn].set_index(
             ['aez18_id', 'gtapv7_r50_label'])['value'].astype(float).fillna(0)
         common = scn_vals.index.intersection(base_vals.index)
         shock = scn_vals.loc[common] - base_vals.loc[common]
-        for year in range(base_year, end_year + 1):
-            frac = (year - base_year) / n_years
+        for year in range(es_shock_base_year, es_shock_end_year + 1):
+            frac = (year - es_shock_base_year) / n_years
             for (aez_id, reg), val in shock.items():
                 endw = 'AEZ%d' % int(aez_id)
-                for sector in sectors:
+                for sector in erosion_shock_acts:
                     rows.append({'ENDW': endw, 'ACTS': sector, 'REG': reg,
                                  'scenario': our_scn, 'year': year, 'shock_pct': val * frac})
 
     out = pd.DataFrame(rows)
-    utilities.assert_shock_table_sound(out, scenarios, 'erosion')
+    utilities.assert_shock_table_sound(out, es_shock_scenarios, 'erosion')
     out.to_csv(p.erosion_shock_output_path, index=False)
-    nz = out[(out['year'] == end_year) & (out['shock_pct'] != 0)] if len(out) else out
+    nz = out[(out['year'] == es_shock_end_year) & (out['shock_pct'] != 0)] if len(out) else out
     print('  erosion shock: %d rows, %d scenarios, %d nonzero @%d (static, uncapped) -> %s'
-          % (len(out), out['scenario'].nunique() if len(out) else 0, len(nz), end_year,
+          % (len(out), out['scenario'].nunique() if len(out) else 0, len(nz), es_shock_end_year,
              p.erosion_shock_output_path))
     return True
 
@@ -752,6 +753,7 @@ def invest_sdr(p):
     run_this guard (so a skipped rerun still feeds downstream), and the builders register this
     with skip_existing=1 -- delete the task dir to force a rerun.
     """
+    publish_inputs(p)
     if not getattr(p, 'erosion_sdr_output_dir', None):
         p.erosion_sdr_output_dir = p.cur_dir
     if not getattr(p, 'erosion_watersheds_sanitized_path', None):
@@ -777,6 +779,7 @@ def prevention_shares(p):
     (the same attr configure_maps chains on), USLE/avoided arrive from invest_sdr's
     published attrs, and the registered result is the skip check (like every gep_calculation).
     """
+    publish_inputs(p)
     if not getattr(p, 'erosion_gep_output_dir', None):
         p.erosion_gep_output_dir = p.cur_dir
     service_results = p.results.setdefault('erosion', {})
@@ -796,6 +799,7 @@ def maps_and_figures(p):
     """Section C: publication-ready choropleths, raster previews and charts from Section B's
     outputs (found via the shared erosion_gep_output_dir attr). Figures default into THIS task's
     dir; skip_existing at registration."""
+    publish_inputs(p)
     if not getattr(p, 'erosion_figures_dir', None):
         p.erosion_figures_dir = p.cur_dir
     if not p.run_this:

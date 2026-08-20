@@ -17,9 +17,8 @@ def build_task_tree(p):
 
 def run_project(p):
 
+    # Every task publishes its own inputs (publish_inputs in the tasks module): no setup call.
     build_task_tree(p)
-
-    p.results = {}
 
     hb.log('Created ProjectFlow object at ' + p.project_dir + '\n    from script ' + p.calling_script)
     p.execute()
