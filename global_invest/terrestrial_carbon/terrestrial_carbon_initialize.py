@@ -2,7 +2,7 @@ from global_invest import utilities
 from global_invest.terrestrial_carbon import terrestrial_carbon_tasks
 
 def build_gep_service_preprocess_task_tree(p):
-    """Base-data preprocessing: (re)build carbon_storage/spawn_total_biomass_carbon_2010.tif (scale raw
+    """Base-data preprocessing: (re)build global_invest/terrestrial_carbon/spawn_total_biomass_carbon_2010.tif (scale raw
     Spawn to Mg C/ha, reproject, add aboveground+belowground). One-off job, kept OUT of the default run;
     run on demand, its product is promoted to base_data and consumed from there by the calculation tree.
     """

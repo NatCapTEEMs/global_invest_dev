@@ -20,6 +20,7 @@ def publish_inputs(p):
     carbon-zones reference (gep_quantity_input_path) is the SAME raster the shock task uses, so
     the GEP valuation and the shock can never diverge."""
     utilities.hydrate_es_config(p, 'terrestrial_carbon', log=hb.log)
+    utilities.hydrate_es_parameters(p, 'terrestrial_carbon', log=hb.log)
     utilities.initialize_country_paths(p)
     if not hasattr(p, 'results'):
         p.results = {}   # every gep task registers its outputs here; the report renders from it
@@ -37,10 +38,8 @@ def total_carbon_density(p):
     """
     publish_inputs(p)
 
-    # Input: the total biomass-carbon density raster. This is a one-off base-data product (raw Spawn
-    # aboveground+belowground already converted and combined), consumed from base_data rather than
-    # rebuilt per run. Overridable via p.total_carbon_density_path.
-    p.total_carbon_density_path = getattr(p, 'total_carbon_density_path', None) or p.get_path('global_invest', 'terrestrial_carbon', 'spawn_total_biomass_carbon_2010.tif')
+    # Input: the total biomass-carbon density raster, a one-off base-data product; its reference
+    # is the total_carbon_density_path row in es_parameters (published by publish_inputs).
     p.reprojected_total_carbon_density_path = os.path.join(p.cur_dir, "total_biomass_carbon_2010_float_reprojected.tif")
     if not p.run_this:
         return True
@@ -107,10 +106,10 @@ def carbon_by_region(p):
 
 
 def gep_preprocess(p):
-    """Rebuild the base-data carbon-density raster (carbon_storage/spawn_total_biomass_carbon_2010.tif)
-    that both the GEP valuation and the shock consume. A one-off base-data job: registered only in
-    build_gep_service_preprocess_task_tree, NOT in the default run, and its product is promoted to
-    base_data/carbon_storage and read from there by the per-run tasks.
+    """Rebuild the base-data carbon-density raster (global_invest/terrestrial_carbon/
+    spawn_total_biomass_carbon_2010.tif) that both the GEP valuation and the shock consume. A
+    one-off base-data job: registered only in build_gep_service_preprocess_task_tree, NOT in the
+    default run; its product is promoted to that base_data ref and read from there per run.
 
     total = aboveground + belowground (Mg C/ha). When the raw Spawn tiles (uint, carbon stored x10) are
     present under base_data/terrestrial_carbon/spawn_2020, first scale them to Mg C/ha and reproject onto
@@ -118,20 +117,18 @@ def gep_preprocess(p):
     rasters already in carbon_storage. All raster ops go through hazelbean.
     """
     publish_inputs(p)
-    # The house base-data-generating pattern: get_path resolves the base_data-relative ref --
-    # to the existing copy wherever one exists, else to the would-be path under cur_dir, where
-    # this task then generates it; promotion to base_data is copying the file to the same
-    # relative ref there, after which every consumer's get_path finds it.
-    p.spawn_total_carbon_density_path = p.get_path(
-        'carbon_storage', 'spawn_total_biomass_carbon_2010.tif', raise_error_if_fail=False)
+    # Generator and consumers share ONE ref: the total_carbon_density_path row (canonical home
+    # global_invest/terrestrial_carbon/). Resolved to the existing copy where one exists, else
+    # formed under cur_dir for generation; promotion = copying to the same ref in base_data.
+    p.spawn_total_carbon_density_path = p.total_carbon_density_path
     if not p.run_this:
         return True
 
-    carbon_storage_dir = os.path.dirname(p.spawn_total_carbon_density_path)
-    spawn_raw_dir = p.get_path('terrestrial_carbon', 'spawn_2020', raise_error_if_fail=False)
+    product_dir = os.path.dirname(p.spawn_total_carbon_density_path)
+    spawn_raw_dir = p.spawn_raw_input_path
     projected = {}
     for band in ('aboveground', 'belowground'):
-        projected[band] = os.path.join(carbon_storage_dir, 'spawn_%s_biomass_carbon_2010_projected.tif' % band)
+        projected[band] = os.path.join(product_dir, 'spawn_%s_biomass_carbon_2010_projected.tif' % band)
         raw = os.path.join(spawn_raw_dir, 'spawn_%s_biomass_carbon_2010.tif' % band)
         if os.path.exists(raw):   # raw Spawn present -> (re)build the projected raster from it
             scaled = os.path.join(p.cur_dir, 'spawn_%s_biomass_carbon_2010_scaled.tif' % band)
@@ -261,6 +258,7 @@ def terrestrial_carbon_shock(p):
     val_col   = getattr(p, 'terrestrial_carbon_shock_value_col', 'mean')
     acts      = p.terrestrial_carbon_shock_acts
     endw_fmt  = p.terrestrial_carbon_shock_endw_format            # int id -> 'AEZ1'..'AEZ18'
+    id_col    = p.terrestrial_carbon_shock_id_col                 # the boundary's stable zone id
 
     # Quantity raster + density lookup arrive from es_parameters with the export keys above
     # (hydrated defaults; caller wins). The quantity ref equals es_config's gep_quantity cell --
@@ -304,15 +302,15 @@ def terrestrial_carbon_shock(p):
                 out_path=dens)
         summ = os.path.join(p.cur_dir, 'carbon_by_zone_%s_%d.csv' % (scenario, year))
         if not os.path.exists(summ):
-            terrestrial_carbon_functions.summarize_raster_by_region(dens, p.region_boundary_path, summ, year=year, id_column='ee_r50_aez18_id')
+            terrestrial_carbon_functions.summarize_raster_by_region(dens, p.region_boundary_path, summ, year=year, id_column=id_col)
         return pd.read_csv(summ).set_index('region_id')[val_col]
 
-    # summarize_raster_by_region keys each zone by the stable ee_r50_aez18_id (see terrestrial_carbon_functions),
+    # summarize_raster_by_region keys each zone by the boundary's stable id column (id_col row),
     # and DROPS empty zones, so map + align on that id, never on gpkg row position.
     regions = gpd.read_file(p.region_boundary_path, engine='pyogrio')
     def _fmt(v):
         return (endw_fmt % int(v)) if endw_fmt is not None else v
-    labels = {(int(r['ee_r50_aez18_id']) if 'ee_r50_aez18_id' in r.index else r.get('id', i)):
+    labels = {(int(r[id_col]) if id_col in r.index else r.get('id', i)):
               (_fmt(r[endw_col]), r[reg_col]) for i, r in regions.iterrows()}
 
     # per-anchor-year zone means; shock_Y = (scenario_Y - baseline_Y)/baseline_Y * 100 (contemporaneous /base_Y),

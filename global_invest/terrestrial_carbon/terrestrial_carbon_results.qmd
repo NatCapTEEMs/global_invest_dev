@@ -54,7 +54,7 @@ if __name__ == '__main__':
     terrestrial_carbon_initialize.build_gep_service_calculation_task_tree(p) # Defines the actual logic of the model. Navigate into here to see what the model does.
 
     # Tasks publish their own inputs (publish_inputs in the tasks module) -- nothing to set up here (one source of truth,
-    # shared with the run files -- carbon_zones from base_data/carbon_storage, all via get_path).
+    # shared with the run files -- carbon_zones from base_data/global_invest/terrestrial_carbon, all via get_path).
     p.results = {}  # All results will be stored here by each child task.
 
     # Run the model
