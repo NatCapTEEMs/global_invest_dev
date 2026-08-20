@@ -125,6 +125,7 @@ format:
 - Write-time invariants check every shock table before it is written, a canonical-row rule guards every country aggregation, and every row of the configuration table is under test from the moment it is added.
 - Caught so far: a 23.5 percent double-count in the carbon GEP, a two-spelling baseline bug, and a stale-input trap in the erosion chaining.
 - It also caught one claim of our own: the coastal report's numbers are the EEZ-only aggregation by design, matched exactly by our run.
+- Every receipt names its anchor, because the two kinds prove different things. Reproducing our own cached run proves a change moved nothing (every refactor is held to that, to the dollar); an external anchor — the manuscript, an author's replication — proves the number itself. A service without an external anchor says so in this deck rather than borrowing confidence from the first kind.
 - What the next slides ask for is the layer replication cannot supply: it proves our code reproduces your results, not that the results are right. None of it is criticism — most questions exist because verification found exactly where a decision, a source, or an input is missing.
 
 # The questions, service by service
