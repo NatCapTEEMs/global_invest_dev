@@ -112,7 +112,8 @@ def _shock_scene(tmp_path):
                      crs='EPSG:4326').to_file(str(regions), driver='GPKG')
 
     return SimpleNamespace(
-        run_this=True, cur_dir=str(tmp_path),
+        run_this=True, cur_dir=str(tmp_path), input_dir=str(tmp_path / 'input'),
+        get_path=lambda *a, **k: '/resolved/' + '/'.join(a),
         es_shock_base_year=2020, es_shock_years=[2030, 2050],
         es_shock_base_scenario='baseline', es_shock_scenarios=['scn_a'],
         scenario_lulc_paths={'baseline': {2030: baseline_2030, 2050: baseline_2050},
@@ -200,7 +201,9 @@ def _static_dep_table(tmp_path):
 def test_static_shock_ramps_and_differences(tmp_path):
     dep = _static_dep_table(tmp_path)
     out = tmp_path / 'terrestrial_carbon_interpolated.csv'
-    p = SimpleNamespace(run_this=True, es_shock_base_year=2020, es_shock_end_year=2050,
+    p = SimpleNamespace(run_this=True, input_dir=str(tmp_path / 'input'),
+                        get_path=lambda *a, **k: '/resolved/' + '/'.join(a),
+                        es_shock_base_year=2020, es_shock_end_year=2050,
                         es_shock_base_scenario='baseline_ignore_dependencies',
                         es_shock_scenarios=['scn_a'],
                         terrestrial_carbon_dependency_path=str(dep),
@@ -230,7 +233,9 @@ def test_static_shock_base_resolves_across_spellings(tmp_path):
         'percentage_change': [0.10, 0.20, 0.15, 0.20],
     }).to_csv(dep, index=False)
     out = tmp_path / 'terrestrial_carbon_interpolated.csv'
-    p = SimpleNamespace(run_this=True, es_shock_base_year=2020, es_shock_end_year=2050,
+    p = SimpleNamespace(run_this=True, input_dir=str(tmp_path / 'input'),
+                        get_path=lambda *a, **k: '/resolved/' + '/'.join(a),
+                        es_shock_base_year=2020, es_shock_end_year=2050,
                         es_shock_base_scenario='baseline_ignore_dependencies',
                         es_shock_scenarios=['scn_a'],
                         terrestrial_carbon_scenario_map={
@@ -266,7 +271,9 @@ def test_static_shock_missing_scenario_is_fatal_at_the_write(tmp_path):
     # write now REFUSES, naming the scenario. The loud skip is the diagnostic; the raise is the stop.
     dep = _static_dep_table(tmp_path)
     out = tmp_path / 'terrestrial_carbon_interpolated.csv'
-    p = SimpleNamespace(run_this=True, es_shock_base_year=2020, es_shock_end_year=2050,
+    p = SimpleNamespace(run_this=True, input_dir=str(tmp_path / 'input'),
+                        get_path=lambda *a, **k: '/resolved/' + '/'.join(a),
+                        es_shock_base_year=2020, es_shock_end_year=2050,
                         es_shock_base_scenario='baseline_ignore_dependencies',
                         es_shock_scenarios=['scn_a', 'scn_b'],   # net_zero absent from table
                         terrestrial_carbon_dependency_path=str(dep),

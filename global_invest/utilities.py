@@ -400,7 +400,9 @@ def hydrate_es_parameters(p, service, log=print):
         if getattr(p, attribute, None) is not None:
             continue
         if attribute.endswith('_path'):
-            value = p.get_path(str(value))
+            # Permissive: a task must not crash resolving a shipped path it never uses;
+            # whatever consumes the path fails loudly at use.
+            value = p.get_path(str(value), raise_error_if_fail=False)
         else:
             try:
                 value = json.loads(str(value))

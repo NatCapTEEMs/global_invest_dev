@@ -252,16 +252,16 @@ def terrestrial_carbon_shock(p):
     base_year    = int(p.es_shock_base_year)          # interp 0-anchor, set by the caller from config
     anchor_years = sorted(y for y in map(int, p.es_shock_years) if y > base_year)  # SEALS anchors (seals_years)
     end_year     = anchor_years[-1]
-    endw_col  = getattr(p, 'terrestrial_carbon_shock_endw_col', 'aez18_id')            # GTAP r50xAEZ18 defaults
-    reg_col   = getattr(p, 'terrestrial_carbon_shock_reg_col', 'gtapv7_r50_label')
+    # The export keys and boundary are SHIPPED DEFAULTS in es_parameters (GTAP r50xAEZ18 --
+    # today's consumer family), hydrated as a defaults layer: a consumer's own tables win, so
+    # the library code itself carries no GTAP flavor. val_col is a statistic choice, not format.
+    utilities.hydrate_es_parameters(p, 'terrestrial_carbon', log=hb.log)
+    endw_col  = p.terrestrial_carbon_shock_endw_col
+    reg_col   = p.terrestrial_carbon_shock_reg_col
     val_col   = getattr(p, 'terrestrial_carbon_shock_value_col', 'mean')
-    acts      = getattr(p, 'terrestrial_carbon_shock_acts', 'FRS')
-    endw_fmt  = getattr(p, 'terrestrial_carbon_shock_endw_format', 'AEZ%d')            # int id -> 'AEZ1'..'AEZ18'
+    acts      = p.terrestrial_carbon_shock_acts
+    endw_fmt  = p.terrestrial_carbon_shock_endw_format            # int id -> 'AEZ1'..'AEZ18'
 
-    # Standard GTAP-carbon inputs default here (Spawn density, r50xAEZ18 boundary, observed 2020 base
-    # map); the caller overrides only when different, so project wiring stays a couple of lines.
-    if not getattr(p, 'region_boundary_path', None):
-        p.region_boundary_path = p.get_path('gtap_invest/region_boundaries/ee_r50_aez18_correspondence.gpkg')
     if not getattr(p, 'terrestrial_quantity_input_path', None):
         p.terrestrial_quantity_input_path = p.get_path('global_invest', 'terrestrial_carbon', 'carbon_zones_rasterized.tif')
     if not getattr(p, 'terrestrial_carbon_density_lookup_table_path', None):
@@ -406,7 +406,8 @@ def terrestrial_carbon_shock_static(p):
     n_years = end_year - base_year
     scenario_map = getattr(p, 'terrestrial_carbon_scenario_map', {})
     scenarios = list(p.es_shock_scenarios)
-    acts = getattr(p, 'terrestrial_carbon_shock_acts', 'FRS')
+    utilities.hydrate_es_parameters(p, 'terrestrial_carbon', log=hb.log)   # shipped defaults; caller wins
+    acts = p.terrestrial_carbon_shock_acts
     base_scn = utilities.required_base_scenario(p, 'terrestrial_carbon')  # consumer-named, no library default
 
     carb_path = getattr(p, 'terrestrial_carbon_dependency_path', None) or os.path.join(
