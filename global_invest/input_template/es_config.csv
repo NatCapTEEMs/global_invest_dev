@@ -9,4 +9,5 @@ crop_provision,crop_provision,commercial,,,,,,
 livestock_provision,livestock_provision,commercial,,,,,,
 fisheries,fish_provision,,,,,,,
 erosion,erosion_control,,,,,,,
-landslide_mitigation,landslide_mitigation,,,,,,,
+landslide_mitigation,landslide_mitigation,,,,landslide_mitigation/input_data_raw,,,
+example_service,,,,,,,,lulc/esa/seals7/lulc_esa_seals7_2017.tif

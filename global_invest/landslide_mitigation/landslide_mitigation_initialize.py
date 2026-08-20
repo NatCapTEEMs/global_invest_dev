@@ -12,6 +12,8 @@ replication waits on a machine-readable v0.2.0 output from the author. Numbers p
 """
 import hazelbean as hb
 
+from global_invest import utilities
+
 from global_invest.landslide_mitigation import landslide_mitigation_tasks
 
 
@@ -20,24 +22,14 @@ def initialize_paths(p):
     staged from the author's TEEMs-drive migration), plus the source run script's full configuration
     block. The first-run crashes came from porting that block one attribute at a time; it lives here
     whole now, source lines 84-114."""
-    p.landslide_input_data_dir = p.get_path('landslide_mitigation', 'input_data_raw')
-
-    p.force_run = False
+    # Configuration comes from the two shared CSVs as a defaults layer: es_config carries the
+    # raw-data reference (gep_quantity_input_path -> landslide_mitigation/input_data_raw,
+    # staged from the author's TEEMs-drive migration); es_parameters carries the run knobs and
+    # method constants that used to live here as literals.
+    utilities.hydrate_es_config(p, 'landslide_mitigation')
+    utilities.hydrate_es_parameters(p, 'landslide_mitigation')
+    p.landslide_input_data_dir = p.gep_quantity_input_path   # the module's descriptive alias
     p.L = hb.get_logger('landslide_mitigation_workflow')
-
-    p.processing_resolution = 2000
-    p.run_in_parallel = True
-    p.num_workers = 8
-
-    p.data_processing_range = range(2007, 2020)
-    p.modeling_range = range(2007, 2019)
-    p.prediction_years = [2019]
-    p.max_location_accuracy_m = 1000
-    p.control_ratio = 25
-    p.c_root_scenarios = {
-        'observed': 'observed',
-        'full_impacts': 0,
-    }
     return p
 
 

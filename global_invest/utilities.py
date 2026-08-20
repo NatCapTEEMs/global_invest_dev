@@ -352,11 +352,48 @@ def hydrate_es_config(p, service, log=print):
         if getattr(p, attribute, None) is not None:
             continue
         if attribute.endswith('_path'):
+            # A fixture shipped under input_template at the same relative ref seeds into
+            # input/ first (required=False: absent template -> get_path stays the loud gate),
+            # so a cell can point at data the library carries -- example_service does.
+            seed_input_template(p, str(value), log, required=False)
             value = p.get_path(str(value))
         else:
             try:
                 value = int(float(value))
             except (TypeError, ValueError):
+                value = str(value)
+        setattr(p, attribute, value)
+    return p
+
+
+def hydrate_es_parameters(p, service, log=print):
+    """Per-service parameters from es_parameters.csv (long key-value rows scoped by a service
+    column) -- the ngfs parameters.csv pattern: machine-specific keys ship BLANK in the template
+    and each machine fills its project's input/ copy (a blank value is skipped); method knobs
+    ship with their defaults. es_config stays the GEP formula's roles; this file holds what a
+    formula row cannot express -- run knobs, method constants promoted to configuration, and
+    machine locations (e.g. erosion_gep_root, the MSI data root that
+    configure_prevention_shares reads off p).
+
+    DEFAULTS layer like its siblings: an attribute the caller already set on p wins. Values
+    parse as JSON where they can (ints, lists, dicts, true/false), else stay strings; *_path
+    keys resolve via get_path.
+    """
+    import json
+    import pandas as pd
+    df = pd.read_csv(seed_input_template(p, 'es_parameters.csv', log))
+    for _, row in df[df['service'] == service].iterrows():
+        attribute, value = str(row['parameter']), row['value']
+        if pd.isna(value) or str(value) == '':
+            continue
+        if getattr(p, attribute, None) is not None:
+            continue
+        if attribute.endswith('_path'):
+            value = p.get_path(str(value))
+        else:
+            try:
+                value = json.loads(str(value))
+            except (ValueError, TypeError):
                 value = str(value)
         setattr(p, attribute, value)
     return p

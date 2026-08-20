@@ -1,0 +1,12 @@
+service,parameter,value
+erosion,erosion_gep_root,
+landslide_mitigation,force_run,false
+landslide_mitigation,run_in_parallel,true
+landslide_mitigation,num_workers,8
+landslide_mitigation,processing_resolution,2000
+landslide_mitigation,data_processing_range,"[2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019]"
+landslide_mitigation,modeling_range,"[2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017, 2018]"
+landslide_mitigation,prediction_years,"[2019]"
+landslide_mitigation,max_location_accuracy_m,1000
+landslide_mitigation,control_ratio,25
+landslide_mitigation,c_root_scenarios,"{""observed"": ""observed"", ""full_impacts"": 0}"
