@@ -27,7 +27,7 @@ def publish_inputs(p):
 
 def coastal_protection(p):
     """
-    Parent task for mangrove coastal protection. Inputs resolve in initialize_paths.
+    Parent task for mangrove coastal protection. Inputs resolve in publish_inputs.
     """
     publish_inputs(p)
 

@@ -30,7 +30,7 @@ def extractive_materials_provision(p):
     Parent task for extractive materials provision.
     """
     publish_inputs(p)
-    pass  # Inputs resolve in initialize_paths.
+    pass  # Inputs resolve in publish_inputs.
 
 def gep_preprocess(p):
     """

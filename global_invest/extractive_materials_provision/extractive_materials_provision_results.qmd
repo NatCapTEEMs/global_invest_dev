@@ -40,7 +40,7 @@ p.set_project_dir(p.project_dir) # Set the project directory in the ProjectFlow 
 # CRITICAL AND UNOBVIOUS, you CANNOT run the full service because this includes the generation of the qmd and the render line itself, thus calling this would infinitely loop.
 extractive_materials_provision_initialize.build_gep_service_calculation_task_tree(p) # Defines the actual logic of the model. Navigate into here to see what the model does.
 
-# Inputs resolve in initialize_paths (one source of truth; shared country block).
+# Inputs resolve in publish_inputs (one source of truth; shared country block).
 p.results = {}  # All results will be stored here by each child task.
 
 # Run the model. This should be instantaneous if you've run the model before.

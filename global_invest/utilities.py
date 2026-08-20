@@ -19,8 +19,7 @@ reached terrestrial_carbon + coastal_carbon and not the other five GEP services.
 def initialize_country_paths(p, simplified='300sec'):
     """Shared country-boundary references every GEP service needs: the r264 correspondence
     (csv + gpkg + simplified gpkg, all as get_path reference paths) and the loaded df_countries.
-    Called from each service's publish_inputs (or its initialize_paths, until its per-ES pass
-    step); the service then adds only its service-specific inputs
+    Called from each service's publish_inputs; the service then adds only its service-specific inputs
     (this block used to be pasted into every module).
     """
     import pandas as pd

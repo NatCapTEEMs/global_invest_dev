@@ -9,21 +9,17 @@ import pandas as pd
 from osgeo import gdal, osr
 import geopandas as gpd
 import pygeoprocessing as pygeo
-from global_invest.landslide_mitigation.landslide_mitigation_utils import (
+import hazelbean as hb
+import pygeoprocessing.routing as routing
+from global_invest import utilities
+from global_invest.landslide_mitigation.landslide_mitigation_functions import (
     parse_gpd_grid_definition,
     warp_to_reference,
-)
-from global_invest.landslide_mitigation.landslide_mitigation_functions import (
-    thickness_weighted_combine,
-    DEPTH_WEIGHTS_0_30CM,
-)
-from osgeo import gdal
-import pygeoprocessing.routing as routing
-from global_invest.landslide_mitigation.landslide_mitigation_functions import compute_si_global
-from global_invest.landslide_mitigation.landslide_mitigation_utils import (
-    warp_to_reference, 
     sample_raster_at_points,
     write_raster_from_array,
+    thickness_weighted_combine,
+    compute_si_global,
+    DEPTH_WEIGHTS_0_30CM,
 )
 import json
 import statsmodels.api as sm
@@ -50,13 +46,12 @@ All reprojected outputs write into p.input_data_dir.
 """
 
 
-
 # ==================================================================== #
 # 0. Parent dir-creator
 # ==================================================================== #
 
 # METHOD CONSTANTS defining the ported v0.2.0 science (the landslide author's to bless) -- in code
-# so a change costs a reviewed commit; caller-wins hooks in initialize allow deliberate overrides.
+# so a change costs a reviewed commit; publish_inputs applies them caller-wins, so deliberate overrides survive.
 LANDSLIDE_DATA_PROCESSING_YEARS = list(range(2007, 2020))
 LANDSLIDE_MODELING_YEARS = list(range(2007, 2019))
 LANDSLIDE_PREDICTION_YEARS = [2019]
@@ -65,8 +60,33 @@ LANDSLIDE_CONTROL_RATIO = 25
 LANDSLIDE_C_ROOT_SCENARIOS = {'observed': 'observed', 'full_impacts': 0}
 
 
+def publish_inputs(p):
+    """Every landslide task's first line: the es_config row and run knobs (defaults layer -- a
+    caller-set value wins), the method constants above, the module's input alias, the logger,
+    and the results registry. Idempotent, so the tree builder may also call it to read the
+    iterator knobs at build time."""
+    utilities.hydrate_es_config(p, 'landslide_mitigation', log=hb.log)
+    utilities.hydrate_es_parameters(p, 'landslide_mitigation', log=hb.log)
+    if getattr(p, 'landslide_input_data_dir', None) is None:
+        p.landslide_input_data_dir = p.gep_quantity_input_path   # the module's descriptive alias
+    for attribute, value in (('data_processing_range', LANDSLIDE_DATA_PROCESSING_YEARS),
+                             ('modeling_range', LANDSLIDE_MODELING_YEARS),
+                             ('prediction_years', LANDSLIDE_PREDICTION_YEARS),
+                             ('max_location_accuracy_m', LANDSLIDE_MAX_LOCATION_ACCURACY_M),
+                             ('control_ratio', LANDSLIDE_CONTROL_RATIO),
+                             ('c_root_scenarios', LANDSLIDE_C_ROOT_SCENARIOS)):
+        if getattr(p, attribute, None) is None:
+            setattr(p, attribute, value)
+    if getattr(p, 'L', None) is None:
+        p.L = hb.get_logger('landslide_mitigation_workflow')
+    if not hasattr(p, 'results'):
+        p.results = {}
+    return p
+
+
 def input_data(p):
     """Creates p.input_data_dir. All other tasks below write into it."""
+    publish_inputs(p)
     if p.run_this:
         p.L.info(f'input_data_dir ready: {p.input_data_dir}')
     return p
@@ -76,20 +96,12 @@ def input_data(p):
 # 1. EASE-Grid 2.0 reference raster
 # ==================================================================== #
 
-# METHOD CONSTANTS defining the ported v0.2.0 science (the landslide author's to bless) -- in code
-# so a change costs a reviewed commit; caller-wins hooks in initialize allow deliberate overrides.
-LANDSLIDE_DATA_PROCESSING_YEARS = list(range(2007, 2020))
-LANDSLIDE_MODELING_YEARS = list(range(2007, 2019))
-LANDSLIDE_PREDICTION_YEARS = [2019]
-LANDSLIDE_MAX_LOCATION_ACCURACY_M = 1000
-LANDSLIDE_CONTROL_RATIO = 25
-LANDSLIDE_C_ROOT_SCENARIOS = {'observed': 'observed', 'full_impacts': 0}
-
 
 def build_ease_grid_reference(p):
     """Parses EASE2_M01km.gpd (a SOURCE file, read from base_data_dir
     and builds an empty reference raster on that exact grid.
     """
+    publish_inputs(p)
     if p.run_this:
         gpd_path = os.path.join(p.landslide_input_data_dir, 'nsidc_proj', 'EASE2_M01km.gpd')
         grid = parse_gpd_grid_definition(gpd_path)
@@ -122,17 +134,9 @@ def build_ease_grid_reference(p):
 # 2. DEM -- SEALS alt_m.tif (shared base_data)
 # ==================================================================== #
 
-# METHOD CONSTANTS defining the ported v0.2.0 science (the landslide author's to bless) -- in code
-# so a change costs a reviewed commit; caller-wins hooks in initialize allow deliberate overrides.
-LANDSLIDE_DATA_PROCESSING_YEARS = list(range(2007, 2020))
-LANDSLIDE_MODELING_YEARS = list(range(2007, 2019))
-LANDSLIDE_PREDICTION_YEARS = [2019]
-LANDSLIDE_MAX_LOCATION_ACCURACY_M = 1000
-LANDSLIDE_CONTROL_RATIO = 25
-LANDSLIDE_C_ROOT_SCENARIOS = {'observed': 'observed', 'full_impacts': 0}
-
 
 def reproject_dem(p):
+    publish_inputs(p)
     if p.run_this:
         src_path = p.get_path('seals', 'static_regressors', 'alt_m.tif')
         out_path = os.path.join(p.input_data_dir, 'dem_1km.tif')
@@ -156,17 +160,9 @@ def reproject_dem(p):
 # 3. GAEZ zones -- categorical
 # ==================================================================== #
 
-# METHOD CONSTANTS defining the ported v0.2.0 science (the landslide author's to bless) -- in code
-# so a change costs a reviewed commit; caller-wins hooks in initialize allow deliberate overrides.
-LANDSLIDE_DATA_PROCESSING_YEARS = list(range(2007, 2020))
-LANDSLIDE_MODELING_YEARS = list(range(2007, 2019))
-LANDSLIDE_PREDICTION_YEARS = [2019]
-LANDSLIDE_MAX_LOCATION_ACCURACY_M = 1000
-LANDSLIDE_CONTROL_RATIO = 25
-LANDSLIDE_C_ROOT_SCENARIOS = {'observed': 'observed', 'full_impacts': 0}
-
 
 def reproject_gaez(p):
+    publish_inputs(p)
     if p.run_this:
         src_path = os.path.join(p.landslide_input_data_dir, 'fao_gaez', 'GAEZ-V5.AEZ57.tif')
         out_path = os.path.join(p.input_data_dir, 'gaez_zones_1km.tif')
@@ -198,17 +194,9 @@ FOREST_WEIGHT = {
     # all other classes default to 0.0
 }
 
-# METHOD CONSTANTS defining the ported v0.2.0 science (the landslide author's to bless) -- in code
-# so a change costs a reviewed commit; caller-wins hooks in initialize allow deliberate overrides.
-LANDSLIDE_DATA_PROCESSING_YEARS = list(range(2007, 2020))
-LANDSLIDE_MODELING_YEARS = list(range(2007, 2019))
-LANDSLIDE_PREDICTION_YEARS = [2019]
-LANDSLIDE_MAX_LOCATION_ACCURACY_M = 1000
-LANDSLIDE_CONTROL_RATIO = 25
-LANDSLIDE_C_ROOT_SCENARIOS = {'observed': 'observed', 'full_impacts': 0}
-
 
 def reproject_esacci_forest_share(p):
+    publish_inputs(p)
     if p.run_this:
         work_dir = os.path.join(p.input_data_dir, 'esacci_work')
         os.makedirs(work_dir, exist_ok=True)
@@ -280,15 +268,6 @@ def reproject_esacci_forest_share(p):
 # 5. UGLC -- point coordinate transform, not raster warp
 # ==================================================================== #
 
-# METHOD CONSTANTS defining the ported v0.2.0 science (the landslide author's to bless) -- in code
-# so a change costs a reviewed commit; caller-wins hooks in initialize allow deliberate overrides.
-LANDSLIDE_DATA_PROCESSING_YEARS = list(range(2007, 2020))
-LANDSLIDE_MODELING_YEARS = list(range(2007, 2019))
-LANDSLIDE_PREDICTION_YEARS = [2019]
-LANDSLIDE_MAX_LOCATION_ACCURACY_M = 1000
-LANDSLIDE_CONTROL_RATIO = 25
-LANDSLIDE_C_ROOT_SCENARIOS = {'observed': 'observed', 'full_impacts': 0}
-
 
 def reproject_uglc_events(p):
     """Load UGLC, clean/filter, transform points to EASE-Grid x/y (meters).
@@ -299,6 +278,7 @@ def reproject_uglc_events(p):
     preprocessing_tasks.build_uglc_annual_panels(), which consumes
     p.uglc_path (this task's output).
     """
+    publish_inputs(p)
     if p.run_this:
  
         src_path = os.path.join(p.landslide_input_data_dir, 'uglc', 'UGLC_point.csv')
@@ -377,15 +357,6 @@ def reproject_uglc_events(p):
 # 6. LandScan population -- SUM-conserving warp, per-year
 # ==================================================================== #
 
-# METHOD CONSTANTS defining the ported v0.2.0 science (the landslide author's to bless) -- in code
-# so a change costs a reviewed commit; caller-wins hooks in initialize allow deliberate overrides.
-LANDSLIDE_DATA_PROCESSING_YEARS = list(range(2007, 2020))
-LANDSLIDE_MODELING_YEARS = list(range(2007, 2019))
-LANDSLIDE_PREDICTION_YEARS = [2019]
-LANDSLIDE_MAX_LOCATION_ACCURACY_M = 1000
-LANDSLIDE_CONTROL_RATIO = 25
-LANDSLIDE_C_ROOT_SCENARIOS = {'observed': 'observed', 'full_impacts': 0}
-
 
 def reproject_landscan_population(p):
     """
@@ -394,6 +365,7 @@ def reproject_landscan_population(p):
     but not aligned with EASE-Grid 1km, so warp to EASE-Grid 1km. 
     SUM-conserving warp (resample_method='sum') to preserve total population counts.
     """
+    publish_inputs(p)
     if p.run_this:
         for year in p.data_processing_range:
             src_path = os.path.join(
@@ -430,17 +402,10 @@ SOILGRIDS_PROPERTIES = {
     'org_carbon_pct': ('soc', 10),
     'bulk_density': ('bdod', 100),
 }
-# METHOD CONSTANTS defining the ported v0.2.0 science (the landslide author's to bless) -- in code
-# so a change costs a reviewed commit; caller-wins hooks in initialize allow deliberate overrides.
-LANDSLIDE_DATA_PROCESSING_YEARS = list(range(2007, 2020))
-LANDSLIDE_MODELING_YEARS = list(range(2007, 2019))
-LANDSLIDE_PREDICTION_YEARS = [2019]
-LANDSLIDE_MAX_LOCATION_ACCURACY_M = 1000
-LANDSLIDE_CONTROL_RATIO = 25
-LANDSLIDE_C_ROOT_SCENARIOS = {'observed': 'observed', 'full_impacts': 0}
 
 
 def reproject_soilgrids_properties(p):
+    publish_inputs(p)
     if p.run_this:
         work_dir = os.path.join(p.input_data_dir, 'soilgrids_work')
         os.makedirs(work_dir, exist_ok=True)
@@ -479,23 +444,14 @@ def reproject_soilgrids_properties(p):
     return p
 
 
-
 # ==================================================================== #
 # 8. WorldClim BIO12 -- climatological rain (q input)
 # ==================================================================== #
 
-# METHOD CONSTANTS defining the ported v0.2.0 science (the landslide author's to bless) -- in code
-# so a change costs a reviewed commit; caller-wins hooks in initialize allow deliberate overrides.
-LANDSLIDE_DATA_PROCESSING_YEARS = list(range(2007, 2020))
-LANDSLIDE_MODELING_YEARS = list(range(2007, 2019))
-LANDSLIDE_PREDICTION_YEARS = [2019]
-LANDSLIDE_MAX_LOCATION_ACCURACY_M = 1000
-LANDSLIDE_CONTROL_RATIO = 25
-LANDSLIDE_C_ROOT_SCENARIOS = {'observed': 'observed', 'full_impacts': 0}
-
 
 def reproject_worldclim_bio12(p):
     """Mean annual precipitation (mm), 1970-2000 climate normal."""
+    publish_inputs(p)
     if p.run_this:
         src_path = os.path.join(p.landslide_input_data_dir, 'worldclim', 'wc2.1_30s_bio_12.tif')
         out_path = os.path.join(p.input_data_dir, 'worldclim_bio12_1km.tif')
@@ -543,17 +499,9 @@ def reproject_worldclim_bio12(p):
 # 9. HiHydroSoil K_sat -- combine + warp
 # ==================================================================== #
 
-# METHOD CONSTANTS defining the ported v0.2.0 science (the landslide author's to bless) -- in code
-# so a change costs a reviewed commit; caller-wins hooks in initialize allow deliberate overrides.
-LANDSLIDE_DATA_PROCESSING_YEARS = list(range(2007, 2020))
-LANDSLIDE_MODELING_YEARS = list(range(2007, 2019))
-LANDSLIDE_PREDICTION_YEARS = [2019]
-LANDSLIDE_MAX_LOCATION_ACCURACY_M = 1000
-LANDSLIDE_CONTROL_RATIO = 25
-LANDSLIDE_C_ROOT_SCENARIOS = {'observed': 'observed', 'full_impacts': 0}
-
 
 def reproject_hihydrosoil_ksat(p):
+    publish_inputs(p)
     if p.run_this:
         work_dir = os.path.join(p.input_data_dir, 'hihydrosoil_work')
         os.makedirs(work_dir, exist_ok=True)
@@ -590,17 +538,9 @@ def reproject_hihydrosoil_ksat(p):
 # 10. Soil depth (b) -- Pelletier/ORNL DAAC, single file
 # ==================================================================== #
 
-# METHOD CONSTANTS defining the ported v0.2.0 science (the landslide author's to bless) -- in code
-# so a change costs a reviewed commit; caller-wins hooks in initialize allow deliberate overrides.
-LANDSLIDE_DATA_PROCESSING_YEARS = list(range(2007, 2020))
-LANDSLIDE_MODELING_YEARS = list(range(2007, 2019))
-LANDSLIDE_PREDICTION_YEARS = [2019]
-LANDSLIDE_MAX_LOCATION_ACCURACY_M = 1000
-LANDSLIDE_CONTROL_RATIO = 25
-LANDSLIDE_C_ROOT_SCENARIOS = {'observed': 'observed', 'full_impacts': 0}
-
 
 def reproject_soil_depth(p):
+    publish_inputs(p)
     if p.run_this:
         src_path = os.path.join(
             p.landslide_input_data_dir, 'Global_Soil_Regolith_Sediment_1304', 'data',
@@ -625,15 +565,6 @@ def reproject_soil_depth(p):
 # 11. GRIP4 road density -- continuous covariate, m of road per km^2
 # ==================================================================== #
 
-# METHOD CONSTANTS defining the ported v0.2.0 science (the landslide author's to bless) -- in code
-# so a change costs a reviewed commit; caller-wins hooks in initialize allow deliberate overrides.
-LANDSLIDE_DATA_PROCESSING_YEARS = list(range(2007, 2020))
-LANDSLIDE_MODELING_YEARS = list(range(2007, 2019))
-LANDSLIDE_PREDICTION_YEARS = [2019]
-LANDSLIDE_MAX_LOCATION_ACCURACY_M = 1000
-LANDSLIDE_CONTROL_RATIO = 25
-LANDSLIDE_C_ROOT_SCENARIOS = {'observed': 'observed', 'full_impacts': 0}
-
 
 def reproject_grip_roads(p):
     """GRIP4 road density (m of road per km^2), the severity-model
@@ -642,6 +573,7 @@ def reproject_grip_roads(p):
     Per GRIP4 ReadMe: WGS84 lat/lon, 5 arcminute cells (~9.26km at the
     equator) -- UPSAMPLES (coarse ~9km source -> 1km target)
     """
+    publish_inputs(p)
     if p.run_this:
         src_path = os.path.join(
             p.landslide_input_data_dir, 'GRIP4_density_total', 'grip4_total_dens_m_km2.asc'
@@ -680,19 +612,9 @@ def reproject_grip_roads(p):
     return p
 
 
-
 # ==================================================================== #
 # 12. ERA5 daily-max rainfall
 # ==================================================================== #
-
-# METHOD CONSTANTS defining the ported v0.2.0 science (the landslide author's to bless) -- in code
-# so a change costs a reviewed commit; caller-wins hooks in initialize allow deliberate overrides.
-LANDSLIDE_DATA_PROCESSING_YEARS = list(range(2007, 2020))
-LANDSLIDE_MODELING_YEARS = list(range(2007, 2019))
-LANDSLIDE_PREDICTION_YEARS = [2019]
-LANDSLIDE_MAX_LOCATION_ACCURACY_M = 1000
-LANDSLIDE_CONTROL_RATIO = 25
-LANDSLIDE_C_ROOT_SCENARIOS = {'observed': 'observed', 'full_impacts': 0}
 
 
 def reproject_rain_daily(p):
@@ -700,6 +622,7 @@ def reproject_rain_daily(p):
     (~11km at the equator) -- COARSER than the 1km target, so this
     UPSAMPLES. 'bilinear', not 'average' (same class as GRIP roads).
     """
+    publish_inputs(p)
     if p.run_this:
  
         for year in p.data_processing_range:
@@ -731,21 +654,13 @@ def reproject_rain_daily(p):
 # 13. Final validation
 # ==================================================================== #
 
-# METHOD CONSTANTS defining the ported v0.2.0 science (the landslide author's to bless) -- in code
-# so a change costs a reviewed commit; caller-wins hooks in initialize allow deliberate overrides.
-LANDSLIDE_DATA_PROCESSING_YEARS = list(range(2007, 2020))
-LANDSLIDE_MODELING_YEARS = list(range(2007, 2019))
-LANDSLIDE_PREDICTION_YEARS = [2019]
-LANDSLIDE_MAX_LOCATION_ACCURACY_M = 1000
-LANDSLIDE_CONTROL_RATIO = 25
-LANDSLIDE_C_ROOT_SCENARIOS = {'observed': 'observed', 'full_impacts': 0}
-
 
 def validate_input_rasters(p):
     """Checks every reprojected raster against the EASE-Grid reference:
     matching size, pixel resolution, projection. Run last, after every
     other input_data_tasks.py task.
     """
+    publish_inputs(p)
     if p.run_this:
         ref_info = pygeo.get_raster_info(p.ease_grid_reference_path)
         ref_size = ref_info['raster_size']
@@ -812,18 +727,10 @@ GRAVITY_M_S2 = 9.81
 # 0. Parent dir-creator
 # ==================================================================== #
 
-# METHOD CONSTANTS defining the ported v0.2.0 science (the landslide author's to bless) -- in code
-# so a change costs a reviewed commit; caller-wins hooks in initialize allow deliberate overrides.
-LANDSLIDE_DATA_PROCESSING_YEARS = list(range(2007, 2020))
-LANDSLIDE_MODELING_YEARS = list(range(2007, 2019))
-LANDSLIDE_PREDICTION_YEARS = [2019]
-LANDSLIDE_MAX_LOCATION_ACCURACY_M = 1000
-LANDSLIDE_CONTROL_RATIO = 25
-LANDSLIDE_C_ROOT_SCENARIOS = {'observed': 'observed', 'full_impacts': 0}
-
 
 def preprocessing(p):
     """Creates p.preprocessing_dir. All other tasks below write into it."""
+    publish_inputs(p)
     if p.run_this:
         p.L.info(f'preprocessing_dir ready: {p.preprocessing_dir}')
         return p
@@ -831,15 +738,6 @@ def preprocessing(p):
 # ==================================================================== #
 # 1. Build UGLC annual panels
 # ==================================================================== #
-
-# METHOD CONSTANTS defining the ported v0.2.0 science (the landslide author's to bless) -- in code
-# so a change costs a reviewed commit; caller-wins hooks in initialize allow deliberate overrides.
-LANDSLIDE_DATA_PROCESSING_YEARS = list(range(2007, 2020))
-LANDSLIDE_MODELING_YEARS = list(range(2007, 2019))
-LANDSLIDE_PREDICTION_YEARS = [2019]
-LANDSLIDE_MAX_LOCATION_ACCURACY_M = 1000
-LANDSLIDE_CONTROL_RATIO = 25
-LANDSLIDE_C_ROOT_SCENARIOS = {'observed': 'observed', 'full_impacts': 0}
 
 
 def build_uglc_annual_panels(p):
@@ -850,6 +748,7 @@ def build_uglc_annual_panels(p):
         event's accuracy buffer via linear distance decay (1 - dist/accuracy_m),
         summed across events, for events in that year only.
     """
+    publish_inputs(p)
     if p.run_this:
         out_dir = os.path.join(p.preprocessing_dir, 'uglc_annual_panels')
         os.makedirs(out_dir, exist_ok=True)
@@ -950,21 +849,13 @@ def build_uglc_annual_panels(p):
 # 2. DEM preprocessing: pit-filling, flow direction, upslope area, slope
 # ==================================================================== #
 
-# METHOD CONSTANTS defining the ported v0.2.0 science (the landslide author's to bless) -- in code
-# so a change costs a reviewed commit; caller-wins hooks in initialize allow deliberate overrides.
-LANDSLIDE_DATA_PROCESSING_YEARS = list(range(2007, 2020))
-LANDSLIDE_MODELING_YEARS = list(range(2007, 2019))
-LANDSLIDE_PREDICTION_YEARS = [2019]
-LANDSLIDE_MAX_LOCATION_ACCURACY_M = 1000
-LANDSLIDE_CONTROL_RATIO = 25
-LANDSLIDE_C_ROOT_SCENARIOS = {'observed': 'observed', 'full_impacts': 0}
-
 
 def fill_pits(p):
     """Re-fills any new depressions introduced by resampling the trusted
     300m pit-filled DEM down to 1km EASE-Grid. Averaging can create small 
     new local minima that weren't in the original 300m DEM.
     """
+    publish_inputs(p)
     if p.run_this:
         out_path = os.path.join(p.preprocessing_dir, 'pit_filled_dem_1km.tif')
         if os.path.exists(out_path) and not p.force_run:
@@ -982,20 +873,13 @@ def fill_pits(p):
     return p
  
  
-# METHOD CONSTANTS defining the ported v0.2.0 science (the landslide author's to bless) -- in code
-# so a change costs a reviewed commit; caller-wins hooks in initialize allow deliberate overrides.
-LANDSLIDE_DATA_PROCESSING_YEARS = list(range(2007, 2020))
-LANDSLIDE_MODELING_YEARS = list(range(2007, 2019))
-LANDSLIDE_PREDICTION_YEARS = [2019]
-LANDSLIDE_MAX_LOCATION_ACCURACY_M = 1000
-LANDSLIDE_CONTROL_RATIO = 25
-LANDSLIDE_C_ROOT_SCENARIOS = {'observed': 'observed', 'full_impacts': 0}
 
 
 def compute_flow_dir_d8(p):
     """
     Fresh D8 flow direction computation at 1km.
     """
+    publish_inputs(p)
     if p.run_this:
         out_path = os.path.join(p.preprocessing_dir, 'flow_dir_1km.tif')
         if os.path.exists(out_path) and not p.force_run:
@@ -1013,14 +897,6 @@ def compute_flow_dir_d8(p):
     return p
  
  
-# METHOD CONSTANTS defining the ported v0.2.0 science (the landslide author's to bless) -- in code
-# so a change costs a reviewed commit; caller-wins hooks in initialize allow deliberate overrides.
-LANDSLIDE_DATA_PROCESSING_YEARS = list(range(2007, 2020))
-LANDSLIDE_MODELING_YEARS = list(range(2007, 2019))
-LANDSLIDE_PREDICTION_YEARS = [2019]
-LANDSLIDE_MAX_LOCATION_ACCURACY_M = 1000
-LANDSLIDE_CONTROL_RATIO = 25
-LANDSLIDE_C_ROOT_SCENARIOS = {'observed': 'observed', 'full_impacts': 0}
 
 
 def compute_upslope_area(p):
@@ -1029,6 +905,7 @@ def compute_upslope_area(p):
     then scaled to real area in m^2. EASE-Grid is equal-area, so this is
     just a constant multiply.
     """
+    publish_inputs(p)
     if p.run_this:
         accum_path = os.path.join(p.preprocessing_dir, 'flow_accum_pixel_count_1km.tif')
         out_path = os.path.join(p.preprocessing_dir, 'upslope_area_m2_1km.tif')
@@ -1060,22 +937,13 @@ def compute_upslope_area(p):
     return p
 
 
-# METHOD CONSTANTS defining the ported v0.2.0 science (the landslide author's to bless) -- in code
-# so a change costs a reviewed commit; caller-wins hooks in initialize allow deliberate overrides.
-LANDSLIDE_DATA_PROCESSING_YEARS = list(range(2007, 2020))
-LANDSLIDE_MODELING_YEARS = list(range(2007, 2019))
-LANDSLIDE_PREDICTION_YEARS = [2019]
-LANDSLIDE_MAX_LOCATION_ACCURACY_M = 1000
-LANDSLIDE_CONTROL_RATIO = 25
-LANDSLIDE_C_ROOT_SCENARIOS = {'observed': 'observed', 'full_impacts': 0}
-
-
 def compute_slope(p):
     """
     gdal.DEMProcessing computes slope in degrees from the pit-filled DEM, 
     using Horn (1981) algorithm. EASE-Grid is already in meters, so no 
     lat/lon degree-to-meter scale factor needed.
     """
+    publish_inputs(p)
     if p.run_this: 
         out_path = os.path.join(p.preprocessing_dir, 'slope_degrees_1km.tif')
         if os.path.exists(out_path) and not p.force_run:
@@ -1161,17 +1029,9 @@ def compute_slope(p):
 # ==================================================================== #
  
 
-# METHOD CONSTANTS defining the ported v0.2.0 science (the landslide author's to bless) -- in code
-# so a change costs a reviewed commit; caller-wins hooks in initialize allow deliberate overrides.
-LANDSLIDE_DATA_PROCESSING_YEARS = list(range(2007, 2020))
-LANDSLIDE_MODELING_YEARS = list(range(2007, 2019))
-LANDSLIDE_PREDICTION_YEARS = [2019]
-LANDSLIDE_MAX_LOCATION_ACCURACY_M = 1000
-LANDSLIDE_CONTROL_RATIO = 25
-LANDSLIDE_C_ROOT_SCENARIOS = {'observed': 'observed', 'full_impacts': 0}
-
 
 def compute_soil_hydraulic_properties(p):
+    publish_inputs(p)
     if p.run_this:
         p.friction_angle_path = os.path.join(p.preprocessing_dir, 'friction_angle_1km.tif')
         p.cohesion_soil_path = os.path.join(p.preprocessing_dir, 'cohesion_soil_1km.tif')
@@ -1286,17 +1146,9 @@ def compute_soil_hydraulic_properties(p):
 # ==================================================================== #
  
 
-# METHOD CONSTANTS defining the ported v0.2.0 science (the landslide author's to bless) -- in code
-# so a change costs a reviewed commit; caller-wins hooks in initialize allow deliberate overrides.
-LANDSLIDE_DATA_PROCESSING_YEARS = list(range(2007, 2020))
-LANDSLIDE_MODELING_YEARS = list(range(2007, 2019))
-LANDSLIDE_PREDICTION_YEARS = [2019]
-LANDSLIDE_MAX_LOCATION_ACCURACY_M = 1000
-LANDSLIDE_CONTROL_RATIO = 25
-LANDSLIDE_C_ROOT_SCENARIOS = {'observed': 'observed', 'full_impacts': 0}
-
 
 def compute_static_q(p):
+    publish_inputs(p)
     if p.run_this:
         out_path = os.path.join(p.preprocessing_dir, 'static_q_1km.tif')
         if os.path.exists(out_path) and not p.force_run:
@@ -1341,17 +1193,10 @@ def compute_static_q(p):
 #   meaning during calibration)
 # ==================================================================== #
  
-# METHOD CONSTANTS defining the ported v0.2.0 science (the landslide author's to bless) -- in code
-# so a change costs a reviewed commit; caller-wins hooks in initialize allow deliberate overrides.
-LANDSLIDE_DATA_PROCESSING_YEARS = list(range(2007, 2020))
-LANDSLIDE_MODELING_YEARS = list(range(2007, 2019))
-LANDSLIDE_PREDICTION_YEARS = [2019]
-LANDSLIDE_MAX_LOCATION_ACCURACY_M = 1000
-LANDSLIDE_CONTROL_RATIO = 25
-LANDSLIDE_C_ROOT_SCENARIOS = {'observed': 'observed', 'full_impacts': 0}
 
 
 def compute_si_scenarios(p):
+    publish_inputs(p)
     if p.run_this:
  
         p.si_paths = {} 
@@ -1398,17 +1243,9 @@ def compute_si_scenarios(p):
 # 7. Build estimation panel for modeling
 # ==================================================================== #
 
-# METHOD CONSTANTS defining the ported v0.2.0 science (the landslide author's to bless) -- in code
-# so a change costs a reviewed commit; caller-wins hooks in initialize allow deliberate overrides.
-LANDSLIDE_DATA_PROCESSING_YEARS = list(range(2007, 2020))
-LANDSLIDE_MODELING_YEARS = list(range(2007, 2019))
-LANDSLIDE_PREDICTION_YEARS = [2019]
-LANDSLIDE_MAX_LOCATION_ACCURACY_M = 1000
-LANDSLIDE_CONTROL_RATIO = 25
-LANDSLIDE_C_ROOT_SCENARIOS = {'observed': 'observed', 'full_impacts': 0}
-
 
 def build_estimation_table(p):
+    publish_inputs(p)
     if p.run_this:
  
         out_path = os.path.join(p.preprocessing_dir, 'estimation_table.csv')
@@ -1586,36 +1423,19 @@ model_tasks.py
 """
 
 
-# METHOD CONSTANTS defining the ported v0.2.0 science (the landslide author's to bless) -- in code
-# so a change costs a reviewed commit; caller-wins hooks in initialize allow deliberate overrides.
-LANDSLIDE_DATA_PROCESSING_YEARS = list(range(2007, 2020))
-LANDSLIDE_MODELING_YEARS = list(range(2007, 2019))
-LANDSLIDE_PREDICTION_YEARS = [2019]
-LANDSLIDE_MAX_LOCATION_ACCURACY_M = 1000
-LANDSLIDE_CONTROL_RATIO = 25
-LANDSLIDE_C_ROOT_SCENARIOS = {'observed': 'observed', 'full_impacts': 0}
-
-
 def modeling(p):
     """
     Task to create a modeling_dir for the downstream tasks.
     """
+    publish_inputs(p)
     if p.run_this:
         os.makedirs(p.modeling_dir, exist_ok=True)
         return p
     return p
 
-# METHOD CONSTANTS defining the ported v0.2.0 science (the landslide author's to bless) -- in code
-# so a change costs a reviewed commit; caller-wins hooks in initialize allow deliberate overrides.
-LANDSLIDE_DATA_PROCESSING_YEARS = list(range(2007, 2020))
-LANDSLIDE_MODELING_YEARS = list(range(2007, 2019))
-LANDSLIDE_PREDICTION_YEARS = [2019]
-LANDSLIDE_MAX_LOCATION_ACCURACY_M = 1000
-LANDSLIDE_CONTROL_RATIO = 25
-LANDSLIDE_C_ROOT_SCENARIOS = {'observed': 'observed', 'full_impacts': 0}
-
 
 def calibrate_si_to_probability(p):
+    publish_inputs(p)
     if p.run_this:
         out_coef_path = os.path.join(p.modeling_dir, 'hazard_model_coefficients.json')
         if os.path.exists(out_coef_path) and not p.force_run:
@@ -1722,17 +1542,9 @@ def calibrate_si_to_probability(p):
  
  
 
-# METHOD CONSTANTS defining the ported v0.2.0 science (the landslide author's to bless) -- in code
-# so a change costs a reviewed commit; caller-wins hooks in initialize allow deliberate overrides.
-LANDSLIDE_DATA_PROCESSING_YEARS = list(range(2007, 2020))
-LANDSLIDE_MODELING_YEARS = list(range(2007, 2019))
-LANDSLIDE_PREDICTION_YEARS = [2019]
-LANDSLIDE_MAX_LOCATION_ACCURACY_M = 1000
-LANDSLIDE_CONTROL_RATIO = 25
-LANDSLIDE_C_ROOT_SCENARIOS = {'observed': 'observed', 'full_impacts': 0}
-
 
 def estimate_severity_model(p):
+    publish_inputs(p)
     if p.run_this:
         out_coef_path = os.path.join(p.modeling_dir, 'severity_model_coefficients.json')
         if os.path.exists(out_coef_path) and not p.force_run:
@@ -1813,16 +1625,6 @@ def estimate_severity_model(p):
     return p
 
 
-# METHOD CONSTANTS defining the ported v0.2.0 science (the landslide author's to bless) -- in code
-# so a change costs a reviewed commit; caller-wins hooks in initialize allow deliberate overrides.
-LANDSLIDE_DATA_PROCESSING_YEARS = list(range(2007, 2020))
-LANDSLIDE_MODELING_YEARS = list(range(2007, 2019))
-LANDSLIDE_PREDICTION_YEARS = [2019]
-LANDSLIDE_MAX_LOCATION_ACCURACY_M = 1000
-LANDSLIDE_CONTROL_RATIO = 25
-LANDSLIDE_C_ROOT_SCENARIOS = {'observed': 'observed', 'full_impacts': 0}
-
-
 def estimate_severity_model_si_sensitivity(p):
     """
     Sensitivity check: does SI subsume slope's information in severity?
@@ -1830,6 +1632,7 @@ def estimate_severity_model_si_sensitivity(p):
     Diagnostic only -- writes to a separate output, does NOT overwrite
     the main severity_model_coefficients.json used by prediction.
     """
+    publish_inputs(p)
     if p.run_this:
         out_coef_path = os.path.join(p.modeling_dir, 'severity_model_si_sensitivity.json')
         if os.path.exists(out_coef_path) and not p.force_run:
@@ -1894,7 +1697,6 @@ def estimate_severity_model_si_sensitivity(p):
     return p
 
 
-
 # =============================================================================
 # SECTION: valuation tasks (was valuation_tasks.py in the source repo)
 # =============================================================================
@@ -1903,21 +1705,12 @@ valuation_tasks.py
 """
 
 
-# METHOD CONSTANTS defining the ported v0.2.0 science (the landslide author's to bless) -- in code
-# so a change costs a reviewed commit; caller-wins hooks in initialize allow deliberate overrides.
-LANDSLIDE_DATA_PROCESSING_YEARS = list(range(2007, 2020))
-LANDSLIDE_MODELING_YEARS = list(range(2007, 2019))
-LANDSLIDE_PREDICTION_YEARS = [2019]
-LANDSLIDE_MAX_LOCATION_ACCURACY_M = 1000
-LANDSLIDE_CONTROL_RATIO = 25
-LANDSLIDE_C_ROOT_SCENARIOS = {'observed': 'observed', 'full_impacts': 0}
-
-
 def tile_zones(p):
     """Generate tile zones for parallel prediction, filtered to
     land-containing tiles only. Tiles are defined on the EASE-Grid
     reference's exact dimensions/transform via p.gaez_path 
     """
+    publish_inputs(p)
     if not p.run_this:
         return p
 
@@ -1976,21 +1769,12 @@ def tile_zones(p):
     return p
 
 
-# METHOD CONSTANTS defining the ported v0.2.0 science (the landslide author's to bless) -- in code
-# so a change costs a reviewed commit; caller-wins hooks in initialize allow deliberate overrides.
-LANDSLIDE_DATA_PROCESSING_YEARS = list(range(2007, 2020))
-LANDSLIDE_MODELING_YEARS = list(range(2007, 2019))
-LANDSLIDE_PREDICTION_YEARS = [2019]
-LANDSLIDE_MAX_LOCATION_ACCURACY_M = 1000
-LANDSLIDE_CONTROL_RATIO = 25
-LANDSLIDE_C_ROOT_SCENARIOS = {'observed': 'observed', 'full_impacts': 0}
-
-
 def predict_landslides_scenarios(p):
     """Per tile, per scenario: apply the calibrated logistic
     (alpha_corrected + beta_si*SI + beta_rain*rain) to produce a hazard
     probability GeoTIFF. Written to disk per tile x scenario.
     """
+    publish_inputs(p)
     if not p.run_this:
         return p
 
@@ -2063,17 +1847,6 @@ def predict_landslides_scenarios(p):
     return p
 
 
-
-# METHOD CONSTANTS defining the ported v0.2.0 science (the landslide author's to bless) -- in code
-# so a change costs a reviewed commit; caller-wins hooks in initialize allow deliberate overrides.
-LANDSLIDE_DATA_PROCESSING_YEARS = list(range(2007, 2020))
-LANDSLIDE_MODELING_YEARS = list(range(2007, 2019))
-LANDSLIDE_PREDICTION_YEARS = [2019]
-LANDSLIDE_MAX_LOCATION_ACCURACY_M = 1000
-LANDSLIDE_CONTROL_RATIO = 25
-LANDSLIDE_C_ROOT_SCENARIOS = {'observed': 'observed', 'full_impacts': 0}
-
-
 def predict_mortality_scenarios(p):
     """
     Per tile, per scenario: predict expected deaths per pixel by combining:
@@ -2087,6 +1860,7 @@ def predict_mortality_scenarios(p):
     Part B expectation uses Duan's smearing correction.
     Writes mortality GeoTIFFs per tile x scenario.
     """
+    publish_inputs(p)
     if not p.run_this:
         return p
  
@@ -2204,20 +1978,13 @@ def predict_mortality_scenarios(p):
     return p
  
  
-# METHOD CONSTANTS defining the ported v0.2.0 science (the landslide author's to bless) -- in code
-# so a change costs a reviewed commit; caller-wins hooks in initialize allow deliberate overrides.
-LANDSLIDE_DATA_PROCESSING_YEARS = list(range(2007, 2020))
-LANDSLIDE_MODELING_YEARS = list(range(2007, 2019))
-LANDSLIDE_PREDICTION_YEARS = [2019]
-LANDSLIDE_MAX_LOCATION_ACCURACY_M = 1000
-LANDSLIDE_CONTROL_RATIO = 25
-LANDSLIDE_C_ROOT_SCENARIOS = {'observed': 'observed', 'full_impacts': 0}
 
 
 def stitch_tiles(p):
     """
     Stitch tile-level hazard and mortality predictions into global rasters.
     """
+    publish_inputs(p)
     if not p.run_this:
         return p
  
@@ -2306,20 +2073,11 @@ def stitch_tiles(p):
     return p
 
 
-# METHOD CONSTANTS defining the ported v0.2.0 science (the landslide author's to bless) -- in code
-# so a change costs a reviewed commit; caller-wins hooks in initialize allow deliberate overrides.
-LANDSLIDE_DATA_PROCESSING_YEARS = list(range(2007, 2020))
-LANDSLIDE_MODELING_YEARS = list(range(2007, 2019))
-LANDSLIDE_PREDICTION_YEARS = [2019]
-LANDSLIDE_MAX_LOCATION_ACCURACY_M = 1000
-LANDSLIDE_CONTROL_RATIO = 25
-LANDSLIDE_C_ROOT_SCENARIOS = {'observed': 'observed', 'full_impacts': 0}
-
-
 def valuation(p):
     """
     Creates directory for valuation outputs. 
     """
+    publish_inputs(p)
     if p.run_this:
         return p
 
@@ -2346,17 +2104,10 @@ INCOME_GRP_TO_FALLBACK_GROUP = {
 # year 2019 -> 2022 cumulative price-adjustment factor = 1.050
 DEFLATOR_2022_TO_2019 = 1 / 1.050
  
-# METHOD CONSTANTS defining the ported v0.2.0 science (the landslide author's to bless) -- in code
-# so a change costs a reviewed commit; caller-wins hooks in initialize allow deliberate overrides.
-LANDSLIDE_DATA_PROCESSING_YEARS = list(range(2007, 2020))
-LANDSLIDE_MODELING_YEARS = list(range(2007, 2019))
-LANDSLIDE_PREDICTION_YEARS = [2019]
-LANDSLIDE_MAX_LOCATION_ACCURACY_M = 1000
-LANDSLIDE_CONTROL_RATIO = 25
-LANDSLIDE_C_ROOT_SCENARIOS = {'observed': 'observed', 'full_impacts': 0}
 
 
 def build_vsl_raster(p):
+    publish_inputs(p)
     if p.run_this:
         out_path = os.path.join(p.valuation_dir, 'vsl_usd_2019_1km.tif')
         if os.path.exists(out_path) and not p.force_run:
@@ -2449,18 +2200,8 @@ def build_vsl_raster(p):
     return p
 
 
-
-# METHOD CONSTANTS defining the ported v0.2.0 science (the landslide author's to bless) -- in code
-# so a change costs a reviewed commit; caller-wins hooks in initialize allow deliberate overrides.
-LANDSLIDE_DATA_PROCESSING_YEARS = list(range(2007, 2020))
-LANDSLIDE_MODELING_YEARS = list(range(2007, 2019))
-LANDSLIDE_PREDICTION_YEARS = [2019]
-LANDSLIDE_MAX_LOCATION_ACCURACY_M = 1000
-LANDSLIDE_CONTROL_RATIO = 25
-LANDSLIDE_C_ROOT_SCENARIOS = {'observed': 'observed', 'full_impacts': 0}
-
-
 def compute_avoided_mortality(p):
+    publish_inputs(p)
     if p.run_this:
         for year in p.prediction_years:
             deaths_observed_path = os.path.join(
@@ -2546,8 +2287,6 @@ def compute_avoided_mortality(p):
     return p
 
 
-
-
 # =============================================================================
 # SECTION: tables figures tasks (was tables_figures_tasks.py in the source repo)
 # =============================================================================
@@ -2563,34 +2302,16 @@ except ImportError:
     ctx = None
 
 
-# METHOD CONSTANTS defining the ported v0.2.0 science (the landslide author's to bless) -- in code
-# so a change costs a reviewed commit; caller-wins hooks in initialize allow deliberate overrides.
-LANDSLIDE_DATA_PROCESSING_YEARS = list(range(2007, 2020))
-LANDSLIDE_MODELING_YEARS = list(range(2007, 2019))
-LANDSLIDE_PREDICTION_YEARS = [2019]
-LANDSLIDE_MAX_LOCATION_ACCURACY_M = 1000
-LANDSLIDE_CONTROL_RATIO = 25
-LANDSLIDE_C_ROOT_SCENARIOS = {'observed': 'observed', 'full_impacts': 0}
-
-
 def tables_figures(p):
     """Creates a directory for tables and figures."""
+    publish_inputs(p)
     if p.run_this:
         return p
     return p    
 
 
-# METHOD CONSTANTS defining the ported v0.2.0 science (the landslide author's to bless) -- in code
-# so a change costs a reviewed commit; caller-wins hooks in initialize allow deliberate overrides.
-LANDSLIDE_DATA_PROCESSING_YEARS = list(range(2007, 2020))
-LANDSLIDE_MODELING_YEARS = list(range(2007, 2019))
-LANDSLIDE_PREDICTION_YEARS = [2019]
-LANDSLIDE_MAX_LOCATION_ACCURACY_M = 1000
-LANDSLIDE_CONTROL_RATIO = 25
-LANDSLIDE_C_ROOT_SCENARIOS = {'observed': 'observed', 'full_impacts': 0}
-
-
 def compute_zonal_statistics(p):
+    publish_inputs(p)
     if p.run_this:
         for year in p.prediction_years:
             csv_out_path = os.path.join(p.tables_figures_dir, f'zonal_statistics_{year}.csv')
@@ -2657,16 +2378,6 @@ def compute_zonal_statistics(p):
     return p
 
 
-# METHOD CONSTANTS defining the ported v0.2.0 science (the landslide author's to bless) -- in code
-# so a change costs a reviewed commit; caller-wins hooks in initialize allow deliberate overrides.
-LANDSLIDE_DATA_PROCESSING_YEARS = list(range(2007, 2020))
-LANDSLIDE_MODELING_YEARS = list(range(2007, 2019))
-LANDSLIDE_PREDICTION_YEARS = [2019]
-LANDSLIDE_MAX_LOCATION_ACCURACY_M = 1000
-LANDSLIDE_CONTROL_RATIO = 25
-LANDSLIDE_C_ROOT_SCENARIOS = {'observed': 'observed', 'full_impacts': 0}
-
-
 def _regression_stars(pval):
     if pd.isna(pval):
         return ''
@@ -2679,14 +2390,6 @@ def _regression_stars(pval):
     return ''
  
  
-# METHOD CONSTANTS defining the ported v0.2.0 science (the landslide author's to bless) -- in code
-# so a change costs a reviewed commit; caller-wins hooks in initialize allow deliberate overrides.
-LANDSLIDE_DATA_PROCESSING_YEARS = list(range(2007, 2020))
-LANDSLIDE_MODELING_YEARS = list(range(2007, 2019))
-LANDSLIDE_PREDICTION_YEARS = [2019]
-LANDSLIDE_MAX_LOCATION_ACCURACY_M = 1000
-LANDSLIDE_CONTROL_RATIO = 25
-LANDSLIDE_C_ROOT_SCENARIOS = {'observed': 'observed', 'full_impacts': 0}
 
 
 def _build_publication_table(coef_rows, bottom_rows, dep_label):
@@ -2711,14 +2414,6 @@ def _build_publication_table(coef_rows, bottom_rows, dep_label):
     return pd.DataFrame(rows)
  
  
-# METHOD CONSTANTS defining the ported v0.2.0 science (the landslide author's to bless) -- in code
-# so a change costs a reviewed commit; caller-wins hooks in initialize allow deliberate overrides.
-LANDSLIDE_DATA_PROCESSING_YEARS = list(range(2007, 2020))
-LANDSLIDE_MODELING_YEARS = list(range(2007, 2019))
-LANDSLIDE_PREDICTION_YEARS = [2019]
-LANDSLIDE_MAX_LOCATION_ACCURACY_M = 1000
-LANDSLIDE_CONTROL_RATIO = 25
-LANDSLIDE_C_ROOT_SCENARIOS = {'observed': 'observed', 'full_impacts': 0}
 
 
 def _save_table_multiple_formats(table_df, base_path, title, notes_text):
@@ -2774,17 +2469,10 @@ TERM_LABELS = {
 }
  
  
-# METHOD CONSTANTS defining the ported v0.2.0 science (the landslide author's to bless) -- in code
-# so a change costs a reviewed commit; caller-wins hooks in initialize allow deliberate overrides.
-LANDSLIDE_DATA_PROCESSING_YEARS = list(range(2007, 2020))
-LANDSLIDE_MODELING_YEARS = list(range(2007, 2019))
-LANDSLIDE_PREDICTION_YEARS = [2019]
-LANDSLIDE_MAX_LOCATION_ACCURACY_M = 1000
-LANDSLIDE_CONTROL_RATIO = 25
-LANDSLIDE_C_ROOT_SCENARIOS = {'observed': 'observed', 'full_impacts': 0}
 
 
 def export_regression_tables(p):
+    publish_inputs(p)
     if p.run_this:
         out_dir = p.tables_figures_dir
  
@@ -2895,16 +2583,6 @@ def export_regression_tables(p):
     return p
 
 
-# METHOD CONSTANTS defining the ported v0.2.0 science (the landslide author's to bless) -- in code
-# so a change costs a reviewed commit; caller-wins hooks in initialize allow deliberate overrides.
-LANDSLIDE_DATA_PROCESSING_YEARS = list(range(2007, 2020))
-LANDSLIDE_MODELING_YEARS = list(range(2007, 2019))
-LANDSLIDE_PREDICTION_YEARS = [2019]
-LANDSLIDE_MAX_LOCATION_ACCURACY_M = 1000
-LANDSLIDE_CONTROL_RATIO = 25
-LANDSLIDE_C_ROOT_SCENARIOS = {'observed': 'observed', 'full_impacts': 0}
-
-
 def _save_table_safe(df, base_path, title, notes_text=None):
     csv_path = f'{base_path}.csv'
     tex_path = f'{base_path}.tex'
@@ -2933,17 +2611,10 @@ def _save_table_safe(df, base_path, title, notes_text=None):
     return csv_path, tex_path, md_path
  
  
-# METHOD CONSTANTS defining the ported v0.2.0 science (the landslide author's to bless) -- in code
-# so a change costs a reviewed commit; caller-wins hooks in initialize allow deliberate overrides.
-LANDSLIDE_DATA_PROCESSING_YEARS = list(range(2007, 2020))
-LANDSLIDE_MODELING_YEARS = list(range(2007, 2019))
-LANDSLIDE_PREDICTION_YEARS = [2019]
-LANDSLIDE_MAX_LOCATION_ACCURACY_M = 1000
-LANDSLIDE_CONTROL_RATIO = 25
-LANDSLIDE_C_ROOT_SCENARIOS = {'observed': 'observed', 'full_impacts': 0}
 
 
 def export_results_tables(p):
+    publish_inputs(p)
     if p.run_this:
         for year in p.prediction_years:
             zonal_csv_path = os.path.join(p.tables_figures_dir, f'zonal_statistics_{year}.csv')
@@ -3011,21 +2682,11 @@ def export_results_tables(p):
     return p
 
 
-
-# METHOD CONSTANTS defining the ported v0.2.0 science (the landslide author's to bless) -- in code
-# so a change costs a reviewed commit; caller-wins hooks in initialize allow deliberate overrides.
-LANDSLIDE_DATA_PROCESSING_YEARS = list(range(2007, 2020))
-LANDSLIDE_MODELING_YEARS = list(range(2007, 2019))
-LANDSLIDE_PREDICTION_YEARS = [2019]
-LANDSLIDE_MAX_LOCATION_ACCURACY_M = 1000
-LANDSLIDE_CONTROL_RATIO = 25
-LANDSLIDE_C_ROOT_SCENARIOS = {'observed': 'observed', 'full_impacts': 0}
-
-
 def export_si_severity_sensitivity_table(p):
     """Side-by-side comparison table for the Appendix: main (slope-based)
     vs. sensitivity-check (SI-based) severity specifications.
     """
+    publish_inputs(p)
     if p.run_this:
         severity_model_coefficients_path = os.path.join(p.modeling_dir, 'severity_model_coefficients.json')
         with open(severity_model_coefficients_path) as f:
@@ -3075,20 +2736,13 @@ def export_si_severity_sensitivity_table(p):
     return p
  
  
-# METHOD CONSTANTS defining the ported v0.2.0 science (the landslide author's to bless) -- in code
-# so a change costs a reviewed commit; caller-wins hooks in initialize allow deliberate overrides.
-LANDSLIDE_DATA_PROCESSING_YEARS = list(range(2007, 2020))
-LANDSLIDE_MODELING_YEARS = list(range(2007, 2019))
-LANDSLIDE_PREDICTION_YEARS = [2019]
-LANDSLIDE_MAX_LOCATION_ACCURACY_M = 1000
-LANDSLIDE_CONTROL_RATIO = 25
-LANDSLIDE_C_ROOT_SCENARIOS = {'observed': 'observed', 'full_impacts': 0}
 
 
 def export_pi_audit_table(p):
     """Per-year event/land pixel counts underlying the population
     prevalence estimate, for Appendix transparency.
     """
+    publish_inputs(p)
     if p.run_this:
         out_path = os.path.join(p.tables_figures_dir, 'pi_audit_table')
         if not os.path.exists(f'{out_path}.csv') and not p.force_run:
@@ -3150,17 +2804,8 @@ def export_pi_audit_table(p):
     return p
 
 
-# METHOD CONSTANTS defining the ported v0.2.0 science (the landslide author's to bless) -- in code
-# so a change costs a reviewed commit; caller-wins hooks in initialize allow deliberate overrides.
-LANDSLIDE_DATA_PROCESSING_YEARS = list(range(2007, 2020))
-LANDSLIDE_MODELING_YEARS = list(range(2007, 2019))
-LANDSLIDE_PREDICTION_YEARS = [2019]
-LANDSLIDE_MAX_LOCATION_ACCURACY_M = 1000
-LANDSLIDE_CONTROL_RATIO = 25
-LANDSLIDE_C_ROOT_SCENARIOS = {'observed': 'observed', 'full_impacts': 0}
-
-
 def plot_global_rasters_png(p):
+    publish_inputs(p)
     failures = []
  
     def _plot_raster(raster_path, out_png, title, cmap, q_low, q_high, cbar_format):
@@ -3295,17 +2940,8 @@ def plot_global_rasters_png(p):
     return p
 
 
-# METHOD CONSTANTS defining the ported v0.2.0 science (the landslide author's to bless) -- in code
-# so a change costs a reviewed commit; caller-wins hooks in initialize allow deliberate overrides.
-LANDSLIDE_DATA_PROCESSING_YEARS = list(range(2007, 2020))
-LANDSLIDE_MODELING_YEARS = list(range(2007, 2019))
-LANDSLIDE_PREDICTION_YEARS = [2019]
-LANDSLIDE_MAX_LOCATION_ACCURACY_M = 1000
-LANDSLIDE_CONTROL_RATIO = 25
-LANDSLIDE_C_ROOT_SCENARIOS = {'observed': 'observed', 'full_impacts': 0}
-
-
 def plot_country_choropleth_maps(p):
+    publish_inputs(p)
     if p.run_this: 
         for year in p.prediction_years:
             gpkg_path = os.path.join(p.tables_figures_dir, f'zonal_statistics_{year}.gpkg')
@@ -3379,20 +3015,11 @@ def plot_country_choropleth_maps(p):
     return p
 
 
-# METHOD CONSTANTS defining the ported v0.2.0 science (the landslide author's to bless) -- in code
-# so a change costs a reviewed commit; caller-wins hooks in initialize allow deliberate overrides.
-LANDSLIDE_DATA_PROCESSING_YEARS = list(range(2007, 2020))
-LANDSLIDE_MODELING_YEARS = list(range(2007, 2019))
-LANDSLIDE_PREDICTION_YEARS = [2019]
-LANDSLIDE_MAX_LOCATION_ACCURACY_M = 1000
-LANDSLIDE_CONTROL_RATIO = 25
-LANDSLIDE_C_ROOT_SCENARIOS = {'observed': 'observed', 'full_impacts': 0}
-
-
 def plot_uglc_from_vector(p):
     """
     Plot UGLC event geometry as a point map with fatality bins.
     """
+    publish_inputs(p)
     if not p.run_this:
         return p
  

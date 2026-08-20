@@ -21,7 +21,7 @@ def publish_inputs(p):
 
 def renewable_energy_provision(p):
     """
-    Parent task for renewable energy provision. Inputs resolve in initialize_paths.
+    Parent task for renewable energy provision. Inputs resolve in publish_inputs.
     """
     publish_inputs(p)
 
