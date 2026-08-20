@@ -65,9 +65,21 @@ format:
 - Where both outputs exist, they are written from the same science, so the valuation and the shock cannot drift apart.
 - The library is scenario agnostic. Consumers inject their naming through scenario maps and required configuration.
 
+## The mental model: a service module reads like a paper
+
+| File | In paper terms |
+|---|---|
+| functions.py | The equations — pure science; knows nothing about folders or projects. |
+| tasks.py | The estimation steps — each caches its output and skips itself when already done. |
+| initialize.py | The table of contents, plus the plug other pipelines graft in. |
+| run_\<service\>.py | The main script — opens a workspace and goes. Thin on purpose. |
+| method.qmd | The methods section — rendered from the code, so it cannot silently drift. |
+
+- The three CSVs are the calibration tables. es_config says what each model reads and how it prices; es_scenarios says which scenarios and maps; es_parameters holds tuning knobs and machine locations.
+- One rule ties data to code: a CSV cell is a default, and whatever the caller already set wins.
+
 ## The template every service follows
 
-- Five files per service: thin runners, tasks, science functions, initialize, and a method document that renders from the code.
 - One runner per task tree, and every run file shares one anatomy, decided with Justin and applied across the library: build_task_tree names the pipeline, and the run is configured where it is constructed.
 - Configuration is data, in two shared CSVs. es_config.csv holds one row per service in the GEP formula's own vocabulary (quantity, price, attribution, land base, base year, price convention) plus the crosswalk to the status sheet; es_scenarios_test.csv holds the standard SEALS scenarios and ships the matching test maps, so a standalone shock run works on any machine.
 - The library fills only what the caller left unset. A pipeline such as ngfs_pnas drives the same tasks from its own scenarios file, and its values always win.
@@ -138,6 +150,7 @@ format:
 - **Q1:** is marine carbon in scope for the account at all, and on what horizon?
 - **Q2:** if yes, who owns it, and which data product drives it?
 - **Q3:** most open-ocean carbon sits in the high seas, inside no country's EEZ. Which attribution convention should a per-country account use?
+- The sheet lists one more subgroup under the same service, equally without a module or lead that we could find: **Other Non-Carbon GHG** — the same three questions apply to it. Correct us if either exists.
 
 # The biophysical services
 
