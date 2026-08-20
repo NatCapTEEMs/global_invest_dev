@@ -24,11 +24,6 @@ def publish_inputs(p):
     return p
 
 
-def terrestrial_carbon(p):
-    """Parent task: grouping only."""
-    return True
-
-
 def total_carbon_density(p):
     """
     Task to reproject the total carbon density raster to the project's coordinate reference system (CRS).
