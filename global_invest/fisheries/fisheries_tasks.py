@@ -8,6 +8,8 @@ block onto the seam (Chiara's 'static ES go through the seam too' restructuring)
 """
 from global_invest import utilities
 import os
+
+import hazelbean as hb
 import pandas as pd
 
 from global_invest.fisheries import fisheries_functions as ff
@@ -59,7 +61,6 @@ FISH_CAP = 2.0          # +-2% backstop. Every legitimate FI value across FI26/F
 # Result: nor = +0.477 (2.6), +0.565 (4.5), +0.558 (8.5) -- gains rise then flatten with warming.
 # ⚠ This is an IMPUTATION, not a correction at source. Flag it to Erwin with #16.
 FISH_VALUE_OVERRIDES = {('FI26', 'nor'): 0.4767}
-FISH_SECTORS = ('FSH',)
 
 
 def fisheries_shock(p):
@@ -77,20 +78,21 @@ def fisheries_shock(p):
     if not p.run_this:
         return
 
-    base_year = int(p.es_shock_base_year)
-    end_year = int(p.es_shock_end_year)
-    scenarios = list(p.es_shock_scenarios)
-    header_map = getattr(p, 'fisheries_header_map', FISH_HEADER_MAP)
-    climate_labels = getattr(p, 'es_shock_climate_labels', None) or {}
+    utilities.hydrate_es_parameters(p, 'fisheries', log=hb.log)   # shipped defaults; caller wins
+    es_shock_base_year = int(p.es_shock_base_year)
+    es_shock_end_year = int(p.es_shock_end_year)
+    es_shock_scenarios = list(p.es_shock_scenarios)
+    fisheries_header_map = getattr(p, 'fisheries_header_map', FISH_HEADER_MAP)
+    es_shock_climate_labels = getattr(p, 'es_shock_climate_labels', None) or {}
 
-    cwon_path = getattr(p, 'cwon_shocks_path', None) or os.path.join(
-        p.base_data_dir, 'gtappy', 'cge_releases', 'gtapv7-aez-rd', 'data',
-        p.aggregation_label, 'cwon_shocks.har')
+    cwon_path = getattr(p, 'cwon_shocks_path', None) or p.get_path(
+        'gtappy', 'cge_releases', 'gtapv7-aez-rd', 'data',
+        p.aggregation_label, 'cwon_shocks.har', raise_error_if_fail=False)
     if not os.path.exists(cwon_path):
         print('  fisheries shock: cwon_shocks.har not found (%s) -- skipping' % cwon_path)
         return
 
-    fi_data = ff.read_fisheries_headers(cwon_path, headers=fisheries_headers_to_read(header_map))
+    fi_data = ff.read_fisheries_headers(cwon_path, headers=fisheries_headers_to_read(fisheries_header_map))
 
     # Read each year's own value from the FI annual series -- the honest default, no artificial freeze.
     # For the current cwon_shocks.har every year 2023..2050 already equals the 2050 value (the series is a
@@ -98,9 +100,9 @@ def fisheries_shock(p):
     # a genuinely dynamic source (DBEM/Fish-MIP, #45) carries a real trajectory -- then this reads it for
     # free. Set p.fisheries_time_varying=False (+ fisheries_constant_year) to force a freeze if ever needed.
     time_varying = bool(getattr(p, 'fisheries_time_varying', True))
-    constant_year = int(getattr(p, 'fisheries_constant_year', end_year))
+    constant_year = int(getattr(p, 'fisheries_constant_year', es_shock_end_year))
 
-    # RAMP the FI value linearly from 0 at base_year to its full size at end_year, instead of taking the
+    # RAMP the FI value linearly from 0 at es_shock_base_year to its full size at es_shock_end_year, instead of taking the
     # HAR's series as-is. The HAR is a STEP -- 0 in its first slice (2017) then a constant to 2050 -- which
     # asserts the FULL RCP impact from 2018 and holds it for 32 years. That cannot be right on any reading
     # of the source: RCP2.6 and RCP4.5 have barely diverged by 2018, and no warming has accumulated by our
@@ -109,10 +111,10 @@ def fisheries_shock(p):
     # says "Fish RCP2.6 shocks") -- provenance is #16. Ramping also makes fisheries consistent with the
     # other three services, which all start at 0 in the base year.
     # ⚠ This IMPOSES a profile the data lacks: state it in methods. #16 fixes only the endpoint year (and
-    # so the slope); end_year is the current assumption.
+    # so the slope); es_shock_end_year is the current assumption.
     ramp_to_end = bool(getattr(p, 'fisheries_ramp_to_end_year', True))
     # The ramp DENOMINATOR is the horizon the FI value belongs to -- NOT the length of this run.
-    # Using end_year (= max of the scenario CSV's `years`) silently rescales the shock whenever the run
+    # Using es_shock_end_year (= max of the scenario CSV's `years`) silently rescales the shock whenever the run
     # is short: on a 2024-2025 test run it would deliver the whole 2050 impact by 2025, a ~13x
     # overstatement, while erosion/carbon/pollination interpolate against calendar anchors and self-limit
     # correctly. Anchor on the ES anchor years (max of es_shock_years, i.e. the last SEALS year) so the
@@ -120,30 +122,30 @@ def fisheries_shock(p):
     # ⚠ Which horizon the FI number actually belongs to is undocumented upstream (#16) -- the last anchor
     # year is our assumption, and it is what sets the slope. Override with p.fisheries_ramp_end_year.
     ramp_end_year = int(getattr(p, 'fisheries_ramp_end_year', 0)) or max(
-        [int(y) for y in getattr(p, 'es_shock_years', []) or []] or [end_year])
-    n_years = max(ramp_end_year - base_year, 1)
+        [int(y) for y in getattr(p, 'es_shock_years', []) or []] or [es_shock_end_year])
+    n_years = max(ramp_end_year - es_shock_base_year, 1)
 
     rows = []
-    for scen in scenarios:
-        hdr = resolve_fisheries_header(scen, header_map, climate_labels)
+    for scen in es_shock_scenarios:
+        hdr = resolve_fisheries_header(scen, fisheries_header_map, es_shock_climate_labels)
         if hdr not in fi_data:
             continue
         overrides = getattr(p, 'fisheries_value_overrides', FISH_VALUE_OVERRIDES)
         for reg, series in fi_data[hdr].items():
             const_val = series.get(constant_year)
-            full_val = const_val if not time_varying else series.get(end_year, const_val)
+            full_val = const_val if not time_varying else series.get(es_shock_end_year, const_val)
             if (hdr, reg) in overrides:
                 full_val = overrides[(hdr, reg)]
                 print('  fisheries shock: OVERRIDE %s/%s -> %+.4f (corrupt at source, imputed)'
                       % (hdr, reg, full_val))
-            for year in range(base_year, end_year + 1):
+            for year in range(es_shock_base_year, es_shock_end_year + 1):
                 if ramp_to_end:
                     # clipped at 1.0 so a run extending past ramp_end_year holds the full value
                     # rather than extrapolating the ramp beyond the horizon it was defined on
-                    val = full_val * min((year - base_year) / n_years, 1.0)
+                    val = full_val * min((year - es_shock_base_year) / n_years, 1.0)
                 else:
                     val = series.get(year, const_val) if time_varying else const_val
-                for sector in FISH_SECTORS:
+                for sector in p.fisheries_shock_acts:
                     rows.append({'ACTS': sector, 'REG': reg, 'scenario': scen,
                                  'year': year, 'shock_pct': val, 'fisheries_header': hdr})
 
@@ -152,7 +154,7 @@ def fisheries_shock(p):
     # contaminated source value would otherwise be clamped to +-2 and look healthy -- the same
     # silent-failure shape the assertion exists to catch. After the clip the magnitude check
     # could never fire.
-    utilities.assert_shock_table_sound(out, scenarios, 'fisheries')
+    utilities.assert_shock_table_sound(out, es_shock_scenarios, 'fisheries')
     if len(out):
         out['shock_pct'] = out['shock_pct'].clip(-FISH_CAP, FISH_CAP)
     out.to_csv(p.fisheries_shock_output_path, index=False)

@@ -18,6 +18,7 @@ coastal_carbon,seagrass_vector_path,global_invest/coastal_carbon/014_001_WCMC013
 coastal_carbon,mangrove_soc_path,global_invest/coastal_carbon/soc.tha_tnc.mangroves.typology_m_30m_b0..100cm_2019_2020_go_epsg.4326_v1.2.tif
 coastal_carbon,salt_marsh_soc_path,global_invest/coastal_carbon/maxwell_2024_marsoc_0_100cm.tif
 coastal_carbon,precipitation_path,global_invest/coastal_carbon/mean_annual_precipitation_mm.tif
+fisheries,fisheries_shock_acts,"[""FSH""]"
 erosion,erosion_dem_path,global_invest/erosion/global_dem_reproj.tif
 erosion,erosion_lulc_path,global_invest/erosion/lulc_esa_2019_reproj_6p45km.tif
 erosion,erosion_biophysical_table_path,global_invest/erosion/expanded_biophysical_table_gura.csv

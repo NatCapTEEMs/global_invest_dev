@@ -11,8 +11,9 @@ def add_fisheries_tasks(p, parent=None):
     """Graft the (static) fisheries ES-shock task onto p.
 
     Caller sets only the shared es_shock_* config (see run_ngfs_pnas STEP 6). Marine, so it never reads
-    the SEALS maps and has no dynamic path: p.dynamic_es does not apply to it. cwon_shocks.har defaults
-    via base_data_dir / aggregation_label; the per-region FSH shock CSV lands in p.es_shock_dir.
+    the SEALS maps and has no dynamic path: p.dynamic_es does not apply to it. cwon_shocks.har resolves
+    via get_path under the gtappy release layout (aggregation_label row); the per-region shock CSV
+    lands in p.es_shock_dir.
     """
     p.fisheries_shock_task = p.add_task(fisheries_tasks.fisheries_shock, parent=parent)
     return p
