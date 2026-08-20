@@ -47,7 +47,7 @@ def build_gep_service_task_tree(p):
 
 
 # ---------------------------------------------------------------------------------------------
-# NGFS ES-shock wiring. Everything above builds the GEP task trees; this builds the ES-shock one.
+# ES-shock wiring (the consumer seam). Everything above builds the GEP task trees; this builds the ES-shock one.
 # Both live here so a module has a single wiring file (cf. add_pollination_tasks / add_erosion_tasks
 # / add_fisheries_tasks in their own <module>_initialization.py).
 # ---------------------------------------------------------------------------------------------

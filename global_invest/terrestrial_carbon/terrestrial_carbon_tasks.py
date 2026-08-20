@@ -1,9 +1,6 @@
 import os
-import sys
 import pandas as pd
 import hazelbean as hb
-import subprocess
-import csv
 import numpy as np
 
 
