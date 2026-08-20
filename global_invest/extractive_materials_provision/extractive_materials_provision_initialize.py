@@ -27,7 +27,7 @@ def build_gep_service_task_tree(p):
     
 def build_gep_task_tree(p):
     """
-    Build the default task tree forthe GEP application of commercial agriculture. In this case, it's very similar to the standard task tree
+    Build the results-oriented task tree (very similar to the standard tree
     but i've included it here for consistency with other models.
     """
     p.extractive_materials_provision_task = p.add_task(extractive_materials_provision_tasks.extractive_materials_provision)
