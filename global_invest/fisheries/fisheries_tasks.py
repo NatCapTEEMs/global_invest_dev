@@ -85,14 +85,14 @@ def fisheries_shock(p):
     fisheries_header_map = getattr(p, 'fisheries_header_map', FISH_HEADER_MAP)
     es_shock_climate_labels = getattr(p, 'es_shock_climate_labels', None) or {}
 
-    cwon_path = getattr(p, 'cwon_shocks_path', None) or p.get_path(
+    cwon_shocks_path = getattr(p, 'cwon_shocks_path', None) or p.get_path(
         'gtappy', 'cge_releases', 'gtapv7-aez-rd', 'data',
         p.aggregation_label, 'cwon_shocks.har', raise_error_if_fail=False)
-    if not os.path.exists(cwon_path):
-        print('  fisheries shock: cwon_shocks.har not found (%s) -- skipping' % cwon_path)
+    if not os.path.exists(cwon_shocks_path):
+        print('  fisheries shock: cwon_shocks.har not found (%s) -- skipping' % cwon_shocks_path)
         return
 
-    fi_data = ff.read_fisheries_headers(cwon_path, headers=fisheries_headers_to_read(fisheries_header_map))
+    fi_data = ff.read_fisheries_headers(cwon_shocks_path, headers=fisheries_headers_to_read(fisheries_header_map))
 
     # Read each year's own value from the FI annual series -- the honest default, no artificial freeze.
     # For the current cwon_shocks.har every year 2023..2050 already equals the 2050 value (the series is a
