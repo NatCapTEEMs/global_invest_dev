@@ -26,7 +26,8 @@ Requires:
 
 On the default 6.45 km analysis grid this is a ~25M-pixel global run, which is tractable locally --
 the multi-hour figures quoted for SDR refer to NATIVE-resolution global runs, roughly 56x larger.
-Set p.modality to 'sc' or 'msi' to run at native SEALS resolution on a cluster instead.
+Set the erosion_native_resolution row (or p.erosion_native_resolution) true to run at native
+SEALS resolution on a cluster instead.
 """
 import hazelbean as hb
 

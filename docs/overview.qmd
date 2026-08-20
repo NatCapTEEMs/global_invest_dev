@@ -169,6 +169,15 @@ format:
 - **Q2 (the author): Can you share a per-country output table from the submission run?** With it we verify by exact replication, the same bar extractive already passed.
 - Both asks may be one answer: the July thread says the full run lives at `/projects/standard/jajohns/shared/sediment_gep` on MSI — pointing us there, or copying it to the drive, settles both questions.
 
+## erosion: one science, two products, three methods
+
+- One biophysical chain feeds everything: InVEST's SDR model yields actual soil loss (USLE) and bare-soil loss (RKLS); their difference is the erosion the land cover prevents.
+- Two products come from it. The GEP valuation runs the chain once on observed land cover (prevention shares, on-farm and upstream, valued per country). The scenario shock reruns it per scenario and year on the SEALS maps.
+- The shock has two paths: static reads the frozen dependency table (the default today); dynamic recomputes the full chain per map — expensive, and the reason the SDR steps cache themselves.
+- Three shock methods are computed side by side and reported together: damage (thresholded area share), service (threshold-free, magnitude-weighted per crop), and service-threshold (service restricted to a fixed severe-pixel set) — the last is the default that becomes the GTAP shock, and one configuration row selects which.
+- Two resolutions: a 6.45 km analysis grid that runs on a laptop, or native 300 m on a cluster — one configuration row switches them.
+- The method's constants (the SES-11 thresholds) are named in code and await the author's blessing; every number from this service is provisional until then.
+
 ## landslide_mitigation: a reference to verify against
 
 - [State: folded from the v0.2.0 release, 50.5 GiB staged. The first run completed the input stage (all twelve global reprojections and the event panels); the compute-heavy remainder resumes on the cluster, where this run belongs. The only machine-readable output predates the method revision.]{.state}

@@ -98,7 +98,7 @@ def publish_inputs(p):
 
 def erosion_sdr(p):
     """DYNAMIC step 1: per (scenario, anchor year), resample the SEALS map to the erosion analysis
-    grid (p.modality: local -> 6.45 km reference grid, sc/msi -> native SEALS resolution) and run
+    grid (erosion_native_resolution row: false -> 6.45 km reference grid, true -> native SEALS 300 m) and run
     InVEST SDR. Outputs per map, in p.cur_dir/<scn>_<yr>/: usle_<scn>_<yr>.tif (actual erosion) and
     rkls_<scn>_<yr>.tif (potential/bare soil); avoided = rkls - usle is formed downstream.
 
@@ -135,7 +135,7 @@ def erosion_sdr(p):
                 p.scenario_lulc_paths[scn] = yr_map
 
     # analysis grid: downsample to a 6.45 km reference for local; run at native SEALS res on the cluster
-    native = getattr(p, 'modality', 'local') in ('sc', 'msi')
+    native = bool(p.erosion_native_resolution)   # false -> the 6.45 km analysis grid; true -> native SEALS 300 m
     grid_ref = None if native else p.get_path(p.erosion_analysis_grid_path)
     dem         = p.get_path(p.erosion_dem_path)
     erosivity   = p.get_path(p.erosion_erosivity_path)

@@ -48,7 +48,7 @@ def add_erosion_tasks(p, parent=None):
     shock the same two ways as carbon/pollination, as ABSOLUTE differences of the productivity-share
     level (the level is already a fraction of output, so an absolute change IS the productivity %;
     dividing would give a change-of-a-fraction): contemporaneous (scn_Y - base_Y) and fixed-base
-    (scn_Y - base_0). Resolution follows p.modality (local -> 6.45 km, sc/msi -> native 300 m).
+    (scn_Y - base_0). Resolution follows the erosion_native_resolution row (false -> 6.45 km, true -> native 300 m).
     Dynamic build tracked in #26.
 
     Caller sets only the shared es_shock_* config (see run_ngfs_pnas STEP 6). Everything erosion-specific
