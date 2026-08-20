@@ -11,7 +11,7 @@ genuinely dynamic future source (DBEM/Fish-MIP, #45) needs no read change.
 """
 
 
-def read_fisheries_headers(cwon_path, headers=('FI26', 'FI45', 'FI85')):
+def read_fisheries_headers(cwon_path, headers):
     """Per-region ANNUAL fisheries shock (%) per RCP header -> {header: {reg: {year_int: value}}}."""
     from gtappy.harpy.har_file import HarFileObj
     h = HarFileObj(filename=cwon_path)
