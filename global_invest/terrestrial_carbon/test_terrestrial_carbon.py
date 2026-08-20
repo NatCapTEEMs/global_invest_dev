@@ -62,9 +62,9 @@ def test_stack_groups_by_two_rasters_with_mean_and_count(tmp_path):
     assert df.loc[(20, 101), 'carbon_density_mean'] == 9.0     # mean of [8, 10]
 
 
-# --- task_compute_terrestrial_carbon_shock_static (linear ramp, differencing, loud skip) ----------
+# --- terrestrial_carbon_shock_static (linear ramp, differencing, loud skip) ----------
 
-# --- task_compute_terrestrial_carbon_shock (dynamic, synthetic scene) -----------------------------
+# --- terrestrial_carbon_shock (dynamic, synthetic scene) -----------------------------
 #
 # 4x4 raster, global extent: columns are 90 deg wide, rows 45 deg tall. Zone A = column 0
 # (box inset to -175..-95 so all_touched can't bleed into column 1), zone B = column 2; columns 1/3
@@ -112,21 +112,22 @@ def _shock_scene(tmp_path):
                      crs='EPSG:4326').to_file(str(regions), driver='GPKG')
 
     return SimpleNamespace(
-        run_this=True, cur_dir=str(tmp_path),
+        run_this=True, cur_dir=str(tmp_path), input_dir=str(tmp_path / 'input'),
+        get_path=lambda *a, **k: '/resolved/' + '/'.join(a),
         es_shock_base_year=2020, es_shock_years=[2030, 2050],
         es_shock_base_scenario='baseline', es_shock_scenarios=['scn_a'],
         scenario_lulc_paths={'baseline': {2030: baseline_2030, 2050: baseline_2050},
                              'scn_a': {2030: below_2030, 2050: below_2050}},
         es_base_year_lulc_path=base_2020,
         region_boundary_path=str(regions),
-        terrestrial_carbon_zones_path=str(cz),
+        terrestrial_quantity_input_path=str(cz),
         terrestrial_carbon_density_lookup_table_path=str(tmp_path / 'lut.csv'),
         terrestrial_carbon_shock_output_path=str(tmp_path / 'terrestrial_carbon_interpolated.csv'))
 
 
 def test_dynamic_shock_per_zone_interpolation_and_both_measures(tmp_path):
     p = _shock_scene(tmp_path)
-    tct.task_compute_terrestrial_carbon_shock(p)
+    tct.terrestrial_carbon_shock(p)
     df = pd.read_csv(p.terrestrial_carbon_shock_output_path)
 
     assert set(df['scenario'].unique()) == {'scn_a'}
@@ -181,7 +182,7 @@ def test_dynamic_shock_esa_base_map_raises_not_silent_zero(tmp_path):
     p.es_base_year_lulc_path = str(esa)                            # the real-world wrong-wiring trap
 
     with pytest.raises(ValueError, match='matched ZERO'):
-        tct.task_compute_terrestrial_carbon_shock(p)
+        tct.terrestrial_carbon_shock(p)
 
 
 def _static_dep_table(tmp_path):
@@ -200,13 +201,15 @@ def _static_dep_table(tmp_path):
 def test_static_shock_ramps_and_differences(tmp_path):
     dep = _static_dep_table(tmp_path)
     out = tmp_path / 'terrestrial_carbon_interpolated.csv'
-    p = SimpleNamespace(run_this=True, es_shock_base_year=2020, es_shock_end_year=2050,
+    p = SimpleNamespace(run_this=True, input_dir=str(tmp_path / 'input'),
+                        get_path=lambda *a, **k: '/resolved/' + '/'.join(a),
+                        es_shock_base_year=2020, es_shock_end_year=2050,
                         es_shock_base_scenario='baseline_ignore_dependencies',
                         es_shock_scenarios=['scn_a'],
                         terrestrial_carbon_dependency_path=str(dep),
                         terrestrial_carbon_shock_output_path=str(out))
 
-    tct.task_compute_terrestrial_carbon_shock_static(p)
+    tct.terrestrial_carbon_shock_static(p)
 
     df = pd.read_csv(out)
     aez1 = df[df['ENDW'] == 'AEZ1'].set_index('year')['shock_pct']
@@ -230,7 +233,9 @@ def test_static_shock_base_resolves_across_spellings(tmp_path):
         'percentage_change': [0.10, 0.20, 0.15, 0.20],
     }).to_csv(dep, index=False)
     out = tmp_path / 'terrestrial_carbon_interpolated.csv'
-    p = SimpleNamespace(run_this=True, es_shock_base_year=2020, es_shock_end_year=2050,
+    p = SimpleNamespace(run_this=True, input_dir=str(tmp_path / 'input'),
+                        get_path=lambda *a, **k: '/resolved/' + '/'.join(a),
+                        es_shock_base_year=2020, es_shock_end_year=2050,
                         es_shock_base_scenario='baseline_ignore_dependencies',
                         es_shock_scenarios=['scn_a'],
                         terrestrial_carbon_scenario_map={
@@ -239,16 +244,25 @@ def test_static_shock_base_resolves_across_spellings(tmp_path):
                         terrestrial_carbon_dependency_path=str(dep),
                         terrestrial_carbon_shock_output_path=str(out))
 
-    tct.task_compute_terrestrial_carbon_shock_static(p)
+    tct.terrestrial_carbon_shock_static(p)
 
     df = pd.read_csv(out)
     assert abs(df[df['ENDW'] == 'AEZ1'].set_index('year')['shock_pct'].loc[2050] - 5.0) < 1e-9
 
-    # Without the map the base cannot resolve, and that is FATAL, not an empty output.
+    # Without any consumer map the two nature-off spellings are mutual aliases BY DEFAULT
+    # (the tables' own vocabulary, normalized at the point of reading) -- same output.
     p2 = SimpleNamespace(**{**vars(p), 'terrestrial_carbon_scenario_map': {},
                             'terrestrial_carbon_shock_output_path': str(tmp_path / 'out2.csv')})
+    tct.terrestrial_carbon_shock_static(p2)
+    df2 = pd.read_csv(tmp_path / 'out2.csv')
+    assert abs(df2[df2['ENDW'] == 'AEZ1'].set_index('year')['shock_pct'].loc[2050] - 5.0) < 1e-9
+
+    # A base under a name that is in the table under NEITHER spelling stays FATAL.
+    p3 = SimpleNamespace(**{**vars(p), 'terrestrial_carbon_scenario_map': {},
+                            'es_shock_base_scenario': 'no_such_base',
+                            'terrestrial_carbon_shock_output_path': str(tmp_path / 'out3.csv')})
     with pytest.raises(ValueError, match='BASE'):
-        tct.task_compute_terrestrial_carbon_shock_static(p2)
+        tct.terrestrial_carbon_shock_static(p3)
 
 
 def test_static_shock_missing_scenario_is_fatal_at_the_write(tmp_path):
@@ -257,11 +271,13 @@ def test_static_shock_missing_scenario_is_fatal_at_the_write(tmp_path):
     # write now REFUSES, naming the scenario. The loud skip is the diagnostic; the raise is the stop.
     dep = _static_dep_table(tmp_path)
     out = tmp_path / 'terrestrial_carbon_interpolated.csv'
-    p = SimpleNamespace(run_this=True, es_shock_base_year=2020, es_shock_end_year=2050,
+    p = SimpleNamespace(run_this=True, input_dir=str(tmp_path / 'input'),
+                        get_path=lambda *a, **k: '/resolved/' + '/'.join(a),
+                        es_shock_base_year=2020, es_shock_end_year=2050,
                         es_shock_base_scenario='baseline_ignore_dependencies',
                         es_shock_scenarios=['scn_a', 'scn_b'],   # net_zero absent from table
                         terrestrial_carbon_dependency_path=str(dep),
                         terrestrial_carbon_shock_output_path=str(out))
 
     with pytest.raises(ValueError, match='scn_b'):
-        tct.task_compute_terrestrial_carbon_shock_static(p)
+        tct.terrestrial_carbon_shock_static(p)

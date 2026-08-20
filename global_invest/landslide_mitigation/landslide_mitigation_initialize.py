@@ -12,6 +12,8 @@ replication waits on a machine-readable v0.2.0 output from the author. Numbers p
 """
 import hazelbean as hb
 
+from global_invest import utilities
+
 from global_invest.landslide_mitigation import landslide_mitigation_tasks
 
 
@@ -20,25 +22,14 @@ def initialize_paths(p):
     staged from the author's TEEMs-drive migration), plus the source run script's full configuration
     block. The first-run crashes came from porting that block one attribute at a time; it lives here
     whole now, source lines 84-114."""
-    p.landslide_input_data_dir = p.get_path('landslide_mitigation', 'input_data_raw')
-    p.shared_base_data_dir = p.base_data_dir
-
-    p.force_run = False
+    # Configuration comes from the two shared CSVs as a defaults layer: es_config carries the
+    # raw-data reference (gep_quantity_input_path -> landslide_mitigation/input_data_raw,
+    # staged from the author's TEEMs-drive migration); es_parameters carries the run knobs and
+    # method constants that used to live here as literals.
+    utilities.hydrate_es_config(p, 'landslide_mitigation')
+    utilities.hydrate_es_parameters(p, 'landslide_mitigation')
+    p.landslide_input_data_dir = p.gep_quantity_input_path   # the module's descriptive alias
     p.L = hb.get_logger('landslide_mitigation_workflow')
-
-    p.processing_resolution = 2000
-    p.run_in_parallel = True
-    p.num_workers = 8
-
-    p.data_processing_range = range(2007, 2020)
-    p.modeling_range = range(2007, 2019)
-    p.prediction_years = [2019]
-    p.max_location_accuracy_m = 1000
-    p.control_ratio = 25
-    p.c_root_scenarios = {
-        'observed': 'observed',
-        'full_impacts': 0,
-    }
     return p
 
 
@@ -50,17 +41,17 @@ def build_gep_service_task_tree(p):
     # ---------------------------------------------------------------- #
     p.input_data_task = p.add_task(landslide_mitigation_tasks.input_data, creates_dir=True)
     p.build_ease_grid_reference_task = p.add_task(landslide_mitigation_tasks.build_ease_grid_reference, creates_dir=False)
-    p.reproject_dem_task = p.add_task(landslide_mitigation_tasks.reproject_dem, creates_dir=False)
-    p.reproject_gaez_task = p.add_task(landslide_mitigation_tasks.reproject_gaez, creates_dir=False)
-    p.reproject_esacci_forest_share_task = p.add_task(landslide_mitigation_tasks.reproject_esacci_forest_share, creates_dir=False)
-    p.reproject_uglc_events_task = p.add_task(landslide_mitigation_tasks.reproject_uglc_events, creates_dir=False)
-    p.reproject_landscan_task = p.add_task(landslide_mitigation_tasks.reproject_landscan_population, creates_dir=False)
-    p.reproject_soilgrids_properties_task = p.add_task(landslide_mitigation_tasks.reproject_soilgrids_properties, creates_dir=False)
-    p.reproject_worldclim_bio12_task = p.add_task(landslide_mitigation_tasks.reproject_worldclim_bio12, creates_dir=False)
-    p.reproject_hihydrosoil_ksat_task = p.add_task(landslide_mitigation_tasks.reproject_hihydrosoil_ksat, creates_dir=False)
-    p.reproject_soil_depth_task = p.add_task(landslide_mitigation_tasks.reproject_soil_depth, creates_dir=False)
-    p.reproject_grip_roads_task = p.add_task(landslide_mitigation_tasks.reproject_grip_roads, creates_dir=False)
-    p.reproject_rain_daily_task = p.add_task(landslide_mitigation_tasks.reproject_rain_daily, creates_dir=False)
+    p.dem_task = p.add_task(landslide_mitigation_tasks.reproject_dem, creates_dir=False)
+    p.gaez_task = p.add_task(landslide_mitigation_tasks.reproject_gaez, creates_dir=False)
+    p.esacci_forest_share_task = p.add_task(landslide_mitigation_tasks.reproject_esacci_forest_share, creates_dir=False)
+    p.uglc_events_task = p.add_task(landslide_mitigation_tasks.reproject_uglc_events, creates_dir=False)
+    p.landscan_task = p.add_task(landslide_mitigation_tasks.reproject_landscan_population, creates_dir=False)
+    p.soilgrids_properties_task = p.add_task(landslide_mitigation_tasks.reproject_soilgrids_properties, creates_dir=False)
+    p.worldclim_bio12_task = p.add_task(landslide_mitigation_tasks.reproject_worldclim_bio12, creates_dir=False)
+    p.hihydrosoil_ksat_task = p.add_task(landslide_mitigation_tasks.reproject_hihydrosoil_ksat, creates_dir=False)
+    p.soil_depth_task = p.add_task(landslide_mitigation_tasks.reproject_soil_depth, creates_dir=False)
+    p.grip_roads_task = p.add_task(landslide_mitigation_tasks.reproject_grip_roads, creates_dir=False)
+    p.rain_daily_task = p.add_task(landslide_mitigation_tasks.reproject_rain_daily, creates_dir=False)
     p.validate_input_rasters_task = p.add_task(landslide_mitigation_tasks.validate_input_rasters, creates_dir=False)
 
     # ---------------------------------------------------------------- #
@@ -69,12 +60,12 @@ def build_gep_service_task_tree(p):
     p.preprocessing_task = p.add_task(landslide_mitigation_tasks.preprocessing, creates_dir=True)
     p.build_uglc_annual_panels_task = p.add_task(landslide_mitigation_tasks.build_uglc_annual_panels,creates_dir=False)
     p.fill_pits_task = p.add_task(landslide_mitigation_tasks.fill_pits, creates_dir=False)
-    p.compute_flow_dir_d8_task = p.add_task(landslide_mitigation_tasks.compute_flow_dir_d8, creates_dir=False)
-    p.compute_upslope_area_task = p.add_task(landslide_mitigation_tasks.compute_upslope_area, creates_dir=False)
-    p.compute_slope_task = p.add_task(landslide_mitigation_tasks.compute_slope, creates_dir=False)
-    p.compute_soil_hydraulic_properties_task = p.add_task(landslide_mitigation_tasks.compute_soil_hydraulic_properties, creates_dir=False)
-    p.compute_static_q_task = p.add_task(landslide_mitigation_tasks.compute_static_q, creates_dir=False)
-    p.compute_si_scenarios_task = p.add_task(landslide_mitigation_tasks.compute_si_scenarios, creates_dir=False)
+    p.flow_dir_d8_task = p.add_task(landslide_mitigation_tasks.compute_flow_dir_d8, creates_dir=False)
+    p.upslope_area_task = p.add_task(landslide_mitigation_tasks.compute_upslope_area, creates_dir=False)
+    p.slope_task = p.add_task(landslide_mitigation_tasks.compute_slope, creates_dir=False)
+    p.soil_hydraulic_properties_task = p.add_task(landslide_mitigation_tasks.compute_soil_hydraulic_properties, creates_dir=False)
+    p.static_q_task = p.add_task(landslide_mitigation_tasks.compute_static_q, creates_dir=False)
+    p.si_scenarios_task = p.add_task(landslide_mitigation_tasks.compute_si_scenarios, creates_dir=False)
     p.build_estimation_table_task = p.add_task(landslide_mitigation_tasks.build_estimation_table, creates_dir=False)
 
     # ---------------------------------------------------------------- #
@@ -89,20 +80,20 @@ def build_gep_service_task_tree(p):
     # VALUATION / PREDICTION (landslide_mitigation_tasks.py)
     # ---------------------------------------------------------------- #
     # A. Tile-level
-    p.generate_tile_zones_task = p.add_iterator(landslide_mitigation_tasks.tile_zones, run_in_parallel=p.run_in_parallel)
-    p.predict_landslides_scenarios_task = p.add_task(landslide_mitigation_tasks.predict_landslides_scenarios, parent=p.generate_tile_zones_task)
-    p.predict_mortality_scenarios_task = p.add_task(landslide_mitigation_tasks.predict_mortality_scenarios, parent=p.generate_tile_zones_task)
+    p.tile_zones_task = p.add_iterator(landslide_mitigation_tasks.tile_zones, run_in_parallel=p.run_in_parallel)
+    p.predict_landslides_scenarios_task = p.add_task(landslide_mitigation_tasks.predict_landslides_scenarios, parent=p.tile_zones_task)
+    p.predict_mortality_scenarios_task = p.add_task(landslide_mitigation_tasks.predict_mortality_scenarios, parent=p.tile_zones_task)
     p.stitch_tiles_task = p.add_task(landslide_mitigation_tasks.stitch_tiles, creates_dir=True)
     # B. Global-level
     p.valuation_task = p.add_task(landslide_mitigation_tasks.valuation, creates_dir=True)
     p.build_vsl_raster_task = p.add_task(landslide_mitigation_tasks.build_vsl_raster, creates_dir=False)
-    p.compute_avoided_mortality_task = p.add_task(landslide_mitigation_tasks.compute_avoided_mortality, creates_dir=False)
+    p.avoided_mortality_task = p.add_task(landslide_mitigation_tasks.compute_avoided_mortality, creates_dir=False)
 
     # ---------------------------------------------------------------- #
     # Tables & Figures (landslide_mitigation_tasks.py)
     # ---------------------------------------------------------------- #
     p.tables_figures_task = p.add_task(landslide_mitigation_tasks.tables_figures, creates_dir=True)
-    p.compute_zonal_statistics_task = p.add_task(landslide_mitigation_tasks.compute_zonal_statistics, creates_dir=False)
+    p.zonal_statistics_task = p.add_task(landslide_mitigation_tasks.compute_zonal_statistics, creates_dir=False)
     p.export_regression_tables_task = p.add_task(landslide_mitigation_tasks.export_regression_tables, creates_dir=False)
     p.plot_global_rasters_png_task = p.add_task(landslide_mitigation_tasks.plot_global_rasters_png, creates_dir=False)
     p.plot_country_choropleth_maps_task = p.add_task(landslide_mitigation_tasks.plot_country_choropleth_maps, creates_dir=False)

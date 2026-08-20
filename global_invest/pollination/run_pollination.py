@@ -5,23 +5,34 @@ resolved in pollination_initialize.initialize_paths (one source of truth); base_
 resolved by ProjectFlow (default / machine.env), never hardcoded here. The ES-shock runner is
 run_pollination_shock.py -- a separate tree, a separate thin runner, no mode switch.
 """
-import os
 import hazelbean as hb
 
 from global_invest.pollination import pollination_initialize
 
-if __name__ == '__main__':
-
-    p = hb.ProjectFlow()
-    p.project_name = 'gep_pollination'
-    p.project_dir = os.path.join(os.path.expanduser('~'), 'Files', 'global_invest', 'projects', p.project_name)
-    p.set_project_dir(p.project_dir)
-
+def build_task_tree(p):
+    # This project's task tree: delegates unchanged to the shared library builder.
     pollination_initialize.build_gep_service_task_tree(p)
+
+
+def run_project(p):
+
+    build_task_tree(p)
 
     p.results = {}
     pollination_initialize.initialize_paths(p)
 
-    hb.log('Created ProjectFlow object at ' + p.project_dir + '\n    from script ' + p.calling_script
-           + '\n    with base_data set at ' + p.base_data_dir)
+    hb.log('Created ProjectFlow object at ' + p.project_dir + '\n    from script ' + p.calling_script)
     p.execute()
+
+    return p
+
+
+if __name__ == '__main__':
+
+    # Create ProjectFlow object
+    p = hb.ProjectFlow(project_name='gep_pollination', run_mode='check')
+
+    # Run the project
+    run_project(p)
+
+    result = 'Done!'

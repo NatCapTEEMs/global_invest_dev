@@ -8,8 +8,10 @@ def initialize_paths(p):
     """One source of truth for the inputs (shared country block + service data, get_path references)."""
     utilities.initialize_country_paths(p, simplified='30sec')
 
-    # Service data staged into base_data from the drive's submissions folders (see base_data CHANGELOG).
-    p.cwon_input_ref_path = p.get_path('global_invest', 'coastal_protection', 'data_mangroves_2019.xlsx')
+    # The CWoN mangroves workbook (quantity) comes from es_config.csv as a defaults layer; the
+    # coral-reef workbook and the deflator stay here as science/auxiliary inputs (coral is really
+    # a second sheet subgroup -- its own row if the config ever splits by subgroup).
+    utilities.hydrate_es_config(p, 'coastal_protection')
     p.coral_reef_ref_path = p.get_path('global_invest', 'coastal_protection', 'coral_reefs_annual_expected_benefit_nfamara.xlsx')
     # The drive's submissions folder spells this 'gdp_inflation_delator' (sic); staged locally under
     # the corrected name. Filename case is exact so it resolves on case-sensitive filesystems too.

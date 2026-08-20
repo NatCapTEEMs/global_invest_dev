@@ -14,6 +14,26 @@ from global_invest.fisheries import fisheries_functions as ff
 
 # NGFS scenario -> fisheries RCP header. RCP2.6=FI26 (below_2c/net_zero/low_demand),
 # RCP4.5=FI45 (ndcs/delayed_transition), RCP7.0=FI85 (current_policies/fragmented_world/stress_test).
+# RCP -> FI header. The headers ARE RCP-named (FI26=RCP2.6, FI45=RCP4.5, FI85=RCP8.5; FI85 also
+# serves RCP7.0 as the closest available -- provenance #16). When the scenarios CSV carries a
+# climate_label column (hydrate_es_scenarios publishes p.es_shock_climate_labels), the header is
+# derived from the scenario's RCP and scenario NAMES need no translation at all.
+RCP_FI_MAP = {'rcp26': 'FI26', 'rcp45': 'FI45', 'rcp60': 'FI85', 'rcp70': 'FI85', 'rcp85': 'FI85'}
+
+def resolve_fisheries_header(scen, header_map, climate_labels):
+    """FI header for a scenario: explicit map (consumer) -> the scenario's RCP (scenarios CSV)
+    -> identity (FI-native labels pass straight through)."""
+    return header_map.get(scen) or RCP_FI_MAP.get(climate_labels.get(scen), scen)
+
+
+def fisheries_headers_to_read(header_map):
+    """The HAR headers to read: the union of the consumer map's targets and every RCP-derivable
+    header. Must NOT depend on header_map alone -- with the legacy default deleted, an empty map
+    would read no headers and every scenario would be dropped regardless of what the RCP
+    derivation resolves (found by the ngfs session: 9/9 scenarios -> 0/9 in simulation)."""
+    return tuple(sorted(set(header_map.values()) | set(RCP_FI_MAP.values())))
+
+
 FISH_HEADER_MAP = {
     'below_2c': 'FI26', 'net_zero': 'FI26', 'low_demand': 'FI26',
     'ndcs': 'FI45', 'delayed_transition': 'FI45',
@@ -42,7 +62,7 @@ FISH_VALUE_OVERRIDES = {('FI26', 'nor'): 0.4767}
 FISH_SECTORS = ('FSH',)
 
 
-def task_compute_fisheries_shock(p):
+def fisheries_shock(p):
     """Static marine-fisheries shock -> FSH, constant across years, mapped by RCP header.
 
     Caller sets on p before calling: es_shock_scenarios, es_shock_base_year,
@@ -61,6 +81,7 @@ def task_compute_fisheries_shock(p):
     end_year = int(p.es_shock_end_year)
     scenarios = list(p.es_shock_scenarios)
     header_map = getattr(p, 'fisheries_header_map', FISH_HEADER_MAP)
+    climate_labels = getattr(p, 'es_shock_climate_labels', None) or {}
 
     cwon_path = getattr(p, 'cwon_shocks_path', None) or os.path.join(
         p.base_data_dir, 'gtappy', 'cge_releases', 'gtapv7-aez-rd', 'data',
@@ -69,7 +90,7 @@ def task_compute_fisheries_shock(p):
         print('  fisheries shock: cwon_shocks.har not found (%s) -- skipping' % cwon_path)
         return
 
-    fi_data = ff.read_fisheries_headers(cwon_path, headers=tuple(sorted(set(header_map.values()))))
+    fi_data = ff.read_fisheries_headers(cwon_path, headers=fisheries_headers_to_read(header_map))
 
     # Read each year's own value from the FI annual series -- the honest default, no artificial freeze.
     # For the current cwon_shocks.har every year 2023..2050 already equals the 2050 value (the series is a
@@ -104,8 +125,8 @@ def task_compute_fisheries_shock(p):
 
     rows = []
     for scen in scenarios:
-        hdr = header_map.get(scen)
-        if hdr is None or hdr not in fi_data:
+        hdr = resolve_fisheries_header(scen, header_map, climate_labels)
+        if hdr not in fi_data:
             continue
         overrides = getattr(p, 'fisheries_value_overrides', FISH_VALUE_OVERRIDES)
         for reg, series in fi_data[hdr].items():

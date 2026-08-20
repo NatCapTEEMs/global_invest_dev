@@ -13,12 +13,12 @@ import hazelbean as hb
 from global_invest import utilities
 
 
-def task_compute_pollination_shock(p):
+def pollination_shock(p):
     """Per-scenario 300 m LULC at each SEALS anchor year -> V_F/OSD shock, piecewise-interp to annual.
 
     Caller sets on p: es_shock_years (SEALS anchor years, from seals_years),
     es_shock_base_year, es_shock_scenarios, es_lulc_path_template
-    ({scenario}/{year}) or scenario_lulc_paths, pollination_base_year_lulc_path (or the shared base_year_lulc_path),
+    ({scenario}/{year}) or scenario_lulc_paths, pollination_base_year_lulc_path (or the shared es_base_year_lulc_path),
     pollination_shock_output_path. Optional: es_shock_base_scenario, pollination_shock_acts,
     region_boundary_path.
     """
@@ -121,7 +121,7 @@ def task_compute_pollination_shock(p):
     return True
 
 
-def task_compute_pollination_shock_static(p):
+def pollination_shock_static(p):
     """Static per-scenario pollination shock -> V_F/OSD, linear ramp 0->end_year, from the frozen table.
 
     The fallback add_pollination_tasks selects when <2 SEALS map years exist. READS
@@ -203,13 +203,13 @@ def task_compute_pollination_shock_static(p):
 # upstream, so lambda = 1 and no price join happens here: quantity IS value.
 # =============================================================================
 
-def task_summarize_pollination_value_by_region(p):
+def pollination_value_by_region(p):
     """GEP quantity stage: per-r264-region sum of the pollination value raster (USD per cell)."""
     p.pollination_value_by_region_path = os.path.join(p.cur_dir, "pollination_value_by_region.csv")
     if not p.run_this:
         return
     utilities.summarize_raster_by_region(
-        value_raster_path=p.pollination_value_raster_path,
+        value_raster_path=p.gep_quantity_input_path,
         region_boundary_path=p.gdf_countries_vector_path,
         out_path=p.pollination_value_by_region_path,
         year=p.base_year, id_column='ee_r264_id')

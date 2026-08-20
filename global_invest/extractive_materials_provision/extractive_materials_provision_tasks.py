@@ -52,9 +52,9 @@ def gep_calculation(p):
 
 
         # 1. Read and process data
-        df_mineral_values = extractive_materials_provision_functions.read_mineral_values(p.wb_mineral_input_ref_path)
+        df_mineral_values = extractive_materials_provision_functions.read_mineral_values(p.gep_attribution_input_path)
 
-        df_gdp_values = extractive_materials_provision_functions.read_GDP_values(p.wb_GDP_ref_path)
+        df_gdp_values = extractive_materials_provision_functions.read_GDP_values(p.gep_quantity_input_path)
 
 
         df_mineral_gdp_values = df_mineral_values.merge(df_gdp_values, on=['Country Code', 'year'], how='left')

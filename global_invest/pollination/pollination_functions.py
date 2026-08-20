@@ -37,7 +37,7 @@ def configure_crop_benefits(p, target_year):
     which removes the separate country-raster dependency. Sufficiency outputs go to the task dir.
     """
     cfg = load_config(validate=False)
-    cb = os.path.join(p.base_data_dir, 'crop_benefits')
+    cb = p.get_path('crop_benefits')
     # poll_value_global_<year>usd.tif is a PRECOMPUTED baseline input, not built here. It is the
     # output of the crop_benefits raster pipeline, run once over Monfreda yields x CropGrids area x
     # FAO producer prices x pollination-dependence ratios:
@@ -89,7 +89,7 @@ def _zonal_pct_change(diff_path, denominator_path, correspondence_gpkg, region_i
     (sum of the baseline pollination-value raster x pixel area over the zone, in target-year USD),
     so it is already computed here and was previously discarded. GEP wants the level, GTAP wants
     the ratio; returning both means one task serves both rather than two chains recomputing the
-    same rasters. See task_compute_pollination_shock, which writes it as `value_usd_base`.
+    same rasters. See pollination_shock, which writes it as `value_usd_base`.
     """
     gdf = gpd.read_file(correspondence_gpkg, engine='pyogrio')
     if gdf.crs is None or gdf.crs.to_epsg() != 4326:

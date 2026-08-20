@@ -2,27 +2,36 @@
 combine -> gep_calculation -> results report.
 
 Thin runner: it builds ONE tree and executes it. All input paths are get_path REFERENCE paths
-resolved in coastal_carbon_initialize.initialize_paths (one source of truth for every runner);
+published by each task itself (publish_inputs in the tasks module);
 base_data_dir is resolved by ProjectFlow (its default, overridable per machine via
 ~/.config/hazelbean/machine.env), never hardcoded here.
 """
-import os
 import hazelbean as hb
 
 from global_invest.coastal_carbon import coastal_carbon_initialize
 
-if __name__ == '__main__':
-
-    p = hb.ProjectFlow()
-    p.project_name = 'gep_coastal_carbon'
-    p.project_dir = os.path.join(os.path.expanduser('~'), 'Files', 'global_invest', 'projects', p.project_name)
-    p.set_project_dir(p.project_dir)  # Sets p.base_data_dir (default / machine.env), p.input_dir, p.intermediate_dir, p.output_dir.
-
+def build_task_tree(p):
+    # This project's task tree: delegates unchanged to the shared library builder.
     coastal_carbon_initialize.build_gep_service_task_tree(p, include_seagrass=True)
 
-    p.results = {}
-    coastal_carbon_initialize.initialize_paths(p)
 
-    hb.log('Created ProjectFlow object at ' + p.project_dir + '\n    from script ' + p.calling_script
-           + '\n    with base_data set at ' + p.base_data_dir)
+def run_project(p):
+
+    build_task_tree(p)
+
+
+    hb.log('Created ProjectFlow object at ' + p.project_dir + '\n    from script ' + p.calling_script)
     p.execute()
+
+    return p
+
+
+if __name__ == '__main__':
+
+    # Create ProjectFlow object
+    p = hb.ProjectFlow(project_name='gep_coastal_carbon', run_mode='check')
+
+    # Run the project
+    run_project(p)
+
+    result = 'Done!'

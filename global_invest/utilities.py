@@ -20,16 +20,27 @@ reached terrestrial_carbon + coastal_carbon and not the other five GEP services.
 def initialize_country_paths(p, simplified='300sec'):
     """Shared country-boundary references every GEP service needs: the r264 correspondence
     (csv + gpkg + simplified gpkg, all as get_path reference paths) and the loaded df_countries.
-    Each service's initialize_paths calls this and then adds only its service-specific inputs
-    (this block used to be pasted into every module). A service with a different aggregation
-    surface (e.g. coastal's marine r566) overrides the aliases after calling.
+    Called from each service's publish_inputs (or its initialize_paths, until its per-ES pass
+    step); the service then adds only its service-specific inputs
+    (this block used to be pasted into every module).
     """
     import pandas as pd
+    import hazelbean as hb
 
-    p.df_countries_csv_path = p.get_path('cartographic', 'ee', 'ee_r264_correspondence.csv')
-    p.gdf_countries_vector_path = p.get_path('cartographic', 'ee', 'ee_r264_correspondence.gpkg')
-    p.gdf_countries_vector_simplified_path = p.get_path('cartographic', 'ee', f'ee_r264_simplified{simplified}.gpkg')
-
+    if getattr(p, 'df_countries', None) is not None:
+        return p          # country world already published (or caller-set): touch nothing
+    # Two different jobs, two different homes. WHICH surface a service aggregates on (marine
+    # r566, land r264) legitimately varies per service, so that lives in the es_config cell
+    # gep_regions_input_path, read by the aggregating tasks. THIS function serves the other job,
+    # shared by every service identically: at the end, collapse whatever was aggregated into ONE
+    # ROW PER COUNTRY -- and that collapse always goes through the r264 correspondence, the
+    # table that stops split countries (China x6, India x6) being counted once per sub-region.
+    # No run ever legitimately wants a different table for that step, so it is code, not a cell.
+    ref = p.get_path('cartographic', 'ee', 'ee_r264_correspondence.gpkg')
+    p.gdf_countries_vector_path = ref
+    p.df_countries_csv_path = ref.replace('.gpkg', '.csv')
+    simplified_ref = ref.replace('_correspondence.gpkg', f'_simplified{simplified}.gpkg')
+    p.gdf_countries_vector_simplified_path = simplified_ref if hb.path_exists(simplified_ref) else ref
     p.df_countries = pd.read_csv(p.df_countries_csv_path)
     # The GDFs stay as path strings; hb.read_vector converts on demand.
     p.gdf_countries = p.gdf_countries_vector_path
@@ -140,15 +151,26 @@ def render_service_results(p):
             hb.path_remove(sidecar)
 
 
+# The frozen dependency tables spell the SAME nature-off baseline two ways (carbon:
+# baseline_ignore_dependencies; pollination/erosion: baseline_ignore_damages). That is
+# table-internal vocabulary, not one project's naming, so the equivalence is normalized here at
+# the point of reading -- the library's own stated principle -- instead of re-encoded in every
+# consumer's scenario_map. An explicit scenario_map entry still wins.
+NATURE_OFF_SPELLINGS = ('baseline_ignore_dependencies', 'baseline_ignore_damages')
+
+
 def resolve_raw_scenario(scenario_labels, scenario_map, our_scn, service, log=print):
     """Map our scenario name to the label its dependency table uses; shared by every ES static shock task.
 
-    scenario_map defaults to identity (our_scn -> [our_scn]); the first candidate present in
-    scenario_labels wins. If none is present, warn loudly -- naming the labels that ARE present -- and
-    return None so the caller skips the scenario rather than emitting a silent zero into GTAP. log is the
-    caller's logger (hb.log or print).
+    scenario_map defaults to identity (our_scn -> [our_scn]) -- except that the two nature-off
+    spellings are mutual aliases by default, since the frozen tables themselves disagree on it.
+    The first candidate present in scenario_labels wins. If none is present, warn loudly --
+    naming the labels that ARE present -- and return None so the caller skips the scenario rather
+    than emitting a silent zero into GTAP. log is the caller's logger (hb.log or print).
     """
-    candidates = scenario_map.get(our_scn, [our_scn])
+    default_candidates = [our_scn] + [s for s in NATURE_OFF_SPELLINGS
+                                      if our_scn in NATURE_OFF_SPELLINGS and s != our_scn]
+    candidates = scenario_map.get(our_scn, default_candidates)
     raw = next((c for c in candidates if c in scenario_labels), None)
     if raw is None:
         log("  WARNING %s shock: scenario '%s' (tried %s) has no row in the dependency table "
@@ -239,7 +261,7 @@ SHOCK_ABS_MAX = 500.0
 def assert_shock_table_sound(df, requested_scenarios, label, abs_max=SHOCK_ABS_MAX):
     """Raise if the ES shock table `df` violates what must hold before it is written.
 
-    Called immediately before to_csv in each task_compute_<es>_shock*, so the failure surfaces where
+    Called immediately before to_csv in each <es>_shock / <es>_shock_static, so the failure surfaces where
     the table was built rather than as a wrong number in a GTAP solve days later.
 
     Checks, in the order they would bite:
@@ -280,3 +302,202 @@ def assert_shock_table_sound(df, requested_scenarios, label, abs_max=SHOCK_ABS_M
     if problems:
         raise ValueError('%s shock table is unsound:\n  - %s' % (label, '\n  - '.join(problems)))
     return True
+
+
+def seed_input_template(p, file_name, log=print, required=True):
+    """Return the project's input/ copy of a tracked input_template file, seeding it on first use.
+
+    The house input chain (same as ngfs/seals): the tracked template under
+    global_invest/input_template/ is copied into the project's input/ if absent, and the run
+    always reads the input/ copy -- edit that copy to configure a single project. file_name may
+    be a relative path (e.g. the lulc test fixtures); the nesting is recreated under input/.
+    Standard caveat: a stale input/ copy shadows an updated template; delete it (or use a fresh
+    project) to pick up template changes.
+
+    required=False is for files that only OPTIONALLY ship as fixtures (a production machine
+    resolves the same reference in base_data instead): a missing template is skipped, and the
+    later get_path on the reference stays the loud failure if it resolves nowhere at all.
+    """
+    import os
+    import shutil
+    template_path = os.path.join(os.path.dirname(__file__), 'input_template', file_name)
+    local_path = os.path.join(p.input_dir, file_name)
+    if not os.path.exists(local_path):
+        if not required and not os.path.exists(template_path):
+            return local_path
+        os.makedirs(os.path.dirname(local_path), exist_ok=True)
+        shutil.copy(template_path, local_path)
+        log(f'Seeded {file_name} into {p.input_dir} from the tracked template.')
+    return local_path
+
+
+def hydrate_es_config(p, service, log=print):
+    """Fill a service's per-ES configuration onto p from es_config.csv (wide format:
+    one row per service, one column per attribute -- one shared table for the whole library;
+    a cell left empty means the attribute does not apply to that service and is skipped).
+
+    DEFAULTS layer, never an override: an attribute already set on p (by a consumer pipeline
+    or a caller) is left untouched, so the seam contract is unchanged. Attributes ending in
+    _path resolve through p.get_path (base_data-relative references); values that parse as
+    integers become ints; everything else stays a string.
+
+    The csv follows the house input chain (same as ngfs/seals): the tracked template at
+    global_invest/input_template/es_config.csv is SEEDED into the project's input/ on first
+    use, and the run always reads the project's own input/ copy -- edit that copy to configure
+    a single project. Note the standard caveat: a stale input/ copy shadows an updated
+    template; delete it (or use a fresh project) to pick up template changes.
+    """
+    import pandas as pd
+    df = pd.read_csv(seed_input_template(p, 'es_config.csv', log))
+    rows = df[df['service'] == service]
+    if rows.empty:
+        log(f"es_config.csv has no row for service '{service}' -- nothing hydrated.")
+        return p
+    row = rows.iloc[0]
+    for attribute in df.columns:
+        if attribute == 'service':
+            continue
+        value = row[attribute]
+        if pd.isna(value):
+            continue
+        if getattr(p, attribute, None) is not None:
+            continue
+        if attribute.endswith('_path'):
+            # A fixture shipped under input_template at the same relative ref seeds into
+            # input/ first (required=False: absent template -> get_path stays the loud gate),
+            # so a cell can point at data the library carries -- example_service does.
+            seed_input_template(p, str(value), log, required=False)
+            value = p.get_path(str(value))
+        else:
+            try:
+                value = int(float(value))
+            except (TypeError, ValueError):
+                value = str(value)
+        setattr(p, attribute, value)
+    return p
+
+
+def hydrate_es_parameters(p, service, log=print):
+    """Per-service parameters from es_parameters.csv (long key-value rows scoped by a service
+    column) -- the ngfs parameters.csv pattern: machine-specific keys ship BLANK in the template
+    and each machine fills its project's input/ copy (a blank value is skipped); method knobs
+    ship with their defaults. es_config stays the GEP formula's roles; this file holds what a
+    formula row cannot express -- run knobs, method constants promoted to configuration, and
+    machine locations (e.g. erosion_gep_root, the MSI data root that
+    configure_prevention_shares reads off p).
+
+    DEFAULTS layer like its siblings: an attribute the caller already set on p wins. Values
+    parse as JSON where they can (ints, lists, dicts, true/false), else stay strings; *_path
+    keys resolve via get_path.
+    """
+    import json
+    import pandas as pd
+    df = pd.read_csv(seed_input_template(p, 'es_parameters.csv', log))
+    for _, row in df[df['service'] == service].iterrows():
+        attribute, value = str(row['parameter']), row['value']
+        if pd.isna(value) or str(value) == '':
+            continue
+        if getattr(p, attribute, None) is not None:
+            continue
+        if attribute.endswith('_path'):
+            # Permissive: a task must not crash resolving a shipped path it never uses;
+            # whatever consumes the path fails loudly at use.
+            value = p.get_path(str(value), raise_error_if_fail=False)
+        else:
+            try:
+                value = json.loads(str(value))
+            except (ValueError, TypeError):
+                value = str(value)
+        setattr(p, attribute, value)
+    return p
+
+
+def hydrate_es_scenarios(p, log=print):
+    """Set the shared es_shock_* seam attributes from a scenarios CSV -- the same derivation a
+    consumer pipeline performs on its own scenarios file (run_ngfs_pnas.py STEP 6), so a
+    standalone module run is data-driven exactly the way a pipeline run is. One shared CSV for
+    the whole library because these attributes are identical for every service; per-service
+    configuration stays in es_config.csv.
+
+    Columns follow the standard seals scenarios.csv vocabulary (scenario_label, scenario_type,
+    baseline_reference_label, key_base_year, years) plus the two map-reference columns; the
+    shipped es_scenarios_test.csv uses the standard seals scenario names, so its maps are the
+    ones a standard seals run writes. The derivation:
+
+      es_shock_scenarios      scenario_label of every scenario_type == 'policy' row
+      es_shock_base_scenario  scenario_label of the scenario_type == 'bau' row (the comparison base)
+      es_shock_base_year      int(key_base_year)
+      es_shock_years          the first non-baseline row's years, space-delimited ints
+      es_shock_end_year       max(es_shock_years)
+      es_lulc_path_template   dirname resolved via get_path, {scenario}/{year} pattern rejoined
+      es_base_year_lulc_path  resolved via get_path
+      aggregation_label       first non-null, when the column is present
+
+    Mirroring es_config's empty-cell rule, a column that is absent (or has no values) is simply
+    not derived: a static-table service like fisheries has no bau row and no map columns -- its
+    file carries only labels, years and the aggregation -- and whatever a task then misses fails
+    as a named AttributeError in that task, not silently.
+
+    Map references also seed from input_template when a fixture with that relative path ships
+    there (the tiny standard-seals test maps), so the standalone smoke test is self-contained;
+    get_path finds input/ before base_data, and a production machine without fixtures resolves
+    the same references in base_data.
+
+    DEFAULTS layer, never an override: an attribute the caller already set on p wins, which is
+    the same seam contract consumers rely on (they set these from their own scenarios CSV and
+    never read this one). The CSV follows the same input chain as es_config.csv (tracked
+    template seeded into the project's input/; the run reads the input/ copy). Set
+    p.es_scenario_definitions_filename to run a different scenarios file.
+    """
+    import os
+    import pandas as pd
+    file_name = getattr(p, 'es_scenario_definitions_filename', None) or 'es_scenarios_test.csv'
+    df = pd.read_csv(seed_input_template(p, file_name, log))
+
+    def unset(attribute):
+        # The defaults-layer contract in one predicate: hydrate only what the caller
+        # (e.g. a consumer pipeline) has not already set on p.
+        return getattr(p, attribute, None) is None
+
+    if unset('es_shock_scenarios'):
+        p.es_shock_scenarios = [str(s) for s in df.loc[df['scenario_type'] == 'policy', 'scenario_label']]
+        if not p.es_shock_scenarios:
+            raise ValueError(f"{file_name} has no scenario_type == 'policy' row -- "
+                             'the shock would silently compute nothing.')
+    def column_values(label):
+        # A column that is absent, or present with no values, is "not applicable" -- same
+        # semantics as an empty es_config cell.
+        return df[label].dropna() if label in df.columns else pd.Series(dtype=object)
+
+    bau_labels = df.loc[df['scenario_type'] == 'bau', 'scenario_label']
+    if unset('es_shock_base_scenario') and len(bau_labels):
+        p.es_shock_base_scenario = str(bau_labels.iloc[0])
+    if unset('es_shock_base_year'):
+        p.es_shock_base_year = int(df['key_base_year'].dropna().iloc[0])
+    if unset('es_shock_years'):
+        year_cells = df.loc[df['scenario_type'] != 'baseline', 'years'].dropna()
+        p.es_shock_years = [int(y) for y in str(year_cells.iloc[0]).split(' ')]
+    if unset('es_shock_end_year'):
+        p.es_shock_end_year = max(p.es_shock_years)
+    if unset('es_lulc_path_template') and len(column_values('es_lulc_path_template')):
+        ref = str(column_values('es_lulc_path_template').iloc[0])
+        base_scenario = getattr(p, 'es_shock_base_scenario', None)
+        for scenario in ([base_scenario] if base_scenario else []) + list(p.es_shock_scenarios):
+            for year in p.es_shock_years:
+                seed_input_template(p, ref.format(scenario=scenario, year=year), log, required=False)
+        p.es_lulc_path_template = os.path.join(p.get_path(os.path.dirname(ref)), os.path.basename(ref))
+    if unset('es_base_year_lulc_path') and len(column_values('es_base_year_lulc_path')):
+        ref = str(column_values('es_base_year_lulc_path').iloc[0])
+        seed_input_template(p, ref, log, required=False)
+        p.es_base_year_lulc_path = p.get_path(ref)
+    if unset('aggregation_label') and len(column_values('aggregation_label')):
+        p.aggregation_label = str(column_values('aggregation_label').iloc[0])
+    if unset('es_shock_climate_labels') and len(column_values('climate_label')):
+        # scenario -> climate (rcp) label, for services whose science keys on the RCP rather
+        # than the scenario (fisheries maps this to its FI headers) -- so scenario NAMES never
+        # need a per-service translation in the library.
+        non_baseline = df[df['scenario_type'] != 'baseline']
+        p.es_shock_climate_labels = {
+            str(row['scenario_label']): str(row['climate_label'])
+            for _, row in non_baseline.iterrows() if pd.notna(row.get('climate_label'))}
+    return p

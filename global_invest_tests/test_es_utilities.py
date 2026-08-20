@@ -36,3 +36,23 @@ def test_resolve_base_scenario_tries_candidates_and_is_fatal_when_absent():
     # A base that resolves to nothing is FATAL (it is the subtraction reference), never a skip.
     with pytest.raises(ValueError, match='BASE'):
         utilities.resolve_base_scenario(['scn_a'], {}, 'baseline_ignore_dependencies', 'erosion')
+
+
+def test_nature_off_spellings_are_mutual_aliases_by_default():
+    # The frozen tables disagree on the nature-off baseline's spelling (carbon: _dependencies;
+    # pollination/erosion: _damages) -- each spelling must find the other's table without a
+    # consumer-supplied map. Closes the "global_invest open" half of the two-spelling bug.
+    quiet = lambda *a: None
+    assert utilities.resolve_raw_scenario(
+        ['baseline_ignore_damages', 'below_2c'], {}, 'baseline_ignore_dependencies', 'erosion', log=quiet) == 'baseline_ignore_damages'
+    assert utilities.resolve_raw_scenario(
+        ['baseline_ignore_dependencies', 'below_2c'], {}, 'baseline_ignore_damages', 'carbon', log=quiet) == 'baseline_ignore_dependencies'
+    # exact spelling present: no alias needed, itself wins
+    assert utilities.resolve_raw_scenario(
+        ['baseline_ignore_dependencies'], {}, 'baseline_ignore_dependencies', 'carbon', log=quiet) == 'baseline_ignore_dependencies'
+    # an explicit consumer map still wins over the default aliasing
+    assert utilities.resolve_raw_scenario(
+        ['x'], {'baseline_ignore_dependencies': ['x']}, 'baseline_ignore_dependencies', 'carbon', log=quiet) == 'x'
+    # non-baseline scenarios keep pure identity: no accidental cross-matching
+    assert utilities.resolve_raw_scenario(
+        ['baseline_ignore_damages'], {}, 'below_2c', 'erosion', log=quiet) is None

@@ -8,11 +8,10 @@ def initialize_paths(p):
     """One source of truth for the inputs (shared country block + service data, get_path references)."""
     utilities.initialize_country_paths(p, simplified='30sec')
 
-    # IRENA generation, WB prices, CWON resource rents. This service's data lives under the
-    # drive's base_data/global_invest/ prefix, unlike the other accounting services (see CHANGELOG).
-    p.irena_production_ref_path = p.get_path('global_invest', 'renewable_energy_provision', 'IRENA_prod_by_country.csv')
-    p.wb_price_ref_path = p.get_path('global_invest', 'renewable_energy_provision', 'WB_price_data.csv')
-    p.cwon_resource_rent_ref_path = p.get_path('global_invest', 'renewable_energy_provision', 'CWON_resource_rent_data.csv')
+    # IRENA generation (quantity), WB prices (price), CWON resource rents (attribution) come
+    # from es_config.csv as a defaults layer. This service's data lives under the drive's
+    # base_data/global_invest/ prefix, unlike the other accounting services (see CHANGELOG).
+    utilities.hydrate_es_config(p, 'renewable_energy_provision')
 
 def build_gep_service_calculation_task_tree(p, parent=None):
     """Build the default task tree for commercial agriculture."""

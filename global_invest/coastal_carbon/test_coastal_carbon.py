@@ -44,9 +44,12 @@ def test_gep_calculation_eez_only_and_one_row_per_country(tmp_path):
                      crs='EPSG:4326').to_file(str(tmp_path / 'marine.gpkg'), driver='GPKG')
 
     p = SimpleNamespace(cur_dir=str(tmp_path), results={},
+                        input_dir=str(tmp_path / 'input'),
+                        get_path=lambda *a, **k: '/resolved/' + '/'.join(a),
+                        df_countries=pd.read_csv(tmp_path / 'ee_r264_correspondence.csv'),
                         combined_area_path=str(tmp_path / 'combined_areas.csv'),
-                        carbon_prices_path=str(tmp_path / 'carbon_prices.xlsx'), carbon_price='p',
-                        gdf_countries_marine_vector_path=str(tmp_path / 'marine.gpkg'),
+                        gep_price_input_path=str(tmp_path / 'carbon_prices.xlsx'), gep_price_convention='p',
+                        gep_regions_input_path=str(tmp_path / 'marine.gpkg'),
                         df_countries_csv_path=str(tmp_path / 'ee_r264_correspondence.csv'))
 
     total = cct.gep_calculation(p)

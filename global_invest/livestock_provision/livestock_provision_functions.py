@@ -5,7 +5,6 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import hazelbean as hb
-from global_invest.livestock_provision import livestock_provision_defaults
 
 def read_crop_values(path: str, items):
     """
@@ -36,8 +35,12 @@ def read_crop_values(path: str, items):
     rename_dict = dict(zip(old_names, new_names))
     df_crop_value.rename(columns=rename_dict, inplace=True)
 
-    # Keep only listed items
-    df_crop_value = df_crop_value[df_crop_value["crop"].isin(items)].copy()
+    # Keep only listed items. Integer entries select by FAO item CODE (the owner's convention,
+    # robust to FAO's item-name revisions); strings select by item name.
+    codes = [i for i in items if isinstance(i, int)]
+    names = [i for i in items if isinstance(i, str)]
+    keep = df_crop_value["crop_code"].isin(codes) | df_crop_value["crop"].isin(names)
+    df_crop_value = df_crop_value[keep].copy()
 
     # drop unwanted countries (aggregates and currently nonexisting)
     countries_to_drop = [

@@ -12,8 +12,9 @@ book:
   chapters:
     - index.qmd
 
-# overview_marked.qmd is deliberately absent: it is a generated revealjs deck
-# (the *_marked.qmd convention), not a book chapter.
+# overview.qmd is deliberately absent from the chapter list: it renders as a
+# standalone revealjs deck, not a book chapter. It is HAND-EDITED source; the
+# *_marked.qmd suffix is reserved for generated decks per the devstack spec.
 
 format:
   html:

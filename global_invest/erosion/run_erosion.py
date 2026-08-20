@@ -6,22 +6,33 @@ functions in erosion_functions.py read them off p at run time (their defaults po
 repo's cluster layout). The ES-shock runner is run_erosion_shock.py -- a separate tree, a separate
 thin runner, no mode switch.
 """
-import os
 import hazelbean as hb
 
 from global_invest.erosion import erosion_initialize
 
-if __name__ == '__main__':
-
-    p = hb.ProjectFlow()
-    p.project_name = 'gep_erosion'
-    p.project_dir = os.path.join(os.path.expanduser('~'), 'Files', 'global_invest', 'projects', p.project_name)
-    p.set_project_dir(p.project_dir)
-
+def build_task_tree(p):
+    # This project's task tree: delegates unchanged to the shared library builder.
     erosion_initialize.build_gep_service_task_tree(p)
+
+
+def run_project(p):
+
+    build_task_tree(p)
 
     p.results = {}
 
-    hb.log('Created ProjectFlow object at ' + p.project_dir + '\n    from script ' + p.calling_script
-           + '\n    with base_data set at ' + p.base_data_dir)
+    hb.log('Created ProjectFlow object at ' + p.project_dir + '\n    from script ' + p.calling_script)
     p.execute()
+
+    return p
+
+
+if __name__ == '__main__':
+
+    # Create ProjectFlow object
+    p = hb.ProjectFlow(project_name='gep_erosion', run_mode='check')
+
+    # Run the project
+    run_project(p)
+
+    result = 'Done!'

@@ -53,11 +53,11 @@ def test_pollination_gep_sums_split_country_once(tmp_path):
     gdf.to_file(str(tmp_path / 'regions.gpkg'), driver='GPKG')
 
     p = SimpleNamespace(run_this=True, cur_dir=str(tmp_path), results={}, base_year=2023,
-                        pollination_value_raster_path=str(tmp_path / 'poll_value.tif'),
+                        gep_quantity_input_path=str(tmp_path / 'poll_value.tif'),
                         gdf_countries_vector_path=str(tmp_path / 'regions.gpkg'),
                         gdf_countries_simplified=str(tmp_path / 'regions.gpkg'))
 
-    pt.task_summarize_pollination_value_by_region(p)
+    pt.pollination_value_by_region(p)
     total = pt.gep_calculation(p)
 
     assert total == 68.0                              # split country counted once, not 128

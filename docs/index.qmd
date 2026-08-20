@@ -3,4 +3,4 @@
 Documentation for `global_invest` — the ecosystem-service module that produces, for each service,
 both a Gross Ecosystem Product (GEP) valuation and an NGFS scenario shock from the same source files.
 
-The [overview slide deck](overview_marked.qmd) is a reveal.js presentation summarising the module.
+The [overview slide deck](overview.qmd) is a reveal.js presentation summarising the module.

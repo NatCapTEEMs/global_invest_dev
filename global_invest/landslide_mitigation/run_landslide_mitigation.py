@@ -1,22 +1,33 @@
 """Full landslide-mitigation GEP run. Thin runner: one tree, executed; inputs resolve via
 initialize_paths reference paths. Folded from m-braaksma/landslide_mitigation v0.2.0."""
-import os
 import hazelbean as hb
 
 from global_invest.landslide_mitigation import landslide_mitigation_initialize
 
-if __name__ == '__main__':
+def build_task_tree(p):
+    # This project's task tree: delegates unchanged to the shared library builder.
+    landslide_mitigation_initialize.build_gep_service_task_tree(p)
 
-    p = hb.ProjectFlow()
-    p.project_name = 'gep_landslide_mitigation'
-    p.project_dir = os.path.join(os.path.expanduser('~'), 'Files', 'global_invest', 'projects', p.project_name)
-    p.set_project_dir(p.project_dir)
+
+def run_project(p):
 
     # The tree builder's iterators read run configuration, so initialize before building the tree.
     p.results = {}
     landslide_mitigation_initialize.initialize_paths(p)
-    landslide_mitigation_initialize.build_gep_service_task_tree(p)
+    build_task_tree(p)
 
-    hb.log('Created ProjectFlow object at ' + p.project_dir + '\n    from script ' + p.calling_script
-           + '\n    with base_data set at ' + p.base_data_dir)
+    hb.log('Created ProjectFlow object at ' + p.project_dir + '\n    from script ' + p.calling_script)
     p.execute()
+
+    return p
+
+
+if __name__ == '__main__':
+
+    # Create ProjectFlow object
+    p = hb.ProjectFlow(project_name='gep_landslide_mitigation', run_mode='check')
+
+    # Run the project
+    run_project(p)
+
+    result = 'Done!'

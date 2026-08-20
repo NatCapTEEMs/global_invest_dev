@@ -12,34 +12,40 @@ InVEST, seconds rather than hours.
 Requires:
   - base_data/<aggregation_label>/cwon_shocks.har with the FI26 / FI45 / FI85 headers
 """
-import os
-
 import hazelbean as hb
 
+from global_invest import utilities
 from global_invest.fisheries import fisheries_initialize
+
+
+def build_task_tree(p):
+    # This runner's tree IS the consumer seam: graft the tasks exactly as a pipeline would.
+    fisheries_initialize.add_fisheries_tasks(p)
+
+
+def run_project(p):
+
+    # The shared es_shock_* seam attributes come from the SAME scenarios CSV as every other
+    # service, as a defaults layer: anything the caller already set on p wins. Fisheries is the
+    # static marine service (no maps, no dynamic path); it keys on the scenario's RCP, which the
+    # CSV's climate_label column provides, so scenario names need no translation. The output CSV
+    # needs no line here -- the task defaults it.
+    utilities.hydrate_es_scenarios(p)
+
+    build_task_tree(p)
+
+    hb.log('Created ProjectFlow object at ' + p.project_dir + '\n    from script ' + p.calling_script)
+    p.execute()
+
+    return p
 
 
 if __name__ == '__main__':
 
-    p = hb.ProjectFlow()
-    p.project_name = 'gep_fisheries'
-    p.project_dir = os.path.join(os.path.expanduser('~'), 'Files', 'global_invest', 'projects', p.project_name)
-    p.set_project_dir(p.project_dir)
+    # Create ProjectFlow object
+    p = hb.ProjectFlow(project_name='gep_fisheries', run_mode='check')
 
-    # -------------------------------------------------------------------
-    # Config -- edit for a local smoke test. In a consumer pipeline these
-    # same attributes are set by the run script (e.g. run_ngfs_pnas.py).
-    # -------------------------------------------------------------------
-    p.aggregation_label = 'v12-s26-r50'         # locates cwon_shocks.har under base_data
+    # Run the project
+    run_project(p)
 
-    p.es_shock_years         = [2050]
-    p.es_shock_base_year     = 2023             # interp 0-anchor (GTAP base year)
-    p.es_shock_end_year      = 2050
-    p.es_shock_scenarios     = ['below_2c']
-    p.es_shock_base_scenario = 'baseline_ignore_damages'
-    p.fisheries_shock_output_path = os.path.join(p.project_dir, 'fisheries_interpolated.csv')
-
-    fisheries_initialize.add_fisheries_tasks(p)
-
-    hb.log('Created ProjectFlow object at ' + p.project_dir + '\n    from script ' + p.calling_script)
-    p.execute()
+    result = 'Done!'
