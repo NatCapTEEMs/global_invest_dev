@@ -18,6 +18,35 @@ SDR): folded and import-clean, NOT yet number-verified -- see the tracker.
 from global_invest.erosion import erosion_tasks
 
 
+# ---------------------------------------------------------------------------------------------
+# GEP task trees (folded from global_erosion_gep; template names, cf. terrestrial_carbon).
+# ---------------------------------------------------------------------------------------------
+def build_gep_service_calculation_task_tree(p):
+    """GEP calculation tree: InVEST SDR run + prevention-share per-country GEP valuation.
+    skip_existing=1 on the SDR task (dir present -> paths published, work skipped); the valuation
+    registers plain and skips on its registered result, like every service's gep_calculation."""
+    p.invest_sdr = p.add_task(erosion_tasks.invest_sdr, skip_existing=1)
+    p.prevention_shares = p.add_task(erosion_tasks.prevention_shares)
+    return p
+
+
+def build_gep_service_results_task_tree(p):
+    """Results-only: render maps/figures from an existing prevention-share run."""
+    p.maps_and_figures = p.add_task(erosion_tasks.maps_and_figures, skip_existing=1)
+    return p
+
+
+def build_gep_service_task_tree(p):
+    """Full GEP run: SDR + valuation + maps/figures."""
+    p = build_gep_service_calculation_task_tree(p)
+    p.maps_and_figures = p.add_task(erosion_tasks.maps_and_figures, skip_existing=1)
+    return p
+
+
+# ---------------------------------------------------------------------------------------------
+# ES-shock wiring (the consumer seam). Everything above builds the GEP task trees; this builds
+# the ES-shock one.
+# ---------------------------------------------------------------------------------------------
 def add_erosion_tasks(p, parent=None):
     """Graft the erosion ES-shock tasks onto p, dispatching STATIC vs DYNAMIC on p.dynamic_es.
 
@@ -50,29 +79,4 @@ def add_erosion_tasks(p, parent=None):
     p.erosion_upstream_task = p.add_task(erosion_tasks.erosion_upstream, parent=parent, skip_existing=1)
     p.erosion_exposure_task = p.add_task(erosion_tasks.erosion_exposure, parent=parent, skip_existing=1)
     p.erosion_shock_task    = p.add_task(erosion_tasks.erosion_shock, parent=parent)
-    return p
-
-
-# ---------------------------------------------------------------------------------------------
-# GEP task trees (folded from global_erosion_gep; template names, cf. terrestrial_carbon).
-# ---------------------------------------------------------------------------------------------
-def build_gep_service_calculation_task_tree(p):
-    """GEP calculation tree: InVEST SDR run + prevention-share per-country GEP valuation.
-    skip_existing=1 on the SDR task (dir present -> paths published, work skipped); the valuation
-    registers plain and skips on its registered result, like every service's gep_calculation."""
-    p.invest_sdr = p.add_task(erosion_tasks.invest_sdr, skip_existing=1)
-    p.prevention_shares = p.add_task(erosion_tasks.prevention_shares)
-    return p
-
-
-def build_gep_service_results_task_tree(p):
-    """Results-only: render maps/figures from an existing prevention-share run."""
-    p.maps_and_figures = p.add_task(erosion_tasks.maps_and_figures, skip_existing=1)
-    return p
-
-
-def build_gep_service_task_tree(p):
-    """Full GEP run: SDR + valuation + maps/figures."""
-    p = build_gep_service_calculation_task_tree(p)
-    p.maps_and_figures = p.add_task(erosion_tasks.maps_and_figures, skip_existing=1)
     return p

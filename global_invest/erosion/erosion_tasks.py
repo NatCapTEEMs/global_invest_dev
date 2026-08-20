@@ -56,7 +56,10 @@ CROPLAND_SEALS7_CLASS = 2
 # per-crop coefficient from elasticity_crops_fao_revised.csv (see alpha_for in erosion_shock) and
 # falls back here only when neither the crop nor its sector has a value.
 EROSION_ALPHA = 0.08
-# The SES-11 threshold policy and analysis frame: METHOD CONSTANTS defining the published science
+# The SES-11 threshold policy and analysis frame (SES-11 = the erosion author's run-series tag;
+# the 11 is the 11 t/ha/yr severe threshold, a standard tolerable-soil-loss benchmark -- the
+# expansion of 'SES' is the author's naming, to confirm at submission): METHOD CONSTANTS defining
+# the published science
 # (provisional, the erosion author's to bless) -- in code so a change costs a reviewed commit, not
 # an input/-copy edit. getattr hooks below allow a deliberate consumer override.
 SES11_SEVERE_THRESHOLD_T_HA = 11.0
