@@ -146,7 +146,7 @@ def test_dynamic_shock_per_zone_interpolation_and_both_measures(tmp_path):
     assert b.loc[2030, 'shock_pct'] == approx(0.0)
     assert b.loc[2050, 'shock_pct'] == approx(-45.0)     # (55-100)/100
 
-    # piecewise interpolation: 0 at gep_base_year, linear between anchors
+    # piecewise interpolation: 0 at base_year, linear between anchors
     assert a.loc[2020, 'shock_pct'] == approx(0.0)
     assert a.loc[2025, 'shock_pct'] == approx(-22.5)     # midpoint 2020->2030
     assert a.loc[2040, 'shock_pct'] == approx(-66.25)    # midpoint 2030->2050
