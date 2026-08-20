@@ -107,7 +107,7 @@ def build_gep_service_calculation_task_tree(p, include_seagrass=False):
     p.combined_ecosystem_areas = p.add_task(
         coastal_carbon_tasks.combined_ecosystem_areas, skip_existing=1
     )
-    p.task_gep_calculation = p.add_task(
+    p.gep_calculation = p.add_task(
         coastal_carbon_tasks.gep_calculation
     )
 

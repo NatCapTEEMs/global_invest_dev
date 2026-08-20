@@ -1,6 +1,4 @@
 import os
-import subprocess
-import sys
 
 import geopandas as gpd
 import hazelbean as hb
@@ -463,7 +461,7 @@ def salt_marsh_storage_value(p):
 # Seagrass tasks: implemented (area -> genus-aware stock -> storage value).
 #
 # Extent = WCMC013-014 SeagrassPtPy v7.1 (p.seagrass_vector_path, set in
-# initialize_paths); the per-country intersection keeps the GENUS attribute so
+# es_parameters); the per-country intersection keeps the GENUS attribute so
 # the stock task can apply Gomis 2025 per-genus pool densities. A missing
 # extent RAISES: excluding seagrass is done by building the tree with
 # include_seagrass=False, never by letting a data gap silently understate the
@@ -889,21 +887,21 @@ def gep_calculation(p):
         )
 
         df_areas = pd.read_csv(p.combined_area_path)
-        df_areas['year'] = 2019
+        df_areas['year'] = p.gep_base_year
 
         df_carbon_p = pd.read_excel(p.gep_price_input_path)
         df_carbon_p = df_carbon_p[['year', p.gep_price_convention]]
         df_gep = df_areas.merge(df_carbon_p, on='year', how='left')
 
-        df_gep['mangrove_storage_value'] = (
-            df_gep['mangrove_total_c_stock_mg'] * df_gep[p.gep_price_convention]
-        )
-        df_gep['salt_marsh_storage_value'] = (
-            df_gep['salt_marsh_total_c_stock_mg'] * df_gep[p.gep_price_convention]
-        )
-        df_gep['seagrass_storage_value'] = (
-            df_gep['seagrass_total_c_stock_mg'] * df_gep[p.gep_price_convention]
-        )
+        # ONE computation of stock x price: the per-ecosystem storage_value tasks own it, and
+        # this stage MERGES their totals instead of recomputing them (removing the drift risk
+        # of the same fact computed twice). A region absent from an ecosystem's csv carries no
+        # value there -> fill 0, matching the zero stock in the combined table.
+        for eco in ('mangrove', 'salt_marsh', 'seagrass'):
+            df_val = pd.read_csv(getattr(p, f'{eco}_storage_value_path'))[
+                [p.gep_regions_id_col, f'{eco}_storage_value']]
+            df_gep = df_gep.merge(df_val, on=p.gep_regions_id_col, how='left')
+            df_gep[f'{eco}_storage_value'] = df_gep[f'{eco}_storage_value'].fillna(0)
         df_gep['coastal_carbon_storage_value'] = (
             df_gep['mangrove_storage_value']
             + df_gep['salt_marsh_storage_value']

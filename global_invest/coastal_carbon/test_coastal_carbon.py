@@ -30,6 +30,14 @@ def test_gep_calculation_eez_only_and_one_row_per_country(tmp_path):
 
     pd.DataFrame({'year': [2019], 'p': [2.0]}).to_excel(tmp_path / 'carbon_prices.xlsx', index=False)
 
+    # The storage_value tasks own stock x price; gep_calculation MERGES their totals (the
+    # restructure). Values here = the fixture stocks x price 2.0.
+    for eco, stocks in (('mangrove', [50.0, 5.0, 50.0]), ('salt_marsh', [30.0, 3.0, 30.0]),
+                        ('seagrass', [20.0, 2.0, 20.0])):
+        pd.DataFrame({'eemarine_r566_id': [1, 2, 3],
+                      f'{eco}_storage_value': [v * 2.0 for v in stocks]
+                      }).to_csv(tmp_path / f'{eco}_storage_value.csv', index=False)
+
     # r264 correspondence: CHN split into two r264 rows (canonical row = ee_r264_label == 'CHN');
     # without the canonical filter the join would duplicate CHN and the sum would double it.
     pd.DataFrame({
@@ -47,6 +55,9 @@ def test_gep_calculation_eez_only_and_one_row_per_country(tmp_path):
                         input_dir=str(tmp_path / 'input'),
                         get_path=lambda *a, **k: '/resolved/' + '/'.join(a),
                         df_countries=pd.read_csv(tmp_path / 'ee_r264_correspondence.csv'),
+                        mangrove_storage_value_path=str(tmp_path / 'mangrove_storage_value.csv'),
+                        salt_marsh_storage_value_path=str(tmp_path / 'salt_marsh_storage_value.csv'),
+                        seagrass_storage_value_path=str(tmp_path / 'seagrass_storage_value.csv'),
                         combined_area_path=str(tmp_path / 'combined_areas.csv'),
                         gep_price_input_path=str(tmp_path / 'carbon_prices.xlsx'), gep_price_convention='p',
                         gep_regions_input_path=str(tmp_path / 'marine.gpkg'),
