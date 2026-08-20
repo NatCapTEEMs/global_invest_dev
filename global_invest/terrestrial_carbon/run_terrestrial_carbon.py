@@ -15,13 +15,10 @@ def build_task_tree(p):
     terrestrial_carbon_initialize.build_gep_service_task_tree(p)
     
 def run_project(p):
-    # Task tree
-    build_task_tree(p) # Defines the actual logic of the model. Navigate into here to see what the model does.
+    # Task tree. Every task publishes its own inputs (publish_inputs in the tasks module), so
+    # there is no setup call here: open the workspace, build the tree, go.
+    build_task_tree(p)
 
-    # Project-level attributes: every input path is resolved in initialize_paths 
-    p.results = {}  # All results will be stored here by each child task.
-    terrestrial_carbon_initialize.initialize_paths(p)
-    
     hb.log('Created ProjectFlow object at ' + p.project_dir +
            '\n    with base_data set at ' + p.base_data_dir)
 

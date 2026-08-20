@@ -13,6 +13,19 @@ from global_invest.terrestrial_carbon import terrestrial_carbon_functions
 SPAWN_INTEGER_SCALE = 0.1  # raw Spawn tiles store carbon as integers x10; x0.1 recovers Mg C/ha
 
 
+def publish_inputs(p):
+    """Every config-consuming task's first line: this service's es_config row (defaults layer --
+    anything the caller set wins) plus the shared country references. Cheap and idempotent, so a
+    task stays a working piece on its own: graft it anywhere, no setup call to remember. The
+    carbon-zones reference (gep_quantity_input_path) is the SAME raster the shock task uses, so
+    the GEP valuation and the shock can never diverge."""
+    utilities.hydrate_es_config(p, 'terrestrial_carbon', log=hb.log)
+    utilities.initialize_country_paths(p)
+    if not hasattr(p, 'results'):
+        p.results = {}   # every gep task registers its outputs here; the report renders from it
+    return p
+
+
 def terrestrial_carbon(p):
     """
     Parent task for terrestrial carbon.
@@ -24,6 +37,7 @@ def total_carbon_density(p):
     """
     Task to reproject the total carbon density raster to the project's coordinate reference system (CRS).
     """
+    publish_inputs(p)
 
     # Input: the total biomass-carbon density raster. This is a one-off base-data product (raw Spawn
     # aboveground+belowground already converted and combined), consumed from base_data rather than
@@ -44,7 +58,7 @@ def total_carbon_density(p):
 
 
 def carbon_density_table(p):
-
+    publish_inputs(p)
     p.carbon_density_lookup_table_path = os.path.join(p.cur_dir, "carbon_density_lookup_table.csv")
     if not p.run_this:
         return True
@@ -61,7 +75,7 @@ def carbon_density_table(p):
 
 
 def carbon_density_raster_base_year(p):
-
+    publish_inputs(p)
     p.carbon_density_raster_base_year_path = os.path.join(p.cur_dir, "projected_carbon_density_2019.tif")
     if not p.run_this:
         return True
@@ -83,6 +97,7 @@ def carbon_density_raster_per_cell_base_year(p):
 
 
 def carbon_by_region(p):
+    publish_inputs(p)
     p.carbon_by_region_base_year_path = os.path.join(p.cur_dir, "gep_by_country_base_year.csv")
     if not p.run_this:
         return True
@@ -105,6 +120,7 @@ def gep_preprocess(p):
     the base-year LULC grid to (re)make the *_projected rasters; otherwise start from the projected
     rasters already in carbon_storage. All raster ops go through hazelbean.
     """
+    publish_inputs(p)
     # The house base-data-generating pattern: get_path resolves the base_data-relative ref --
     # to the existing copy wherever one exists, else to the would-be path under cur_dir, where
     # this task then generates it; promotion to base_data is copying the file to the same
@@ -132,6 +148,7 @@ def gep_preprocess(p):
 
 def gep_calculation(p):
     """ GEP calculation task for terrestrial carbon."""
+    publish_inputs(p)
     # Define at least the primary output for the service, which for this project is gep_by_country_base_year.
     service_results = {}
     p.results['terrestrial_carbon'] = service_results
@@ -198,6 +215,7 @@ def gep_load_results(p):
     recomputing. Fails loudly if they are not present -- run the calculation (run_terrestrial_carbon.py)
     or promote the results into base_data first. This is the 'results-only' entry point.
     """
+    publish_inputs(p)
     result_path = os.path.join(p.intermediate_dir, 'gep_calculation', 'gep_by_country_base_year.csv')
     if not hb.path_exists(result_path):
         raise FileNotFoundError(

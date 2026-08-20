@@ -4,19 +4,6 @@ import hazelbean as hb
 from global_invest import utilities
 from global_invest.terrestrial_carbon import terrestrial_carbon_tasks
 
-def initialize_paths(p):
-    """Resolve the terrestrial-carbon GEP inputs on p, all via get_path (machine-agnostic, and one source
-    of truth for every run file / consumer instead of a block duplicated in each). carbon_zones is the
-    SAME raster the shock task uses (base_data/carbon_storage), so the GEP valuation and the shock never
-    diverge. gep_price_convention defaults here but the caller may override it before calling.
-    """
-    utilities.initialize_country_paths(p)   # shared r264 block (csv/gpkg/simplified + df_countries)
-    # Per-ES configuration (data references, price convention, base year) comes from
-    # es_config.csv as a defaults layer: anything the caller already set on p wins.
-    utilities.hydrate_es_config(p, 'terrestrial_carbon')
-
-    return p
-
 def build_gep_service_preprocess_task_tree(p):
     """Base-data preprocessing: (re)build carbon_storage/spawn_total_biomass_carbon_2010.tif (scale raw
     Spawn to Mg C/ha, reproject, add aboveground+belowground). One-off job, kept OUT of the default run;
