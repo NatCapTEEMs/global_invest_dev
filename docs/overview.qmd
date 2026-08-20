@@ -180,7 +180,7 @@ format:
 - **Q1 (Erwin): Do you bless the RCP8.5-for-RCP7.0 substitution, or name a replacement?** The 8.5 series stands in because no 7.0 series exists — defensible, but currently discoverable rather than stated.
 - **Q2 (Erwin): Which CWoN vintage is behind the HAR file?** For the record and the methods writeup.
 - **Q3 (fisheries teams): Should the fisheries GEP come into the library — and from which source?** Every service is expected to have a GEP eventually; fisheries' valuation is still external.
-- **Q4 (room, architecture): Is fisheries in the right family?** Today the pipeline groups it with the nature channels — it enters the cc_es pass alongside carbon, pollination and erosion, and the nature-off baseline carries no fisheries shock. But unlike those three, its shock is RCP-driven and reads no land-use map, which is the signature of the climate-damage family (crop yield, labor productivity — present in every world including the baseline). We are keeping today's grouping; we want the room to confirm it is the intended one, because moving it would change the decomposition.
+- Settled convention (Chiara, 20 Aug): **fisheries is an ecosystem service and stays in the nature family** — it enters the cc_es pass alongside carbon, pollination and erosion, and is not part of the just_cc runs, even though its shock varies only with the climate pathway. Stated here so the boundary property that makes it unusual (RCP-driven, no land-use map) reads as a characteristic, not an open question.
 - Found in the project's own repos: a commercial fisheries GEP exists as an R pipeline (FishStatJ to GEP), and the subsistence repo already carries a per-country output table — so the in-library GEP has source material, and the subsistence scope question has an existing product to evaluate.
 
 # The accounting services
@@ -274,7 +274,7 @@ format:
 - **Coastal-protection owner:** which run produced {{< meta cp_alt >}}.
 - **Extractive owner:** the source of 0.49.
 - **Renewable owner:** code or CSVs.
-- **The room:** pollination's definition, the shoreline convention, crop's units, the map dissolve, base year 2019, subsistence scope, marine carbon's fate, the fisheries GEP's source and its family (nature channel vs climate damage).
+- **The room:** pollination's definition, the shoreline convention, crop's units, the map dissolve, base year 2019, subsistence scope, marine carbon's fate, the fisheries GEP's source.
 - **Every service team:** complete your SI-table row (status, value info, relationships to other services); name leads for the unclaimed services; confirm the next-in-line services for the library.
 
 ## What happens with your answers
