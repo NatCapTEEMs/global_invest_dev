@@ -38,6 +38,8 @@ def initialize_country_paths(p, simplified='300sec'):
     simplified_ref = ref.replace('_correspondence.gpkg', f'_simplified{simplified}.gpkg')
     p.gdf_countries_vector_simplified_path = simplified_ref if hb.path_exists(simplified_ref) else ref
 
+    if getattr(p, 'df_countries', None) is not None:
+        return p          # already published (or caller-set): don't re-read, don't clobber
     p.df_countries = pd.read_csv(p.df_countries_csv_path)
     # The GDFs stay as path strings; hb.read_vector converts on demand.
     p.gdf_countries = p.gdf_countries_vector_path
