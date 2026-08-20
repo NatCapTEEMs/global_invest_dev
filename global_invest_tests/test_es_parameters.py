@@ -53,3 +53,19 @@ def test_caller_set_values_win_and_other_services_rows_are_ignored(tmp_path):
     q = fake_p(tmp_path)
     utilities.hydrate_es_parameters(q, 'erosion', log=lambda *a: None)
     assert not hasattr(q, 'num_workers')            # landslide's rows never leak onto erosion
+
+
+def test_shock_quantity_default_agrees_with_the_gep_cell():
+    # The shock and the GEP valuation must consume the SAME carbon-zones raster. Both are data
+    # cells now (es_config gep_quantity_input_path; es_parameters terrestrial_quantity_input_path),
+    # so their agreement is a checked fact, not a docstring claim.
+    import os
+    import pandas as pd
+    from global_invest import utilities as u
+    template_dir = os.path.join(os.path.dirname(u.__file__), 'input_template')
+    config = pd.read_csv(os.path.join(template_dir, 'es_config.csv'))
+    params = pd.read_csv(os.path.join(template_dir, 'es_parameters.csv'))
+    gep_cell = config.loc[config['service'] == 'terrestrial_carbon', 'gep_quantity_input_path'].iloc[0]
+    shock_cell = params.loc[(params['service'] == 'terrestrial_carbon')
+                            & (params['parameter'] == 'terrestrial_quantity_input_path'), 'value'].iloc[0]
+    assert gep_cell == shock_cell

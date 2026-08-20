@@ -262,10 +262,9 @@ def terrestrial_carbon_shock(p):
     acts      = p.terrestrial_carbon_shock_acts
     endw_fmt  = p.terrestrial_carbon_shock_endw_format            # int id -> 'AEZ1'..'AEZ18'
 
-    if not getattr(p, 'terrestrial_quantity_input_path', None):
-        p.terrestrial_quantity_input_path = p.get_path('global_invest', 'terrestrial_carbon', 'carbon_zones_rasterized.tif')
-    if not getattr(p, 'terrestrial_carbon_density_lookup_table_path', None):
-        p.terrestrial_carbon_density_lookup_table_path = p.get_path('global_invest', 'terrestrial_carbon', 'carbon_density_lookup_seals7_spawn.csv')
+    # Quantity raster + density lookup arrive from es_parameters with the export keys above
+    # (hydrated defaults; caller wins). The quantity ref equals es_config's gep_quantity cell --
+    # one fact stated twice in data, gated by test_shock_quantity_default_agrees_with_the_gep_cell.
     # Resolve the LULC map per scenario by globbing es_lulc_path_template ({scenario}/{year}
     # placeholders) when the caller didn't pre-build scenario_lulc_paths. Globbing lives here so a
     # project passes only a template string, not a path-building task.
