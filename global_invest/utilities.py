@@ -22,25 +22,25 @@ def initialize_country_paths(p, simplified='300sec'):
     (csv + gpkg + simplified gpkg, all as get_path reference paths) and the loaded df_countries.
     Called from each service's publish_inputs (or its initialize_paths, until its per-ES pass
     step); the service then adds only its service-specific inputs
-    (this block used to be pasted into every module). A service with a different aggregation
-    surface (e.g. coastal's marine r566) overrides the aliases after calling.
+    (this block used to be pasted into every module).
     """
     import pandas as pd
     import hazelbean as hb
 
-    # The aggregation surface comes from the service's es_config row (gep_regions_input_path --
-    # r264 for the terrestrial services, the marine r566 for coastal), hydrated before this runs
-    # in the publish_inputs pattern; callers not yet on that pattern fall back to r264. The csv
-    # and simplified siblings derive by the house naming convention; when no simplified variant
-    # exists (the marine surface), the correspondence itself serves as the display vector.
-    ref = getattr(p, 'gep_regions_input_path', None) or p.get_path('cartographic', 'ee', 'ee_r264_correspondence.gpkg')
+    if getattr(p, 'df_countries', None) is not None:
+        return p          # country world already published (or caller-set): touch nothing
+    # Two different jobs, two different homes. WHICH surface a service aggregates on (marine
+    # r566, land r264) legitimately varies per service, so that lives in the es_config cell
+    # gep_regions_input_path, read by the aggregating tasks. THIS function serves the other job,
+    # shared by every service identically: at the end, collapse whatever was aggregated into ONE
+    # ROW PER COUNTRY -- and that collapse always goes through the r264 correspondence, the
+    # table that stops split countries (China x6, India x6) being counted once per sub-region.
+    # No run ever legitimately wants a different table for that step, so it is code, not a cell.
+    ref = p.get_path('cartographic', 'ee', 'ee_r264_correspondence.gpkg')
     p.gdf_countries_vector_path = ref
     p.df_countries_csv_path = ref.replace('.gpkg', '.csv')
     simplified_ref = ref.replace('_correspondence.gpkg', f'_simplified{simplified}.gpkg')
     p.gdf_countries_vector_simplified_path = simplified_ref if hb.path_exists(simplified_ref) else ref
-
-    if getattr(p, 'df_countries', None) is not None:
-        return p          # already published (or caller-set): don't re-read, don't clobber
     p.df_countries = pd.read_csv(p.df_countries_csv_path)
     # The GDFs stay as path strings; hb.read_vector converts on demand.
     p.gdf_countries = p.gdf_countries_vector_path

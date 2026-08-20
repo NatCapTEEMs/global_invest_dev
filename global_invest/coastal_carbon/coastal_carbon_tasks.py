@@ -14,6 +14,23 @@ from global_invest import utilities
 from global_invest.coastal_carbon import coastal_carbon_functions
 
 
+
+def publish_inputs(p):
+    """Every config-consuming task's first line. TWO SURFACES BY DESIGN: the marine r566
+    correspondence (the gep_regions_input_path cell) is the per-EEZ aggregation surface with its
+    gep_regions_id_col; the r264 correspondence (initialize_country_paths) is the iso3_r250-
+    collapse crosswalk gep_calculation reads. Science inputs (habitat extents, SOC rasters,
+    precipitation) hydrate from es_parameters -- the optional ones resolve permissively and the
+    stock tasks keep their documented fallbacks. ha_per_cell is pyramid infrastructure, in code."""
+    utilities.hydrate_es_config(p, 'coastal_carbon', log=hb.log)
+    utilities.hydrate_es_parameters(p, 'coastal_carbon', log=hb.log)
+    utilities.initialize_country_paths(p, simplified='30sec')
+    p.ha_per_cell_10sec_path = p.get_path('pyramids', 'ha_per_cell_10sec.tif')
+    if not hasattr(p, 'results'):
+        p.results = {}
+    return p
+
+
 def _task_outputs_exist(*paths):
     """Return True if every given path is non-empty and exists on disk.
 
@@ -30,6 +47,7 @@ def mangrove_area_within_countries(p):
     Calculate mangrove area within each country's marine EEZ.
     Uses Global Mangrove Watch (GMW) vector data.
     """
+    publish_inputs(p)
     p.mangrove_area_by_countries_base_year_path = os.path.join(
         p.cur_dir, "mangrove_area_by_countries2019.gpkg"
     )
@@ -37,7 +55,7 @@ def mangrove_area_within_countries(p):
     if not p.run_this:
         return
 
-    gdf_countries_marine_vector = gpd.read_file(p.gdf_countries_marine_vector_path)
+    gdf_countries_marine_vector = gpd.read_file(p.gep_regions_input_path)
     gdf_mangroves = gpd.read_file(p.mangrove_vector_path)
 
     print(f"Loaded {len(gdf_mangroves)} mangrove polygons")
@@ -91,14 +109,14 @@ def mangrove_area_within_countries(p):
 
     # Aggregate by country
     mangrove_area_by_countries_base_year = (
-        gdf_mangroves_within_countries.groupby("eemarine_r566_id")["area_ha"]
+        gdf_mangroves_within_countries.groupby(p.gep_regions_id_col)["area_ha"]
         .sum()
         .reset_index()
     )
 
     # Merge with country info
     mangrove_area_by_countries_base_year = mangrove_area_by_countries_base_year.merge(
-        gdf_countries_marine_vector, how="left", on="eemarine_r566_id"
+        gdf_countries_marine_vector, how="left", on=p.gep_regions_id_col
     )
 
     # Create GeoDataFrame with country geometries
@@ -120,6 +138,7 @@ def salt_marsh_area_within_countries(p):
     Calculate salt marsh area within each country's marine EEZ.
     Uses zonal statistics on salt marsh raster data.
     """
+    publish_inputs(p)
     p.salt_marsh_area_by_countries_base_year_path = os.path.join(
         p.cur_dir, "salt_marsh_area_by_countries2019.gpkg"
     )
@@ -129,7 +148,7 @@ def salt_marsh_area_within_countries(p):
 
     # Read salt marsh vector data
     gdf_salt_marsh = gpd.read_file(p.salt_marsh_vector_path)
-    gdf_countries_marine_vector = gpd.read_file(p.gdf_countries_marine_vector_path)
+    gdf_countries_marine_vector = gpd.read_file(p.gep_regions_input_path)
 
     print(f"Loaded {len(gdf_salt_marsh)} salt marsh polygons")
     print(f"Loaded {len(gdf_countries_marine_vector)} country marine zones")
@@ -183,8 +202,8 @@ def salt_marsh_area_within_countries(p):
             continue
 
         # Add country ID
-        if 'eemarine_r566_id' in gdf_countries_marine_vector.columns:
-            clipped['eemarine_r566_id'] = country['eemarine_r566_id']
+        if p.gep_regions_id_col in gdf_countries_marine_vector.columns:
+            clipped[p.gep_regions_id_col] = country[p.gep_regions_id_col]
 
         intersect_list.append(clipped)
 
@@ -202,14 +221,14 @@ def salt_marsh_area_within_countries(p):
 
     # Aggregate by country
     salt_marsh_area_by_countries = (
-        intersected.groupby("eemarine_r566_id")["area_ha"]
+        intersected.groupby(p.gep_regions_id_col)["area_ha"]
         .sum()
         .reset_index()
     )
 
     # Merge with country info
     salt_marsh_area_by_countries = salt_marsh_area_by_countries.merge(
-        gdf_countries_marine_vector, how="right", on="eemarine_r566_id"
+        gdf_countries_marine_vector, how="right", on=p.gep_regions_id_col
     )
 
     # Fill NaN areas with 0 (countries with no salt marsh)
@@ -244,10 +263,10 @@ def _build_country_id_raster_if_needed(p):
     p.country_id_raster_path = os.path.join(p.cur_dir, "country_id_raster_10sec.tif")
     if not os.path.exists(p.country_id_raster_path):
         coastal_carbon_functions.rasterize_polygons_to_template(
-            vector_path=p.gdf_countries_marine_vector_path,
+            vector_path=p.gep_regions_input_path,
             template_raster_path=p.ha_per_cell_10sec_path,
             out_path=p.country_id_raster_path,
-            field='eemarine_r566_id',
+            field=p.gep_regions_id_col,
             dtype='uint16',
             nodata=0,
             all_touched=False,
@@ -264,6 +283,7 @@ def mangrove_carbon_stock(p):
       - BGB: AGB x IPCC 2014 zone-specific ratio (uses p.precipitation_path if set)
       - SOC: Sanderman 2018 raster at p.mangrove_soc_path (fallback otherwise)
     """
+    publish_inputs(p)
     p.mangrove_carbon_stock_path = os.path.join(
         p.cur_dir, "mangrove_carbon_stock_by_countries2019.csv"
     )
@@ -284,8 +304,8 @@ def mangrove_carbon_stock(p):
             all_touched=True,
         )
 
-    gdf_countries = gpd.read_file(p.gdf_countries_marine_vector_path)
-    country_ids = gdf_countries['eemarine_r566_id'].dropna().astype(int).unique()
+    gdf_countries = gpd.read_file(p.gep_regions_input_path)
+    country_ids = gdf_countries[p.gep_regions_id_col].dropna().astype(int).unique()
 
     df_stock = coastal_carbon_functions.compute_mangrove_carbon_stock_with_sanderman(
         project_dir=p.cur_dir,
@@ -395,6 +415,7 @@ def mangrove_storage_value(p):
             mangrove_agb_storage_value, mangrove_bgb_storage_value,
             mangrove_soil_storage_value, mangrove_storage_value.
     """
+    publish_inputs(p)
     p.mangrove_storage_value_path = os.path.join(p.cur_dir, "mangrove_storage_value_by_countries2019.csv")
     if not p.run_this:
         return
@@ -420,6 +441,7 @@ def salt_marsh_storage_value(p):
         salt_marsh_agb_storage_value, salt_marsh_bgb_storage_value,
         salt_marsh_soil_storage_value, salt_marsh_storage_value.
     """
+    publish_inputs(p)
     p.salt_marsh_storage_value_path = os.path.join(p.cur_dir, "salt_marsh_storage_value_by_countries2019.csv")
     if not p.run_this:
         return
@@ -465,6 +487,7 @@ def seagrass_area_within_countries(p):
     seagrass_area_by_countries2019.{gpkg,csv}
         Country-level area total.
     """
+    publish_inputs(p)
     p.seagrass_within_countries_path = os.path.join(
         p.cur_dir, "seagrass_within_countries2019.gpkg"
     )
@@ -481,7 +504,7 @@ def seagrass_area_within_countries(p):
             "data would silently understate the coastal GEP total; to exclude seagrass, build the "
             "tree with include_seagrass=False instead." % (getattr(p, 'seagrass_vector_path', None),))
 
-    gdf_countries_marine_vector = gpd.read_file(p.gdf_countries_marine_vector_path)
+    gdf_countries_marine_vector = gpd.read_file(p.gep_regions_input_path)
     gdf_seagrass = gpd.read_file(p.seagrass_vector_path, columns=['GENUS', 'FAMILY'])
 
     print(f"Loaded {len(gdf_seagrass)} seagrass polygons")
@@ -526,12 +549,12 @@ def seagrass_area_within_countries(p):
 
     # Aggregate area by country
     area_by_country = (
-        gdf_seagrass_within_countries.groupby("eemarine_r566_id")["area_ha"]
+        gdf_seagrass_within_countries.groupby(p.gep_regions_id_col)["area_ha"]
         .sum()
         .reset_index()
     )
     area_by_country = area_by_country.merge(
-        gdf_countries_marine_vector, how="right", on="eemarine_r566_id"
+        gdf_countries_marine_vector, how="right", on=p.gep_regions_id_col
     )
     area_by_country['area_ha'] = area_by_country['area_ha'].fillna(0)
     area_by_country = gpd.GeoDataFrame(
@@ -556,6 +579,7 @@ def seagrass_carbon_stock(p):
     polygon, then aggregates to country level. Non-marine genera (Trapa, Myriophyllum,
     Valisneria, Najas, etc.) are zeroed out before aggregation.
     """
+    publish_inputs(p)
     p.seagrass_carbon_stock_path = os.path.join(
         p.cur_dir, "seagrass_carbon_stock_by_countries2019.csv"
     )
@@ -586,7 +610,7 @@ def seagrass_carbon_stock(p):
 
     # Aggregate to country
     df_stock = (
-        gdf.groupby('eemarine_r566_id')[
+        gdf.groupby(p.gep_regions_id_col)[
             ['seagrass_agb_c_mg', 'seagrass_bgb_c_mg',
              'seagrass_soil_c_mg', 'seagrass_total_c_mg']
         ].sum().reset_index()
@@ -615,6 +639,7 @@ def seagrass_storage_value(p):
         seagrass_agb_storage_value, seagrass_bgb_storage_value,
         seagrass_soil_storage_value, seagrass_storage_value.
     """
+    publish_inputs(p)
     p.seagrass_storage_value_path = os.path.join(p.cur_dir, "seagrass_storage_value_by_countries2019.csv")
     if not p.run_this:
         return
@@ -642,6 +667,7 @@ def salt_marsh_carbon_stock(p):
       - SOC: Maxwell et al. 2024 MarSOC raster at p.salt_marsh_soc_path (if set);
              fallback to latitude step function if path is missing or file absent.
     """
+    publish_inputs(p)
     p.salt_marsh_carbon_stock_path = os.path.join(
         p.cur_dir, "salt_marsh_carbon_stock_by_countries2019.csv"
     )
@@ -662,8 +688,8 @@ def salt_marsh_carbon_stock(p):
             all_touched=True,
         )
 
-    gdf_countries = gpd.read_file(p.gdf_countries_marine_vector_path)
-    country_ids = gdf_countries['eemarine_r566_id'].dropna().astype(int).unique()
+    gdf_countries = gpd.read_file(p.gep_regions_input_path)
+    country_ids = gdf_countries[p.gep_regions_id_col].dropna().astype(int).unique()
 
     df_stock = coastal_carbon_functions.compute_salt_marsh_carbon_stock_with_maxwell(
         project_dir=p.cur_dir,
@@ -689,6 +715,7 @@ def combined_ecosystem_areas(p):
     single dataset. Seagrass is optional: skipped silently if its area / stock
     CSVs do not exist (e.g. include_seagrass=False on the run script).
     """
+    publish_inputs(p)
     p.combined_area_path = os.path.join(p.cur_dir, "combined_ecosystem_areas.csv")
     if not p.run_this:
         return
@@ -697,7 +724,7 @@ def combined_ecosystem_areas(p):
     df_mangrove = pd.read_csv(
         p.mangrove_area_by_countries_base_year_path.replace('.gpkg', '.csv')
     )
-    df_mangrove = df_mangrove[['eemarine_r566_id', 'area_ha']].rename(
+    df_mangrove = df_mangrove[[p.gep_regions_id_col, 'area_ha']].rename(
         columns={'area_ha': 'mangrove_area_ha'}
     )
 
@@ -705,7 +732,7 @@ def combined_ecosystem_areas(p):
     df_salt_marsh = pd.read_csv(
         p.salt_marsh_area_by_countries_base_year_path.replace('.gpkg', '.csv')
     )
-    df_salt_marsh = df_salt_marsh[['eemarine_r566_id', 'area_ha']].rename(
+    df_salt_marsh = df_salt_marsh[[p.gep_regions_id_col, 'area_ha']].rename(
         columns={'area_ha': 'salt_marsh_area_ha'}
     )
 
@@ -717,7 +744,7 @@ def combined_ecosystem_areas(p):
     has_seagrass_area = bool(seagrass_area_csv) and os.path.exists(seagrass_area_csv)
     if has_seagrass_area:
         df_seagrass = pd.read_csv(seagrass_area_csv)
-        df_seagrass = df_seagrass[['eemarine_r566_id', 'area_ha']].rename(
+        df_seagrass = df_seagrass[[p.gep_regions_id_col, 'area_ha']].rename(
             columns={'area_ha': 'seagrass_area_ha'}
         )
     else:
@@ -728,11 +755,11 @@ def combined_ecosystem_areas(p):
 
     # Merge areas
     df_combined = df_mangrove.merge(
-        df_salt_marsh, on='eemarine_r566_id', how='outer'
+        df_salt_marsh, on=p.gep_regions_id_col, how='outer'
     )
     if has_seagrass_area:
         df_combined = df_combined.merge(
-            df_seagrass, on='eemarine_r566_id', how='outer'
+            df_seagrass, on=p.gep_regions_id_col, how='outer'
         )
     else:
         df_combined['seagrass_area_ha'] = 0
@@ -756,31 +783,31 @@ def combined_ecosystem_areas(p):
     salt_marsh_stock_path = p.salt_marsh_carbon_stock_path
     seagrass_stock_path = getattr(p, 'seagrass_carbon_stock_path', None)
     mangrove_stock_cols = [
-        'eemarine_r566_id',
+        p.gep_regions_id_col,
         'mangrove_agb_c_total_mg', 'mangrove_bgb_c_total_mg',
         'mangrove_soil_c_total_mg', 'mangrove_total_c_stock_mg',
     ]
     salt_marsh_stock_cols = [
-        'eemarine_r566_id',
+        p.gep_regions_id_col,
         'salt_marsh_agb_c_total_mg', 'salt_marsh_bgb_c_total_mg',
         'salt_marsh_soil_c_total_mg', 'salt_marsh_total_c_stock_mg',
     ]
     seagrass_stock_cols = [
-        'eemarine_r566_id',
+        p.gep_regions_id_col,
         'seagrass_agb_c_total_mg', 'seagrass_bgb_c_total_mg',
         'seagrass_soil_c_total_mg', 'seagrass_total_c_stock_mg',
     ]
     df_mangrove_stock = pd.read_csv(mangrove_stock_path)[mangrove_stock_cols]
     df_salt_marsh_stock = pd.read_csv(salt_marsh_stock_path)[salt_marsh_stock_cols]
 
-    df_combined = df_combined.merge(df_mangrove_stock, on='eemarine_r566_id', how='left')
-    df_combined = df_combined.merge(df_salt_marsh_stock, on='eemarine_r566_id', how='left')
+    df_combined = df_combined.merge(df_mangrove_stock, on=p.gep_regions_id_col, how='left')
+    df_combined = df_combined.merge(df_salt_marsh_stock, on=p.gep_regions_id_col, how='left')
 
     has_seagrass_stock = bool(seagrass_stock_path) and os.path.exists(seagrass_stock_path)
     if has_seagrass_stock:
         df_seagrass_stock = pd.read_csv(seagrass_stock_path)[seagrass_stock_cols]
         df_combined = df_combined.merge(
-            df_seagrass_stock, on='eemarine_r566_id', how='left'
+            df_seagrass_stock, on=p.gep_regions_id_col, how='left'
         )
     else:
         for col in seagrass_stock_cols[1:]:
@@ -803,12 +830,12 @@ def combined_ecosystem_areas(p):
     )
 
     # Read country info
-    gdf_countries = gpd.read_file(p.gdf_countries_marine_vector_path)
+    gdf_countries = gpd.read_file(p.gep_regions_input_path)
     df_countries = gdf_countries.drop(columns=['geometry'])
 
     # Merge with country info
     df_combined = df_combined.merge(
-        df_countries, on='eemarine_r566_id', how='left'
+        df_countries, on=p.gep_regions_id_col, how='left'
     )
 
     df_combined.to_csv(p.combined_area_path, index=False)
@@ -829,6 +856,7 @@ def gep_calculation(p):
         r264 correspondence (one row per iso3_r250), filling missing with 0,
         and summing per iso3_r250_label.
     """
+    publish_inputs(p)
     service_results = {}
     p.results['coastal_carbon'] = service_results
 
@@ -885,8 +913,8 @@ def gep_calculation(p):
         df_gep = df_gep[df_gep['total_coastal_carbon_area_ha'] > 0]
 
         hb.df_write(df_gep, r566_csv)
-        gdf_countries = gpd.read_file(p.gdf_countries_marine_vector_path)
-        gdf_gep = gdf_countries.merge(df_gep, on='eemarine_r566_id', how='right')
+        gdf_countries = gpd.read_file(p.gep_regions_input_path)
+        gdf_gep = gdf_countries.merge(df_gep, on=p.gep_regions_id_col, how='right')
         gdf_gep.to_file(r566_gpkg, driver='GPKG')
 
         hb.log(
@@ -948,4 +976,5 @@ def gep_calculation(p):
 def gep_result(p):
     """Render the results report(s). Shared implementation in utilities (this module's variant --
     sidecar copying, PYTHONPATH, crash-loudly -- became the shared one)."""
+    publish_inputs(p)
     utilities.render_service_results(p)

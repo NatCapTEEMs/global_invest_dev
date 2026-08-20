@@ -2,7 +2,7 @@
 combine -> gep_calculation -> results report.
 
 Thin runner: it builds ONE tree and executes it. All input paths are get_path REFERENCE paths
-resolved in coastal_carbon_initialize.initialize_paths (one source of truth for every runner);
+published by each task itself (publish_inputs in the tasks module);
 base_data_dir is resolved by ProjectFlow (its default, overridable per machine via
 ~/.config/hazelbean/machine.env), never hardcoded here.
 """
@@ -19,8 +19,6 @@ def run_project(p):
 
     build_task_tree(p)
 
-    p.results = {}
-    coastal_carbon_initialize.initialize_paths(p)
 
     hb.log('Created ProjectFlow object at ' + p.project_dir + '\n    from script ' + p.calling_script)
     p.execute()

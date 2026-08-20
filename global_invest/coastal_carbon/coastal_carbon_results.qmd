@@ -140,7 +140,6 @@ if __name__ == '__main__':
     p.results = {}
 
     # Initialize paths
-    coastal_carbon_initialize.initialize_paths(p)
 
     # Run the model
     hb.log(

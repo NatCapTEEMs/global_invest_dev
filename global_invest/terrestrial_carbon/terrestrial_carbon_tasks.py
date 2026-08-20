@@ -96,9 +96,9 @@ def carbon_by_region(p):
         return True
     result = terrestrial_carbon_functions.summarize_raster_by_region(
         value_raster_path=p.carbon_density_per_cell_base_year_path,
-        region_boundary_path=p.gdf_countries_vector_path,
+        region_boundary_path=p.gep_regions_input_path,
         out_path=p.carbon_by_region_base_year_path,
-        year=p.gep_base_year, id_column='ee_r264_id')
+        year=p.gep_base_year, id_column=p.gep_regions_id_col)
     return result
 
 
