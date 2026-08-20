@@ -85,9 +85,11 @@ def fisheries_shock(p):
     fisheries_header_map = getattr(p, 'fisheries_header_map', FISH_HEADER_MAP)
     es_shock_climate_labels = getattr(p, 'es_shock_climate_labels', None) or {}
 
+    # The HAR reference is the cwon_shocks_path_template row (the es_lulc_path_template
+    # pattern: a template cell, formatted at use -- here with the aggregation label).
     cwon_shocks_path = getattr(p, 'cwon_shocks_path', None) or p.get_path(
-        'gtappy', 'cge_releases', 'gtapv7-aez-rd', 'data',
-        p.aggregation_label, 'cwon_shocks.har', raise_error_if_fail=False)
+        p.cwon_shocks_path_template.format(aggregation_label=p.aggregation_label),
+        raise_error_if_fail=False)
     if not os.path.exists(cwon_shocks_path):
         print('  fisheries shock: cwon_shocks.har not found (%s) -- skipping' % cwon_shocks_path)
         return
