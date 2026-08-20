@@ -1,19 +1,11 @@
 """Standard task-tree seam for the erosion-control ES model (mirrors add_pollination/carbon/fisheries).
 
-add_erosion_tasks dispatches STATIC (read the pre-computed erosion dependency table) vs DYNAMIC (recompute
-from the SEALS maps via InVEST SDR, #26) on whether 'erosion' is listed in p.dynamic_es. Consumers
-(ngfs_pnas) set the shared es_shock_* config on p, then call add_erosion_tasks(p) alongside the other seams.
-
-THE GEP VALUATION IS FOLDED IN (2026-08-16, per the recipe that used to live here): the
-prevention-share valuation from `global_erosion_gep` -- InVEST SDR -> on-farm/upstream prevention
-shares -> per-country GEP -> maps/figures. Its functions/tasks were appended to
-erosion_functions.py / erosion_tasks.py (zero name collisions; the one duplicate, SPAM_ALIAS_MAP,
-kept OUR corrected exact-FAO-name version), erosion_utils.py arrived as a new file, and every
-import-time side effect was made lazy (output-dir mkdirs, natcap imports, the root-logging/gdal
-env block -- see the fold separator in erosion_functions.py). Its builders are exposed below under
-the template names (build_gep_service_*); its two-line add_erosion_tasks alias was dropped --
-add_erosion_tasks here stays the ES-shock seam. ⚠ The GEP chain is cluster-scale (global InVEST
-SDR): folded and import-clean, NOT yet number-verified -- see the tracker.
+add_erosion_tasks dispatches STATIC (read the pre-computed erosion dependency table) vs DYNAMIC
+(recompute from the SEALS maps via InVEST SDR) on whether 'erosion' is listed in p.dynamic_es.
+Consumers set the shared es_shock_* config on p, then call add_erosion_tasks(p) alongside the
+other seams. The GEP valuation (InVEST SDR -> on-farm/upstream prevention shares -> per-country
+GEP -> maps/figures) is exposed through the template builders (build_gep_service_*); that chain
+is cluster-scale (global InVEST SDR).
 """
 from global_invest.erosion import erosion_tasks
 
