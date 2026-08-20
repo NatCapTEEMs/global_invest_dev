@@ -1,22 +1,6 @@
-"""coastal_carbon wiring.
-
-The develop_yanxu rework is MERGED onto this branch (2026-08-15): per-ecosystem task trees
-(mangrove + salt marsh + seagrass) composed into the GEP calculation tree, real
-area->stock->storage-value chains, results.qmd + references.bib, and a gep_calculation that
-enforces the r250-only rule via the canonical `ee_r264_label == iso3_r250_label` filter
-(see global_invest/utilities.py). This file was renamed from coastal_carbon_initialization.py
-to match the other services.
-
-Conform state relative to the terrestrial_carbon template:
-- [x] configuration is data: the aggregation surface + id column are es_config cells, the
-      science inputs are es_parameters rows, and every config-consuming task opens with
-      publish_inputs (coastal_carbon_tasks) -- no initialize_paths, no setup call anywhere.
-- [x] ProjectFlow-native skip: data tasks registered with skip_existing=1; each publishes its
-      output paths then `if not p.run_this: return`. _task_outputs_exist survives only as an
-      internal sub-step cache; the pipeline-wide _final_result_exists short-circuit is gone.
-- [ ] hazelbean-first pass over the raster ops (rasterio/rasterstats -> hb equivalents),
-      each swap verified against the cached output.
-- [ ] number-verify the chain against the coastal source data (NatCapTEEMs Drive).
+"""coastal_carbon wiring: the per-ecosystem task trees (mangrove + salt marsh + seagrass)
+composed into the GEP calculation tree. gep_calculation enforces the r250-only rule via the
+canonical `ee_r264_label == iso3_r250_label` filter (see global_invest/utilities.py).
 """
 from global_invest import utilities
 
