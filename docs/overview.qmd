@@ -217,7 +217,7 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 
 # Open questions by service
 
-## terrestrial_carbon: verified against the manuscript
+## terrestrial_carbon
 
 - [What it does: sums the carbon stored by land ecosystems (a zone-by-class density table on the land-cover map) and prices it at the rental social cost of carbon. State: GEP reproduces the manuscript's total, {{< meta terrestrial_total >}} at 2019.]{.state}
 - A double-count in the code overstated its total by 23.5 percent (split countries entered once per sub-region, China six times). The corrected aggregation reproduces the manuscript's total.
@@ -246,7 +246,7 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 - Erosion's GEP records the habitat-supplied share, so the raster-side definition is the internally consistent choice.
 - The FAO-side number comes directly from the author's committed per-country table (its 2023 total is the {{< meta poll_fao >}}, and it carries 2019 ready-made). The raster-side number is our country aggregation of the author's value raster. The manuscript becomes its reference once regenerated at 2019.
 
-## erosion: interim inputs
+## erosion
 
 - [What it does: values the soil that land cover keeps in place (prevented erosion mapped by the SDR model, valued through crop productivity). State: the full chain runs end to end and gives {{< meta erosion_total >}}, provisional. The rerun with the author's original input tables is under way. A unit test checks the rebuilt country formula's three behaviors on a sample input: the production-weighted elasticity average, the cap of elasticity at one, and the numerical floor that keeps a tiny positive shock from vanishing.]{.state}
 - Both former asks are closed. The drive's erosion folder carries the author's three input tables and the per-country results, all copied. The rerun with the originals is under way, and its comparison against the author's own table verifies by replication.
@@ -260,7 +260,7 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 - The chain runs at two resolutions, a 6.45 km analysis grid on a laptop or native 300 m on a cluster, and one configuration row switches them.
 - The method's constants (the SES-11 thresholds) are named in code and await the author's confirmation. Every number from this service is provisional until then.
 
-## landslide_mitigation: the first full run is complete
+## landslide_mitigation
 
 - [What it does: models slope stability with and without forest root cohesion, turns the difference into avoided landslide deaths, and values them at a value of a statistical life. State: folded from the v0.2.0 release with its input data copied into the shared base data. The first full run is complete on the cluster: {{< meta landslide_deaths >}} avoided deaths globally in 2019, valued at {{< meta landslide_total >}}. Two data faults were found and fixed (a corrupted input file from the transfer, and a wrong column name in the country join).]{.state}
 - **Q1: needed, one machine-readable per-country output from a v0.2.0 run. A CSV is enough.** With it, our run is checked country by country against the author's own output.
@@ -274,7 +274,7 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 - **Q3: is the CWoN method the account's fisheries GEP?** It runs at {{< meta fisheries_total >}} for 2019 across 165 countries, on the two CWoN tables copied from the public World Bank package. Needed: the source pipeline's output CSV for replication. The FishStatJ pipeline is the alternative source.
 - The subsistence component is also in the library. It is the Lynch et al. (2024) consumptive-use value per country, {{< meta fisheries_subsistence_total >}} across 85 countries (Canada and China lead), and it replicates the source repo's committed output. Whether and how commercial and subsistence combine into the account's fisheries value is the open scope question.
 
-## recreation: ported and running
+## recreation
 
 - [State: ported from the source repo: seven tasks in the library template, method constants pinned by unit tests, aggregation directly on r250, data copied, first run complete. What it does: land-cover shares, protected areas and road access rank 1 km sites. A gravity model sends residents (daily) and allocated overnight stays (UNWTO, the UN World Tourism Organization's tourism statistics) into the high-quality sites. Visits are valued at national fuel cost times travel distance.]{.state}
 - **The remaining need is a reference per-country output.** We could not find the source pipeline's results_by_country.csv anywhere we can reach. One copy verifies the port by replication.
@@ -332,7 +332,7 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 - **Q1: needed, the USD-to-international-dollars conversion script and its inputs.** The method note describes per-source-year cost harmonization the folder does not carry.
 - **Q2: the account's currency.** Water quality proposes 2019 international dollars. Every other service values in 2019 market USD. One account cannot mix the two.
 
-## flood_control: adopted from the committed pipeline
+## flood_control
 
 - [State: new module from the drive's FINAL_GEP_FLOOD tree (extensive method notes, a JRC comparison for Europe). Flood depth by return period, JRC depth-damage functions and the asset map give each country's expected annual flood damage. The committed per-country total is {{< meta flood_total >}} in 2019 USD (236 countries assessed, 148 non-zero) and reproduces the pipeline's own summary. Every calculation step is reimplemented as tested functions in the library, and the full 250-country recompute on the pipeline's own inputs reproduces its table for 146 of 148 non-zero countries within 0.1 percent.]{.state}
 - One vocabulary catch, fixed in our staging: the pipeline codes South Sudan as Natural Earth's SDS where the account's label is SSD. The mapping layer had dropped it (assessed, zero).
@@ -340,7 +340,7 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 - **The recompute also flags one country: Morocco.** The committed value is {{< meta mar_committed >}} for the whole country where the recompute gives {{< meta mar_recomputed >}}.
 - **Q1: needed, confirmation that the FINAL_GEP_FLOOD outputs are the current ones**, the vintage note for the methods writeup, and the answer whether the service-flow fraction should multiply into the valuation chain.
 
-## local_climate_regulation: ported
+## local_climate_regulation
 
 - [State: new module, closing the roster's last scoped port. InVEST urban cooling gives each city-month a vegetation cooling effect. The avoided energy is priced at national electricity prices (the city-level identity is exact in the committed files). The v04 correction applies each country's own consumption per cooling-degree-day (CDD, the annual sum of how far each day's temperature exceeds an 18°C comfort base, the standard measure of cooling demand). The committed accounting total is {{< meta lcr_total >}} across 174 countries, and the committed final equals the plain city sum.]{.state}
 - The cooling-degree-day input resolves into our own task: the IEA-CMCC tracker distributes the country-level data publicly, so we download the 2019 file and test the replication ourselves. The ask returns only if the numbers do not reproduce. The energy side needs nothing either. The per-capita cooling-energy build is public in the group's own repo, corrected and documented.
