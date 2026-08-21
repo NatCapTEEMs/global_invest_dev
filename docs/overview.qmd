@@ -245,7 +245,7 @@ format:
 
 ## erosion: interim inputs
 
-- [What it does: values the soil that land cover keeps in place — prevented erosion mapped by the SDR model, valued through crop productivity. State: the full chain runs end to end and reconciles internally at {{< meta erosion_total >}}, PROVISIONAL. The rebuilt valuation formulas — the yield shock, the clipping step and the value share — are unit-tested on sample inputs. The valuation runs on interim inputs we built ourselves.]{.state}
+- [What it does: values the soil that land cover keeps in place — prevented erosion mapped by the SDR model, valued through crop productivity. State: the full chain runs end to end and reconciles internally at {{< meta erosion_total >}}, PROVISIONAL. A unit test checks the rebuilt country formula's three behaviors on a sample input: the production-weighted elasticity average, the cap of elasticity at one, and the numerical floor that keeps a tiny positive shock from vanishing. The valuation runs on interim inputs we built ourselves.]{.state}
 - **Q1: needed — the three processed input files the code reads by name** (faostat_gpv_2019_iso3, faostat_prices_2019_completed_revised, elasticity_crops_fao_revised). Raw FAOSTAT is public, but the completed/revised steps are the author's. Our chain runs on interim series we built ourselves, and every number moves when the originals replace them.
 - **Q2: needed — a per-country output table from the submission run.** With it we verify by exact replication, as extractive_materials was.
 - Could it be at `/projects/standard/jajohns/shared/sediment_gep` on MSI — and can we get it? One copy settles both questions.
