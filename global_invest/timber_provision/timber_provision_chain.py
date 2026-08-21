@@ -88,5 +88,5 @@ def timber_gep_from_zone_sums(zone_sums, countries_df):
         pd.DataFrame: countries_df plus a timber_provision_gep column.
     """
     df = countries_df.copy()
-    df["timber_provision_gep"] = zone_sums[df["iso3_r250_id"].to_numpy()]
+    df["timber_provision_gep"] = zone_sums[df["iso3_r250_id"].to_numpy(dtype=int)]
     return df

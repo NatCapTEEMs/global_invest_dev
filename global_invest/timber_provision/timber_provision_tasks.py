@@ -1,9 +1,17 @@
-"""Timber-provision GEP tasks: the committed Forestry output on the r250 rows."""
+"""Timber-provision GEP tasks: the value raster summed to countries in the library.
+
+The reported number is OUR run: the pipeline's value raster (verified equal to the
+net-return layer masked and floored, see timber_provision_chain) summed per country on
+the 10-arcsecond country-id raster. The committed Forestry CSV stays as the test anchor
+the run is compared against, never as the output."""
 import os
 
+import numpy as np
 import pandas as pd
+import rasterio
 import hazelbean as hb
 from global_invest import utilities
+from global_invest.timber_provision import timber_provision_chain as tc
 from global_invest.timber_provision import timber_provision_functions as tp
 
 
@@ -20,7 +28,7 @@ def publish_inputs(p):
 
 
 def gep_calculation(p):
-    """GEP valuation for timber provision: the committed per-country table."""
+    """GEP valuation for timber provision: the value raster summed per country."""
     publish_inputs(p)
     service_results = {}
     p.results['timber_provision'] = service_results
@@ -31,17 +39,28 @@ def gep_calculation(p):
         return
     hb.log('Starting GEP calculation for timber_provision.')
 
-    timber = pd.read_csv(p.timber_provision_gep_path)
+    value_src = rasterio.open(p.timber_provision_value_raster_path)
+    zone_src = rasterio.open(p.timber_provision_zone_raster_path)
+    n_zones = 1000
+    zone_sums = np.zeros(n_zones + 1, dtype='float64')
+    rows_per_block = 2048
+    for row0 in range(0, value_src.shape[0], rows_per_block):
+        h = min(rows_per_block, value_src.shape[0] - row0)
+        win = rasterio.windows.Window(0, row0, value_src.shape[1], h)
+        zone_sums += tc.gep_by_zone(value_src.read(1, window=win), zone_src.read(1, window=win), n_zones)
+
     attr_cols = ['iso3_r250_id', 'iso3_r250_label', 'iso3_r250_name',
                  'continent', 'region_un', 'region_wb', 'income_grp', 'subregion']
     countries = p.df_countries[attr_cols].drop_duplicates('iso3_r250_id')
-    df_gep = tp.timber_gep_by_country(timber, countries)
+    df_gep = tc.timber_gep_from_zone_sums(zone_sums, countries)
     df_gep['year'] = int(p.gep_base_year)
     hb.df_write(df_gep[attr_cols + ['year', 'timber_provision_gep']],
                 service_results['gep_by_country_base_year'])
 
     hb.log(f'Total timber_provision GEP for base year {p.gep_base_year}: '
            f'{df_gep["timber_provision_gep"].sum():,.2f}')
+    committed = pd.read_csv(p.timber_provision_gep_path)
+    hb.log(f'Committed Forestry table total: {committed.select_dtypes("number").iloc[:, -1].sum():,.2f} (the test anchor).')
     return True
 
 

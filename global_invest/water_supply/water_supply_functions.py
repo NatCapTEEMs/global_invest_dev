@@ -185,3 +185,24 @@ def water_use_components_by_country(agriculture_df, all_sector_df, countries_df)
             columns={'wateruse_gep': 'water_use_all_sector_gep'}),
         on='iso3_r250_label', how='left')
     return df
+
+
+def water_use_components_from_chain(gep_by_country_year_df, countries_df):
+    """One row per country from OUR chain: the latest survey year's agriculture value and
+    all-sector sum, keyed to r250 by exact country-name match (iso3_r250_name, then
+    name_long). Unmatched chain countries keep an empty iso3 so a name drift is visible
+    instead of silently dropped."""
+    latest = (gep_by_country_year_df.sort_values('year')
+              .groupby('country', as_index=False).last())
+    sector_cols = ['gep_water_agricultural', 'gep_water_industrial', 'gep_water_municipal']
+    latest['water_use_agriculture_gep'] = latest['gep_water_agricultural']
+    latest['water_use_all_sector_gep'] = latest[sector_cols].sum(axis=1, min_count=1)
+
+    by_name = countries_df.drop_duplicates('iso3_r250_name').set_index('iso3_r250_name')['iso3_r250_label']
+    by_long = (countries_df.drop_duplicates('name_long').set_index('name_long')['iso3_r250_label']
+               if 'name_long' in countries_df.columns else by_name.iloc[0:0])
+    latest['iso3_r250_label'] = latest['country'].map(by_name).fillna(latest['country'].map(by_long))
+    latest = latest.merge(countries_df[['iso3_r250_label', 'iso3_r250_id']].drop_duplicates('iso3_r250_label'),
+                          on='iso3_r250_label', how='left')
+    return latest[['country', 'iso3_r250_id', 'iso3_r250_label', 'year',
+                   'water_use_agriculture_gep', 'water_use_all_sector_gep']]

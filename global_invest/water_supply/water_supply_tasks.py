@@ -83,12 +83,11 @@ def gep_result(p):
 
 def water_use_components(p):
     """The water-use chain computed from the raw inputs (script-01 cleaning, then script-02
-    efficiency x withdrawal products at the survey years), and the components' per-country
-    values from the drive's committed outputs. The committed per-country tables are NOT the
-    chain's outputs -- a newer AQUASTAT vintage plus the appendix's deflate-to-2015 step for
-    the all-sector total, a separate crop-water chain for agriculture (see the functions
-    module) -- so they stay the adopted values; the chain's replication anchors are its own
-    two committed intermediates, pinned in the test suite."""
+    efficiency x withdrawal products at the survey years), reported as OUR run's components.
+    The drive's committed per-country tables are NOT this chain's outputs -- a newer AQUASTAT
+    vintage plus the appendix's deflate-to-2015 step for the all-sector total, a separate
+    crop-water chain for agriculture (see the functions module) -- so they are the comparison
+    anchors, logged and pinned in the test suite, never the reported values."""
     publish_inputs(p)
     p.water_use_efficiency_path = os.path.join(p.cur_dir, 'aquastat_water_efficiency_cleaned.csv')
     p.water_use_gep_path = os.path.join(p.cur_dir, 'water_use_gep_by_country_year.csv')
@@ -108,15 +107,19 @@ def water_use_components(p):
         hb.log('water_use chain: %d country-year rows, %.4g USD summed over survey years '
                'and sectors' % (len(df_gep), df_gep[sector_cols].sum().sum()))
     if not hb.path_exists(p.water_use_components_path):
-        agriculture = pd.read_csv(p.water_use_agriculture_path)
-        all_sector = pd.read_csv(p.water_use_all_sector_path)
-        attr_cols = ['iso3_r250_id', 'iso3_r250_label']
-        countries = p.df_countries[attr_cols].drop_duplicates('iso3_r250_id')
-        out = wf.water_use_components_by_country(agriculture, all_sector, countries)
-        out.to_csv(p.water_use_components_path, index=False)
-        hb.log('water_use components: agriculture %.4g USD (%d countries), all-sector %.4g USD '
-               '(%d countries)' % (out['water_use_agriculture_gep'].sum(),
-                                   out['water_use_agriculture_gep'].notna().sum(),
-                                   out['water_use_all_sector_gep'].sum(),
-                                   out['water_use_all_sector_gep'].notna().sum()))
+        df_gep = pd.read_csv(p.water_use_gep_path, encoding='utf-8-sig')
+        name_cols = ['iso3_r250_id', 'iso3_r250_label', 'iso3_r250_name', 'name_long']
+        countries = p.df_countries[[c for c in name_cols if c in p.df_countries.columns]].drop_duplicates('iso3_r250_id')
+        out = wf.water_use_components_from_chain(df_gep, countries)
+        out.to_csv(p.water_use_components_path, index=False, encoding='utf-8-sig')
+        hb.log('water_use components (OUR chain): agriculture %.4g USD (%d countries), all-sector %.4g USD '
+               '(%d countries); %d chain countries without an r250 match' % (
+                   out['water_use_agriculture_gep'].sum(), out['water_use_agriculture_gep'].notna().sum(),
+                   out['water_use_all_sector_gep'].sum(), out['water_use_all_sector_gep'].notna().sum(),
+                   out['iso3_r250_label'].isna().sum()))
+        committed_ag = pd.read_csv(p.water_use_agriculture_path)
+        committed_all = pd.read_csv(p.water_use_all_sector_path)
+        hb.log('committed anchors: agriculture %.4g USD, all-sector %.4g USD -- different source '
+               'chains (see the functions module), compared in the test suite' % (
+                   committed_ag['wateruse_ag_gep'].sum(), committed_all['wateruse_gep'].sum()))
     return True
