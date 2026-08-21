@@ -21,10 +21,12 @@ erosion_total: "$15.54bn"
 livestock_ind: "$136bn"
 livestock_chn: "$838bn"
 livestock_world: "$2.29T"
-n_services: "13"
+n_services: "14"
 fisheries_total: "$29.00bn"
 fisheries_subsistence_total: "$7.92bn"
-n_services_at_2019: "12"
+water_supply_total: "$144.68bn"
+hydro_manuscript: "$287.7bn"
+n_services_at_2019: "13"
 
 format:
     revealjs:
@@ -63,7 +65,7 @@ format:
 - Every one of the {{< meta n_services >}} services now carries its GEP method in the library, with its data staged.
 - Services whose science supports it also produce a scenario shock for the macroeconomic pipeline; not all can be made into shocks.
 - A service with both outputs computes them from the same functions file — one implementation, so the valuation and the shock cannot disagree.
-- The library is scenario agnostic. Consumers inject their naming through scenario maps and required configuration.
+- The library is scenario agnostic: a caller injects its own scenario naming through scenario maps and configuration.
 
 ## The mental model: a service module reads like a paper
 
@@ -84,7 +86,7 @@ format:
 - Configuration is data, in two shared CSVs.
 - es_config.csv: one row per service, in the GEP formula's own vocabulary — quantity, price, attribution, land base, base year, price convention — plus the crosswalk to the status sheet.
 - es_scenarios_test.csv: the standard SEALS scenarios, with matching test maps shipped, so a standalone shock run works on any machine.
-- The library fills only what the caller left unset. A pipeline such as ngfs_pnas drives the same tasks from its own scenarios file, and its values always prevail.
+- A pipeline such as ngfs_pnas drives the same tasks from its own scenarios file; the CSVs only fill what it leaves unset.
 - A task begins by naming its own inputs — not machine paths, but references into the shared base data (the next slide). Because every task carries its own input list, it works wherever it is grafted; this holds for every service now.
 - Results aggregate to one row per country (r250). Sub-national tables (r264, marine r566) serve as computation surfaces and maps — their rows are never summed into totals.
 
@@ -94,17 +96,17 @@ format:
 - A run therefore carries no absolute paths. The same run file works on a laptop, on the cluster, or on any machine that stages the same base data — the recreation port and the landslide cluster run rely on exactly this.
 - Tasks cache their output in the project directory and skip themselves when it already exists, so a rerun recomputes nothing and an interrupted run resumes where it stopped.
 
-## Two consumers, one science
+## Two callers, one science
 
-- Each service module feeds two consumers from the same functions file: the GEP account reads the valuation (one row per country), and the macroeconomic pipeline reads the scenario shock (a table of productivity deviations for GTAP).
-- Because both outputs are written from the same science, the account's value and the scenario's shock cannot drift apart — there is no second implementation to diverge.
+- Each service module serves two callers: the GEP account reads the valuation (one row per country), and the macroeconomic pipeline reads the scenario shock (a table of productivity deviations for GTAP).
+- Both read the same functions file, so a change to the science reaches the account and the scenarios at once.
 - Not every service's science supports a shock, but every service is expected to reach a GEP valuation.
 
 ## How a pipeline grafts a service
 
-- A consumer pipeline calls add_\<service\>_tasks(p) after its land-use step, and the service's tasks slot into the consumer's own task tree.
-- Configuration is a defaults layer. The library's CSVs fill only what the caller left unset, and a caller's value always prevails — so the library never needs to know its consumers' naming.
-- The standalone runners use the same graft, so a service debugged in isolation behaves identically inside the pipeline.
+- A caller grafts a service with one call — add_\<service\>_tasks(p) after its land-use step — and the service's tasks slot into the caller's own task tree.
+- The caller's configuration prevails over the shipped CSVs (the rule from the mental-model slide), so the library never needs to know its callers' naming.
+- The standalone runners use the same graft, so a bug found and fixed in a service's own run is fixed in the pipeline too — nothing changes between the two.
 
 ## The configuration table itself (es_config.csv)
 
@@ -135,18 +137,19 @@ format:
 | livestock_provision | quarantined | three open method decisions |
 | coastal_protection | {{< meta cp_total >}} | fresh baseline, rerun identical |
 | extractive_materials | {{< meta extractive_total >}} | the author's reference, exact |
-| renewable_energy | {{< meta renewable_total >}} | rerun identical; drive references disagree |
+| renewable_energy | {{< meta renewable_total >}} | our rerun identical; OPEN: which source is blessed (code vs drive CSVs) |
 | pollination | {{< meta poll_raster >}} raster side (2023) | FAO side {{< meta poll_fao >}}, definition open |
 | erosion | {{< meta erosion_total >}} PROVISIONAL | internal reconciliation; awaits submission |
 | landslide_mitigation | input stage complete; full run resumes on the cluster | no machine-readable reference yet |
 | fisheries | shock + commercial GEP {{< meta fisheries_total >}} PROVISIONAL + subsistence {{< meta fisheries_subsistence_total >}} | CWoN tables staged, run live (reference still needed); subsistence replicates its committed output exactly |
 | recreation | ported this week; data staged, first run in progress | tests pin the method; no external anchor yet |
 | fire_protection | three variants; account variant open | full from-raw replication (panel staged from the drive), to the float |
+| water_supply | hydropower component {{< meta water_supply_total >}} | the drive's committed output, replicated exactly (95 countries) |
 
 ## Verification discipline, and what it caught
 
-- Run first, conform second, and verify every conform step against the cached run. An additive gate audits each branch against develop.
-- Write-time invariants check every shock table before it is written, a canonical-row rule guards every country aggregation, and every row of the configuration table is under test from the moment it is added.
+- Every restructuring step had to reproduce a saved reference run before it counted as done. Before any merge, a check lists everything a branch would remove from the shared code, so nothing disappears silently.
+- Automatic checks run continuously: every shock table is validated before it is written, every country aggregation is guarded against double-counting split countries, and every configuration row is covered by a test from the moment it is added.
 - Caught so far: a 23.5 percent double-count in the carbon GEP, a two-spelling baseline bug, and a stale-input trap in the erosion chaining.
 - It also caught one claim of our own: the coastal report's numbers are the EEZ-only aggregation by design, matched exactly by our run.
 - Every receipt names its anchor, because the two kinds prove different things. Reproducing our own cached run proves a change moved nothing (every refactor is held to that, to the dollar); an external anchor — the manuscript, an author's replication — proves the number itself. The totals table names which kind each service has.
@@ -162,6 +165,7 @@ format:
 | erosion | test_erosion.py | the valuation arithmetic itself (loaders mocked): elasticity shock, clipping, floor, GPV shares |
 | recreation | test_recreation.py | every method constant against hand-derived values: matrices, ring kernels, gravity model, allocation |
 | fire_protection | test_fire_protection.py | exact replication of the committed reference (161 countries) on every run, plus the reordered-input tripwire |
+| water_supply | test_water_supply.py | the annuity identity and exact replication of the committed output |
 | fisheries | test_fisheries_headers.py + test_fisheries.py | header resolution and the HAR read-list union; the CWoN rent-trend math against hand-derived series |
 | landslide_mitigation | — | run parameters pinned in the library tests; the science awaits the cluster run |
 | the five accounting services | — | library-wide contract tests only (next line) |
@@ -170,11 +174,11 @@ format:
 - The library-wide tests are the reason a NEW row or service is born under test: adding a row to a shipped CSV is automatically covered, and clobbering a service's entry point fails the seam test.
 - Missing: science-level tests for the five accounting services and landslide — a small synthetic pin of each service's arithmetic, the way erosion and recreation have.
 
-## What kind of work each service got — and where to scrutinize us
+## What kind of work each service got
 
-- Four kinds of work, in increasing order of intervention: configuration and verification passes on working code (the five accounting services); restructuring onto the shared template (the carbons, pollination, erosion, recreation); translation from R to Python (fire protection, both fisheries components); and one draft implementation of a method from its repo (livestock — quarantined for exactly that reason).
-- The more we intervened, the more places our own errors could hide. The anchor discipline scales with that: translations are held to exact replication of committed outputs where one exists, and where none exists yet, the service's slide says so.
-- Every port keeps the original science authoritative — the status sheet's work column names what we did per service, and every question slide is an invitation to correct us.
+- Four kinds of work, in increasing order of intervention: configuration and verification passes on working code (the five accounting services); restructuring onto the shared template (the carbons, pollination, erosion, recreation); translation from R to Python (fire protection, both fisheries components); and one draft implementation of a method from its repo (livestock).
+- The verification matches the intervention: translations are held to exact replication of committed outputs where one exists, and where none exists yet, the service's slide names what is still needed.
+- Every port keeps the original science authoritative — the status sheet's work column records what we did per service, and every question slide is an invitation to correct us.
 
 # The questions, service by service
 
@@ -280,6 +284,12 @@ format:
 - **Q1: which of the three GEP variants is the account's fire_protection value?** Baseline persistence totals −$22.4bn and the cause difference −$1.3bn — both globally negative — while the area comparison totals +$16.7bn. The choice sets both the number and its sign; the cause difference is the module's provisional default, marked as such.
 - Q2 is CLOSED: the ADM2 burned-area panel was found on the consortium drive and staged, and the full from-raw chain — burned-area aggregation, EM-DAT damage rates, all three GEP columns — reproduces the committed reference to the float. Only Q1, the variant choice, remains.
 
+## water_supply: the hydropower component, with an identified method
+
+- [State: new module. The consortium drive's Hydropower folder carries a committed 2019 output but not the script behind it; the method was identified against that output and holds exactly for all 95 valued countries: the GEP is CWoN 2024's capitalized hydropower wealth divided by the annuity factor at the CWoN-standard 4 percent discount over a 100-year horizon — the constant annual rent the wealth implies. The CWoN table is staged from the public package, the run is live at {{< meta water_supply_total >}}, and the replication runs inside the test suite. Agriculture and household join beside hydropower when their science surfaces.]{.state}
+- **Q1: which hydropower total is the account's?** The manuscript records {{< meta hydro_manuscript >}} — roughly twice the committed output's {{< meta water_supply_total >}} — consistent with the drive's earlier direct-use script (price times generation) versus the CWoN-rent method. Two methods, two totals; the account needs one.
+- **Q2: why does the reference leave 17 countries empty although the CWoN table values them?** The 17 are encoded as named exclusions so the module reproduces the reference; the reason needs its author.
+
 # Cross-cutting decisions
 
 ## Four conventions the room can settle today
@@ -323,7 +333,7 @@ format:
 ## Leads, priorities, and the label typos
 
 - The sheet itself lists a category "Feasible ES with no assigned lead" — can leads be named today for the unclaimed services?
-- Which sheet services should enter the library NEXT? Recreation and fire protection came into the library this week (their slides above); the two with complete SI tables and global feasibility and no module yet are Local Climate Regulation and Extractive Energy. One blocker found while auditing: the sheet's water-quality repo link points to a fork that does not contain the water-quality code — where does that pipeline actually live?
+- Which sheet services should enter the library NEXT? Recreation, fire protection, the fisheries GEP (both components) and water supply's hydropower component came into the library this week; the two with complete SI tables and global feasibility and no module yet are Local Climate Regulation and Extractive Energy. One blocker found while auditing: the sheet's water-quality repo link points to a fork that does not contain the water-quality code — where does that pipeline actually live?
 - The sheet's label typos (wind_enery_provision and siblings) now need a coordinated fix: our configuration table's crosswalk cells reproduce them faithfully, because a crosswalk key must match the sheet as written. Ask: fix the three labels in the sheet, and we update our three cells in the same change — a two-place lockstep edit, since either alone breaks the join.
 
 # What we need
@@ -339,7 +349,8 @@ format:
 - **extractive_materials:** the source of 0.49.
 - **renewable_energy:** code or CSVs.
 - **recreation:** one reference results_by_country.csv (the data folder is staged and the run is live).
-- **water_quality:** where the pipeline's code actually lives (the sheet's link doesn't contain it).
+- **water_quality:** the transformation script (its drive folder holds the output and inputs already).
+- **water_supply:** which hydropower total is the account's ({{< meta hydro_manuscript >}} direct-use vs {{< meta water_supply_total >}} CWoN rent), and the reason for the reference's 17 empty countries.
 - **fire_protection:** the account's choice among the three GEP variants (the data asks are closed).
 - **air_filtration:** where the code lives — the manuscript already carries its total, so one pointer to the pipeline makes it next into the library.
 - **local_climate_regulation:** which entry point and script versions in the urban-cooling repo are canonical (several live side by side), and where its runs happen.
