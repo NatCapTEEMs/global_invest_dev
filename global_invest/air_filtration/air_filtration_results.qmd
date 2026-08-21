@@ -1,0 +1,66 @@
+---
+format:
+  html:
+    embed-resources: true
+    standalone: true
+execute:
+  echo: false          # results report shows tables/figures, not code
+  warning: false
+---
+
+# Air Filtration Results
+
+Text describing it. To be written by the service team (science source: the air-quality modeling chain and workbook on the consortium drive).
+
+```{python}
+#| output: false
+
+### SETUP CODE: Runs the whole model if it doesn't exist, else loads the results.
+
+import os
+import pandas as pd
+import hazelbean as hb
+
+from global_invest.air_filtration import air_filtration_initialize
+
+if __name__ == '__main__':
+
+    p = hb.ProjectFlow()
+    p.project_name = 'gep_air_filtration'
+    p.project_dir = os.path.join(os.path.expanduser('~'), 'Files', 'global_invest', 'projects', p.project_name)
+    p.set_project_dir(p.project_dir)
+
+    air_filtration_initialize.build_gep_service_calculation_task_tree(p)
+
+    p.results = {}
+
+    hb.log('Created ProjectFlow object at ' + p.project_dir + '\n    from script ' + p.calling_script + '\n    with base_data set at ' + p.base_data_dir)
+    p.execute()
+```
+
+```{python}
+#| output: false
+
+### DISPLAY SETUP CODE
+
+import pandas as pd
+import os
+import hazelbean as hb
+
+pd.set_option('display.float_format', '{:,.2f}'.format)
+pd.set_option('display.max_rows', 1000)
+
+service_label = 'air_filtration'
+
+df = hb.df_read(p.results[service_label]['gep_by_country_base_year'])
+total_air_filtration_value = df['air_filtration_gep'].sum()
+total_sandstorm_value = df['sandstorm_prevention_gep'].sum()
+p.gep_by_country_base_year_table = df[['iso3_r250_name', 'air_filtration_gep', 'sandstorm_prevention_gep']]
+```
+
+The analysis estimates an air-filtration GEP of $`{python} f"{total_air_filtration_value:,.0f}"` for the base year (`{python} f"{int(p.gep_base_year)}"`) — avoided deaths from vegetation's dry pollutant deposition, valued at a GDP-adjusted VSL — and, from the same workbook's dust channel, a sandstorm-prevention GEP of $`{python} f"{total_sandstorm_value:,.0f}"`. The avoided-death columns come from the group's coupled emissions–InMAP–health modeling chain and are taken as given; the valuation layer replicates the committed workbook exactly.
+
+## GEP by Country in Base Year
+```{python}
+p.gep_by_country_base_year_table
+```

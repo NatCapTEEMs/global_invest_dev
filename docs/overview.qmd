@@ -21,12 +21,14 @@ erosion_total: "$15.54bn"
 livestock_ind: "$136bn"
 livestock_chn: "$838bn"
 livestock_world: "$2.29T"
-n_services: "14"
+n_services: "16"
 fisheries_total: "$29.00bn"
 fisheries_subsistence_total: "$7.92bn"
 water_supply_total: "$144.68bn"
+air_filtration_total: "$17.81bn"
+sandstorm_total: "$595.36bn"
 hydro_manuscript: "$287.7bn"
-n_services_at_2019: "13"
+n_services_at_2019: "15"
 
 format:
     revealjs:
@@ -145,6 +147,8 @@ format:
 | recreation | ported this week; data staged, first run in progress | tests pin the method; no external anchor yet |
 | fire_protection | three variants; account variant open | full from-raw replication (panel staged from the drive), to the float |
 | water_supply | hydropower component {{< meta water_supply_total >}} | the drive's committed output, replicated exactly (95 countries) |
+| air_filtration | {{< meta air_filtration_total >}} — the manuscript's number | the drive's committed workbook, replicated exactly |
+| sandstorm_prevention | {{< meta sandstorm_total >}} (the same workbook's dust channel) | computed in the air_filtration module |
 
 ## Verification discipline, and what it caught
 
@@ -166,6 +170,7 @@ format:
 | recreation | test_recreation.py | every method constant against hand-derived values: matrices, ring kernels, gravity model, allocation |
 | fire_protection | test_fire_protection.py | exact replication of the committed reference (161 countries) on every run, plus the reordered-input tripwire |
 | water_supply | test_water_supply.py | the annuity identity and exact replication of the committed output |
+| air_filtration | test_air_filtration.py | benefits and both totals against the workbook; the VSL fill rule; the positional-join guard |
 | fisheries | test_fisheries_headers.py + test_fisheries.py | header resolution and the HAR read-list union; the CWoN rent-trend math against hand-derived series |
 | landslide_mitigation | — | run parameters pinned in the library tests; the science awaits the cluster run |
 | the five accounting services | — | library-wide contract tests only (next line) |
@@ -290,6 +295,12 @@ format:
 - **Q1: which hydropower total is the account's?** The manuscript records {{< meta hydro_manuscript >}} — roughly twice the committed output's {{< meta water_supply_total >}} — consistent with the drive's earlier direct-use script (price times generation) versus the CWoN-rent method. Two methods, two totals; the account needs one.
 - **Q2: why does the reference leave 17 countries empty although the CWoN table values them?** The 17 are encoded as named exclusions so the module reproduces the reference; the reason needs its author.
 
+## air_filtration: one workbook, two services
+
+- [State: new module. The drive's committed workbook values avoided deaths from two channels at a GDP-adjusted VSL: DEPOSITION — vegetation's dry pollutant capture, the sheet's air filtration — totals {{< meta air_filtration_total >}}, exactly the manuscript's number; DUST — windblown-dust suppression, the sheet's sandstorm prevention — totals {{< meta sandstorm_total >}}. The valuation layer replicates the workbook exactly inside the test suite; the avoided-death columns come from the group's coupled emissions–InMAP–health modeling chain and are taken as given.]{.state}
+- **Q1: needed — the VSL build behind the workbook.** The folder's vsl.R documents the method (US-anchored, GDP- and life-years-adjusted) but its committed raw data is a different vintage and does not reproduce the workbook's VSL column.
+- **Q2: the vintage of the avoided-death columns** — for the record and the methods writeup.
+
 # Cross-cutting decisions
 
 ## Four conventions the room can settle today
@@ -333,7 +344,7 @@ format:
 ## Leads, priorities, and the label typos
 
 - The sheet itself lists a category "Feasible ES with no assigned lead" — can leads be named today for the unclaimed services?
-- Which sheet services should enter the library NEXT? Recreation, fire protection, the fisheries GEP (both components) and water supply's hydropower component came into the library this week; the two with complete SI tables and global feasibility and no module yet are Local Climate Regulation and Extractive Energy. One blocker found while auditing: the sheet's water-quality repo link points to a fork that does not contain the water-quality code — where does that pipeline actually live?
+- Which sheet services should enter the library NEXT? Recreation, fire protection, the fisheries GEP (both components), water supply's hydropower component, air filtration and sandstorm prevention came into the library this week; the two with complete SI tables and global feasibility and no module yet are Local Climate Regulation and Extractive Energy. One blocker found while auditing: the sheet's water-quality repo link points to a fork that does not contain the water-quality code — where does that pipeline actually live?
 - The sheet's label typos (wind_enery_provision and siblings) now need a coordinated fix: our configuration table's crosswalk cells reproduce them faithfully, because a crosswalk key must match the sheet as written. Ask: fix the three labels in the sheet, and we update our three cells in the same change — a two-place lockstep edit, since either alone breaks the join.
 
 # What we need
@@ -352,7 +363,7 @@ format:
 - **water_quality:** the transformation script (its drive folder holds the output and inputs already).
 - **water_supply:** which hydropower total is the account's ({{< meta hydro_manuscript >}} direct-use vs {{< meta water_supply_total >}} CWoN rent), and the reason for the reference's 17 empty countries.
 - **fire_protection:** the account's choice among the three GEP variants (the data asks are closed).
-- **air_filtration:** where the code lives — the manuscript already carries its total, so one pointer to the pipeline makes it next into the library.
+- **air_filtration:** the VSL build behind the workbook (the folder's vsl.R is a different vintage), and the vintage of the avoided-death columns.
 - **local_climate_regulation:** which entry point and script versions in the urban-cooling repo are canonical (several live side by side), and where its runs happen.
 - **The room:** pollination's definition, the shoreline convention, crop's units, the map dissolve, base year 2019, subsistence scope, marine carbon's fate, the fisheries GEP's source.
 - **Every service:** a complete SI-table row (status, value info, relationships to other services); leads for the unclaimed services; confirmation of the next-in-line for the library.
