@@ -1,0 +1,251 @@
+iso3_r250_id,iso3_r250_label,iso3_r250_name,gep_oil
+4,AFG,Afghanistan,16326965.97
+8,ALB,Albania,45828098.83
+10,ATA,Antarctica,
+12,DZA,Algeria,3506657022
+16,ASM,American Samoa,
+20,AND,Andorra,
+24,AGO,Angola,16803474422
+28,ATG,Antigua and Barbuda,
+31,AZE,Azerbaijan,11697480175
+32,ARG,Argentina,0
+36,AUS,Australia,4473478277
+40,AUT,Austria,188943280.1
+44,BHS,Bahamas,
+48,BHR,Bahrain,2253874184
+50,BGD,Bangladesh,37917656.13
+51,ARM,Armenia,
+52,BRB,Barbados,15258938.16
+56,BEL,Belgium,
+60,BMU,Bermuda,
+64,BTN,Bhutan,
+68,BOL,Bolivia,225888209.5
+70,BIH,Bosnia and Herzegovina,
+72,BWA,Botswana,
+74,BVT,Bouvet Island,0
+76,BRA,Brazil,12961921569
+84,BLZ,Belize,0
+86,IOT,British Indian Ocean Territory,
+90,SLB,Solomon Islands,
+92,VGB,British Virgin Islands,
+96,BRN,Brunei,1114323049
+100,BGR,Bulgaria,5492627.247
+104,MMR,Myanmar,149650100.9
+108,BDI,Burundi,
+112,BLR,Belarus,134787910.3
+116,KHM,Cambodia,
+120,CMR,Cameroon,516621269.4
+124,CAN,Canada,0
+132,CPV,Cabo Verde,
+136,CYM,Cayman Islands,
+140,CAF,Central African Republic,
+144,LKA,Sri Lanka,
+148,TCD,Chad,1111315829
+152,CHL,Chile,78724598.75
+156,CHN,China,45704698181
+158,TWN,Taiwan,11959682.4
+162,CXR,Christmas Island,4473478277
+166,CCK,Cocos Islands,4473478277
+170,COL,Colombia,8982954879
+174,COM,Comoros,
+175,MYT,Mayotte,0
+178,COG,Republic of the Congo,4479164681
+180,COD,Democratic Republic of the Congo,388779982.3
+184,COK,Cook Islands,
+188,CRI,Costa Rica,
+191,HRV,Croatia,206660100.2
+192,CUB,Cuba,309036754.3
+196,CYP,Cyprus,
+203,CZE,Czechia,22603012
+204,BEN,Benin,
+208,DNK,Denmark,1054127265
+212,DMA,Dominica,
+214,DOM,Dominican Republic,
+218,ECU,Ecuador,8157563315
+222,SLV,El Salvador,
+226,GNQ,Equatorial Guinea,2119419638
+231,ETH,Ethiopia,
+232,ERI,Eritrea,
+233,EST,Estonia,401016062.9
+234,FRO,Faroe Islands,
+238,FLK,Falkland Islands,
+239,SGS,South Georgia and the South Sand,
+242,FJI,Fiji,
+246,FIN,Finland,
+248,ALA,Åland,
+250,FRA,France,0
+254,GUF,French Guiana,0
+258,PYF,French Polynesia,
+260,ATF,French Southern Territories,
+262,DJI,Djibouti,
+266,GAB,Gabon,1852271553
+268,GEO,Georgia,0
+270,GMB,Gambia,
+275,PSE,Palestine,
+276,DEU,Germany,301553742.4
+288,GHA,Ghana,
+292,GIB,Gibraltar,
+296,KIR,Kiribati,
+300,GRC,Greece,0
+304,GRL,Greenland,
+308,GRD,Grenada,
+312,GLP,Guadeloupe,0
+316,GUM,Guam,
+320,GTM,Guatemala,37408949.24
+324,GIN,Guinea,
+328,GUY,Guyana,1005568911
+332,HTI,Haiti,
+334,HMD,Heard Island and McDonald Island,
+336,VAT,Vatican City,
+340,HND,Honduras,
+344,HKG,"China, Hong Kong Special Administrative Region",
+348,HUN,Hungary,27276685.01
+352,ISL,Iceland,
+356,IND,India,11983871765
+360,IDN,Indonesia,9765062403
+364,IRN,Iran,56969847071
+368,IRQ,Iraq,1.04397E+11
+372,IRL,Ireland,
+376,ISR,Israel,
+380,ITA,Italy,512330501.3
+383,XKX,Serbia,112768603.6
+384,CIV,Côte d'lvoire,100030993.7
+388,JAM,Jamaica,
+392,JPN,Japan,104233212.7
+398,KAZ,Kazakhstan,18392238970
+400,JOR,Jordan,0
+404,KEN,Kenya,0
+408,PRK,North Korea,
+410,KOR,South Korea,5135917.893
+414,KWT,Kuwait,
+417,KGZ,Kyrgyzstan,0
+418,LAO,Laos,
+422,LBN,Lebanon,
+426,LSO,Lesotho,
+428,LVA,Latvia,
+430,LBR,Liberia,
+434,LBY,Libya,18493374126
+438,LIE,Liechtenstein,
+440,LTU,Lithuania,0
+442,LUX,Luxembourg,
+446,MAC,"China, Macao Special Administrative Region",
+450,MDG,Madagascar,450890.2038
+454,MWI,Malawi,
+458,MYS,Malaysia,7460531474
+462,MDV,Maldives,
+466,MLI,Mali,
+470,MLT,Malta,
+474,MTQ,Martinique,0
+478,MRT,Mauritania,
+480,MUS,Mauritius,
+484,MEX,Mexico,15147548038
+492,MCO,Monaco,
+496,MNG,Mongolia,279553292.6
+498,MDA,Moldova,
+499,MNE,Montenegro,
+500,MSR,Montserrat,
+504,MAR,Morocco,1694137.135
+508,MOZ,Mozambique,
+512,OMN,Oman,16191167690
+516,NAM,Namibia,
+520,NRU,Nauru,
+524,NPL,Nepal,
+528,NLD,Netherlands,134310394.2
+531,CUW,Curaçao,
+533,ABW,Aruba,
+534,SXM,Sint Maarten,
+535,BES,"Bonaire, Sint Eustatius and Saba",
+540,NCL,New Caledonia,
+548,VUT,Vanuatu,
+554,NZL,New Zealand,43836636.91
+558,NIC,Nicaragua,
+562,NER,Niger,146998665.3
+566,NGA,Nigeria,28605956716
+570,NIU,Niue,
+574,NFK,Norfolk Island,
+578,NOR,Norway,0
+580,MNP,Northern Mariana Islands,
+581,UMI,United States Minor Outlying Isl,
+583,FSM,Micronesia,
+584,MHL,Marshall Islands,
+585,PLW,Palau,
+586,PAK,Pakistan,1029705747
+591,PAN,Panama,
+598,PNG,Papua New Guinea,349745828.7
+600,PRY,Paraguay,
+604,PER,Peru,0
+608,PHL,Philippines,0
+612,PCN,Pitcairn Islands,
+616,POL,Poland,131342422
+620,PRT,Portugal,
+624,GNB,Guinea-Bissau,
+626,TLS,Timor-Leste,
+630,PRI,Puerto Rico,
+634,QAT,Qatar,24818624482
+638,REU,Réunion,0
+642,ROU,Romania,703448709.3
+643,RUS,Russia,33863827548
+646,RWA,Rwanda,
+652,BLM,Saint Barthélemy,
+654,SHN,"Saint Helena, Ascension and Tris",
+659,KNA,Saint Kitts and Nevis,
+660,AIA,Anguilla,
+662,LCA,Saint Lucia,
+663,MAF,Saint-Martin,
+666,SPM,Saint Pierre and Miquelon,
+670,VCT,Saint Vincent and the Grenadines,
+674,SMR,San Marino,
+678,STP,São Tomé and Príncipe,
+682,SAU,Saudi Arabia,
+686,SEN,Senegal,
+688,SRB,Serbia,112768603.6
+690,SYC,Seychelles,
+694,SLE,Sierra Leone,
+702,SGP,Singapore,
+703,SVK,Slovakia,450430.2064
+704,VNM,Vietnam,3363873560
+705,SVN,Slovenia,3248277.543
+706,SOM,Somalia,
+710,ZAF,South Africa,0
+716,ZWE,Zimbabwe,
+724,ESP,Spain,0
+728,SSD,South Sudan,
+729,SDN,Sudan,5852452.994
+732,ESH,Western Sahara,1694137.135
+740,SUR,Suriname,147276253.1
+744,SJM,Svalbard and Jan Mayen,0
+748,SWZ,Swaziland,
+752,SWE,Sweden,
+756,CHE,Switzerland,
+760,SYR,Syria,547088561.8
+762,TJK,Tajikistan,6138041.96
+764,THA,Thailand,2793109413
+768,TGO,Togo,
+772,TKL,Tokelau,43836636.91
+776,TON,Tonga,
+780,TTO,Trinidad and Tobago,438308535.2
+784,ARE,United Arab Emirates,67585504655
+788,TUN,Tunisia,215964277.8
+792,TUR,Turkey,25296327.58
+795,TKM,Turkmenistan,2453556761
+796,TCA,Turks and Caicos Islands,
+798,TUV,Tuvalu,
+800,UGA,Uganda,
+804,UKR,Ukraine,895574170.6
+807,MKD,North Macedonia,
+818,EGY,Egypt,10667979562
+826,GBR,United Kingdom,10141700464
+831,GGY,Guernsey,
+832,JEY,Jersey,
+833,IMN,Isle of Man,
+834,TZA,Tanzania,
+840,USA,United States,1.45422E+11
+850,VIR,"Virgin Islands, U.S.",
+854,BFA,Burkina Faso,
+858,URY,Uruguay,
+860,UZB,Uzbekistan,752390425.3
+862,VEN,Venezuela,14519652443
+876,WLF,Wallis and Futuna,
+882,WSM,Samoa,
+887,YEM,Yemen,0
+894,ZMB,Zambia,

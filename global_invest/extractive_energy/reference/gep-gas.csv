@@ -1,0 +1,251 @@
+iso3_r250_id,iso3_r250_label,iso3_r250_name,gep_gas
+4.0,AFG,Afghanistan,309283.1359156772
+8.0,ALB,Albania,3158866.310859065
+10.0,ATA,Antarctica,
+12.0,DZA,Algeria,16672369861.53944
+16.0,ASM,American Samoa,
+20.0,AND,Andorra,
+24.0,AGO,Angola,432108188.4148626
+28.0,ATG,Antigua and Barbuda,
+31.0,AZE,Azerbaijan,0.0
+32.0,ARG,Argentina,464512002.7773249
+36.0,AUS,Australia,10676299909.80225
+40.0,AUT,Austria,0.0
+44.0,BHS,Bahamas,
+48.0,BHR,Bahrain,1568795504.797183
+50.0,BGD,Bangladesh,1622802230.05919
+51.0,ARM,Armenia,
+52.0,BRB,Barbados,162532.5866971705
+56.0,BEL,Belgium,206211.4813703285
+60.0,BMU,Bermuda,
+64.0,BTN,Bhutan,
+68.0,BOL,Bolivia,0.0
+70.0,BIH,Bosnia and Herzegovina,
+72.0,BWA,Botswana,
+74.0,BVT,Bouvet Island,11523589989.94223
+76.0,BRA,Brazil,665801295.9099286
+84.0,BLZ,Belize,
+86.0,IOT,British Indian Ocean Territory,
+90.0,SLB,Solomon Islands,
+92.0,VGB,British Virgin Islands,
+96.0,BRN,Brunei,3224348748.294969
+100.0,BGR,Bulgaria,2287556.502732478
+104.0,MMR,Myanmar,3412128941.252581
+108.0,BDI,Burundi,
+112.0,BLR,Belarus,9038076.120148713
+116.0,KHM,Cambodia,
+120.0,CMR,Cameroon,168777228.5610563
+124.0,CAN,Canada,0.0
+132.0,CPV,Cabo Verde,
+136.0,CYM,Cayman Islands,
+140.0,CAF,Central African Republic,
+144.0,LKA,Sri Lanka,
+148.0,TCD,Chad,
+152.0,CHL,Chile,23101112.06063041
+156.0,CHN,China,11135725905.91028
+158.0,TWN,Taiwan,66604926.82424393
+162.0,CXR,Christmas Island,10676299909.80225
+166.0,CCK,Cocos Islands,10676299909.80225
+170.0,COL,Colombia,288120591.936067
+174.0,COM,Comoros,
+175.0,MYT,Mayotte,0.0
+178.0,COG,Republic of the Congo,64093938.68945208
+180.0,COD,Democratic Republic of the Congo,
+184.0,COK,Cook Islands,
+188.0,CRI,Costa Rica,
+191.0,HRV,Croatia,16705544.70893596
+192.0,CUB,Cuba,19160167.35318569
+196.0,CYP,Cyprus,
+203.0,CZE,Czechia,6481716.077878476
+204.0,BEN,Benin,
+208.0,DNK,Denmark,195278968.6148185
+212.0,DMA,Dominica,
+214.0,DOM,Dominican Republic,
+218.0,ECU,Ecuador,0.0
+222.0,SLV,El Salvador,
+226.0,GNQ,Equatorial Guinea,287927324.6695821
+231.0,ETH,Ethiopia,
+232.0,ERI,Eritrea,
+233.0,EST,Estonia,
+234.0,FRO,Faroe Islands,
+238.0,FLK,Falkland Islands,
+239.0,SGS,South Georgia and the South Sand,
+242.0,FJI,Fiji,
+246.0,FIN,Finland,
+248.0,ALA,Åland,
+250.0,FRA,France,0.0
+254.0,GUF,French Guiana,0.0
+258.0,PYF,French Polynesia,
+260.0,ATF,French Southern Territories,
+262.0,DJI,Djibouti,
+266.0,GAB,Gabon,31245659.49201315
+268.0,GEO,Georgia,0.0
+270.0,GMB,Gambia,
+275.0,PSE,Palestine,638006648.800122
+276.0,DEU,Germany,269262678.257018
+288.0,GHA,Ghana,86429043.52950077
+292.0,GIB,Gibraltar,
+296.0,KIR,Kiribati,
+300.0,GRC,Greece,644595.0022324221
+304.0,GRL,Greenland,
+308.0,GRD,Grenada,
+312.0,GLP,Guadeloupe,0.0
+316.0,GUM,Guam,
+320.0,GTM,Guatemala,2758414.535429216
+324.0,GIN,Guinea,
+328.0,GUY,Guyana,
+332.0,HTI,Haiti,
+334.0,HMD,Heard Island and McDonald Island,
+336.0,VAT,Vatican City,
+340.0,HND,Honduras,
+344.0,HKG,"China, Hong Kong Special Administrative Region",
+348.0,HUN,Hungary,236692164.6158993
+352.0,ISL,Iceland,
+356.0,IND,India,1383247950.838511
+360.0,IDN,Indonesia,8767017488.78435
+364.0,IRN,Iran,10434065080.12778
+368.0,IRQ,Iraq,749083688.973773
+372.0,IRL,Ireland,151420718.7392091
+376.0,ISR,Israel,638006648.800122
+380.0,ITA,Italy,286570444.3594776
+383.0,XKX,Serbia,24654913.34065022
+384.0,CIV,Côte d'lvoire,97912978.68882346
+388.0,JAM,Jamaica,
+392.0,JPN,Japan,828766070.4870344
+398.0,KAZ,Kazakhstan,651985790.5670631
+400.0,JOR,Jordan,0.0
+404.0,KEN,Kenya,
+408.0,PRK,North Korea,
+410.0,KOR,South Korea,68959666.86287084
+414.0,KWT,Kuwait,525394495.8191026
+417.0,KGZ,Kyrgyzstan,77193.59915343515
+418.0,LAO,Laos,
+422.0,LBN,Lebanon,
+426.0,LSO,Lesotho,
+428.0,LVA,Latvia,
+430.0,LBR,Liberia,
+434.0,LBY,Libya,990709316.7703158
+438.0,LIE,Liechtenstein,
+440.0,LTU,Lithuania,
+442.0,LUX,Luxembourg,
+446.0,MAC,"China, Macao Special Administrative Region",
+450.0,MDG,Madagascar,
+454.0,MWI,Malawi,
+458.0,MYS,Malaysia,10657234384.92623
+462.0,MDV,Maldives,
+466.0,MLI,Mali,
+470.0,MLT,Malta,
+474.0,MTQ,Martinique,0.0
+478.0,MRT,Mauritania,
+480.0,MUS,Mauritius,
+484.0,MEX,Mexico,0.0
+492.0,MCO,Monaco,
+496.0,MNG,Mongolia,
+498.0,MDA,Moldova,4099.933723857784
+499.0,MNE,Montenegro,
+500.0,MSR,Montserrat,
+504.0,MAR,Morocco,11792938.68612189
+508.0,MOZ,Mozambique,318412992.2500305
+512.0,OMN,Oman,6215254464.112176
+516.0,NAM,Namibia,
+520.0,NRU,Nauru,
+524.0,NPL,Nepal,
+528.0,NLD,Netherlands,2323909793.005614
+531.0,CUW,Curaçao,
+533.0,ABW,Aruba,
+534.0,SXM,Sint Maarten,
+535.0,BES,"Bonaire, Sint Eustatius and Saba",
+540.0,NCL,New Caledonia,
+548.0,VUT,Vanuatu,
+554.0,NZL,New Zealand,274274320.7947017
+558.0,NIC,Nicaragua,
+562.0,NER,Niger,2478267.551202888
+566.0,NGA,Nigeria,2934522961.911522
+570.0,NIU,Niue,
+574.0,NFK,Norfolk Island,
+578.0,NOR,Norway,11523589989.94223
+580.0,MNP,Northern Mariana Islands,
+581.0,UMI,United States Minor Outlying Isl,
+583.0,FSM,Micronesia,
+584.0,MHL,Marshall Islands,
+585.0,PLW,Palau,
+586.0,PAK,Pakistan,2789352944.742669
+591.0,PAN,Panama,
+598.0,PNG,Papua New Guinea,1074542073.827177
+600.0,PRY,Paraguay,
+604.0,PER,Peru,276723932.0807755
+608.0,PHL,Philippines,369958640.9699215
+612.0,PCN,Pitcairn Islands,
+616.0,POL,Poland,217865921.5894864
+620.0,PRT,Portugal,
+624.0,GNB,Guinea-Bissau,
+626.0,TLS,Timor-Leste,
+630.0,PRI,Puerto Rico,
+634.0,QAT,Qatar,20968015200.64771
+638.0,REU,Réunion,0.0
+642.0,ROU,Romania,360746772.4634202
+643.0,RUS,Russia,35130189293.01125
+646.0,RWA,Rwanda,
+652.0,BLM,Saint Barthélemy,
+654.0,SHN,"Saint Helena, Ascension and Tris",
+659.0,KNA,Saint Kitts and Nevis,
+660.0,AIA,Anguilla,
+662.0,LCA,Saint Lucia,
+663.0,MAF,Saint-Martin,
+666.0,SPM,Saint Pierre and Miquelon,
+670.0,VCT,Saint Vincent and the Grenadines,
+674.0,SMR,San Marino,
+678.0,STP,São Tomé and Príncipe,
+682.0,SAU,Saudi Arabia,902686805.9135065
+686.0,SEN,Senegal,974268.0706067642
+688.0,SRB,Serbia,24654913.34065022
+690.0,SYC,Seychelles,
+694.0,SLE,Sierra Leone,
+702.0,SGP,Singapore,
+703.0,SVK,Slovakia,0.0
+704.0,VNM,Vietnam,885817520.7837259
+705.0,SVN,Slovenia,215968.6294985654
+706.0,SOM,Somalia,
+710.0,ZAF,South Africa,22376417.67644729
+716.0,ZWE,Zimbabwe,
+724.0,ESP,Spain,6652001.674271043
+728.0,SSD,South Sudan,
+729.0,SDN,Sudan,
+732.0,ESH,Western Sahara,11792938.68612189
+740.0,SUR,Suriname,126727.7405426522
+744.0,SJM,Svalbard and Jan Mayen,11523589989.94223
+748.0,SWZ,Swaziland,
+752.0,SWE,Sweden,
+756.0,CHE,Switzerland,
+760.0,SYR,Syria,227250239.3303715
+762.0,TJK,Tajikistan,2957525.190419605
+764.0,THA,Thailand,972753579.3355551
+768.0,TGO,Togo,
+772.0,TKL,Tokelau,274274320.7947017
+776.0,TON,Tonga,
+780.0,TTO,Trinidad and Tobago,1886143414.383351
+784.0,ARE,United Arab Emirates,3963492183.684769
+788.0,TUN,Tunisia,0.0
+792.0,TUR,Turkey,0.0
+795.0,TKM,Turkmenistan,3342229110.394781
+796.0,TCA,Turks and Caicos Islands,
+798.0,TUV,Tuvalu,
+800.0,UGA,Uganda,
+804.0,UKR,Ukraine,3052194919.754544
+807.0,MKD,North Macedonia,
+818.0,EGY,Egypt,2888476383.906688
+826.0,GBR,United Kingdom,0.0
+831.0,GGY,Guernsey,
+832.0,JEY,Jersey,
+833.0,IMN,Isle of Man,
+834.0,TZA,Tanzania,63653255.22708137
+840.0,USA,United States,0.0
+850.0,VIR,"Virgin Islands, U.S.",
+854.0,BFA,Burkina Faso,
+858.0,URY,Uruguay,
+860.0,UZB,Uzbekistan,1518049965.93406
+862.0,VEN,Venezuela,47640196.72533446
+876.0,WLF,Wallis and Futuna,
+882.0,WSM,Samoa,
+887.0,YEM,Yemen,0.0
+894.0,ZMB,Zambia,

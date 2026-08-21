@@ -21,7 +21,7 @@ erosion_total: "$15.54bn"
 livestock_ind: "$136bn"
 livestock_chn: "$838bn"
 livestock_world: "$2.29T"
-n_services: "19"
+n_services: "21"
 fisheries_total: "$29.00bn"
 fisheries_subsistence_total: "$7.92bn"
 water_supply_total: "$144.68bn"
@@ -33,8 +33,10 @@ wq_usd: "$638.34bn"
 wq_intl: "$655.91bn"
 flood_total: "$110.59bn"
 lcr_total: "$14.19bn"
+xe_total: "$1.14T"
+timber_total: "$88.74bn"
 hydro_manuscript: "$287.7bn"
-n_services_at_2019: "18"
+n_services_at_2019: "20"
 
 format:
     revealjs:
@@ -158,6 +160,8 @@ format:
 | water_quality | {{< meta wq_usd >}} USD; {{< meta wq_intl >}} intl$ (accounting value) | the committed chain, identities exact; the currency conversion unidentified |
 | flood_control | {{< meta flood_total >}} | the pipeline's committed output; sums and counts match its own summary exactly |
 | local_climate_regulation | {{< meta lcr_total >}} | the committed final; city-level pricing and version lineage verify exactly |
+| extractive_energy | {{< meta xe_total >}} (gas + coal + petroleum) | the three committed fuel tables, reproduced exactly |
+| timber_provision | {{< meta timber_total >}} | the committed Forestry output, reproduced exactly |
 
 ## Verification discipline, and what it caught
 
@@ -301,6 +305,11 @@ format:
 - [State: new module, closing the roster's last scoped port. InVEST urban cooling gives each city-month a vegetation cooling effect; the avoided energy is priced at national electricity prices (the city-level identity is exact in the committed files); the v04 correction applies each country's own consumption per cooling-degree-day. The committed accounting total is {{< meta lcr_total >}} across 174 countries; the version lineage verifies exactly (the December 2025 table IS the plain city sum).]{.state}
 - **Q1: needed — the correction's two inputs**: the IEA-CMCC 2019 cooling-degree-day file and the v2_nkd energy workbook (the drive's staged energy CSV is a different vintage and does not validate them). With both, the correction reproduces from raw.
 
+## extractive_energy and timber_provision: two committed outputs, adopted
+
+- [State: two new modules from committed drive outputs, both already in the account's vocabulary. EXTRACTIVE ENERGY: per-fuel valuations for natural gas, coal and petroleum, summed by the same commodity convention extractive_materials uses — {{< meta xe_total >}}, dominated by petroleum. TIMBER: the Forestry chain's per-country output, {{< meta timber_total >}} across 166 countries — and a status correction: the sheet lists timber's draft as In Progress, but its output exists and reproduces.]{.state}
+- **Q1: needed — the upstream provenance notes for both** (the fuel valuations' method and vintage; the Forestry raster chain's inputs), for the methods writeup.
+
 # Cross-cutting decisions
 
 ## Four conventions the room can settle today
@@ -344,7 +353,7 @@ format:
 ## Leads, priorities, and the label typos
 
 - The sheet itself lists a category of feasible services still unclaimed — can leads be named today?
-- Which sheet services should enter the library NEXT? Recreation, fire protection, the fisheries GEP (both components), water supply's hydropower component, air filtration, sandstorm prevention and water quality came into the library this week; the two with complete SI tables and global feasibility and no module yet are Local Climate Regulation and Extractive Energy. One blocker found while auditing: the sheet's water-quality repo link points to a fork that does not contain the water-quality code — where does that pipeline actually live?
+- Which sheet services should enter the library NEXT? Twelve services or components came into the library this week (recreation, fire protection, both fisheries components, hydropower and water use, air filtration, sandstorm prevention, water quality, flood control, urban cooling, extractive energy, timber). Every sheet service with a complete SI table and global feasibility now has a module. One blocker found while auditing: the sheet's water-quality repo link points to a fork that does not contain the water-quality code — where does that pipeline actually live?
 - The sheet's label typos (wind_enery_provision and siblings) now need a coordinated fix: our configuration table's crosswalk cells reproduce them faithfully, because a crosswalk key must match the sheet as written. Ask: fix the three labels in the sheet, and we update our three cells in the same change — a two-place lockstep edit, since either alone breaks the join.
 
 # What we need
@@ -362,6 +371,7 @@ format:
 - **recreation:** one reference results_by_country.csv (the data folder is staged and the run is live).
 - **water_quality:** the USD-to-international-dollars conversion script and inputs; and the room's currency decision (international vs market dollars).
 - **flood_control:** confirmation that the December 2025 outputs are current.
+- **extractive_energy + timber_provision:** the upstream provenance notes (method and vintage) for the committed outputs now in the library.
 - **water_supply:** which hydropower total is the account's ({{< meta hydro_manuscript >}} direct-use vs {{< meta water_supply_total >}} CWoN rent); the reference's 17 empty countries; the water-use efficiency table; and the attribution step the water-use components still need.
 - **fire_protection:** the account's choice among the three GEP variants (the data asks are closed).
 - **air_filtration:** the VSL build behind the workbook (the folder's vsl.R is a different vintage), and the vintage of the avoided-death columns.
@@ -392,6 +402,8 @@ format:
 | water_quality | the retention identities against the committed intermediates; the conversion documented as unidentified |
 | flood_control | the anchor against the pipeline's own global summary: total, assessed count, zero count |
 | local_climate_regulation | the city kwh-x-price identity, the version-lineage sum, the final's parse and totals, the CDD math |
+| extractive_energy | components and sum against the three fuel tables; coal-only countries valued, no-table countries NaN |
+| timber_provision | the join and total against the committed output |
 | fisheries | header resolution and the HAR read-list union; the CWoN rent-trend math on series small enough to compute by hand |
 | landslide_mitigation | run parameters only; the science awaits the cluster run |
 | the five accounting services | the shared library tests only |
