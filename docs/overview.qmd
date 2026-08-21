@@ -101,7 +101,7 @@ format:
 
 ## The library's two callers
 
-- Each service module serves two callers. The GEP account reads the valuation (one row per country), and the macroeconomic pipeline reads the scenario shock (a table of productivity deviations for GTAP).
+- Each service module serves two callers. The GEP account reads the valuation (one row per country), and the macroeconomic pipeline reads the scenario shock (a table of productivity deviations).
 - Both read the same functions file, so a change to the science reaches the account and the scenarios at once.
 - Every service is expected to reach a GEP valuation, with or without a shock.
 
