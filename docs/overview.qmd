@@ -425,7 +425,7 @@ format:
 ## How a run finds its data
 
 - Every input is a reference path relative to the shared base data, and each machine resolves it for itself: the task's own directory first (so finished work is found and skipped), then the project's input folder, then the machine's base_data, then the cloud fallback.
-- A run therefore carries no absolute paths. The same run file works on a laptop, on the cluster, or on any machine that stages the same base data. The recreation port and the landslide cluster run rely on this.
+- A run therefore carries no absolute paths. The same run file works on a laptop, on the cluster, or on any machine that stages the same base data.
 - Tasks cache their output in the project directory and skip themselves when it already exists, so a rerun recomputes nothing and an interrupted run resumes where it stopped.
 
 ## What the tests pin, per service
