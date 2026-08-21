@@ -40,6 +40,12 @@ xe_total: "$1,048.9bn"
 xe_committed: "$1,140.4bn"
 timber_total: "$88.74bn"
 landslide_total: "$770.7M"
+landslide_deaths: "570.66"
+renewable_wind: "$110.31bn"
+renewable_solar: "$53.95bn"
+renewable_geothermal: "$6.56bn"
+mar_committed: "$53 thousand"
+mar_recomputed: "$43 million"
 hydro_manuscript: "$287.7bn"
 n_services_at_2019: "20"
 
@@ -121,7 +127,7 @@ format:
 - **{{< meta n_open_question >}} carry an open source or definition question** (pollination, renewable energy, coastal protection), and **livestock's numbers are provisional** until the feed-share attribution replaces the current crop-coefficient stand-in.
 - Two new modules are under way (non-timber forest products, stormwater).
 
-## What each service is, in one line
+## What each service is {.smaller}
 
 | Service | What it values |
 |---|---|
@@ -136,18 +142,23 @@ format:
 | coastal_protection | storm damage avoided by mangroves |
 | extractive_materials | mineral resource rents |
 | renewable_energy | wind, solar and geothermal production value |
+
+## What each service is (continued) {.smaller}
+
+| Service | What it values |
+|---|---|
 | recreation | visits to natural recreation sites, valued at travel cost |
 | fire_protection | wildfire damage avoided by nature's fire regulation |
-| water_supply | hydropower rent. Agricultural and municipal water use |
+| water_supply | hydropower rent, and water withdrawal priced by sector |
 | air_filtration | deaths avoided by vegetation removing air pollution |
 | sandstorm_prevention | deaths avoided by ecosystems suppressing windblown dust |
 | water_quality | water-treatment costs avoided by nutrient retention |
 | flood_control | flood damage avoided by ecosystems |
 | local_climate_regulation | cooling-energy costs avoided by urban vegetation |
 | extractive_energy | fossil-fuel resource rents (gas, coal, petroleum) |
-| timber_provision | the stumpage value of timber harvests |
+| timber_provision | the net value of timber harvests, after harvest and transport costs |
 
-## Services and totals (base year 2019, verified)
+## Services and totals (base year 2019, verified) {.smaller}
 
 - Full per-service status in the status sheet's own structure, one row per sheet service (in-library state, totals, anchors, tests, and what each still needs): [the library status sheet](https://docs.google.com/spreadsheets/d/1sQOUT7TRKVLxc-TSfPWeuCFm0vwk-6iLk-AnA6jyEiY), updated as work lands.
 
@@ -162,8 +173,13 @@ format:
 | renewable_energy | {{< meta renewable_total >}} | OPEN: which source is current, the code's {{< meta renewable_total >}} or the drive CSVs' {{< meta renewable_ref >}} |
 | pollination | {{< meta poll_raster >}} raster side (2023) | FAO side {{< meta poll_fao >}}, definition open |
 | erosion | {{< meta erosion_total >}} PROVISIONAL | our own run. The rerun with the author's original inputs from the drive is under way |
-| landslide_mitigation | {{< meta landslide_total >}} (570.66 avoided deaths) | the first full run, complete on the cluster. No machine-readable reference yet |
+| landslide_mitigation | {{< meta landslide_total >}} ({{< meta landslide_deaths >}} avoided deaths) | the first full run, complete on the cluster. No machine-readable reference yet |
 | fisheries | shock + commercial GEP {{< meta fisheries_total >}} PROVISIONAL + subsistence {{< meta fisheries_subsistence_total >}} | CWoN tables in place, run live (reference still needed). Subsistence replicates its committed output |
+
+## Services and totals (continued) {.smaller}
+
+| Service | Total | Verified against |
+|---|---|---|
 | recreation | ported. Data in place, first run complete | tests pin the method. No external anchor yet |
 | fire_protection | three variants. Account variant open | full from-raw replication (panel copied from the drive), to the float |
 | water_supply | hydropower component {{< meta water_supply_total >}} | the drive's committed output, replicated (95 countries) |
@@ -230,7 +246,7 @@ format:
 
 ## landslide_mitigation: the first full run is complete
 
-- [What it does: models slope stability with and without forest root cohesion, turns the difference into avoided landslide deaths, and values them at a value of a statistical life. State: folded from the v0.2.0 release with its input data copied into the shared base data. The first full run is complete on the cluster: 570.66 avoided deaths globally in 2019, valued at {{< meta landslide_total >}}. Two data faults were found and fixed (a corrupted input file from the transfer, and a wrong column name in the country join).]{.state}
+- [What it does: models slope stability with and without forest root cohesion, turns the difference into avoided landslide deaths, and values them at a value of a statistical life. State: folded from the v0.2.0 release with its input data copied into the shared base data. The first full run is complete on the cluster: {{< meta landslide_deaths >}} avoided deaths globally in 2019, valued at {{< meta landslide_total >}}. Two data faults were found and fixed (a corrupted input file from the transfer, and a wrong column name in the country join).]{.state}
 - **Q1: needed, one machine-readable per-country output from a v0.2.0 run. A CSV is enough.** With it, our run is checked country by country against the author's own output.
 - **Q2: which input versions did the run behind the v0.2.0 release use?**
 
@@ -271,7 +287,7 @@ format:
 
 ## renewable_energy: which source is current?
 
-- [What it does: values wind, solar and geothermal electricity as production times price with a resource-rent share. State: conformed and rerun-identical at {{< meta renewable_total >}} (wind 110.31, solar 53.95, geothermal 6.56).]{.state}
+- [What it does: values wind, solar and geothermal electricity as production times price with a resource-rent share. State: conformed and rerun-identical at {{< meta renewable_total >}} (wind {{< meta renewable_wind >}}, solar {{< meta renewable_solar >}}, geothermal {{< meta renewable_geothermal >}}).]{.state}
 - **Q1: which is current, the code's {{< meta renewable_total >}} or the drive CSVs' {{< meta renewable_ref >}}?** More than 100 countries differ per source, both cannot be right, and the folder's "gepNEW" method note suggests the CSVs are older than the code.
 - **Q2: the sheet lists wind, solar and geothermal as three services. The library computes them in one module with per-source tables. Is one module the right structure, or would three separate ones make more sense?**
 
@@ -305,7 +321,7 @@ format:
 - [State: new module from the drive's FINAL_GEP_FLOOD tree (extensive method notes, a JRC comparison for Europe). Flood depth by return period, JRC depth-damage functions and the asset map give each country's expected annual flood damage. The committed per-country total is {{< meta flood_total >}} in 2019 USD (236 countries assessed, 148 non-zero) and reproduces the pipeline's own summary. Every calculation step is reimplemented as tested functions in the library, and the full 250-country recompute on the pipeline's own inputs reproduces its table for 146 of 148 non-zero countries within 0.1 percent.]{.state}
 - One vocabulary catch, fixed in our staging: the pipeline codes South Sudan as Natural Earth's SDS where the account's label is SSD. The mapping layer had dropped it (assessed, zero).
 - **The port surfaced a method question: the committed number is the expected annual damage of assets in the floodplain, not an avoided-damage difference.** The pipeline computes an ecosystem service-flow fraction, but the valuation chain never applies it. The "avoided damage" name comes from the analysis notebook relabeling the damage column.
-- **The recompute also flags one country: Morocco.** The committed value is $53 thousand for the whole country where the recompute gives $43 million.
+- **The recompute also flags one country: Morocco.** The committed value is {{< meta mar_committed >}} for the whole country where the recompute gives {{< meta mar_recomputed >}}.
 - **Q1: needed, confirmation that the FINAL_GEP_FLOOD outputs are the current ones**, the vintage note for the methods writeup, and the answer whether the service-flow fraction should multiply into the valuation chain.
 
 ## local_climate_regulation: ported
@@ -386,7 +402,7 @@ format:
 - **extractive_energy:** confirmation that the eight duplicated rows are a join error, and which total the account keeps.
 - **recreation:** one reference results_by_country.csv (the data folder is copied and the run is live).
 - **water_quality:** the USD-to-international-dollars conversion script and inputs. And the currency decision (international vs market dollars).
-- **flood_control:** confirmation that the FINAL_GEP_FLOOD outputs are current, and whether the service-flow fraction should enter the valuation chain (the committed number is expected damage, not an avoided-damage difference). And the Morocco row, committed at $53 thousand where the recompute gives $43 million.
+- **flood_control:** confirmation that the FINAL_GEP_FLOOD outputs are current, and whether the service-flow fraction should enter the valuation chain (the committed number is expected damage, not an avoided-damage difference). And the Morocco row, committed at {{< meta mar_committed >}} where the recompute gives {{< meta mar_recomputed >}}.
 - **water_supply:** which hydropower total is the account's ({{< meta hydro_manuscript >}} direct-use vs {{< meta water_supply_total >}} CWoN rent). The reference's 17 empty countries. And the attribution step the water-use components still need.
 - **fire_protection:** the account's choice among the three GEP variants (the data asks are closed).
 - **air_filtration:** the VSL build behind the workbook (the folder's vsl.R is a different vintage), and the vintage of the avoided-death columns.
