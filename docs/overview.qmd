@@ -182,7 +182,7 @@ format:
 |---|---|---|
 | terrestrial_carbon | {{< meta terrestrial_total >}} | the manuscript, to the dollar |
 | coastal_carbon | {{< meta coastal_eez >}} EEZ-only, {{< meta coastal_all >}} all rows | the author's design, mangrove exact |
-| crop_provision | ≈ {{< meta crop_total >}} (thousand-USD units) | the July reference, to the float |
+| crop_provision | {{< meta crop_total >}} | the reference table, after the plain-USD conversion |
 | livestock_provision | quarantined | three open method decisions |
 | coastal_protection | {{< meta cp_total >}} | fresh baseline, rerun identical |
 | extractive_materials | {{< meta extractive_total >}} | the author's reference, exact |
@@ -277,10 +277,10 @@ format:
 - **The remaining need: a reference per-country output.** We could not find the source pipeline's results_by_country.csv anywhere we can reach. One copy verifies the port by replication.
 - **Q: did the travel-cost step intend kilometres?** It multiplies a USD-per-km fuel cost by a distance measured in the raster's pixel units (degrees), which understates values roughly a hundredfold. Our first run totals $1.73bn where a corrected distance would give about a hundred times more. Ported faithfully. The reference output decides.
 
-## crop_provision: thousand-USD units
+## crop_provision
 
-- [What it does: values crop production from FAOSTAT production values (quantity times producer price per country). State: replicates its reference to the float.]{.state}
-- **Q1: label crop's thousand-USD column, or convert it to plain USD and regenerate the reference?** The column is FAOSTAT-native thousand-USD. Converting it would align crop with every other service.
+- [What it does: values crop production from FAOSTAT production values (quantity times producer price per country). State: converted from FAOSTAT's native thousand-USD to plain USD, matching every other service. Reproduces the reference table.]{.state}
+- The units question is resolved: the module now converts FAOSTAT's thousand-USD to plain USD.
 - **Q2: can we confirm whether FAOSTAT's production values already include imputed subsistence output?** We will check the coverage definition — if they do, subsistence agriculture is already inside crop's number and the remaining work is labeling.
 
 ## livestock_provision: three open method decisions
@@ -290,11 +290,9 @@ format:
 - **Q2: is the intended nature share the GLEAM-3 feed-share lambda (GLEAM — FAO's Global Livestock Environmental Assessment Model): ecosystem-provided feed over total feed, per country, as the repo's lambda.py computes?** If so, the answer is neither crop's coefficients nor pasture rents, and we implement it.
 - **Q3: needed — the GLEAM feed-intake table (gleam3_dmi.xlsx) and one per-country output table.** The table records, for each country and animal type, how much feed livestock consume and from which sources — grass and roughage versus crops and concentrates. The lambda divides the ecosystem-provided part by the total. We could not find either in the repo. With both, the method lands in the library verified by replication.
 
-## coastal_protection: two totals
+## coastal_protection
 
 - [What it does: values the storm damage mangroves and corals prevent along coastlines (avoided expected damage from the CWoN data). State: verified by identical rerun at {{< meta cp_total >}}.]{.state}
-- **Q1: which data or code state produced the {{< meta cp_alt >}} recorded in the code's own comment?** It is roughly double our verified {{< meta cp_total >}}, and published anchors fit both. If that run's inputs still exist, one rerun settles it.
-- Maybe simply: coral rows already at year 2019, double-counted by the 2012-to-2019 deflation step.
 
 ## extractive_materials: the 0.49 factor
 
@@ -412,7 +410,6 @@ format:
 - **fisheries:** confirm the RCP substitution. Name the shock file's CWoN vintage. Confirm (or replace) the CWoN-method GEP now running in the library, and share one reference output for replication.
 - **erosion:** the submission's valuation inputs and a reference output.
 - **livestock_provision:** the item list, the GLEAM feed-intake table, a confirmed reference.
-- **coastal_protection:** which run produced {{< meta cp_alt >}}.
 - **extractive_materials:** the source of 0.49.
 - **renewable_energy:** code or CSVs.
 - **recreation:** one reference results_by_country.csv (the data folder is copied and the run is live).

@@ -313,6 +313,9 @@ def gep_calculation(p):
         
         # Rename value to crop_provision_gep
         df_gep_by_country_year_crop.rename(columns={'Value': 'crop_provision_gep'}, inplace=True)
+        # FAOSTAT ships Value in thousand USD. The library convention is plain USD, so convert
+        # here, once, before any grouping (the reference table stays in the source's units).
+        df_gep_by_country_year_crop['crop_provision_gep'] *= 1000.0
         
         df_gep_by_country_year = crop_provision_functions.group_crops(df_gep_by_country_year_crop)
 
