@@ -346,7 +346,7 @@ format:
 - **water_supply:** which hydropower total is the account's ({{< meta hydro_manuscript >}} direct-use vs {{< meta water_supply_total >}} CWoN rent), and the reason for the reference's 17 empty countries.
 - **fire_protection:** the account's choice among the three GEP variants (the data asks are closed).
 - **air_filtration:** the VSL build behind the workbook (the folder's vsl.R is a different vintage), and the vintage of the avoided-death columns.
-- **local_climate_regulation:** which entry point and script versions in the urban-cooling repo are canonical (several live side by side), and where its runs happen.
+- **local_climate_regulation:** the canonical chain is identified (the repo's v04 valuation script: cooling-degree-days and marginal consumption per CDD); its port into the library is scoped and next.
 - **Decisions for the meeting:** pollination's definition, the shoreline convention, crop's units, the map dissolve, base year 2019, subsistence scope, marine carbon's fate, the fisheries GEP's source.
 - **Every service:** a complete SI-table row (status, value info, relationships to other services); leads for the unclaimed services; confirmation of the next-in-line for the library.
 
