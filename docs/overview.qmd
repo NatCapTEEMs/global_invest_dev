@@ -312,6 +312,14 @@ format:
 
 # Cross-cutting decisions
 
+## Which services could gain scenario shocks
+
+- Four services produce shocks today (the carbons, pollination, erosion, fisheries). For the rest, the question is whether a scenario lever exists and who holds the chain.
+- Natural extensions, chain in the library: RECREATION is built on land-cover shares, so rerunning it on the SEALS scenario maps gives scenario visits and values directly (compute-heavy; the receiving sector is a mapping decision). TIMBER follows from SEALS forest-area change — sharing the forestry sector with the carbon shock without double-counting is the design decision.
+- Possible with a science decision: FIRE's nature-vs-human-area coefficient is a land-use lever; LANDSLIDE's stability model already reads forest share (cluster-scale compute; mortality is a nonstandard economic channel).
+- Upstream-owned chains (their infrastructure, not ours): air filtration and sandstorm (the InMAP chain was built to trace land-use scenarios — the capability sits with that pipeline), urban cooling, flood control. Water quality could get an in-library NDR chain the way erosion got SDR.
+- Deliberately no shock: crop and livestock (their scenario effects already arrive through the pollination and erosion channels — an own shock would double-count), the extractives (abiotic rents), the static accounting components.
+
 ## Four conventions the room can settle today
 
 - **Maps:** country values on split-country polygons render partially (China shows one sixth). We propose dissolving to one polygon per country, a one-time cartographic artifact that can never double-count. Any objection?
