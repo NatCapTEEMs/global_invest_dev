@@ -385,7 +385,7 @@ format:
 - Per the sheet's own status column, three services list their SI table as not filled: **Water Supply, Livestock, River Flood Mitigation**. Six more are marked Incomplete: Water Quality, Coastal Protection, Pest Control, Timber, Extractive Materials, Fire Protection.
 - **Storm Mitigation has no status at all** in the sheet, and Fuelwood's feasibility reads "Unknown" — where do these stand?
 - Timber's draft is In Progress; everyone else reports a shared draft. When does Timber's land?
-- Five services are feasible only as case studies, not globally: Water Quality, Pest Control, Health, Peak Flow Mitigation, Moisture Recycling. Is case-study coverage acceptable for the account, or do these wait?
+- Case studies, in the sheet's feasibility class, means computable only as worked examples for specific regions or systems — one country's pest control, one basin's peak flow — not as all-country accounts. The sheet lists five: Water Quality, Pest Control, Health, Peak Flow Mitigation, Moisture Recycling (though Water Quality's committed chain now runs globally in the library). Is case-study coverage acceptable for the account, or do these wait?
 
 ## The sheet's own missing-info flags, by service
 
