@@ -86,9 +86,9 @@ format:
 | tasks.py | The estimation steps. Each writes one output. |
 | initialize.py | The table of contents (the list of steps, and the entry point other pipelines call). |
 | run_\<service\>.py | The main script. Opens a workspace and runs the steps. |
-| run_\<service\>_shock.py | The scenario runner, for services with a shock (one runner per task tree). |
 | method.qmd | The written explanation of the method. |
 
+- A service with a shock has a second runner for it, run_\<service\>_shock.py (one runner per task tree).
 - The three CSVs are the calibration tables. es_config states what each model reads and how it prices. es_scenarios states which scenarios and maps, and es_parameters holds the run parameters and machine locations.
 - A CSV cell is a default, and whatever the caller already set prevails.
 
