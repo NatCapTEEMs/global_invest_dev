@@ -66,7 +66,7 @@ format:
 
 - Different contributors developed the GEP service models in different repos, each with its own layout, path conventions and aggregation choices.
 - The library brings them into one repo with one layout: every service runs the same way and writes the same per-country table the GEP account reads.
-- Central banks and finance ministries are asked to price nature risk, and the scenarios they use carry no ecosystem-service feedback. The pipeline this library feeds adds one.
+- The library gives policymakers a tool to price nature risk. The scenarios they use today carry no ecosystem-service feedback, and the pipeline this library feeds adds one.
 
 # What global_invest is
 
@@ -78,17 +78,17 @@ format:
 - A service with both outputs computes them from the same functions file, so the valuation and the shock rely on the same science.
 - The library is scenario agnostic: a caller supplies its own scenarios (the maps, the years and the naming) through configuration.
 
-## The code structure: a service module reads like a paper
+## The code structure
 
 | File | In paper terms |
 |---|---|
 | functions.py | The equations, pure science. |
-| tasks.py | The estimation steps, run in order. Each writes one output. |
+| tasks.py | The estimation steps. Each writes one output. |
 | initialize.py | The table of contents (the list of steps, and the entry point other pipelines call). |
 | run_\<service\>.py | The main script. Opens a workspace and runs the steps. |
+| run_\<service\>_shock.py | The scenario runner, for services with a shock (one runner per task tree). |
 | method.qmd | The written explanation of the method. |
 
-- A service with a shock has a second runner for it, run_\<service\>_shock.py (one runner per task tree).
 - The three CSVs are the calibration tables. es_config states what each model reads and how it prices. es_scenarios states which scenarios and maps, and es_parameters holds the run parameters and machine locations.
 - A CSV cell is a default, and whatever the caller already set prevails.
 
@@ -186,12 +186,12 @@ format:
 | terrestrial_carbon | {{< meta terrestrial_total >}} | the manuscript, to the dollar |
 | coastal_carbon | {{< meta coastal_eez >}} EEZ-only, {{< meta coastal_all >}} all rows | the author's design, mangrove exact |
 | crop_provision | {{< meta crop_total >}} | the reference table, after the plain-USD conversion |
-| livestock_provision | quarantined | three open method decisions |
+| livestock_provision | quarantined | steps one and two are in the code. The method inputs remain |
 | coastal_protection | {{< meta cp_total >}} | our saved baseline run |
 | extractive_materials | {{< meta extractive_total >}} | the author's reference, exact |
 | renewable_energy | {{< meta renewable_total >}} | OPEN: which source is current, the code's {{< meta renewable_total >}} or the drive CSVs' {{< meta renewable_ref >}} |
 | pollination | {{< meta poll_raster >}} raster side (2023) | FAO side {{< meta poll_fao >}}, definition open |
-| erosion | {{< meta erosion_total >}} PROVISIONAL | our own run only, on stand-in inputs. Awaits the author's originals |
+| erosion | {{< meta erosion_total >}} PROVISIONAL | our own run. The rerun with the author's original inputs from the drive is under way |
 | landslide_mitigation | {{< meta landslide_total >}} (570.66 avoided deaths) | the first full run, complete on the cluster. No machine-readable reference yet |
 | fisheries | shock + commercial GEP {{< meta fisheries_total >}} PROVISIONAL + subsistence {{< meta fisheries_subsistence_total >}} | CWoN tables in place, run live (reference still needed). Subsistence replicates its committed output |
 | recreation | ported. Data in place, first run complete | tests pin the method. No external anchor yet |
@@ -200,10 +200,10 @@ format:
 | air_filtration | {{< meta air_filtration_total >}}, the manuscript's number | the drive's committed workbook, replicated to the float |
 | sandstorm_prevention | {{< meta sandstorm_total >}} (the same workbook's dust channel) | computed in the air_filtration module |
 | water_quality | {{< meta wq_usd >}} USD and {{< meta wq_intl >}} intl$ (accounting value) | the committed chain, identities exact. The currency conversion unidentified |
-| flood_control | {{< meta flood_total >}} | the pipeline's committed output. Sums and counts match its own summary |
+| flood_control | {{< meta flood_total >}} | the full 250-country recompute reproduces the pipeline's table, Morocco excepted |
 | local_climate_regulation | {{< meta lcr_total >}} | the committed final. City-level pricing exact, and the final equals the city sums |
 | extractive_energy | {{< meta xe_total >}} (gas + coal + petroleum) | computed from the public CWoN rent tables. The committed tables ({{< meta xe_committed >}}) double-count eight rows |
-| timber_provision | {{< meta timber_total >}} | the committed Forestry output, reproduced |
+| timber_provision | {{< meta timber_total >}} | recomputed from the drive's net-return raster. All 166 countries match the committed output |
 
 ## Verification discipline, and what it caught
 
@@ -413,14 +413,13 @@ format:
 - **coastal_carbon:** the shoreline rationale, and the seagrass and marsh input versions behind {{< meta coastal_report >}}.
 - **landslide_mitigation:** one machine-readable v0.2.0 output, and its input versions.
 - **fisheries:** confirm the RCP substitution. Name the shock file's CWoN vintage. Confirm (or replace) the CWoN-method GEP now running in the library, and share one reference output for replication.
-- **erosion:** the submission's valuation inputs and a reference output.
-- **livestock_provision:** the item list, the GLEAM feed-intake table, a confirmed reference.
+- **livestock_provision:** the item-grouping confirmation, and a reference output.
 - **extractive_materials:** the source of 0.49.
 - **renewable_energy:** code or CSVs.
 - **extractive_energy:** confirmation that the eight duplicated rows are a join error, and which total the account keeps.
 - **recreation:** one reference results_by_country.csv (the data folder is copied and the run is live).
 - **water_quality:** the USD-to-international-dollars conversion script and inputs. And the currency decision (international vs market dollars).
-- **flood_control:** confirmation that the FINAL_GEP_FLOOD outputs are current, and whether the service-flow fraction should enter the valuation chain (the committed number is expected damage, not an avoided-damage difference).
+- **flood_control:** confirmation that the FINAL_GEP_FLOOD outputs are current, and whether the service-flow fraction should enter the valuation chain (the committed number is expected damage, not an avoided-damage difference). And the Morocco row, committed at $53 thousand where the recompute gives $43 million.
 - **water_supply:** which hydropower total is the account's ({{< meta hydro_manuscript >}} direct-use vs {{< meta water_supply_total >}} CWoN rent). The reference's 17 empty countries. And the attribution step the water-use components still need.
 - **fire_protection:** the account's choice among the three GEP variants (the data asks are closed).
 - **air_filtration:** the VSL build behind the workbook (the folder's vsl.R is a different vintage), and the vintage of the avoided-death columns.
