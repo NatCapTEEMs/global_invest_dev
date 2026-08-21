@@ -104,12 +104,6 @@ format:
 - Each service module serves two callers. The GEP account reads the valuation (one row per country), and the macroeconomic pipeline reads the scenario shock (a table of productivity deviations).
 - Both read the same functions file, so a change to the science reaches the account and the scenarios at once.
 
-## How a pipeline grafts a service
-
-- A caller grafts a service with one call (add_\<service\>_tasks(p) after its land-use step), and the service's tasks slot into the caller's own task tree.
-- A CSV cell is a default. The caller's configuration prevails over the shipped CSVs, so the library never needs to know its callers' naming.
-- The standalone runners use the same graft, so a bug found and fixed in a service's own run is fixed in the pipeline too. Nothing changes between the two.
-
 ## The configuration table itself (es_config.csv)
 
 - One row per service. The GEP formula has a column each (Q = quantity input, P = price input, λ = attribution input), and the rest are the land base and the crosswalk to this group's status sheet. An empty cell means the input does not apply.
@@ -426,6 +420,12 @@ format:
 - Every input is a reference path relative to the shared base data, and each machine resolves it for itself: the task's own directory first (so finished work is found and skipped), then the project's input folder, then the machine's base_data, then the cloud fallback.
 - A run therefore carries no absolute paths. The same run file works on a laptop, on the cluster, or on any machine that stages the same base data.
 - Tasks cache their output in the project directory and skip themselves when it already exists, so a rerun recomputes nothing and an interrupted run resumes where it stopped.
+
+## How a pipeline grafts a service
+
+- A caller grafts a service with one call (add_\<service\>_tasks(p) after its land-use step), and the service's tasks slot into the caller's own task tree.
+- A CSV cell is a default. The caller's configuration prevails over the shipped CSVs, so the library never needs to know its callers' naming.
+- The standalone runners use the same graft, so a bug found and fixed in a service's own run is fixed in the pipeline too. Nothing changes between the two.
 
 ## What the tests pin, per service
 
