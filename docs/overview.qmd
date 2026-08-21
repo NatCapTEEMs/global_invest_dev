@@ -114,7 +114,7 @@ format:
 
 - **{{< meta n_services >}} services are in the library.** {{< meta n_replicating >}} of them (plus the subsistence fisheries component) replicate a committed reference or the manuscript.
 - **{{< meta n_awaiting_file >}} await one file to finish verification**: recreation, commercial fisheries and landslide each need a reference output we could not find. Erosion's replication rerun is under way.
-- **{{< meta n_open_question >}} carry an open source or definition question** (pollination, renewable energy, coastal protection), and **livestock's numbers are provisional**, pending its method inputs.
+- **{{< meta n_open_question >}} carry an open source or definition question** (pollination, renewable energy, coastal protection), and **livestock's numbers are provisional** until the feed-share attribution replaces the current crop-coefficient stand-in.
 - **{{< meta n_ports_done >}} chain ports are complete and verified**: extractive energy (computed from the public CWoN rent tables), timber (the value raster and all 166 country sums reproduce), and flood control (the full 250-country recompute reproduces the pipeline's table). Two new module skeletons have their science stages under way (non-timber forest products, stormwater), and landslide's first full run is complete on the cluster.
 
 ## How every GEP number is built
@@ -159,7 +159,7 @@ format:
 | terrestrial_carbon | {{< meta terrestrial_total >}} | the manuscript, to the dollar |
 | coastal_carbon | {{< meta coastal_eez >}} EEZ-only, {{< meta coastal_all >}} all rows | the author's design, mangrove exact |
 | crop_provision | {{< meta crop_total >}} | the reference table, after the plain-USD conversion |
-| livestock_provision | provisional | steps one and two are in the code. The method inputs remain |
+| livestock_provision | provisional | steps one and two are in the code. The feed-share attribution and a reference output remain |
 | coastal_protection | {{< meta cp_total >}} | our saved baseline run |
 | extractive_materials | {{< meta extractive_total >}} | the author's reference, exact |
 | renewable_energy | {{< meta renewable_total >}} | OPEN: which source is current, the code's {{< meta renewable_total >}} or the drive CSVs' {{< meta renewable_ref >}} |
