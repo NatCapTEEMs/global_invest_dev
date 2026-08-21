@@ -177,13 +177,13 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 
 | Service | Total | Verification |
 |---|---|---|
-| terrestrial_carbon | {{< meta terrestrial_total >}} | reproduces the manuscript's total |
-| coastal_carbon | {{< meta coastal_eez >}} EEZ-only, {{< meta coastal_all >}} all rows | reproduces the author's reported numbers |
-| crop_provision | {{< meta crop_total >}} | reproduces the reference table |
-| livestock_provision | provisional | awaits the GLEAM intake data and a reference output |
-| coastal_protection | {{< meta cp_total >}} | gives the same numbers on rerun. No author output exists |
-| extractive_materials | {{< meta extractive_total >}} | reproduces the author's reference table |
-| renewable_energy | {{< meta renewable_total >}} | the code and the drive's reference CSVs give different values. The open question is which one is current |
+| terrestrial_carbon | {{< meta terrestrial_total >}} | yes. Reproduces the manuscript's total |
+| coastal_carbon | {{< meta coastal_eez >}} EEZ-only, {{< meta coastal_all >}} all rows | yes. Reproduces the author's reported numbers |
+| crop_provision | {{< meta crop_total >}} | yes. Reproduces the reference table |
+| livestock_provision | provisional | no. Awaits the GLEAM intake data and a reference output |
+| coastal_protection | {{< meta cp_total >}} | partially. Same numbers on rerun, and no author output exists |
+| extractive_materials | {{< meta extractive_total >}} | yes. Reproduces the author's reference table |
+| renewable_energy | {{< meta renewable_total >}} | partially. The code and the drive's reference CSVs give different values, and which one is current is the open question |
 
 : {tbl-colwidths="[22,32,46]"}
 
@@ -191,13 +191,13 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 
 | Service | Total | Verification |
 |---|---|---|
-| pollination | {{< meta poll_raster >}} raster side (2023). {{< meta poll_fao >}} FAO side | two definitions of the same service, and the decision between them is open |
-| erosion | {{< meta erosion_total >}} provisional | our own run. The rerun with the author's original inputs from the drive is under way |
-| landslide_mitigation | {{< meta landslide_total >}} ({{< meta landslide_deaths >}} avoided deaths) | the first full run is complete on the cluster. No reference output exists to compare against yet |
-| fisheries | shock + commercial GEP {{< meta fisheries_total >}} provisional + subsistence {{< meta fisheries_subsistence_total >}} | the commercial run has no reference output yet. Subsistence reproduces the source repo's committed output |
-| recreation | {{< meta recreation_total >}} provisional | the method is unit-tested. The author's output table is not reachable, so nothing to compare against yet |
-| fire_protection | {{< meta fire_cause_total >}} provisional, the default of three variants | reproduces the source repo's committed output from the raw inputs |
-| water_supply | hydropower component {{< meta water_supply_total >}} | reproduces the drive's committed output for the 95 valued countries |
+| pollination | {{< meta poll_raster >}} raster side (2023). {{< meta poll_fao >}} FAO side | partially. Two definitions of the same service, and the decision between them is open |
+| erosion | {{< meta erosion_total >}} provisional | not yet. The rerun with the author's original inputs is under way |
+| landslide_mitigation | {{< meta landslide_total >}} ({{< meta landslide_deaths >}} avoided deaths) | no. No reference output exists to compare against yet |
+| fisheries | shock + commercial GEP {{< meta fisheries_total >}} provisional + subsistence {{< meta fisheries_subsistence_total >}} | partially. Subsistence reproduces its committed output, and the commercial run has no reference output yet |
+| recreation | {{< meta recreation_total >}} provisional | no. The author's output table is not reachable |
+| fire_protection | {{< meta fire_cause_total >}} provisional, the default of three variants | yes. Reproduces the source repo's committed output from the raw inputs |
+| water_supply | hydropower component {{< meta water_supply_total >}} | yes. Reproduces the drive's committed output for the 95 valued countries |
 
 : {tbl-colwidths="[22,32,46]"}
 
@@ -205,13 +205,13 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 
 | Service | Total | Verification |
 |---|---|---|
-| air_filtration | {{< meta air_filtration_total >}} | reproduces the drive's committed workbook and the manuscript's total |
-| sandstorm_prevention | {{< meta sandstorm_total >}} | reproduces the same workbook's dust channel |
-| water_quality | {{< meta wq_usd >}} USD and {{< meta wq_intl >}} intl$ | reproduces the committed intermediate tables. The currency conversion stays unidentified |
-| flood_control | {{< meta flood_total >}} | our recomputed table matches the pipeline's, Morocco excepted |
-| local_climate_regulation | {{< meta lcr_total >}} | reproduces the committed final |
-| extractive_energy | {{< meta xe_total >}} (gas + coal + petroleum) | computed from the public CWoN rent tables. The committed tables ({{< meta xe_committed >}}) double-count eight rows |
-| timber_provision | {{< meta timber_total >}} | recomputed from the drive's net-return raster. All 166 countries match the committed output |
+| air_filtration | {{< meta air_filtration_total >}} | yes. Reproduces the drive's committed workbook and the manuscript's total |
+| sandstorm_prevention | {{< meta sandstorm_total >}} | yes. Reproduces the same workbook's dust channel |
+| water_quality | {{< meta wq_usd >}} USD and {{< meta wq_intl >}} intl$ | partially. Reproduces the committed intermediate tables, and the currency conversion stays unidentified |
+| flood_control | {{< meta flood_total >}} | partially. Our recompute matches the pipeline's table, Morocco excepted |
+| local_climate_regulation | {{< meta lcr_total >}} | yes. Reproduces the committed final |
+| extractive_energy | {{< meta xe_total >}} (gas + coal + petroleum) | yes. Computed from the public CWoN rent tables, and the committed tables double-count eight rows |
+| timber_provision | {{< meta timber_total >}} | yes. All 166 countries match the committed output |
 
 : {tbl-colwidths="[22,32,46]"}
 
