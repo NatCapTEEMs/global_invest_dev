@@ -140,18 +140,23 @@ format:
 | landslide_mitigation | landslide deaths avoided by forest cover, valued at a value of a statistical life |
 | fisheries | commercial capture-fisheries rent. Subsistence catch value |
 | crop_provision | the value of crop production |
-| livestock_provision | livestock production attributable to ecosystem-provided feed |
-| coastal_protection | storm damage avoided by mangroves |
-| extractive_materials | mineral resource rents |
-| renewable_energy | wind, solar and geothermal production value |
 
 ## What each service is (continued) {.smaller}
 
 | Service | What it values |
 |---|---|
+| livestock_provision | livestock production attributable to ecosystem-provided feed |
+| coastal_protection | storm damage avoided by mangroves |
+| extractive_materials | mineral resource rents |
+| renewable_energy | wind, solar and geothermal production value |
 | recreation | visits to natural recreation sites, valued at travel cost |
 | fire_protection | wildfire damage avoided by nature's fire regulation |
 | water_supply | hydropower rent, and water withdrawal priced by sector |
+
+## What each service is (continued) {.smaller}
+
+| Service | What it values |
+|---|---|
 | air_filtration | deaths avoided by vegetation removing air pollution |
 | sandstorm_prevention | deaths avoided by ecosystems suppressing windblown dust |
 | water_quality | water-treatment costs avoided by nutrient retention |
