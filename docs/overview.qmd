@@ -15,8 +15,8 @@ extractive_alt: "$203bn"
 extractive_factor: "0.49"
 renewable_total: "$170.83bn"
 renewable_ref: "$134.6bn"
-poll_raster: "$18.28B"
-poll_fao: "$515B"
+poll_raster: "$18.28bn"
+poll_fao: "$515bn"
 erosion_total: "$15.54bn"
 livestock_ind: "$136bn"
 livestock_chn: "$838bn"
@@ -167,8 +167,8 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 | terrestrial_carbon | {{< meta terrestrial_total >}} | reproduces the manuscript's total |
 | coastal_carbon | {{< meta coastal_eez >}} EEZ-only, {{< meta coastal_all >}} all rows | reproduces the author's reported numbers |
 | crop_provision | {{< meta crop_total >}} | reproduces the reference table after the plain-USD conversion |
-| livestock_provision | provisional | steps one and two are in the code. The feed-share attribution and a reference output remain |
-| coastal_protection | {{< meta cp_total >}} | reproduces our saved baseline run. No author reference exists |
+| livestock_provision | provisional | the product list and the feed-share formula are implemented. The number still uses the old attribution until the GLEAM intake data and a reference output arrive |
+| coastal_protection | {{< meta cp_total >}} | rerunning gives the same numbers. No author output exists to compare against |
 | extractive_materials | {{< meta extractive_total >}} | reproduces the author's reference table |
 | renewable_energy | {{< meta renewable_total >}} | the code and the drive CSVs disagree ({{< meta renewable_total >}} vs {{< meta renewable_ref >}}), and which is current is the open question |
 
@@ -176,10 +176,10 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 
 | Service | Total | Verification |
 |---|---|---|
-| pollination | {{< meta poll_raster >}} raster side (2023) | the FAO side gives {{< meta poll_fao >}}, and the definition decision is open |
-| erosion | {{< meta erosion_total >}} PROVISIONAL | our own run. The rerun with the author's original inputs from the drive is under way |
+| pollination | {{< meta poll_raster >}} raster side (2023). {{< meta poll_fao >}} FAO side | two definitions of the same service, and the decision between them is open |
+| erosion | {{< meta erosion_total >}} provisional | our own run. The rerun with the author's original inputs from the drive is under way |
 | landslide_mitigation | {{< meta landslide_total >}} ({{< meta landslide_deaths >}} avoided deaths) | the first full run is complete on the cluster. No reference output exists to compare against yet |
-| fisheries | shock + commercial GEP {{< meta fisheries_total >}} PROVISIONAL + subsistence {{< meta fisheries_subsistence_total >}} | the commercial run has no reference output yet. Subsistence reproduces the source repo's committed output |
+| fisheries | shock + commercial GEP {{< meta fisheries_total >}} provisional + subsistence {{< meta fisheries_subsistence_total >}} | the commercial run has no reference output yet. Subsistence reproduces the source repo's committed output |
 | recreation | ported. Data in place, first run complete | the method is unit-tested. The author's output table is not reachable, so nothing to compare against yet |
 | fire_protection | three variants. Account variant open | reproduces the source repo's committed output from the raw inputs |
 | water_supply | hydropower component {{< meta water_supply_total >}} | reproduces the drive's committed output for the 95 valued countries |
@@ -237,7 +237,7 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 
 ## erosion: interim inputs
 
-- [What it does: values the soil that land cover keeps in place (prevented erosion mapped by the SDR model, valued through crop productivity). State: the full chain runs end to end and gives {{< meta erosion_total >}}, PROVISIONAL. The rerun with the author's original input tables is under way. A unit test checks the rebuilt country formula's three behaviors on a sample input: the production-weighted elasticity average, the cap of elasticity at one, and the numerical floor that keeps a tiny positive shock from vanishing.]{.state}
+- [What it does: values the soil that land cover keeps in place (prevented erosion mapped by the SDR model, valued through crop productivity). State: the full chain runs end to end and gives {{< meta erosion_total >}}, provisional. The rerun with the author's original input tables is under way. A unit test checks the rebuilt country formula's three behaviors on a sample input: the production-weighted elasticity average, the cap of elasticity at one, and the numerical floor that keeps a tiny positive shock from vanishing.]{.state}
 - Both former asks are closed. The drive's erosion folder carries the author's three input tables and the per-country results, all copied. The rerun with the originals is under way, and its comparison against the author's own table verifies by replication.
 
 ## erosion: how the valuation and the shock share the chain
@@ -257,7 +257,7 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 
 ## fisheries: the RCP substitution
 
-- [What it does: values commercial capture fisheries as the economic rent of the catch, and subsistence fisheries as the consumptive-use value of home catch. The shock file derives from DBEM (Cheung 2021), built from CWoN inputs. The GEP valuation is ported to Python from the source repo's 2026 CWoN-method script (FAO-based economic rent from the CWoN 2024 reproducibility package (FR_WLD_2024_195), deflated to 2019 USD, extrapolated to 2019 by each country's own 2009–2018 trend, floored at zero), PROVISIONAL until the source choice is confirmed.]{.state}
+- [What it does: values commercial capture fisheries as the economic rent of the catch, and subsistence fisheries as the consumptive-use value of home catch. The shock file derives from DBEM (Cheung 2021), built from CWoN inputs. The GEP valuation is ported to Python from the source repo's 2026 CWoN-method script (FAO-based economic rent from the CWoN 2024 reproducibility package (FR_WLD_2024_195), deflated to 2019 USD, extrapolated to 2019 by each country's own 2009–2018 trend, floored at zero), provisional until the source choice is confirmed.]{.state}
 - **Q1: should the RCP8.5-for-RCP7.0 substitution stand, or is there a replacement?** The 8.5 series stands in because no 7.0 series exists.
 - **Q2: which CWoN vintage produced the shock file (cwon_shocks.har)?** The valuation side is pinned by the port (CWoN 2024, FR_WLD_2024_195). The shock file's vintage is still unknown.
 - **Q3: is the CWoN method the account's fisheries GEP?** It runs at {{< meta fisheries_total >}} for 2019 across 165 countries, on the two CWoN tables copied from the public World Bank package. Needed: the source pipeline's output CSV for replication. The FishStatJ pipeline is the alternative source.
@@ -276,7 +276,7 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 
 ## livestock_provision: three open method decisions
 
-- [What it does: values livestock production and attributes to nature the share of feed ecosystems provide. State: PROVISIONAL numbers. The service's method repo answers more than we hoped, and step 1 of that method is already implemented as a draft: with its 65 FAO item codes replacing the stale 29-name list, India recovers from zero to {{< meta livestock_ind >}}, China reads {{< meta livestock_chn >}}, and the world total {{< meta livestock_world >}}, all PROVISIONAL pending the lambda input. The old name list matched only 13 of its own 29 items against current FAO files.]{.state}
+- [What it does: values livestock production and attributes to nature the share of feed ecosystems provide. State: provisional numbers. The service's method repo answers more than we hoped, and step 1 of that method is already implemented as a draft: with its 65 FAO item codes replacing the stale 29-name list, India recovers from zero to {{< meta livestock_ind >}}, China reads {{< meta livestock_chn >}}, and the world total {{< meta livestock_world >}}, all provisional pending the lambda input. The old name list matched only 13 of its own 29 items against current FAO files.]{.state}
 - **Q1: is the method repo's meat/milk/other item grouping current, and does milk belong as it suggests?** The library's 29-item meats-and-eggs list (which captures 4 percent of India's FAO livestock value) appears to be a stale fork of it.
 - **Q2: is the intended nature share the GLEAM-3 feed-share lambda (GLEAM, FAO's Global Livestock Environmental Assessment Model): ecosystem-provided feed over total feed, per country, as the repo's lambda.py computes?** That construction is now implemented in the library and unit-tested on sample inputs. The answer decides whether it replaces the current crop-coefficient stand-in.
 - **Q3: needed, one per-country output table, to verify the method by replication.** The remaining input takes care of itself: the GLEAM intake data (how much feed livestock consume per country and from which sources, grass and roughage versus crops and concentrates) is public behind FAO's dashboard, so we download it and build the lambda ourselves.
