@@ -23,9 +23,11 @@ def add_fisheries_tasks(p, parent=None):
 # GEP task trees (the valuation side; the shock seam above is unchanged).
 # ---------------------------------------------------------------------------------------------
 def build_gep_service_calculation_task_tree(p):
-    """GEP calculation tree: CWoN rent trends -> r250 one-row-per-country valuation."""
+    """GEP calculation tree: CWoN rent trends -> r250 one-row-per-country valuation, plus
+    the separate subsistence component (Lynch et al. 2024)."""
     p.fisheries_rent_trends_task = p.add_task(fisheries_tasks.fisheries_rent_trends)
     p.gep_calculation_task = p.add_task(fisheries_tasks.gep_calculation)
+    p.fisheries_subsistence_gep_task = p.add_task(fisheries_tasks.fisheries_subsistence_gep)
     return p
 
 

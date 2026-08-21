@@ -23,6 +23,7 @@ livestock_chn: "$838bn"
 livestock_world: "$2.29T"
 n_services: "13"
 fisheries_total: "$29.00bn"
+fisheries_subsistence_total: "$7.92bn"
 n_services_at_2019: "12"
 
 format:
@@ -51,7 +52,7 @@ format:
 
 - Different GEP service models were developed by different contributors in different repositories, with their own layout, path conventions and aggregation choices.
 - The library brings them into one repository with one layout: every service runs the same way, reproduces its numbers on rerun, and writes the same per-country table the GEP account reads.
-- A GEP account changes decisions only if every number can be traced to the model that produced it — and an account used in policy inherits every silent error inside it. Livestock's numbers are known wrong and erosion's are provisional; the totals table carries that status.
+- A GEP account changes decisions only if every number can be traced to the model that produced it; the totals table carries each service's verification status.
 - Central banks and finance ministries are asked to price nature risk, and the scenarios they use carry no ecosystem-service feedback; the pipeline this library feeds adds one.
 
 # What global_invest is
@@ -61,7 +62,7 @@ format:
 - The library holds one folder per ecosystem service, all on the same file convention.
 - Every one of the {{< meta n_services >}} services now carries its GEP method in the library; recreation still awaits its input data.
 - Services whose science supports it also produce a scenario shock for the macroeconomic pipeline; not all can be made into shocks.
-- Where both outputs exist, they are written from the same science, so the valuation and the shock cannot drift apart.
+- A service with both outputs computes them from the same functions file — one implementation, so the valuation and the shock cannot disagree.
 - The library is scenario agnostic. Consumers inject their naming through scenario maps and required configuration.
 
 ## The mental model: a service module reads like a paper
@@ -134,9 +135,9 @@ format:
 | pollination | {{< meta poll_raster >}} raster side (2023) | FAO side {{< meta poll_fao >}}, definition open |
 | erosion | {{< meta erosion_total >}} PROVISIONAL | internal reconciliation; awaits submission |
 | landslide_mitigation | input stage complete; full run resumes on the cluster | no machine-readable reference yet |
-| fisheries | shock + GEP {{< meta fisheries_total >}} PROVISIONAL | CWoN 2024 tables staged (public download), run live; reference output still needed |
+| fisheries | shock + commercial GEP {{< meta fisheries_total >}} PROVISIONAL + subsistence {{< meta fisheries_subsistence_total >}} | CWoN tables staged, run live (reference still needed); subsistence replicates its committed output exactly |
 | recreation | ported this week, awaiting its data | tests pin the method; no external anchor yet |
-| fire_protection | three variants; account variant open | the repo's committed output, reproduced to the float |
+| fire_protection | three variants; account variant open | full from-raw replication (panel staged from the drive), to the float |
 
 ## Verification discipline, and what it caught
 
@@ -224,7 +225,7 @@ format:
 - **Q2: which CWoN vintage is behind the HAR file?** The GEP side's vintage is now pinned by the port (CWoN 2024, FR_WLD_2024_195); the shock-HAR side is still open.
 - **Q3: is the CWoN method the account's fisheries GEP?** The method is implemented in the library and runs: {{< meta fisheries_total >}} for 2019, 165 countries with values, Indonesia first. The two CWoN tables are staged from the public World Bank package; marked provisional. Needed: the source pipeline's output CSV as the replication anchor — and the blessing (the FishStatJ pipeline is the alternative source).
 - Settled convention (20 Aug): **fisheries is an ecosystem service and stays in the nature family** — it enters the cc_es pass alongside carbon, pollination and erosion, and is not part of the just_cc runs, even though its shock varies only with the climate pathway. Its unusual boundary property — RCP-driven, no land-use map — is a characteristic, not an open question.
-- The subsistence repo carries a per-country output table, so the subsistence scope question has an existing product to evaluate.
+- The subsistence component is ALSO in the library now: Lynch et al. (2024) consumptive-use value per country, {{< meta fisheries_subsistence_total >}} across 85 countries (Canada and China lead), replicating the source repo's committed output exactly. Whether and how commercial and subsistence combine into the account's fisheries value is the scope question for the room.
 
 ## recreation: ported — two things make it verifiable
 
@@ -267,7 +268,7 @@ format:
 
 - [State: translated to Python from the GEP wildfire repo's R pipeline (function by function; the R source stays the reference). Per-country fire-persistence regressions (committed in the source repo) give three betas: baseline persistence, the nature-vs-human CAUSE difference, and the nature-vs-human AREA difference. Each beta times the country's 2018 burned area gives avoided acres in 2019, valued at EM-DAT wildfire damage per burned acre. The port reproduces the repo's committed per-country output to the float, 161 countries; the replication runs inside the test suite, so it re-verifies on every change.]{.state}
 - **Q1: which of the three GEP variants is the account's fire_protection value?** Baseline persistence totals −$22.4bn and the cause difference −$1.3bn — both globally negative — while the area comparison totals +$16.7bn. The choice sets both the number and its sign; the cause difference is the module's provisional default, marked as such.
-- **Q2: needed — the ADM2 burned-area panel** (gadm_adm2_panel_complete_2010_2023.csv; the repo's own data README points to a drive download). The regression results and the EM-DAT extract are committed and staged; with the panel, burned-area aggregates and damage rates regenerate from raw instead of the frozen reference columns.
+- Q2 is CLOSED: the ADM2 burned-area panel was found on the consortium drive and staged, and the full from-raw chain — burned-area aggregation, EM-DAT damage rates, all three GEP columns — reproduces the committed reference to the float. Only Q1, the variant choice, remains.
 
 # Cross-cutting decisions
 
@@ -329,7 +330,7 @@ format:
 - **renewable_energy:** code or CSVs.
 - **recreation:** the Recreation/data folder staged, and one reference results_by_country.csv.
 - **water_quality:** where the pipeline's code actually lives (the sheet's link doesn't contain it).
-- **fire_protection:** the ADM2 burned-area panel (its repo's own README names the drive download), and the account's choice among the three GEP variants.
+- **fire_protection:** the account's choice among the three GEP variants (the data asks are closed).
 - **air_filtration:** where the code lives — the manuscript already carries its total, so one pointer to the pipeline makes it next into the library.
 - **local_climate_regulation:** which entry point and script versions in the urban-cooling repo are canonical (several live side by side), and where its runs happen.
 - **The room:** pollination's definition, the shoreline convention, crop's units, the map dissolve, base year 2019, subsistence scope, marine carbon's fate, the fisheries GEP's source.

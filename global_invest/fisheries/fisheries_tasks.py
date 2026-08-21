@@ -234,3 +234,27 @@ def gep_result(p):
     """Render the results report(s). Shared implementation in utilities."""
     publish_inputs(p)
     utilities.render_service_results(p)
+
+
+def fisheries_subsistence_gep(p):
+    """Subsistence-fisheries GEP: the Lynch et al. (2024) per-country consumptive-use value
+    on the canonical r250 rows (the split-country guard: one row per country, never summed
+    across sub-regions). A separate component from the commercial CWoN estimate -- whether
+    and how the two combine into the account's fisheries value is the open scope question."""
+    publish_inputs(p)
+    p.fisheries_subsistence_gep_path = os.path.join(p.cur_dir, 'subsistence_gep_by_country.csv')
+    if not p.run_this:
+        return
+    if not hb.path_exists(p.fisheries_subsistence_gep_path):
+        lynch = pd.read_excel(p.fisheries_subsistence_lynch_path, engine='openpyxl')
+        # Canonical r250 rows with the Natural Earth name key the release joins on.
+        countries = p.df_countries[p.df_countries['ee_r264_label'] == p.df_countries['iso3_r250_label']]
+        countries = countries[['brk_name', 'ee_r264_id', 'iso3_r250_id', 'iso3_r250_label',
+                               'ee_r264_description']].drop_duplicates('iso3_r250_id')
+        out = ff.subsistence_fisheries_by_country(lynch, countries)
+        out.to_csv(p.fisheries_subsistence_gep_path, index=False)
+        p.results.setdefault('fisheries', {})
+        hb.log('fisheries subsistence GEP (Lynch et al. 2024): %d countries with values, '
+               'total %.4g USD' % (out['subsistence_fisheries_gep'].notna().sum(),
+                                   out['subsistence_fisheries_gep'].sum()))
+    return True

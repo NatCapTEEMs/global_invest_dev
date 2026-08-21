@@ -88,3 +88,35 @@ def test_es_config_and_parameters_rows_hydrate_the_fisheries_gep(tmp_path):
     utilities.hydrate_es_parameters(p, 'fisheries', log=lambda *a: None)
     assert p.fisheries_cwon_cpi_path.endswith('cwon/cpi2019.dta')
     assert p.fisheries_cwon_econ_rent_path.endswith('cwon/EconRent_Analysis_AllYears.dta')
+
+
+# --- Subsistence component (Lynch et al. 2024) ---
+def test_subsistence_exact_replication_of_the_committed_output():
+    import os
+    reference_dir = os.path.join(os.path.dirname(ff.__file__), 'reference')
+    lynch = pd.read_excel(os.path.join(reference_dir, 'Rec fish food_20230509_for USGS data release.xlsx'),
+                          engine='openpyxl')
+    countries = pd.read_csv(os.path.join(reference_dir, 'subsistence_correspondence.csv'))
+    reference = pd.read_csv(os.path.join(reference_dir, 'gep-subsistence-fisheries.csv'))
+
+    out = ff.subsistence_fisheries_by_country(lynch, countries)
+    merged = out.merge(reference, on='iso3_r250_id', suffixes=('', '_ref'))
+    assert len(out) == len(reference) == len(merged) == 250
+    ours, ref = merged['subsistence_fisheries_gep'], merged['gep_subistence_fish']
+    assert (ours.isna() == ref.isna()).all()
+    both = ours.notna()
+    assert np.allclose(ours[both], ref[both], rtol=1e-9)
+    assert np.isclose(out['subsistence_fisheries_gep'].sum(), reference['gep_subistence_fish'].sum())
+
+
+def test_subsistence_keeps_the_first_tcuv_per_admin_and_no_data_stays_nan():
+    lynch = pd.DataFrame({'admin': ['Atlantis', 'Atlantis', 'Erewhon'],
+                          'TCUV': [10.0, 99.0, 5.0],
+                          'other': [1, 2, 3]})
+    countries = pd.DataFrame({'brk_name': ['Atlantis', 'Nowhere'],
+                              'ee_r264_id': [1, 2], 'iso3_r250_id': [1, 2],
+                              'iso3_r250_label': ['ATL', 'NOW'],
+                              'ee_r264_description': ['Atlantis', 'Nowhere']})
+    out = ff.subsistence_fisheries_by_country(lynch, countries).set_index('iso3_r250_label')
+    assert np.isclose(out.loc['ATL', 'subsistence_fisheries_gep'], 10.0)   # first, not max
+    assert np.isnan(out.loc['NOW', 'subsistence_fisheries_gep'])           # absent stays NaN

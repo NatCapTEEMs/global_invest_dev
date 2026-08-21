@@ -101,3 +101,21 @@ def commfish_gep_by_country(trends_df, countries_df):
     df = countries_df.merge(trends[['iso3_r250_label', 'positive_resrent_2019_hat']],
                             on='iso3_r250_label', how='left')
     return df.rename(columns={'positive_resrent_2019_hat': 'commfish_provision'})
+
+
+# =============================================================================
+# Subsistence fisheries GEP (Lynch et al. 2024, USGS data release). Ported from
+# the gep-subsistence-fisheries repo; the committed output CSV is the anchor.
+# =============================================================================
+def subsistence_fisheries_by_country(lynch_df, countries_df):
+    """One TCUV (total consumptive-use value) per country from the Lynch et al. data
+    release, name-joined onto the canonical r250 country rows by brk_name.
+
+    Faithful-port notes: the source keeps the FIRST TCUV per admin, and 4 of the 81 admins
+    carry more than one distinct TCUV, so keep-first is order-dependent -- the committed
+    anchor pins the choice. The name join leaves countries absent from the release NaN:
+    no data is not zero value."""
+    data = lynch_df[['admin', 'TCUV']].drop_duplicates(subset=['admin'], keep='first')
+    df = countries_df.merge(data, how='left', left_on='brk_name', right_on='admin')
+    df = df.rename(columns={'TCUV': 'subsistence_fisheries_gep'})
+    return df.drop(columns=['admin'])
