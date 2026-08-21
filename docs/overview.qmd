@@ -69,7 +69,7 @@ format:
 
 # What global_invest is
 
-## One module per service: GEP always, a shock where the science allows
+## One module per service
 
 - The library holds one folder per ecosystem service, all on the same file convention.
 - Every one of the {{< meta n_services >}} services now carries its GEP method in the library, with its input data copied into the shared base data.
