@@ -2138,7 +2138,10 @@ def build_vsl_raster(p):
         # ---- 2. Join to correspondence GPKG ----
         correspondence_path = p.get_path('cartographic', 'ee', 'ee_r264_correspondence.gpkg')
         corr = gpd.read_file(correspondence_path)
-        iso3_field = 'iso3'
+        # The EE correspondence names its ISO3 column iso3_r250_label (the source repo's own
+        # gpkg called it iso3). It is also the right join key: every r264 sub-region carries
+        # its country's iso3 there, so split countries take their national VSL on every row.
+        iso3_field = 'iso3_r250_label'
         if iso3_field not in corr.columns:
             raise KeyError(
                 f'{iso3_field} not found in correspondence GPKG -- check '
