@@ -60,12 +60,12 @@ format:
 - Ecosystems supply services the economy depends on, from pollination and soil retention to coastal protection and carbon storage, yet none of them appear in standard national accounts.
 - Unmeasured, the loss of these services surfaces only later, as lower yields, higher damages and higher prices.
 - The Gross Ecosystem Product (GEP) account values what ecosystems supply, country by country and service by service, so natural capital can be tracked alongside GDP.
-- The same service models also drive scenario analysis: how climate and land-use scenarios change the services economies depend on, feeding the macroeconomic pipelines.
+- The same service models also drive scenario analysis. They trace how climate and land-use scenarios change the services economies depend on, feeding the macroeconomic pipelines.
 
 ## Why one reviewed library
 
 - Different contributors developed the GEP service models in different repos, each with its own layout, path conventions and aggregation choices.
-- The library brings them into one repo with one layout: every service runs the same way and writes the same per-country table the GEP account reads.
+- The library brings them into one repo with one layout. Every service runs the same way and writes the same per-country table the GEP account reads.
 - The library gives policymakers a tool to price nature risk as the scenarios they use today carry no ecosystem-service feedback.
 
 # What global_invest is
@@ -76,7 +76,7 @@ format:
 - {{< meta n_services >}} services carry their GEP method in the library, with their input data in the shared base data.
 - Some services also produce a scenario shock for the macroeconomic pipeline. A shock exists where the scenarios' physical changes (the land-use maps or the climate pathway) reach the service's science.
 - A service with both outputs computes them from the same functions file, so the valuation and the shock rely on the same science.
-- The library is scenario agnostic: a caller supplies its own scenarios (the maps, the years and the naming) through configuration.
+- The library is scenario agnostic. A caller supplies its own scenarios (the maps, the years and the naming) through configuration.
 
 ## The code structure
 
@@ -94,7 +94,7 @@ format:
 
 ## The template every service follows
 
-- One runner per task tree, and every run file shares one anatomy: build_task_tree names the pipeline and tasks publish their own inputs.
+- build_task_tree names the pipeline, and tasks publish their own inputs.
 - Configuration is data, in two shared CSVs.
 - es_config.csv: one row per service, in the GEP formula's own vocabulary (quantity, price, attribution, land base, base year, price convention) plus the crosswalk to the status sheet.
 - es_scenarios_test.csv: the standard SEALS scenarios, with matching test maps shipped, so a standalone shock run works on any machine.
@@ -110,7 +110,7 @@ format:
 
 ## The library's two callers
 
-- Each service module serves two callers: the GEP account reads the valuation (one row per country), and the macroeconomic pipeline reads the scenario shock (a table of productivity deviations for GTAP).
+- Each service module serves two callers. The GEP account reads the valuation (one row per country), and the macroeconomic pipeline reads the scenario shock (a table of productivity deviations for GTAP).
 - Both read the same functions file, so a change to the science reaches the account and the scenarios at once.
 - Not every service's science supports a shock, but every service is expected to reach a GEP valuation.
 
@@ -146,7 +146,7 @@ format:
 
 ## How every GEP number is built
 
-- Every service's number is the same construction: a QUANTITY of service delivered, times a PRICE, times NATURE'S SHARE of it, summed to one row per country.
+- Every service's number is the same construction. It multiplies a QUANTITY of service delivered by a PRICE and by NATURE'S SHARE of it, summed to one row per country.
 - Worked example, terrestrial carbon: the quantity is tons of carbon stored (a density table over the land-cover map). The price is the rental social cost of carbon. Nature's share is one, because storage is entirely nature's work. Result: {{< meta terrestrial_total >}}.
 - The three parts differ per service (recreation's quantity is visits and its price is travel cost. Livestock's nature share is the ecosystem-provided part of feed), but the construction never changes, which is why one configuration table (quantity, price, attribution) can describe every service.
 - Where a part is missing or contested, that is the service's open question. The slides ahead are organized around them.
@@ -208,7 +208,7 @@ format:
 ## Verification discipline, and what it caught
 
 - Every restructuring step had to reproduce a saved reference run before it counted as done. Before any merge, a check lists everything a branch would remove from the shared code, so nothing disappears silently.
-- Automatic checks run continuously: every shock table is validated before it is written, every country aggregation is guarded against double-counting split countries, and every configuration row is covered by a test from the moment it is added.
+- Automatic checks run continuously. Every shock table is validated before it is written, every country aggregation is guarded against double-counting split countries, and every configuration row is covered by a test from the moment it is added.
 - These checks found and fixed real errors: an aggregation double-count, a baseline spelled two ways, and a stale input in the erosion chain.
 - Each service's number is verified against an anchor: the manuscript, the author's own output, or our saved reference run. The totals table names which.
 - Fifteen of the {{< meta n_services >}} services carry their own test module (test_\<service\>.py), run on every change. The five accounting services and landslide are covered by the library-wide tests only. Their service-level tests are a known gap. What each pins is listed in the appendix.
@@ -253,11 +253,11 @@ format:
 
 ## erosion: how the valuation and the shock share the chain
 
-- One biophysical chain feeds everything: InVEST's SDR model yields actual soil loss (USLE) and bare-soil loss (RKLS). Their difference is the erosion the land cover prevents.
+- One biophysical chain feeds everything. InVEST's SDR model yields actual soil loss (USLE) and bare-soil loss (RKLS), and their difference is the erosion the land cover prevents.
 - Two products come from it. The GEP valuation runs the chain once on observed land cover (prevention shares, on-farm and upstream, valued per country). The scenario shock reruns it per scenario and year on the SEALS maps.
-- The shock has two paths: static reads the frozen dependency table (the default today). Dynamic recomputes the full chain per map (expensive), so each step saves its output and skips itself on rerun.
+- The shock has two paths. Static reads the frozen dependency table (the default today), and dynamic recomputes the full chain per map (expensive), so each step saves its output and skips itself on rerun.
 - Three shock methods are computed side by side and reported together: damage (thresholded area share), service (threshold-free, magnitude-weighted per crop), and service-threshold (service restricted to a fixed severe-pixel set). The last is the default that becomes the GTAP shock, and one configuration row selects which.
-- Two resolutions: a 6.45 km analysis grid that runs on a laptop, or native 300 m on a cluster. One configuration row switches them.
+- The chain runs at two resolutions, a 6.45 km analysis grid on a laptop or native 300 m on a cluster, and one configuration row switches them.
 - The method's constants (the SES-11 thresholds) are named in code and await the author's confirmation. Every number from this service is provisional until then.
 
 ## landslide_mitigation: the first full run is complete
@@ -272,18 +272,18 @@ format:
 - **Q1: should the RCP8.5-for-RCP7.0 substitution stand, or is there a replacement?** The 8.5 series stands in because no 7.0 series exists.
 - **Q2: which CWoN vintage produced the shock file (cwon_shocks.har)?** The valuation side is pinned by the port (CWoN 2024, FR_WLD_2024_195). The shock file's vintage is still unknown.
 - **Q3: is the CWoN method the account's fisheries GEP?** It runs at {{< meta fisheries_total >}} for 2019 across 165 countries, on the two CWoN tables copied from the public World Bank package. Needed: the source pipeline's output CSV for replication. The FishStatJ pipeline is the alternative source.
-- The subsistence component is also in the library: Lynch et al. (2024) consumptive-use value per country, {{< meta fisheries_subsistence_total >}} across 85 countries (Canada and China lead), replicating the source repo's committed output. Whether and how commercial and subsistence combine into the account's fisheries value is the open scope question.
+- The subsistence component is also in the library. It is the Lynch et al. (2024) consumptive-use value per country, {{< meta fisheries_subsistence_total >}} across 85 countries (Canada and China lead), and it replicates the source repo's committed output. Whether and how commercial and subsistence combine into the account's fisheries value is the open scope question.
 
 ## recreation: ported and running
 
 - [State: ported from the source repo: seven tasks in the library template, method constants pinned by unit tests, aggregation directly on r250, data copied, first run complete. What it does: land-cover shares, protected areas and road access rank 1 km sites. A gravity model sends residents (daily) and allocated overnight stays (UNWTO, the UN World Tourism Organization's tourism statistics) into the high-quality sites. Visits are valued at national fuel cost times travel distance.]{.state}
-- **The remaining need: a reference per-country output.** We could not find the source pipeline's results_by_country.csv anywhere we can reach. One copy verifies the port by replication.
+- **The remaining need is a reference per-country output.** We could not find the source pipeline's results_by_country.csv anywhere we can reach. One copy verifies the port by replication.
 - **Q: did the travel-cost step intend kilometres?** It multiplies a USD-per-km fuel cost by a distance measured in the raster's pixel units (degrees), which understates values roughly a hundredfold. Our first run totals $1.73bn where a corrected distance would give about a hundred times more. Ported faithfully. The reference output decides.
 
 ## crop_provision
 
 - [What it does: values crop production from FAOSTAT production values (quantity times producer price per country). State: converted from FAOSTAT's native thousand-USD to plain USD, matching every other service. Reproduces the reference table.]{.state}
-- The units question is resolved: the module now converts FAOSTAT's thousand-USD to plain USD.
+- The units question is resolved. The module converts FAOSTAT's thousand-USD to plain USD.
 - **Q2: can we confirm whether FAOSTAT's production values already include imputed subsistence output?** We will check the coverage definition. If they do, subsistence agriculture is already inside crop's number and the remaining work is labeling.
 
 ## livestock_provision: three open method decisions
