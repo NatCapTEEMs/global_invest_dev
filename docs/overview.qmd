@@ -95,7 +95,7 @@ format:
 ## The template every service follows
 
 - Every run file lists the steps of its pipeline in one build_task_tree function.
-- Configuration is data, in two shared CSVs.
+- A service reads its settings from rows in two shared CSVs, not from values in code.
 - es_config.csv: one row per service, in the GEP formula's own vocabulary (quantity, price, attribution, land base, base year, price convention) plus the crosswalk to the status sheet.
 - es_scenarios_test.csv: the standard SEALS scenarios, with matching test maps shipped, so a standalone shock run works on any machine.
 - A pipeline such as ngfs_pnas drives the same tasks from its own scenarios file. The CSVs only fill what it leaves unset.
