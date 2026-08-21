@@ -141,6 +141,13 @@ format:
 - **Four await one file to finish verification** — recreation, commercial fisheries, erosion, landslide each need a reference output or input we could not find.
 - **Three carry an open source or definition question** (pollination, renewable energy, coastal protection), and **one is quarantined** (livestock, pending its method inputs).
 
+## How every GEP number is built
+
+- Every service's number is the same construction: a QUANTITY of service delivered, times a PRICE, times NATURE'S SHARE of it — summed to one row per country.
+- Worked example, terrestrial carbon: the quantity is tons of carbon stored (a density table over the land-cover map); the price is the rental social cost of carbon; nature's share is one, because storage is entirely nature's work. Result: {{< meta terrestrial_total >}}.
+- The three parts differ per service — recreation's quantity is visits and its price is travel cost; livestock's nature share is the ecosystem-provided part of feed — but the construction never changes, which is why one configuration table (quantity, price, attribution) can describe every service.
+- Where a part is missing or contested, that is the service's open question — the slides ahead are organized around them.
+
 ## What each service is, in one line
 
 | Service | What it values |
