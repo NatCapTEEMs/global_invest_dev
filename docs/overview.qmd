@@ -96,7 +96,7 @@ format:
 
 - Every run file lists the steps of its pipeline in one build_task_tree function.
 - A service reads its settings from rows in two shared CSVs.
-- es_config.csv: one row per service, in the GEP formula's own vocabulary (quantity, price, attribution, land base, base year, price convention) plus the crosswalk to the status sheet.
+- es_config.csv: one row per service, with the GEP formula's three roles (quantity, price, attribution) plus the land base, the base year, the price convention and the crosswalk to the status sheet.
 - es_scenarios_test.csv: the standard SEALS scenarios, with matching test maps shipped, so a standalone shock run works on any machine.
 - A pipeline such as ngfs_pnas drives the same tasks from its own scenarios file. The CSVs only fill what it leaves unset.
 - A task begins by naming its own inputs as references into the shared base data (the next slide). Because every task carries its own input list, it works wherever it is grafted. This holds for every service now.
@@ -122,7 +122,7 @@ format:
 
 ## The configuration table itself (es_config.csv)
 
-- One row per service. The columns are the GEP formula's roles (Q = quantity input, P = price input, λ = attribution input, land = the LULC base) plus the crosswalk to this group's status sheet. An empty cell means the role does not apply.
+- One row per service. Three columns are the GEP formula's roles (Q = quantity input, P = price input, λ = attribution input), and the rest are the land base and the crosswalk to this group's status sheet. An empty cell means the role does not apply.
 
 | service | sheet crosswalk | base year | price convention | Q | P | λ | land |
 |---|---|---|---|---|---|---|---|
