@@ -55,29 +55,122 @@ def water_supply_gep_by_country(hydropower_df, countries_df):
 
 
 # =============================================================================
-# Water-use components (agriculture / industrial / municipal), ported from the
-# drive's two-script R chain: sector water-use efficiency (USD/m3, AQUASTAT
-# SDG 6.4.1) x sector withdrawal volume = sector GEP, computed at the AQUASTAT
-# survey years. The drive commits the withdrawal table and BOTH outputs (the
-# agriculture component and the all-sector total); the cleaned efficiency table
-# is on no drive we can reach -- the open staging ask. Until it lands, the
-# committed outputs are carried as the components' values and this function
-# holds the chain's arithmetic for the from-raw rebuild.
+# Water-use chain (agriculture / industrial / municipal), ported from the
+# drive's two-script R chain: script 01 cleans the raw AQUASTAT export into the
+# four SDG 6.4.1 efficiency series (US$/m3, wide by country-year); script 02
+# joins iso codes on from the withdrawal table's names, merges the two, and
+# computes sector GEP = efficiency x withdrawal volume at the survey years.
+# Both of the chain's outputs are committed on the drive and replicate: the
+# cleaned table bit-exactly, the country-year GEP table to the anchor CSV's own
+# 15-significant-digit rounding (max 3e-15 relative).
+#
+# The drive's PER-COUNTRY outputs are NOT this chain's outputs and stay adopted
+# as the components' values: the agriculture table equals 1000 x GEP_total from
+# the crop-water valuation (share_20260618/gep_agwater_country_source.csv, a
+# separate chain whose scripts are not on the drive), and the all-sector table
+# was computed on a newer AQUASTAT vintage with the appendix's deflate-to-2015
+# step -- only 3/183 countries reproduce from the staged inputs (median
+# committed/computed-at-2019 ratio 0.36, range 0 to 1.25).
 # =============================================================================
 WATER_USE_YEARS = (2000, 2005, 2010, 2015)   # the AQUASTAT survey years the chain keeps
+# The four AQUASTAT series script 01 keeps, renamed to the chain's column names.
+WATER_USE_EFFICIENCY_SERIES = {
+    'SDG 6.4.1. Water Use Efficiency': 'wue_general_usdpm3',
+    'SDG 6.4.1. Irrigated Agriculture Water Use Efficiency': 'wue_irrigation_usdpm3',
+    'SDG 6.4.1. Industrial Water Use Efficiency': 'wue_industrial_usdpm3',
+    'SDG 6.4.1. Services Water Use Efficiency': 'wue_municipal_usdpm3',
+}
+# Script 02's name surgery, verbatim: three renames onto the withdrawal table's spellings,
+# then iso codes for the names its country map does not carry. The lookup countries keep
+# their AQUASTAT names, so their efficiency and withdrawal rows share an iso code but never
+# a country name -- the merge leaves them as half-rows with no products (USA, RUS, TUR...).
+# The anchor commits that behavior and the port reproduces it.
+WATER_USE_COUNTRY_RENAMES = {
+    'Cabo Verde': 'Cape Verde',
+    "Côte d'Ivoire": "Cote d'Ivoire",
+    'Timor-Leste': 'East Timor',
+}
+WATER_USE_ISO_LOOKUP = {
+    'Bolivia (Plurinational State of)': 'BOL',
+    'Brunei Darussalam': 'BRN',
+    "Democratic People's Republic of Korea": 'PRK',
+    'Democratic Republic of the Congo': 'COD',
+    'Iran (Islamic Republic of)': 'IRN',
+    "Lao People's Democratic Republic": 'LAO',
+    'Liechtenstein': 'LIE',
+    'Netherlands (Kingdom of the)': 'NLD',
+    'Republic of Korea': 'KOR',
+    'Republic of Moldova': 'MDA',
+    'Russian Federation': 'RUS',
+    'Sao Tome and Principe': 'STP',
+    'Syrian Arab Republic': 'SYR',
+    'Türkiye': 'TUR',
+    'United Kingdom of Great Britain and Northern Ireland': 'GBR',
+    'United Republic of Tanzania': 'TZA',
+    'United States of America': 'USA',
+    'Venezuela (Bolivarian Republic of)': 'VEN',
+    'Viet Nam': 'VNM',
+}
+WATER_USE_REGIONS_DROPPED = (
+    'Australia and New Zealand', 'Central Asia', 'Central and Southern Asia', 'Eastern Asia',
+    'Eastern and South-Eastern Asia', 'Europe', 'Europe and Northern America',
+    'Land Locked Developing Countries', 'Latin America and the Caribbean',
+    'Least Developed Countries', 'Northern Africa', 'Northern Africa and Western Asia',
+    'Northern America', 'Oceania', 'Oceania (excluding Australia and New Zealand)',
+    'Small Island Developing States', 'South-eastern Asia', 'Southern Asia',
+    'Sub-Saharan Africa', 'Western Asia', 'World',
+)
 
 
-def water_use_sector_gep(efficiency_df, withdrawal_df):
-    """Sector GEP per country-year: efficiency (USD/m3) x withdrawal volume, the source
-    chain's arithmetic. efficiency_df: iso_code, year, wue_irrigation_usdpm3,
-    wue_industrial_usdpm3, wue_municipal_usdpm3. withdrawal_df: iso_code, year,
-    w_agriculture, w_industry, w_munucipal (the source's spelling, kept)."""
-    df = efficiency_df.merge(withdrawal_df, on=['iso_code', 'year'], how='outer')
+def clean_aquastat_water_efficiency(raw_df):
+    """Script 01: the raw AQUASTAT export -> the wide country-year efficiency table.
+
+    Args:
+        raw_df (pd.DataFrame): the AQUASTAT dissemination export (Variable, Area, Year,
+            Value, Unit columns).
+
+    Returns:
+        pd.DataFrame: country, year, and the four wue_*_usdpm3 columns -- the US$/m3 rows of
+        the four SDG 6.4.1 series pivoted wide.
+    """
+    df = raw_df[(raw_df['Unit'] == 'US$/m3')
+                & raw_df['Variable'].isin(WATER_USE_EFFICIENCY_SERIES)]
+    wide = (df.pivot_table(index=['Area', 'Year'], columns='Variable', values='Value',
+                           aggfunc='first')
+              .rename(columns=WATER_USE_EFFICIENCY_SERIES)
+              .rename_axis(index=['country', 'year'], columns=None)
+              .reset_index())
+    return wide[['country', 'year', 'wue_industrial_usdpm3', 'wue_irrigation_usdpm3',
+                 'wue_municipal_usdpm3', 'wue_general_usdpm3']]
+
+
+def water_use_gep_by_country_year(efficiency_df, withdrawal_df):
+    """Script 02: sector GEP per country-year = efficiency (US$/m3) x withdrawal volume (m3).
+
+    Args:
+        efficiency_df (pd.DataFrame): clean_aquastat_water_efficiency's output.
+        withdrawal_df (pd.DataFrame): the withdrawal table (country, iso_code, year,
+            w_agriculture, w_industry, w_munucipal -- the source's spelling, kept).
+
+    Returns:
+        pd.DataFrame: the outer merge at the survey years with the three gep_water_* product
+        columns, in the anchor's column order.
+    """
+    wue = efficiency_df.copy()
+    wue['country'] = wue['country'].replace(WATER_USE_COUNTRY_RENAMES)
+    country_map = withdrawal_df[['iso_code', 'country']].drop_duplicates()
+    wue = wue.merge(country_map, on='country', how='left')
+    wue['iso_code'] = wue['country'].map(WATER_USE_ISO_LOOKUP).fillna(wue['iso_code'])
+    wue = wue[~wue['country'].isin(WATER_USE_REGIONS_DROPPED)]
+    df = wue.merge(withdrawal_df, on=['iso_code', 'country', 'year'], how='outer')
     df = df[df['year'].isin(WATER_USE_YEARS)]
     df['gep_water_agricultural'] = df['wue_irrigation_usdpm3'] * df['w_agriculture']
     df['gep_water_industrial'] = df['wue_industrial_usdpm3'] * df['w_industry']
     df['gep_water_municipal'] = df['wue_municipal_usdpm3'] * df['w_munucipal']
-    return df
+    return df[['iso_code', 'country', 'year', 'wue_industrial_usdpm3', 'wue_irrigation_usdpm3',
+               'wue_municipal_usdpm3', 'wue_general_usdpm3', 'w_agriculture', 'w_industry',
+               'w_munucipal', 'gep_water_agricultural', 'gep_water_industrial',
+               'gep_water_municipal']]
 
 
 def water_use_components_by_country(agriculture_df, all_sector_df, countries_df):

@@ -82,13 +82,31 @@ def gep_result(p):
 
 
 def water_use_components(p):
-    """The water-use components from the drive's committed outputs: the agriculture subgroup
-    and the all-sector total (efficiency x withdrawal chain; the cleaned efficiency table is
-    the open staging ask, so the committed outputs carry the values for now)."""
+    """The water-use chain computed from the raw inputs (script-01 cleaning, then script-02
+    efficiency x withdrawal products at the survey years), and the components' per-country
+    values from the drive's committed outputs. The committed per-country tables are NOT the
+    chain's outputs -- a newer AQUASTAT vintage plus the appendix's deflate-to-2015 step for
+    the all-sector total, a separate crop-water chain for agriculture (see the functions
+    module) -- so they stay the adopted values; the chain's replication anchors are its own
+    two committed intermediates, pinned in the test suite."""
     publish_inputs(p)
+    p.water_use_efficiency_path = os.path.join(p.cur_dir, 'aquastat_water_efficiency_cleaned.csv')
+    p.water_use_gep_path = os.path.join(p.cur_dir, 'water_use_gep_by_country_year.csv')
     p.water_use_components_path = os.path.join(p.cur_dir, 'water_use_components.csv')
     if not p.run_this:
         return
+    if not hb.path_exists(p.water_use_efficiency_path):
+        raw = pd.read_csv(p.water_use_efficiency_input_path, encoding='utf-8-sig')
+        wf.clean_aquastat_water_efficiency(raw).to_csv(
+            p.water_use_efficiency_path, index=False, encoding='utf-8-sig')
+    if not hb.path_exists(p.water_use_gep_path):
+        efficiency = pd.read_csv(p.water_use_efficiency_path, encoding='utf-8-sig')
+        withdrawal = pd.read_csv(p.water_use_withdrawal_path, encoding='utf-8-sig')
+        df_gep = wf.water_use_gep_by_country_year(efficiency, withdrawal)
+        df_gep.to_csv(p.water_use_gep_path, index=False, encoding='utf-8-sig')
+        sector_cols = ['gep_water_agricultural', 'gep_water_industrial', 'gep_water_municipal']
+        hb.log('water_use chain: %d country-year rows, %.4g USD summed over survey years '
+               'and sectors' % (len(df_gep), df_gep[sector_cols].sum().sum()))
     if not hb.path_exists(p.water_use_components_path):
         agriculture = pd.read_csv(p.water_use_agriculture_path)
         all_sector = pd.read_csv(p.water_use_all_sector_path)
