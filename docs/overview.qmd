@@ -141,6 +141,8 @@ format:
 | fisheries | commercial capture-fisheries rent. Subsistence catch value |
 | crop_provision | the value of crop production |
 
+: {tbl-colwidths="[28,72]"}
+
 ## What each service is (continued) {.smaller}
 
 | Service | What it values |
@@ -153,6 +155,8 @@ format:
 | fire_protection | wildfire damage avoided by nature's fire regulation |
 | water_supply | hydropower rent, and water withdrawal priced by sector |
 
+: {tbl-colwidths="[28,72]"}
+
 ## What each service is (continued) {.smaller}
 
 | Service | What it values |
@@ -164,6 +168,8 @@ format:
 | local_climate_regulation | cooling-energy costs avoided by urban vegetation |
 | extractive_energy | fossil-fuel resource rents (gas, coal, petroleum) |
 | timber_provision | the net value of timber harvests, after harvest and transport costs |
+
+: {tbl-colwidths="[28,72]"}
 
 ## Services and totals (base year 2019) {.smaller}
 
