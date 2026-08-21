@@ -23,6 +23,7 @@ livestock_chn: "$838bn"
 livestock_world: "$2.29T"
 n_services: "21"
 n_replicating: "13"
+n_awaiting_file: "3"
 fisheries_total: "$29bn"
 fisheries_subsistence_total: "$7.92bn"
 water_supply_total: "$144.68bn"
@@ -110,7 +111,7 @@ format:
 ## The state in numbers
 
 - **{{< meta n_services >}} services are in the library.** {{< meta n_replicating >}} of them (plus the subsistence fisheries component) replicate a committed reference or the manuscript.
-- **Three await one file to finish verification**: recreation, commercial fisheries and landslide each need a reference output we could not find. Erosion's turned up on the drive, and its replication rerun is under way.
+- **{{< meta n_awaiting_file >}} await one file to finish verification**: recreation, commercial fisheries and landslide each need a reference output we could not find. Erosion's turned up on the drive, and its replication rerun is under way.
 - **Three carry an open source or definition question** (pollination, renewable energy, coastal protection), and **one is quarantined** (livestock, pending its method inputs).
 - **Three chain ports are complete and verified**: extractive energy (computed from the public CWoN rent tables), timber (the value raster and all 166 country sums reproduce), and flood control (the full 250-country recompute reproduces the pipeline's table). Two new module skeletons have their science stages under way (non-timber forest products, stormwater), and landslide's first full run is complete on the cluster.
 
