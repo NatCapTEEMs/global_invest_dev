@@ -66,7 +66,7 @@ format:
 
 - Different contributors developed the GEP service models in different repos, each with its own layout, path conventions and aggregation choices.
 - The library brings them into one repo with one layout: every service runs the same way and writes the same per-country table the GEP account reads.
-- The library gives policymakers a tool to price nature risk. The scenarios they use today carry no ecosystem-service feedback, and the pipeline this library feeds adds one.
+- The library gives policymakers a tool to price nature risk as the scenarios they use today carry no ecosystem-service feedback.
 
 # What global_invest is
 
