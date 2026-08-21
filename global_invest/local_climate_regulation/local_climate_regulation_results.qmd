@@ -1,0 +1,65 @@
+---
+format:
+  html:
+    embed-resources: true
+    standalone: true
+execute:
+  echo: false          # results report shows tables/figures, not code
+  warning: false
+---
+
+# Local Climate Regulation Results
+
+Text describing it. To be written by the service team (science source: the urban-cooling repo's v04 chain and the drive's committed outputs).
+
+```{python}
+#| output: false
+
+### SETUP CODE: Runs the whole model if it doesn't exist, else loads the results.
+
+import os
+import pandas as pd
+import hazelbean as hb
+
+from global_invest.local_climate_regulation import local_climate_regulation_initialize
+
+if __name__ == '__main__':
+
+    p = hb.ProjectFlow()
+    p.project_name = 'gep_local_climate_regulation'
+    p.project_dir = os.path.join(os.path.expanduser('~'), 'Files', 'global_invest', 'projects', p.project_name)
+    p.set_project_dir(p.project_dir)
+
+    local_climate_regulation_initialize.build_gep_service_calculation_task_tree(p)
+
+    p.results = {}
+
+    hb.log('Created ProjectFlow object at ' + p.project_dir + '\n    from script ' + p.calling_script + '\n    with base_data set at ' + p.base_data_dir)
+    p.execute()
+```
+
+```{python}
+#| output: false
+
+### DISPLAY SETUP CODE
+
+import pandas as pd
+import os
+import hazelbean as hb
+
+pd.set_option('display.float_format', '{:,.2f}'.format)
+pd.set_option('display.max_rows', 1000)
+
+service_label = 'local_climate_regulation'
+
+df = hb.df_read(p.results[service_label]['gep_by_country_base_year'])
+total_lcr = df['local_climate_regulation_gep'].sum()
+p.gep_by_country_base_year_table = df[['iso3_r250_name', 'local_climate_regulation_gep']]
+```
+
+The analysis values urban cooling as avoided cooling-energy costs: InVEST urban cooling gives each city-month a vegetation cooling effect, the avoided energy is priced at national electricity prices, and the v04 correction applies each country's own consumption per cooling-degree-day. The committed accounting total is $`{python} f"{total_lcr:,.0f}"` across 174 countries. The city-level pricing identity and the version lineage verify exactly; the correction's own inputs are the open asks.
+
+## GEP by Country in Base Year
+```{python}
+p.gep_by_country_base_year_table
+```

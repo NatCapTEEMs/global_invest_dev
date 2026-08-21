@@ -21,7 +21,7 @@ erosion_total: "$15.54bn"
 livestock_ind: "$136bn"
 livestock_chn: "$838bn"
 livestock_world: "$2.29T"
-n_services: "18"
+n_services: "19"
 fisheries_total: "$29.00bn"
 fisheries_subsistence_total: "$7.92bn"
 water_supply_total: "$144.68bn"
@@ -32,8 +32,9 @@ sandstorm_total: "$595.36bn"
 wq_usd: "$638.34bn"
 wq_intl: "$655.91bn"
 flood_total: "$110.59bn"
+lcr_total: "$14.19bn"
 hydro_manuscript: "$287.7bn"
-n_services_at_2019: "17"
+n_services_at_2019: "18"
 
 format:
     revealjs:
@@ -156,6 +157,7 @@ format:
 | sandstorm_prevention | {{< meta sandstorm_total >}} (the same workbook's dust channel) | computed in the air_filtration module |
 | water_quality | {{< meta wq_usd >}} USD; {{< meta wq_intl >}} intl$ (accounting value) | the committed chain, identities exact; the currency conversion unidentified |
 | flood_control | {{< meta flood_total >}} | the pipeline's committed output; sums and counts match its own summary exactly |
+| local_climate_regulation | {{< meta lcr_total >}} | the committed final; city-level pricing and version lineage verify exactly |
 
 ## Verification discipline, and what it caught
 
@@ -294,6 +296,11 @@ format:
 - One vocabulary catch, fixed in our staging: the pipeline codes South Sudan as Natural Earth's SDS where the account's label is SSD; the mapping layer had dropped it (assessed, zero).
 - **Q1: needed — confirmation that the December 2025 outputs are the current ones**, and the vintage note for the methods writeup.
 
+## local_climate_regulation: the identified chain, ported
+
+- [State: new module, closing the roster's last scoped port. InVEST urban cooling gives each city-month a vegetation cooling effect; the avoided energy is priced at national electricity prices (the city-level identity is exact in the committed files); the v04 correction applies each country's own consumption per cooling-degree-day. The committed accounting total is {{< meta lcr_total >}} across 174 countries; the version lineage verifies exactly (the December 2025 table IS the plain city sum).]{.state}
+- **Q1: needed — the correction's two inputs**: the IEA-CMCC 2019 cooling-degree-day file and the v2_nkd energy workbook (the drive's staged energy CSV is a different vintage and does not validate them). With both, the correction reproduces from raw.
+
 # Cross-cutting decisions
 
 ## Four conventions the room can settle today
@@ -358,7 +365,7 @@ format:
 - **water_supply:** which hydropower total is the account's ({{< meta hydro_manuscript >}} direct-use vs {{< meta water_supply_total >}} CWoN rent); the reference's 17 empty countries; the water-use efficiency table; and the attribution step the water-use components still need.
 - **fire_protection:** the account's choice among the three GEP variants (the data asks are closed).
 - **air_filtration:** the VSL build behind the workbook (the folder's vsl.R is a different vintage), and the vintage of the avoided-death columns.
-- **local_climate_regulation:** the canonical chain is identified (the repo's v04 valuation script: cooling-degree-days and marginal consumption per CDD); its port into the library is scoped and next.
+- **local_climate_regulation:** the correction's two inputs (the IEA-CMCC 2019 CDD file and the v2_nkd energy workbook) for from-raw reproduction.
 - **Decisions for the meeting:** pollination's definition, the shoreline convention, crop's units, the map dissolve, base year 2019, subsistence scope, marine carbon's fate, the fisheries GEP's source.
 - **Every service:** a complete SI-table row (status, value info, relationships to other services); leads for the unclaimed services; confirmation of the next-in-line for the library.
 
@@ -384,6 +391,7 @@ format:
 | air_filtration | benefits and both totals against the workbook; the VSL fill rule; the positional-join guard |
 | water_quality | the retention identities against the committed intermediates; the conversion documented as unidentified |
 | flood_control | the anchor against the pipeline's own global summary: total, assessed count, zero count |
+| local_climate_regulation | the city kwh-x-price identity, the version-lineage sum, the final's parse and totals, the CDD math |
 | fisheries | header resolution and the HAR read-list union; the CWoN rent-trend math on series small enough to compute by hand |
 | landslide_mitigation | run parameters only; the science awaits the cluster run |
 | the five accounting services | the shared library tests only |
