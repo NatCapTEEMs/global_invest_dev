@@ -158,7 +158,7 @@ format:
 | extractive_energy | fossil-fuel resource rents (gas, coal, petroleum) |
 | timber_provision | the net value of timber harvests, after harvest and transport costs |
 
-## Services and totals (base year 2019, verified) {.smaller}
+## Services and totals (base year 2019) {.smaller}
 
 Full per-service status, one row per sheet service, updated as work lands: [the library status sheet](https://docs.google.com/spreadsheets/d/1sQOUT7TRKVLxc-TSfPWeuCFm0vwk-6iLk-AnA6jyEiY).
 
@@ -171,18 +171,23 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 | coastal_protection | {{< meta cp_total >}} | reproduces our saved baseline run. No author reference exists |
 | extractive_materials | {{< meta extractive_total >}} | reproduces the author's reference table |
 | renewable_energy | {{< meta renewable_total >}} | the code and the drive CSVs disagree ({{< meta renewable_total >}} vs {{< meta renewable_ref >}}), and which is current is the open question |
-| pollination | {{< meta poll_raster >}} raster side (2023) | the FAO side gives {{< meta poll_fao >}}, and the definition decision is open |
-| erosion | {{< meta erosion_total >}} PROVISIONAL | our own run. The rerun with the author's original inputs from the drive is under way |
-| landslide_mitigation | {{< meta landslide_total >}} ({{< meta landslide_deaths >}} avoided deaths) | the first full run is complete on the cluster. No reference output exists to compare against yet |
-| fisheries | shock + commercial GEP {{< meta fisheries_total >}} PROVISIONAL + subsistence {{< meta fisheries_subsistence_total >}} | the commercial run has no reference output yet. Subsistence reproduces the source repo's committed output |
 
 ## Services and totals (continued) {.smaller}
 
 | Service | Total | Verification |
 |---|---|---|
+| pollination | {{< meta poll_raster >}} raster side (2023) | the FAO side gives {{< meta poll_fao >}}, and the definition decision is open |
+| erosion | {{< meta erosion_total >}} PROVISIONAL | our own run. The rerun with the author's original inputs from the drive is under way |
+| landslide_mitigation | {{< meta landslide_total >}} ({{< meta landslide_deaths >}} avoided deaths) | the first full run is complete on the cluster. No reference output exists to compare against yet |
+| fisheries | shock + commercial GEP {{< meta fisheries_total >}} PROVISIONAL + subsistence {{< meta fisheries_subsistence_total >}} | the commercial run has no reference output yet. Subsistence reproduces the source repo's committed output |
 | recreation | ported. Data in place, first run complete | the method is unit-tested. The author's output table is not reachable, so nothing to compare against yet |
 | fire_protection | three variants. Account variant open | reproduces the source repo's committed output from the raw inputs |
 | water_supply | hydropower component {{< meta water_supply_total >}} | reproduces the drive's committed output for the 95 valued countries |
+
+## Services and totals (continued) {.smaller}
+
+| Service | Total | Verification |
+|---|---|---|
 | air_filtration | {{< meta air_filtration_total >}}, the manuscript's number | reproduces the drive's committed workbook and the manuscript's total |
 | sandstorm_prevention | {{< meta sandstorm_total >}} (the same workbook's dust channel) | reproduces the same workbook's dust channel |
 | water_quality | {{< meta wq_usd >}} USD and {{< meta wq_intl >}} intl$ (accounting value) | reproduces the committed intermediate tables. The currency conversion stays unidentified |
