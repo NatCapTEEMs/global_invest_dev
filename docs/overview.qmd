@@ -106,7 +106,7 @@ format:
 - A run therefore carries no absolute paths. The same run file works on a laptop, on the cluster, or on any machine that stages the same base data — the recreation port and the landslide cluster run rely on this.
 - Tasks cache their output in the project directory and skip themselves when it already exists, so a rerun recomputes nothing and an interrupted run resumes where it stopped.
 
-## Two callers, one science
+## The library's two callers
 
 - Each service module serves two callers: the GEP account reads the valuation (one row per country), and the macroeconomic pipeline reads the scenario shock (a table of productivity deviations for GTAP).
 - Both read the same functions file, so a change to the science reaches the account and the scenarios at once.
@@ -220,7 +220,7 @@ format:
 
 ## coastal_carbon: seaward pixels only, or the full habitat?
 
-- [What it does: sums the carbon stored in mangroves, salt marshes and seagrass (mapped habitat times per-habitat density) and prices it like terrestrial carbon. State: replicates the author's design, mangrove component to the cent. One run, two totals: {{< meta coastal_eez >}} counting ocean-side rows only, {{< meta coastal_all >}} counting both sides.]{.state}
+- [What it does: sums the carbon stored in mangroves, salt marshes and seagrass (mapped habitat times per-habitat density) and prices it like terrestrial carbon. State: replicates the author's design, mangrove component to the cent. The same run yields {{< meta coastal_eez >}} counting seaward rows only and {{< meta coastal_all >}} counting both sides.]{.state}
 - **Q1 (design):** was EEZ-only chosen to avoid double-counting the landward pixels with terrestrial carbon? Most of the mapped habitat sits landward of the shoreline (97.5 percent of mangrove area, 84 percent of salt marsh), so including it multiplies the total by 4.5.
 - **Q2 (inputs):** which exact seagrass and salt marsh input versions produced the report's {{< meta coastal_report >}}? Our replication gives {{< meta coastal_eez >}} with mangrove matching to the cent, and the report's own seagrass area (62.21 Mha) exceeds the published range it cites (16 to 26.7 Mha).
 - **Q3: if both sides count, a landward mask must prevent double-counting with terrestrial carbon — does one exist?**
@@ -247,7 +247,7 @@ format:
 - **Q2: needed — a per-country output table from the submission run.** With it we verify by exact replication, as extractive_materials was.
 - Could it be at `/projects/standard/jajohns/shared/sediment_gep` on MSI — and can we get it? One copy settles both questions.
 
-## erosion: one science, two products, three methods
+## erosion: how the valuation and the shock share the chain
 
 - One biophysical chain feeds everything: InVEST's SDR model yields actual soil loss (USLE) and bare-soil loss (RKLS); their difference is the erosion the land cover prevents.
 - Two products come from it. The GEP valuation runs the chain once on observed land cover (prevention shares, on-farm and upstream, valued per country). The scenario shock reruns it per scenario and year on the SEALS maps.
@@ -300,7 +300,7 @@ format:
 - [What it does: values mineral extraction as the resource-rent share of mining output. State: per-country replication of the reference, including the rendered tables.]{.state}
 - **Q1: what is the source or derivation of the 0.49 factor?** The valuation multiplies mineral rents times GDP by it; without it the total would be {{< meta extractive_alt >}} instead of {{< meta extractive_total >}}.
 
-## renewable_energy: two sources, two totals
+## renewable_energy: which source is current?
 
 - [What it does: values wind, solar and geothermal electricity as production times price with a resource-rent share. State: conformed and rerun-identical at {{< meta renewable_total >}} (wind 110.31, solar 53.95, geothermal 6.56).]{.state}
 - **Q1: which is current — the code's {{< meta renewable_total >}} or the drive CSVs' {{< meta renewable_ref >}}?** More than 100 countries differ per source, both cannot be right, and the folder's "gepNEW" method note suggests the CSVs predate a revision.
@@ -315,11 +315,11 @@ format:
 ## water_supply: three components
 
 - [State: new module, now with three components. HYDROPOWER: the method was identified against the drive's committed output and holds for all 95 valued countries — CWoN 2024 capitalized wealth divided by the 4-percent, 100-year annuity factor; live at {{< meta water_supply_total >}}. WATER USE (the drive's two-script chain, sector efficiency times sector withdrawal): the committed agriculture component is {{< meta water_use_ag_total >}} across 145 countries, and the all-sector total {{< meta water_use_all_total >}} across 183 — carried as committed values; the cleaned efficiency table behind them is the staging ask.]{.state}
-- **Q1: which hydropower total is the account's?** The manuscript records {{< meta hydro_manuscript >}} — roughly double the committed output's {{< meta water_supply_total >}} — consistent with the drive's earlier direct-use script (price times generation) versus the CWoN-rent method. Two methods, two totals; the account needs one.
+- **Q1: which hydropower total is the account's?** The manuscript records {{< meta hydro_manuscript >}} — roughly double the committed output's {{< meta water_supply_total >}} — consistent with the drive's earlier direct-use script (price times generation) versus the CWoN-rent method. The account needs one of the two.
 - **Q2: why does the reference leave 17 countries empty although the CWoN table values them?** The 17 are encoded as named exclusions so the module reproduces the reference; the reason needs its author.
 - **Q3: the water-use components carry no nature-attribution step.** The all-sector total ({{< meta water_use_all_total >}}) is the gross economic value of water use — rivaling global GDP — which is why an attribution factor is needed before any of it enters the account. How the three components combine into water_supply's value is the same open subgroup question.
 
-## air_filtration: one workbook, two services
+## air_filtration and sandstorm_prevention
 
 - [State: new module. The drive's committed workbook values avoided deaths from two channels at a GDP-adjusted value of a statistical life (VSL — the monetary value assigned to one avoided death): DEPOSITION — vegetation's dry pollutant capture, the sheet's air filtration — totals {{< meta air_filtration_total >}} — the manuscript's number; DUST — windblown-dust suppression, the sheet's sandstorm prevention — totals {{< meta sandstorm_total >}}. The valuation layer replicates the workbook inside the test suite; the avoided-death columns come from the group's coupled emissions–InMAP–health modeling chain and are taken as given.]{.state}
 - **Q1: needed — the VSL build behind the workbook.** The folder's vsl.R documents the method (US-anchored, GDP- and life-years-adjusted) but its committed raw data is a different vintage and does not reproduce the workbook's VSL column.
@@ -342,7 +342,7 @@ format:
 - [State: new module, closing the roster's last scoped port. InVEST urban cooling gives each city-month a vegetation cooling effect; the avoided energy is priced at national electricity prices (the city-level identity is exact in the committed files); the v04 correction applies each country's own consumption per cooling-degree-day (CDD — the annual sum of how far each day's temperature exceeds an 18°C comfort base, the standard measure of cooling demand). The committed accounting total is {{< meta lcr_total >}} across 174 countries; the version lineage verifies (the December 2025 table IS the plain city sum).]{.state}
 - **Q1: needed — the correction's two inputs**: the IEA-CMCC 2019 cooling-degree-day file and the v2_nkd energy workbook (the drive's copied energy CSV is a different vintage and does not validate them). With both, the correction reproduces from raw.
 
-## extractive_energy and timber_provision: two committed outputs, adopted
+## extractive_energy and timber_provision
 
 - [State: two modules from committed drive outputs, both already in the account's vocabulary. EXTRACTIVE ENERGY: per-fuel valuations for natural gas, coal and petroleum, summed by the same commodity convention extractive_materials uses — {{< meta xe_total >}}, dominated by petroleum. TIMBER: the Forestry chain's per-country output, {{< meta timber_total >}} across 166 countries — and a status correction: the sheet lists timber's draft as In Progress, but its output exists and reproduces.]{.state}
 - **Q1: needed — the upstream provenance notes for both** (the fuel valuations' method and vintage; the Forestry raster chain's inputs), for the methods writeup.
