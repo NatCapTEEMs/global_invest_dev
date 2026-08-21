@@ -80,7 +80,7 @@ format:
 
 | File | In paper terms |
 |---|---|
-| functions.py | The equations — pure science. Knows nothing about folders or projects. |
+| functions.py | The equations — pure science. |
 | tasks.py | The estimation steps, run in order — each writes one output. |
 | initialize.py | The table of contents — the list of steps, and the entry point other pipelines call. |
 | run_\<service\>.py | The main script — opens a workspace and runs the steps. |
