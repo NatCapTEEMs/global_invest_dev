@@ -142,7 +142,7 @@ format:
 - **{{< meta n_services >}} services are in the library.** Thirteen of them (plus the subsistence fisheries component) replicate a committed reference or the manuscript.
 - **Four await one file to finish verification**: recreation, commercial fisheries, erosion, landslide each need a reference output or input we could not find.
 - **Three carry an open source or definition question** (pollination, renewable energy, coastal protection), and **one is quarantined** (livestock, pending its method inputs).
-- **Four chain ports are in progress**: timber and flood control (their outputs already reproduce, the chains follow), and two new module skeletons with their science stages under way (non-timber forest products, stormwater). Extractive energy's chain port is complete.
+- **Three chain ports are complete and verified**: extractive energy (computed from the public CWoN rent tables), timber (the value raster and all 166 country sums reproduce), and flood control (the full 250-country recompute reproduces the pipeline's table). Two new module skeletons have their science stages under way (non-timber forest products, stormwater), and landslide's first full run is complete on the cluster.
 
 ## How every GEP number is built
 
