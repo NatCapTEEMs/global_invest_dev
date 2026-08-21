@@ -286,18 +286,18 @@ format:
 
 - [What it does: values the storm damage mangroves and corals prevent along coastlines (avoided expected damage from the CWoN data). State: verified by identical rerun at {{< meta cp_total >}}.]{.state}
 - **Q1: which data or code state produced the {{< meta cp_alt >}} recorded in the code's own comment?** It is roughly double our verified {{< meta cp_total >}}, and published anchors fit both. If that run's inputs still exist, one rerun settles it.
-- Our leading suspect, for what it is worth: coral rows already at year 2019 double-counted by the 2012-to-2019 deflation step.
+- Maybe simply: coral rows already at year 2019, double-counted by the 2012-to-2019 deflation step.
 
-## extractive_materials: what does 0.49 mean?
+## extractive_materials: the 0.49 factor
 
 - [What it does: values mineral extraction as the resource-rent share of mining output. State: per-country replication of the reference, including the rendered tables.]{.state}
-- **Q1: what is the source or derivation of the 0.49 factor?** The valuation multiplies mineral rents times GDP by it, unsourced in code, submission, and notes; without it the total would be {{< meta extractive_alt >}} instead of {{< meta extractive_total >}}. The arithmetic is verified; the meaning of the number is not.
+- **Q1: what is the source or derivation of the 0.49 factor?** The valuation multiplies mineral rents times GDP by it; without it the total would be {{< meta extractive_alt >}} instead of {{< meta extractive_total >}}.
 
 ## renewable_energy: two sources, two totals
 
 - [What it does: values wind, solar and geothermal electricity as production times price with a resource-rent share. State: conformed and rerun-identical at {{< meta renewable_total >}} (wind 110.31, solar 53.95, geothermal 6.56).]{.state}
 - **Q1: which is current — the code's {{< meta renewable_total >}} or the drive CSVs' {{< meta renewable_ref >}}?** More than 100 countries differ per source, both cannot be right, and the folder's "gepNEW" method note suggests the CSVs predate a revision.
-- **Q2: does the crosswalk satisfy the sheet's wind/solar/geothermal split, or does anyone want separate modules?** The module already computes all three and writes per-source tables.
+- **Q2: the sheet lists wind, solar and geothermal as three services; the library computes them in one module with per-source tables. Is one module the right structure, or would three separate ones make more sense?**
 
 ## fire_protection: three variants
 
@@ -400,9 +400,9 @@ format:
 
 - **coastal_carbon:** the shoreline rationale, and the seagrass and marsh input versions behind {{< meta coastal_report >}}.
 - **landslide_mitigation:** one machine-readable v0.2.0 output, and its input versions.
-- **fisheries:** bless the RCP substitution; name the shock-HAR's CWoN vintage; bless (or replace) the CWoN-method GEP now running in the library, and share one reference output for exact replication.
+- **fisheries:** confirm the RCP substitution; name the shock file's CWoN vintage; confirm (or replace) the CWoN-method GEP now running in the library, and share one reference output for replication.
 - **erosion:** the submission's valuation inputs and a reference output.
-- **livestock_provision:** the item list, the pasture rents, a blessed reference.
+- **livestock_provision:** the item list, the GLEAM feed-intake table, a confirmed reference.
 - **coastal_protection:** which run produced {{< meta cp_alt >}}.
 - **extractive_materials:** the source of 0.49.
 - **renewable_energy:** code or CSVs.
