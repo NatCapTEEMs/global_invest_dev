@@ -215,7 +215,7 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 
 : {tbl-colwidths="[22,32,46]"}
 
-# The questions, service by service
+# Open questions by service
 
 ## terrestrial_carbon: verified against the manuscript
 
