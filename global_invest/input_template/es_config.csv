@@ -7,7 +7,7 @@ extractive_materials_provision,extractive_materials_provision,,,,global_invest/e
 coastal_protection,coastal_protection,,,,global_invest/coastal_protection/data_mangroves_2019.xlsx,,,,cartographic/ee/ee_r264_correspondence.gpkg,ee_r264_id
 crop_provision,crop_provision,commercial,,,,,,,cartographic/ee/ee_r264_correspondence.gpkg,ee_r264_id
 livestock_provision,livestock_provision,commercial,,,,,,,cartographic/ee/ee_r264_correspondence.gpkg,ee_r264_id
-fisheries,fish_provision,,,,,,,,,
+fisheries,fish_provision,,2019,resource rent (CWoN 2024),,,,,,
 erosion,erosion_control,,,,,,,,cartographic/ee/ee_r264_correspondence.gpkg,ee_r264_id
 landslide_mitigation,landslide_mitigation,,,,landslide_mitigation/input_data_raw,,,,cartographic/ee/ee_r264_correspondence.gpkg,ee_r264_id
 recreation,recreation_tourism,,2019,travel cost,,,,,cartographic/ee/ee_r250.gpkg,iso3_r250_id

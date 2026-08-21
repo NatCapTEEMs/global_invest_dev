@@ -47,21 +47,16 @@ format:
 ## Why one reviewed library
 
 - Different GEP service models were developed by different contributors in different repositories, with their own layout, path conventions and aggregation choices.
-- One home with one template makes every service runnable by anyone, verifiable by rerun, and consumable by the GEP account.
-
-## Why this matters outside the lab
-
-- Central banks and finance ministries are now asked to price nature risk, and the NGFS scenarios they use carry no ecosystem-service feedback at all — the pipeline this library feeds is the first to put one there.
-- A GEP account changes decisions only if every number can be traced to the model that produced it. The library makes every number rerunnable.
-- The valuation answers what nature is worth in a place; the shock answers what happens to the economy when that changes — the margin policy instruments act on.
-- Livestock's numbers are known wrong and erosion's are provisional. An account used in policy inherits every silent error inside it.
+- The library brings them into one repository with one layout: every service runs the same way, reproduces its numbers on rerun, and writes the same per-country table the GEP account reads.
+- A GEP account changes decisions only if every number can be traced to the model that produced it — and an account used in policy inherits every silent error inside it. Livestock's numbers are known wrong and erosion's are provisional; the totals table carries that status.
+- Central banks and finance ministries are asked to price nature risk, and the scenarios they use carry no ecosystem-service feedback; the pipeline this library feeds adds one.
 
 # What global_invest is
 
 ## One module per service: GEP always, a shock where the science allows
 
 - The library holds one folder per ecosystem service, all on the same file convention.
-- Twelve of the thirteen services carry their GEP valuation in the library; fisheries' is still external.
+- Every one of the thirteen services now carries its GEP method in the library; fisheries and recreation still await their input data.
 - Services whose science supports it also produce a scenario shock for the macroeconomic pipeline; not all can be made into shocks.
 - Where both outputs exist, they are written from the same science, so the valuation and the shock cannot drift apart.
 - The library is scenario agnostic. Consumers inject their naming through scenario maps and required configuration.
@@ -136,7 +131,7 @@ format:
 | pollination | {{< meta poll_raster >}} raster side (2023) | FAO side {{< meta poll_fao >}}, definition open |
 | erosion | {{< meta erosion_total >}} PROVISIONAL | internal reconciliation; awaits submission |
 | landslide_mitigation | input stage complete; full run resumes on the cluster | no machine-readable reference yet |
-| fisheries | shock only | valuation external (CWoN) |
+| fisheries | shock + GEP method in, awaiting its data | CWoN 2024 method ported; no data staged, no reference yet |
 | recreation | ported this week, awaiting its data | tests pin the method; no external anchor yet |
 | fire_protection | three variants; account variant open | the repo's committed output, reproduced to the float |
 
@@ -159,7 +154,7 @@ format:
 | erosion | test_erosion.py | the valuation arithmetic itself (loaders mocked): elasticity shock, clipping, floor, GPV shares |
 | recreation | test_recreation.py | every method constant against hand-derived values: matrices, ring kernels, gravity model, allocation |
 | fire_protection | test_fire_protection.py | exact replication of the committed reference (161 countries) on every run, plus the reordered-input tripwire |
-| fisheries | test_fisheries_headers.py | climate-label header resolution and the HAR read-list union |
+| fisheries | test_fisheries_headers.py + test_fisheries.py | header resolution and the HAR read-list union; the CWoN rent-trend math against hand-derived series |
 | landslide_mitigation | — | run knobs pinned in the library tests; the science awaits the cluster run |
 | the five accounting services | — | library-wide contract tests only (next line) |
 | library-wide | test_es_config / parameters / scenarios / seams / utilities / r250_guard | every shipped CSV row hydrates, every shock seam stays grafted, the split-country guard stays present |
@@ -221,12 +216,12 @@ format:
 
 ## fisheries: one substitution to bless
 
-- [State: shock-only in the library. The shock file derives from DBEM (Cheung 2021), built from CWoN inputs; a fisheries GEP valuation exists outside the library in the group's own R pipeline, computed from FAO FishStatJ.]{.state}
+- [State: the shock file derives from DBEM (Cheung 2021), built from CWoN inputs. The GEP valuation is now IN the library too: ported to Python from the source repo's 2026 CWoN-method script — FAO-based economic rent from the CWoN 2024 reproducibility package (FR_WLD_2024_195), deflated to 2019 USD, extrapolated to 2019 by each country's own 2009–2018 trend, floored at zero — PROVISIONAL until the source choice is blessed.]{.state}
 - **Q1: should the RCP8.5-for-RCP7.0 substitution stand, or is there a replacement?** The 8.5 series stands in because no 7.0 series exists — defensible, but currently discoverable rather than stated.
-- **Q2: which CWoN vintage is behind the HAR file?** For the record and the methods writeup.
-- **Q3: should the fisheries GEP come into the library — and from which source?** Every service is expected to have a GEP eventually; fisheries' valuation is still external.
+- **Q2: which CWoN vintage is behind the HAR file?** The GEP side's vintage is now pinned by the port (CWoN 2024, FR_WLD_2024_195); the shock-HAR side is still open.
+- **Q3: is the CWoN method the account's fisheries GEP?** The method is implemented in the library, marked provisional; the FishStatJ pipeline is the alternative source. Needed to run and verify it: the two CWoN rent tables (a public World Bank download) and the source pipeline's output CSV as the replication anchor.
 - Settled convention (20 Aug): **fisheries is an ecosystem service and stays in the nature family** — it enters the cc_es pass alongside carbon, pollination and erosion, and is not part of the just_cc runs, even though its shock varies only with the climate pathway. Its unusual boundary property — RCP-driven, no land-use map — is a characteristic, not an open question.
-- Found in the project's own repos: a commercial fisheries GEP exists as an R pipeline (FishStatJ to GEP), and the subsistence repo already carries a per-country output table — so the in-library GEP has source material, and the subsistence scope question has an existing product to evaluate.
+- The subsistence repo carries a per-country output table, so the subsistence scope question has an existing product to evaluate.
 
 ## recreation: ported — two things make it verifiable
 
@@ -267,7 +262,7 @@ format:
 
 ## fire_protection: ported — a variant to bless and a file to stage
 
-- [State: ported from the GEP wildfire repo's R pipeline. Per-country fire-persistence regressions (committed in the source repo) give three betas: baseline persistence, the nature-vs-human CAUSE difference, and the nature-vs-human AREA difference. Each beta times the country's 2018 burned area gives avoided acres in 2019, valued at EM-DAT wildfire damage per burned acre. The port reproduces the repo's committed per-country output to the float, 161 countries; the replication runs inside the test suite, so it re-verifies on every change.]{.state}
+- [State: translated to Python from the GEP wildfire repo's R pipeline (function by function; the R source stays the reference). Per-country fire-persistence regressions (committed in the source repo) give three betas: baseline persistence, the nature-vs-human CAUSE difference, and the nature-vs-human AREA difference. Each beta times the country's 2018 burned area gives avoided acres in 2019, valued at EM-DAT wildfire damage per burned acre. The port reproduces the repo's committed per-country output to the float, 161 countries; the replication runs inside the test suite, so it re-verifies on every change.]{.state}
 - **Q1: which of the three GEP variants is the account's fire_protection value?** Baseline persistence totals −$22.4bn and the cause difference −$1.3bn — both globally negative — while the area comparison totals +$16.7bn. The choice sets both the number and its sign; the cause difference is the module's provisional default, marked as such.
 - **Q2: needed — the ADM2 burned-area panel** (gadm_adm2_panel_complete_2010_2023.csv; the repo's own data README points to a drive download). The regression results and the EM-DAT extract are committed and staged; with the panel, burned-area aggregates and damage rates regenerate from raw instead of the frozen reference columns.
 
@@ -323,7 +318,7 @@ format:
 
 - **coastal_carbon:** the shoreline rationale, and the seagrass and marsh input versions behind {{< meta coastal_report >}}.
 - **landslide_mitigation:** one machine-readable v0.2.0 output, and its input versions.
-- **fisheries:** bless the RCP substitution; name the CWoN vintage.
+- **fisheries:** bless the RCP substitution; name the shock-HAR's CWoN vintage; bless (or replace) the CWoN-method GEP now in the library, and stage its two CWoN tables plus one reference output.
 - **erosion:** the submission's valuation inputs and a reference output.
 - **livestock_provision:** the item list, the pasture rents, a blessed reference.
 - **coastal_protection:** which run produced {{< meta cp_alt >}}.

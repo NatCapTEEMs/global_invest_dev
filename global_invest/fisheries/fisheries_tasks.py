@@ -165,3 +165,72 @@ def fisheries_shock(p):
              ('per-year' if time_varying else 'constant @%d' % constant_year),
              FISH_CAP, p.fisheries_shock_output_path))
     return True
+
+
+# =============================================================================
+# GEP valuation tasks (commercial capture fisheries, CWoN method). The shock
+# above and the valuation below are separate consumers of separate CWoN
+# products: the shock reads the FI headers of cwon_shocks.har, the valuation
+# the economic-rent tables of the CWoN 2024 reproducibility package.
+# PROVISIONAL as the account's fisheries GEP until the source choice is
+# blessed (the deck's open question); ported from the author's 2026 script.
+# =============================================================================
+
+def publish_inputs(p):
+    """Every GEP task's first line: the fisheries es_config row and the CWoN data references
+    from es_parameters (defaults layer -- a caller-set value wins), the shared country
+    references and the results registry."""
+    utilities.hydrate_es_config(p, 'fisheries', log=hb.log)
+    utilities.hydrate_es_parameters(p, 'fisheries', log=hb.log)
+    utilities.initialize_country_paths(p)
+    if not hasattr(p, 'results'):
+        p.results = {}
+    return p
+
+
+def fisheries_rent_trends(p):
+    """CWoN CPI + economic rent -> per-country real-rent trend and 2019 estimate."""
+    publish_inputs(p)
+    p.fisheries_rent_trends_path = os.path.join(p.cur_dir, 'fisheries_rent_trends.csv')
+    if not p.run_this:
+        return
+    if not hb.path_exists(p.fisheries_rent_trends_path):
+        cpi = ff.clean_cwon_cpi(pd.read_stata(p.fisheries_cwon_cpi_path))
+        rent = ff.clean_cwon_econ_rent(pd.read_stata(p.fisheries_cwon_econ_rent_path))
+        deflated = ff.deflate_rent_to_2019usd(rent, cpi)
+        ff.fisheries_rent_trends(deflated).to_csv(p.fisheries_rent_trends_path, index=False)
+    return True
+
+
+def gep_calculation(p):
+    """GEP valuation for fisheries: the 2019 rent estimate joined onto the r250 country list
+    (by iso3 label -- CWoN's wb_code is the same vocabulary), one row per country."""
+    publish_inputs(p)
+    service_results = {}
+    p.results['fisheries'] = service_results
+    service_results['gep_by_country_base_year'] = os.path.join(p.cur_dir, 'gep_by_country_base_year.csv')
+
+    if hb.path_all_exist(list(service_results.values())):
+        hb.log('All results already exist. Skipping GEP calculation for fisheries.')
+        return
+    hb.log('Starting GEP calculation for fisheries.')
+
+    trends = pd.read_csv(p.fisheries_rent_trends_path)
+    attr_cols = ['iso3_r250_id', 'iso3_r250_label', 'iso3_r250_name',
+                 'continent', 'region_un', 'region_wb', 'income_grp', 'subregion']
+    countries = p.df_countries[attr_cols].drop_duplicates('iso3_r250_id')
+    df_gep = ff.commfish_gep_by_country(trends, countries)
+    df_gep['year'] = int(p.gep_base_year)
+    df_gep = df_gep.rename(columns={'commfish_provision': 'fisheries_gep'})
+    hb.df_write(df_gep[attr_cols + ['year', 'fisheries_gep']],
+                service_results['gep_by_country_base_year'])
+
+    hb.log(f'Total fisheries GEP (commercial capture, CWoN method, PROVISIONAL) for base year '
+           f'{p.gep_base_year}: {df_gep["fisheries_gep"].sum():,.2f}')
+    return True
+
+
+def gep_result(p):
+    """Render the results report(s). Shared implementation in utilities."""
+    publish_inputs(p)
+    utilities.render_service_results(p)

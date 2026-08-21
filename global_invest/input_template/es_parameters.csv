@@ -20,6 +20,8 @@ coastal_carbon,salt_marsh_soc_path,global_invest/coastal_carbon/maxwell_2024_mar
 coastal_carbon,precipitation_path,global_invest/coastal_carbon/mean_annual_precipitation_mm.tif
 fisheries,fisheries_shock_acts,"[""FSH""]"
 fisheries,cwon_shocks_path_template,gtappy/cge_releases/gtapv7-aez-rd/data/{aggregation_label}/cwon_shocks.har
+fisheries,fisheries_cwon_cpi_path,global_invest/fisheries/cwon/cpi2019.dta
+fisheries,fisheries_cwon_econ_rent_path,global_invest/fisheries/cwon/EconRent_Analysis_AllYears.dta
 erosion,erosion_dem_path,global_invest/erosion/global_dem_reproj.tif
 erosion,erosion_lulc_path,global_invest/erosion/lulc_esa_2019_reproj_6p45km.tif
 erosion,erosion_biophysical_table_path,global_invest/erosion/expanded_biophysical_table_gura.csv
