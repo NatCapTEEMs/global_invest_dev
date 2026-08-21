@@ -72,7 +72,7 @@ format:
 ## One module per service: GEP always, a shock where the science allows
 
 - The library holds one folder per ecosystem service, all on the same file convention.
-- Every one of the {{< meta n_services >}} services now carries its GEP method in the library, with its data staged.
+- Every one of the {{< meta n_services >}} services now carries its GEP method in the library, with its input data copied into the shared base data.
 - Services whose science supports it also produce a scenario shock for the macroeconomic pipeline; not all can be made into shocks.
 - A service with both outputs computes them from the same functions file — one implementation, so the valuation and the shock cannot disagree.
 - The library is scenario agnostic: a caller injects its own scenario naming through scenario maps and configuration.
@@ -201,7 +201,7 @@ format:
 - Automatic checks run continuously: every shock table is validated before it is written, every country aggregation is guarded against double-counting split countries, and every configuration row is covered by a test from the moment it is added.
 - These checks found and fixed real errors: an aggregation double-count, a baseline spelled two ways, and a stale input in the erosion chain.
 - Each service's number is verified against an anchor — the manuscript, the author's own output, or our saved reference run; the totals table names which.
-- Most services carry their own test module (test_\<service\>.py), run on every change; what each pins is listed in the appendix.
+- Fifteen of the {{< meta n_services >}} services carry their own test module (test_\<service\>.py), run on every change; the five accounting services and landslide are covered by the library-wide tests only — their service-level tests are a known gap. What each pins is listed in the appendix.
 
 # The questions, service by service
 
@@ -251,8 +251,8 @@ format:
 
 ## landslide_mitigation: running on the cluster
 
-- [What it does: models slope stability with and without forest root cohesion, turns the difference into avoided landslide deaths, and values them at a value of a statistical life. State: folded from the v0.2.0 release with its input data staged. The input stage is complete (all twelve global reprojections and the event panels); the compute-heavy remainder is running on the cluster.]{.state}
-- **Q1: needed — one machine-readable per-country output from a v0.2.0 run; a CSV is enough.** With it, our run is checked country by country against the original.
+- [What it does: models slope stability with and without forest root cohesion, turns the difference into avoided landslide deaths, and values them at a value of a statistical life. State: folded from the v0.2.0 release with its input data copied into the shared base data. The input stage is complete (all twelve global reprojections and the event panels); the compute-heavy remainder is running on the cluster.]{.state}
+- **Q1: needed — one machine-readable per-country output from a v0.2.0 run; a CSV is enough.** With it, our run is checked country by country against the author's own output.
 - **Q2: which input versions did the run behind the v0.2.0 release use?**
 
 ## fisheries: the RCP substitution
@@ -260,7 +260,7 @@ format:
 - [What it does: values commercial capture fisheries as the economic rent of the catch, and subsistence fisheries as the consumptive-use value of home catch. The shock file derives from DBEM (Cheung 2021), built from CWoN inputs. The GEP valuation is ported to Python from the source repo's 2026 CWoN-method script — FAO-based economic rent from the CWoN 2024 reproducibility package (FR_WLD_2024_195), deflated to 2019 USD, extrapolated to 2019 by each country's own 2009–2018 trend, floored at zero — PROVISIONAL until the source choice is confirmed.]{.state}
 - **Q1: should the RCP8.5-for-RCP7.0 substitution stand, or is there a replacement?** The 8.5 series stands in because no 7.0 series exists.
 - **Q2: which CWoN vintage produced the shock file (cwon_shocks.har)?** The valuation side is pinned by the port (CWoN 2024, FR_WLD_2024_195); the shock file's vintage is still unknown.
-- **Q3: is the CWoN method the account's fisheries GEP?** It runs at {{< meta fisheries_total >}} for 2019 across 165 countries, led by Indonesia, on the two CWoN tables provisionally staged from the public World Bank package. Needed: the source pipeline's output CSV for replication; the FishStatJ pipeline is the alternative source.
+- **Q3: is the CWoN method the account's fisheries GEP?** It runs at {{< meta fisheries_total >}} for 2019 across 165 countries, on the two CWoN tables copied from the public World Bank package. Needed: the source pipeline's output CSV for replication; the FishStatJ pipeline is the alternative source.
 - The subsistence component is also ported to Python: Lynch et al. (2024) consumptive-use value per country, {{< meta fisheries_subsistence_total >}} across 85 countries (Canada and China lead), replicating the source repository's committed output. Whether and how commercial and subsistence combine into the account's fisheries value is the open scope question.
 
 ## recreation: ported and running
@@ -280,7 +280,7 @@ format:
 - [What it does: values livestock production and attributes to nature the share of feed ecosystems provide. State: QUARANTINED numbers, but the service's method repo answers more than we hoped — and step 1 of that method is already implemented as a draft: with its 65 FAO item codes replacing the stale 29-name list, India recovers from zero to {{< meta livestock_ind >}}, China reads {{< meta livestock_chn >}}, and the world total {{< meta livestock_world >}}, all PROVISIONAL pending the lambda input. The old name list matched only 13 of its own 29 items against current FAO files.]{.state}
 - **Q1: is the method repo's meat/milk/other item grouping current, and does milk belong as it suggests?** The library's 29-item meats-and-eggs list (which captures 4 percent of India's FAO livestock value) appears to be a stale fork of it.
 - **Q2: is the intended nature share the GLEAM-3 feed-share lambda (GLEAM — FAO's Global Livestock Environmental Assessment Model): ecosystem-provided feed over total feed, per country, as the repo's lambda.py computes?** If so, the answer is neither crop's coefficients nor pasture rents, and we implement it.
-- **Q3: needed — the GLEAM input (gleam3_dmi.xlsx) and one per-country output table.** Neither is in the repo; with both, the method lands in the library verified by exact replication.
+- **Q3: needed — the GLEAM feed-intake table (gleam3_dmi.xlsx: dry-matter intake per country and animal, by feed source) and one per-country output table.** We could not find either in the repo; with both, the method lands in the library verified by replication.
 
 ## coastal_protection: two totals
 
