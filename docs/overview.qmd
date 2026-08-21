@@ -190,7 +190,7 @@ format:
 | extractive_materials | {{< meta extractive_total >}} | the author's reference, exact |
 | renewable_energy | {{< meta renewable_total >}} | OPEN: which source is current — the code's {{< meta renewable_total >}} or the drive CSVs' {{< meta renewable_ref >}} |
 | pollination | {{< meta poll_raster >}} raster side (2023) | FAO side {{< meta poll_fao >}}, definition open |
-| erosion | {{< meta erosion_total >}} PROVISIONAL | internal reconciliation. Awaits submission |
+| erosion | {{< meta erosion_total >}} PROVISIONAL | our own run only, on stand-in inputs. Awaits the author's originals |
 | landslide_mitigation | input stage complete. Full run resumes on the cluster | no machine-readable reference yet |
 | fisheries | shock + commercial GEP {{< meta fisheries_total >}} PROVISIONAL + subsistence {{< meta fisheries_subsistence_total >}} | CWoN tables in place, run live (reference still needed). Subsistence replicates its committed output |
 | recreation | ported. Data in place, first run complete | tests pin the method. No external anchor yet |
@@ -245,7 +245,7 @@ format:
 
 ## erosion: interim inputs
 
-- [What it does: values the soil that land cover keeps in place — prevented erosion mapped by the SDR model, valued through crop productivity. State: the full chain runs end to end and reconciles internally at {{< meta erosion_total >}}, PROVISIONAL. A unit test checks the rebuilt country formula's three behaviors on a sample input: the production-weighted elasticity average, the cap of elasticity at one, and the numerical floor that keeps a tiny positive shock from vanishing. The valuation runs on interim inputs we built ourselves.]{.state}
+- [What it does: values the soil that land cover keeps in place — prevented erosion mapped by the SDR model, valued through crop productivity. State: the full chain runs end to end and gives {{< meta erosion_total >}}, PROVISIONAL. The run uses stand-in series we built from public FAOSTAT data, and the number will change when the original time series replace them. A unit test checks the rebuilt country formula's three behaviors on a sample input: the production-weighted elasticity average, the cap of elasticity at one, and the numerical floor that keeps a tiny positive shock from vanishing.]{.state}
 - **Q1: needed — the three processed input files the code reads by name** (faostat_gpv_2019_iso3, faostat_prices_2019_completed_revised, elasticity_crops_fao_revised). Raw FAOSTAT is public, but the completed/revised steps are the author's. Our chain runs on interim series we built ourselves, and every number moves when the originals replace them.
 - **Q2: needed — a per-country output table from the submission run.** With it we verify by exact replication, as extractive_materials was.
 - Could it be at `/projects/standard/jajohns/shared/sediment_gep` on MSI — and can we get it? One copy settles both questions.
