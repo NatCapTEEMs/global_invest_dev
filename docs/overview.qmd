@@ -94,7 +94,7 @@ format:
 
 ## The template every service follows
 
-- build_task_tree names the pipeline, and tasks publish their own inputs.
+- Every run file has the same two parts. A build_task_tree function lists the steps of the pipeline, and each step begins by naming the inputs it reads.
 - Configuration is data, in two shared CSVs.
 - es_config.csv: one row per service, in the GEP formula's own vocabulary (quantity, price, attribution, land base, base year, price convention) plus the crosswalk to the status sheet.
 - es_scenarios_test.csv: the standard SEALS scenarios, with matching test maps shipped, so a standalone shock run works on any machine.
