@@ -41,6 +41,8 @@ xe_committed: "$1,140.4bn"
 timber_total: "$88.74bn"
 landslide_total: "$770.7M"
 landslide_deaths: "570.66"
+recreation_total: "$1.73bn"
+fire_cause_total: "-$1.3bn"
 renewable_wind: "$110.31bn"
 renewable_solar: "$53.95bn"
 renewable_geothermal: "$6.56bn"
@@ -180,19 +182,19 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 | erosion | {{< meta erosion_total >}} provisional | our own run. The rerun with the author's original inputs from the drive is under way |
 | landslide_mitigation | {{< meta landslide_total >}} ({{< meta landslide_deaths >}} avoided deaths) | the first full run is complete on the cluster. No reference output exists to compare against yet |
 | fisheries | shock + commercial GEP {{< meta fisheries_total >}} provisional + subsistence {{< meta fisheries_subsistence_total >}} | the commercial run has no reference output yet. Subsistence reproduces the source repo's committed output |
-| recreation | ported. Data in place, first run complete | the method is unit-tested. The author's output table is not reachable, so nothing to compare against yet |
-| fire_protection | three variants. Account variant open | reproduces the source repo's committed output from the raw inputs |
+| recreation | {{< meta recreation_total >}} provisional | the method is unit-tested. The author's output table is not reachable, so nothing to compare against yet |
+| fire_protection | {{< meta fire_cause_total >}} provisional, the default of three variants | reproduces the source repo's committed output from the raw inputs |
 | water_supply | hydropower component {{< meta water_supply_total >}} | reproduces the drive's committed output for the 95 valued countries |
 
 ## Services and totals (continued) {.smaller}
 
 | Service | Total | Verification |
 |---|---|---|
-| air_filtration | {{< meta air_filtration_total >}}, the manuscript's number | reproduces the drive's committed workbook and the manuscript's total |
-| sandstorm_prevention | {{< meta sandstorm_total >}} (the same workbook's dust channel) | reproduces the same workbook's dust channel |
-| water_quality | {{< meta wq_usd >}} USD and {{< meta wq_intl >}} intl$ (accounting value) | reproduces the committed intermediate tables. The currency conversion stays unidentified |
-| flood_control | {{< meta flood_total >}} | the full 250-country recompute reproduces the pipeline's table, Morocco excepted |
-| local_climate_regulation | {{< meta lcr_total >}} | reproduces the committed final, which equals the city sums |
+| air_filtration | {{< meta air_filtration_total >}} | reproduces the drive's committed workbook and the manuscript's total |
+| sandstorm_prevention | {{< meta sandstorm_total >}} | reproduces the same workbook's dust channel |
+| water_quality | {{< meta wq_usd >}} USD and {{< meta wq_intl >}} intl$ | reproduces the committed intermediate tables. The currency conversion stays unidentified |
+| flood_control | {{< meta flood_total >}} | our recomputed table matches the pipeline's, Morocco excepted |
+| local_climate_regulation | {{< meta lcr_total >}} | reproduces the committed final |
 | extractive_energy | {{< meta xe_total >}} (gas + coal + petroleum) | computed from the public CWoN rent tables. The committed tables ({{< meta xe_committed >}}) double-count eight rows |
 | timber_provision | {{< meta timber_total >}} | recomputed from the drive's net-return raster. All 166 countries match the committed output |
 

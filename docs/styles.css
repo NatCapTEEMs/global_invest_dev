@@ -8,3 +8,8 @@
 .reveal ul { line-height: 1.35; }
 .reveal li { margin-bottom: 0.3em; }
 .reveal .state { color: #444444; font-size: 0.85em; font-style: italic; }
+
+/* Uniform table size on all .smaller table slides, immune to reveal's auto-scaling. */
+.reveal .smaller table {
+  font-size: 0.65em;
+}
