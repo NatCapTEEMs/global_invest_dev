@@ -170,6 +170,12 @@ format:
 - The library-wide tests are the reason a NEW row or service is born under test: adding a row to a shipped CSV is automatically covered, and clobbering a service's entry point fails the seam test.
 - Missing: science-level tests for the five accounting services and landslide — a small synthetic pin of each service's arithmetic, the way erosion and recreation have.
 
+## What kind of work each service got — and where to scrutinize us
+
+- Four kinds of work, in increasing order of intervention: configuration and verification passes on working code (the five accounting services); restructuring onto the shared template (the carbons, pollination, erosion, recreation); translation from R to Python (fire protection, both fisheries components); and one draft implementation of a method from its repo (livestock — quarantined for exactly that reason).
+- The more we intervened, the more places our own errors could hide. The anchor discipline scales with that: translations are held to exact replication of committed outputs where one exists, and where none exists yet, the service's slide says so.
+- Every port keeps the original science authoritative — the status sheet's work column names what we did per service, and every question slide is an invitation to correct us.
+
 # The questions, service by service
 
 ## terrestrial_carbon: verified against the manuscript
