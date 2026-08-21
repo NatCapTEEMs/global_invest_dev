@@ -203,15 +203,15 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 
 ## terrestrial_carbon: verified against the manuscript
 
-- [What it does: sums the carbon stored by land ecosystems (a zone-by-class density table on the land-cover map) and prices it at the rental social cost of carbon. State: GEP replicates the manuscript to the dollar, {{< meta terrestrial_total >}} at 2019.]{.state}
-- A double-count in the code overstated its total by 23.5 percent (split countries entered once per sub-region, China six times). The corrected aggregation reproduces the manuscript to the dollar.
+- [What it does: sums the carbon stored by land ecosystems (a zone-by-class density table on the land-cover map) and prices it at the rental social cost of carbon. State: GEP reproduces the manuscript's total, {{< meta terrestrial_total >}} at 2019.]{.state}
+- A double-count in the code overstated its total by 23.5 percent (split countries entered once per sub-region, China six times). The corrected aggregation reproduces the manuscript's total.
 - **No open questions.** This service is the template the others are held to.
 
 ## coastal_carbon: seaward pixels only, or the full habitat?
 
-- [What it does: sums the carbon stored in mangroves, salt marshes and seagrass (mapped habitat times per-habitat density) and prices it like terrestrial carbon. State: replicates the author's design, mangrove component to the cent. The same run yields {{< meta coastal_eez >}} counting seaward rows only and {{< meta coastal_all >}} counting both sides.]{.state}
+- [What it does: sums the carbon stored in mangroves, salt marshes and seagrass (mapped habitat times per-habitat density) and prices it like terrestrial carbon. State: reproduces the author's reported numbers. The same run yields {{< meta coastal_eez >}} counting seaward rows only and {{< meta coastal_all >}} counting both sides.]{.state}
 - **Q1 (design):** was EEZ-only chosen to avoid double-counting the landward pixels with terrestrial carbon? Most of the mapped habitat sits landward of the shoreline (97.5 percent of mangrove area, 84 percent of salt marsh), so including it multiplies the total by 4.5.
-- **Q2 (inputs):** which exact seagrass and salt marsh input versions produced the report's {{< meta coastal_report >}}? Our replication gives {{< meta coastal_eez >}} with mangrove matching to the cent, and the report's own seagrass area (62.21 Mha) exceeds the published range it cites (16 to 26.7 Mha).
+- **Q2 (inputs):** which exact seagrass and salt marsh input versions produced the report's {{< meta coastal_report >}}? Our replication gives {{< meta coastal_eez >}} with the mangrove component matching, and the report's own seagrass area (62.21 Mha) exceeds the published range it cites (16 to 26.7 Mha).
 - **Q3: if both sides count, a landward mask must prevent double-counting with terrestrial carbon. Does one exist?**
 
 ## Marine carbon: no module yet
@@ -293,7 +293,7 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 
 ## fire_protection: three variants
 
-- [State: translated to Python from the GEP wildfire repo's R pipeline (function by function. The R source stays the reference). Per-country fire-persistence regressions (committed in the source repo) give three betas: baseline persistence, the nature-vs-human CAUSE difference, and the nature-vs-human AREA difference. Each beta times the country's 2018 burned area gives avoided acres in 2019, valued at EM-DAT wildfire damage per burned acre. The port reproduces the repo's committed per-country output to the float, 161 countries. The replication runs inside the test suite, so it re-verifies on every change.]{.state}
+- [State: translated to Python from the GEP wildfire repo's R pipeline (function by function. The R source stays the reference). Per-country fire-persistence regressions (committed in the source repo) give three betas: baseline persistence, the nature-vs-human CAUSE difference, and the nature-vs-human AREA difference. Each beta times the country's 2018 burned area gives avoided acres in 2019, valued at EM-DAT wildfire damage per burned acre. The port reproduces the repo's committed per-country output, 161 countries. The replication runs inside the test suite, so it re-verifies on every change.]{.state}
 - **Q1: which of the three GEP variants is the account's fire_protection value?** Baseline persistence totals −$22.4bn and the cause difference −$1.3bn (both globally negative), while the area comparison totals +$16.7bn. The choice sets both the number and its sign. The cause difference is the module's provisional default, marked as such.
 - **Q3: the regressions cover 161 of the account's 250 countries. The other 89 carry no value.** No data is not zero avoided damage. Whether and how to treat them is an account question.
 
