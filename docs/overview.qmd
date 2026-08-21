@@ -198,14 +198,6 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 | extractive_energy | {{< meta xe_total >}} (gas + coal + petroleum) | computed from the public CWoN rent tables. The committed tables ({{< meta xe_committed >}}) double-count eight rows |
 | timber_provision | {{< meta timber_total >}} | recomputed from the drive's net-return raster. All 166 countries match the committed output |
 
-## Verification discipline, and what it caught
-
-- Every restructuring step had to reproduce a saved reference run before it counted as done. Before any merge, a check lists everything a branch would remove from the shared code, so nothing disappears silently.
-- Automatic checks run continuously. Every shock table is validated before it is written, every country aggregation is guarded against double-counting split countries, and every configuration row is covered by a test from the moment it is added.
-- These checks found and fixed real errors: an aggregation double-count, a baseline spelled two ways, and a stale input in the erosion chain.
-- Each service's number is verified against an anchor: the manuscript, the author's own output, or our saved reference run. The totals table names which.
-- Fifteen of the {{< meta n_services >}} services carry their own test module (test_\<service\>.py), run on every change. The five accounting services and landslide are covered by the library-wide tests only. Their service-level tests are a known gap. What each pins is listed in the appendix.
-
 # The questions, service by service
 
 ## terrestrial_carbon: verified against the manuscript
