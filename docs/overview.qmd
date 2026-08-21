@@ -334,9 +334,10 @@ format:
 
 ## flood_control: adopted from the committed pipeline
 
-- [State: new module from the drive's FINAL_GEP_FLOOD tree (extensive method notes, a JRC comparison for Europe). Flood hazard, JRC depth-damage functions and protection levels give expected annual damage with and without ecosystems. The committed per-country avoided damage totals {{< meta flood_total >}} in 2019 USD — 236 countries assessed, 148 non-zero — and reproduces the pipeline's own summary. The upstream geospatial chain is taken as given for now, and its code is on the drive, so bringing the chain into the library is queued work on our side.]{.state}
+- [State: new module from the drive's FINAL_GEP_FLOOD tree (extensive method notes, a JRC comparison for Europe). Flood depth by return period, JRC depth-damage functions and the asset map give each country's expected annual flood damage. The committed per-country total is {{< meta flood_total >}} in 2019 USD — 236 countries assessed, 148 non-zero — and reproduces the pipeline's own summary. The chain port is under way: every calculation step is reimplemented as tested functions in the library, and the remaining work is running them on the staged rasters.]{.state}
 - One vocabulary catch, fixed in our staging: the pipeline codes South Sudan as Natural Earth's SDS where the account's label is SSD. The mapping layer had dropped it (assessed, zero).
-- **Q1: needed — confirmation that the FINAL_GEP_FLOOD outputs are the current ones**, and the vintage note for the methods writeup.
+- **The port surfaced a method question: the committed number is the expected annual damage of assets in the floodplain, not an avoided-damage difference.** The pipeline computes an ecosystem service-flow fraction, but the staged money chain never applies it — the "avoided damage" name comes from the analysis notebook relabeling the damage column.
+- **Q1: needed — confirmation that the FINAL_GEP_FLOOD outputs are the current ones**, the vintage note for the methods writeup, and the answer whether the service-flow fraction should multiply into the money chain.
 
 ## local_climate_regulation: ported
 
@@ -417,7 +418,7 @@ format:
 - **extractive_energy:** confirmation that the eight duplicated rows are a join error, and which total the account keeps.
 - **recreation:** one reference results_by_country.csv (the data folder is copied and the run is live).
 - **water_quality:** the USD-to-international-dollars conversion script and inputs. And the currency decision (international vs market dollars).
-- **flood_control:** confirmation that the FINAL_GEP_FLOOD outputs are current.
+- **flood_control:** confirmation that the FINAL_GEP_FLOOD outputs are current, and whether the service-flow fraction should enter the money chain (the committed number is expected damage, not an avoided-damage difference).
 - **water_supply:** which hydropower total is the account's ({{< meta hydro_manuscript >}} direct-use vs {{< meta water_supply_total >}} CWoN rent). The reference's 17 empty countries. And the attribution step the water-use components still need.
 - **fire_protection:** the account's choice among the three GEP variants (the data asks are closed).
 - **air_filtration:** the VSL build behind the workbook (the folder's vsl.R is a different vintage), and the vintage of the avoided-death columns.

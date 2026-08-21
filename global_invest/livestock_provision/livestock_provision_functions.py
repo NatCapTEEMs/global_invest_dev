@@ -247,3 +247,29 @@ def group_countries(df: pd.DataFrame):
 #         "gep_by_year_country": df_gep_by_year_country,
 #         "gep_by_country_year_crop": df_gep_by_country_year_crop,
 #     }
+
+
+# The source repo's step-two attribution (lambda.py): lambda = the ecosystem-provided share
+# of livestock feed, from GLEAM 3 dry-matter intake by feed category. These category lists
+# ARE the method -- the first four are ecosystem-provided, all eight are total intake.
+GLEAM_ECOSYSTEM_FEED_COLS = ("By-products", "Crop residues", "Fodder crop", "Grass and leaves")
+GLEAM_TOTAL_FEED_COLS = GLEAM_ECOSYSTEM_FEED_COLS + ("Grains", "Oil seed cakes",
+                                                     "Other edible", "Other non-edible")
+
+
+def feed_lambda_by_country(gleam_dmi_df):
+    """One row per country: lambda, the ecosystem-provided share of total feed intake.
+
+    Args:
+        gleam_dmi_df (pd.DataFrame): GLEAM 3 dry-matter intake with iso3_r250_id,
+            iso3_r250_label and one column per feed category (the eight in
+            GLEAM_TOTAL_FEED_COLS), any number of rows per country (species, systems).
+
+    Returns:
+        pd.DataFrame: iso3_r250_id, iso3_r250_label, lambda.
+    """
+    eco_cols = list(GLEAM_ECOSYSTEM_FEED_COLS)
+    total_cols = list(GLEAM_TOTAL_FEED_COLS)
+    grouped = gleam_dmi_df.groupby(['iso3_r250_id', 'iso3_r250_label'], dropna=False)[total_cols].sum().reset_index()
+    grouped['lambda'] = grouped[eco_cols].sum(axis=1) / grouped[total_cols].sum(axis=1)
+    return grouped[['iso3_r250_id', 'iso3_r250_label', 'lambda']]

@@ -6,7 +6,7 @@ renewable_energy_provision,wind_enery_provision solar_enery_provision geothermal
 extractive_materials_provision,extractive_materials_provision,,,,global_invest/extractive_materials_provision/API_NY.GDP.MKTP.CD_DS2_en_csv_v2_130122.csv,,global_invest/extractive_materials_provision/API_NY.GDP.MINR.RT.ZS_DS2_en_csv_v2_6559.csv,,cartographic/ee/ee_r264_correspondence.gpkg,ee_r264_id
 coastal_protection,coastal_protection,,,,global_invest/coastal_protection/data_mangroves_2019.xlsx,,,,cartographic/ee/ee_r264_correspondence.gpkg,ee_r264_id
 crop_provision,crop_provision,commercial,,,,,,,cartographic/ee/ee_r264_correspondence.gpkg,ee_r264_id
-livestock_provision,livestock_provision,commercial,,,,,,,cartographic/ee/ee_r264_correspondence.gpkg,ee_r264_id
+livestock_provision,livestock_provision,commercial,2019,,,,,,cartographic/ee/ee_r264_correspondence.gpkg,ee_r264_id
 fisheries,fish_provision,,2019,resource rent (CWoN 2024),,,,,,
 erosion,erosion_control,,,,,,,,cartographic/ee/ee_r264_correspondence.gpkg,ee_r264_id
 landslide_mitigation,landslide_mitigation,,,,landslide_mitigation/input_data_raw,,,,cartographic/ee/ee_r264_correspondence.gpkg,ee_r264_id
