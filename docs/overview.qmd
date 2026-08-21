@@ -75,7 +75,6 @@ format:
 - The library holds one folder per ecosystem service, all on the same file convention.
 - {{< meta n_services >}} services carry their GEP method in the library, with their input data in the shared base data.
 - Some services also produce a scenario shock for the macroeconomic pipeline. A shock exists where the scenarios' physical changes (the land-use maps or the climate pathway) reach the service's science.
-- A service with both outputs computes them from the same functions file, so the valuation and the shock rely on the same science.
 - The library is scenario agnostic. A caller supplies its own scenarios (the maps, the years and the naming) through configuration.
 
 ## The code structure
@@ -89,8 +88,7 @@ format:
 | method.qmd | The written explanation of the method. |
 
 - A service with a shock has a second runner for it, run_\<service\>_shock.py (one runner per task tree).
-- The three CSVs are the calibration tables. es_config states what each model reads and how it prices. es_scenarios states which scenarios and maps, and es_parameters holds the run parameters and machine locations.
-- A CSV cell is a default, and whatever the caller already set prevails.
+- Three shared CSVs carry the configuration (the next slide).
 
 ## The template every service follows
 
@@ -111,12 +109,12 @@ format:
 
 - Each service module serves two callers. The GEP account reads the valuation (one row per country), and the macroeconomic pipeline reads the scenario shock (a table of productivity deviations for GTAP).
 - Both read the same functions file, so a change to the science reaches the account and the scenarios at once.
-- Not every service's science supports a shock, but every service is expected to reach a GEP valuation.
+- Every service is expected to reach a GEP valuation, with or without a shock.
 
 ## How a pipeline grafts a service
 
 - A caller grafts a service with one call (add_\<service\>_tasks(p) after its land-use step), and the service's tasks slot into the caller's own task tree.
-- The caller's configuration prevails over the shipped CSVs (the rule from the mental-model slide), so the library never needs to know its callers' naming.
+- A CSV cell is a default. The caller's configuration prevails over the shipped CSVs, so the library never needs to know its callers' naming.
 - The standalone runners use the same graft, so a bug found and fixed in a service's own run is fixed in the pipeline too. Nothing changes between the two.
 
 ## The configuration table itself (es_config.csv)
@@ -136,10 +134,10 @@ format:
 
 # Where things stand
 
-## The state in three numbers
+## The state in numbers
 
 - **{{< meta n_services >}} services are in the library.** Thirteen of them (plus the subsistence fisheries component) replicate a committed reference or the manuscript.
-- **Four await one file to finish verification**: recreation, commercial fisheries, erosion, landslide each need a reference output or input we could not find.
+- **Three await one file to finish verification**: recreation, commercial fisheries and landslide each need a reference output we could not find. Erosion's turned up on the drive, and its replication rerun is under way.
 - **Three carry an open source or definition question** (pollination, renewable energy, coastal protection), and **one is quarantined** (livestock, pending its method inputs).
 - **Three chain ports are complete and verified**: extractive energy (computed from the public CWoN rent tables), timber (the value raster and all 166 country sums reproduce), and flood control (the full 250-country recompute reproduces the pipeline's table). Two new module skeletons have their science stages under way (non-timber forest products, stormwater), and landslide's first full run is complete on the cluster.
 
@@ -245,10 +243,8 @@ format:
 
 ## erosion: interim inputs
 
-- [What it does: values the soil that land cover keeps in place (prevented erosion mapped by the SDR model, valued through crop productivity). State: the full chain runs end to end and gives {{< meta erosion_total >}}, PROVISIONAL. The run uses stand-in series we built from public FAOSTAT data, and the number will change when the original time series replace them. A unit test checks the rebuilt country formula's three behaviors on a sample input: the production-weighted elasticity average, the cap of elasticity at one, and the numerical floor that keeps a tiny positive shock from vanishing.]{.state}
-- **Q1: needed, the three processed input files the code reads by name** (faostat_gpv_2019_iso3, faostat_prices_2019_completed_revised, elasticity_crops_fao_revised). Raw FAOSTAT is public, but the completed/revised steps are the author's. Our chain runs on interim series we built ourselves, and every number moves when the originals replace them.
-- **Q2: needed, a per-country output table from the submission run.** With it we verify by exact replication, as extractive_materials was.
-- Could it be at `/projects/standard/jajohns/shared/sediment_gep` on MSI, and can we get it? One copy settles both questions.
+- [What it does: values the soil that land cover keeps in place (prevented erosion mapped by the SDR model, valued through crop productivity). State: the full chain runs end to end and gives {{< meta erosion_total >}}, PROVISIONAL. The rerun with the author's original input tables is under way. A unit test checks the rebuilt country formula's three behaviors on a sample input: the production-weighted elasticity average, the cap of elasticity at one, and the numerical floor that keeps a tiny positive shock from vanishing.]{.state}
+- Both former asks are closed. The drive's erosion folder carries the author's three input tables and the per-country results, all copied. The rerun with the originals is under way, and its comparison against the author's own table verifies by replication.
 
 ## erosion: how the valuation and the shock share the chain
 
@@ -261,7 +257,7 @@ format:
 
 ## landslide_mitigation: the first full run is complete
 
-- [What it does: models slope stability with and without forest root cohesion, turns the difference into avoided landslide deaths, and values them at a value of a statistical life. State: folded from the v0.2.0 release with its input data copied into the shared base data. The first full run is complete on the cluster: 570.66 avoided deaths globally in 2019, valued at {{< meta landslide_total >}}. Two data faults were found and fixed on the way (a corrupted input file from the transfer, and a wrong column name in the country join).]{.state}
+- [What it does: models slope stability with and without forest root cohesion, turns the difference into avoided landslide deaths, and values them at a value of a statistical life. State: folded from the v0.2.0 release with its input data copied into the shared base data. The first full run is complete on the cluster: 570.66 avoided deaths globally in 2019, valued at {{< meta landslide_total >}}. Two data faults were found and fixed (a corrupted input file from the transfer, and a wrong column name in the country join).]{.state}
 - **Q1: needed, one machine-readable per-country output from a v0.2.0 run. A CSV is enough.** With it, our run is checked country by country against the author's own output.
 - **Q2: which input versions did the run behind the v0.2.0 release use?**
 
@@ -282,8 +278,7 @@ format:
 ## crop_provision
 
 - [What it does: values crop production from FAOSTAT production values (quantity times producer price per country). State: converted from FAOSTAT's native thousand-USD to plain USD, matching every other service. Reproduces the reference table.]{.state}
-- The units question is resolved. The module converts FAOSTAT's thousand-USD to plain USD.
-- **Q2: can we confirm whether FAOSTAT's production values already include imputed subsistence output?** We will check the coverage definition. If they do, subsistence agriculture is already inside crop's number and the remaining work is labeling.
+- FAOSTAT's production values already count part of subsistence output (checked in FAO's methodology): meat includes farm slaughter, and FAO estimates non-commercial crops where countries report only sales. Kitchen gardens, scattered trees and wild harvest are usually missing, so a separate subsistence-crop value would double-count the covered part.
 
 ## livestock_provision: three open method decisions
 
@@ -347,7 +342,7 @@ format:
 
 ## extractive_energy and timber_provision
 
-- [State: EXTRACTIVE ENERGY is now computed in the library from the public CWoN 2024 rent tables the method appendices name: gas, coal and petroleum rents at 2019, summed by the same commodity convention extractive_materials uses. TIMBER: the Forestry chain's per-country output, {{< meta timber_total >}} across 166 countries, reproduces in the library, and the chain itself is being reimplemented from the staged method appendix and intermediate rasters (biomass, log prices, transport cost), and a status correction: the sheet lists timber's draft as In Progress, but its output exists and reproduces.]{.state}
+- [State: EXTRACTIVE ENERGY is now computed in the library from the public CWoN 2024 rent tables the method appendices name: gas, coal and petroleum rents at 2019, summed by the same commodity convention extractive_materials uses. TIMBER: the chain is reimplemented and verified. The value raster recomputed from the drive's net-return layer equals the pipeline's own on every positive pixel, and all 166 country sums match the committed output ({{< meta timber_total >}}). One status correction: the sheet lists timber's draft as In Progress, but its output exists and reproduces.]{.state}
 - **The extractive port caught a real error: eight rows of the committed tables carry another country's full value.** Christmas Island and Cocos hold Australia's rents, Bouvet and Svalbard Norway's, Tokelau New Zealand's, Western Sahara Morocco's, Palestine Israel's, and Kosovo Serbia's (the committed name column itself reads "Serbia"). The committed total of {{< meta xe_committed >}} counts those countries twice. Computed one-country-one-row, the total is {{< meta xe_total >}}.
 - **Q1: confirmation that the eight duplicated rows are a join error, and which total the account keeps.**
 
@@ -427,7 +422,7 @@ format:
 
 ## What happens with the answers
 
-- Every answer starts an already-scoped step, most of them mechanical: reference outputs trigger exact-replication verification (erosion, landslide, livestock), decisions trigger one-pass conversions (crop's units, the map dissolve), and the definitional calls trigger the regenerations that are already written up (pollination at 2019, the shoreline diagnostic).
+- Every answer starts an already-scoped step, most of them mechanical: reference outputs trigger exact-replication verification (erosion, landslide, livestock), decisions trigger one-pass conversions (the map dissolve), and the definitional calls trigger the regenerations that are already written up (pollination at 2019, the shoreline diagnostic).
 - The questions live in a tracked document, and each closes with a verified number or a recorded decision.
 - Each answer extends the same reproducibility to one more service. The goal for the next session like this one: no questions slide at all.
 
