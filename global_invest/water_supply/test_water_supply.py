@@ -61,3 +61,31 @@ def test_es_config_and_parameters_rows_hydrate_water_supply(tmp_path):
     assert p.gep_base_year == 2019
     utilities.hydrate_es_parameters(p, 'water_supply', log=lambda *a: None)
     assert p.water_supply_cwon_hydro_wealth_path.endswith('cwon/hydro_wealth_cd.dta')
+
+
+# --- Water-use components (efficiency x withdrawal chain) ---
+def test_water_use_sector_arithmetic_on_synthetic_data():
+    efficiency = pd.DataFrame({'iso_code': ['AAA'], 'year': [2015],
+                               'wue_irrigation_usdpm3': [0.5], 'wue_industrial_usdpm3': [2.0],
+                               'wue_municipal_usdpm3': [3.0]})
+    withdrawal = pd.DataFrame({'iso_code': ['AAA'], 'year': [2015],
+                               'w_agriculture': [100.0], 'w_industry': [10.0], 'w_munucipal': [5.0]})
+    out = wf.water_use_sector_gep(efficiency, withdrawal).iloc[0]
+    assert np.isclose(out['gep_water_agricultural'], 50.0)
+    assert np.isclose(out['gep_water_industrial'], 20.0)
+    assert np.isclose(out['gep_water_municipal'], 15.0)
+    # A non-survey year is dropped, as in the source.
+    off_year = wf.water_use_sector_gep(efficiency.assign(year=2013), withdrawal.assign(year=2013))
+    assert len(off_year) == 0
+
+
+def test_water_use_committed_anchors_join_and_total():
+    agriculture = pd.read_csv(os.path.join(REFERENCE_DIR, 'wateruse_ag_gep.csv'))
+    all_sector = pd.read_csv(os.path.join(REFERENCE_DIR, 'wateruse_gep.csv'))
+    countries = agriculture[['iso3_r250_id', 'iso3_r250_label']].merge(
+        all_sector[['iso3_r250_id', 'iso3_r250_label']], how='outer')
+    out = wf.water_use_components_by_country(agriculture, all_sector, countries)
+    assert out['water_use_agriculture_gep'].notna().sum() == 145
+    assert out['water_use_all_sector_gep'].notna().sum() == 183
+    assert np.isclose(out['water_use_agriculture_gep'].sum(),
+                      agriculture['wateruse_ag_gep'].sum())

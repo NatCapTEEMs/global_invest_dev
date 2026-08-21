@@ -25,6 +25,8 @@ n_services: "17"
 fisheries_total: "$29.00bn"
 fisheries_subsistence_total: "$7.92bn"
 water_supply_total: "$144.68bn"
+water_use_ag_total: "$554.5bn"
+water_use_all_total: "$36.08T"
 air_filtration_total: "$17.81bn"
 sandstorm_total: "$595.36bn"
 wq_usd: "$638.34bn"
@@ -267,9 +269,10 @@ format:
 
 ## water_supply: the hydropower component, with an identified method
 
-- [State: new module. The consortium drive's Hydropower folder carries a committed 2019 output but not the script behind it; the method was identified against that output and holds exactly for all 95 valued countries: the GEP is CWoN 2024's capitalized hydropower wealth divided by the annuity factor at the CWoN-standard 4 percent discount over a 100-year horizon — the constant annual rent the wealth implies. The CWoN table is staged from the public package, the run is live at {{< meta water_supply_total >}}, and the replication runs inside the test suite. Agriculture and household join beside hydropower when their science surfaces.]{.state}
+- [State: new module, now with three components. HYDROPOWER: the method was identified against the drive's committed output and holds exactly for all 95 valued countries — CWoN 2024 capitalized wealth divided by the 4-percent, 100-year annuity factor; live at {{< meta water_supply_total >}}. WATER USE (the drive's two-script chain, sector efficiency times sector withdrawal): the committed agriculture component is {{< meta water_use_ag_total >}} across 145 countries, and the all-sector total {{< meta water_use_all_total >}} across 183 — carried as committed values; the cleaned efficiency table behind them is the staging ask.]{.state}
 - **Q1: which hydropower total is the account's?** The manuscript records {{< meta hydro_manuscript >}} — roughly twice the committed output's {{< meta water_supply_total >}} — consistent with the drive's earlier direct-use script (price times generation) versus the CWoN-rent method. Two methods, two totals; the account needs one.
 - **Q2: why does the reference leave 17 countries empty although the CWoN table values them?** The 17 are encoded as named exclusions so the module reproduces the reference; the reason needs its author.
+- **Q3: the water-use components carry no nature-attribution step.** The all-sector total ({{< meta water_use_all_total >}}) is the gross economic value of water use — rivaling global GDP — which is exactly why an attribution factor is needed before any of it enters the account. How the three components combine into water_supply's value is the same open subgroup question.
 
 ## air_filtration: one workbook, two services
 
@@ -343,7 +346,7 @@ format:
 - **renewable_energy:** code or CSVs.
 - **recreation:** one reference results_by_country.csv (the data folder is staged and the run is live).
 - **water_quality:** the USD-to-international-dollars conversion script and inputs; and the room's currency decision (international vs market dollars).
-- **water_supply:** which hydropower total is the account's ({{< meta hydro_manuscript >}} direct-use vs {{< meta water_supply_total >}} CWoN rent), and the reason for the reference's 17 empty countries.
+- **water_supply:** which hydropower total is the account's ({{< meta hydro_manuscript >}} direct-use vs {{< meta water_supply_total >}} CWoN rent); the reference's 17 empty countries; the water-use efficiency table; and the attribution step the water-use components still need.
 - **fire_protection:** the account's choice among the three GEP variants (the data asks are closed).
 - **air_filtration:** the VSL build behind the workbook (the folder's vsl.R is a different vintage), and the vintage of the avoided-death columns.
 - **local_climate_regulation:** the canonical chain is identified (the repo's v04 valuation script: cooling-degree-days and marginal consumption per CDD); its port into the library is scoped and next.

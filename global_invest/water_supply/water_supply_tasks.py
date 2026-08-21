@@ -55,9 +55,19 @@ def gep_calculation(p):
                  'continent', 'region_un', 'region_wb', 'income_grp', 'subregion']
     countries = p.df_countries[attr_cols].drop_duplicates('iso3_r250_id')
     df_gep = wf.water_supply_gep_by_country(hydropower, countries)
+    if hb.path_exists(getattr(p, 'water_use_components_path', None)):
+        components = pd.read_csv(p.water_use_components_path)
+        df_gep = df_gep.merge(components.drop(columns=['iso3_r250_label']),
+                              on='iso3_r250_id', how='left')
+    else:
+        df_gep['water_use_agriculture_gep'] = float('nan')
+        df_gep['water_use_all_sector_gep'] = float('nan')
     df_gep['year'] = int(p.gep_base_year)
+    # water_supply_gep stays the hydropower component alone: how (and whether) the water-use
+    # components combine with it is the account's subgroup question, flagged on the deck.
     df_gep['water_supply_gep'] = df_gep['hydropower_gep']
-    hb.df_write(df_gep[attr_cols + ['year', 'hydropower_gep', 'water_supply_gep']],
+    hb.df_write(df_gep[attr_cols + ['year', 'hydropower_gep', 'water_use_agriculture_gep',
+                                    'water_use_all_sector_gep', 'water_supply_gep']],
                 service_results['gep_by_country_base_year'])
 
     hb.log(f'Total water_supply GEP (hydropower component) for base year {p.gep_base_year}: '
@@ -69,3 +79,26 @@ def gep_result(p):
     """Render the results report(s). Shared implementation in utilities."""
     publish_inputs(p)
     utilities.render_service_results(p)
+
+
+def water_use_components(p):
+    """The water-use components from the drive's committed outputs: the agriculture subgroup
+    and the all-sector total (efficiency x withdrawal chain; the cleaned efficiency table is
+    the open staging ask, so the committed outputs carry the values for now)."""
+    publish_inputs(p)
+    p.water_use_components_path = os.path.join(p.cur_dir, 'water_use_components.csv')
+    if not p.run_this:
+        return
+    if not hb.path_exists(p.water_use_components_path):
+        agriculture = pd.read_csv(p.water_use_agriculture_path)
+        all_sector = pd.read_csv(p.water_use_all_sector_path)
+        attr_cols = ['iso3_r250_id', 'iso3_r250_label']
+        countries = p.df_countries[attr_cols].drop_duplicates('iso3_r250_id')
+        out = wf.water_use_components_by_country(agriculture, all_sector, countries)
+        out.to_csv(p.water_use_components_path, index=False)
+        hb.log('water_use components: agriculture %.4g USD (%d countries), all-sector %.4g USD '
+               '(%d countries)' % (out['water_use_agriculture_gep'].sum(),
+                                   out['water_use_agriculture_gep'].notna().sum(),
+                                   out['water_use_all_sector_gep'].sum(),
+                                   out['water_use_all_sector_gep'].notna().sum()))
+    return True

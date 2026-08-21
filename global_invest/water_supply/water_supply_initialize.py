@@ -9,6 +9,7 @@ from global_invest.water_supply import water_supply_tasks
 def build_gep_service_calculation_task_tree(p):
     """GEP calculation tree: hydropower rent -> r250 one-row-per-country valuation."""
     p.hydropower_rent_task = p.add_task(water_supply_tasks.hydropower_rent)
+    p.water_use_components_task = p.add_task(water_supply_tasks.water_use_components)
     p.gep_calculation_task = p.add_task(water_supply_tasks.gep_calculation)
     return p
 
