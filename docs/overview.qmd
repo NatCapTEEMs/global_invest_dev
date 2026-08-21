@@ -73,24 +73,26 @@ format:
 | tasks.py | The estimation steps — each caches its output and skips itself when already done. |
 | initialize.py | The table of contents, plus the plug other pipelines graft in. |
 | run_\<service\>.py | The main script — opens a workspace and goes. Thin on purpose. |
-| method.qmd | The methods section — rendered from the code, so it cannot silently drift. |
+| method.qmd | The methods section — rendered from the code. |
 
-- The three CSVs are the calibration tables. es_config says what each model reads and how it prices; es_scenarios says which scenarios and maps; es_parameters holds tuning knobs and machine locations.
-- One rule ties data to code: a CSV cell is a default, and whatever the caller already set wins.
+- The three CSVs are the calibration tables. es_config states what each model reads and how it prices; es_scenarios states which scenarios and maps; es_parameters holds the run parameters and machine locations.
+- One rule ties data to code: a CSV cell is a default, and whatever the caller already set prevails.
 
 ## The template every service follows
 
-- One runner per task tree, and every run file shares one anatomy, applied across the library: build_task_tree names the pipeline, and the run is configured where it is constructed.
-- Configuration is data, in two shared CSVs. es_config.csv holds one row per service in the GEP formula's own vocabulary (quantity, price, attribution, land base, base year, price convention) plus the crosswalk to the status sheet; es_scenarios_test.csv holds the standard SEALS scenarios and ships the matching test maps, so a standalone shock run works on any machine.
-- The library fills only what the caller left unset. A pipeline such as ngfs_pnas drives the same tasks from its own scenarios file, and its values always win.
-- Each task's first line publishes the inputs it needs (relative to the shared base data; each machine finds its own copy), so any task grafted anywhere is a working piece — rolling out service by service, terrestrial first.
+- One runner per task tree, and every run file shares one anatomy: build_task_tree names the pipeline, tasks publish their own inputs, and the runner stays thin.
+- Configuration is data, in two shared CSVs.
+- es_config.csv: one row per service, in the GEP formula's own vocabulary — quantity, price, attribution, land base, base year, price convention — plus the crosswalk to the status sheet.
+- es_scenarios_test.csv: the standard SEALS scenarios, with matching test maps shipped, so a standalone shock run works on any machine.
+- The library fills only what the caller left unset. A pipeline such as ngfs_pnas drives the same tasks from its own scenarios file, and its values always prevail.
+- Each task's first line publishes the inputs it needs, as references into the shared base data that each machine resolves for itself. This holds for every service now, so any task grafted anywhere is a working piece.
 - Aggregation is on r250, one row per country. The r264 crosswalk is used only for maps.
 
 ## How a run finds its data
 
 - Every input is a reference path relative to the shared base data, and each machine resolves it for itself: the project's own input folder first, then the machine's base_data, then the cloud fallback.
 - A run therefore carries no absolute paths. The same run file works on a laptop, on the cluster, or on any machine that stages the same base data — the recreation port and the landslide cluster run rely on exactly this.
-- Tasks cache their output in the project directory and skip themselves when it already exists, so reruns are cheap and interrupted runs resume where they stopped.
+- Tasks cache their output in the project directory and skip themselves when it already exists, so a rerun recomputes nothing and an interrupted run resumes where it stopped.
 
 ## Two consumers, one science
 
@@ -101,7 +103,7 @@ format:
 ## How a pipeline grafts a service
 
 - A consumer pipeline calls add_\<service\>_tasks(p) after its land-use step, and the service's tasks slot into the consumer's own task tree.
-- Configuration is a defaults layer. The library's CSVs fill only what the caller left unset, and a caller's value always wins — so ngfs_pnas drives the same tasks from its own scenarios file, and the library never needs to know its consumers' naming.
+- Configuration is a defaults layer. The library's CSVs fill only what the caller left unset, and a caller's value always prevails — so the library never needs to know its consumers' naming.
 - The standalone runners use the same graft, so a service debugged in isolation behaves identically inside the pipeline.
 
 ## The configuration table itself (es_config.csv)
@@ -117,11 +119,13 @@ format:
 | extractive_materials | extractive_materials_provision | | | WB GDP | | WB rents share | |
 | coastal_protection | coastal_protection | | | CWoN mangroves | | | |
 
-- Five more rows (crop and livestock as the sheet's commercial subgroups, fish_provision, erosion_control, landslide) carry their crosswalk today and gain cells as their configuration moves in. Every row is under test the moment it is edited.
+- Seven more rows (crop and livestock as the sheet's commercial subgroups, fish_provision, erosion_control, landslide, recreation_tourism, fire_protection) carry their crosswalk; the three newest arrived with their base-year and price-convention cells filled. Every row is under test the moment it is edited.
 
 # Where things stand
 
 ## Services and totals (base year 2019, verified)
+
+- Full per-service status in the status sheet's own structure, one row per sheet service — in-library state, totals, anchors, tests, and what each still needs: [the library status sheet](https://docs.google.com/spreadsheets/d/1sQOUT7TRKVLxc-TSfPWeuCFm0vwk-6iLk-AnA6jyEiY), updated as work lands.
 
 | Service | Total | Verified against |
 |---|---|---|
@@ -159,7 +163,7 @@ format:
 | recreation | test_recreation.py | every method constant against hand-derived values: matrices, ring kernels, gravity model, allocation |
 | fire_protection | test_fire_protection.py | exact replication of the committed reference (161 countries) on every run, plus the reordered-input tripwire |
 | fisheries | test_fisheries_headers.py + test_fisheries.py | header resolution and the HAR read-list union; the CWoN rent-trend math against hand-derived series |
-| landslide_mitigation | — | run knobs pinned in the library tests; the science awaits the cluster run |
+| landslide_mitigation | — | run parameters pinned in the library tests; the science awaits the cluster run |
 | the five accounting services | — | library-wide contract tests only (next line) |
 | library-wide | test_es_config / parameters / scenarios / seams / utilities / r250_guard | every shipped CSV row hydrates, every shock seam stays grafted, the split-country guard stays present |
 
@@ -191,7 +195,7 @@ format:
 
 ## pollination: which definition is the GEP?
 
-- [State: built on the template and running; aggregation verified. Two defensible definitions, 28 times apart.]{.state}
+- [State: built on the template and running; aggregation verified. Two defensible definitions, 28 times apart. NOT yet at the account's 2019 base year (the August 31 alignment): the value raster is 2023, and its regeneration at 2019 follows the definition decision.]{.state}
 - **Q1 (the room):** is pollination's GEP the service nature currently delivers ({{< meta poll_raster >}}, the sufficiency-weighted raster) or the production value at stake ({{< meta poll_fao >}}, dependence-weighted FAO value)? The country ranking is identical; only the definition differs.
 - **Q2:** the rasters on hand are 2023 and the account values at 2019. We regenerate at 2019 once the definition is settled. Does anyone object to that ordering?
 - A consistency note for the discussion: erosion's GEP records the habitat-supplied share, so the raster-side definition is the internally consistent choice.
@@ -229,7 +233,7 @@ format:
 
 ## recreation: ported — two things make it verifiable
 
-- [State: the first externally-owned service ported into the library (this week): seven tasks in the house shape, method constants pinned by unit tests, aggregation born on r250. What it does: LULC shares + protected areas + road access rank 1 km sites; a gravity model sends residents (daily) and allocated UNWTO overnights (tourism) into the high-quality sites; visits are valued at national fuel cost times travel distance.]{.state}
+- [State: the first externally-owned service ported into the library (this week): seven tasks in the library template, method constants pinned by unit tests, aggregation directly on r250. What it does: LULC shares + protected areas + road access rank 1 km sites; a gravity model sends residents (daily) and allocated UNWTO overnights (tourism) into the high-quality sites; visits are valued at national fuel cost times travel distance.]{.state}
 - **Need 1: the data folder.** The pipeline's inputs live in the consortium drive's Recreation/data tree (six LULC share rasters, protected-area and road layers, WorldPop, the UNWTO workbook, the hotels geopackage, a fuel-cost table — all 1 km, so modest). Staged into base_data, the run works anywhere.
 - **Need 2: a reference per-country output.** The source pipeline's results_by_country.csv was not committed; with one copy we diff per-country visits and values and the port reaches the verified bar.
 - One flagged question for the method writeup: the travel-cost distance multiplies the fuel cost (USD per km) by ring distance in the raster's native pixel units — ported faithfully, to be resolved against the reference output.
