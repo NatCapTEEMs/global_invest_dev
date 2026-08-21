@@ -115,7 +115,7 @@ format:
 - **{{< meta n_services >}} services are in the library.** {{< meta n_replicating >}} of them (plus the subsistence fisheries component) replicate a committed reference or the manuscript.
 - **{{< meta n_awaiting_file >}} await one file to finish verification**: recreation, commercial fisheries and landslide each need a reference output we could not find. Erosion's replication rerun is under way.
 - **{{< meta n_open_question >}} carry an open source or definition question** (pollination, renewable energy, coastal protection), and **livestock's numbers are provisional** until the feed-share attribution replaces the current crop-coefficient stand-in.
-- **{{< meta n_ports_done >}} chain ports are complete and verified**: extractive energy (computed from the public CWoN rent tables), timber (the value raster and all 166 country sums reproduce), and flood control (the full 250-country recompute reproduces the pipeline's table). Two new module skeletons have their science stages under way (non-timber forest products, stormwater), and landslide's first full run is complete on the cluster.
+- **{{< meta n_ports_done >}} services that carried precomputed outputs are now computed in the library and verified**: extractive energy, timber, flood control. Two new modules are under way (non-timber forest products, stormwater).
 
 ## How every GEP number is built
 
