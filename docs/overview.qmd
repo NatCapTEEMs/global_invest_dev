@@ -25,7 +25,6 @@ n_services: "21"
 n_replicating: "13"
 n_awaiting_file: "3"
 n_open_question: "3"
-n_ports_done: "3"
 fisheries_total: "$29bn"
 fisheries_subsistence_total: "$7.92bn"
 water_supply_total: "$144.68bn"
@@ -115,7 +114,7 @@ format:
 - **{{< meta n_services >}} services are in the library.** {{< meta n_replicating >}} of them (plus the subsistence fisheries component) replicate a committed reference or the manuscript.
 - **{{< meta n_awaiting_file >}} await one file to finish verification**: recreation, commercial fisheries and landslide each need a reference output we could not find. Erosion's replication rerun is under way.
 - **{{< meta n_open_question >}} carry an open source or definition question** (pollination, renewable energy, coastal protection), and **livestock's numbers are provisional** until the feed-share attribution replaces the current crop-coefficient stand-in.
-- **{{< meta n_ports_done >}} services that carried precomputed outputs are now computed in the library and verified**: extractive energy, timber, flood control. Two new modules are under way (non-timber forest products, stormwater).
+- Two new modules are under way (non-timber forest products, stormwater).
 
 ## How every GEP number is built
 
