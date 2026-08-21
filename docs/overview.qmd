@@ -160,7 +160,7 @@ format:
 
 ## Services and totals (base year 2019, verified) {.smaller}
 
-- Full per-service status in the status sheet's own structure, one row per sheet service (in-library state, totals, anchors, tests, and what each still needs): [the library status sheet](https://docs.google.com/spreadsheets/d/1sQOUT7TRKVLxc-TSfPWeuCFm0vwk-6iLk-AnA6jyEiY), updated as work lands.
+Full per-service status, one row per sheet service, updated as work lands: [the library status sheet](https://docs.google.com/spreadsheets/d/1sQOUT7TRKVLxc-TSfPWeuCFm0vwk-6iLk-AnA6jyEiY).
 
 | Service | Total | Verified against |
 |---|---|---|
