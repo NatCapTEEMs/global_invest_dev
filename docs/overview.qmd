@@ -74,7 +74,7 @@ format:
 
 - The library holds one folder per ecosystem service, all on the same file convention.
 - {{< meta n_services >}} services carry their GEP method in the library, with their input data in the shared base data.
-- Some services also produce a scenario shock for the macroeconomic pipeline. A shock exists where the scenarios' physical changes (the land-use maps or the climate pathway) reach the service's science. Where they reach it only through another service, an own shock would double-count, so not every service carries one.
+- Some services also produce a scenario shock for the macroeconomic pipeline. A shock exists where the scenarios' physical changes (the land-use maps or the climate pathway) reach the service's science.
 - A service with both outputs computes them from the same functions file, so the valuation and the shock rely on the same science.
 - The library is scenario agnostic: a caller supplies its own scenarios (the maps, the years and the naming) through configuration.
 
