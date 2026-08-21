@@ -62,8 +62,8 @@ format:
 
 ## Why one reviewed library
 
-- Different contributors developed the GEP service models in different repositories, each with its own layout, path conventions and aggregation choices.
-- The library brings them into one repository with one layout: every service runs the same way and writes the same per-country table the GEP account reads.
+- Different contributors developed the GEP service models in different repos, each with its own layout, path conventions and aggregation choices.
+- The library brings them into one repo with one layout: every service runs the same way and writes the same per-country table the GEP account reads.
 - Central banks and finance ministries are asked to price nature risk, and the scenarios they use carry no ecosystem-service feedback. The pipeline this library feeds adds one.
 
 # What global_invest is
@@ -184,9 +184,9 @@ format:
 | coastal_carbon | {{< meta coastal_eez >}} EEZ-only, {{< meta coastal_all >}} all rows | the author's design, mangrove exact |
 | crop_provision | {{< meta crop_total >}} | the reference table, after the plain-USD conversion |
 | livestock_provision | quarantined | three open method decisions |
-| coastal_protection | {{< meta cp_total >}} | fresh baseline, rerun identical |
+| coastal_protection | {{< meta cp_total >}} | our saved baseline run |
 | extractive_materials | {{< meta extractive_total >}} | the author's reference, exact |
-| renewable_energy | {{< meta renewable_total >}} | our rerun identical. OPEN: which source is current (code vs drive CSVs) |
+| renewable_energy | {{< meta renewable_total >}} | OPEN: which source is current — the code's {{< meta renewable_total >}} or the drive CSVs' {{< meta renewable_ref >}} |
 | pollination | {{< meta poll_raster >}} raster side (2023) | FAO side {{< meta poll_fao >}}, definition open |
 | erosion | {{< meta erosion_total >}} PROVISIONAL | internal reconciliation. Awaits submission |
 | landslide_mitigation | input stage complete. Full run resumes on the cluster | no machine-readable reference yet |
@@ -198,7 +198,7 @@ format:
 | sandstorm_prevention | {{< meta sandstorm_total >}} (the same workbook's dust channel) | computed in the air_filtration module |
 | water_quality | {{< meta wq_usd >}} USD and {{< meta wq_intl >}} intl$ (accounting value) | the committed chain, identities exact. The currency conversion unidentified |
 | flood_control | {{< meta flood_total >}} | the pipeline's committed output. Sums and counts match its own summary |
-| local_climate_regulation | {{< meta lcr_total >}} | the committed final. City-level pricing and version lineage verified |
+| local_climate_regulation | {{< meta lcr_total >}} | the committed final. City-level pricing exact, and the final equals the city sums |
 | extractive_energy | {{< meta xe_total >}} (gas + coal + petroleum) | the three committed fuel tables, reproduced |
 | timber_provision | {{< meta timber_total >}} | the committed Forestry output, reproduced |
 
@@ -227,7 +227,7 @@ format:
 
 ## Marine carbon: no module yet
 
-- [State: the service sheet lists Terrestrial, Coastal, and Marine carbon. We found no marine module in any repository — correct us if one exists.]{.state}
+- [State: the service sheet lists Terrestrial, Coastal, and Marine carbon. We found no marine module in any repo — correct us if one exists.]{.state}
 - **Q1:** is marine carbon in scope for the account at all, and on what horizon?
 - **Q2:** if yes, which data product drives it?
 - **Q3:** most open-ocean carbon sits in the high seas, inside no country's EEZ. Which attribution convention should a per-country account use?
@@ -269,11 +269,11 @@ format:
 - **Q1: should the RCP8.5-for-RCP7.0 substitution stand, or is there a replacement?** The 8.5 series stands in because no 7.0 series exists.
 - **Q2: which CWoN vintage produced the shock file (cwon_shocks.har)?** The valuation side is pinned by the port (CWoN 2024, FR_WLD_2024_195). The shock file's vintage is still unknown.
 - **Q3: is the CWoN method the account's fisheries GEP?** It runs at {{< meta fisheries_total >}} for 2019 across 165 countries, on the two CWoN tables copied from the public World Bank package. Needed: the source pipeline's output CSV for replication. The FishStatJ pipeline is the alternative source.
-- The subsistence component is also ported to Python: Lynch et al. (2024) consumptive-use value per country, {{< meta fisheries_subsistence_total >}} across 85 countries (Canada and China lead), replicating the source repository's committed output. Whether and how commercial and subsistence combine into the account's fisheries value is the open scope question.
+- The subsistence component is also ported to Python: Lynch et al. (2024) consumptive-use value per country, {{< meta fisheries_subsistence_total >}} across 85 countries (Canada and China lead), replicating the source repo's committed output. Whether and how commercial and subsistence combine into the account's fisheries value is the open scope question.
 
 ## recreation: ported and running
 
-- [State: ported from the source repository: seven tasks in the library template, method constants pinned by unit tests, aggregation directly on r250, data copied, first run complete. What it does: land-cover shares, protected areas and road access rank 1 km sites. A gravity model sends residents (daily) and allocated overnight stays (UNWTO — the UN World Tourism Organization's tourism statistics) into the high-quality sites. Visits are valued at national fuel cost times travel distance.]{.state}
+- [State: ported from the source repo: seven tasks in the library template, method constants pinned by unit tests, aggregation directly on r250, data copied, first run complete. What it does: land-cover shares, protected areas and road access rank 1 km sites. A gravity model sends residents (daily) and allocated overnight stays (UNWTO — the UN World Tourism Organization's tourism statistics) into the high-quality sites. Visits are valued at national fuel cost times travel distance.]{.state}
 - **The remaining need: a reference per-country output.** We could not find the source pipeline's results_by_country.csv anywhere we can reach. One copy verifies the port by replication.
 - **Q: did the travel-cost step intend kilometres?** It multiplies a USD-per-km fuel cost by a distance measured in the raster's pixel units (degrees), which understates values roughly a hundredfold. Our first run totals $1.73bn where a corrected distance would give about a hundred times more. Ported faithfully. The reference output decides.
 
@@ -332,15 +332,14 @@ format:
 
 ## flood_control: adopted from the committed pipeline
 
-- [State: new module from the drive's FINAL_GEP_FLOOD tree (December 2025 pipeline, extensive method notes, a JRC comparison for Europe). Flood hazard, JRC depth-damage functions and protection levels give expected annual damage with and without ecosystems. The committed per-country avoided damage totals {{< meta flood_total >}} in 2019 USD — 236 countries assessed, 148 non-zero — and reproduces the pipeline's own summary. The upstream geospatial chain is taken as given.]{.state}
+- [State: new module from the drive's FINAL_GEP_FLOOD tree (extensive method notes, a JRC comparison for Europe). Flood hazard, JRC depth-damage functions and protection levels give expected annual damage with and without ecosystems. The committed per-country avoided damage totals {{< meta flood_total >}} in 2019 USD — 236 countries assessed, 148 non-zero — and reproduces the pipeline's own summary. The upstream geospatial chain is taken as given.]{.state}
 - One vocabulary catch, fixed in our staging: the pipeline codes South Sudan as Natural Earth's SDS where the account's label is SSD. The mapping layer had dropped it (assessed, zero).
-- **Q1: needed — confirmation that the December 2025 outputs are the current ones**, and the vintage note for the methods writeup.
+- **Q1: needed — confirmation that the FINAL_GEP_FLOOD outputs are the current ones**, and the vintage note for the methods writeup.
 
 ## local_climate_regulation: ported
 
-- [State: new module, closing the roster's last scoped port. InVEST urban cooling gives each city-month a vegetation cooling effect. The avoided energy is priced at national electricity prices (the city-level identity is exact in the committed files). The v04 correction applies each country's own consumption per cooling-degree-day (CDD — the annual sum of how far each day's temperature exceeds an 18°C comfort base, the standard measure of cooling demand). The committed accounting total is {{< meta lcr_total >}} across 174 countries. The version lineage verifies (the December 2025 table IS the plain city sum).]{.state}
-- **Q1: needed — the IEA-CMCC 2019 cooling-degree-day file.** The energy side resolved itself: the per-capita cooling-energy build is public in the group's own repository, corrected and documented.
-- **Q2: was the committed final built with the corrected energy data?** The public energy repository documents two bugs in the original build (a denominator conflation, and a halving of the IEA cooling share). A final built on the earlier version would carry them — the answer decides whether the {{< meta lcr_total >}} stands or gets a rebuild.
+- [State: new module, closing the roster's last scoped port. InVEST urban cooling gives each city-month a vegetation cooling effect. The avoided energy is priced at national electricity prices (the city-level identity is exact in the committed files). The v04 correction applies each country's own consumption per cooling-degree-day (CDD — the annual sum of how far each day's temperature exceeds an 18°C comfort base, the standard measure of cooling demand). The committed accounting total is {{< meta lcr_total >}} across 174 countries, and the committed final equals the plain city sum.]{.state}
+- **Q1: needed — the IEA-CMCC 2019 cooling-degree-day file.** The energy side needs nothing more. The per-capita cooling-energy build is public in the group's own repo, corrected and documented.
 
 ## extractive_energy and timber_provision
 
@@ -414,13 +413,13 @@ format:
 - **renewable_energy:** code or CSVs.
 - **recreation:** one reference results_by_country.csv (the data folder is copied and the run is live).
 - **water_quality:** the USD-to-international-dollars conversion script and inputs. And the currency decision (international vs market dollars).
-- **flood_control:** confirmation that the December 2025 outputs are current.
+- **flood_control:** confirmation that the FINAL_GEP_FLOOD outputs are current.
 - **extractive_energy + timber_provision:** the upstream provenance notes (method and vintage) for the committed outputs now in the library.
 - **water_supply:** which hydropower total is the account's ({{< meta hydro_manuscript >}} direct-use vs {{< meta water_supply_total >}} CWoN rent). The reference's 17 empty countries. The water-use efficiency table. And the attribution step the water-use components still need.
 - **fire_protection:** the account's choice among the three GEP variants (the data asks are closed).
 - **air_filtration:** the VSL build behind the workbook (the folder's vsl.R is a different vintage), and the vintage of the avoided-death columns.
-- **local_climate_regulation:** the IEA-CMCC 2019 CDD file, and the answer whether the committed final used the corrected energy data.
-- **Decisions for the meeting:** pollination's definition, the shoreline convention, crop's units, the map dissolve, base year 2019, subsistence scope, marine carbon's fate, the fisheries GEP's source.
+- **local_climate_regulation:** the IEA-CMCC 2019 cooling-degree-day file.
+- **Decisions for the meeting:** pollination's definition, the shoreline convention, the map dissolve, base year 2019, subsistence scope, marine carbon's fate, the fisheries GEP's source.
 - **Every service:** a complete SI-table row (status, value info, relationships to other services). Leads for the unclaimed services. Confirmation of the next-in-line for the library.
 
 ## What happens with the answers
