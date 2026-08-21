@@ -11,5 +11,5 @@
 
 /* Uniform table size on all .smaller table slides, immune to reveal's auto-scaling. */
 .reveal .smaller table {
-  font-size: 0.65em;
+  font-size: 0.85em;
 }
