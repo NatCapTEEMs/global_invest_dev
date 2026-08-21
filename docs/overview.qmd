@@ -33,7 +33,8 @@ wq_usd: "$638.34bn"
 wq_intl: "$655.91bn"
 flood_total: "$110.59bn"
 lcr_total: "$14.19bn"
-xe_total: "$1.14T"
+xe_total: "$1,048.9bn"
+xe_committed: "$1,140.4bn"
 timber_total: "$88.74bn"
 hydro_manuscript: "$287.7bn"
 n_services_at_2019: "20"
@@ -140,6 +141,7 @@ format:
 - **{{< meta n_services >}} services are in the library.** Thirteen of them (plus the subsistence fisheries component) replicate a committed reference or the manuscript.
 - **Four await one file to finish verification** — recreation, commercial fisheries, erosion, landslide each need a reference output or input we could not find.
 - **Three carry an open source or definition question** (pollination, renewable energy, coastal protection), and **one is quarantined** (livestock, pending its method inputs).
+- **Four chain ports are in progress** — timber and flood control (their outputs already reproduce, the chains follow), and two new module skeletons with their science stages under way (non-timber forest products, stormwater). Extractive energy's chain port is complete.
 
 ## How every GEP number is built
 
@@ -199,7 +201,7 @@ format:
 | water_quality | {{< meta wq_usd >}} USD and {{< meta wq_intl >}} intl$ (accounting value) | the committed chain, identities exact. The currency conversion unidentified |
 | flood_control | {{< meta flood_total >}} | the pipeline's committed output. Sums and counts match its own summary |
 | local_climate_regulation | {{< meta lcr_total >}} | the committed final. City-level pricing exact, and the final equals the city sums |
-| extractive_energy | {{< meta xe_total >}} (gas + coal + petroleum) | the three committed fuel tables, reproduced |
+| extractive_energy | {{< meta xe_total >}} (gas + coal + petroleum) | computed from the public CWoN rent tables. The committed tables ({{< meta xe_committed >}}) double-count eight rows |
 | timber_provision | {{< meta timber_total >}} | the committed Forestry output, reproduced |
 
 ## Verification discipline, and what it caught
@@ -269,7 +271,7 @@ format:
 - **Q1: should the RCP8.5-for-RCP7.0 substitution stand, or is there a replacement?** The 8.5 series stands in because no 7.0 series exists.
 - **Q2: which CWoN vintage produced the shock file (cwon_shocks.har)?** The valuation side is pinned by the port (CWoN 2024, FR_WLD_2024_195). The shock file's vintage is still unknown.
 - **Q3: is the CWoN method the account's fisheries GEP?** It runs at {{< meta fisheries_total >}} for 2019 across 165 countries, on the two CWoN tables copied from the public World Bank package. Needed: the source pipeline's output CSV for replication. The FishStatJ pipeline is the alternative source.
-- The subsistence component is also ported to Python: Lynch et al. (2024) consumptive-use value per country, {{< meta fisheries_subsistence_total >}} across 85 countries (Canada and China lead), replicating the source repo's committed output. Whether and how commercial and subsistence combine into the account's fisheries value is the open scope question.
+- The subsistence component is also in the library (the author's script was already Python): Lynch et al. (2024) consumptive-use value per country, {{< meta fisheries_subsistence_total >}} across 85 countries (Canada and China lead), replicating the source repo's committed output. Whether and how commercial and subsistence combine into the account's fisheries value is the open scope question.
 
 ## recreation: ported and running
 
@@ -302,7 +304,7 @@ format:
 ## renewable_energy: which source is current?
 
 - [What it does: values wind, solar and geothermal electricity as production times price with a resource-rent share. State: conformed and rerun-identical at {{< meta renewable_total >}} (wind 110.31, solar 53.95, geothermal 6.56).]{.state}
-- **Q1: which is current — the code's {{< meta renewable_total >}} or the drive CSVs' {{< meta renewable_ref >}}?** More than 100 countries differ per source, both cannot be right, and the folder's "gepNEW" method note suggests the CSVs predate a revision.
+- **Q1: which is current — the code's {{< meta renewable_total >}} or the drive CSVs' {{< meta renewable_ref >}}?** More than 100 countries differ per source, both cannot be right, and the folder's "gepNEW" method note suggests the CSVs are older than the code.
 - **Q2: the sheet lists wind, solar and geothermal as three services. The library computes them in one module with per-source tables. Is one module the right structure, or would three separate ones make more sense?**
 
 ## fire_protection: three variants
@@ -343,8 +345,9 @@ format:
 
 ## extractive_energy and timber_provision
 
-- [State: two modules from committed drive outputs, both already in the account's vocabulary. EXTRACTIVE ENERGY: per-fuel valuations for natural gas, coal and petroleum, summed by the same commodity convention extractive_materials uses — {{< meta xe_total >}}, dominated by petroleum. TIMBER: the Forestry chain's per-country output, {{< meta timber_total >}} across 166 countries — and a status correction: the sheet lists timber's draft as In Progress, but its output exists and reproduces.]{.state}
-- The valuations themselves are not yet reimplemented, and the material to do it is on the drive: each fuel's method appendix (CWoN 2024 resource rents) with its input tables, and timber's appendix with the intermediate rasters (biomass, log prices, transport cost). Reimplementing both chains in the library is our queued work — no ask remains here.
+- [State: EXTRACTIVE ENERGY is now computed in the library from the public CWoN 2024 rent tables the method appendices name — gas, coal and petroleum rents at 2019, summed by the same commodity convention extractive_materials uses. TIMBER: the Forestry chain's per-country output, {{< meta timber_total >}} across 166 countries, reproduces in the library, and the chain itself is being reimplemented from the staged method appendix and intermediate rasters (biomass, log prices, transport cost) — and a status correction: the sheet lists timber's draft as In Progress, but its output exists and reproduces.]{.state}
+- **The extractive port caught a real error: eight rows of the committed tables carry another country's full value.** Christmas Island and Cocos hold Australia's rents, Bouvet and Svalbard Norway's, Tokelau New Zealand's, Western Sahara Morocco's, Palestine Israel's, and Kosovo Serbia's (the committed name column itself reads "Serbia"). The committed total of {{< meta xe_committed >}} counts those countries twice. Computed one-country-one-row, the total is {{< meta xe_total >}}.
+- **Q1: confirmation that the eight duplicated rows are a join error, and which total the account keeps.**
 
 # Cross-cutting decisions
 
@@ -411,6 +414,7 @@ format:
 - **livestock_provision:** the item list, the GLEAM feed-intake table, a confirmed reference.
 - **extractive_materials:** the source of 0.49.
 - **renewable_energy:** code or CSVs.
+- **extractive_energy:** confirmation that the eight duplicated rows are a join error, and which total the account keeps.
 - **recreation:** one reference results_by_country.csv (the data folder is copied and the run is live).
 - **water_quality:** the USD-to-international-dollars conversion script and inputs. And the currency decision (international vs market dollars).
 - **flood_control:** confirmation that the FINAL_GEP_FLOOD outputs are current.

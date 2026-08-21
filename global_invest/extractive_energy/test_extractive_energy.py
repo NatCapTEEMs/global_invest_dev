@@ -1,4 +1,4 @@
-"""Unit tests for the extractive_energy port (three committed fuel anchors)."""
+"""Unit tests for the extractive_energy port (CWoN rents computed, committed CSVs as anchors)."""
 import os
 from types import SimpleNamespace
 
@@ -32,6 +32,41 @@ def test_components_and_sum_reproduce_the_committed_anchors():
     assert out.loc[none, 'extractive_energy_gep'].isna().all()
 
 
+def test_cwon_rents_replicate_the_committed_anchors_except_named_rows():
+    """The computed valuation (CWoN <fuel>_rent_cd at YR2019) equals the committed drive
+    CSVs country by country. The exceptions are the eight rows named in the functions
+    module, which carry another country's full value in the committed CSVs."""
+    for dta, csv, vcol in (('gas_rent_cd.dta', 'gep-gas.csv', 'gep_gas'),
+                           ('coal_rent_cd.dta', 'gep-coal.csv', 'gep_coal'),
+                           ('oil_rent_cd.dta', 'gep-petrolium.csv', 'gep_oil')):
+        cwon = pd.read_stata(os.path.join(REFERENCE_DIR, dta))
+        committed = pd.read_csv(os.path.join(REFERENCE_DIR, csv))
+        computed = xe.fuel_rent_by_country_from_cwon(cwon, 2019)
+        j = committed.merge(computed, on='iso3_r250_label', how='left')
+        plain = j[~j['iso3_r250_label'].isin(xe.COMMITTED_DUPLICATE_VALUE_ROWS)
+                  & j[vcol].notna()]
+        assert len(plain) > 60
+        matched = plain.dropna(subset=['rent_cd'])
+        assert np.allclose(matched[vcol], matched['rent_cd'], rtol=1e-5)
+        # A committed value with no CWoN row outside the named duplicates would be a new
+        # unexplained source -- there are none.
+        assert plain[plain['rent_cd'].isna()][vcol].eq(0).all()
+
+
+def test_committed_duplicate_rows_equal_their_source_country():
+    """Documents the join artifact the port removes: each named row's committed value IS
+    another country's value, so the committed totals count those countries twice."""
+    for csv, vcol in (('gep-gas.csv', 'gep_gas'), ('gep-coal.csv', 'gep_coal'),
+                      ('gep-petrolium.csv', 'gep_oil')):
+        committed = pd.read_csv(os.path.join(REFERENCE_DIR, csv)).set_index('iso3_r250_label')[vcol]
+        checked = 0
+        for row, source in xe.COMMITTED_DUPLICATE_VALUE_ROWS.items():
+            if pd.notna(committed.get(row)) and committed.get(row) != 0:
+                assert committed[row] == committed[source], (row, source, vcol)
+                checked += 1
+        assert checked > 0
+
+
 def test_es_config_and_parameters_rows_hydrate_extractive_energy(tmp_path):
     from global_invest import utilities
     p = SimpleNamespace()
@@ -43,3 +78,6 @@ def test_es_config_and_parameters_rows_hydrate_extractive_energy(tmp_path):
     assert p.extractive_energy_gas_path.endswith('gep-gas.csv')
     assert p.extractive_energy_coal_path.endswith('gep-coal.csv')
     assert p.extractive_energy_oil_path.endswith('gep-petrolium.csv')
+    assert p.extractive_energy_cwon_gas_path.endswith('cwon/gas_rent_cd.dta')
+    assert p.extractive_energy_cwon_coal_path.endswith('cwon/coal_rent_cd.dta')
+    assert p.extractive_energy_cwon_oil_path.endswith('cwon/oil_rent_cd.dta')
