@@ -80,6 +80,11 @@ format:
 - Some services also produce a scenario shock for the macroeconomic pipeline. A shock exists where the scenarios' physical changes (the land-use maps or the climate pathway) reach the service's science.
 - The library is scenario agnostic. A caller supplies its own scenarios (the maps, the years and the naming) through configuration.
 
+## How every GEP number is built
+
+- Every service's number is the same construction. It multiplies a QUANTITY of service delivered by a PRICE and by NATURE'S SHARE of it, summed to one row per country.
+- The three parts differ per service (recreation's quantity is visits and its price is travel cost, livestock's nature share is the ecosystem-provided part of feed), but the construction never changes, which is why one configuration table can describe every service.
+
 ## The code structure
 
 | File | In paper terms |
@@ -115,13 +120,6 @@ format:
 - **{{< meta n_awaiting_file >}} await one file to finish verification**: recreation, commercial fisheries and landslide each need a reference output we could not find. Erosion's replication rerun is under way.
 - **{{< meta n_open_question >}} carry an open source or definition question** (pollination, renewable energy, coastal protection), and **livestock's numbers are provisional** until the feed-share attribution replaces the current crop-coefficient stand-in.
 - Two new modules are under way (non-timber forest products, stormwater).
-
-## How every GEP number is built
-
-- Every service's number is the same construction. It multiplies a QUANTITY of service delivered by a PRICE and by NATURE'S SHARE of it, summed to one row per country.
-- Worked example, terrestrial carbon: the quantity is tons of carbon stored (a density table over the land-cover map). The price is the rental social cost of carbon. Nature's share is one, because storage is entirely nature's work. Result: {{< meta terrestrial_total >}}.
-- The three parts differ per service (recreation's quantity is visits and its price is travel cost. Livestock's nature share is the ecosystem-provided part of feed), but the construction never changes, which is why one configuration table (quantity, price, attribution) can describe every service.
-- Where a part is missing or contested, that is the service's open question. The slides ahead are organized around them.
 
 ## What each service is, in one line
 
