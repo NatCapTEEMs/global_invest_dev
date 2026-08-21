@@ -21,14 +21,16 @@ erosion_total: "$15.54bn"
 livestock_ind: "$136bn"
 livestock_chn: "$838bn"
 livestock_world: "$2.29T"
-n_services: "16"
+n_services: "17"
 fisheries_total: "$29.00bn"
 fisheries_subsistence_total: "$7.92bn"
 water_supply_total: "$144.68bn"
 air_filtration_total: "$17.81bn"
 sandstorm_total: "$595.36bn"
+wq_usd: "$638.34bn"
+wq_intl: "$655.91bn"
 hydro_manuscript: "$287.7bn"
-n_services_at_2019: "15"
+n_services_at_2019: "16"
 
 format:
     revealjs:
@@ -149,6 +151,7 @@ format:
 | water_supply | hydropower component {{< meta water_supply_total >}} | the drive's committed output, replicated exactly (95 countries) |
 | air_filtration | {{< meta air_filtration_total >}} — the manuscript's number | the drive's committed workbook, replicated exactly |
 | sandstorm_prevention | {{< meta sandstorm_total >}} (the same workbook's dust channel) | computed in the air_filtration module |
+| water_quality | {{< meta wq_usd >}} USD; {{< meta wq_intl >}} intl$ (accounting value) | the committed chain, identities exact; the currency conversion unidentified |
 
 ## Verification discipline, and what it caught
 
@@ -171,6 +174,7 @@ format:
 | fire_protection | test_fire_protection.py | exact replication of the committed reference (161 countries) on every run, plus the reordered-input tripwire |
 | water_supply | test_water_supply.py | the annuity identity and exact replication of the committed output |
 | air_filtration | test_air_filtration.py | benefits and both totals against the workbook; the VSL fill rule; the positional-join guard |
+| water_quality | test_water_quality.py | the retention identities against the committed intermediates; the conversion documented as unidentified |
 | fisheries | test_fisheries_headers.py + test_fisheries.py | header resolution and the HAR read-list union; the CWoN rent-trend math against hand-derived series |
 | landslide_mitigation | — | run parameters pinned in the library tests; the science awaits the cluster run |
 | the five accounting services | — | library-wide contract tests only (next line) |
@@ -301,6 +305,12 @@ format:
 - **Q1: needed — the VSL build behind the workbook.** The folder's vsl.R documents the method (US-anchored, GDP- and life-years-adjusted) but its committed raw data is a different vintage and does not reproduce the workbook's VSL column.
 - **Q2: the vintage of the avoided-death columns** — for the record and the methods writeup.
 
+## water_quality: the chain verified, the currency open
+
+- [State: new module. The drive carries the committed chain but no script: nitrogen and phosphorus retention per country (upstream NDR-style estimation, taken as given), scaled by the AQUASTAT domestic-water-use fraction and priced at treatment cost per kilogram. Both identities replicate the committed intermediates exactly ({{< meta wq_usd >}} in 2019 USD, 209 countries). The committed accounting output is {{< meta wq_intl >}} in 2019 INTERNATIONAL dollars, 178 countries; that conversion stage is not identified from the available material (the single-factor PPP hypothesis was tested and rejected).]{.state}
+- **Q1: needed — the USD-to-international-dollars conversion script and its inputs.** The method note describes per-source-year cost harmonization the folder does not carry.
+- **Q2 (the room): the account's currency.** Water quality proposes 2019 international dollars; every other service values in 2019 market USD. One account cannot mix the two.
+
 # Cross-cutting decisions
 
 ## Four conventions the room can settle today
@@ -344,7 +354,7 @@ format:
 ## Leads, priorities, and the label typos
 
 - The sheet itself lists a category "Feasible ES with no assigned lead" — can leads be named today for the unclaimed services?
-- Which sheet services should enter the library NEXT? Recreation, fire protection, the fisheries GEP (both components), water supply's hydropower component, air filtration and sandstorm prevention came into the library this week; the two with complete SI tables and global feasibility and no module yet are Local Climate Regulation and Extractive Energy. One blocker found while auditing: the sheet's water-quality repo link points to a fork that does not contain the water-quality code — where does that pipeline actually live?
+- Which sheet services should enter the library NEXT? Recreation, fire protection, the fisheries GEP (both components), water supply's hydropower component, air filtration, sandstorm prevention and water quality came into the library this week; the two with complete SI tables and global feasibility and no module yet are Local Climate Regulation and Extractive Energy. One blocker found while auditing: the sheet's water-quality repo link points to a fork that does not contain the water-quality code — where does that pipeline actually live?
 - The sheet's label typos (wind_enery_provision and siblings) now need a coordinated fix: our configuration table's crosswalk cells reproduce them faithfully, because a crosswalk key must match the sheet as written. Ask: fix the three labels in the sheet, and we update our three cells in the same change — a two-place lockstep edit, since either alone breaks the join.
 
 # What we need
@@ -360,7 +370,7 @@ format:
 - **extractive_materials:** the source of 0.49.
 - **renewable_energy:** code or CSVs.
 - **recreation:** one reference results_by_country.csv (the data folder is staged and the run is live).
-- **water_quality:** the transformation script (its drive folder holds the output and inputs already).
+- **water_quality:** the USD-to-international-dollars conversion script and inputs; and the room's currency decision (international vs market dollars).
 - **water_supply:** which hydropower total is the account's ({{< meta hydro_manuscript >}} direct-use vs {{< meta water_supply_total >}} CWoN rent), and the reason for the reference's 17 empty countries.
 - **fire_protection:** the account's choice among the three GEP variants (the data asks are closed).
 - **air_filtration:** the VSL build behind the workbook (the folder's vsl.R is a different vintage), and the vintage of the avoided-death columns.

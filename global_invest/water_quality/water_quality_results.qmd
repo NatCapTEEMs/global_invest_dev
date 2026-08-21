@@ -1,0 +1,66 @@
+---
+format:
+  html:
+    embed-resources: true
+    standalone: true
+execute:
+  echo: false          # results report shows tables/figures, not code
+  warning: false
+---
+
+# Water Quality Results
+
+Text describing it. To be written by the service team (science source: the drive's committed retention chain and method notes).
+
+```{python}
+#| output: false
+
+### SETUP CODE: Runs the whole model if it doesn't exist, else loads the results.
+
+import os
+import pandas as pd
+import hazelbean as hb
+
+from global_invest.water_quality import water_quality_initialize
+
+if __name__ == '__main__':
+
+    p = hb.ProjectFlow()
+    p.project_name = 'gep_water_quality'
+    p.project_dir = os.path.join(os.path.expanduser('~'), 'Files', 'global_invest', 'projects', p.project_name)
+    p.set_project_dir(p.project_dir)
+
+    water_quality_initialize.build_gep_service_calculation_task_tree(p)
+
+    p.results = {}
+
+    hb.log('Created ProjectFlow object at ' + p.project_dir + '\n    from script ' + p.calling_script + '\n    with base_data set at ' + p.base_data_dir)
+    p.execute()
+```
+
+```{python}
+#| output: false
+
+### DISPLAY SETUP CODE
+
+import pandas as pd
+import os
+import hazelbean as hb
+
+pd.set_option('display.float_format', '{:,.2f}'.format)
+pd.set_option('display.max_rows', 1000)
+
+service_label = 'water_quality'
+
+df = hb.df_read(p.results[service_label]['gep_by_country_base_year'])
+total_usd = df['water_quality_gep_usd'].sum()
+total_intl = df['water_quality_gep'].sum()
+p.gep_by_country_base_year_table = df[['iso3_r250_name', 'nitrogen_gep_usd', 'phosphorus_gep_usd', 'water_quality_gep']]
+```
+
+The analysis values water purification as nutrient retention priced at treatment cost: nitrogen and phosphorus retention per country, scaled by the AQUASTAT domestic-water-use fraction and priced per kilogram, totalling $`{python} f"{total_usd:,.0f}"` in 2019 USD across 209 countries. The committed accounting output expresses the service in 2019 INTERNATIONAL dollars — $`{python} f"{total_intl:,.0f}"` across 178 countries — and that conversion stage is not yet identified from the available material; the USD chain replicates the committed intermediates exactly.
+
+## GEP by Country in Base Year
+```{python}
+p.gep_by_country_base_year_table
+```
