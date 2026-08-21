@@ -207,13 +207,13 @@ format:
 
 ## terrestrial_carbon: verified against the manuscript
 
-- [State: GEP replicates the manuscript to the dollar, {{< meta terrestrial_total >}} at 2019.]{.state}
+- [What it does: sums the carbon stored by land ecosystems (a zone-by-class density table on the land-cover map) and prices it at the rental social cost of carbon. State: GEP replicates the manuscript to the dollar, {{< meta terrestrial_total >}} at 2019.]{.state}
 - A double-count in the code overstated its total by 23.5 percent (split countries entered once per sub-region — China six times); the corrected aggregation reproduces the manuscript to the dollar.
 - **No open questions.** This service is the template the others are held to.
 
 ## coastal_carbon: seaward pixels only, or the full habitat?
 
-- [State: replicates the author's design, mangrove component to the cent. One run, two totals: {{< meta coastal_eez >}} counting ocean-side rows only, {{< meta coastal_all >}} counting both sides.]{.state}
+- [What it does: sums the carbon stored in mangroves, salt marshes and seagrass (mapped habitat times per-habitat density) and prices it like terrestrial carbon. State: replicates the author's design, mangrove component to the cent. One run, two totals: {{< meta coastal_eez >}} counting ocean-side rows only, {{< meta coastal_all >}} counting both sides.]{.state}
 - **Q1 (design):** was EEZ-only chosen to avoid double-counting the landward pixels with terrestrial carbon? Most of the mapped habitat sits landward of the shoreline (97.5 percent of mangrove area, 84 percent of salt marsh), so including it multiplies the total by 4.5.
 - **Q2 (inputs):** which exact seagrass and salt marsh input versions produced the report's {{< meta coastal_report >}}? Our replication gives {{< meta coastal_eez >}} with mangrove matching to the cent, and the report's own seagrass area (62.21 Mha) exceeds the published range it cites (16 to 26.7 Mha).
 - **Q3: if both sides count, a landward mask must prevent double-counting with terrestrial carbon — does one exist?**
@@ -228,14 +228,14 @@ format:
 
 ## pollination: which definition is the GEP?
 
-- [State: built on the template and running; aggregation verified. Two defensible definitions, 28 times apart. NOT yet at the account's 2019 base year (the August 31 alignment): the value raster is 2023, and its regeneration at 2019 follows the definition decision.]{.state}
+- [What it does: values the crop production attributable to wild pollinators — a sufficiency-weighted value raster built from pollinator habitat around cropland. State: built on the template and running; aggregation verified. Two defensible definitions, 28 times apart. NOT yet at the account's 2019 base year (the August 31 alignment): the value raster is 2023, and its regeneration at 2019 follows the definition decision.]{.state}
 - **Q1:** is pollination's GEP the service nature currently delivers ({{< meta poll_raster >}}, the sufficiency-weighted raster) or the production value at stake ({{< meta poll_fao >}}, dependence-weighted FAO value)? The country ranking is identical; only the definition differs.
 - **Q2:** the rasters on hand are 2023 and the account values at 2019. We would regenerate at 2019 once the definition is settled — and we can: the generation recipe is on hand.
 - Erosion's GEP records the habitat-supplied share, so the raster-side definition is the internally consistent choice.
 
 ## erosion: interim inputs
 
-- [State: the full chain runs end to end and reconciles internally at {{< meta erosion_total >}}, PROVISIONAL. Sections A and B verified structurally; the valuation runs on interim inputs we built ourselves.]{.state}
+- [What it does: values the soil that land cover keeps in place — prevented erosion mapped by the SDR model, valued through crop productivity. State: the full chain runs end to end and reconciles internally at {{< meta erosion_total >}}, PROVISIONAL. Sections A and B verified structurally; the valuation runs on interim inputs we built ourselves.]{.state}
 - **Q1: needed — the exact FAO production-value and price series the submitted paper used.** Our chain runs on interim series we built ourselves; every number moves when the originals replace them.
 - **Q2: needed — a per-country output table from the submission run.** With it we verify by exact replication, as extractive_materials was.
 - Could it be at `/projects/standard/jajohns/shared/sediment_gep` on MSI — and can we get it? One copy settles both questions.
@@ -251,13 +251,13 @@ format:
 
 ## landslide_mitigation: running on the cluster
 
-- [State: folded from the v0.2.0 release with its input data staged. The input stage is complete (all twelve global reprojections and the event panels); the compute-heavy remainder is running on the cluster.]{.state}
+- [What it does: models slope stability with and without forest root cohesion, turns the difference into avoided landslide deaths, and values them at a value of a statistical life. State: folded from the v0.2.0 release with its input data staged. The input stage is complete (all twelve global reprojections and the event panels); the compute-heavy remainder is running on the cluster.]{.state}
 - **Q1: needed — one machine-readable per-country output from a v0.2.0 run; a CSV is enough.** With it, our run is checked country by country against the original.
 - **Q2: which input versions did the run behind the v0.2.0 release use?**
 
 ## fisheries: the RCP substitution
 
-- [State: the shock file derives from DBEM (Cheung 2021), built from CWoN inputs. The GEP valuation is ported to Python from the source repo's 2026 CWoN-method script — FAO-based economic rent from the CWoN 2024 reproducibility package (FR_WLD_2024_195), deflated to 2019 USD, extrapolated to 2019 by each country's own 2009–2018 trend, floored at zero — PROVISIONAL until the source choice is confirmed.]{.state}
+- [What it does: values commercial capture fisheries as the economic rent of the catch, and subsistence fisheries as the consumptive-use value of home catch. The shock file derives from DBEM (Cheung 2021), built from CWoN inputs. The GEP valuation is ported to Python from the source repo's 2026 CWoN-method script — FAO-based economic rent from the CWoN 2024 reproducibility package (FR_WLD_2024_195), deflated to 2019 USD, extrapolated to 2019 by each country's own 2009–2018 trend, floored at zero — PROVISIONAL until the source choice is confirmed.]{.state}
 - **Q1: should the RCP8.5-for-RCP7.0 substitution stand, or is there a replacement?** The 8.5 series stands in because no 7.0 series exists.
 - **Q2: which CWoN vintage produced the shock file (cwon_shocks.har)?** The valuation side is pinned by the port (CWoN 2024, FR_WLD_2024_195); the shock file's vintage is still unknown.
 - **Q3: is the CWoN method the account's fisheries GEP?** It runs at {{< meta fisheries_total >}} for 2019 across 165 countries, led by Indonesia, on the two CWoN tables provisionally staged from the public World Bank package. Needed: the source pipeline's output CSV for replication; the FishStatJ pipeline is the alternative source.
@@ -271,31 +271,31 @@ format:
 
 ## crop_provision: thousand-USD units
 
-- [State: replicates its reference to the float.]{.state}
+- [What it does: values crop production from FAOSTAT production values (quantity times producer price per country). State: replicates its reference to the float.]{.state}
 - **Q1: label crop's thousand-USD column, or convert it to plain USD and regenerate the reference?** The column is FAOSTAT-native thousand-USD; converting it would align crop with every other service.
 - **Q2: can we confirm whether FAOSTAT's production values already include imputed subsistence output?** We will check the coverage definition — if they do, subsistence agriculture is already inside crop's number and the remaining work is labeling.
 
 ## livestock_provision: three open method decisions
 
-- [State: QUARANTINED numbers, but the service's method repo answers more than we hoped — and step 1 of that method is already implemented as a draft: with its 65 FAO item codes replacing the stale 29-name list, India recovers from zero to {{< meta livestock_ind >}}, China reads {{< meta livestock_chn >}}, and the world total {{< meta livestock_world >}}, all PROVISIONAL pending the lambda input. The old name list matched only 13 of its own 29 items against current FAO files.]{.state}
+- [What it does: values livestock production and attributes to nature the share of feed ecosystems provide. State: QUARANTINED numbers, but the service's method repo answers more than we hoped — and step 1 of that method is already implemented as a draft: with its 65 FAO item codes replacing the stale 29-name list, India recovers from zero to {{< meta livestock_ind >}}, China reads {{< meta livestock_chn >}}, and the world total {{< meta livestock_world >}}, all PROVISIONAL pending the lambda input. The old name list matched only 13 of its own 29 items against current FAO files.]{.state}
 - **Q1: is the method repo's meat/milk/other item grouping current, and does milk belong as it suggests?** The library's 29-item meats-and-eggs list (which captures 4 percent of India's FAO livestock value) appears to be a stale fork of it.
 - **Q2: is the intended nature share the GLEAM-3 feed-share lambda (GLEAM — FAO's Global Livestock Environmental Assessment Model): ecosystem-provided feed over total feed, per country, as the repo's lambda.py computes?** If so, the answer is neither crop's coefficients nor pasture rents, and we implement it.
 - **Q3: needed — the GLEAM input (gleam3_dmi.xlsx) and one per-country output table.** Neither is in the repo; with both, the method lands in the library verified by exact replication.
 
 ## coastal_protection: two totals
 
-- [State: verified by identical rerun at {{< meta cp_total >}} (2019, mangrove and coral avoided damage).]{.state}
+- [What it does: values the storm damage mangroves and corals prevent along coastlines (avoided expected damage from the CWoN data). State: verified by identical rerun at {{< meta cp_total >}}.]{.state}
 - **Q1: which data or code state produced the {{< meta cp_alt >}} recorded in the code's own comment?** It is roughly double our verified {{< meta cp_total >}}, and published anchors fit both. If that run's inputs still exist, one rerun settles it.
 - Our leading suspect, for what it is worth: coral rows already at year 2019 double-counted by the 2012-to-2019 deflation step.
 
 ## extractive_materials: what does 0.49 mean?
 
-- [State: exact per-country replication of the reference, including the rendered tables.]{.state}
+- [What it does: values mineral extraction as the resource-rent share of mining output. State: per-country replication of the reference, including the rendered tables.]{.state}
 - **Q1: what is the source or derivation of the 0.49 factor?** The valuation multiplies mineral rents times GDP by it, unsourced in code, submission, and notes; without it the total would be {{< meta extractive_alt >}} instead of {{< meta extractive_total >}}. The arithmetic is verified; the meaning of the number is not.
 
 ## renewable_energy: two sources, two totals
 
-- [State: conformed and rerun-identical at {{< meta renewable_total >}} (wind 110.31, solar 53.95, geothermal 6.56).]{.state}
+- [What it does: values wind, solar and geothermal electricity as production times price with a resource-rent share. State: conformed and rerun-identical at {{< meta renewable_total >}} (wind 110.31, solar 53.95, geothermal 6.56).]{.state}
 - **Q1: which is current — the code's {{< meta renewable_total >}} or the drive CSVs' {{< meta renewable_ref >}}?** More than 100 countries differ per source, both cannot be right, and the folder's "gepNEW" method note suggests the CSVs predate a revision.
 - **Q2: does the crosswalk satisfy the sheet's wind/solar/geothermal split, or does anyone want separate modules?** The module already computes all three and writes per-source tables.
 
