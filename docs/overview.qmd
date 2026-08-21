@@ -162,32 +162,32 @@ format:
 
 Full per-service status, one row per sheet service, updated as work lands: [the library status sheet](https://docs.google.com/spreadsheets/d/1sQOUT7TRKVLxc-TSfPWeuCFm0vwk-6iLk-AnA6jyEiY).
 
-| Service | Total | Verified against |
+| Service | Total | Verification |
 |---|---|---|
-| terrestrial_carbon | {{< meta terrestrial_total >}} | the manuscript, to the dollar |
-| coastal_carbon | {{< meta coastal_eez >}} EEZ-only, {{< meta coastal_all >}} all rows | the author's design, mangrove exact |
-| crop_provision | {{< meta crop_total >}} | the reference table, after the plain-USD conversion |
+| terrestrial_carbon | {{< meta terrestrial_total >}} | reproduces the manuscript's total |
+| coastal_carbon | {{< meta coastal_eez >}} EEZ-only, {{< meta coastal_all >}} all rows | reproduces the author's reported numbers |
+| crop_provision | {{< meta crop_total >}} | reproduces the reference table after the plain-USD conversion |
 | livestock_provision | provisional | steps one and two are in the code. The feed-share attribution and a reference output remain |
-| coastal_protection | {{< meta cp_total >}} | our saved baseline run |
-| extractive_materials | {{< meta extractive_total >}} | the author's reference, exact |
-| renewable_energy | {{< meta renewable_total >}} | OPEN: which source is current, the code's {{< meta renewable_total >}} or the drive CSVs' {{< meta renewable_ref >}} |
-| pollination | {{< meta poll_raster >}} raster side (2023) | FAO side {{< meta poll_fao >}}, definition open |
+| coastal_protection | {{< meta cp_total >}} | reproduces our saved baseline run. No author reference exists |
+| extractive_materials | {{< meta extractive_total >}} | reproduces the author's reference table |
+| renewable_energy | {{< meta renewable_total >}} | the code and the drive CSVs disagree ({{< meta renewable_total >}} vs {{< meta renewable_ref >}}), and which is current is the open question |
+| pollination | {{< meta poll_raster >}} raster side (2023) | the FAO side gives {{< meta poll_fao >}}, and the definition decision is open |
 | erosion | {{< meta erosion_total >}} PROVISIONAL | our own run. The rerun with the author's original inputs from the drive is under way |
-| landslide_mitigation | {{< meta landslide_total >}} ({{< meta landslide_deaths >}} avoided deaths) | the first full run, complete on the cluster. No machine-readable reference yet |
-| fisheries | shock + commercial GEP {{< meta fisheries_total >}} PROVISIONAL + subsistence {{< meta fisheries_subsistence_total >}} | CWoN tables in place, run live (reference still needed). Subsistence replicates its committed output |
+| landslide_mitigation | {{< meta landslide_total >}} ({{< meta landslide_deaths >}} avoided deaths) | the first full run is complete on the cluster. No reference output exists to compare against yet |
+| fisheries | shock + commercial GEP {{< meta fisheries_total >}} PROVISIONAL + subsistence {{< meta fisheries_subsistence_total >}} | the commercial run has no reference output yet. Subsistence reproduces the source repo's committed output |
 
 ## Services and totals (continued) {.smaller}
 
-| Service | Total | Verified against |
+| Service | Total | Verification |
 |---|---|---|
-| recreation | ported. Data in place, first run complete | tests pin the method. No external anchor yet |
-| fire_protection | three variants. Account variant open | full from-raw replication (panel copied from the drive), to the float |
-| water_supply | hydropower component {{< meta water_supply_total >}} | the drive's committed output, replicated (95 countries) |
-| air_filtration | {{< meta air_filtration_total >}}, the manuscript's number | the drive's committed workbook, replicated to the float |
-| sandstorm_prevention | {{< meta sandstorm_total >}} (the same workbook's dust channel) | computed in the air_filtration module |
-| water_quality | {{< meta wq_usd >}} USD and {{< meta wq_intl >}} intl$ (accounting value) | the committed chain, identities exact. The currency conversion unidentified |
+| recreation | ported. Data in place, first run complete | the method is unit-tested. The author's output table is not reachable, so nothing to compare against yet |
+| fire_protection | three variants. Account variant open | reproduces the source repo's committed output from the raw inputs |
+| water_supply | hydropower component {{< meta water_supply_total >}} | reproduces the drive's committed output for the 95 valued countries |
+| air_filtration | {{< meta air_filtration_total >}}, the manuscript's number | reproduces the drive's committed workbook and the manuscript's total |
+| sandstorm_prevention | {{< meta sandstorm_total >}} (the same workbook's dust channel) | reproduces the same workbook's dust channel |
+| water_quality | {{< meta wq_usd >}} USD and {{< meta wq_intl >}} intl$ (accounting value) | reproduces the committed intermediate tables. The currency conversion stays unidentified |
 | flood_control | {{< meta flood_total >}} | the full 250-country recompute reproduces the pipeline's table, Morocco excepted |
-| local_climate_regulation | {{< meta lcr_total >}} | the committed final. City-level pricing exact, and the final equals the city sums |
+| local_climate_regulation | {{< meta lcr_total >}} | reproduces the committed final, which equals the city sums |
 | extractive_energy | {{< meta xe_total >}} (gas + coal + petroleum) | computed from the public CWoN rent tables. The committed tables ({{< meta xe_committed >}}) double-count eight rows |
 | timber_provision | {{< meta timber_total >}} | recomputed from the drive's net-return raster. All 166 countries match the committed output |
 
