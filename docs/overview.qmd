@@ -21,7 +21,7 @@ erosion_total: "$15.54bn"
 livestock_ind: "$136bn"
 livestock_chn: "$838bn"
 livestock_world: "$2.29T"
-n_services: "17"
+n_services: "18"
 fisheries_total: "$29.00bn"
 fisheries_subsistence_total: "$7.92bn"
 water_supply_total: "$144.68bn"
@@ -31,8 +31,9 @@ air_filtration_total: "$17.81bn"
 sandstorm_total: "$595.36bn"
 wq_usd: "$638.34bn"
 wq_intl: "$655.91bn"
+flood_total: "$110.59bn"
 hydro_manuscript: "$287.7bn"
-n_services_at_2019: "16"
+n_services_at_2019: "17"
 
 format:
     revealjs:
@@ -154,6 +155,7 @@ format:
 | air_filtration | {{< meta air_filtration_total >}} — the manuscript's number | the drive's committed workbook, replicated exactly |
 | sandstorm_prevention | {{< meta sandstorm_total >}} (the same workbook's dust channel) | computed in the air_filtration module |
 | water_quality | {{< meta wq_usd >}} USD; {{< meta wq_intl >}} intl$ (accounting value) | the committed chain, identities exact; the currency conversion unidentified |
+| flood_control | {{< meta flood_total >}} | the pipeline's committed output; sums and counts match its own summary exactly |
 
 ## Verification discipline, and what it caught
 
@@ -286,6 +288,12 @@ format:
 - **Q1: needed — the USD-to-international-dollars conversion script and its inputs.** The method note describes per-source-year cost harmonization the folder does not carry.
 - **Q2: the account's currency.** Water quality proposes 2019 international dollars; every other service values in 2019 market USD. One account cannot mix the two.
 
+## flood_control: the committed pipeline, adopted whole
+
+- [State: new module from the drive's FINAL_GEP_FLOOD tree (December 2025 pipeline, extensive method notes, a JRC comparison for Europe). Flood hazard, JRC depth-damage functions and protection levels give expected annual damage with and without ecosystems; the committed per-country avoided damage totals {{< meta flood_total >}} in 2019 USD — 236 countries assessed, 148 non-zero — and reproduces the pipeline's own summary exactly. The upstream geospatial chain is taken as given.]{.state}
+- One vocabulary catch, fixed in our staging: the pipeline codes South Sudan as Natural Earth's SDS where the account's label is SSD; the mapping layer had dropped it (assessed, zero).
+- **Q1: needed — confirmation that the December 2025 outputs are the current ones**, and the vintage note for the methods writeup.
+
 # Cross-cutting decisions
 
 ## Four conventions the room can settle today
@@ -346,6 +354,7 @@ format:
 - **renewable_energy:** code or CSVs.
 - **recreation:** one reference results_by_country.csv (the data folder is staged and the run is live).
 - **water_quality:** the USD-to-international-dollars conversion script and inputs; and the room's currency decision (international vs market dollars).
+- **flood_control:** confirmation that the December 2025 outputs are current.
 - **water_supply:** which hydropower total is the account's ({{< meta hydro_manuscript >}} direct-use vs {{< meta water_supply_total >}} CWoN rent); the reference's 17 empty countries; the water-use efficiency table; and the attribution step the water-use components still need.
 - **fire_protection:** the account's choice among the three GEP variants (the data asks are closed).
 - **air_filtration:** the VSL build behind the workbook (the folder's vsl.R is a different vintage), and the vintage of the avoided-death columns.
@@ -374,6 +383,7 @@ format:
 | water_supply | the annuity identity and exact replication of the committed output |
 | air_filtration | benefits and both totals against the workbook; the VSL fill rule; the positional-join guard |
 | water_quality | the retention identities against the committed intermediates; the conversion documented as unidentified |
+| flood_control | the anchor against the pipeline's own global summary: total, assessed count, zero count |
 | fisheries | header resolution and the HAR read-list union; the CWoN rent-trend math on series small enough to compute by hand |
 | landslide_mitigation | run parameters only; the science awaits the cluster run |
 | the five accounting services | the shared library tests only |
