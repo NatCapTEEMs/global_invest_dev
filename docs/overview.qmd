@@ -114,7 +114,7 @@ format:
 
 - **{{< meta n_services >}} services are in the library.** {{< meta n_replicating >}} of them (plus the subsistence fisheries component) replicate a committed reference or the manuscript.
 - **{{< meta n_awaiting_file >}} await one file to finish verification**: recreation, commercial fisheries and landslide each need a reference output we could not find. Erosion's replication rerun is under way.
-- **{{< meta n_open_question >}} carry an open source or definition question** (pollination, renewable energy, coastal protection), and **one is quarantined** (livestock, pending its method inputs).
+- **{{< meta n_open_question >}} carry an open source or definition question** (pollination, renewable energy, coastal protection), and **livestock's numbers are provisional**, pending its method inputs.
 - **{{< meta n_ports_done >}} chain ports are complete and verified**: extractive energy (computed from the public CWoN rent tables), timber (the value raster and all 166 country sums reproduce), and flood control (the full 250-country recompute reproduces the pipeline's table). Two new module skeletons have their science stages under way (non-timber forest products, stormwater), and landslide's first full run is complete on the cluster.
 
 ## How every GEP number is built
@@ -159,7 +159,7 @@ format:
 | terrestrial_carbon | {{< meta terrestrial_total >}} | the manuscript, to the dollar |
 | coastal_carbon | {{< meta coastal_eez >}} EEZ-only, {{< meta coastal_all >}} all rows | the author's design, mangrove exact |
 | crop_provision | {{< meta crop_total >}} | the reference table, after the plain-USD conversion |
-| livestock_provision | quarantined | steps one and two are in the code. The method inputs remain |
+| livestock_provision | provisional | steps one and two are in the code. The method inputs remain |
 | coastal_protection | {{< meta cp_total >}} | our saved baseline run |
 | extractive_materials | {{< meta extractive_total >}} | the author's reference, exact |
 | renewable_energy | {{< meta renewable_total >}} | OPEN: which source is current, the code's {{< meta renewable_total >}} or the drive CSVs' {{< meta renewable_ref >}} |
@@ -258,7 +258,7 @@ format:
 
 ## livestock_provision: three open method decisions
 
-- [What it does: values livestock production and attributes to nature the share of feed ecosystems provide. State: QUARANTINED numbers, but the service's method repo answers more than we hoped, and step 1 of that method is already implemented as a draft: with its 65 FAO item codes replacing the stale 29-name list, India recovers from zero to {{< meta livestock_ind >}}, China reads {{< meta livestock_chn >}}, and the world total {{< meta livestock_world >}}, all PROVISIONAL pending the lambda input. The old name list matched only 13 of its own 29 items against current FAO files.]{.state}
+- [What it does: values livestock production and attributes to nature the share of feed ecosystems provide. State: PROVISIONAL numbers. The service's method repo answers more than we hoped, and step 1 of that method is already implemented as a draft: with its 65 FAO item codes replacing the stale 29-name list, India recovers from zero to {{< meta livestock_ind >}}, China reads {{< meta livestock_chn >}}, and the world total {{< meta livestock_world >}}, all PROVISIONAL pending the lambda input. The old name list matched only 13 of its own 29 items against current FAO files.]{.state}
 - **Q1: is the method repo's meat/milk/other item grouping current, and does milk belong as it suggests?** The library's 29-item meats-and-eggs list (which captures 4 percent of India's FAO livestock value) appears to be a stale fork of it.
 - **Q2: is the intended nature share the GLEAM-3 feed-share lambda (GLEAM, FAO's Global Livestock Environmental Assessment Model): ecosystem-provided feed over total feed, per country, as the repo's lambda.py computes?** That construction is now implemented in the library and unit-tested on sample inputs. The answer decides whether it replaces the current crop-coefficient stand-in.
 - **Q3: needed, one per-country output table, to verify the method by replication.** The remaining input takes care of itself: the GLEAM intake data (how much feed livestock consume per country and from which sources, grass and roughage versus crops and concentrates) is public behind FAO's dashboard, so we download it and build the lambda ourselves.
