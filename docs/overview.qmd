@@ -61,7 +61,7 @@ format:
 ## One module per service: GEP always, a shock where the science allows
 
 - The library holds one folder per ecosystem service, all on the same file convention.
-- Eleven of the twelve services carry their GEP valuation in the library; fisheries' is still external.
+- Twelve of the thirteen services carry their GEP valuation in the library; fisheries' is still external.
 - Services whose science supports it also produce a scenario shock for the macroeconomic pipeline; not all can be made into shocks.
 - Where both outputs exist, they are written from the same science, so the valuation and the shock cannot drift apart.
 - The library is scenario agnostic. Consumers inject their naming through scenario maps and required configuration.
@@ -138,6 +138,7 @@ format:
 | landslide_mitigation | input stage complete; full run resumes on the cluster | no machine-readable reference yet |
 | fisheries | shock only | valuation external (CWoN) |
 | recreation | ported this week, awaiting its data | tests pin the method; no external anchor yet |
+| fire_protection | three variants; account variant open | the repo's committed output, reproduced to the float |
 
 ## Verification discipline, and what it caught
 
@@ -157,6 +158,7 @@ format:
 | pollination | test_pollination.py | end-to-end on a tiny value raster through real zonal statistics; a split country sums once |
 | erosion | test_erosion.py | the valuation arithmetic itself (loaders mocked): elasticity shock, clipping, floor, GPV shares |
 | recreation | test_recreation.py | every method constant against hand-derived values: matrices, ring kernels, gravity model, allocation |
+| fire_protection | test_fire_protection.py | exact replication of the committed reference (161 countries) on every run, plus the reordered-input tripwire |
 | fisheries | test_fisheries_headers.py | climate-label header resolution and the HAR read-list union |
 | landslide_mitigation | — | run knobs pinned in the library tests; the science awaits the cluster run |
 | the five accounting services | — | library-wide contract tests only (next line) |
@@ -263,12 +265,18 @@ format:
 - **Q1: which is blessed — the code's {{< meta renewable_total >}} or the drive CSVs' {{< meta renewable_ref >}}?** More than 100 countries differ per source, both cannot be right, and the folder's "gepNEW" method note suggests the CSVs predate a revision.
 - **Q2 (the room): Does the crosswalk satisfy the sheet's wind/solar/geothermal split, or does anyone want separate modules?** The module already computes all three and writes per-source tables.
 
+## fire_protection: ported — a variant to bless and a file to stage
+
+- [State: ported from the GEP wildfire repo's R pipeline. Per-country fire-persistence regressions (committed in the source repo) give three betas: baseline persistence, the nature-vs-human CAUSE difference, and the nature-vs-human AREA difference. Each beta times the country's 2018 burned area gives avoided acres in 2019, valued at EM-DAT wildfire damage per burned acre. The port reproduces the repo's committed per-country output to the float, 161 countries; the replication runs inside the test suite, so it re-verifies on every change.]{.state}
+- **Q1: which of the three GEP variants is the account's fire_protection value?** Baseline persistence totals −$22.4bn and the cause difference −$1.3bn — both globally negative — while the area comparison totals +$16.7bn. The choice sets both the number and its sign; the cause difference is the module's provisional default, marked as such.
+- **Q2: needed — the ADM2 burned-area panel** (gadm_adm2_panel_complete_2010_2023.csv; the repo's own data README points to a drive download). The regression results and the EM-DAT extract are committed and staged; with the panel, burned-area aggregates and damage rates regenerate from raw instead of the frozen reference columns.
+
 # Cross-cutting decisions
 
 ## Four conventions the room can settle today
 
 - **Maps:** country values on split-country polygons render partially (China shows one sixth). We propose dissolving to one polygon per country, a one-time cartographic artifact that can never double-count. Any objection?
-- **Base year:** eleven of twelve services value at 2019; pollination's raster is 2023 and gets regenerated after its definition is settled. Confirm 2019 as the account's base year.
+- **Base year:** twelve of thirteen services value at 2019; pollination's raster is 2023 and gets regenerated after its definition is settled. Confirm 2019 as the account's base year.
 - **Subsistence:** crop, livestock, and fisheries carry subsistence subgroups in the service sheet. In scope or not, per service?
 - **The universe crosswalk:** the sheet lists roughly 26 services; the library covers ten. We propose a tested crosswalk table (sheet label to module to output) instead of restructuring modules to mirror the sheet. And the sheet's label typos should be fixed before anything inherits them.
 
@@ -306,7 +314,7 @@ format:
 ## Leads, priorities, and the label typos
 
 - The sheet itself lists a category "Feasible ES with no assigned lead" — can leads be named today for the unclaimed services?
-- Which sheet services should enter the library NEXT? Recreation's module came in this week (previous slide), which leaves two with complete SI tables and global feasibility and no module yet: Local Climate Regulation and Extractive Energy. One blocker found while auditing: the sheet's water-quality repo link points to a fork that does not contain the water-quality code — where does that pipeline actually live?
+- Which sheet services should enter the library NEXT? Recreation and fire protection came into the library this week (their slides above); the two with complete SI tables and global feasibility and no module yet are Local Climate Regulation and Extractive Energy. One blocker found while auditing: the sheet's water-quality repo link points to a fork that does not contain the water-quality code — where does that pipeline actually live?
 - The sheet's label typos (wind_enery_provision and siblings) now need a coordinated fix: our configuration table's crosswalk cells reproduce them faithfully, because a crosswalk key must match the sheet as written. Ask: fix the three labels in the sheet, and we update our three cells in the same change — a two-place lockstep edit, since either alone breaks the join.
 
 # What we need
@@ -323,6 +331,7 @@ format:
 - **renewable_energy:** code or CSVs.
 - **recreation:** the Recreation/data folder staged, and one reference results_by_country.csv.
 - **water_quality:** where the pipeline's code actually lives (the sheet's link doesn't contain it).
+- **fire_protection:** the ADM2 burned-area panel (its repo's own README names the drive download), and the account's choice among the three GEP variants.
 - **air_filtration:** where the code lives — the manuscript already carries its total, so one pointer to the pipeline makes it next into the library.
 - **local_climate_regulation:** which entry point and script versions in the urban-cooling repo are canonical (several live side by side), and where its runs happen.
 - **The room:** pollination's definition, the shoreline convention, crop's units, the map dissolve, base year 2019, subsistence scope, marine carbon's fate, the fisheries GEP's source.

@@ -11,4 +11,5 @@ fisheries,fish_provision,,,,,,,,,
 erosion,erosion_control,,,,,,,,cartographic/ee/ee_r264_correspondence.gpkg,ee_r264_id
 landslide_mitigation,landslide_mitigation,,,,landslide_mitigation/input_data_raw,,,,cartographic/ee/ee_r264_correspondence.gpkg,ee_r264_id
 recreation,recreation_tourism,,2019,travel cost,,,,,cartographic/ee/ee_r250.gpkg,iso3_r250_id
+fire_protection,fire_protection,,2019,avoided damage,,,,,,
 example_service,,,,,,,,lulc/esa/seals7/lulc_esa_seals7_2017.tif,,
