@@ -141,7 +141,7 @@ format:
 | fisheries | commercial capture-fisheries rent. Subsistence catch value |
 | crop_provision | the value of crop production |
 
-: {tbl-colwidths="[28,72]"}
+: {tbl-colwidths="[30,70]"}
 
 ## What each service is (continued) {.smaller}
 
@@ -155,7 +155,7 @@ format:
 | fire_protection | wildfire damage avoided by nature's fire regulation |
 | water_supply | hydropower rent, and water withdrawal priced by sector |
 
-: {tbl-colwidths="[28,72]"}
+: {tbl-colwidths="[30,70]"}
 
 ## What each service is (continued) {.smaller}
 
@@ -169,7 +169,7 @@ format:
 | extractive_energy | fossil-fuel resource rents (gas, coal, petroleum) |
 | timber_provision | the net value of timber harvests, after harvest and transport costs |
 
-: {tbl-colwidths="[28,72]"}
+: {tbl-colwidths="[30,70]"}
 
 ## Services and totals (base year 2019) {.smaller}
 
@@ -179,11 +179,13 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 |---|---|---|
 | terrestrial_carbon | {{< meta terrestrial_total >}} | reproduces the manuscript's total |
 | coastal_carbon | {{< meta coastal_eez >}} EEZ-only, {{< meta coastal_all >}} all rows | reproduces the author's reported numbers |
-| crop_provision | {{< meta crop_total >}} | reproduces the reference table after the plain-USD conversion |
-| livestock_provision | provisional | the product list and the feed-share formula are implemented. The number still uses the old attribution until the GLEAM intake data and a reference output arrive |
-| coastal_protection | {{< meta cp_total >}} | rerunning gives the same numbers. No author output exists to compare against |
+| crop_provision | {{< meta crop_total >}} | reproduces the reference table |
+| livestock_provision | provisional | awaits the GLEAM intake data and a reference output |
+| coastal_protection | {{< meta cp_total >}} | gives the same numbers on rerun. No author output exists |
 | extractive_materials | {{< meta extractive_total >}} | reproduces the author's reference table |
-| renewable_energy | {{< meta renewable_total >}} | the code and the drive CSVs disagree ({{< meta renewable_total >}} vs {{< meta renewable_ref >}}), and which is current is the open question |
+| renewable_energy | {{< meta renewable_total >}} | the code and the drive's reference CSVs give different values. The open question is which one is current |
+
+: {tbl-colwidths="[22,32,46]"}
 
 ## Services and totals (continued) {.smaller}
 
@@ -197,6 +199,8 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 | fire_protection | {{< meta fire_cause_total >}} provisional, the default of three variants | reproduces the source repo's committed output from the raw inputs |
 | water_supply | hydropower component {{< meta water_supply_total >}} | reproduces the drive's committed output for the 95 valued countries |
 
+: {tbl-colwidths="[22,32,46]"}
+
 ## Services and totals (continued) {.smaller}
 
 | Service | Total | Verification |
@@ -208,6 +212,8 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 | local_climate_regulation | {{< meta lcr_total >}} | reproduces the committed final |
 | extractive_energy | {{< meta xe_total >}} (gas + coal + petroleum) | computed from the public CWoN rent tables. The committed tables ({{< meta xe_committed >}}) double-count eight rows |
 | timber_provision | {{< meta timber_total >}} | recomputed from the drive's net-return raster. All 166 countries match the committed output |
+
+: {tbl-colwidths="[22,32,46]"}
 
 # The questions, service by service
 

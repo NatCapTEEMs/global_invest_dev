@@ -12,4 +12,8 @@
 /* Uniform table size on all .smaller table slides, immune to reveal's auto-scaling. */
 .reveal .smaller table {
   font-size: 0.85em;
+  width: 100%;
+}
+.reveal .smaller table td, .reveal .smaller table th {
+  padding: 0.5em 0.5em;
 }
