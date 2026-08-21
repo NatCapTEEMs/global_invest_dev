@@ -341,7 +341,8 @@ format:
 ## local_climate_regulation: ported
 
 - [State: new module, closing the roster's last scoped port. InVEST urban cooling gives each city-month a vegetation cooling effect. The avoided energy is priced at national electricity prices (the city-level identity is exact in the committed files). The v04 correction applies each country's own consumption per cooling-degree-day (CDD — the annual sum of how far each day's temperature exceeds an 18°C comfort base, the standard measure of cooling demand). The committed accounting total is {{< meta lcr_total >}} across 174 countries. The version lineage verifies (the December 2025 table IS the plain city sum).]{.state}
-- **Q1: needed — the correction's two inputs**: the IEA-CMCC 2019 cooling-degree-day file and the v2_nkd energy workbook (the drive's copied energy CSV is a different vintage and does not validate them). With both, the correction reproduces from raw.
+- **Q1: needed — the IEA-CMCC 2019 cooling-degree-day file.** The energy side resolved itself: the per-capita cooling-energy build is public in the group's own repository, corrected and documented.
+- **Q2: was the committed final built with the corrected energy data?** The public energy repository documents two bugs in the original build (a denominator conflation, and a halving of the IEA cooling share). A final built on the earlier version would carry them — the answer decides whether the {{< meta lcr_total >}} stands or gets a rebuild.
 
 ## extractive_energy and timber_provision
 
@@ -421,7 +422,7 @@ format:
 - **water_supply:** which hydropower total is the account's ({{< meta hydro_manuscript >}} direct-use vs {{< meta water_supply_total >}} CWoN rent). The reference's 17 empty countries. The water-use efficiency table. And the attribution step the water-use components still need.
 - **fire_protection:** the account's choice among the three GEP variants (the data asks are closed).
 - **air_filtration:** the VSL build behind the workbook (the folder's vsl.R is a different vintage), and the vintage of the avoided-death columns.
-- **local_climate_regulation:** the correction's two inputs (the IEA-CMCC 2019 CDD file and the v2_nkd energy workbook) for from-raw reproduction.
+- **local_climate_regulation:** the IEA-CMCC 2019 CDD file, and the answer whether the committed final used the corrected energy data.
 - **Decisions for the meeting:** pollination's definition, the shoreline convention, crop's units, the map dissolve, base year 2019, subsistence scope, marine carbon's fate, the fisheries GEP's source.
 - **Every service:** a complete SI-table row (status, value info, relationships to other services). Leads for the unclaimed services. Confirmation of the next-in-line for the library.
 
