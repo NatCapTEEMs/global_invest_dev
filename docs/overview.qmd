@@ -21,6 +21,9 @@ erosion_total: "$15.54bn"
 livestock_ind: "$136bn"
 livestock_chn: "$838bn"
 livestock_world: "$2.29T"
+n_services: "13"
+fisheries_total: "$29.00bn"
+n_services_at_2019: "12"
 
 format:
     revealjs:
@@ -56,7 +59,7 @@ format:
 ## One module per service: GEP always, a shock where the science allows
 
 - The library holds one folder per ecosystem service, all on the same file convention.
-- Every one of the thirteen services now carries its GEP method in the library; fisheries and recreation still await their input data.
+- Every one of the {{< meta n_services >}} services now carries its GEP method in the library; recreation still awaits its input data.
 - Services whose science supports it also produce a scenario shock for the macroeconomic pipeline; not all can be made into shocks.
 - Where both outputs exist, they are written from the same science, so the valuation and the shock cannot drift apart.
 - The library is scenario agnostic. Consumers inject their naming through scenario maps and required configuration.
@@ -131,7 +134,7 @@ format:
 | pollination | {{< meta poll_raster >}} raster side (2023) | FAO side {{< meta poll_fao >}}, definition open |
 | erosion | {{< meta erosion_total >}} PROVISIONAL | internal reconciliation; awaits submission |
 | landslide_mitigation | input stage complete; full run resumes on the cluster | no machine-readable reference yet |
-| fisheries | shock + GEP method in, awaiting its data | CWoN 2024 method ported; no data staged, no reference yet |
+| fisheries | shock + GEP {{< meta fisheries_total >}} PROVISIONAL | CWoN 2024 tables staged (public download), run live; reference output still needed |
 | recreation | ported this week, awaiting its data | tests pin the method; no external anchor yet |
 | fire_protection | three variants; account variant open | the repo's committed output, reproduced to the float |
 
@@ -219,7 +222,7 @@ format:
 - [State: the shock file derives from DBEM (Cheung 2021), built from CWoN inputs. The GEP valuation is now IN the library too: ported to Python from the source repo's 2026 CWoN-method script — FAO-based economic rent from the CWoN 2024 reproducibility package (FR_WLD_2024_195), deflated to 2019 USD, extrapolated to 2019 by each country's own 2009–2018 trend, floored at zero — PROVISIONAL until the source choice is blessed.]{.state}
 - **Q1: should the RCP8.5-for-RCP7.0 substitution stand, or is there a replacement?** The 8.5 series stands in because no 7.0 series exists — defensible, but currently discoverable rather than stated.
 - **Q2: which CWoN vintage is behind the HAR file?** The GEP side's vintage is now pinned by the port (CWoN 2024, FR_WLD_2024_195); the shock-HAR side is still open.
-- **Q3: is the CWoN method the account's fisheries GEP?** The method is implemented in the library, marked provisional; the FishStatJ pipeline is the alternative source. Needed to run and verify it: the two CWoN rent tables (a public World Bank download) and the source pipeline's output CSV as the replication anchor.
+- **Q3: is the CWoN method the account's fisheries GEP?** The method is implemented in the library and runs: {{< meta fisheries_total >}} for 2019, 165 countries with values, Indonesia first. The two CWoN tables are staged from the public World Bank package; marked provisional. Needed: the source pipeline's output CSV as the replication anchor — and the blessing (the FishStatJ pipeline is the alternative source).
 - Settled convention (20 Aug): **fisheries is an ecosystem service and stays in the nature family** — it enters the cc_es pass alongside carbon, pollination and erosion, and is not part of the just_cc runs, even though its shock varies only with the climate pathway. Its unusual boundary property — RCP-driven, no land-use map — is a characteristic, not an open question.
 - The subsistence repo carries a per-country output table, so the subsistence scope question has an existing product to evaluate.
 
@@ -271,7 +274,7 @@ format:
 ## Four conventions the room can settle today
 
 - **Maps:** country values on split-country polygons render partially (China shows one sixth). We propose dissolving to one polygon per country, a one-time cartographic artifact that can never double-count. Any objection?
-- **Base year:** twelve of thirteen services value at 2019; pollination's raster is 2023 and gets regenerated after its definition is settled. Confirm 2019 as the account's base year.
+- **Base year:** {{< meta n_services_at_2019 >}} of {{< meta n_services >}} services value at 2019; pollination's raster is 2023 and gets regenerated after its definition is settled. Confirm 2019 as the account's base year.
 - **Subsistence:** crop, livestock, and fisheries carry subsistence subgroups in the service sheet. In scope or not, per service?
 - **The universe crosswalk:** the sheet lists roughly 26 services; the library covers ten. We propose a tested crosswalk table (sheet label to module to output) instead of restructuring modules to mirror the sheet. And the sheet's label typos should be fixed before anything inherits them.
 
@@ -318,7 +321,7 @@ format:
 
 - **coastal_carbon:** the shoreline rationale, and the seagrass and marsh input versions behind {{< meta coastal_report >}}.
 - **landslide_mitigation:** one machine-readable v0.2.0 output, and its input versions.
-- **fisheries:** bless the RCP substitution; name the shock-HAR's CWoN vintage; bless (or replace) the CWoN-method GEP now in the library, and stage its two CWoN tables plus one reference output.
+- **fisheries:** bless the RCP substitution; name the shock-HAR's CWoN vintage; bless (or replace) the CWoN-method GEP now running in the library, and share one reference output for exact replication.
 - **erosion:** the submission's valuation inputs and a reference output.
 - **livestock_provision:** the item list, the pasture rents, a blessed reference.
 - **coastal_protection:** which run produced {{< meta cp_alt >}}.
