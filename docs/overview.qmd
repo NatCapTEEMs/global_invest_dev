@@ -104,21 +104,6 @@ format:
 - Each service module serves two callers. The GEP account reads the valuation (one row per country), and the macroeconomic pipeline reads the scenario shock (a table of productivity deviations).
 - Both read the same functions file, so a change to the science reaches the account and the scenarios at once.
 
-## The configuration table itself (es_config.csv)
-
-- One row per service. The GEP formula has a column each (Q = quantity input, P = price input, λ = attribution input), and the rest are the land base and the crosswalk to this group's status sheet. An empty cell means the input does not apply.
-
-| service | sheet crosswalk | base year | price convention | Q | P | λ | land |
-|---|---|---|---|---|---|---|---|
-| terrestrial_carbon | global_climate_regulation / terrestrial | 2019 | rental scc r2% | carbon zones raster | prices xlsx | | esa 2019 |
-| coastal_carbon | global_climate_regulation / coastal | 2019 | rental scc r2% | | prices xlsx | | |
-| pollination | pollination | 2023 | | value raster | | | |
-| renewable_energy | wind + solar + geothermal | | | IRENA production | WB prices | CWON rents | |
-| extractive_materials | extractive_materials_provision | | | WB GDP | | WB rents share | |
-| coastal_protection | coastal_protection | | | CWoN mangroves | | | |
-
-- Seven more rows (crop and livestock as the sheet's commercial subgroups, fish_provision, erosion_control, landslide, recreation_tourism, fire_protection) carry their crosswalk. The three newest arrived with their base-year and price-convention cells filled. Every row is under test the moment it is edited.
-
 # Where things stand
 
 ## The state in numbers
@@ -426,6 +411,21 @@ format:
 - A caller grafts a service with one call (add_\<service\>_tasks(p) after its land-use step), and the service's tasks slot into the caller's own task tree.
 - A CSV cell is a default. The caller's configuration prevails over the shipped CSVs, so the library never needs to know its callers' naming.
 - The standalone runners use the same graft, so a bug found and fixed in a service's own run is fixed in the pipeline too. Nothing changes between the two.
+
+## The configuration table (es_config.csv)
+
+- One row per service. The GEP formula has a column each (Q = quantity input, P = price input, λ = attribution input), plus the land base, the base year and the price convention. The full CSV also carries the crosswalk to this group's status sheet. An empty cell means the input does not apply.
+
+| service | base year | price convention | Q | P | λ | land |
+|---|---|---|---|---|---|---|
+| terrestrial_carbon | 2019 | rental scc r2% | carbon zones raster | prices xlsx | | esa 2019 |
+| coastal_carbon | 2019 | rental scc r2% | | prices xlsx | | |
+| pollination | 2023 | | value raster | | | |
+| renewable_energy | 2019 | | IRENA production | WB prices | CWON rents | |
+| extractive_materials | 2019 | | WB GDP | | WB rents share | |
+| coastal_protection | 2019 | | CWoN mangroves | | | |
+
+- The remaining services' rows follow the same columns. Blank price-convention cells fill as each module's convention is named. Every row is under test the moment it is edited.
 
 ## What the tests pin, per service
 
