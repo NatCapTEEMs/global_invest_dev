@@ -97,7 +97,7 @@ format:
 - es_config.csv: one row per service, with the GEP formula (quantity, price, attribution) plus the land base, the base year, the price convention and the crosswalk to the status sheet.
 - es_scenarios_test.csv: the standard SEALS scenarios, with matching test maps shipped, so a standalone shock run works on any machine.
 - es_parameters.csv: the run parameters and the references to each service's data.
-- Results aggregate to one row per country (r250). Sub-national tables (r264, marine r566) serve as computation surfaces and maps. Their rows are never summed into totals.
+- Results aggregate to one row per country (r250). Sub-national tables (r264, marine r566) serve as computation surfaces and maps.
 
 ## How a run finds its data
 
