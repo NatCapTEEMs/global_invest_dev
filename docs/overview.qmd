@@ -93,7 +93,7 @@ format:
 - Every service's number is the same construction. It multiplies a QUANTITY of service delivered by a PRICE and by NATURE'S SHARE of it, summed to one row per country.
 - The three parts differ per service (recreation's quantity is visits and its price is travel cost, livestock's nature share is the ecosystem-provided part of feed), but the construction never changes, which is why one configuration table can describe every service.
 
-## The code structure
+## The code structure {.smaller}
 
 | File | In paper terms |
 |---|---|
