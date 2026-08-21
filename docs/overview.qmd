@@ -62,9 +62,8 @@ format:
 
 ## Why one reviewed library
 
-- Different GEP service models were developed by different contributors in different repositories, with their own layout, path conventions and aggregation choices.
-- The library brings them into one repository with one layout: every service runs the same way, reproduces its numbers on rerun, and writes the same per-country table the GEP account reads.
-- A GEP account changes decisions only if every number can be traced to the model that produced it. The totals table carries each service's verification status.
+- Different contributors developed the GEP service models in different repositories, each with its own layout, path conventions and aggregation choices.
+- The library brings them into one repository with one layout: every service runs the same way and writes the same per-country table the GEP account reads.
 - Central banks and finance ministries are asked to price nature risk, and the scenarios they use carry no ecosystem-service feedback. The pipeline this library feeds adds one.
 
 # What global_invest is
@@ -72,27 +71,28 @@ format:
 ## One module per service
 
 - The library holds one folder per ecosystem service, all on the same file convention.
-- Every one of the {{< meta n_services >}} services now carries its GEP method in the library, with its input data copied into the shared base data.
-- Services whose science supports it also produce a scenario shock for the macroeconomic pipeline. Not all can be made into shocks.
-- A service with both outputs computes them from the same functions file — one implementation, so the valuation and the shock cannot disagree.
-- The library is scenario agnostic: a caller injects its own scenario naming through scenario maps and configuration.
+- {{< meta n_services >}} services carry their GEP method in the library, with their input data in the shared base data.
+- Some services also produce a scenario shock for the macroeconomic pipeline. A shock needs a lever the scenarios can move — the land-use maps or the climate pathway — and not every service has one.
+- A service with both outputs computes them from the same functions file, so the valuation and the shock rely on the same science.
+- The library is scenario agnostic: a caller supplies its own scenarios — the maps, the years and the naming — through configuration.
 
-## The mental model: a service module reads like a paper
+## The code structure: a service module reads like a paper
 
 | File | In paper terms |
 |---|---|
 | functions.py | The equations — pure science. Knows nothing about folders or projects. |
-| tasks.py | The estimation steps — each caches its output and skips itself when already done. |
-| initialize.py | The table of contents, plus the plug other pipelines graft in. |
-| run_\<service\>.py | The main script — opens a workspace and goes. Thin on purpose. |
-| method.qmd | The methods section — rendered from the code. |
+| tasks.py | The estimation steps, run in order — each writes one output. |
+| initialize.py | The table of contents — the list of steps, and the entry point other pipelines call. |
+| run_\<service\>.py | The main script — opens a workspace and runs the steps. |
+| method.qmd | The written explanation of the method. |
 
+- A service with a shock has a second runner for it, run_\<service\>_shock.py — one runner per task tree.
 - The three CSVs are the calibration tables. es_config states what each model reads and how it prices. es_scenarios states which scenarios and maps, and es_parameters holds the run parameters and machine locations.
-- One rule ties data to code: a CSV cell is a default, and whatever the caller already set prevails.
+- A CSV cell is a default, and whatever the caller already set prevails.
 
 ## The template every service follows
 
-- One runner per task tree, and every run file shares one anatomy: build_task_tree names the pipeline, tasks publish their own inputs, and the runner stays thin.
+- One runner per task tree, and every run file shares one anatomy: build_task_tree names the pipeline and tasks publish their own inputs.
 - Configuration is data, in two shared CSVs.
 - es_config.csv: one row per service, in the GEP formula's own vocabulary — quantity, price, attribution, land base, base year, price convention — plus the crosswalk to the status sheet.
 - es_scenarios_test.csv: the standard SEALS scenarios, with matching test maps shipped, so a standalone shock run works on any machine.
