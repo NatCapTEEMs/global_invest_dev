@@ -499,3 +499,43 @@ def hydrate_es_scenarios(p, log=print):
             str(row['scenario_label']): str(row['climate_label'])
             for _, row in non_baseline.iterrows() if pd.notna(row.get('climate_label'))}
     return p
+
+
+def raster_sum(raster_path, block_rows=2048):
+    """Nodata-safe sum of a raster's first band, read blockwise so global rasters fit in
+    memory. Promotion candidate to hazelbean (no equivalent found there on 2026-08-21)."""
+    import numpy as np
+    from osgeo import gdal
+    gdal.UseExceptions()
+    ds = gdal.Open(raster_path)
+    band = ds.GetRasterBand(1)
+    ndv = band.GetNoDataValue()
+    total = 0.0
+    for y in range(0, band.YSize, block_rows):
+        rows = min(block_rows, band.YSize - y)
+        array = band.ReadAsArray(0, y, band.XSize, rows).astype('float64')
+        if ndv is not None:
+            array[array == ndv] = 0.0
+        array[~np.isfinite(array)] = 0.0
+        total += array.sum()
+    return total
+
+
+def assert_zonal_conservation(country_totals_sum, raster_path, service, lower=0.95, upper=1.001):
+    """The conservation invariant for a value-raster country aggregation: the country sums must
+    add up to the raster's own total. A shortfall beyond `lower` means value fell outside every
+    polygon (or zones were dropped). An excess beyond `upper` means DOUBLE-COUNTING -- the exact
+    failure the split-country guard exists for. Verified at 100.0000% on pollination's real
+    raster before being encoded here."""
+    import hazelbean as hb
+    total = raster_sum(raster_path)
+    if total == 0:
+        raise ValueError(f'{service}: conservation check impossible, the raster sums to zero.')
+    coverage = country_totals_sum / total
+    hb.log(f'{service}: zonal conservation {coverage:.4%} of the raster total.')
+    if not (lower <= coverage <= upper):
+        raise ValueError(
+            f'{service}: country sums are {coverage:.4%} of the raster total '
+            f'(allowed {lower:.0%} to {upper:.1%}). Above 100% means double-counting; '
+            f'far below means dropped value.')
+    return coverage

@@ -227,6 +227,11 @@ def pollination_value_by_region(p):
         region_boundary_path=p.gep_regions_input_path,
         out_path=p.pollination_value_by_region_path,
         year=p.gep_base_year, id_column=p.gep_regions_id_col)
+    # Full-scale conservation: the region sums must add up to the raster's own total
+    # (verified at 100.0000% on the real raster when this check was added).
+    df_regions = pd.read_csv(p.pollination_value_by_region_path)
+    utilities.assert_zonal_conservation(df_regions['total'].sum(),
+                                        p.gep_quantity_input_path, 'pollination')
     return True
 
 
