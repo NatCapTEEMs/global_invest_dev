@@ -281,7 +281,7 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 
 - [Values crop production from FAOSTAT production values (quantity times producer price per country), and it reproduces the reference table.]{.state}
 - FAOSTAT already counts part of subsistence output, so a separate subsistence-crop value would double-count it.
-- **No open questions.**
+- **Q1:** does the account add crop_provision and pollination? Crop multiplies production value by the CWoN land rental rate, and pollination values the crop production attributable to wild pollinators, so both attribute part of the same output to nature.
 
 ## livestock_provision
 
