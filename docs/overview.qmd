@@ -269,13 +269,14 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 - **Q1:** should the RCP8.5-for-RCP7.0 substitution stand, or is there a replacement?
 - **Q2:** which CWoN vintage produced the shock file (cwon_shocks.har)?
 - **Q3:** is the CWoN method the account's fisheries GEP? It runs across 165 countries on the two CWoN tables from the public WB package, and the FishStatJ pipeline is the alternative source. Do you have the source pipeline's output CSV, for replication?
-- The subsistence component is also in the library. It is the Lynch et al. (2024) consumptive-use value per country across 85 countries, and it replicates the source repo's committed output. Whether and how commercial and subsistence combine into the account's fisheries value is the open scope question.
+- The subsistence component is also in the library. It is the Lynch et al. (2024) consumptive-use value per country across 85 countries, and it replicates the source repo's committed output.
+- **Q4:** how do commercial and subsistence combine into the account's fisheries value?
 
 ## recreation
 
-- [Ranks 1 km sites by land-cover shares, protected areas and road access. A gravity model sends residents (daily) and allocated overnight stays (UNWTO, the UN World Tourism Organization's statistics) into the high-quality sites, and visits are valued at national fuel cost times travel distance. Ported from the source repo, and the first run is complete.]{.state}
-- **The remaining need is a reference per-country output.** We could not find the source pipeline's results_by_country.csv anywhere we can reach. One copy verifies the port by replication.
-- **Q:** did the travel-cost step intend kilometres? It multiplies a USD-per-km fuel cost by a distance measured in the raster's pixel units (degrees), which understates values roughly a hundredfold. The port keeps the source's arithmetic, and the reference output decides.
+- [Ranks 1 km sites by land-cover shares, protected areas and road access. A gravity model sends residents (daily) and allocated overnight stays (UNWTO) into the high-quality sites, and visits are valued at national fuel cost times travel distance. Ported from the source repo.]{.state}
+- **Q1:** do you have the source pipeline's results_by_country.csv? We could not find it anywhere we can reach, and one copy verifies the port by replication.
+- **Q2:** did the travel-cost step intend kilometres? It multiplies a USD-per-km fuel cost by a distance measured in the raster's pixel units (degrees), which understates values roughly a hundredfold. The port keeps the source's arithmetic, and the reference output decides.
 
 ## crop_provision
 
