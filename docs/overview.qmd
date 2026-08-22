@@ -280,15 +280,15 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 ## crop_provision
 
 - [Values crop production from FAOSTAT production values (quantity times producer price per country), and it reproduces the reference table.]{.state}
-- Adding a separate subsistence-crop service would double-count, because FAOSTAT's production values already include part of what households grow and eat themselves.
+- The service sheet lists subsistence as a crop subgroup, but adding it as a separate service would double-count, because FAOSTAT's production values already include part of what households grow and eat themselves.
 - **Q1:** does the GEP total add crop_provision and pollination? Crop multiplies production value by the CWoN land rental rate, and pollination values the crop production attributable to wild pollinators, so both attribute part of the same output to nature.
 
 ## livestock_provision
 
 - [Values livestock production and attributes to nature the share of feed ecosystems provide. The product list and the feed-share formula are implemented, and the numbers stay provisional until the feed-share attribution replaces the current stand-in.]{.state}
 - With the 65 FAO item codes, India recovers from zero to {{< meta livestock_ind >}} and the world total reads {{< meta livestock_world >}}, both provisional.
-- **Q1:** is the method repo's meat/milk/other item grouping current, and does milk belong as it suggests? The library's 29-item meats-and-eggs list (which captures 4 percent of India's FAO livestock value) appears to be a stale fork of it.
-- **Q2:** is the intended nature share the GLEAM-3 feed-share lambda (GLEAM, FAO's Global Livestock Environmental Assessment Model): ecosystem-provided feed over total feed, per country, as the repo's lambda.py computes?
+- **Q1:** should milk and the other missing products count as livestock production? The library's old list covered meat and eggs only and captured 4 percent of India's FAO livestock value, while the method repo's list of 65 products includes milk.
+- **Q2:** is nature's share the part of livestock feed that comes from ecosystems (grass, leaves, crop residues, by-products) rather than from crops and concentrates? That is what the method repo's lambda.py computes, and it would replace the land rental rate the module uses now.
 - **Q3:** do you have a per-country output table, to verify by replication? FAO's dashboard serves the intake data one selection at a time, and its table carries six feed categories where the method repo's extract carries eight, so we need that extract (gleam3_dmi.xlsx).
 
 ## coastal_protection
