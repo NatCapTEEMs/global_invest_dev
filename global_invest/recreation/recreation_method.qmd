@@ -45,9 +45,10 @@ into one visit total per cell.
 
 The population raster is residents for daily recreation. For tourism it is
 `allocate_overnights_raster`, which spreads each country's UNWTO overnight total proportionally
-over that country's hotel pixels. `clean_unwto_data` builds the overnight panel from the domestic
-and inbound accommodation sheets, locating each sheet's data by its AFGHANISTAN header row and
-preferring the Total row over Hotels-and-similar where Total exists.
+over that country's hotel pixels. `read_unwto_sheets` in the task module locates each sheet's data
+by its AFGHANISTAN header row, and `clean_unwto_data` builds the overnight panel from the domestic
+and inbound accommodation sheets, preferring the Total row over Hotels-and-similar where Total
+exists.
 `build_country_overnights_map` sums domestic and international overnights per country at the
 target year.
 

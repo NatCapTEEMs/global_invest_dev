@@ -14,6 +14,7 @@ import pandas as pd
 import pytest
 
 from global_invest.recreation import recreation_functions as rf
+from global_invest.recreation import recreation_tasks as rt
 
 
 def test_environment_class_matches_hand_derived_bins():
@@ -118,6 +119,54 @@ def test_unwto_extraction_tidies_the_sheet_layout():
     assert set(tidy['overnight_type']) == {'Total', 'Hotels and similar establishments'}
     assert tidy['overnights'].tolist() == [200.0, 150.0]
     assert (tidy['iso3_r250_id'] == 8.0).all() and (tidy['year'] == 2019).all()
+
+
+def _unwto_sheet(total_overnights, hotel_overnights):
+    """One accommodation sheet as read_unwto_sheets hands it over: two countries, each with a
+    Total row and a Hotels row, and the merged cells under a country name arriving as NaN. The
+    second country always reports a Total, which is what holds the Total column open in the
+    pivot when the first country's Total is missing."""
+    return pd.DataFrame({
+        'C.': [8.0, np.nan, 12.0, np.nan],
+        'Basic data and indicators': ['ALBANIA', np.nan, 'BELGIUM', np.nan],
+        'Unnamed: 5': ['Total', 'Hotels and similar establishments'] * 2,
+        'Unnamed: 6': ['Overnights'] * 4,
+        '2019': [total_overnights, hotel_overnights, 400.0, 300.0]})
+
+
+def test_clean_unwto_data_prefers_the_total_row_and_falls_back_to_hotels():
+    panel = rf.clean_unwto_data({'domestic': _unwto_sheet(200.0, 150.0),
+                                 'international': _unwto_sheet(np.nan, 50.0)})
+    albania = panel[panel['iso3_r250_id'] == 8.0].iloc[0]
+    assert albania['overnights_domestic'] == 200.0        # Total present, so Total is used
+    assert albania['overnights_international'] == 50.0    # Total missing, so Hotels stands in
+    assert albania['hotel_overnights_domestic'] == 150.0
+
+
+def test_task_reader_finds_each_sheet_header_below_the_banner_row(tmp_path):
+    """The sheets open with a banner row, so a straight read puts the banner in the header and
+    the real header in the first row. The country column is what locates the table."""
+    path = str(tmp_path / 'unwto_all_data.xlsx')
+    with pd.ExcelWriter(path) as writer:
+        for tourism_type, sheet_name in rf.UNWTO_ACCOMMODATION_SHEETS.items():
+            total = 200.0 if tourism_type == 'domestic' else np.nan
+            pd.DataFrame([
+                ['UNWTO country data', None, None, None, None, None, None, None],
+                ['S.', 'x', 'C.', 'Basic data and indicators', 'y', None, None, 2019],
+                [1, None, 4, rf.UNWTO_FIRST_COUNTRY, None, 'Total', 'Overnights', total],
+                [None, None, None, None, None, 'Hotels and similar establishments',
+                 'Overnights', 150.0],
+                [2, None, 8, 'ALBANIA', None, 'Total', 'Overnights', 400.0],
+                [None, None, None, None, None, 'Hotels and similar establishments',
+                 'Overnights', 300.0],
+            ]).to_excel(writer, sheet_name=sheet_name, header=False, index=False)
+
+    sheets = rt.read_unwto_sheets(path)
+    assert sorted(sheets) == ['domestic', 'international']
+    panel = rf.clean_unwto_data(sheets)
+    afghanistan = panel[panel['iso3_r250_id'] == 4.0].iloc[0]
+    assert afghanistan['overnights_domestic'] == 200.0
+    assert afghanistan['overnights_international'] == 150.0
 
 
 def _write_tif(path, array, nodata=-9999.0):

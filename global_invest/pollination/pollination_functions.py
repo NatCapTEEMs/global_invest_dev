@@ -1,16 +1,12 @@
 """Pollination science: a thin driver over William Sidemo-Holm's crop_benefits chain, plus the
-frame arithmetic the two shock tasks and the GEP valuation share.
+frame and array arithmetic the two shock tasks and the GEP valuation share.
 
 The raster science (300 m sufficiency, 5 km valuation, PNAS diff) is imported unchanged from
-crop_benefits; the driver functions at the bottom only run it per scenario on our SEALS maps and
-zonal-aggregate the diff to GTAP r50xAEZ regions, reproducing the percent change definition in
-his pnas_ngfs pipeline (crop_benefits/project_flow/pnas_ngfs.py, which is not part of the
-installed package).
-
-Everything above the driver section is pure frame arithmetic over per-zone series and needs
-neither crop_benefits nor a raster, which is what the tests exercise. The crop_benefits and
-raster imports are made inside the driver functions so that importing this module (or running the
-static shock task, which needs none of it) does not require the package to be installed.
+crop_benefits; the driver functions at the bottom only run it per scenario on our SEALS maps,
+and the task layer reads the rasters it leaves behind. Nothing here opens a file: the zonal step
+takes the arrays in and hands per-zone series back, which is what the tests exercise. The
+crop_benefits imports are made inside the driver functions so that importing this module (or
+running the static shock task, which needs none of it) does not require the package installed.
 """
 import os
 from pathlib import Path
@@ -27,6 +23,68 @@ POLLINATION_ATTR_COLS = ['iso3_r250_id', 'iso3_r250_label', 'iso3_r250_name',
 # The zonal percent changes arrive already expressed in percent, so a percent change of x means a
 # growth factor of 1 + x/100.
 PERCENT = 100.0
+
+# The zone the shock is reported on: one GTAP r50 region crossed with one AEZ18 band. The
+# boundary carries this id plus the two columns the (ENDW, REG) key is built from.
+REGION_ID_FIELD = 'ee_r50_aez18_id'
+AEZ_ID_COLUMN = 'aez18_id'
+REGION_LABEL_COLUMN = 'gtapv7_r50_label'
+ENDW_LABEL_FORMAT = 'AEZ%d'
+
+# The zonal rasters are geographic, and the burned zone raster reserves this id for the cells
+# that fall outside every zone.
+LATLON_EPSG = 4326
+NO_ZONE_ID = 0
+
+
+# =============================================================================
+# Zonal arithmetic. The task reads the rasters and burns the zone ids; this
+# turns those arrays into one percent change and one absolute value per zone.
+# =============================================================================
+
+def zone_labels_from_boundary(gdf_boundary):
+    """Zone id -> the (ENDW, REG) pair every shock row is keyed on.
+
+    Args:
+        gdf_boundary (pd.DataFrame): the r50xAEZ boundary attributes, carrying REGION_ID_FIELD,
+            AEZ_ID_COLUMN and REGION_LABEL_COLUMN. One row per zone is kept.
+
+    Returns:
+        dict: zone id -> (ENDW, REG), in the boundary's own row order.
+    """
+    unique_zones = gdf_boundary.drop_duplicates(REGION_ID_FIELD).set_index(REGION_ID_FIELD)
+    return {int(zone_id): (ENDW_LABEL_FORMAT % int(row[AEZ_ID_COLUMN]), row[REGION_LABEL_COLUMN])
+            for zone_id, row in unique_zones.iterrows()}
+
+
+def zonal_pct_change(diff_arr, baseline_arr, area_arr, zones_arr, zone_labels):
+    """Per zone, the percent change in pollination value AND the absolute baseline value.
+
+    The second costs nothing to compute because it is the DENOMINATOR of the first (the baseline
+    pollination-value raster summed over the zone, weighted by pixel area, in target-year USD).
+    GEP wants the level, the economic model wants the ratio, so returning both means one task
+    serves both rather than two chains recomputing the same rasters. A zone with no baseline value
+    is dropped from both series: there is nothing for a change to be a share of.
+
+    Args:
+        diff_arr (np.ndarray): the scenario-minus-baseline value raster, nodata as NaN.
+        baseline_arr (np.ndarray): the baseline value raster on the same grid, nodata as NaN.
+        area_arr (np.ndarray): pixel area in km2 on the same grid.
+        zones_arr (np.ndarray): the zone id burned onto the same grid, NO_ZONE_ID outside.
+        zone_labels (dict): zone id -> (ENDW, REG).
+
+    Returns:
+        tuple: (pct_change, baseline_value_usd) as two aligned pd.Series keyed on (ENDW, REG).
+    """
+    pct_change, baseline_value = {}, {}
+    for zone_id, key in zone_labels.items():
+        mask = zones_arr == zone_id
+        denominator = np.nansum(baseline_arr[mask] * area_arr[mask])
+        if not denominator:
+            continue
+        pct_change[key] = np.nansum(diff_arr[mask] * area_arr[mask]) / denominator * PERCENT
+        baseline_value[key] = denominator
+    return pd.Series(pct_change), pd.Series(baseline_value)
 
 
 # =============================================================================
@@ -185,7 +243,7 @@ def expand_country_values_to_regions(df_regions, df_gep_by_country):
 
 # =============================================================================
 # Driver over the crop_benefits raster chain. Nothing below here is arithmetic
-# this module owns; it runs the imported science and aggregates its output.
+# this module owns; it runs the imported science and names what it left behind.
 # =============================================================================
 
 def configure_crop_benefits(p, target_year):
@@ -226,11 +284,11 @@ def baseline_denominator(cfg, baseline_lulc_path, target_year):
     return cfg.outputs.pollination_sufficiency / f'value_pollination_sufficiency_{BASELINE_LABEL}_5km.tif'
 
 
-def scenario_region_pct_change(cfg, scenario, lulc_path, baseline_lulc_path,
-                               denominator_path, correspondence_gpkg, target_year):
-    """Per-region % change of pollination value, scenario vs 2023 baseline (stable cropland only).
+def scenario_diff_raster(cfg, scenario, lulc_path, baseline_lulc_path, target_year):
+    """The 5 km scenario-minus-baseline value raster, on cropland stable across the two maps.
 
-    Returns (pct_change, baseline_value_usd); see _zonal_pct_change for why the level comes free.
+    Returns the path crop_benefits wrote it to; the task reads it and hands the array to
+    zonal_pct_change.
     """
     from crop_benefits.pollination.sufficiency_poll import (
         run_pollination_sufficiency_300m_stable_ag, run_pollination_sufficiency_5km)
@@ -245,54 +303,7 @@ def scenario_region_pct_change(cfg, scenario, lulc_path, baseline_lulc_path,
         run_pollination_valuation_5km(cfg, scenario=suff_scen, target_year=target_year)
 
     suff_dir = cfg.outputs.pollination_sufficiency
-    diff_path = run_pollination_diff_5km_pnas(
+    return run_pollination_diff_5km_pnas(
         cfg, scenario=scenario, baseline_scenario=BASELINE_LABEL,
         scenario_value_path=suff_dir / f'value_pollination_sufficiency_{stab}_5km.tif',
         baseline_value_path=suff_dir / f'value_pollination_sufficiency_{b_stab}_5km.tif')
-    return _zonal_pct_change(diff_path, denominator_path, correspondence_gpkg)
-
-
-def _zonal_pct_change(diff_path, denominator_path, correspondence_gpkg, region_id_field='ee_r50_aez18_id'):
-    """Per r50xAEZ zone, keyed to (ENDW, REG): the % change AND the absolute baseline value.
-
-    Returns (pct_change, baseline_value_usd) as two aligned Series.
-
-    The second is the GEP quantity and costs nothing to emit: it is the DENOMINATOR of the first
-    (sum of the baseline pollination-value raster x pixel area over the zone, in target-year USD),
-    so it is already computed here and was previously discarded. GEP wants the level, GTAP wants
-    the ratio; returning both means one task serves both rather than two chains recomputing the
-    same rasters. See pollination_shock, which writes it as `value_usd_base`.
-    """
-    import geopandas as gpd
-    import rasterio
-    from rasterio.features import rasterize
-    from crop_benefits.raster.spatial import build_area_km2_raster
-
-    gdf = gpd.read_file(correspondence_gpkg, engine='pyogrio')
-    if gdf.crs is None or gdf.crs.to_epsg() != 4326:
-        gdf = gdf.to_crs(4326)
-    gdf[region_id_field] = gdf[region_id_field].astype(int)
-
-    with rasterio.open(denominator_path) as src:
-        base = src.read(1).astype(np.float64)
-        base[base == src.nodata] = np.nan
-        transform, shape, meta = src.transform, src.shape, src.meta.copy()
-    with rasterio.open(diff_path) as src:
-        diff = src.read(1).astype(np.float64)
-        diff[diff == src.nodata] = np.nan
-
-    zones = rasterize(
-        ((g, int(r)) for g, r in zip(gdf.geometry, gdf[region_id_field]) if g is not None and not g.is_empty),
-        out_shape=shape, transform=transform, fill=0, dtype=np.int32)
-    area = build_area_km2_raster(meta)
-
-    out, level = {}, {}
-    for rid, sub in gdf.drop_duplicates(region_id_field).set_index(region_id_field).iterrows():
-        mask = zones == rid
-        denom = np.nansum(base[mask] * area[mask]) if mask.any() else 0.0
-        if not denom:
-            continue
-        key = (f"AEZ{int(sub['aez18_id'])}", sub['gtapv7_r50_label'])
-        out[key] = np.nansum(diff[mask] * area[mask]) / denom * PERCENT
-        level[key] = denom
-    return pd.Series(out), pd.Series(level)

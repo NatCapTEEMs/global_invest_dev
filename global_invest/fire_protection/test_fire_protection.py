@@ -14,6 +14,7 @@ import pandas as pd
 import pytest
 
 from global_invest.fire_protection import fire_protection_functions as ffn
+from global_invest.fire_protection import fire_protection_tasks as fpt
 
 REFERENCE_DIR = os.path.join(os.path.dirname(__file__), 'reference')
 
@@ -80,15 +81,28 @@ def test_damage_per_acre_global_average_fills_zero_and_missing():
     assert np.isclose(by_country['CCC'], 10.0)       # zero acres -> filled
 
 
-def test_emdat_reader_filters_wildfire_and_scales_thousands(tmp_path):
-    xlsx_path = str(tmp_path / 'emdat.xlsx')
-    pd.DataFrame({'Disaster Type': ['Wildfire', 'Flood', 'Wildfire'],
-                  'ISO': ['AAA', 'AAA', 'BBB'],
-                  "Total Damage, Adjusted ('000 US$)": ['1,000', '999', '250']}).to_excel(
-        xlsx_path, sheet_name='EM-DAT Data', index=False)
-    damages = ffn.read_emdat_wildfire_damages(xlsx_path)
+def _emdat_frame():
+    """An EM-DAT extract with one non-wildfire row and the damages as comma-separated thousands,
+    plus a row whose ISO is missing (the source drops it rather than summing it namelessly)."""
+    return pd.DataFrame({'Disaster Type': ['Wildfire', 'Flood', 'Wildfire', 'Wildfire'],
+                         'ISO': ['AAA', 'AAA', 'BBB', None],
+                         "Total Damage, Adjusted ('000 US$)": ['1,000', '999', '250', '500']})
+
+
+def test_emdat_damages_filter_wildfire_and_scale_thousands():
+    damages = ffn.emdat_wildfire_damages(_emdat_frame())
     by_country = damages.set_index('GID_0')['total_damages_country_usd']
     assert np.isclose(by_country['AAA'], 1_000_000)  # thousands -> USD; flood row excluded
+    assert np.isclose(by_country['BBB'], 250_000)
+    assert len(damages) == 2                         # the row without an ISO is dropped
+
+
+def test_task_reader_totals_the_emdat_workbook(tmp_path):
+    xlsx_path = str(tmp_path / 'emdat.xlsx')
+    _emdat_frame().to_excel(xlsx_path, sheet_name=fpt.EMDAT_SHEET_NAME, index=False)
+    damages = fpt.read_emdat_wildfire_damages(xlsx_path)
+    by_country = damages.set_index('GID_0')['total_damages_country_usd']
+    assert np.isclose(by_country['AAA'], 1_000_000)
     assert np.isclose(by_country['BBB'], 250_000)
 
 

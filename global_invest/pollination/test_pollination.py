@@ -125,6 +125,45 @@ def test_static_shock_rows_skip_a_zone_the_scenario_does_not_cover():
 
 
 # ---------------------------------------------------------------------------
+# Zonal arithmetic.
+# ---------------------------------------------------------------------------
+
+def test_zonal_pct_change_weights_by_area_and_drops_a_zone_without_baseline_value():
+    # Zone 1 spans two pixels of unequal area; zone 2's only pixel has a NaN baseline, so its
+    # denominator is zero and the zone appears in neither series.
+    zones = np.array([[1, 1, 2]])
+    baseline = np.array([[10.0, 20.0, np.nan]])
+    diff = np.array([[1.0, -2.0, 5.0]])
+    area = np.array([[2.0, 1.0, 1.0]])
+    labels = {1: ZONE_A, 2: ZONE_B}
+
+    pct, level = pf.zonal_pct_change(diff, baseline, area, zones, labels)
+
+    assert list(pct.index) == [ZONE_A] and list(level.index) == [ZONE_A]
+    assert level.loc[ZONE_A] == 40.0                    # 10x2 + 20x1
+    assert pct.loc[ZONE_A] == 0.0                       # (1x2 - 2x1) / 40 x 100
+
+
+def test_zonal_pct_change_treats_nan_diff_pixels_as_zero_change():
+    zones = np.array([[1, 1]])
+    baseline = np.array([[10.0, 10.0]])
+    diff = np.array([[3.0, np.nan]])                    # the NaN pixel contributes no numerator
+    area = np.array([[1.0, 1.0]])
+
+    pct, level = pf.zonal_pct_change(diff, baseline, area, zones, {1: ZONE_A})
+
+    assert level.loc[ZONE_A] == 20.0
+    assert pct.loc[ZONE_A] == 15.0                      # 3 / 20 x 100
+
+
+def test_zone_labels_from_boundary_keeps_one_row_per_zone():
+    boundary = pd.DataFrame({'ee_r50_aez18_id': [101, 101, 102], 'aez18_id': [1, 1, 2],
+                             'gtapv7_r50_label': ['usa', 'usa', 'chn']})
+    labels = pf.zone_labels_from_boundary(boundary)
+    assert labels == {101: ('AEZ1', 'usa'), 102: ('AEZ2', 'chn')}
+
+
+# ---------------------------------------------------------------------------
 # GEP valuation arithmetic.
 # ---------------------------------------------------------------------------
 

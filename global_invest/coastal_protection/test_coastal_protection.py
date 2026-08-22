@@ -3,6 +3,7 @@
 Each function is pinned on a hand-built table small enough that the expected number is written
 out in the assertion: the two source readers' clean-up, the cumulative GDP deflator, the two
 component aggregations with their split-country handling, the combination, and the country join.
+The task module's two workbook readers are pinned on workbooks written into tmp_path.
 """
 from types import SimpleNamespace
 
@@ -10,6 +11,7 @@ import numpy as np
 import pandas as pd
 
 from global_invest.coastal_protection import coastal_protection_functions as cpf
+from global_invest.coastal_protection import coastal_protection_tasks as cpt
 
 # The r264 correspondence, with AAA split into two sub-regions that share the country's NAME.
 # The coral table is keyed on name, so both rows match it; the mangrove table is keyed on label,
@@ -105,9 +107,9 @@ def test_coral_reef_gep_deflates_to_the_base_year_and_counts_a_split_country_onc
     assert len(out) == 2
 
 
-def test_coral_reef_gep_reports_zero_for_a_country_the_deflator_table_lacks():
-    """The known defect, pinned so a fix has to come through this test: a missing multiplier
-    makes the deflated value missing, and the sum then reports it as zero rather than unvalued."""
+def test_coral_reef_gep_reports_missing_for_a_country_the_deflator_table_lacks():
+    """No multiplier means the value cannot be carried to the base year, so the country comes out
+    unvalued. Reporting it as zero would put it in the total as a country worth nothing."""
     coral = pd.DataFrame({
         'ee_r264_name': ['Cccland'],
         'coral_reef_value': [100.0],
@@ -115,7 +117,8 @@ def test_coral_reef_gep_reports_zero_for_a_country_the_deflator_table_lacks():
     })
     deflator = cpf.deflator_multiplier_by_country(DEFLATOR_LONG, 2012, 2013)   # no CCC row
     out = cpf.coral_reef_gep_by_country(COUNTRIES, coral, deflator, base_year=2019)
-    assert out.set_index('iso3_r250_label')['coastal_protection_gep_coral_reef'].loc['CCC'] == 0.0
+    value = out.set_index('iso3_r250_label')['coastal_protection_gep_coral_reef'].loc['CCC']
+    assert np.isnan(value)
 
 
 def test_combine_coastal_components_adds_them_and_keeps_a_country_present_in_only_one():
@@ -129,6 +132,21 @@ def test_combine_coastal_components_adds_them_and_keeps_a_country_present_in_onl
     assert out.loc['BBB', 'coastal_protection_gep'] == 250.0     # mangrove only, coral filled 0
     assert out.loc['CCC', 'coastal_protection_gep'] == 7.0       # coral only, mangrove filled 0
     assert out['Value'].tolist() == out['coastal_protection_gep'].tolist()
+
+
+def test_combine_coastal_components_keeps_an_undeflatable_coral_value_missing():
+    """A country the coral table carries but whose value could not be deflated is unvalued, and
+    reporting its mangrove component alone would hide that its coral component is unknown."""
+    mangrove = pd.DataFrame({'iso3_r250_label': ['AAA'], 'year': [2019],
+                             'coastal_protection_gep_mangrove': [140.0]})
+    coral = pd.DataFrame({'iso3_r250_label': ['AAA'], 'year': [2019],
+                          'coastal_protection_gep_coral_reef': [np.nan]})
+    out = cpf.combine_coastal_components(mangrove, coral).set_index('iso3_r250_label')
+
+    assert np.isnan(out.loc['AAA', 'coastal_protection_gep'])
+    assert out.loc['AAA', 'coastal_protection_gep_mangrove'] == 140.0
+    # A missing total drops out of the reported sum rather than entering it as a zero.
+    assert out['coastal_protection_gep'].sum() == 0.0
 
 
 def test_attach_country_attributes_gives_one_row_per_country():
@@ -147,6 +165,28 @@ def test_the_currency_years_that_define_the_deflator_span_are_pinned():
     # The coral table is 2011 USD and the service reports 2019, so the deflator runs 2012..2019.
     assert cpf.CORAL_REEF_VALUE_YEAR == 2011
     assert cpf.COASTAL_PROTECTION_BASE_YEAR == 2019
+
+
+def test_task_reader_cleans_the_mangrove_workbook(tmp_path):
+    path = str(tmp_path / 'mangroves.xlsx')
+    pd.DataFrame({'countrycode': ['AAA'], 'countryname': ['Aaaland'],
+                  'annual_value_2019': [100.0], 'year': [2019.0]}).to_excel(
+        path, sheet_name=cpt.SOURCE_SHEET_NAME, index=False)
+    out = cpt.read_mangrove_values(path)
+    assert out['ee_r264_label'].tolist() == ['AAA']
+    assert out['Value'].tolist() == [100.0]
+    assert out['year'].dtype.kind == 'i'
+
+
+def test_task_reader_compounds_the_deflator_workbook_over_the_span(tmp_path):
+    path = str(tmp_path / 'deflator.xlsx')
+    pd.DataFrame({'Country Name': ['Aaaland'], 'Country Code': ['AAA'],
+                  'Indicator Name': ['Inflation, GDP deflator'],
+                  'Indicator Code': ['NY.GDP.DEFL.KD.ZG'],
+                  '2011': [50.0], '2012': [10.0], '2013': [10.0]}).to_excel(path, index=False)
+    out = cpt.read_deflator_multiplier(path, 2012, 2013)
+    # 2011's 50% is outside the span, so the multiplier is 1.10 x 1.10.
+    assert np.isclose(out.set_index('ee_r264_label')['deflator_multiplier'].loc['AAA'], 1.21)
 
 
 def test_es_config_row_hydrates_coastal_protection(tmp_path):

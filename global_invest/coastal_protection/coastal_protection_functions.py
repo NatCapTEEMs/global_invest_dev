@@ -8,8 +8,8 @@ The coral-reef component is the annual expected flood-protection benefit table, 
 USD, so it is carried to the base year by the cumulative World Bank GDP deflator over the
 intervening years before being combined with the mangrove component.
 
-File reading is kept to three thin functions at the top; everything below them is a pure
-transformation over frames, which is what the tests exercise.
+Every function here is a pure transformation over frames, which is what the tests exercise. The
+task module reads the three workbooks and passes the frames in.
 """
 import logging
 
@@ -25,35 +25,6 @@ COASTAL_PROTECTION_BASE_YEAR = 2019
 # The World Bank deflator series is an annual percentage change, so each year contributes
 # 1 + rate/100 to the cumulative multiplier.
 DEFLATOR_PERCENT = 100.0
-
-
-def read_mangrove_values(path):
-    """The CWoN mangrove workbook read and renamed. See clean_mangrove_values."""
-    df_raw = pd.read_excel(path, sheet_name='Sheet1', engine='openpyxl')
-    logging.info(f'Loaded mangrove coastal protection values from {path} ({df_raw.shape[0]} rows).')
-    return clean_mangrove_values(df_raw)
-
-
-def read_coral_reef_values(path):
-    """The coral-reef annual expected benefit workbook, read as shipped.
-
-    The table already carries ee_r264_name, coral_reef_value and year, so nothing is renamed or
-    rescaled on the way in. Its currency year is CORAL_REEF_VALUE_YEAR; deflating to the base
-    year happens in coral_reef_gep_by_country.
-    """
-    df = pd.read_excel(path, sheet_name='Sheet1', engine='openpyxl')
-    logging.info(f'Loaded coral reef coastal protection values from {path} ({df.shape[0]} rows).')
-    return df
-
-
-def read_gdp_inflation_deflator(path):
-    """The World Bank GDP deflator workbook read and reshaped to long.
-
-    Source: https://data.worldbank.org/indicator/NY.GDP.DEFL.KD.ZG
-    """
-    df_raw = pd.read_excel(path, engine='openpyxl')
-    logging.info(f'Loaded GDP deflator from {path} ({df_raw.shape[0]} rows).')
-    return reshape_gdp_inflation_deflator(df_raw)
 
 
 def clean_mangrove_values(df_raw):
@@ -117,11 +88,6 @@ def deflator_multiplier_by_country(df_deflator_long, start_year, end_year):
     return df.rename(columns={'Country Code': 'ee_r264_label', 'Country Name': 'ee_r264_name'})
 
 
-def get_inflation_deflator_multiplier(path, start_year, end_year):
-    """The deflator workbook read and reduced to a per-country multiplier."""
-    return deflator_multiplier_by_country(read_gdp_inflation_deflator(path), start_year, end_year)
-
-
 def mangrove_gep_by_country(gdf_countries, df_mangrove_value):
     """Mangrove protection value summed to one row per country and year.
 
@@ -153,10 +119,10 @@ def coral_reef_gep_by_country(gdf_countries, df_coral_reef_value, df_deflator_mu
     sub-region rows a split country's name matches. The surviving rows are multiplied by their
     country's cumulative deflator and stamped with the base year.
 
-    todo A country the World Bank deflator table does not cover gets a missing multiplier, so its
-    coral value becomes missing and the sum below reports it as zero rather than as unvalued. On
-    the shipped data that silently zeroes nine countries, Taiwan the largest. Flagged rather than
-    fixed, because fixing it changes the published number.
+    A country the World Bank deflator table does not cover gets a missing multiplier, so its
+    deflated value is missing and cannot be summed: the aggregation propagates that rather than
+    skipping it, so the country comes out unvalued instead of valued at zero. On the shipped data
+    nine countries land here, Taiwan the largest.
 
     Args:
         gdf_countries (pd.DataFrame): the r264 country correspondence.
@@ -177,7 +143,8 @@ def coral_reef_gep_by_country(gdf_countries, df_coral_reef_value, df_deflator_mu
     deflated['year'] = base_year
 
     df = pd.concat([df, deflated], ignore_index=True)
-    df = df.groupby(['iso3_r250_label', 'year'], as_index=False, dropna=False)['coral_reef_value'].sum()
+    df = (df.groupby(['iso3_r250_label', 'year'], as_index=False, dropna=False)['coral_reef_value']
+          .agg(lambda country_year_values: country_year_values.sum(skipna=False)))
     df = df.rename(columns={'coral_reef_value': 'coastal_protection_gep_coral_reef'})
     return df[df['year'] == base_year]
 
@@ -186,7 +153,10 @@ def combine_coastal_components(df_mangrove, df_coral_reef):
     """The two components on one row per country and year, plus their sum.
 
     The join is outer because the two tables cover different countries, and a country present in
-    only one of them contributes that component alone rather than dropping out.
+    only one of them contributes that component alone rather than dropping out. Only the component
+    the join itself had to invent is zeroed: a country the coral table does carry, but whose value
+    coral_reef_gep_by_country could not deflate, keeps its missing value and so reports a missing
+    total rather than its mangrove component alone.
 
     Args:
         df_mangrove (pd.DataFrame): iso3_r250_label, year, coastal_protection_gep_mangrove.
@@ -196,8 +166,11 @@ def combine_coastal_components(df_mangrove, df_coral_reef):
         pd.DataFrame: both components, their sum as coastal_protection_gep, and a Value copy of
         the sum for the shared reporting templates.
     """
-    df = pd.merge(df_mangrove, df_coral_reef, how='outer', on=['iso3_r250_label', 'year'])
-    df = df.fillna(0)
+    df = pd.merge(df_mangrove, df_coral_reef, how='outer', on=['iso3_r250_label', 'year'],
+                  indicator=True)
+    df.loc[df['_merge'] == 'left_only', 'coastal_protection_gep_coral_reef'] = 0.0
+    df.loc[df['_merge'] == 'right_only', 'coastal_protection_gep_mangrove'] = 0.0
+    df = df.drop(columns='_merge')
     df['coastal_protection_gep'] = (df['coastal_protection_gep_mangrove']
                                     + df['coastal_protection_gep_coral_reef'])
     df['Value'] = df['coastal_protection_gep']

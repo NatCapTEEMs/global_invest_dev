@@ -83,10 +83,12 @@ The coral table is joined on country name, not on a code. A name that the corres
 differently would drop the country without failing, so the join is a place to check first when a
 coastal country is missing.
 
-A country the World Bank deflator series does not cover has no multiplier, and its deflated coral
-value therefore comes out as zero rather than as unvalued. On the currently staged data this
-affects nine countries with coral values, the largest of which is Taiwan. Their mangrove
-component is unaffected.
+A country the World Bank deflator series does not cover has no multiplier, so its coral value
+cannot be carried to the base year and the country comes out unvalued rather than valued at zero.
+On the currently staged data this affects nine countries holding about \$75 million of 2011 coral
+value: the Cook Islands, Guadeloupe, Martinique, Mayotte, Niue, Pitcairn, Réunion, Taiwan and
+Wallis and Futuna. None of the nine carries a mangrove value either, so their rows now read as
+missing and the reported global total is unchanged.
 
 Because the module consumes pre-valued national tables, it cannot separate the physical extent of
 a habitat from the value assigned to it. A change in either the mapped habitat area or the damage

@@ -162,11 +162,10 @@ def compute_damage_per_acre(burned_acres_all_years_df, emdat_damages_df):
     return df[['GID_0', 'damages_usd_per_acre_country']], global_average
 
 
-def read_emdat_wildfire_damages(emdat_xlsx_path):
+def emdat_wildfire_damages(emdat_df):
     """EM-DAT extract -> total adjusted wildfire damages (USD) per ISO3. The damage column is
     thousands of USD with comma separators in the source workbook."""
-    emdat = pd.read_excel(emdat_xlsx_path, sheet_name='EM-DAT Data')
-    wildfire = emdat[emdat['Disaster Type'] == 'Wildfire'].copy()
+    wildfire = emdat_df[emdat_df['Disaster Type'] == 'Wildfire'].copy()
     damage_col = "Total Damage, Adjusted ('000 US$)"
     wildfire['total_damages_usd'] = (
         pd.to_numeric(wildfire[damage_col].astype(str).str.replace(',', '', regex=False),

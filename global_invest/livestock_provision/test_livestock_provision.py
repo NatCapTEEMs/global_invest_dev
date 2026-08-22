@@ -3,7 +3,8 @@
 Every function the task calls is pinned on a hand-built table small enough that the expected
 number is written out in the assertion: the FAOSTAT clean-up with its code-or-name item
 selection, the decade rental-rate lookup, the as-of attribution, the country join, the two
-groupings, and the GLEAM feed-share lambda (step two of the port).
+groupings, and the GLEAM feed-share lambda (step two of the port). The task module's two readers
+are pinned on files written into tmp_path.
 """
 from types import SimpleNamespace
 
@@ -11,6 +12,7 @@ import numpy as np
 import pandas as pd
 
 from global_invest.livestock_provision import livestock_provision_functions as lp
+from global_invest.livestock_provision import livestock_provision_tasks as lpt
 
 # The identifier columns collapse_countries_to_r250 keeps, with one split country: r264 carries
 # AAA twice (the canonical row plus a sub-region Z01) and the collapse must keep only AAA.
@@ -207,6 +209,28 @@ def test_feed_lambda_is_ecosystem_share_of_total_intake():
 def test_the_feed_category_lists_are_pinned():
     assert lp.GLEAM_ECOSYSTEM_FEED_COLS == ("By-products", "Crop residues", "Fodder crop", "Grass and leaves")
     assert len(lp.GLEAM_TOTAL_FEED_COLS) == 8
+
+
+def test_task_reader_cleans_the_faostat_bulk_file(tmp_path):
+    """The bulk file is Latin-1, so an accented area name comes back mangled at any other
+    encoding and the country would then miss its join."""
+    path = str(tmp_path / 'Value_of_Production_E_All_Data.csv')
+    raw = _raw_faostat_frame()
+    raw.loc[0, 'Area'] = 'Côte'
+    raw.to_csv(path, index=False, encoding='ISO-8859-1')
+
+    out = lpt.read_crop_values(path, items=[1017])
+    assert set(out['country']) == {'Côte'}
+    assert out.set_index('year')['livestock_provision_gep'].loc[1961] == 1.0
+
+
+def test_task_reader_reshapes_the_semicolon_delimited_coefficient_table(tmp_path):
+    path = str(tmp_path / 'CWON2024_crop_coef.csv')
+    pd.DataFrame({'Order': [1], 'FAO': [1.0], 'ISO3': ['AAA'], 'Country/territory': ['Aaaland'],
+                  '1961-1970': [0.30], '2011-2020': [0.35]}).to_csv(path, sep=';', index=False)
+
+    out = lpt.read_crop_coefs(path)
+    assert out.set_index(['FAO', 'year'])['rental_rate'].loc[(1, 2011)] == 0.35
 
 
 def test_es_config_row_hydrates_livestock_provision(tmp_path):

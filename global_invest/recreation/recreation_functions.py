@@ -261,6 +261,31 @@ def calculate_kernel_recreation(population_path, country_id_path, fuel_cost_df,
 
 
 # --- Overnights (UNWTO panel + hotel allocation) ---
+# The workbook keeps domestic and inbound accommodation on their own sheets, and the panel is
+# the two stacked.
+UNWTO_ACCOMMODATION_SHEETS = {'domestic': 'Domestic Tourism-Accommodation',
+                              'international': 'Inbound Tourism-Accommodation'}
+# Each sheet opens with banner rows above its real header, so the table is located by its first
+# country row rather than by a fixed offset.
+UNWTO_FIRST_COUNTRY = 'AFGHANISTAN'
+UNWTO_COUNTRY_COLUMN_INDEX = 3
+
+
+def unwto_header_row_index(banner_sheet):
+    """Rows to skip so that a re-read starts at the sheet's own header.
+
+    Args:
+        banner_sheet (pd.DataFrame): the sheet read straight through, so its banner row is
+            standing in as the header and the real header is its first row.
+
+    Returns:
+        int: the position of the first country row, which is the header row's position once the
+        banner is no longer consuming a row.
+    """
+    country_column = banner_sheet.iloc[:, UNWTO_COUNTRY_COLUMN_INDEX]
+    return banner_sheet[country_column == UNWTO_FIRST_COUNTRY].index[0]
+
+
 def extract_clean_overnights(df, tourism_type):
     """One UNWTO accommodation sheet -> tidy (iso3_r250_id, name, type, year, overnights)."""
     df = df.copy()
@@ -286,19 +311,21 @@ def extract_clean_overnights(df, tourism_type):
     return tidy
 
 
-def clean_unwto_data(unwto_xlsx_path):
-    """UNWTO all-data workbook -> a wide overnight panel per country-year, written as CSV.
+def clean_unwto_data(sheets_by_tourism_type):
+    """UNWTO accommodation sheets -> a wide overnight panel per country-year.
 
-    Domestic and inbound accommodation sheets are located by their AFGHANISTAN header row,
-    tidied, and pivoted; per tourism type the combined overnights column prefers the Total
-    row and falls back to Hotels-and-similar where Total is missing."""
-    rows_by_type = {}
-    for tourism_type, sheet_name in (('domestic', 'Domestic Tourism-Accommodation'),
-                                     ('international', 'Inbound Tourism-Accommodation')):
-        raw = pd.read_excel(unwto_xlsx_path, sheet_name=sheet_name)
-        start_index = raw[raw.iloc[:, 3] == 'AFGHANISTAN'].index[0]
-        data = pd.read_excel(unwto_xlsx_path, sheet_name=sheet_name, skiprows=start_index)
-        rows_by_type[tourism_type] = extract_clean_overnights(data, tourism_type)
+    The sheets are tidied and pivoted; per tourism type the combined overnights column prefers
+    the Total row and falls back to Hotels-and-similar where Total is missing.
+
+    Args:
+        sheets_by_tourism_type (dict): tourism type -> that type's accommodation sheet, read
+            from its own header row down (the task module's read_unwto_sheets).
+
+    Returns:
+        pd.DataFrame: iso3_r250_id, unwto_name, year and the per-type overnight columns.
+    """
+    rows_by_type = {tourism_type: extract_clean_overnights(sheet, tourism_type)
+                    for tourism_type, sheet in sheets_by_tourism_type.items()}
     panel_df = pd.concat(list(rows_by_type.values()), ignore_index=True)
     panel_df['overnight_type'] = panel_df['overnight_type'].str.lower().str.strip()
 

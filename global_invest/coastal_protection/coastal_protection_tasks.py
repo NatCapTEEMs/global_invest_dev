@@ -1,11 +1,31 @@
 import os
 
+import pandas as pd
 import hazelbean as hb
 from global_invest import utilities
 
 from global_invest.coastal_protection import coastal_protection_initialize
 from global_invest.coastal_protection import coastal_protection_functions
 
+# Both valuation workbooks ship their table on a single sheet with this name.
+SOURCE_SHEET_NAME = 'Sheet1'
+
+
+def read_mangrove_values(path):
+    """The CWoN mangrove workbook read and renamed. See clean_mangrove_values."""
+    return coastal_protection_functions.clean_mangrove_values(
+        pd.read_excel(path, sheet_name=SOURCE_SHEET_NAME, engine='openpyxl'))
+
+
+def read_deflator_multiplier(path, start_year, end_year):
+    """The World Bank GDP deflator workbook read, melted to long and compounded over the span.
+
+    Source: https://data.worldbank.org/indicator/NY.GDP.DEFL.KD.ZG
+    """
+    df_long = coastal_protection_functions.reshape_gdp_inflation_deflator(
+        pd.read_excel(path, engine='openpyxl'))
+    return coastal_protection_functions.deflator_multiplier_by_country(
+        df_long, start_year, end_year)
 
 
 def publish_inputs(p):
@@ -59,11 +79,14 @@ def gep_calculation(p):
         base_year = coastal_protection_functions.COASTAL_PROTECTION_BASE_YEAR
         p.gdf_countries = hb.read_vector(p.gdf_countries_vector_path)
 
-        df_mangrove_value = coastal_protection_functions.read_mangrove_values(p.gep_quantity_input_path)
-        df_coral_reef_value = coastal_protection_functions.read_coral_reef_values(p.coral_reef_ref_path)
+        df_mangrove_value = read_mangrove_values(p.gep_quantity_input_path)
+        # The coral table already carries ee_r264_name, coral_reef_value and year, so nothing is
+        # renamed or rescaled on the way in.
+        df_coral_reef_value = pd.read_excel(p.coral_reef_ref_path, sheet_name=SOURCE_SHEET_NAME,
+                                            engine='openpyxl')
         # The coral table is in CORAL_REEF_VALUE_YEAR currency, so inflation is applied from the
         # year after that through the base year.
-        df_gdp_inflation_deflator = coastal_protection_functions.get_inflation_deflator_multiplier(
+        df_gdp_inflation_deflator = read_deflator_multiplier(
             p.df_gdp_inflation_deflator_path,
             coastal_protection_functions.CORAL_REEF_VALUE_YEAR + 1, base_year)
 

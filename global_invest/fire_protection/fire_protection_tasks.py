@@ -20,6 +20,12 @@ from global_invest.fire_protection import fire_protection_functions as ffn
 
 MODULE_REFERENCE_DIR = os.path.join(os.path.dirname(__file__), 'reference')
 FIRE_GEP_PROVISIONAL_VARIANT = 'nn_hh'   # the account's variant: OPEN question, see docstring
+EMDAT_SHEET_NAME = 'EM-DAT Data'         # the extract's only data sheet
+
+
+def read_emdat_wildfire_damages(path):
+    """The EM-DAT extract read and totalled per ISO3. See emdat_wildfire_damages."""
+    return ffn.emdat_wildfire_damages(pd.read_excel(path, sheet_name=EMDAT_SHEET_NAME))
 
 
 def publish_inputs(p):
@@ -89,7 +95,7 @@ def damage_per_acre(p):
             burned_acres = (panel.groupby('GID_0', as_index=False)['total_burned_areas_ha'].sum()
                             .rename(columns={'total_burned_areas_ha': 'total_burned_acres_country'}))
             burned_acres['total_burned_acres_country'] *= ffn.HA_TO_ACRES
-            damages = ffn.read_emdat_wildfire_damages(p.fire_emdat_path)
+            damages = read_emdat_wildfire_damages(p.fire_emdat_path)
             rates, _ = ffn.compute_damage_per_acre(burned_acres, damages)
         else:
             hb.log('fire_protection: ADM2 panel not staged -- damage rates read from the '

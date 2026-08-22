@@ -1,5 +1,6 @@
 import os
 
+import pandas as pd
 import hazelbean as hb
 from global_invest import utilities
 
@@ -195,6 +196,24 @@ DEFAULT_CROP_ITEMS = [
 ]
 
 
+def read_crop_values(path, items):
+    """The FAOSTAT bulk file read and cleaned. See clean_crop_values for the science.
+
+    The file ships Latin-1 encoded, so it is read as such rather than as UTF-8.
+    """
+    return crop_provision_functions.clean_crop_values(
+        pd.read_csv(path, encoding='ISO-8859-1'), items)
+
+
+def read_crop_coefs(path):
+    """The CWoN rental-rate table read and reshaped. See build_rental_rate_lookup for the science.
+
+    The table ships semicolon-delimited.
+    """
+    return crop_provision_functions.build_rental_rate_lookup(
+        pd.read_csv(path, delimiter=';', encoding='utf-8'))
+
+
 def publish_inputs(p):
     """Every task's first line: the FAO crop-production valuation's es_config row (defaults layer -- a caller-set value wins)
     plus the shared country references and the results registry."""
@@ -243,8 +262,8 @@ def gep_calculation(p):
         if not getattr(p, 'crop_provision_subservices', None):
             p.commercial_attribute_subservices = DEFAULT_CROP_ITEMS
 
-        df_crop_value = crop_provision_functions.read_crop_values(p.fao_input_path, p.commercial_attribute_subservices)
-        df_crop_coefs = crop_provision_functions.read_crop_coefs(p.cwon_crop_coefficients_path)
+        df_crop_value = read_crop_values(p.fao_input_path, p.commercial_attribute_subservices)
+        df_crop_coefs = read_crop_coefs(p.cwon_crop_coefficients_path)
 
         df_gep_by_country_year_crop = crop_provision_functions.merge_crop_with_coefs(df_crop_value, df_crop_coefs)
         df_gep_by_country_year_crop = crop_provision_functions.normalize_m49_codes(df_gep_by_country_year_crop)

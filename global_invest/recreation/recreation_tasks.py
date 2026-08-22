@@ -18,6 +18,23 @@ from global_invest import utilities
 from global_invest.recreation import recreation_functions as rf
 
 
+def read_unwto_sheets(path):
+    """The UNWTO all-data workbook's two accommodation sheets, each read from its own header row.
+
+    Args:
+        path (str): the UNWTO all-data workbook.
+
+    Returns:
+        dict: tourism type -> that type's accommodation sheet, ready for clean_unwto_data.
+    """
+    sheets = {}
+    for tourism_type, sheet_name in rf.UNWTO_ACCOMMODATION_SHEETS.items():
+        banner_sheet = pd.read_excel(path, sheet_name=sheet_name)
+        sheets[tourism_type] = pd.read_excel(
+            path, sheet_name=sheet_name, skiprows=rf.unwto_header_row_index(banner_sheet))
+    return sheets
+
+
 def publish_inputs(p):
     """Every GEP task's first line: the recreation es_config row (defaults layer -- a caller-set
     value wins), the recreation data references from es_parameters (the staged drive data), the
@@ -97,7 +114,7 @@ def overnight_allocation(p):
         if hb.path_exists(p.recreation_unwto_panel_path):
             overnight_df = pd.read_csv(p.recreation_unwto_panel_path)
         else:
-            overnight_df = rf.clean_unwto_data(p.recreation_unwto_path)
+            overnight_df = rf.clean_unwto_data(read_unwto_sheets(p.recreation_unwto_path))
             overnight_df.to_csv(p.recreation_unwto_panel_path, index=False)
         country_overnights_map = rf.build_country_overnights_map(overnight_df, int(p.gep_base_year))
         hb.log('recreation: overnight totals mapped for %d countries (%.4g total overnights @%d)'

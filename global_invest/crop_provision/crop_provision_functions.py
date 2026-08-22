@@ -8,8 +8,8 @@ share that varies by decade, applied by an as-of merge so each year takes the ra
 it falls in. The result is converted from FAOSTAT's thousand USD to plain USD once, before any
 grouping, and collapsed onto the r250 country list.
 
-File reading is kept to three thin functions at the top; everything below them is a pure
-transformation over frames, which is what the tests exercise.
+Every function here is a pure transformation over frames, which is what the tests exercise. The
+task module reads the FAOSTAT bulk file and the rental-rate table and passes the frames in.
 """
 import logging
 
@@ -93,20 +93,6 @@ M49_SUCCESSORS = {
 
 # The columns a crop-level row is identified by, before the year columns are melted down.
 CROP_ID_COLUMNS = ['area_code', 'area_code_M49', 'country', 'crop_code', 'crop']
-
-
-def read_crop_values(path, items):
-    """The FAOSTAT bulk file read and cleaned. See clean_crop_values for the science."""
-    df_raw = pd.read_csv(path, encoding='ISO-8859-1')
-    logging.info(f'Loaded crop values from {path} ({df_raw.shape[0]} rows).')
-    return clean_crop_values(df_raw, items)
-
-
-def read_crop_coefs(path):
-    """The CWoN rental-rate workbook read and reshaped. See build_rental_rate_lookup."""
-    df_raw = pd.read_csv(path, delimiter=';', encoding='utf-8')
-    logging.info(f'Loaded crop coefs from {path} ({df_raw.shape[0]} rows).')
-    return build_rental_rate_lookup(df_raw)
 
 
 def clean_crop_values(df_raw, items):

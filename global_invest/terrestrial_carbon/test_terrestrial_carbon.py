@@ -34,29 +34,28 @@ def test_generate_density_maps_pairs_and_leaves_missing_as_nan(tmp_path):
     lulc, cz, out = tmp_path / 'lulc.tif', tmp_path / 'cz.tif', tmp_path / 'dens.tif'
     _write_tif(lulc, [[10, 10], [20, 99]], gdal.GDT_Byte)          # (99, 101) has no lookup row
     _write_tif(cz, [[101, 101], [101, 101]], gdal.GDT_UInt32)
-    pd.DataFrame({'lulc_id': [10, 20], 'carbon_zone_id': [101, 101],
-                  'carbon_density_mean': [5.0, 7.0]}).to_csv(tmp_path / 'lut.csv', index=False)
+    lookup = tcf.carbon_density_lookup(pd.DataFrame({
+        'lulc_id': [10, 20], 'carbon_zone_id': [101, 101], 'carbon_density_mean': [5.0, 7.0]}))
 
-    tcf.generate_carbon_density_raster(str(lulc), str(cz), str(tmp_path / 'lut.csv'), str(out))
+    tcf.generate_carbon_density_raster(str(lulc), str(cz), lookup, str(out))
 
     a = gdal.Open(str(out)).ReadAsArray()
     assert a[0, 0] == 5.0 and a[0, 1] == 5.0 and a[1, 0] == 7.0
     assert np.isnan(a[1, 1])                  # (lulc 99, zone 101) absent -> NaN, not a silent 0
 
 
-# --- stack_layers_to_csv (group a value raster by two category rasters) ---------------------------
+# --- stack_layers_summary (group a value raster by two category rasters) --------------------------
 
 def test_stack_groups_by_two_rasters_with_mean_and_count(tmp_path):
     from osgeo import gdal
-    lulc, cz, val, out = tmp_path / 'lulc.tif', tmp_path / 'cz.tif', tmp_path / 'val.tif', tmp_path / 'lut.csv'
+    lulc, cz, val = tmp_path / 'lulc.tif', tmp_path / 'cz.tif', tmp_path / 'val.tif'
     _write_tif(lulc, [[10, 10], [20, 20]], gdal.GDT_Byte)
     _write_tif(cz, [[101, 101], [101, 101]], gdal.GDT_UInt32)
     _write_tif(val, [[4.0, 6.0], [8.0, 10.0]], gdal.GDT_Float32, nodata=np.nan)
 
-    tcf.stack_layers_to_csv(str(lulc), str(cz), str(val), str(out),
-                            group1_name='lulc_id', group2_name='carbon_zone_id', value_name='carbon_density')
-
-    df = pd.read_csv(out).set_index(['lulc_id', 'carbon_zone_id'])
+    df = tcf.stack_layers_summary(str(lulc), str(cz), str(val),
+                                  group1_name='lulc_id', group2_name='carbon_zone_id',
+                                  value_name='carbon_density').set_index(['lulc_id', 'carbon_zone_id'])
     assert df.loc[(10, 101), 'carbon_density_mean'] == 5.0     # mean of [4, 6]
     assert df.loc[(10, 101), 'carbon_density_count'] == 2
     assert df.loc[(20, 101), 'carbon_density_mean'] == 9.0     # mean of [8, 10]
@@ -167,11 +166,12 @@ def test_generate_density_raises_when_lookup_matches_nothing(tmp_path):
     lulc, cz, out = tmp_path / 'lulc.tif', tmp_path / 'cz.tif', tmp_path / 'dens.tif'
     _write_tif(lulc, [[10, 30], [190, 210]], gdal.GDT_Byte)        # ESA class ids
     _write_tif(cz, [[101, 101], [101, 101]], gdal.GDT_UInt32)
-    pd.DataFrame({'lulc_id': [1, 2, 3], 'carbon_zone_id': [101, 101, 101],   # SEALS7-keyed lookup
-                  'carbon_density_mean': [100.0, 10.0, 20.0]}).to_csv(tmp_path / 'lut.csv', index=False)
+    lookup = tcf.carbon_density_lookup(pd.DataFrame({                        # SEALS7-keyed lookup
+        'lulc_id': [1, 2, 3], 'carbon_zone_id': [101, 101, 101],
+        'carbon_density_mean': [100.0, 10.0, 20.0]}))
 
     with pytest.raises(ValueError, match='matched ZERO'):
-        tcf.generate_carbon_density_raster(str(lulc), str(cz), str(tmp_path / 'lut.csv'), str(out))
+        tcf.generate_carbon_density_raster(str(lulc), str(cz), lookup, str(out))
 
 
 def test_dynamic_shock_esa_base_map_raises_not_silent_zero(tmp_path):

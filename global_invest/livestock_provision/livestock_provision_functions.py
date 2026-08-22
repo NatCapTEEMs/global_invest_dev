@@ -15,8 +15,8 @@ in the tracker, not a decision: see attach_countries.
 Step two of the port, feed_lambda_by_country, computes the ecosystem-provided share of livestock
 feed from GLEAM 3 and is not yet wired into the task chain.
 
-File reading is kept to two thin functions at the top; everything below them is a pure
-transformation over frames, which is what the tests exercise.
+Every function here is a pure transformation over frames, which is what the tests exercise. The
+task module reads the FAOSTAT bulk file and the rental-rate table and passes the frames in.
 """
 import logging
 
@@ -101,20 +101,6 @@ M49_SUCCESSORS = {
 # The columns an item-level row is identified by, before the year columns are melted down. The
 # item columns keep crop_provision's names because both services read the same FAOSTAT file.
 CROP_ID_COLUMNS = ['area_code', 'area_code_M49', 'country', 'crop_code', 'crop']
-
-
-def read_crop_values(path, items):
-    """The FAOSTAT bulk file read and cleaned. See clean_crop_values for the science."""
-    df_raw = pd.read_csv(path, encoding='ISO-8859-1')
-    logging.info(f'Loaded crop values from {path} ({df_raw.shape[0]} rows).')
-    return clean_crop_values(df_raw, items)
-
-
-def read_crop_coefs(path):
-    """The CWoN rental-rate workbook read and reshaped. See build_rental_rate_lookup."""
-    df_raw = pd.read_csv(path, delimiter=';', encoding='utf-8')
-    logging.info(f'Loaded crop coefs from {path} ({df_raw.shape[0]} rows).')
-    return build_rental_rate_lookup(df_raw)
 
 
 def clean_crop_values(df_raw, items):

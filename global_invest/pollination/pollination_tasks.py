@@ -7,6 +7,7 @@ directory (p.es_shock_dir). Grafted by consumers via add_pollination_tasks (disp
 """
 import os
 import glob
+import numpy as np
 import pandas as pd
 import hazelbean as hb
 from global_invest import utilities
@@ -28,6 +29,39 @@ def publish_inputs(p):
     return p
 
 
+def _read_masked(raster_path):
+    """A single-band raster as float64 with its nodata read as NaN, and its metadata beside it."""
+    import rasterio
+    with rasterio.open(raster_path) as src:
+        arr = src.read(1).astype(np.float64)
+        arr[arr == src.nodata] = np.nan
+        return arr, src.meta.copy()
+
+
+def _zonal_context(denominator_path, correspondence_gpkg):
+    """The fixed side of every zonal percent change, read once.
+
+    The baseline value raster defines the grid, so the pixel-area raster and the burned zone ids
+    are built on it. All three plus the zone labels are handed to pf.zonal_pct_change with each
+    scenario's difference array.
+    """
+    import geopandas as gpd
+    from rasterio.features import rasterize
+    from crop_benefits.raster.spatial import build_area_km2_raster
+
+    gdf = gpd.read_file(correspondence_gpkg, engine='pyogrio')
+    if gdf.crs is None or gdf.crs.to_epsg() != pf.LATLON_EPSG:
+        gdf = gdf.to_crs(pf.LATLON_EPSG)
+    gdf[pf.REGION_ID_FIELD] = gdf[pf.REGION_ID_FIELD].astype(int)
+
+    baseline, meta = _read_masked(denominator_path)
+    zones = rasterize(
+        ((g, int(r)) for g, r in zip(gdf.geometry, gdf[pf.REGION_ID_FIELD]) if g is not None and not g.is_empty),
+        out_shape=(meta['height'], meta['width']), transform=meta['transform'],
+        fill=pf.NO_ZONE_ID, dtype=np.int32)
+    return baseline, build_area_km2_raster(meta), zones, pf.zone_labels_from_boundary(gdf)
+
+
 def pollination_shock(p):
     """Per-scenario 300 m LULC at each SEALS anchor year -> V_F/OSD shock, piecewise-interp to annual.
 
@@ -43,8 +77,7 @@ def pollination_shock(p):
         p.pollination_shock_output_path = os.path.join(getattr(p, 'es_shock_dir', None) or p.project_dir, 'pollination_interpolated.csv')
     if not p.run_this:
         return
-    # Locals bind seam attributes only under their OWN names; derived values get new names;
-    # single-use reads stay inline. Export keys/boundary are es_parameters shipped defaults.
+    # Export keys and boundary are es_parameters shipped defaults; a consumer's own tables win.
     utilities.hydrate_es_parameters(p, 'pollination', log=hb.log)
     base_scenario      = utilities.required_base_scenario(p, 'pollination')
     es_shock_base_year = int(p.es_shock_base_year)
@@ -61,42 +94,33 @@ def pollination_shock(p):
 
     # base-year SEALS7 map: per-ES override, else the ES-shared attr. NEVER p.base_year_lulc_path, which
     # SEALS OWNS and overwrites at runtime with its raw-ESA source (a raw-ESA base map would make the
-    # SEALS7-keyed sufficiency lookup produce garbage). Unlike carbon's optional fixed-base extra, this
-    # base-year value IS pollination's primary denominator (feeds both fixedbase and contemp), so it is
-    # mandatory -- fail loudly rather than silently emit a wrong/empty shock.
-    _base_map = getattr(p, 'pollination_base_year_lulc_path', None) or getattr(p, 'es_base_year_lulc_path', None)
-    if not _base_map:
+    # SEALS7-keyed sufficiency lookup produce garbage). This base-year value IS pollination's primary
+    # denominator (it feeds both fixedbase and contemp), so a missing one is fatal.
+    base_map = getattr(p, 'pollination_base_year_lulc_path', None) or getattr(p, 'es_base_year_lulc_path', None)
+    if not base_map:
         raise ValueError('pollination base-year LULC not set: point p.es_base_year_lulc_path (or '
                          'p.pollination_base_year_lulc_path) at the SEALS7 base-year map.')
-    # denominator (unpaired 2023 value) is year-independent -> compute once
-    denom = pf.baseline_denominator(cfg, _base_map, es_shock_base_year)
+    # The denominator (unpaired 2023 value) is year- and scenario-independent, so the fixed side of
+    # the zonal step is built once.
+    denominator_path = pf.baseline_denominator(cfg, base_map, es_shock_base_year)
+    baseline_arr, area_arr, zones_arr, zone_labels = _zonal_context(denominator_path, p.region_boundary_path)
 
-    # value[scenario][year] = per-region % change of that scenario's year-map vs the 2023 baseline (stable ag)
-    # level_usd = per-region ABSOLUTE baseline pollination value in base-year USD. It is the denominator
-    # of that % change, so it is already computed; emitting it is what lets GEP consume this task's
-    # output instead of running a second chain over the same rasters. Scenario-invariant by construction
-    # (the denominator is the unpaired baseline), so one copy is kept rather than one per scenario-year.
+    # value[scenario][year] = per-zone % change of that scenario's year-map vs the 2023 baseline (stable
+    # ag). level_usd = the denominator of that % change, the per-zone absolute baseline value in base-year
+    # USD, emitted so the GEP chain can consume this task instead of rerunning the same rasters.
     value, level_usd = {}, None
     for year in anchor_years:
         for scen in [base_scenario] + es_shock_scenarios:
-            pct, lvl = pf.scenario_region_pct_change(
+            diff_arr, _ = _read_masked(pf.scenario_diff_raster(
                 cfg, scenario=f'{scen}_{year}', lulc_path=p.scenario_lulc_paths[scen][year],
-                baseline_lulc_path=_base_map,
-                denominator_path=denom, correspondence_gpkg=p.region_boundary_path,
-                target_year=es_shock_base_year)
+                baseline_lulc_path=base_map, target_year=es_shock_base_year))
+            pct, level = pf.zonal_pct_change(diff_arr, baseline_arr, area_arr, zones_arr, zone_labels)
             value.setdefault(scen, {})[year] = pct
             if level_usd is None:
-                level_usd = lvl
+                level_usd = level
 
-    # ES shock numerator = scenario minus baseline_ignore_dependencies value at each anchor (S_y - B_y); interp annually.
-    # TWO denominators emitted under explicit names (carbon uses the SAME names) for the #14 diagnostic:
-    #   shock_pct_fixedbase = (S_y - B_y) / B0    -- B0 = base-year (2023) value, denominator FIXED across years
-    #   shock_pct_contemp   = (S_y - B_y) / B_y   -- B_y = baseline year-y value = (poll_scenario - poll_base)/poll_base
-    #   shock_pct           = GTAP-primary = shock_pct_contemp (÷B_y), matching carbon. afeall is a productivity
-    #                         deviation from the baseline path (scenarios take productivity as given from BAU), so
-    #                         normalize by the year-y baseline, not the fixed 2023 value.
-    # The arithmetic and the annual expansion are pollination_functions.anchor_shock_tables and
-    # dynamic_shock_rows; they are pinned in the test suite on hand-computed inputs.
+    # The shock numerator is scenario minus nature-off baseline at each anchor. anchor_shock_tables
+    # puts it over the two denominators and dynamic_shock_rows expands those to annual rows.
     rows = []
     for scen in es_shock_scenarios:
         anchor_shock, anchor_contemp = pf.anchor_shock_tables(
@@ -110,9 +134,7 @@ def pollination_shock(p):
     out.to_csv(p.pollination_shock_output_path, index=False)
     print('  pollination shock: %d rows, %d scenarios (shock_pct=shock_pct_contemp=/baseline-year value, shock_pct_fixedbase=/2023 value) -> %s'
           % (len(out), out['scenario'].nunique() if rows else 0, p.pollination_shock_output_path))
-    # GEP hand-off: the absolute base-year pollination value per zone, in base-year USD. Not read by
-    # GTAP (build_combined_afeall takes shock_pct only) -- emitted so the GEP chain can consume this
-    # task rather than recomputing the same rasters.
+    # value_usd_base is the GEP hand-off, not read by GTAP (build_combined_afeall takes shock_pct only).
     if level_usd is not None and len(level_usd):
         print('  pollination value (GEP): %d zones, total %.4g base-year USD -> column value_usd_base'
               % (len(level_usd), float(level_usd.sum())))
