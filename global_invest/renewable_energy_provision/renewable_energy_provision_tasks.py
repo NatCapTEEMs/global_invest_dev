@@ -97,7 +97,7 @@ def gep_calculation(p):
         wb_df = pd.read_csv(p.gep_price_input_path)
 
         # Convert Price from cents/kWh to USD/GWh
-        wb_df['Price'] = wb_df['Price'] * 10000
+        wb_df['Price'] = wb_df['Price'] * renewable_energy_provision_functions.CENTS_PER_KWH_TO_USD_PER_GWH
 
         # rename columns for merge
         wb_df.rename(columns={'Economy ISO3' : 'ISO3 code', 'Economy Name' : 'Country', 'Price' : 'Price (USD/GWh)'}, inplace=True)
@@ -127,7 +127,8 @@ def gep_calculation(p):
         gep_df = combined_df.merge(a_df, on = merge_cols, how = 'inner')
 
         # gep calculation: gep = nat_contrib * P * Q
-        gep_df['renewable_energy_provision_gep'] = gep_df['nat_contrib'] * gep_df['Price (USD/GWh)'] * gep_df['Electricity Generation (GWh)']
+        gep_df['renewable_energy_provision_gep'] = renewable_energy_provision_functions.renewable_energy_gep(
+            gep_df['nat_contrib'], gep_df['Price (USD/GWh)'], gep_df['Electricity Generation (GWh)'])
         gep_df.head()
 
         # filter to columns of interest

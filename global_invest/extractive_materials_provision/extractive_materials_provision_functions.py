@@ -67,3 +67,17 @@ def group_countries(df: pd.DataFrame):
     df_gep_by_year.sort_values("year", inplace=True)
     logging.info(f"Grouped total by year ({df_gep_by_year.shape[0]} rows).")
     return df_gep_by_year
+
+def mineral_rent_gep(mineral_rent_percent, gdp_current_usd, factor):
+    """Mineral provision value: the rent share of GDP, times the attribution factor.
+
+    Args:
+        mineral_rent_percent: mineral rents as a percentage of GDP (the World Bank series).
+        gdp_current_usd: GDP in current USD.
+        factor: the attribution factor applied to the rent (the 0.49 whose source is the
+            service's open question).
+
+    Returns:
+        The valued rent, in the same units as gdp_current_usd.
+    """
+    return (mineral_rent_percent / 100.0) * gdp_current_usd * factor

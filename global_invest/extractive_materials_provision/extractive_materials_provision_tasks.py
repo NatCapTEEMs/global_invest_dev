@@ -74,7 +74,8 @@ def gep_calculation(p):
 
         df_mineral_gdp_values = df_mineral_values.merge(df_gdp_values, on=['Country Code', 'year'], how='left')
 
-        df_mineral_gdp_values['extractive_materials_provision_gep'] = (df_mineral_gdp_values['mineral_rent'] / 100) * df_mineral_gdp_values['GDP_currentUSD'] * MINERAL_RENT_GEP_FACTOR
+        df_mineral_gdp_values['extractive_materials_provision_gep'] = extractive_materials_provision_functions.mineral_rent_gep(
+            df_mineral_gdp_values['mineral_rent'], df_mineral_gdp_values['GDP_currentUSD'], MINERAL_RENT_GEP_FACTOR)
 
         df_mineral_gdp_values['Value'] = df_mineral_gdp_values['extractive_materials_provision_gep']
 

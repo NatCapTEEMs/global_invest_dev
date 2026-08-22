@@ -61,3 +61,21 @@ def filter_and_split_by_resource(df):
 
 
     return technology_dfs
+
+# The World Bank price series arrives in US cents per kilowatt-hour, and generation is in
+# gigawatt-hours: 1e6 kWh per GWh over 100 cents per USD leaves this factor.
+CENTS_PER_KWH_TO_USD_PER_GWH = 10000.0
+
+
+def renewable_energy_gep(nature_contribution, price_usd_per_gwh, generation_gwh):
+    """Renewable provision value: generation, priced, times nature's contribution share.
+
+    Args:
+        nature_contribution: the resource-rent share attributable to nature.
+        price_usd_per_gwh: electricity price in USD per gigawatt-hour.
+        generation_gwh: electricity generated, gigawatt-hours.
+
+    Returns:
+        The valued generation, USD.
+    """
+    return nature_contribution * price_usd_per_gwh * generation_gwh
