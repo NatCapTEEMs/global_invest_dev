@@ -246,7 +246,7 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 - [Values the crop production attributable to wild pollinators (a sufficiency-weighted value raster built from pollinator habitat around cropland). The raster is 2023, and its regeneration at 2019 follows the definition decision.]{.state}
 - **Q1:** is pollination's GEP the service nature currently delivers ({{< meta poll_raster >}}, the sufficiency-weighted raster) or the production value at stake ({{< meta poll_fao >}}, dependence-weighted FAO value)? The country ranking is identical, only the definition differs.
 - Erosion's GEP records the habitat-supplied share, so the raster-side definition is the internally consistent choice.
-- The FAO-side number comes directly from the author's committed per-country table (its 2023 total is the {{< meta poll_fao >}}, and it carries 2019 ready-made). The raster-side number is our country aggregation of the author's value raster. The manuscript becomes its reference once regenerated at 2019.
+- The FAO-side number comes directly from the author's committed per-country table (its 2023 total is the {{< meta poll_fao >}}, and it carries 2019 ready-made). The raster-side number is our country aggregation of the author's value raster.
 
 ## erosion
 
