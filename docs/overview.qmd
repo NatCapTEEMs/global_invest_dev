@@ -233,8 +233,8 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 ## Marine carbon
 
 - [The service sheet lists Terrestrial, Coastal, and Marine carbon. No marine module found in any repo.]{.state}
-- **Q1:** is marine carbon in scope for the account at all, and on what horizon?
-- **Q2:** if yes, which data product drives it?
+- **Q1:** is marine carbon in scope for the account, and if so, when?
+- **Q2:** if yes, which data drives it?
 - **Q3:** most open-ocean carbon sits in the high seas, inside no country's EEZ. Which attribution convention should a per-country account use?
 - The sheet lists one more subgroup under the same service, equally without a module we could find: **Other Non-Carbon GHG**. The same three questions apply.
 
