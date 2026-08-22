@@ -10,6 +10,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from global_invest.livestock_provision import livestock_provision_functions as lp
 from global_invest.livestock_provision import livestock_provision_tasks as lpt
@@ -240,3 +241,37 @@ def test_es_config_row_hydrates_livestock_provision(tmp_path):
     p.get_path = lambda *a, **k: '/resolved/' + '/'.join(a)
     utilities.hydrate_es_config(p, 'livestock_provision', log=lambda *a: None)
     assert p.gep_base_year == 2019
+
+
+def test_dashboard_categories_give_an_upper_bound_not_an_estimate():
+    """The public dashboard serves six of the eight categories, and both absent ones belong to
+    the denominator, so the share it yields is too high. The flag must say so."""
+    full = pd.DataFrame([{'iso3_r250_id': 1, 'iso3_r250_label': 'AAA',
+                          'By-products': 0.0, 'Crop residues': 2.0, 'Fodder crop': 0.0,
+                          'Grass and leaves': 4.0, 'Grains': 3.0, 'Oil seed cakes': 1.0,
+                          'Other edible': 5.0, 'Other non-edible': 5.0}])
+    dashboard = full.drop(columns=['Other edible', 'Other non-edible'])
+
+    complete = lp.feed_lambda_by_country(full).iloc[0]
+    bounded = lp.feed_lambda_by_country(dashboard).iloc[0]
+
+    assert complete['lambda'] == 0.3                     # 6 of 20
+    assert bounded['lambda'] == 0.6                      # 6 of 10, the two others absent
+    assert bounded['lambda'] > complete['lambda']        # biased upward, hence a bound
+    assert bool(complete['lambda_is_upper_bound']) is False
+    assert bool(bounded['lambda_is_upper_bound']) is True
+
+
+def test_missing_an_ecosystem_category_raises_rather_than_understating():
+    """An absent numerator category cannot be bounded in either direction."""
+    df = pd.DataFrame([{'iso3_r250_id': 1, 'iso3_r250_label': 'AAA', 'By-products': 1.0,
+                        'Crop residues': 1.0, 'Grains': 1.0}])       # no Fodder crop, no Grass
+    with pytest.raises(ValueError, match='numerator'):
+        lp.feed_lambda_by_country(df)
+
+
+def test_the_dashboard_category_list_is_the_documented_six():
+    assert set(lp.GLEAM_DASHBOARD_FEED_COLS) < set(lp.GLEAM_TOTAL_FEED_COLS)
+    assert set(lp.GLEAM_ECOSYSTEM_FEED_COLS) < set(lp.GLEAM_DASHBOARD_FEED_COLS)
+    missing = set(lp.GLEAM_TOTAL_FEED_COLS) - set(lp.GLEAM_DASHBOARD_FEED_COLS)
+    assert missing == {'Other edible', 'Other non-edible'}

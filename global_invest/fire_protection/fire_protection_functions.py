@@ -187,3 +187,52 @@ def compute_gep(avoided_df, damage_per_acre_df, global_average):
         df[f'GEP_wildfire_2019_{label}'] = (
             -1 * df[f'additional_acres_2019_{label}'] * df['damages_usd_per_acre_country'])
     return df
+
+
+# GADM codes three of the reference's units differently from the account: Kosovo is XKO where
+# the account's label is XKX, and Z01 and Z07 are Indian sub-regions GADM keeps separate. Joining
+# GID_0 straight onto the r250 label silently dropped all three, stranding their value on rows
+# with no country at all (34.09M USD at the 2019 nature-vs-human-cause variant, which still
+# entered the reported total). The correspondence resolves all three, so the join goes through it.
+GADM_LABEL_ALIASES = {'XKO': 'XKX'}
+FIRE_VALUE_COLUMNS = ('GEP_wildfire_2019_baseline', 'GEP_wildfire_2019_nn_hh',
+                      'GEP_wildfire_2019_ttn_tth')
+
+
+def attach_countries(df_gep, df_countries):
+    """The per-GADM results summed to one row per r250 country.
+
+    GID_0 is resolved through the GADM-to-r250 correspondence rather than assumed equal to the
+    r250 label. Several GADM units can share a country (India carries Z01 and Z07 beside IND),
+    so the values are summed per country rather than joined row for row.
+
+    Args:
+        df_gep (pd.DataFrame): compute_gep's output, one row per GID_0.
+        df_countries (pd.DataFrame): the r264 correspondence, carrying gadm_r263_label and
+            iso3_r250_label.
+
+    Returns:
+        pd.DataFrame: one row per valued country, with the three variant columns summed.
+
+    Raises:
+        ValueError: if a GID_0 carrying a value resolves to no country. Dropping it would take
+            its value out of the account without saying so.
+    """
+    import pandas as pd
+
+    gadm_to_r250 = (df_countries[['gadm_r263_label', 'iso3_r250_label']]
+                    .dropna().drop_duplicates('gadm_r263_label')
+                    .set_index('gadm_r263_label')['iso3_r250_label'])
+    df = df_gep.copy()
+    df['iso3_r250_label'] = df['GID_0'].replace(GADM_LABEL_ALIASES).map(gadm_to_r250)
+
+    value_columns = [c for c in FIRE_VALUE_COLUMNS if c in df.columns]
+    unresolved = df[df['iso3_r250_label'].isna()]
+    stranded = unresolved[value_columns].notna().any(axis=1)
+    if stranded.any():
+        raise ValueError(
+            f"fire_protection: GID_0 {sorted(unresolved.loc[stranded, 'GID_0'])} carry a value "
+            f"but resolve to no r250 country, so their value would leave the account unannounced.")
+
+    return (df.dropna(subset=['iso3_r250_label'])
+            .groupby('iso3_r250_label', as_index=False)[value_columns].sum(min_count=1))

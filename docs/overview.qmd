@@ -125,7 +125,7 @@ format:
 
 - {{< meta n_services >}} services are in the library, and {{< meta n_replicating >}} of them reproduce a committed reference or the manuscript.
 - Nineteen compute their reported number from source data. Three report a value another team computed, because no chain behind it exists in the library: coastal protection, urban cooling, and water quality's headline column. Non-timber forest products has no number yet.
-- {{< meta n_awaiting_file >}} await one file to finish verification: recreation, commercial fisheries and landslide each need a reference output we could not find. Erosion's replication rerun is under way.
+- {{< meta n_awaiting_file >}} await one file to finish verification: recreation, commercial fisheries and landslide each need a reference output we could not find. Erosion's replication run was stopped, for the reasons on its slide.
 - Livestock's numbers are provisional until the feed-share attribution replaces the land rental rate standing in for it.
 
 ## What each service is {.smaller}
@@ -191,11 +191,11 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 | Service | Total | Verified |
 |---|---|---|
 | pollination | {{< meta poll_raster >}} raster side (2023). {{< meta poll_fao >}} FAO side | partially. Two definitions of the same service, and the decision between them is open |
-| erosion | {{< meta erosion_total >}} provisional | not yet. The rerun with the author's original inputs is under way |
+| erosion | {{< meta erosion_total >}} provisional | no. The replication run was stopped: it was computing on inputs that were not present |
 | landslide_mitigation | {{< meta landslide_total >}} ({{< meta landslide_deaths >}} avoided deaths) | no. No reference output exists to compare against yet |
 | fisheries | shock + commercial GEP {{< meta fisheries_total >}} provisional + subsistence {{< meta fisheries_subsistence_total >}} | partially. Subsistence reproduces its committed output, and the commercial run has no reference output yet |
 | recreation | {{< meta recreation_total >}} provisional | no. The author's output table is not reachable |
-| fire_protection | {{< meta fire_cause_total >}} provisional, one of three coefficients | partially. Reproduces the committed output, but reads the committed regression coefficients rather than refitting them |
+| fire_protection | {{< meta fire_cause_total >}} provisional, one of three coefficients | partially. Reproduces the committed output, but reads the committed regression coefficients rather than refitting them. Kosovo and two Indian sub-regions now reach a country instead of no country |
 | water_supply | hydropower component {{< meta water_supply_total >}} | yes. Reproduces the committed output exactly on the 95 countries it covers, and reports the 112 the source table values |
 
 : {tbl-colwidths="[22,32,46]"}
@@ -246,8 +246,10 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 
 ## erosion
 
-- [Values soil the land cover keeps in place: prevented erosion mapped by running the sediment-delivery model ourselves, valued through crop productivity. A replication run on the author's original input tables is under way, so the number is provisional.]{.state}
+- [Values soil the land cover keeps in place: prevented erosion mapped by running the sediment-delivery model ourselves, valued through crop productivity. The replication run was stopped after 17 hours because it was computing on inputs that were not there, so this service has no number we stand behind.]{.state}
+- Two faults, both silent. Six of the run's inputs were missing and it continued anyway: four upstream attribution layers (the forest, grass, cropland and bare shares that decide which land cover prevented the erosion) still resolve to a cluster path that does not exist on this machine, and the run only warned. Separately, the sediment-model task was skipped because its output directory existed, though that directory is empty, so the two rasters the valuation reads were published as paths into it while the real ones sit in a different folder.
 - **Q1:** which of the three shock methods is the account's? We compute damage (thresholded area share), service (threshold-free and magnitude-weighted per crop) and service-threshold (service restricted to a fixed severe-pixel set) side by side.
+- **Q2:** where do the four upstream attribution layers live, now that the cluster path in the config is unreachable from a laptop?
 
 ## landslide_mitigation
 
@@ -280,7 +282,7 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 - [Values livestock production and attributes to nature the share of feed ecosystems provide. Computed in the library the way crop_provision is, but on a land rental rate standing in for the feed share, so the numbers are provisional. On the 65 FAO item codes India recovers from zero to {{< meta livestock_ind >}} and the world total reads {{< meta livestock_world >}}.]{.state}
 - **Q1:** should milk and the other missing products count as livestock production? The library's old list covered meat and eggs only and captured 4 percent of India's FAO livestock value, while the method repo's list of 65 products includes milk.
 - **Q2:** is nature's share the part of feed that comes from ecosystems (grass, leaves, crop residues, by-products) rather than from crops and concentrates? We have written and tested that formula, and it would replace the land rental rate standing in for it now.
-- **Q3:** can you share the GLEAM 3 intake extract (gleam3_dmi.xlsx), and a per-country output to replicate? The public dashboard serves six feed categories where the formula needs eight, so the extract is the blocker, not access.
+- **Q3:** can you share the GLEAM 3 intake extract (gleam3_dmi.xlsx), and a per-country output to replicate? We checked the public dashboard directly: it serves six of the eight feed categories, and the two it omits sit in the denominator only. A share computed from it is therefore an upper bound on nature's contribution rather than an estimate of it, which is also why it could not reproduce your figures.
 
 ## coastal_protection
 

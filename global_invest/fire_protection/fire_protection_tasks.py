@@ -128,12 +128,14 @@ def gep_calculation(p):
     out = ffn.compute_gep(avoided, rates, global_average)
     out.to_csv(p.fire_results_reference_shape_path, index=False)
 
-    # House per-country table: GID_0 is already an iso3 country label, so the r250 attributes
-    # join by label -- the canonical-row collapse is a label equality, nothing is summed.
+    # House per-country table. GID_0 is a GADM label, not an r250 label: three of the
+    # reference's units (Kosovo as XKO, and India's Z01 and Z07) only resolve through the
+    # correspondence, so the values are summed per country there rather than joined here.
     attr_cols = ['iso3_r250_id', 'iso3_r250_label', 'iso3_r250_name',
                  'continent', 'region_un', 'region_wb', 'income_grp', 'subregion']
     attrs = p.df_countries[attr_cols].drop_duplicates('iso3_r250_id')
-    df_gep = out.merge(attrs, how='left', left_on='GID_0', right_on='iso3_r250_label')
+    by_country = ffn.attach_countries(out, p.df_countries)
+    df_gep = by_country.merge(attrs, how='left', on='iso3_r250_label')
     df_gep['year'] = int(p.gep_base_year)
     df_gep['fire_protection_gep'] = df_gep[f'GEP_wildfire_2019_{FIRE_GEP_PROVISIONAL_VARIANT}']
     keep_cols = attr_cols + ['year', 'GEP_wildfire_2019_baseline', 'GEP_wildfire_2019_nn_hh',

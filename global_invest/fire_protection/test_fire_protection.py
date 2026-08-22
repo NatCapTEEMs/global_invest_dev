@@ -129,3 +129,50 @@ def test_es_config_and_parameters_rows_hydrate_fire_protection(tmp_path):
     assert p.fire_regression_results_path.endswith('all_countries_regression_results_lag1.csv')
     assert p.fire_emdat_path.endswith('.xlsx')
     assert p.fire_panel_path.endswith('gadm_adm2_panel_complete_2010_2023.csv')
+
+
+# ---------------------------------------------------------------------------
+# The GADM-to-country join.
+# ---------------------------------------------------------------------------
+
+COUNTRIES = pd.DataFrame({
+    'gadm_r263_label': ['IND', 'Z01', 'Z07', 'XKX', 'KEN'],
+    'iso3_r250_label': ['IND', 'IND', 'IND', 'XKX', 'KEN'],
+})
+
+
+def _gep_rows(rows):
+    return pd.DataFrame(rows, columns=['GID_0'] + list(ffn.FIRE_VALUE_COLUMNS))
+
+
+def test_gadm_subregions_sum_into_their_country():
+    """India's value arrives as three GADM units. Joining on the label alone dropped Z01 and
+    Z07, which left their value on a row with no country and still inside the total."""
+    out = ffn.attach_countries(_gep_rows([
+        ['IND', 1.0, 2.0, 3.0],
+        ['Z01', 10.0, 20.0, 30.0],
+        ['Z07', 100.0, 200.0, 300.0],
+    ]), COUNTRIES).set_index('iso3_r250_label')
+
+    assert len(out) == 1
+    assert out.loc['IND', 'GEP_wildfire_2019_nn_hh'] == 222.0
+
+
+def test_kosovos_gadm_code_resolves_to_the_accounts_label():
+    out = ffn.attach_countries(_gep_rows([['XKO', 1.0, 2.0, 3.0]]), COUNTRIES)
+    assert out['iso3_r250_label'].tolist() == ['XKX']
+    assert out['GEP_wildfire_2019_nn_hh'].tolist() == [2.0]
+
+
+def test_a_valued_code_that_resolves_to_no_country_raises():
+    """Silently dropping it would take its value out of the account without saying so."""
+    with pytest.raises(ValueError, match='resolve to no r250 country'):
+        ffn.attach_countries(_gep_rows([['ZZZ', 1.0, 2.0, 3.0]]), COUNTRIES)
+
+
+def test_an_unvalued_code_that_resolves_to_no_country_is_simply_dropped():
+    out = ffn.attach_countries(_gep_rows([
+        ['KEN', 1.0, 2.0, 3.0],
+        ['ZZZ', np.nan, np.nan, np.nan],
+    ]), COUNTRIES)
+    assert out['iso3_r250_label'].tolist() == ['KEN']

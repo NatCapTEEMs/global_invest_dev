@@ -289,21 +289,47 @@ def group_countries(df):
 GLEAM_ECOSYSTEM_FEED_COLS = ("By-products", "Crop residues", "Fodder crop", "Grass and leaves")
 GLEAM_TOTAL_FEED_COLS = GLEAM_ECOSYSTEM_FEED_COLS + ("Grains", "Oil seed cakes",
                                                      "Other edible", "Other non-edible")
+# What the public GLEAM 3 dashboard serves, confirmed against the live Input Data table on
+# 2026-08-22: it carries all four ecosystem categories but only two of the four others, so
+# "Other edible" and "Other non-edible" are missing. Both are DENOMINATOR-ONLY. A lambda
+# computed without them divides by too small a total, so it is biased upward: it is an UPPER
+# BOUND on nature's share of feed, not an estimate of it. That is also exactly why a run on
+# dashboard data cannot reproduce the author's figures, whose extract carries all eight.
+GLEAM_DASHBOARD_FEED_COLS = GLEAM_ECOSYSTEM_FEED_COLS + ("Grains", "Oil seed cakes")
 
 
 def feed_lambda_by_country(gleam_dmi_df):
     """One row per country: lambda, the ecosystem-provided share of total feed intake.
 
+    The denominator is whichever of GLEAM_TOTAL_FEED_COLS the frame actually carries. With all
+    eight this is nature's share. With only the six the public dashboard serves it is an upper
+    bound, because the two absent categories belong to the denominator alone; the returned
+    `lambda_is_upper_bound` column says which case produced the number, so a downstream reader
+    cannot mistake one for the other.
+
     Args:
         gleam_dmi_df (pd.DataFrame): GLEAM 3 dry-matter intake with iso3_r250_id,
-            iso3_r250_label and one column per feed category (the eight in
-            GLEAM_TOTAL_FEED_COLS), any number of rows per country (species, systems).
+            iso3_r250_label and one column per feed category, any number of rows per country
+            (species, production systems).
 
     Returns:
-        pd.DataFrame: iso3_r250_id, iso3_r250_label, lambda.
+        pd.DataFrame: iso3_r250_id, iso3_r250_label, lambda, lambda_is_upper_bound.
+
+    Raises:
+        ValueError: if a category that feeds the NUMERATOR is missing. Nature's share cannot be
+            bounded in either direction without all four, so there is no honest number to give.
     """
-    eco_cols = list(GLEAM_ECOSYSTEM_FEED_COLS)
-    total_cols = list(GLEAM_TOTAL_FEED_COLS)
-    grouped = gleam_dmi_df.groupby(['iso3_r250_id', 'iso3_r250_label'], dropna=False)[total_cols].sum().reset_index()
+    eco_cols = [c for c in GLEAM_ECOSYSTEM_FEED_COLS if c in gleam_dmi_df.columns]
+    missing_eco = [c for c in GLEAM_ECOSYSTEM_FEED_COLS if c not in gleam_dmi_df.columns]
+    if missing_eco:
+        raise ValueError(
+            f"GLEAM intake is missing ecosystem feed categories {missing_eco}, which are the "
+            f"numerator: nature's share cannot be computed or bounded without them.")
+
+    total_cols = [c for c in GLEAM_TOTAL_FEED_COLS if c in gleam_dmi_df.columns]
+    missing_total = [c for c in GLEAM_TOTAL_FEED_COLS if c not in total_cols]
+    grouped = (gleam_dmi_df.groupby(['iso3_r250_id', 'iso3_r250_label'], dropna=False)[total_cols]
+               .sum().reset_index())
     grouped['lambda'] = grouped[eco_cols].sum(axis=1) / grouped[total_cols].sum(axis=1)
-    return grouped[['iso3_r250_id', 'iso3_r250_label', 'lambda']]
+    grouped['lambda_is_upper_bound'] = bool(missing_total)
+    return grouped[['iso3_r250_id', 'iso3_r250_label', 'lambda', 'lambda_is_upper_bound']]
