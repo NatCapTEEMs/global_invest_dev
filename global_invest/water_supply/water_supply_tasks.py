@@ -66,12 +66,19 @@ def gep_calculation(p):
     # water_supply_gep stays the hydropower component alone: how (and whether) the water-use
     # components combine with it is the account's subgroup question, flagged on the deck.
     df_gep['water_supply_gep'] = df_gep['hydropower_gep']
-    hb.df_write(df_gep[attr_cols + ['year', 'hydropower_gep', 'water_use_agriculture_gep',
-                                    'water_use_all_sector_gep', 'water_supply_gep']],
+    hb.df_write(df_gep[attr_cols + ['year', 'hydropower_gep', 'hydropower_gep_reference_variant',
+                                    'water_use_agriculture_gep', 'water_use_all_sector_gep',
+                                    'water_supply_gep']],
                 service_results['gep_by_country_base_year'])
 
+    ours = df_gep['hydropower_gep'].sum()
+    reference = df_gep['hydropower_gep_reference_variant'].sum()
+    n_extra = int(df_gep['hydropower_gep'].notna().sum()
+                  - df_gep['hydropower_gep_reference_variant'].notna().sum())
     hb.log(f'Total water_supply GEP (hydropower component) for base year {p.gep_base_year}: '
-           f'{df_gep["hydropower_gep"].sum():,.2f}')
+           f'{ours:,.2f}')
+    hb.log(f'  reference-matching variant {reference:,.2f} over {n_extra} fewer countries; '
+           f'the gap is the reference exclusions, which we no longer apply to the reported value')
     return True
 
 

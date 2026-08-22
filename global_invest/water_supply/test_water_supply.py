@@ -13,6 +13,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from global_invest.water_supply import water_supply_functions as wf
 
@@ -31,18 +32,32 @@ def test_exact_replication_of_the_committed_anchor():
 
     rent = wf.hydropower_rent_from_wealth(wealth)
     merged = anchor.merge(rent, on='iso3_r250_label', how='left')
-    ours, ref = merged['hydropower_gep'], merged['gep_hydro_cwonresrent_2019usd']
-    both = ours.notna() & ref.notna()
+    variant, ref = merged['hydropower_gep_reference_variant'], merged['gep_hydro_cwonresrent_2019usd']
+    both = variant.notna() & ref.notna()
     assert both.sum() == 95                                  # the valued countries, Venezuela included
     # The anchor stores whole dollars, so at 1e7-1e9 magnitudes its rounding is ~1e-7 relative.
-    assert np.allclose(ours[both], ref[both], rtol=1e-6)
-    # A country the anchor values must never be missing from our side, and our coverage must
-    # not exceed the anchor's: the encoded exclusions carry the whole difference.
-    assert not (ref.notna() & ours.isna()).any()
-    assert not (ref.isna() & ours.notna()).any()
+    assert np.allclose(variant[both], ref[both], rtol=1e-6)
+    # The reference-matching variant must line up with the anchor exactly, country for country.
+    assert not (ref.notna() & variant.isna()).any()
+    assert not (ref.isna() & variant.notna()).any()
     raw = wealth.set_index('countrycode')['YR2019']
     for label in wf.HYDROPOWER_REFERENCE_EXCLUDED:
         assert pd.notna(raw.get(label)), label      # the exclusion is real: wealth exists
+
+
+def test_the_reported_value_covers_the_countries_the_reference_drops():
+    """The reported column must NOT reproduce the reference's unexplained exclusions. Blanking
+    them would fit our number to the anchor, and the discrepancy could never surface."""
+    wealth = pd.read_stata(os.path.join(REFERENCE_DIR, 'hydro_wealth_cd.dta'))
+    rent = wf.hydropower_rent_from_wealth(wealth).set_index('iso3_r250_label')
+
+    for label in wf.HYDROPOWER_REFERENCE_EXCLUDED:
+        assert pd.notna(rent.loc[label, 'hydropower_gep']), label
+        assert pd.isna(rent.loc[label, 'hydropower_gep_reference_variant']), label
+    extra = int(rent['hydropower_gep'].notna().sum()
+                - rent['hydropower_gep_reference_variant'].notna().sum())
+    assert extra == len(wf.HYDROPOWER_REFERENCE_EXCLUDED)
+    assert rent['hydropower_gep'].sum() > rent['hydropower_gep_reference_variant'].sum()
 
 
 def test_no_wealth_stays_nan_and_the_join_keeps_all_countries():
@@ -135,3 +150,45 @@ def test_water_use_committed_anchors_join_and_total():
     assert out['water_use_all_sector_gep'].notna().sum() == 183
     assert np.isclose(out['water_use_agriculture_gep'].sum(),
                       agriculture['wateruse_ag_gep'].sum())
+
+
+# ---------------------------------------------------------------------------
+# One row per country: the AQUASTAT double-spelling fan-out.
+# ---------------------------------------------------------------------------
+
+def _components(rows):
+    return pd.DataFrame(rows, columns=['country', 'iso3_r250_id', 'iso3_r250_label', 'year',
+                                       'water_use_agriculture_gep', 'water_use_all_sector_gep'])
+
+
+def test_two_spellings_of_one_country_collapse_to_a_single_row():
+    """The export names Russia twice. Left-merging both onto the country list counted it
+    twice in every total, which is what inflated the reported hydropower number."""
+    out = wf.one_row_per_country(_components([
+        ['Russian Federation', 643.0, 'RUS', 2015, np.nan, np.nan],
+        ['Russia', 643.0, 'RUS', 2000, 5.0, 7.0],
+    ]))
+    assert len(out) == 1
+    assert out.iloc[0]['iso3_r250_label'] == 'RUS'
+    assert out.iloc[0]['water_use_agriculture_gep'] == 5.0     # the non-empty spelling wins
+    assert out.iloc[0]['water_use_all_sector_gep'] == 7.0
+
+
+def test_a_country_the_name_join_could_not_resolve_passes_through():
+    """An unresolved name keeps its empty id rather than being dropped, so a name drift in
+    the export stays visible instead of silently losing a country."""
+    out = wf.one_row_per_country(_components([
+        ['Cape Verde', np.nan, np.nan, 2015, 9.0, 9.0],
+        ['Kenya', 404.0, 'KEN', 2015, 1.0, 2.0],
+    ]))
+    assert len(out) == 2
+    assert set(out['country']) == {'Cape Verde', 'Kenya'}
+
+
+def test_two_spellings_that_disagree_on_a_value_raise():
+    """Combining them would decide, silently, which number the country gets."""
+    with pytest.raises(ValueError, match='disagree'):
+        wf.one_row_per_country(_components([
+            ['Russian Federation', 643.0, 'RUS', 2015, 5.0, 7.0],
+            ['Russia', 643.0, 'RUS', 2000, 6.0, 7.0],
+        ]))

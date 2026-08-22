@@ -21,8 +21,13 @@ HYDROPOWER_HORIZON_YEARS = 100    # the CWoN capitalization horizon
 HYDROPOWER_GEP_YEAR = 2019
 # Countries the reference output leaves EMPTY although the CWoN wealth table values them.
 # No available material explains the drop (the 2026 script is not on the drive; the package
-# lacks its raw workbook), so the exclusion is encoded to reproduce the reference and the
-# reason is an open ask on the deck. Changing this list is a reviewed-commit decision.
+# lacks its raw workbook), and the reason is an open ask on the deck.
+#
+# These are NOT dropped from the reported value. Blanking them would fit our number to the
+# reference instead of deriving it, which is the one thing the account must not do: a
+# discrepancy we silently reproduce can never surface. The module reports every country the
+# CWoN table values, and emits the reference-matching variant beside it as the comparison
+# anchor, so the replication check still runs and the gap stays visible and countable.
 HYDROPOWER_REFERENCE_EXCLUDED = ('AZE', 'BGR', 'DOM', 'GRC', 'GTM', 'HTI', 'KAZ', 'LBR',
                                  'MAR', 'MKD', 'NIC', 'POL', 'PRT', 'SLV', 'TJK', 'UKR', 'ZAF')
 
@@ -37,21 +42,27 @@ def hydropower_rent_from_wealth(wealth_df, year=HYDROPOWER_GEP_YEAR):
 
     wealth_df: the CWoN hydro_wealth_cd table (countrycode + YR<year> columns, current USD --
     equal to real 2019 USD in the 2019 base year, and the only variant that covers Venezuela).
-    Countries without wealth stay NaN -- no data is not zero rent; the reference's unexplained
-    exclusions (HYDROPOWER_REFERENCE_EXCLUDED) are set NaN to reproduce it."""
+    Countries without wealth stay NaN: no data is not zero rent.
+
+    Returns hydropower_gep, every country the wealth table values, and beside it
+    hydropower_gep_reference_variant, the same figure with the reference's unexplained
+    exclusions blanked. The first is what the account reports; the second exists only so the
+    replication check has something to compare against."""
     df = wealth_df[['countrycode', f'YR{year}']].rename(
         columns={'countrycode': 'iso3_r250_label',
                  f'YR{year}': 'hydropower_wealth_usd'})
     df['hydropower_gep'] = df['hydropower_wealth_usd'] / annuity_factor()
-    df.loc[df['iso3_r250_label'].isin(HYDROPOWER_REFERENCE_EXCLUDED), 'hydropower_gep'] = float('nan')
+    df['hydropower_gep_reference_variant'] = df['hydropower_gep'].mask(
+        df['iso3_r250_label'].isin(HYDROPOWER_REFERENCE_EXCLUDED))
     return df
 
 
 def water_supply_gep_by_country(hydropower_df, countries_df):
     """Join the hydropower rent onto the r250 country list by iso3 label, one row per country."""
-    df = countries_df.merge(hydropower_df[['iso3_r250_label', 'hydropower_gep']],
-                            on='iso3_r250_label', how='left')
-    return df
+    columns = ['iso3_r250_label', 'hydropower_gep']
+    if 'hydropower_gep_reference_variant' in hydropower_df.columns:
+        columns.append('hydropower_gep_reference_variant')
+    return countries_df.merge(hydropower_df[columns], on='iso3_r250_label', how='left')
 
 
 # =============================================================================
@@ -208,5 +219,44 @@ def water_use_components_from_chain(gep_by_country_year_df, countries_df):
     latest['iso3_r250_label'] = latest['country'].map(by_name).fillna(latest['country'].map(by_long))
     latest = latest.merge(countries_df[['iso3_r250_label', 'iso3_r250_id']].drop_duplicates('iso3_r250_label'),
                           on='iso3_r250_label', how='left')
-    return latest[['country', 'iso3_r250_id', 'iso3_r250_label', 'year',
-                   'water_use_agriculture_gep', 'water_use_all_sector_gep']]
+    return one_row_per_country(latest[['country', 'iso3_r250_id', 'iso3_r250_label', 'year',
+                                       'water_use_agriculture_gep', 'water_use_all_sector_gep']])
+
+
+# The AQUASTAT export names some countries twice, once in full and once short ("Russian
+# Federation" and "Russia", "Republic of Korea" and "South Korea"), and both spellings can
+# resolve to the same r250 id. Left-merging that table onto the country list then FANS OUT:
+# the country gets two rows and is counted twice in every total. Korea and Russia did exactly
+# that, inflating the reported hydropower total by 1.89bn USD, which stayed invisible because
+# the deck quoted the reference file's total rather than the module's own.
+WATER_USE_VALUE_COLUMNS = ('water_use_agriculture_gep', 'water_use_all_sector_gep')
+
+
+def one_row_per_country(df_components):
+    """The components table collapsed to one row per r250 country.
+
+    Rows the name join could not resolve keep their empty id and pass through unchanged, so a
+    name drift stays visible. Where two spellings resolved to the same country, their values
+    are combined by taking the one non-empty value per column.
+
+    Raises:
+        ValueError: if two rows for the same country carry DIFFERENT values for a column.
+            That is a genuine conflict about what the country's value is, and picking one
+            silently would be the same class of error as the double-count this prevents.
+    """
+    resolved = df_components[df_components['iso3_r250_id'].notna()]
+    for column in WATER_USE_VALUE_COLUMNS:
+        distinct = resolved.groupby('iso3_r250_id')[column].nunique(dropna=True)
+        conflicted = distinct[distinct > 1]
+        if len(conflicted):
+            raise ValueError(
+                f"water_use components disagree on {column} for r250 id(s) "
+                f"{sorted(conflicted.index.tolist())}: two spellings of the same country carry "
+                f"different values, so which one the account reports is undecided.")
+
+    unresolved = df_components[df_components['iso3_r250_id'].isna()]
+    # groupby.last skips nulls, so a column empty on one spelling takes the other's value.
+    collapsed = (resolved.sort_values('year')
+                 .groupby('iso3_r250_id', as_index=False)
+                 .agg({c: 'last' for c in df_components.columns if c != 'iso3_r250_id'}))
+    return pd.concat([collapsed, unresolved], ignore_index=True)[list(df_components.columns)]
