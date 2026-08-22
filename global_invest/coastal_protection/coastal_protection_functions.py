@@ -1,12 +1,17 @@
 # -*- coding: utf-8 -*-
 """Coastal-protection science: storm damage avoided by mangroves and by coral reefs.
 
-Two components, valued upstream and combined here. The mangrove component is the World Bank
-Changing Wealth of Nations mangrove table, which already reports an annual protection value per
-country in current 2019 USD, so it is read, joined to the country correspondence and summed.
-The coral-reef component is the annual expected flood-protection benefit table, reported in 2011
-USD, so it is carried to the base year by the cumulative World Bank GDP deflator over the
-intervening years before being combined with the mangrove component.
+Two components, combined here, and only one of them is ours to compute.
+
+The mangrove component IS computed here: the CWoN mangrove table carries the protected area in
+hectares and the value per hectare beside its own published total, so the value is the product
+of those two rather than the published column read through. That reproduces the published total
+to within 2e-7 and, unlike reading it, would show us a disagreement if one appeared.
+
+The coral-reef component is NOT computed here. Its table carries a finished annual benefit per
+country and nothing underneath it, so there is no chain to run; it is carried from 2011 to the
+base year by the cumulative World Bank GDP deflator and added. That is the open ask on this
+service.
 
 Every function here is a pure transformation over frames, which is what the tests exercise. The
 task module reads the three workbooks and passes the frames in.
@@ -27,22 +32,33 @@ COASTAL_PROTECTION_BASE_YEAR = 2019
 DEFLATOR_PERCENT = 100.0
 
 
-def clean_mangrove_values(df_raw):
-    """The mangrove table keyed the way the country join expects.
+# The two columns the mangrove value is computed from, and the published total kept beside it
+# as the comparison anchor.
+MANGROVE_AREA_COLUMN = 'mangrove_ha'
+MANGROVE_VALUE_PER_HA_COLUMN = 'value_per_ha_2019'
+MANGROVE_PUBLISHED_VALUE_COLUMN = 'annual_value_2019'
 
-    The workbook is already one row per country and year with the annual protection value in
-    current USD, so the only work is renaming its two key columns onto the correspondence's
-    vocabulary and making the year an integer.
+
+def clean_mangrove_values(df_raw):
+    """The mangrove protection value, computed from area times value per hectare.
+
+    The workbook publishes a finished annual value, but it also carries the two numbers that
+    value is made of, so the value is computed here instead of read. A country missing either
+    stays empty rather than becoming zero: no area or no price is not no protection.
 
     Args:
-        df_raw (pd.DataFrame): the CWoN mangrove table as shipped, with countrycode,
-            annual_value_2019 and year.
+        df_raw (pd.DataFrame): the CWoN mangrove table as shipped, carrying countrycode, year,
+            mangrove_ha, value_per_ha_2019 and annual_value_2019.
 
     Returns:
-        pd.DataFrame: the same rows with ee_r264_label and Value in place of those two columns.
+        pd.DataFrame: ee_r264_label, year, Value (ours) and Value_published (the anchor).
     """
-    df = df_raw.rename(columns={'countrycode': 'ee_r264_label', 'annual_value_2019': 'Value'})
+    df = df_raw.rename(columns={'countrycode': 'ee_r264_label'})
     df['year'] = pd.to_numeric(df['year'], errors='coerce').astype(int)
+    area = pd.to_numeric(df[MANGROVE_AREA_COLUMN], errors='coerce')
+    value_per_ha = pd.to_numeric(df[MANGROVE_VALUE_PER_HA_COLUMN], errors='coerce')
+    df['Value'] = area * value_per_ha
+    df['Value_published'] = pd.to_numeric(df[MANGROVE_PUBLISHED_VALUE_COLUMN], errors='coerce')
     logging.info(f'Finished cleaning up ({df.shape[0]} rows).')
     return df
 

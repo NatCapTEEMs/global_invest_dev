@@ -39,16 +39,22 @@ DEFLATOR_LONG = pd.DataFrame({
 })
 
 
-def test_clean_mangrove_values_renames_the_join_keys_and_casts_the_year():
+def test_mangrove_value_is_computed_from_area_and_price_not_read():
+    """The workbook publishes a finished value, but it also carries what that value is made of.
+    Computing it is what would let a disagreement with the published column surface."""
     raw = pd.DataFrame({
-        'countrycode': ['AAA', 'BBB'],
-        'countryname': ['Aaaland', 'Bbbland'],
-        'annual_value_2019': [100.0, 200.0],
-        'year': [2019.0, 2019.0],
+        'countrycode': ['AAA', 'BBB', 'CCC'],
+        'countryname': ['Aaaland', 'Bbbland', 'Cccland'],
+        'mangrove_ha': [10.0, 20.0, np.nan],
+        'value_per_ha_2019': [10.0, 10.0, 10.0],
+        'annual_value_2019': [100.0, 199.0, 50.0],
+        'year': [2019.0, 2019.0, 2019.0],
     })
-    out = cpf.clean_mangrove_values(raw)
-    assert out['ee_r264_label'].tolist() == ['AAA', 'BBB']
-    assert out['Value'].tolist() == [100.0, 200.0]
+    out = cpf.clean_mangrove_values(raw).set_index('ee_r264_label')
+    assert out.loc['AAA', 'Value'] == 100.0
+    assert out.loc['BBB', 'Value'] == 200.0          # ours, not the published 199
+    assert out.loc['BBB', 'Value_published'] == 199.0
+    assert pd.isna(out.loc['CCC', 'Value'])          # no area is not no protection
     assert out['year'].dtype.kind == 'i'
 
 
@@ -170,6 +176,7 @@ def test_the_currency_years_that_define_the_deflator_span_are_pinned():
 def test_task_reader_cleans_the_mangrove_workbook(tmp_path):
     path = str(tmp_path / 'mangroves.xlsx')
     pd.DataFrame({'countrycode': ['AAA'], 'countryname': ['Aaaland'],
+                  'mangrove_ha': [10.0], 'value_per_ha_2019': [10.0],
                   'annual_value_2019': [100.0], 'year': [2019.0]}).to_excel(
         path, sheet_name=cpt.SOURCE_SHEET_NAME, index=False)
     out = cpt.read_mangrove_values(path)

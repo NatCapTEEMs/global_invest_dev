@@ -248,7 +248,6 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 - [Values crop production attributable to wild pollinators, from a sufficiency-weighted value raster built from pollinator habitat around cropland. We aggregate that raster to countries ourselves. It is a 2023 raster, and we regenerate it at 2019 once the definition is decided.]{.state}
 - **Q1:** is pollination's value the service nature currently delivers ({{< meta poll_raster >}}, the sufficiency-weighted raster) or the production value at stake ({{< meta poll_fao >}}, dependence-weighted FAO value)? The country ranking is identical.
 - **Q2:** does the account add pollination on top of crop_provision? Crop multiplies production value by the land rental rate, so both attribute part of the same output to nature.
-- Erosion records the habitat-supplied share, which would make the raster side the consistent choice.
 
 ## erosion
 
@@ -374,11 +373,9 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 
 ## Conventions to settle
 
-- **Base year:** every service with a number values at 2019, except pollination's 2023 raster, which we regenerate once its definition is settled. Confirm 2019.
-- **Subsistence:** crop, livestock and fisheries carry subsistence subgroups in the sheet. In scope, per service?
-- **Maps:** country values on split-country polygons render partially, so China shows one sixth of its value. May we dissolve to one polygon per country for cartography? It is a display change that cannot affect a total.
-- **Case studies:** the sheet marks five services computable only as worked examples rather than all-country accounts (water quality, pest control, health, peak flow, moisture recycling), though water quality now runs globally in the library. Is case-study coverage acceptable for the account?
-- **The crosswalk:** the sheet lists roughly 26 services and the library covers 23. We propose a tested crosswalk table, sheet label to module to output, rather than restructuring modules to mirror the sheet.
+- **Base year:** every service with a number values at 2019, except pollination's 2023 raster, which we regenerate once its definition is settled.
+- **Subsistence:** crop, livestock and fisheries carry subsistence subgroups in the sheet. In scope? Double counting?
+- **Case studies:** the sheet marks five services computable only as worked examples rather than all-country accounts (water quality, pest control, health, peak flow, moisture recycling), though water quality now runs globally in the library. Should we include case-studies in the account?
 
 # What we need
 
