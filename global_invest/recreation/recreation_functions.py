@@ -206,13 +206,12 @@ def mask_to_sites(input_path, sites_path, output_path):
                                       output_path, gdal.GDT_Float32, FLOAT_NDV)
 
 
-def calculate_kernel_recreation(population_path, country_id_path, fuel_cost_csv_path,
+def calculate_kernel_recreation(population_path, country_id_path, fuel_cost_df,
                                 hq_sites_path, visits_output_path, value_output_path, working_dir):
     """The visit/value engine shared by daily recreation and tourism: for each Chebyshev ring,
     build the potential surfaces and convolve them over the population, then mask the summed
     totals to high-quality sites. population_path is residents (daily) or allocated overnights
     (tourism); everything else is identical between the two."""
-    fuel_cost_df = pd.read_csv(fuel_cost_csv_path)
     country_costs = dict(zip(fuel_cost_df['iso3_r250_id'], fuel_cost_df[RECREATION_FUEL_COST_COL]))
     max_country_id = max(country_costs.keys()) if country_costs else 0
     cost_lookup = np.zeros(max_country_id + 1, dtype=np.float32)
@@ -287,7 +286,7 @@ def extract_clean_overnights(df, tourism_type):
     return tidy
 
 
-def clean_unwto_data(unwto_xlsx_path, panel_output_path):
+def clean_unwto_data(unwto_xlsx_path):
     """UNWTO all-data workbook -> a wide overnight panel per country-year, written as CSV.
 
     Domestic and inbound accommodation sheets are located by their AFGHANISTAN header row,
@@ -324,7 +323,6 @@ def clean_unwto_data(unwto_xlsx_path, panel_output_path):
         final_cols += [f'total_overnights_{tourism_type}', f'hotel_overnights_{tourism_type}',
                        f'overnights_{tourism_type}']
     final_df = pivoted[[col for col in final_cols if col in pivoted.columns]]
-    final_df.to_csv(panel_output_path, index=False)
     return final_df
 
 

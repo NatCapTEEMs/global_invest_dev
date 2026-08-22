@@ -97,8 +97,8 @@ def overnight_allocation(p):
         if hb.path_exists(p.recreation_unwto_panel_path):
             overnight_df = pd.read_csv(p.recreation_unwto_panel_path)
         else:
-            overnight_df = rf.clean_unwto_data(p.recreation_unwto_path,
-                                               p.recreation_unwto_panel_path)
+            overnight_df = rf.clean_unwto_data(p.recreation_unwto_path)
+            overnight_df.to_csv(p.recreation_unwto_panel_path, index=False)
         country_overnights_map = rf.build_country_overnights_map(overnight_df, int(p.gep_base_year))
         hb.log('recreation: overnight totals mapped for %d countries (%.4g total overnights @%d)'
                % (len(country_overnights_map), sum(country_overnights_map.values()),
@@ -118,7 +118,7 @@ def daily_recreation(p):
     if not hb.path_all_exist([p.daily_recreation_visits_path, p.daily_recreation_value_path]):
         rf.calculate_kernel_recreation(
             p.recreation_population_path, p.recreation_country_id_path,
-            p.recreation_fuel_cost_path, p.recreation_hq_sites_path,
+            pd.read_csv(p.recreation_fuel_cost_path), p.recreation_hq_sites_path,
             p.daily_recreation_visits_path, p.daily_recreation_value_path,
             working_dir=os.path.join(p.cur_dir, 'kernel'))
     return True
@@ -135,7 +135,7 @@ def tourist_recreation(p):
     if not hb.path_all_exist([p.tourist_recreation_visits_path, p.tourist_recreation_value_path]):
         rf.calculate_kernel_recreation(
             p.recreation_overnights_path, p.recreation_country_id_path,
-            p.recreation_fuel_cost_path, p.recreation_hq_sites_path,
+            pd.read_csv(p.recreation_fuel_cost_path), p.recreation_hq_sites_path,
             p.tourist_recreation_visits_path, p.tourist_recreation_value_path,
             working_dir=os.path.join(p.cur_dir, 'kernel'))
     return True
