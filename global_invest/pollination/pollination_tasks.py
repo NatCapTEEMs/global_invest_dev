@@ -7,10 +7,10 @@ directory (p.es_shock_dir). Grafted by consumers via add_pollination_tasks (disp
 """
 import os
 import glob
-import numpy as np
 import pandas as pd
 import hazelbean as hb
 from global_invest import utilities
+from global_invest.pollination import pollination_functions as pf
 
 
 def publish_inputs(p):
@@ -43,17 +43,13 @@ def pollination_shock(p):
         p.pollination_shock_output_path = os.path.join(getattr(p, 'es_shock_dir', None) or p.project_dir, 'pollination_interpolated.csv')
     if not p.run_this:
         return
-    # Imported here, not at module top, so the static fallback task can run without crop_benefits
-    # (only this dynamic path, via pollination_functions, needs it).
-    from global_invest.pollination import pollination_functions as pf
-
     # Locals bind seam attributes only under their OWN names; derived values get new names;
     # single-use reads stay inline. Export keys/boundary are es_parameters shipped defaults.
     utilities.hydrate_es_parameters(p, 'pollination', log=hb.log)
     base_scenario      = utilities.required_base_scenario(p, 'pollination')
     es_shock_base_year = int(p.es_shock_base_year)
+    es_shock_scenarios = list(p.es_shock_scenarios)      # was read unbound: this task raised NameError
     anchor_years = sorted(y for y in map(int, p.es_shock_years) if y > es_shock_base_year)
-    end_year     = anchor_years[-1]
 
     cfg = pf.configure_crop_benefits(p, es_shock_base_year)            # crop_benefits Config -> our base_data + task dir
 
@@ -99,26 +95,15 @@ def pollination_shock(p):
     #   shock_pct           = GTAP-primary = shock_pct_contemp (÷B_y), matching carbon. afeall is a productivity
     #                         deviation from the baseline path (scenarios take productivity as given from BAU), so
     #                         normalize by the year-y baseline, not the fixed 2023 value.
-    # contemp is an EXACT rescale of fixedbase (no extra rasters): (sum B_y*area)/(sum B0*area) = 1 + value[base_scenario][y]/100,
-    # so contemp = fixedbase / that factor. Guards only exact-zero; near-zero baselines handled after seeing #14.
-    all_years, rows = list(range(es_shock_base_year, end_year + 1)), []
+    # The arithmetic and the annual expansion are pollination_functions.anchor_shock_tables and
+    # dynamic_shock_rows; they are pinned in the test suite on hand-computed inputs.
+    rows = []
     for scen in es_shock_scenarios:
-        anchor_shock = pd.DataFrame({y: value[scen][y] - value[base_scenario][y] for y in anchor_years}).dropna()
-        # reindex the growth factor onto anchor_shock's own zones, so contemp has exactly the same rows
-        base_factor = pd.DataFrame({y: 1.0 + value[base_scenario][y] / 100.0
-                                    for y in anchor_years}).reindex(anchor_shock.index).replace(0, np.nan)
-        anchor_contemp = anchor_shock / base_factor
-        for (endw, reg), s in anchor_shock.iterrows():
-            annual   = np.interp(all_years, [es_shock_base_year] + anchor_years, [0.0] + list(s.values))
-            annual_c = np.interp(all_years, [es_shock_base_year] + anchor_years,
-                                 [0.0] + list(anchor_contemp.loc[(endw, reg)].values))
-            base_usd = float(level_usd.get((endw, reg), float('nan'))) if level_usd is not None else float('nan')
-            for year, v, vc in zip(all_years, annual, annual_c):
-                for sector in p.pollination_shock_acts:
-                    rows.append({'ENDW': endw, 'ACTS': sector, 'REG': reg, 'scenario': scen,
-                                 'year': year, 'shock_pct': vc,
-                                 'shock_pct_fixedbase': v, 'shock_pct_contemp': vc,
-                                 'value_usd_base': base_usd})
+        anchor_shock, anchor_contemp = pf.anchor_shock_tables(
+            {y: value[scen][y] for y in anchor_years},
+            {y: value[base_scenario][y] for y in anchor_years})
+        rows += pf.dynamic_shock_rows(anchor_shock, anchor_contemp, level_usd, scen,
+                                      p.pollination_shock_acts, es_shock_base_year)
 
     out = pd.DataFrame(rows)
     utilities.assert_shock_table_sound(out, es_shock_scenarios, 'pollination')
@@ -159,7 +144,6 @@ def pollination_shock_static(p):
     utilities.hydrate_es_parameters(p, 'pollination', log=hb.log)   # shipped defaults; caller wins
     es_shock_base_year = int(p.es_shock_base_year)
     es_shock_end_year = int(p.es_shock_end_year)
-    n_years = es_shock_end_year - es_shock_base_year
     pollination_scenario_map = getattr(p, 'pollination_scenario_map', {})
     es_shock_scenarios = list(p.es_shock_scenarios)
 
@@ -188,14 +172,8 @@ def pollination_shock_static(p):
         if raw_scn is None:
             continue
         scn_vals = df[df['scenario'] == raw_scn].set_index(['ENDW', 'REG'])['value'].astype(float)
-        common = base.index.intersection(scn_vals.index)
-        shock = (scn_vals.loc[common] - base.loc[common]).dropna()
-        for year in range(es_shock_base_year, es_shock_end_year + 1):
-            frac = (year - es_shock_base_year) / n_years
-            for (endw, reg), val in shock.items():
-                for sector in p.pollination_shock_acts:
-                    rows.append({'ENDW': endw, 'ACTS': sector, 'REG': reg,
-                                 'scenario': our_scn, 'year': year, 'shock_pct': val * frac})
+        rows += pf.static_shock_rows(base, scn_vals, our_scn, p.pollination_shock_acts,
+                                     es_shock_base_year, es_shock_end_year)
 
     out = pd.DataFrame(rows)
     utilities.assert_shock_table_sound(out, es_shock_scenarios, 'pollination')
@@ -248,28 +226,21 @@ def gep_calculation(p):
         return
     hb.log("Starting GEP calculation for pollination.")
 
-    # 1. Per-region (r264) USD value -> aggregate to one row per COUNTRY (r250). Summing the
-    #    r264-expanded table instead would double-count split countries (see utilities docstring).
+    # 1. Per-region (r264) USD value -> one row per COUNTRY (r250), written as the per-country CSV
+    #    that is the source of truth for every sum. Summing the r264-expanded table instead would
+    #    double-count split countries (see utilities docstring).
     df_q264 = pd.read_csv(p.pollination_value_by_region_path)
-    df_250 = (df_q264.groupby(['iso3_r250_id', 'year'], as_index=False)['total'].sum()
-              .rename(columns={'total': 'pollination_gep'}))
-
-    # 2. Attach per-country attributes and write the per-country CSV (source of truth for every sum).
-    attr_cols = ['iso3_r250_id', 'iso3_r250_label', 'iso3_r250_name',
-                 'continent', 'region_un', 'region_wb', 'income_grp', 'subregion']
-    keep_cols = attr_cols + ['year', 'pollination_gep']
-    df_gep = df_250.merge(df_q264[attr_cols].drop_duplicates('iso3_r250_id'),
-                          how='left', on='iso3_r250_id')[keep_cols]
+    df_gep = pf.collapse_regions_to_countries(df_q264)
     hb.df_write(df_gep, service_results['gep_by_country_base_year'])
 
-    # 3. Map only: r264-expanded, each sub-region carries its country's value, never summed
+    # 2. Map only: r264-expanded, each sub-region carries its country's value, never summed
     #    (carbon template; the repo-wide map convention is the open flag-3 decision).
-    df_regions = df_q264.merge(df_250[['iso3_r250_id', 'pollination_gep']], how='left', on='iso3_r250_id')
+    df_regions = pf.expand_country_values_to_regions(df_q264, df_gep)
     gdf = hb.df_merge(p.gdf_countries_simplified, df_regions, how='outer',
                       left_on='ee_r264_id', right_on='ee_r264_id')
     gdf.to_file(service_results['gep_by_country_base_year'].replace('.csv', '.gpkg'), driver='GPKG')
 
-    # 4. National total = sum over the one-row-per-country table.
+    # 3. National total = sum over the one-row-per-country table.
     value_gep_base_year = df_gep['pollination_gep'].sum()
     hb.log(f"Total pollination GEP for base year {p.gep_base_year}: {value_gep_base_year}")
     return value_gep_base_year

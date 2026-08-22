@@ -1,9 +1,7 @@
 import os
-import sys
-import pandas as pd
+
 import hazelbean as hb
 from global_invest import utilities
-import subprocess
 
 from global_invest.coastal_protection import coastal_protection_initialize
 from global_invest.coastal_protection import coastal_protection_functions
@@ -57,120 +55,40 @@ def gep_calculation(p):
         hb.log("All results already exist. Skipping GEP calculation for coastal protection.")
     else:
         hb.log("Starting GEP calculation for coastal protection.")
-        
-        # Optimization here,
-        # p.gdf_countries = hb.read_vector(p.gdf_countries)
+
+        base_year = coastal_protection_functions.COASTAL_PROTECTION_BASE_YEAR
         p.gdf_countries = hb.read_vector(p.gdf_countries_vector_path)
 
-        # 1. Read and process data
         df_mangrove_value = coastal_protection_functions.read_mangrove_values(p.gep_quantity_input_path)
         df_coral_reef_value = coastal_protection_functions.read_coral_reef_values(p.coral_reef_ref_path)
+        # The coral table is in CORAL_REEF_VALUE_YEAR currency, so inflation is applied from the
+        # year after that through the base year.
+        df_gdp_inflation_deflator = coastal_protection_functions.get_inflation_deflator_multiplier(
+            p.df_gdp_inflation_deflator_path,
+            coastal_protection_functions.CORAL_REEF_VALUE_YEAR + 1, base_year)
 
-        # Keep one row per country: a right join on r264 would repeat an r250 country once per
-        # sub-region, so the sub-region rows are dropped before the join.
-        
-        
-        # Merge so it has all the good labels from the  
-        df_gep_by_country_year_mangrove = hb.df_merge(p.gdf_countries, df_mangrove_value, how='inner', on='ee_r264_label')
-        df_gep_by_country_year_mangrove = (
-            df_gep_by_country_year_mangrove
-            .groupby(["iso3_r250_label", "year"], as_index=False, dropna=False)["Value"]
-            .sum()
-        )
-        df_gep_by_country_year_mangrove.dropna(subset=['iso3_r250_label'], inplace=True)
+        df_mangrove = coastal_protection_functions.mangrove_gep_by_country(
+            p.gdf_countries, df_mangrove_value)
+        df_coral_reef = coastal_protection_functions.coral_reef_gep_by_country(
+            p.gdf_countries, df_coral_reef_value, df_gdp_inflation_deflator, base_year)
 
-        df_gep_by_country_year_coral_reef = hb.df_merge(p.gdf_countries, df_coral_reef_value, how='inner', on='ee_r264_name')
-        df_gep_by_country_year_coral_reef.dropna(subset=['coral_reef_value'], inplace=True)
-        df_gep_by_country_year_coral_reef.drop_duplicates(subset=['iso3_r250_label', 'year','coral_reef_value'], inplace=True)
+        df_gep_by_country_year = coastal_protection_functions.combine_coastal_components(
+            df_mangrove, df_coral_reef)
+        df_gep_by_country_year = coastal_protection_functions.attach_country_attributes(
+            df_gep_by_country_year, p.gdf_countries)
 
+        df_gep_by_country_base_year = df_gep_by_country_year.loc[
+            df_gep_by_country_year['year'] == base_year].copy()
 
-        df_gdp_inflation_deflator = coastal_protection_functions.get_inflation_deflator_multiplier(p.df_gdp_inflation_deflator_path,2012,2019)
-        df_gep_by_country_year_coral_reef2019 = hb.df_merge(df_gep_by_country_year_coral_reef, df_gdp_inflation_deflator, how='left', on='ee_r264_label')
-        df_gep_by_country_year_coral_reef2019['coral_reef_value'] = df_gep_by_country_year_coral_reef2019 ['coral_reef_value'] * df_gep_by_country_year_coral_reef2019['deflator_multiplier']
-        df_gep_by_country_year_coral_reef2019['year'] = 2019
-        df_gep_by_country_year_coral_reef = pd.concat(
-            [df_gep_by_country_year_coral_reef, df_gep_by_country_year_coral_reef2019],
-            ignore_index=True
-        )
+        hb.df_write(df_gep_by_country_base_year, p.results['coastal_protection']['gep_by_country_base_year'])
 
-        df_gep_by_country_year_coral_reef = (
-            df_gep_by_country_year_coral_reef
-            .groupby(["iso3_r250_label", "year"], as_index=False, dropna=False)["coral_reef_value"]
-            .sum()
-        )
-
-
-        # Rename value to coastal_protection_gep
-        df_gep_by_country_year_mangrove = df_gep_by_country_year_mangrove.rename(
-            columns={'Value': 'coastal_protection_gep_mangrove'}
-        )
-
-        df_gep_by_country_year_coral_reef = df_gep_by_country_year_coral_reef.rename(
-            columns={'coral_reef_value': 'coastal_protection_gep_coral_reef'}
-        )
-        df_gep_by_country_year_coral_reef = df_gep_by_country_year_coral_reef[
-            df_gep_by_country_year_coral_reef['year'] == 2019
-        ]
-    
-        #merge the two dataframes on the common columns
-        df_gep_by_country_year = pd.merge(
-            df_gep_by_country_year_mangrove,
-            df_gep_by_country_year_coral_reef,
-            how='outer',
-            on=['iso3_r250_label', 'year']
-        )
-
-        df_gep_by_country_year = df_gep_by_country_year.fillna(0)
-
-        df_gep_by_country_year['coastal_protection_gep'] = df_gep_by_country_year['coastal_protection_gep_mangrove'] + df_gep_by_country_year['coastal_protection_gep_coral_reef']
-        # df_gep_by_country_year['coastal_protection_gep'] = df_gep_by_country_year['coastal_protection_gep_coral_reef'] # for mangrove or coral reef only testing
-        df_gep_by_country_year['Value'] = df_gep_by_country_year['coastal_protection_gep']
-                # Drop repeated ids in df_countries
-        ee_r264_to_250 = p.gdf_countries.copy()
-        ee_r264_to_250 = ee_r264_to_250[ee_r264_to_250['ee_r264_label'] == ee_r264_to_250['iso3_r250_label']]
-        
-        cols_to_keep = [
-            'ee_r264_id',	
-            'iso3_r250_id',
-            'ee_r264_label',
-            'iso3_r250_label',
-            'ee_r264_name',
-            'iso3_r250_name',
-            'continent',
-            'region_un',
-            'region_wb',
-            'income_grp',
-            'subregion',
-            'area_code_M49',
-            'area_code',
-            'country',
-        ]
-        ee_r264_to_250.drop([i for i in ee_r264_to_250.columns if i not in cols_to_keep], axis=1, inplace=True, errors='ignore')
-        # ee_r264_to_250 = ee_r264_to_250[cols_to_keep]
-
-        df_gep_by_country_year = pd.merge(
-            df_gep_by_country_year,
-            ee_r264_to_250,
-            how='left',
-            on=['iso3_r250_label']
-        )
-
-        df_gep_by_country_base_year = df_gep_by_country_year.loc[df_gep_by_country_year['year'] == 2019].copy()
-        
-        # Write to CSVs
-        hb.df_write(df_gep_by_country_base_year, p.results['coastal_protection']['gep_by_country_base_year'])   
-
-
-        # Use geopandas to merge the df_gep_by_country_base_year with the  to get the country names and other attributes
+        # Map only: the r264-expanded boundaries, each sub-region carrying its country's value.
         gdf_gep_by_country_base_year = hb.df_merge(p.gdf_countries_vector_simplified_path, df_gep_by_country_base_year, how='outer', on='ee_r264_id')
-
-
         gdf_gep_by_country_base_year.to_file(p.results['coastal_protection']['gep_by_country_base_year'].replace('.csv', '.gpkg'), driver='GPKG')
 
-        # Then sum the values across all countries. 
-        value_gep_base_year = df_gep_by_country_base_year['coastal_protection_gep'].sum() 
-        
-        hb.log(f"Total GEP value for base year 2019: {value_gep_base_year}")
+        value_gep_base_year = df_gep_by_country_base_year['coastal_protection_gep'].sum()
+
+        hb.log(f"Total GEP value for base year {base_year}: {value_gep_base_year}")
         return value_gep_base_year
 
 def gep_result(p):

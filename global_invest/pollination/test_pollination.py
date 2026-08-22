@@ -1,15 +1,17 @@
-"""Unit tests for the pollination GEP valuation (synthetic, self-contained).
+"""Unit tests for pollination.
 
-End-to-end through the real chain: a tiny USD value raster -> utilities.summarize_raster_by_region
-(real zonal statistics) -> gep_calculation. Pins the r250 contract: a split country (two r264
-sub-regions, one iso3) is summed once, and the map gpkg carries per-sub-region rows that are never
-summed. The ES-shock tasks have their own coverage via the shared resolver/invariant tests.
+Two layers. The shock and valuation arithmetic is pinned as pure functions over hand-built series
+whose expected values are written out in the assertions. Below that, one end-to-end test runs the
+real chain (a tiny USD value raster through utilities.summarize_raster_by_region into
+gep_calculation) to pin the r250 contract: a split country is summed once, and the map gpkg
+carries per-sub-region rows that are never summed.
 """
 from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
 
+from global_invest.pollination import pollination_functions as pf
 from global_invest.pollination import pollination_tasks as pt
 
 ATTRS = {'iso3_r250_label': {156: 'CHN', 528: 'NLD'},
@@ -20,6 +22,144 @@ ATTRS = {'iso3_r250_label': {156: 'CHN', 528: 'NLD'},
          'income_grp': {156: 'UMIC', 528: 'HIC'},
          'subregion': {156: 'Eastern Asia', 528: 'Western Europe'}}
 
+ZONE_A = ('AEZ1', 'usa')
+ZONE_B = ('AEZ2', 'bra')
+
+
+def _zone_frame(columns_by_year):
+    """An anchor table shaped the way anchor_shock_tables builds it: rows keyed on (ENDW, REG)."""
+    return pd.DataFrame({year: pd.Series(values) for year, values in columns_by_year.items()})
+
+
+# ---------------------------------------------------------------------------
+# Shock arithmetic.
+# ---------------------------------------------------------------------------
+
+def test_anchor_shock_tables_subtract_the_baseline_and_rebase_onto_it():
+    # Both inputs are percent changes against the same fixed base-year value. Zone A: scenario is
+    # 4 points below its baseline against the fixed base, and the baseline itself has grown 25%,
+    # so contemporaneously it is -4 / 1.25 = -3.2 percent.
+    scenario = {2030: pd.Series({ZONE_A: 21.0, ZONE_B: -5.0})}
+    baseline = {2030: pd.Series({ZONE_A: 25.0, ZONE_B: -50.0})}
+
+    fixedbase, contemporaneous = pf.anchor_shock_tables(scenario, baseline)
+    assert fixedbase.loc[ZONE_A, 2030] == -4.0
+    assert np.isclose(contemporaneous.loc[ZONE_A, 2030], -3.2)
+    # Zone B: 45 points above its baseline against the fixed base, baseline halved, so 45 / 0.5.
+    assert fixedbase.loc[ZONE_B, 2030] == 45.0
+    assert np.isclose(contemporaneous.loc[ZONE_B, 2030], 90.0)
+
+
+def test_anchor_shock_tables_give_nan_where_the_baseline_has_gone_to_zero():
+    """A baseline that has lost all its value would divide the contemporaneous shock by zero."""
+    scenario = {2030: pd.Series({ZONE_A: -100.0})}
+    baseline = {2030: pd.Series({ZONE_A: -100.0})}       # growth factor exactly 0
+    fixedbase, contemporaneous = pf.anchor_shock_tables(scenario, baseline)
+    assert fixedbase.loc[ZONE_A, 2030] == 0.0
+    assert np.isnan(contemporaneous.loc[ZONE_A, 2030])
+
+
+def test_anchor_shock_tables_drop_a_zone_missing_from_any_anchor_year():
+    """The two tables must carry identical rows, so a zone the later year does not cover is
+    dropped from both rather than being carried with a hole in it."""
+    scenario = {2030: pd.Series({ZONE_A: 10.0, ZONE_B: 10.0}), 2040: pd.Series({ZONE_A: 20.0})}
+    baseline = {2030: pd.Series({ZONE_A: 0.0, ZONE_B: 0.0}), 2040: pd.Series({ZONE_A: 0.0})}
+    fixedbase, contemporaneous = pf.anchor_shock_tables(scenario, baseline)
+    assert fixedbase.index.tolist() == [ZONE_A]
+    assert contemporaneous.index.tolist() == [ZONE_A]
+
+
+def test_dynamic_shock_rows_ramp_from_zero_at_the_base_year_through_each_anchor():
+    fixedbase = _zone_frame({2025: {ZONE_A: -4.0}, 2030: {ZONE_A: -8.0}})
+    contemporaneous = _zone_frame({2025: {ZONE_A: -3.2}, 2030: {ZONE_A: -6.4}})
+    level_usd = pd.Series({ZONE_A: 1000.0})
+
+    rows = pf.dynamic_shock_rows(fixedbase, contemporaneous, level_usd, 'net_zero',
+                                 ('V_F', 'OSD'), base_year=2020)
+    out = pd.DataFrame(rows)
+
+    # 11 years (2020..2030) x 2 sectors.
+    assert len(out) == 22
+    by_year = out[out['ACTS'] == 'V_F'].set_index('year')
+    assert by_year.loc[2020, 'shock_pct_fixedbase'] == 0.0
+    assert np.isclose(by_year.loc[2022, 'shock_pct_fixedbase'], -1.6)   # 2/5 of the way to -4
+    assert by_year.loc[2025, 'shock_pct_fixedbase'] == -4.0
+    assert np.isclose(by_year.loc[2027, 'shock_pct_fixedbase'], -5.6)   # 2/5 of -4 to -8
+    assert by_year.loc[2030, 'shock_pct_fixedbase'] == -8.0
+    # shock_pct is the contemporaneous measure, matching carbon.
+    assert (out['shock_pct'] == out['shock_pct_contemp']).all()
+    assert by_year.loc[2030, 'shock_pct'] == -6.4
+    assert (out['value_usd_base'] == 1000.0).all()
+    assert out['REG'].unique().tolist() == ['usa']
+    assert out['ENDW'].unique().tolist() == ['AEZ1']
+
+
+def test_dynamic_shock_rows_leave_the_level_missing_for_a_zone_the_denominator_lacks():
+    fixedbase = _zone_frame({2030: {ZONE_A: -8.0}})
+    rows = pf.dynamic_shock_rows(fixedbase, fixedbase, pd.Series({ZONE_B: 5.0}), 'net_zero',
+                                 ('V_F',), base_year=2029)
+    assert all(np.isnan(row['value_usd_base']) for row in rows)
+
+
+def test_static_shock_rows_ramp_the_difference_linearly_to_the_end_year():
+    baseline = pd.Series({ZONE_A: 10.0, ZONE_B: 4.0})
+    scenario = pd.Series({ZONE_A: 12.0, ZONE_B: 4.0})
+
+    rows = pf.static_shock_rows(baseline, scenario, 'net_zero', ('V_F',), 2020, 2024)
+    out = pd.DataFrame(rows).set_index(['REG', 'year'])['shock_pct']
+
+    assert out.loc[('usa', 2020)] == 0.0
+    assert out.loc[('usa', 2021)] == 0.5       # a quarter of the way to +2
+    assert out.loc[('usa', 2024)] == 2.0
+    assert out.loc[('bra', 2024)] == 0.0       # no difference to ramp
+    assert len(rows) == 2 * 5                  # two zones x five years, one sector
+
+
+def test_static_shock_rows_skip_a_zone_the_scenario_does_not_cover():
+    """Shocking a zone the scenario table has no row for would put an invented number into the
+    economic model, so only the zones both series carry are ramped."""
+    baseline = pd.Series({ZONE_A: 10.0, ZONE_B: 4.0})
+    scenario = pd.Series({ZONE_A: 12.0})
+    rows = pf.static_shock_rows(baseline, scenario, 'net_zero', ('V_F',), 2020, 2024)
+    assert {row['REG'] for row in rows} == {'usa'}
+
+
+# ---------------------------------------------------------------------------
+# GEP valuation arithmetic.
+# ---------------------------------------------------------------------------
+
+def _region_frame():
+    """Three r264 regions, two of them sub-regions of the same country."""
+    rows = []
+    for region_id, iso, total in [(1, 156, 40.0), (2, 156, 20.0), (3, 528, 8.0)]:
+        row = {'ee_r264_id': region_id, 'iso3_r250_id': iso, 'year': 2023, 'total': total}
+        row.update({col: mapping[iso] for col, mapping in ATTRS.items()})
+        rows.append(row)
+    return pd.DataFrame(rows)
+
+
+def test_collapse_regions_to_countries_sums_a_split_country_once():
+    out = pf.collapse_regions_to_countries(_region_frame())
+    assert list(out.columns) == pf.POLLINATION_ATTR_COLS + ['year', 'pollination_gep']
+    by_country = out.set_index('iso3_r250_label')
+    assert len(by_country) == 2
+    assert by_country.loc['CHN', 'pollination_gep'] == 60.0     # 40 + 20, not 40 and 20
+    assert by_country.loc['NLD', 'pollination_gep'] == 8.0
+    assert by_country.loc['CHN', 'region_wb'] == 'EAP'
+
+
+def test_expand_country_values_to_regions_repeats_the_national_value_per_sub_region():
+    df_regions = _region_frame()
+    out = pf.expand_country_values_to_regions(df_regions, pf.collapse_regions_to_countries(df_regions))
+    assert len(out) == 3
+    assert out.set_index('ee_r264_id')['pollination_gep'].loc[[1, 2]].tolist() == [60.0, 60.0]
+    # The per-region raster totals are kept beside the national value, not overwritten by it.
+    assert out.set_index('ee_r264_id')['total'].loc[1] == 40.0
+
+
+# ---------------------------------------------------------------------------
+# End to end through the real zonal chain.
+# ---------------------------------------------------------------------------
 
 def _write_tif(path, array):
     from osgeo import gdal, osr
