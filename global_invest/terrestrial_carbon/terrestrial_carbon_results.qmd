@@ -161,7 +161,7 @@ for k, v in p.results[service_label].items():
     # Per-year results (gep_by_year) are produced only in a multi-year run; omitted in this base-year report.
 ```
 
-The analysis reveals that terrestrial carbon storage and sequestration generates a total gross ecosystem product of $`{python} f"{total_terrestrial_carbon_value:,.2f}"` in the base year (2019). Below we present the results in various aggregations, ending with the GEP by country in the base year.
+Carbon stored by land ecosystems is valued at the rental social cost of carbon, giving $`{python} f"{total_terrestrial_carbon_value:,.2f}"` in the base year. The tables below aggregate that by income group, region and continent, and end with the per-country table the account reads.
 
 ```{python}
 # Display the GEP by country map

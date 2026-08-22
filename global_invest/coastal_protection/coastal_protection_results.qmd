@@ -3,9 +3,11 @@ format:
   html:
     embed-resources: true
     standalone: true
-    code-fold: true           # Fold code by default in HTML
-    code-summary: "Show code"
+execute:
+  echo: false          # results report shows tables/figures, not code
+  warning: false
 ---
+
 
 # Coastal Protection Results
 
@@ -157,7 +159,7 @@ for k, v in p.results[service_label].items():
 
 ```
 
-The analysis reveals that costal protection generates a total gross economic product of $`{python} f"{total_value:,.2f}"` across the study period. Below we present the results in various aggregations, ending with the GEP by country in the base year.
+Storm damage avoided by mangroves and coral reefs is valued at $`{python} f"{total_value:,.2f}"` in the base year. Both source tables already carry a final per-country value, so this page reports them rather than a chain we ran. The tables below aggregate by income group, region and continent.
 
 ```{python}
 # Display the GEP by income group table

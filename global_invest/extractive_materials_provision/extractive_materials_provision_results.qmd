@@ -3,9 +3,11 @@ format:
   html:
     embed-resources: true
     standalone: true
-    code-fold: true           # Fold code by default in HTML
-    code-summary: "Show code"
+execute:
+  echo: false          # results report shows tables/figures, not code
+  warning: false
 ---
+
 
 # extractive materials provision Results
 
@@ -154,7 +156,7 @@ for k, v in p.results[service_label].items():
 
 ```
 
-The analysis reveals that total extractive materials provision value generates a total gross economic product of $`{python} f"{total_extractive_materials_provision_value:,.2f}"` across the study period. Below we present the results in various aggregations, ending with the GEP by country in the base year.
+Mineral extraction is valued at the resource-rent share of mining output, giving $`{python} f"{total_extractive_materials_provision_value:,.2f}"` in the base year. The tables below aggregate that by income group, region and continent, and end with the per-country table the account reads.
 
 ```{python}
 # Display the GEP by income group table   

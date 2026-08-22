@@ -3,9 +3,11 @@ format:
   html:
     embed-resources: true
     standalone: true
-    code-fold: true           # Fold code by default in HTML
-    code-summary: "Show code"
+execute:
+  echo: false          # results report shows tables/figures, not code
+  warning: false
 ---
+
 
 # Livestock Provision Results
 
@@ -157,7 +159,7 @@ for k, v in p.results[service_label].items():
 
 ```
 
-The analysis reveals that commercial agriculture generates a total gross economic product of $`{python} f"{total_agricultural_value:,.2f}"` across the study period. Below we present the results in various aggregations, ending with the GEP by country in the base year.
+Livestock production attributable to ecosystem-provided feed is valued at $`{python} f"{total_agricultural_value:,.2f}"` in the base year. The attribution currently uses a land rental rate standing in for the feed share, so the number is provisional. The tables below aggregate it by income group, region and continent.
 
 ```{python}
 # Display the GEP by income group table   
