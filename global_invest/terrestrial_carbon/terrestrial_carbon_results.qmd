@@ -29,8 +29,6 @@ author:
 
 # Terrestrial Carbon Results
 
-Text describing it. To be written by service team.
-
 ```{python}
 #| output: false
 
@@ -47,7 +45,10 @@ if __name__ == '__main__':
     # ProjectFlow object
     p = hb.ProjectFlow() # Create a ProjectFlow Object to organize directories and enable parallel processing.
     p.project_name = 'gep_terrestrial_carbon'  # Determines the folder created to store intermediate and final results.
-    p.project_dir = os.path.join(os.path.expanduser('~'), 'Files', 'global_invest', 'projects', p.project_name) # Put it in the right location relative to the user's home directory.
+    # The rendering task passes the project it is reporting on; the home path is the
+    # fallback for someone opening this qmd directly.
+    p.project_dir = os.environ.get('PROJECTFLOW_ROOT', os.path.join(
+        os.path.expanduser('~'), 'Files', 'global_invest', 'projects', p.project_name)) # Put it in the right location relative to the user's home directory.
     p.set_project_dir(p.project_dir) # Sets p.base_data_dir (default / machine.env), p.input_dir, p.intermediate_dir, p.output_dir.
 
     # Task tree

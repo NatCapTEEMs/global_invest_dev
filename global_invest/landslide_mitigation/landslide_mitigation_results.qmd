@@ -10,8 +10,6 @@ execute:
 
 # Landslide Mitigation Results
 
-Text describing it. To be written by the service team (science source: the v0.2.0 landslide model folded from m-braaksma/landslide_mitigation, and the method note in `landslide_mitigation_method.qmd`).
-
 ```{python}
 #| output: false
 
@@ -27,7 +25,10 @@ if __name__ == '__main__':
 
     p = hb.ProjectFlow()
     p.project_name = 'gep_landslide_mitigation'
-    p.project_dir = os.path.join(os.path.expanduser('~'), 'Files', 'global_invest', 'projects', p.project_name)
+    # The rendering task passes the project it is reporting on; the home path is the
+    # fallback for someone opening this qmd directly.
+    p.project_dir = os.environ.get('PROJECTFLOW_ROOT', os.path.join(
+        os.path.expanduser('~'), 'Files', 'global_invest', 'projects', p.project_name))
     p.set_project_dir(p.project_dir)
 
     landslide_mitigation_initialize.build_gep_service_task_tree(p)

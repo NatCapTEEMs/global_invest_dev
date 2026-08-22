@@ -129,6 +129,10 @@ def render_service_results(p):
         existing_pythonpath = env.get('PYTHONPATH')
         env['PYTHONPATH'] = (repo_root if not existing_pythonpath
                              else repo_root + os.pathsep + existing_pythonpath)
+        # Name the project being reported on. Without this every results page falls back to a
+        # hardcoded home-directory path, so a report rendered from a test project or another
+        # machine would show the stable project's numbers instead of this run's.
+        env['PROJECTFLOW_ROOT'] = p.project_dir
 
         cmd = ['quarto', 'render', results_qmd_project_path, '--verbose']
         hb.log('Running quarto command: %s' % ' '.join(cmd))

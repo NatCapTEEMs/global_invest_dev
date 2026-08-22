@@ -238,19 +238,19 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 ## pollination
 
 - [Values crop production attributable to wild pollinators, from a sufficiency-weighted value raster built from pollinator habitat around cropland. We aggregate that raster to countries ourselves. It is a 2023 raster, and we regenerate it at 2019 once the definition is decided.]{.state}
-- **Q1:** is pollination's value the service nature currently delivers ({{< meta poll_raster >}}, the sufficiency-weighted raster) or the production value at stake ({{< meta poll_fao >}}, dependence-weighted FAO value)? The country ranking is identical, only the definition differs. Erosion records the habitat-supplied share, which would make the raster side the consistent choice.
+- **Q1:** is pollination's value the service nature currently delivers ({{< meta poll_raster >}}, the sufficiency-weighted raster) or the production value at stake ({{< meta poll_fao >}}, dependence-weighted FAO value)? The country ranking is identical.
 - **Q2:** does the account add pollination on top of crop_provision? Crop multiplies production value by the land rental rate, so both attribute part of the same output to nature.
+- Erosion records the habitat-supplied share, which would make the raster side the consistent choice.
 
 ## erosion
 
 - [Values soil the land cover keeps in place: prevented erosion mapped by running the sediment-delivery model ourselves, valued through crop productivity. The replication is ongoing and we report no number for it yet.]{.state}
-- Four upstream attribution layers, the forest, grass, cropland and bare shares that decide which land cover prevented the erosion, are referenced at a cluster path that is not reachable from this machine, and the run proceeded without them rather than stopping.
 - **Q1:** which of the three shock methods is the account's? We compute damage (thresholded area share), service (threshold-free and magnitude-weighted per crop) and service-threshold (service restricted to a fixed severe-pixel set) side by side.
-- **Q2:** where do the four upstream attribution layers live, now that the cluster path in the config is unreachable from a laptop?
+- **Q2:** where do the four upstream attribution layers (the forest, grass, cropland and bare shares that decide which land cover prevented the erosion) live?
 
 ## landslide_mitigation
 
-- [Values landslide deaths avoided by forest cover: slope stability modelled with and without forest root cohesion, the difference turned into avoided deaths and priced at a value of a statistical life. Computed end to end in the library, and the first full run is complete on the cluster.]{.state}
+- [Values landslide deaths avoided by forest cover: slope stability modelled with and without forest root cohesion, the difference turned into avoided deaths and priced at a value of a statistical life. Computed end to end in the library.]{.state}
 - **Q1:** do you have a per-country output from a v0.2.0 run?
 - **Q2:** which input versions did the run behind the v0.2.0 release use?
 
@@ -265,8 +265,8 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 ## recreation
 
 - [Values visits to natural recreation sites at travel cost: 1 km sites ranked by land-cover shares, protected areas and road access, then a gravity model sends residents on day trips and tourists on overnight stays into the high-quality sites. Computed end to end in the library.]{.state}
-- **Q1:** do you have the source pipeline's results_by_country.csv, for replication?
-- **Q2:** did the travel-cost step intend kilometres? It multiplies a USD-per-km fuel cost by a distance measured in the raster's pixel units (degrees), which understates values.
+- **Q1:** where can we find the source pipeline's results_by_country.csv?
+- **Q2:** did the travel-cost step intend km? It multiplies a USD-per-km fuel cost by a distance measured in the raster's pixel units (degrees), which understates values.
 
 ## crop_provision
 

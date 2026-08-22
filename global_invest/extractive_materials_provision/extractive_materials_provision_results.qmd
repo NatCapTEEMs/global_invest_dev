@@ -11,8 +11,6 @@ execute:
 
 # extractive materials provision Results
 
-Text describing it. To be written by service team.
-
 ```{python}
 #| output: false
 
