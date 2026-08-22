@@ -7,11 +7,6 @@ from global_invest import utilities
 from global_invest.crop_provision import crop_provision_initialize
 from global_invest.crop_provision import crop_provision_functions
 
-# The year the service reports. It is a literal because crop_provision's es_config row leaves
-# gep_base_year empty, so p.gep_base_year is never hydrated for this service (recorded as an
-# open item, not fixed here: filling the cell would change which year the CSV reports).
-CROP_PROVISION_BASE_YEAR = 2019
-
 # Project content/config (was crop_provision_defaults.py; the template keeps content in the task module).
 
 DEFAULT_CROP_ITEMS = [
@@ -274,8 +269,9 @@ def gep_calculation(p):
 
         df_gep_by_year = crop_provision_functions.group_countries(df_gep_by_country_year)
 
+        base_year = int(p.gep_base_year)
         df_gep_by_country_base_year = df_gep_by_country_year.loc[
-            df_gep_by_country_year['year'] == CROP_PROVISION_BASE_YEAR].copy()
+            df_gep_by_country_year['year'] == base_year].copy()
 
         # Write to CSVs
         hb.df_write(df_gep_by_country_year_crop, p.results['crop_provision']['gep_by_country_year_crop'])
@@ -290,7 +286,7 @@ def gep_calculation(p):
 
         value_gep_base_year = df_gep_by_country_base_year['crop_provision_gep'].sum()
 
-        hb.log(f"Total GEP value for base year {CROP_PROVISION_BASE_YEAR}: {value_gep_base_year}")
+        hb.log(f"Total GEP value for base year {base_year}: {value_gep_base_year}")
 
         return value_gep_base_year
 
