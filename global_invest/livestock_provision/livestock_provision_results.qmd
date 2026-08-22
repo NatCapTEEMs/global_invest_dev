@@ -5,12 +5,6 @@ format:
     standalone: true
     code-fold: true           # Fold code by default in HTML
     code-summary: "Show code"
-  pdf:
-    echo: false              # Hide code by default in PDF
-  docx:
-    echo: false              # Hide code by default in Word
-  ipynb: 
-    echo: true
 ---
 
 # Livestock Provision Results
