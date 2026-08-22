@@ -268,7 +268,7 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 - [Values commercial capture fisheries as the economic rent of the catch, and subsistence fisheries as the consumptive-use value of home catch. The valuation is ported from the source repo's CWoN-method script, provisional until the source choice is confirmed.]{.state}
 - **Q1:** should the RCP8.5-for-RCP7.0 substitution stand, or is there a replacement?
 - **Q2:** which CWoN vintage produced the shock file (cwon_shocks.har)?
-- **Q3:** should the account's fisheries value come from the CWoN resource rents (the method now running in the library, 165 countries) or from the FishStatJ catch pipeline? Do you have a per-country CSV from your own run of the CWoN script, so we can check our port against it?
+- **Q3:** should the account's fisheries value come from the CWoN resource rents (the method now running in the library, 165 countries) or from the FishStatJ catch pipeline? Do you have a per-country CSV from your own run of the CWoN script?
 - The subsistence component is also in the library. It is the Lynch et al. (2024) consumptive-use value per country across 85 countries, and it replicates the source repo's committed output.
 - **Q4:** do commercial and subsistence add together, or does the commercial number already contain the subsistence catch? The commercial side is built on FAO catch statistics, so where a country reports subsistence fishing in its catch, summing the two counts it twice.
 
