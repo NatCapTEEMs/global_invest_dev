@@ -36,6 +36,19 @@ import pandas as pd
 # Every derived raster in this chain carries the same nodata value.
 NODATA = -9999.0
 
+# METHOD CONSTANTS defining the ported v0.2.0 science (the landslide author's to bless) -- in
+# code so a change costs a reviewed commit. publish_inputs applies them caller-wins, so a
+# deliberate override on p survives.
+DATA_PROCESSING_YEARS = list(range(2007, 2020))  # every year the input rasters are built for
+MODELING_YEARS = list(range(2007, 2019))         # the years both models are fitted on
+PREDICTION_YEARS = [2019]                        # held out of fitting, and the reported year
+MAX_LOCATION_ACCURACY_M = 1000   # UGLC events located less precisely than this are dropped
+CONTROL_RATIO = 25               # control pixel-years drawn per case pixel-year
+# Scenario -> the root cohesion it gets. 'observed' keeps the mapped forest share at full root
+# strength; 'full_impacts' (the value 0) strips root cohesion, and the difference in predicted
+# deaths between the two is what the service values.
+C_ROOT_SCENARIOS = {'observed': 'observed', 'full_impacts': 0}
+
 # GeoTIFF creation options. A full EASE-Grid 1km raster is global and large, so every
 # full-grid output is tiled, LZW-compressed and BIGTIFF-capable; per-tile outputs are small
 # enough to skip BIGTIFF, and the stitched globals spell the options in the source repo's order.
@@ -65,6 +78,19 @@ ESA_CLASS_CODE_MAX = 255  # ESA-CCI class codes are 8-bit, so a 256-entry LUT co
 
 # Thickness of each SoilGrids/HiHydroSoil depth interval (cm), summing to the 0-30cm topsoil.
 DEPTH_WEIGHTS_0_30CM = {'0-5cm': 5, '5-15cm': 10, '15-30cm': 15}
+
+# SoilGrids property -> (its file's property code, the integer scaling to divide out). SoilGrids
+# ships percentages x10 and bulk density x100 as integers.
+SOILGRIDS_PROPERTIES = {
+    'sand_pct': ('sand', 10),
+    'clay_pct': ('clay', 10),
+    'org_carbon_pct': ('soc', 10),
+    'bulk_density': ('bdod', 100),
+}
+
+# Slope is computed at this multiple of the 1km grid and averaged back down: computing it at
+# 1km directly would flatten the terrain the model is about. 4 gives an exact ~250m subdivision.
+SLOPE_FINE_FACTOR = 4
 
 # --- Infinite-slope stability index -----------------------------------------------------
 C_ROOT_MAX_KPA = 5.0          # root cohesion added by fully forested cover (kPa)
@@ -659,13 +685,21 @@ def hurdle_table_rows(part_a, part_b, term_labels, column_labels):
 
 def fatality_bin_masks(fatalities):
     """{bin label: boolean mask} over FATALITY_BINS, for the UGLC event map."""
-    return {label: (fatalities >= low) if high is None
-                   else ((fatalities >= low) & (fatalities < high))
-            for label, low, high in FATALITY_BINS}
+    masks = {}
+    for label, low, high in FATALITY_BINS:
+        in_bin = (fatalities >= low)
+        if high is not None:
+            in_bin &= (fatalities < high)
+        masks[label] = in_bin
+    return masks
 
 
 def bucket_legend_labels(bucket_edges, tick_format):
     """Legend labels for a bucketed choropleth: one per bucket, open-ended at the top."""
-    return [f'{tick_format.format(bucket_edges[i])}+' if bucket_edges[i + 1] == float('inf')
-            else f'{tick_format.format(bucket_edges[i])} – {tick_format.format(bucket_edges[i + 1])}'
-            for i in range(len(bucket_edges) - 1)]
+    labels = []
+    for lower, upper in zip(bucket_edges, bucket_edges[1:]):
+        if upper == float('inf'):
+            labels.append(f'{tick_format.format(lower)}+')
+        else:
+            labels.append(f'{tick_format.format(lower)} – {tick_format.format(upper)}')
+    return labels

@@ -6,9 +6,10 @@ audit). Files arrive intact with imports rewritten to this package; the full tas
 verbatim from the source run script and exposed under the template name. Data staged at
 base_data/landslide_mitigation/input_data_raw (50.5 GiB, see the base_data changelog).
 
-STATUS: folded + import-clean; NOT yet run here and NOT number-verified -- the current reference is
-the release-day appendix tables (the older gep xlsx predates the v0.2.0 method change); exact
-replication waits on a machine-readable v0.2.0 output from the author. Numbers provisional.
+STATUS: folded, import-clean, and run end to end once on the cluster. NOT number-verified against
+the author -- the current reference is the release-day appendix tables (the older gep xlsx predates
+the v0.2.0 method change), and exact replication waits on a machine-readable v0.2.0 output from the
+author. Numbers provisional.
 """
 from global_invest.landslide_mitigation import landslide_mitigation_tasks
 
@@ -84,6 +85,11 @@ def build_gep_service_task_tree(p):
     p.export_results_tables_task = p.add_task(landslide_mitigation_tasks.export_results_tables, creates_dir=False)
     p.export_si_severity_sensitivity_table_task = p.add_task(landslide_mitigation_tasks.export_si_severity_sensitivity_table, creates_dir=False)
     p.export_pi_audit_table_task = p.add_task(landslide_mitigation_tasks.export_pi_audit_table, creates_dir=False)
+
+    # ---------------------------------------------------------------- #
+    # Results report (shared render in utilities)
+    # ---------------------------------------------------------------- #
+    p.landslide_mitigation_gep_result_task = p.add_task(landslide_mitigation_tasks.gep_result)
 
     return p
 

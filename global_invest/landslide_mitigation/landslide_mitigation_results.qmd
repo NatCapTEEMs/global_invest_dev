@@ -1,0 +1,74 @@
+---
+format:
+  html:
+    embed-resources: true
+    standalone: true
+execute:
+  echo: false          # results report shows tables/figures, not code
+  warning: false
+---
+
+# Landslide Mitigation Results
+
+Text describing it. To be written by the service team (science source: the v0.2.0 landslide model folded from m-braaksma/landslide_mitigation, and the method note in `landslide_mitigation_method.qmd`).
+
+```{python}
+#| output: false
+
+### SETUP CODE: Runs the whole model if it doesn't exist, else loads the results.
+
+import os
+import pandas as pd
+import hazelbean as hb
+
+from global_invest.landslide_mitigation import landslide_mitigation_initialize
+
+if __name__ == '__main__':
+
+    p = hb.ProjectFlow()
+    p.project_name = 'gep_landslide_mitigation'
+    p.project_dir = os.path.join(os.path.expanduser('~'), 'Files', 'global_invest', 'projects', p.project_name)
+    p.set_project_dir(p.project_dir)
+
+    landslide_mitigation_initialize.build_gep_service_task_tree(p)
+
+    p.results = {}
+
+    hb.log('Created ProjectFlow object at ' + p.project_dir + '\n    from script ' + p.calling_script + '\n    with base_data set at ' + p.base_data_dir)
+    p.execute()
+```
+
+```{python}
+#| output: false
+
+### DISPLAY SETUP CODE
+
+import pandas as pd
+import os
+import hazelbean as hb
+
+pd.set_option('display.float_format', '{:,.2f}'.format)
+pd.set_option('display.max_rows', 1000)
+
+service_label = 'landslide_mitigation'
+prediction_year = p.prediction_years[-1]
+
+df = hb.df_read(p.results[service_label][f'zonal_statistics_{prediction_year}'])
+total_deaths = df['avoided_deaths_sum'].sum()
+total_value = df['avoided_value_sum_usd'].sum()
+
+# One row per country: the r264 correspondence splits large countries, so the sub-regions are
+# summed back together before the table is shown.
+p.gep_by_country_base_year_table = (
+    df.groupby('iso3_r250_label', as_index=False)
+      .agg(avoided_deaths_sum=('avoided_deaths_sum', 'sum'),
+           avoided_value_sum_usd=('avoided_value_sum_usd', 'sum'))
+      .sort_values('avoided_value_sum_usd', ascending=False))
+```
+
+The analysis values landslide mitigation as the deaths that forest root cohesion averts. The stability of every 1km slope is computed twice for `{python} prediction_year` -- once with the mapped forest cover holding the soil, once with root cohesion removed -- and each stability index is turned into a landslide probability and then into expected deaths through a two-part fatality model. The difference between the two runs is `{python} f"{total_deaths:,.2f}"` avoided deaths, valued at each country's value of a statistical life at $`{python} f"{total_value:,.0f}"` in 2019 constant USD.
+
+## Avoided Mortality and Value by Country
+```{python}
+p.gep_by_country_base_year_table
+```
