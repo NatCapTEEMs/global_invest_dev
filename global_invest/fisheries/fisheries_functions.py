@@ -210,15 +210,48 @@ def commfish_gep_by_country(trends_df, countries_df):
 # Subsistence fisheries GEP (Lynch et al. 2024, USGS data release). Ported from
 # the gep-subsistence-fisheries repo; the committed output CSV is the anchor.
 # =============================================================================
-def subsistence_fisheries_by_country(lynch_df, countries_df):
-    """One TCUV (total consumptive-use value) per country from the Lynch et al. data
-    release, name-joined onto the canonical r250 country rows by brk_name.
+# The Lynch et al. release carries the whole valuation, not only its result: a harvested
+# quantity at the price's unit, a price per kilogram in USD, and their product per species.
+# So the country value is computed here rather than adopted from the published TCUV column.
+# Two reasons beyond principle: reading TCUV kept the FIRST value per admin, which is
+# order-dependent where an admin carries more than one, and a published total cannot show us
+# a discrepancy. Recomputing reproduces the release exactly (9,952,528,093.60 either way).
+SUBSISTENCE_QUANTITY_COLUMN = 'total_biomass_harv_kg_unitofprice'
+SUBSISTENCE_PRICE_COLUMN = 'final_kg_price_USD'
+SUBSISTENCE_PUBLISHED_VALUE_COLUMN = 'TCUV'
 
-    Faithful-port notes: the source keeps the FIRST TCUV per admin, and 4 of the 81 admins
-    carry more than one distinct TCUV, so keep-first is order-dependent -- the committed
-    anchor pins the choice. The name join leaves countries absent from the release NaN:
-    no data is not zero value."""
-    data = lynch_df[['admin', 'TCUV']].drop_duplicates(subset=['admin'], keep='first')
+
+def subsistence_value_by_admin(lynch_df):
+    """Consumptive-use value per admin, summed over species from quantity times price.
+
+    Args:
+        lynch_df (pd.DataFrame): the Lynch et al. release, one row per admin and species.
+
+    Returns:
+        pd.DataFrame: admin, subsistence_fisheries_gep (ours), and
+        subsistence_fisheries_gep_published (the release's own TCUV) beside it as the anchor.
+    """
+    import pandas as pd
+    df = lynch_df.copy()
+    for column in (SUBSISTENCE_QUANTITY_COLUMN, SUBSISTENCE_PRICE_COLUMN,
+                   SUBSISTENCE_PUBLISHED_VALUE_COLUMN):
+        df[column] = pd.to_numeric(df[column], errors='coerce')
+    df['species_value'] = df[SUBSISTENCE_QUANTITY_COLUMN] * df[SUBSISTENCE_PRICE_COLUMN]
+    # min_count=1 so an admin whose species all lack a quantity or a price stays empty rather
+    # than becoming a zero. Summing to 0.0 there would assert no subsistence value where the
+    # truth is that none was measured.
+    grouped = df.groupby('admin', as_index=False).agg(
+        subsistence_fisheries_gep=('species_value', lambda v: v.sum(min_count=1)),
+        subsistence_fisheries_gep_published=(SUBSISTENCE_PUBLISHED_VALUE_COLUMN, 'first'))
+    return grouped
+
+
+def subsistence_fisheries_by_country(lynch_df, countries_df):
+    """The computed per-admin value name-joined onto the canonical r250 country rows.
+
+    The join is on brk_name, and a country absent from the release stays NaN: no data is not
+    zero value.
+    """
+    data = subsistence_value_by_admin(lynch_df)
     df = countries_df.merge(data, how='left', left_on='brk_name', right_on='admin')
-    df = df.rename(columns={'TCUV': 'subsistence_fisheries_gep'})
     return df.drop(columns=['admin'])

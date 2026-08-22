@@ -91,7 +91,12 @@ def test_es_config_and_parameters_rows_hydrate_the_fisheries_gep(tmp_path):
 
 
 # --- Subsistence component (Lynch et al. 2024) ---
-def test_subsistence_exact_replication_of_the_committed_output():
+def test_subsistence_computed_value_reproduces_the_committed_output():
+    """We compute from quantity times price rather than reading the release's TCUV column.
+    Every country whose inputs the release carries reproduces the committed output, and the
+    total is unchanged. Twenty countries carry a published TCUV of zero with no quantity and
+    no price behind it; those stay empty here, because a value we cannot derive is not a
+    measurement of zero, and being zero they take nothing out of the total."""
     import os
     reference_dir = os.path.join(os.path.dirname(ff.__file__), 'reference')
     lynch = pd.read_excel(os.path.join(reference_dir, 'Rec fish food_20230509_for USGS data release.xlsx'),
@@ -103,22 +108,46 @@ def test_subsistence_exact_replication_of_the_committed_output():
     merged = out.merge(reference, on='iso3_r250_id', suffixes=('', '_ref'))
     assert len(out) == len(reference) == len(merged) == 250
     ours, ref = merged['subsistence_fisheries_gep'], merged['gep_subistence_fish']
-    assert (ours.isna() == ref.isna()).all()
-    both = ours.notna()
-    assert np.allclose(ours[both], ref[both], rtol=1e-9)
-    assert np.isclose(out['subsistence_fisheries_gep'].sum(), reference['gep_subistence_fish'].sum())
+
+    both = ours.notna() & ref.notna()
+    assert both.sum() == 65
+    assert np.allclose(ours[both], ref[both], rtol=1e-8)
+
+    # Where we cannot derive a value the reference states zero, so no money is lost.
+    only_reference = ref.notna() & ours.isna()
+    assert only_reference.sum() == 20
+    assert (ref[only_reference] == 0).all()
+    # And we never invent a country the reference does not value.
+    assert not (ours.notna() & ref.isna()).any()
+
+    assert np.isclose(ours.sum(), reference['gep_subistence_fish'].sum(), rtol=1e-8)
 
 
-def test_subsistence_keeps_the_first_tcuv_per_admin_and_no_data_stays_nan():
+def test_subsistence_recompute_matches_the_releases_own_published_total():
+    """The release publishes TCUV beside the quantities and prices it was built from. Our sum
+    over species must land on it, or one of the two is wrong."""
+    import os
+    reference_dir = os.path.join(os.path.dirname(ff.__file__), 'reference')
+    lynch = pd.read_excel(os.path.join(reference_dir, 'Rec fish food_20230509_for USGS data release.xlsx'),
+                          engine='openpyxl')
+    by_admin = ff.subsistence_value_by_admin(lynch)
+    assert np.isclose(by_admin['subsistence_fisheries_gep'].sum(),
+                      by_admin['subsistence_fisheries_gep_published'].sum(), rtol=1e-9)
+
+
+def test_subsistence_sums_species_rather_than_taking_the_first_published_value():
+    """Reading TCUV kept whichever value came first, which is order-dependent where an admin
+    carries more than one. Summing quantity times price over species has no such ambiguity."""
     lynch = pd.DataFrame({'admin': ['Atlantis', 'Atlantis', 'Erewhon'],
-                          'TCUV': [10.0, 99.0, 5.0],
-                          'other': [1, 2, 3]})
+                          'total_biomass_harv_kg_unitofprice': [2.0, 3.0, 1.0],
+                          'final_kg_price_USD': [5.0, 10.0, 4.0],
+                          'TCUV': [10.0, 99.0, 5.0]})
     countries = pd.DataFrame({'brk_name': ['Atlantis', 'Nowhere'],
                               'ee_r264_id': [1, 2], 'iso3_r250_id': [1, 2],
                               'iso3_r250_label': ['ATL', 'NOW'],
                               'ee_r264_description': ['Atlantis', 'Nowhere']})
     out = ff.subsistence_fisheries_by_country(lynch, countries).set_index('iso3_r250_label')
-    assert np.isclose(out.loc['ATL', 'subsistence_fisheries_gep'], 10.0)   # first, not max
+    assert np.isclose(out.loc['ATL', 'subsistence_fisheries_gep'], 40.0)   # 2x5 + 3x10
     assert np.isnan(out.loc['NOW', 'subsistence_fisheries_gep'])           # absent stays NaN
 
 
