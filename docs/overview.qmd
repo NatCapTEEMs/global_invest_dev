@@ -103,7 +103,7 @@ format:
 | run_\<service\>.py | The main script. Opens a workspace and runs the steps. |
 | method.qmd | The written explanation of the method. |
 
-- The scripts interact in one direction: run_\<service\>.py asks initialize.py for the list of steps, each step in tasks.py calls the equations in functions.py and writes its output, and the next step reads that output.
+- run_\<service\>.py asks initialize.py for the list of steps, each step in tasks.py calls the equations in functions.py and writes its output, and the next step reads that output.
 - A service with a shock has a second runner for it, run_\<service\>_shock.py (one runner per task tree).
 - Three shared CSVs carry the configuration (the next slide).
 
@@ -316,14 +316,14 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 
 ## water_supply
 
-- [New module, now with three components. HYDROPOWER: the method was identified against the drive's committed output and holds for all 95 valued countries (CWoN 2024 capitalized wealth divided by the 4-percent, 100-year annuity factor). WATER USE (the drive's two-script chain, sector efficiency times sector withdrawal): computed in the library and reported as our run, agriculture {{< meta water_use_ag_total >}} across 126 countries and all-sector {{< meta water_use_all_total >}} across 154. The drive's committed tables ($554.5bn and $36.08T) come from two other chains (a crop-water chain for agriculture, a newer AQUASTAT vintage for all sectors) and stay as comparison anchors.]{.state}
+- [New module, now with three components. Hydropower: the method was identified against the drive's committed output and holds for all 95 valued countries (CWoN 2024 capitalized wealth divided by the 4-percent, 100-year annuity factor). Water use (the drive's two-script chain, sector efficiency times sector withdrawal): computed in the library and reported as our run, agriculture {{< meta water_use_ag_total >}} across 126 countries and all-sector {{< meta water_use_all_total >}} across 154. The drive's committed tables ($554.5bn and $36.08T) come from two other chains (a crop-water chain for agriculture, a newer AQUASTAT vintage for all sectors) and stay as comparison anchors.]{.state}
 - **Q1:** which hydropower total is the account's? The manuscript records {{< meta hydro_manuscript >}} (roughly double the committed output's {{< meta water_supply_total >}}), consistent with the drive's earlier direct-use script (price times generation) versus the CWoN-rent method. The account needs one of the two.
 - **Q2:** why does the reference leave 17 countries empty although the CWoN table values them? The 17 are encoded as named exclusions so the module reproduces the reference. The reason needs its author.
 - **Q3:** the water-use components carry no nature-attribution step. The all-sector total ({{< meta water_use_all_total >}}) is the gross economic value of water use (rivaling global GDP), which is why an attribution factor is needed before any of it enters the account. How the three components combine into water_supply's value is the same open subgroup question.
 
 ## air_filtration and sandstorm_prevention
 
-- [New module. The drive's committed workbook values avoided deaths from two channels at a GDP-adjusted value of a statistical life (VSL, the monetary value assigned to one avoided death): DEPOSITION (vegetation's dry pollutant capture, the sheet's air filtration) totals {{< meta air_filtration_total >}}, the manuscript's number. DUST (windblown-dust suppression, the sheet's sandstorm prevention) totals {{< meta sandstorm_total >}}. The valuation layer is implemented in Python and replicates the workbook. The workbook itself is the source, since the folder's only code (the vsl.R script) does not reproduce it. The avoided-death columns come from the group's coupled emissions–InMAP–health modeling chain and are taken as given.]{.state}
+- [New module. The drive's committed workbook values avoided deaths from two channels at a GDP-adjusted value of a statistical life (VSL, the monetary value assigned to one avoided death): Deposition (vegetation's dry pollutant capture, the sheet's air filtration) totals {{< meta air_filtration_total >}}, the manuscript's number. Dust (windblown-dust suppression, the sheet's sandstorm prevention) totals {{< meta sandstorm_total >}}. The valuation layer is implemented in Python and replicates the workbook. The workbook itself is the source, since the folder's only code (the vsl.R script) does not reproduce it. The avoided-death columns come from the group's coupled emissions–InMAP–health modeling chain and are taken as given.]{.state}
 - **Q1:** needed, the VSL build behind the workbook. The folder's vsl.R documents the method (US-anchored, GDP- and life-years-adjusted) but its committed raw data is a different vintage and does not reproduce the workbook's VSL column.
 - **Q2:** the vintage of the avoided-death columns, for the record and the methods writeup.
 
@@ -348,7 +348,7 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 
 ## extractive_energy and timber_provision
 
-- [EXTRACTIVE ENERGY is now computed in the library from the public CWoN 2024 rent tables the method appendices name: gas, coal and petroleum rents at 2019, summed by the same commodity convention extractive_materials uses. TIMBER: the chain is reimplemented, and all 166 country sums match the committed output. One status correction: the sheet lists timber's draft as In Progress, but its output exists and reproduces.]{.state}
+- [Extractive energy is now computed in the library from the public CWoN 2024 rent tables the method appendices name: gas, coal and petroleum rents at 2019, summed by the same commodity convention extractive_materials uses. Timber: the chain is reimplemented, and all 166 country sums match the committed output. One status correction: the sheet lists timber's draft as In Progress, but its output exists and reproduces.]{.state}
 - **The extractive port caught a real error: eight rows of the committed tables carry another country's full value.** Christmas Island and Cocos hold Australia's rents, Bouvet and Svalbard Norway's, Tokelau New Zealand's, Western Sahara Morocco's, Palestine Israel's, and Kosovo Serbia's (the committed name column itself reads "Serbia"). The committed total of {{< meta xe_committed >}} counts those countries twice. Computed one-country-one-row, the total is {{< meta xe_total >}}.
 - **Q1:** confirmation that the eight duplicated rows are a join error, and which total the account keeps.
 
