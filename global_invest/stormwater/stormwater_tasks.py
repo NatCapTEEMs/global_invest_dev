@@ -31,12 +31,19 @@ def gep_calculation(p):
     if hb.path_all_exist(list(service_results.values())):
         hb.log('All results already exist. Skipping GEP calculation for stormwater.')
         return
-    raise NotImplementedError(
-        'The InVEST urban stormwater retention run over the staged global inputs is in '
-        'progress -- it produces the per-country retention volumes this task prices. The '
-        'valuation function is in place and unit-tested (stormwater_functions), with the '
-        'committed price placeholder of 1 held as a named constant until the author names '
-        'the intended price.')
+    hb.log('Starting GEP calculation for stormwater.')
+
+    import pandas as pd
+    from global_invest.stormwater import stormwater_functions as sf
+    retention = pd.read_csv(p.stormwater_retention_by_country_path)
+    df_gep = sf.stormwater_gep_by_country(retention, sf.STORMWATER_PRICE_PER_M3_PLACEHOLDER)
+    df_gep['year'] = int(p.gep_base_year)
+    hb.df_write(df_gep, service_results['gep_by_country_base_year'])
+    hb.log('Total stormwater retention: %.4g m3/yr over %d countries; GEP %.4g USD at the '
+           'placeholder price of %s per m3 (the open ask).' % (
+               df_gep['retention_m3'].sum(), (df_gep['retention_m3'] > 0).sum(),
+               df_gep['stormwater_gep'].sum(), sf.STORMWATER_PRICE_PER_M3_PLACEHOLDER))
+    return True
 
 
 def gep_result(p):
