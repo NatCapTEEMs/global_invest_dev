@@ -239,7 +239,7 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 - **Q1:** is marine carbon in scope for the account?
 - **Q2:** if yes, which data drives it?
 - **Q3:** most open-ocean carbon sits in the high seas, inside no country's EEZ. Which attribution convention should a per-country account use?
-- The sheet lists one more subgroup under the same service, equally without a module we could find: **Other Non-Carbon GHG**. The same three questions apply.
+- The sheet lists one more subgroup under the same service, **Other Non-Carbon GHG**. We could not find a module for it either. The same three questions apply.
 
 ## pollination
 
