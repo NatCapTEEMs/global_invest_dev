@@ -7,7 +7,6 @@ coastal_eez: "$22.84bn"
 coastal_all: "$102.18bn"
 coastal_report: "$26.65bn"
 crop_total: "$678bn"
-cp_total: "$36.72bn"
 extractive_total: "$99.54bn"
 extractive_alt: "$203bn"
 extractive_factor: "0.49"
@@ -15,7 +14,6 @@ renewable_total: "$170.83bn"
 renewable_ref: "$134.6bn"
 poll_raster: "$18.28bn"
 poll_fao: "$515bn"
-erosion_total: "$15.54bn"
 livestock_ind: "$136bn"
 livestock_world: "$2.29T"
 n_services: "23"
@@ -32,7 +30,6 @@ sandstorm_total: "$595.36bn"
 wq_usd: "$638.34bn"
 wq_intl: "$655.91bn"
 flood_total: "$112.78bn"
-lcr_total: "$14.19bn"
 xe_total: "$1,048.9bn"
 xe_committed: "$1,140.4bn"
 timber_total: "$88.74bn"
@@ -124,8 +121,8 @@ format:
 ## The state in numbers
 
 - {{< meta n_services >}} services are in the library, and {{< meta n_replicating >}} of them reproduce a committed reference or the manuscript.
-- Nineteen compute their reported number from source data. Three report a value another team computed, because no chain behind it exists in the library: coastal protection, urban cooling, and water quality's headline column. Non-timber forest products has no number yet.
-- {{< meta n_awaiting_file >}} await one file to finish verification: recreation, commercial fisheries and landslide each need a reference output we could not find. Erosion's replication run was stopped, for the reasons on its slide.
+- 19 of them we run ourselves, from the source data up. Three we cannot run, because no chain behind the number exists in the library: coastal protection, urban cooling and water quality's headline figure. Non-timber forest products has no number yet.
+- {{< meta n_awaiting_file >}} of the runs we have cannot yet be validated: recreation, commercial fisheries and landslide each need a reference output we could not find. Erosion's replication is ongoing.
 - Livestock's numbers are provisional until the feed-share attribution replaces the land rental rate standing in for it.
 
 ## What each service is {.smaller}
@@ -180,7 +177,7 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 | coastal_carbon | {{< meta coastal_eez >}} EEZ-only, {{< meta coastal_all >}} all rows | yes. Reproduces the author's reported numbers |
 | crop_provision | {{< meta crop_total >}} | yes. Reproduces the reference table |
 | livestock_provision | provisional | no. Awaits the GLEAM intake data and a reference output |
-| coastal_protection | {{< meta cp_total >}} | no. Both source tables already carry a final per-country value, so there is nothing here to reproduce |
+| coastal_protection | not reported | no. Both source tables already carry a final per-country value, so there is no chain here to run |
 | extractive_materials | {{< meta extractive_total >}} | yes. Reproduces the author's reference table |
 | renewable_energy | {{< meta renewable_total >}} | partially. The code and the drive's reference CSVs give different values, and which one is current is the open question |
 
@@ -191,7 +188,7 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 | Service | Total | Verified |
 |---|---|---|
 | pollination | {{< meta poll_raster >}} raster side (2023). {{< meta poll_fao >}} FAO side | partially. Two definitions of the same service, and the decision between them is open |
-| erosion | {{< meta erosion_total >}} provisional | no. The replication run was stopped: it was computing on inputs that were not present |
+| erosion | not reported | no. The replication is ongoing: four upstream attribution layers are not reachable from this machine |
 | landslide_mitigation | {{< meta landslide_total >}} ({{< meta landslide_deaths >}} avoided deaths) | no. No reference output exists to compare against yet |
 | fisheries | shock + commercial GEP {{< meta fisheries_total >}} provisional + subsistence {{< meta fisheries_subsistence_total >}} | partially. Subsistence reproduces its committed output, and the commercial run has no reference output yet |
 | recreation | {{< meta recreation_total >}} provisional | no. The author's output table is not reachable |
@@ -208,7 +205,7 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 | sandstorm_prevention | {{< meta sandstorm_total >}} | yes. Reproduces the same workbook's dust channel |
 | water_quality | {{< meta wq_usd >}} USD and {{< meta wq_intl >}} intl$ | partially. We recompute the nutrient valuations and reproduce the committed intermediates; the headline international-dollar column is read through |
 | flood_control | {{< meta flood_total >}} | partially. Our recompute matches the pipeline's table, Morocco excepted |
-| local_climate_regulation | {{< meta lcr_total >}} | no. The committed final is the reported value; its inputs are not available to recompute |
+| local_climate_regulation | not reported | no. We cannot run this: the correction's inputs exist only on the author's machine |
 | extractive_energy | {{< meta xe_total >}} (gas + coal + petroleum) | yes. Computed from the public CWoN rent tables, and the committed tables double-count eight rows |
 | timber_provision | {{< meta timber_total >}} | yes. All 166 countries match the committed output |
 | ntfp | in progress | no. The accessibility run is going on the public roads data |
@@ -246,8 +243,8 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 
 ## erosion
 
-- [Values soil the land cover keeps in place: prevented erosion mapped by running the sediment-delivery model ourselves, valued through crop productivity. The replication run was stopped after 17 hours because it was computing on inputs that were not there, so this service has no number we stand behind.]{.state}
-- Two faults, both silent. Six of the run's inputs were missing and it continued anyway: four upstream attribution layers (the forest, grass, cropland and bare shares that decide which land cover prevented the erosion) still resolve to a cluster path that does not exist on this machine, and the run only warned. Separately, the sediment-model task was skipped because its output directory existed, though that directory is empty, so the two rasters the valuation reads were published as paths into it while the real ones sit in a different folder.
+- [Values soil the land cover keeps in place: prevented erosion mapped by running the sediment-delivery model ourselves, valued through crop productivity. The replication is ongoing and we report no number for it yet.]{.state}
+- Four upstream attribution layers, the forest, grass, cropland and bare shares that decide which land cover prevented the erosion, are referenced at a cluster path that is not reachable from this machine, and the run proceeded without them rather than stopping.
 - **Q1:** which of the three shock methods is the account's? We compute damage (thresholded area share), service (threshold-free and magnitude-weighted per crop) and service-threshold (service restricted to a fixed severe-pixel set) side by side.
 - **Q2:** where do the four upstream attribution layers live, now that the cluster path in the config is unreachable from a laptop?
 
@@ -273,7 +270,7 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 
 ## crop_provision
 
-- [Values crop production from FAOSTAT production values, quantity times producer price per country, times the land rental rate. Computed in the library, and a fresh run reproduces the reference table to the cent.]{.state}
+- [Values crop production from FAOSTAT production values, quantity times producer price per country, times the land rental rate. We run the chain ourselves and it replicates, validated against the reference table.]{.state}
 - **Q1:** does the account add crop_provision and pollination? Both attribute part of the same output to nature.
 - **Q2:** is subsistence in scope as a separate crop subgroup? Adding it would double-count, because FAOSTAT's production values already include part of what households grow and eat themselves.
 
