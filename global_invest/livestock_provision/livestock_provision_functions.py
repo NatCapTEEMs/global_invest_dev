@@ -333,3 +333,39 @@ def feed_lambda_by_country(gleam_dmi_df):
     grouped['lambda'] = grouped[eco_cols].sum(axis=1) / grouped[total_cols].sum(axis=1)
     grouped['lambda_is_upper_bound'] = bool(missing_total)
     return grouped[['iso3_r250_id', 'iso3_r250_label', 'lambda', 'lambda_is_upper_bound']]
+
+
+# The dashboard harvest arrives one row per country, species and production system, with the
+# feed columns formatted for display: thousands separated by commas, and an empty cell where a
+# system does not occur. The country column is the dashboard's own code, which is ISO3 for
+# nearly every entry but carries a few territories GLEAM models separately.
+GLEAM_DASHBOARD_ID_COLUMNS = ('country_code', 'species', 'Area', 'Animal', 'LPS')
+
+
+def clean_gleam_dashboard_intake(df_raw, df_countries):
+    """The harvested dashboard table, numeric and keyed to r250 countries.
+
+    Args:
+        df_raw (pd.DataFrame): the harvest, carrying country_code and one column per feed
+            category, values formatted with thousands separators.
+        df_countries (pd.DataFrame): the r264 correspondence, for iso3_r250_id and label.
+
+    Returns:
+        tuple: (cleaned frame ready for feed_lambda_by_country, list of country codes that
+        matched no r250 country). The unmatched are returned rather than dropped silently,
+        because a code that matches nothing is intake leaving the account unannounced.
+    """
+    import pandas as pd
+    df = df_raw.copy()
+    feed_columns = [c for c in df.columns if c in GLEAM_TOTAL_FEED_COLS]
+    for column in feed_columns:
+        df[column] = pd.to_numeric(
+            df[column].astype(str).str.replace(',', '', regex=False).str.strip().replace('', None),
+            errors='coerce')
+
+    labels = (df_countries[['iso3_r250_label', 'iso3_r250_id']]
+              .dropna().drop_duplicates('iso3_r250_label'))
+    df = df.merge(labels, how='left', left_on='country_code', right_on='iso3_r250_label')
+    unmatched = sorted(df.loc[df['iso3_r250_id'].isna(), 'country_code'].unique().tolist())
+    matched = df[df['iso3_r250_id'].notna()]
+    return matched[['iso3_r250_id', 'iso3_r250_label'] + feed_columns], unmatched

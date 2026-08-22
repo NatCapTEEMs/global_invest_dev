@@ -275,3 +275,41 @@ def test_the_dashboard_category_list_is_the_documented_six():
     assert set(lp.GLEAM_ECOSYSTEM_FEED_COLS) < set(lp.GLEAM_DASHBOARD_FEED_COLS)
     missing = set(lp.GLEAM_TOTAL_FEED_COLS) - set(lp.GLEAM_DASHBOARD_FEED_COLS)
     assert missing == {'Other edible', 'Other non-edible'}
+
+
+def test_dashboard_harvest_is_made_numeric_and_keyed_to_countries():
+    """The dashboard formats values for display, so commas must come out before they are summed,
+    and a blank cell is no intake rather than a zero typed as text."""
+    raw = pd.DataFrame({
+        'country_code': ['FRA', 'FRA', 'ZZZ'],
+        'species': ['Cattle', 'Cattle', 'Cattle'],
+        'By-products': ['2,245,313', '70,183', '1'],
+        'Crop residues': ['1,554,947', '53,503', '1'],
+        'Fodder crop': ['12,748,580', '321,018', '1'],
+        'Grass and leaves': ['27,039,001', '1,151,748', '1'],
+        'Grains': ['6,433,690', '166,590', '1'],
+        'Oil seed cakes': ['', '64,098', '1'],
+    })
+    countries = pd.DataFrame({'iso3_r250_label': ['FRA'], 'iso3_r250_id': [250]})
+
+    cleaned, unmatched = lp.clean_gleam_dashboard_intake(raw, countries)
+
+    assert unmatched == ['ZZZ']                       # named, not silently dropped
+    assert len(cleaned) == 2
+    assert cleaned['By-products'].tolist() == [2245313.0, 70183.0]
+    assert pd.isna(cleaned['Oil seed cakes'].iloc[0])  # blank is absent, not zero
+
+
+def test_a_dashboard_harvest_yields_an_upper_bound_share():
+    """End to end on the six categories the dashboard serves: the share computes, and it is
+    flagged as a bound because the two denominator-only categories are absent."""
+    raw = pd.DataFrame({
+        'country_code': ['FRA'], 'species': ['Cattle'],
+        'By-products': ['1'], 'Crop residues': ['1'], 'Fodder crop': ['1'],
+        'Grass and leaves': ['1'], 'Grains': ['2'], 'Oil seed cakes': ['2'],
+    })
+    countries = pd.DataFrame({'iso3_r250_label': ['FRA'], 'iso3_r250_id': [250]})
+    cleaned, _ = lp.clean_gleam_dashboard_intake(raw, countries)
+    out = lp.feed_lambda_by_country(cleaned).iloc[0]
+    assert out['lambda'] == 0.5                        # 4 ecosystem of 8 total across six columns
+    assert bool(out['lambda_is_upper_bound']) is True
