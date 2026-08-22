@@ -276,35 +276,10 @@ def gep_calculation(p):
         # Replace wrong codes in the m49
         df_gep_by_country_year_crop['area_code_M49'] = df_gep_by_country_year_crop['area_code_M49'].replace(replacements)    
 
-        # Keep one row per country: a right join on r264 would repeat an r250 country once per
-        # sub-region, so the sub-region rows are dropped before the join.
-        # Drop repeated ids in df_countries
-        ee_r264_to_250 = p.df_countries.copy()
-        ee_r264_to_250 = ee_r264_to_250[ee_r264_to_250['ee_r264_label'] == ee_r264_to_250['iso3_r250_label']]
-        
-        cols_to_keep = [
-            'ee_r264_id',	
-            'iso3_r250_id',
-            'ee_r264_label',
-            'iso3_r250_label',
-            'ee_r264_name',
-            'iso3_r250_name',
-            'continent',
-            'region_un',
-            'region_wb',
-            'income_grp',
-            'subregion',
-            'area_code_M49',
-            'area_code',
-            'country',
-            'crop_code',
-            'crop',
-            'year',
-            'rental_rate',
-            'Value',
-        ]
-        ee_r264_to_250.drop([i for i in ee_r264_to_250.columns if i not in cols_to_keep], axis=1, inplace=True, errors='ignore')
-        # ee_r264_to_250 = ee_r264_to_250[cols_to_keep]
+        # One row per country: r264 splits large countries, so the correspondence is
+        # collapsed before the join.
+        ee_r264_to_250 = utilities.collapse_countries_to_r250(
+            p.df_countries, keep_columns=['area_code_M49', 'area_code', 'country', 'crop_code', 'crop', 'year', 'rental_rate', 'Value'])
         
         # Merge so it has all the good labels from the  
         df_gep_by_country_year_crop = hb.df_merge(ee_r264_to_250, df_gep_by_country_year_crop, how='right', left_on='iso3_r250_id', right_on='area_code_M49')

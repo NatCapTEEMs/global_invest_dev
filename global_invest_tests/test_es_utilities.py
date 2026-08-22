@@ -127,3 +127,30 @@ def test_download_missing_inputs_extracts_an_archive_member_and_reports_notes(tm
     assert member.read_text() == 'the wanted member'
     assert needs_a_person == {'demo_noted_path': 'exported by hand from the dashboard'}
     assert not noted.exists()
+
+
+def test_collapse_countries_to_r250_keeps_one_row_per_country():
+    """A split country (two r264 sub-regions) collapses to its single canonical row, and
+    the extra columns a caller asks for come through."""
+    import pandas as pd
+    from global_invest import utilities
+
+    df = pd.DataFrame([
+        {'ee_r264_id': 1, 'iso3_r250_id': 156, 'ee_r264_label': 'CHN', 'iso3_r250_label': 'CHN',
+         'ee_r264_name': 'China', 'iso3_r250_name': 'China', 'continent': 'Asia',
+         'region_un': 'Asia', 'region_wb': 'EAP', 'income_grp': 'UM', 'subregion': 'E Asia',
+         'area_code': 351, 'noise': 'drop me'},
+        {'ee_r264_id': 2, 'iso3_r250_id': 156, 'ee_r264_label': 'CHN_north', 'iso3_r250_label': 'CHN',
+         'ee_r264_name': 'China north', 'iso3_r250_name': 'China', 'continent': 'Asia',
+         'region_un': 'Asia', 'region_wb': 'EAP', 'income_grp': 'UM', 'subregion': 'E Asia',
+         'area_code': 351, 'noise': 'drop me'},
+        {'ee_r264_id': 3, 'iso3_r250_id': 76, 'ee_r264_label': 'BRA', 'iso3_r250_label': 'BRA',
+         'ee_r264_name': 'Brazil', 'iso3_r250_name': 'Brazil', 'continent': 'Americas',
+         'region_un': 'Americas', 'region_wb': 'LAC', 'income_grp': 'UM', 'subregion': 'S America',
+         'area_code': 21, 'noise': 'drop me'},
+    ])
+    out = utilities.collapse_countries_to_r250(df, keep_columns=['area_code'])
+    assert len(out) == 2
+    assert sorted(out['iso3_r250_label']) == ['BRA', 'CHN']
+    assert 'area_code' in out.columns
+    assert 'noise' not in out.columns

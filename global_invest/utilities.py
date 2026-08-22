@@ -631,3 +631,27 @@ def download_inputs_task(service):
 
     download_inputs.__name__ = f'download_{service}_inputs'
     return download_inputs
+
+
+def collapse_countries_to_r250(df_countries, keep_columns=()):
+    """The r264 correspondence reduced to one canonical row per country.
+
+    r264 splits large countries into sub-regions, so joining a per-country value against it
+    repeats that country once per sub-region. Filtering to the rows whose r264 label equals
+    the r250 label leaves exactly one row per country, which is what a country join needs.
+
+    Args:
+        df_countries (pd.DataFrame): the r264 correspondence (p.df_countries).
+        keep_columns (iterable): extra columns to carry through, beyond the identifiers and
+            the standard country attributes.
+
+    Returns:
+        pd.DataFrame: one row per country, holding the identifiers, the attributes, and
+        whatever `keep_columns` names.
+    """
+    identifiers = ['ee_r264_id', 'iso3_r250_id', 'ee_r264_label', 'iso3_r250_label',
+                   'ee_r264_name', 'iso3_r250_name']
+    attributes = ['continent', 'region_un', 'region_wb', 'income_grp', 'subregion']
+    wanted = identifiers + attributes + list(keep_columns)
+    one_row_per_country = df_countries[df_countries['ee_r264_label'] == df_countries['iso3_r250_label']]
+    return one_row_per_country[[c for c in wanted if c in one_row_per_country.columns]].copy()

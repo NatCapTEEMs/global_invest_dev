@@ -150,8 +150,9 @@ def gep_calculation(p):
         
         # Drop repeated ids in df_countries.
         # TODO Need to make this more robust by having a r250 dataset as the starting point.
-        ee_r264_to_250 = p.df_countries.copy()
-        ee_r264_to_250 = ee_r264_to_250[ee_r264_to_250['ee_r264_label'] == ee_r264_to_250['iso3_r250_label']]
+        # One row per country: r264 splits large countries, so the correspondence is
+        # collapsed before the join.
+        ee_r264_to_250 = utilities.collapse_countries_to_r250(p.df_countries)
         
         df_gep_by_country_base_year = hb.df_merge(ee_r264_to_250, df_gep_by_country_base_year, left_on='iso3_r250_label', right_on='iso3_r250_label', how='left')
         
