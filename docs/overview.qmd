@@ -224,13 +224,13 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 
 ## terrestrial_carbon
 
-- [Sums the carbon stored by land ecosystems (a zone-by-class density table on the land-cover map) and prices it at the rental social cost of carbon. Reproduces the manuscript's total.]{.state}
+- [Sums the carbon stored by land ecosystems (a zone-by-class density table on the land-cover map) and prices it at the rental social cost of carbon, and it reproduces the manuscript's total.]{.state}
 - A double-count in the code overstated its total by 23.5 percent (split countries entered once per sub-region, China six times).
 - **No open questions.**
 
 ## coastal_carbon
 
-- [Sums the carbon stored in mangroves, salt marshes and seagrass (mapped habitat times per-habitat density) and prices it like terrestrial carbon. Reproduces the author's reported numbers.]{.state}
+- [Sums the carbon stored in mangroves, salt marshes and seagrass (mapped habitat times per-habitat density) and prices it like terrestrial carbon, and it reproduces the author's reported numbers.]{.state}
 - **Q1:** was EEZ-only chosen to avoid double-counting the landward pixels with terrestrial carbon? Most of the mapped habitat sits landward of the shoreline (97.5 percent of mangrove area, 84 percent of salt marsh), so including it multiplies the total by 4.5.
 - **Q2:** which exact seagrass and salt marsh input versions produced the report's {{< meta coastal_report >}}? Our replication gives {{< meta coastal_eez >}} with the mangrove component matching, and the report's own seagrass area (62.21 Mha) exceeds the published range it cites (16 to 26.7 Mha).
 - **Q3:** if both sides count, a landward mask must prevent double-counting with terrestrial carbon. Does one exist?
@@ -245,7 +245,7 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 
 ## pollination
 
-- [Values the crop production attributable to wild pollinators (a sufficiency-weighted value raster built from pollinator habitat around cropland). The raster is 2023. Once the definition is decided, we regenerate it at 2019.]{.state}
+- [Values the crop production attributable to wild pollinators (a sufficiency-weighted value raster built from pollinator habitat around cropland). The raster is 2023, and once the definition is decided we regenerate it at 2019.]{.state}
 - **Q1:** is pollination's GEP the service nature currently delivers ({{< meta poll_raster >}}, the sufficiency-weighted raster) or the production value at stake ({{< meta poll_fao >}}, dependence-weighted FAO value)? The country ranking is identical, but the definition differs.
 - Erosion's GEP records the habitat-supplied share, so the raster-side definition is the internally consistent choice.
 - The FAO-side number comes directly from the author's committed per-country table . The raster-side number is our country aggregation of the author's value raster.
@@ -277,7 +277,7 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 
 ## crop_provision
 
-- [Values crop production from FAOSTAT production values (quantity times producer price per country). Converted from FAOSTAT's native thousand-USD to plain USD, matching every other service. Reproduces the reference table.]{.state}
+- [Values crop production from FAOSTAT production values (quantity times producer price per country), converted from FAOSTAT's native thousand-USD to plain USD like every other service, and it reproduces the reference table.]{.state}
 - FAOSTAT's production values already count part of subsistence output (checked in FAO's methodology): meat includes farm slaughter, and FAO estimates non-commercial crops where countries report only sales. Kitchen gardens, scattered trees and wild harvest are usually missing, so a separate subsistence-crop value would double-count the covered part.
 
 ## livestock_provision
@@ -290,11 +290,11 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 
 ## coastal_protection
 
-- [Values the storm damage mangroves and corals prevent along coastlines (avoided expected damage from the CWoN data). Verified by identical rerun.]{.state}
+- [Values the storm damage mangroves and corals prevent along coastlines (avoided expected damage from the CWoN data), and a rerun gives the same numbers.]{.state}
 
 ## extractive_materials
 
-- [Values mineral extraction as the resource-rent share of mining output. Per-country replication of the reference, including the rendered tables.]{.state}
+- [Values mineral extraction as the resource-rent share of mining output, and our run replicates the reference per country, including the rendered tables.]{.state}
 - **Q1:** what is the source or derivation of the 0.49 factor? The valuation multiplies mineral rents times GDP by it. Without it the total would be {{< meta extractive_alt >}} instead of {{< meta extractive_total >}}.
 
 ## renewable_energy
@@ -320,18 +320,18 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 
 - [Values avoided deaths from two channels at a GDP-adjusted value of a statistical life (VSL, the monetary value assigned to one avoided death), from the drive's committed workbook: Deposition, vegetation's dry pollutant capture, the sheet's air filtration. Dust, windblown-dust suppression, the sheet's sandstorm prevention. The valuation layer is implemented in Python and replicates the workbook. The workbook itself is the source, since the folder's only code (the vsl.R script) does not reproduce it. The avoided-death columns come from the group's coupled emissions–InMAP–health modeling chain and are taken as given.]{.state}
 - **Q1:** which VSL build produced the workbook's column? The folder's vsl.R documents the method (US-anchored, GDP- and life-years-adjusted) but its committed raw data is a different vintage and does not reproduce it.
-- **Q2:** the vintage of the avoided-death columns, for the record and the methods writeup.
+- **Q2:** which vintage are the avoided-death columns?
 
 ## water_quality
 
 - [Values avoided water-treatment costs: nitrogen and phosphorus retention per country (upstream NDR-style estimation, taken as given), scaled by the AQUASTAT domestic-water-use fraction and priced at treatment cost per kilogram. The drive carries the committed chain without a script, so we rebuilt it, and both identities replicate the committed intermediates. The committed accounting output is in 2019 international dollars (a purchasing-power unit, one international dollar buys in each country what one US dollar buys in the United States), 178 countries. That conversion stage is not identified from the available material. It is not one exchange factor per country, because the factors implied by the two committed values sit far from the World Bank's published ones.]{.state}
 - **Q1:** where is the USD-to-international-dollars conversion script? The method note describes per-source-year cost harmonization the folder does not carry.
-- **Q2:** the account's currency. Water quality proposes 2019 international dollars. Every other service values in 2019 market USD. One account cannot mix the two.
+- **Q2:** which currency does the account use? Water quality proposes 2019 international dollars while every other service values in 2019 market USD, and one account cannot mix the two.
 
 ## flood_control
 
 - [From the drive's FINAL_GEP_FLOOD tree (extensive method notes, a JRC comparison for Europe). Flood depth by return period, JRC depth-damage functions and the asset map give each country's expected annual flood damage. Every calculation step is reimplemented in the library, and our full 250-country recompute reproduces the pipeline's table for 146 of 148 non-zero countries.]{.state}
-- The pipeline codes South Sudan as Natural Earth's SDS where the account's label is SSD, and the mapping layer had dropped it. Fixed in our copy.
+- The pipeline codes South Sudan as Natural Earth's SDS where the account's label is SSD, and the mapping layer had dropped it, which our copy fixes.
 - **The committed number is the expected annual damage of assets in the floodplain, not an avoided-damage difference.** The pipeline computes an ecosystem service-flow fraction, but the valuation chain never applies it. The "avoided damage" name comes from the analysis notebook relabeling the damage column.
 - **Morocco's committed value is {{< meta mar_committed >}} for the whole country where the recompute gives {{< meta mar_recomputed >}}.**
 - **Q1:** are the FINAL_GEP_FLOOD outputs the current ones, and should the service-flow fraction multiply into the valuation chain?
@@ -343,7 +343,7 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 
 ## extractive_energy and timber_provision
 
-- [Extractive energy is computed in the library from the public CWoN 2024 rent tables the method appendices name: gas, coal and petroleum rents at 2019, summed by the same commodity convention extractive_materials uses. Timber: the chain is reimplemented, and all 166 country sums match the committed output. One status correction: the sheet lists timber's draft as In Progress, but its output exists and reproduces.]{.state}
+- [Extractive energy is computed in the library from the public CWoN 2024 rent tables the method appendices name: gas, coal and petroleum rents at 2019, summed by the same commodity convention extractive_materials uses. Timber: the chain is reimplemented, and all 166 country sums match the committed output. The sheet lists timber's draft as In Progress, but its output exists and reproduces.]{.state}
 - **Eight rows of the committed tables carry another country's full value.** Christmas Island and Cocos hold Australia's rents, Bouvet and Svalbard Norway's, Tokelau New Zealand's, Western Sahara Morocco's, Palestine Israel's, and Kosovo Serbia's (the committed name column itself reads "Serbia"). The committed total of {{< meta xe_committed >}} counts those countries twice. Computed one-country-one-row, the total is {{< meta xe_total >}}.
 - **Q1:** confirmation that the eight duplicated rows are a join error, and which total the account keeps.
 
@@ -351,7 +351,7 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 
 - [Values non-timber forest products as accessible forest area (near roads and rivers) times the CWoN value per hectare. Both of the repo's script variants are running on the public roads database.]{.state}
 - [Values retained stormwater at a price per cubic metre, from the InVEST urban stormwater model. The run retains {{< meta stormwater_volume >}} per year over 104 countries, wall to wall rather than urban-masked, and the value waits on the price.]{.state}
-- **Q:** the intended price per cubic metre retained. The committed configuration carries a placeholder of 1.
+- **Q:** what is the intended price per cubic metre retained? The committed configuration carries a placeholder of 1.
 
 # Cross-cutting decisions
 
