@@ -1,0 +1,38 @@
+---
+format:
+  html:
+    embed-resources: true
+    standalone: true
+execute:
+  echo: false          # results report shows tables/figures, not code
+  warning: false
+---
+
+# NTFP Results
+
+The service values non-timber forest products as accessible forest hectares times the CWoN
+per-hectare NWFP value. The valuation function is in place and unit-tested; the accessibility
+stage that feeds it, the ESA forest mask intersected with a 10 km road and river buffer per
+country, is still being ported because the source script's roads shapefile was never committed
+and a public roads dataset has to be staged in its place. Until that stage lands the calculation
+task stops with a NotImplementedError rather than reporting a number from someone else's run, so
+this page carries no per-country table yet.
+
+```{python}
+#| output: false
+
+### SETUP CODE: reports the state of the port; the calculation raises until the
+### accessibility stage lands, so nothing is run from here.
+
+import os
+import pandas as pd
+import hazelbean as hb
+
+pd.set_option('display.float_format', '{:,.2f}'.format)
+```
+
+## GEP by Country in Base Year
+
+Not yet computed. The blocker is the accessibility stage's roads input; once it is staged the
+calculation writes gep_by_country_base_year.csv and this page reports it the way every other
+service's results page does.

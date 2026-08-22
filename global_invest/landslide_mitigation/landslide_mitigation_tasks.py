@@ -886,6 +886,18 @@ def compute_slope(p):
 # ==================================================================== #
 
 
+def _nodata_masked_op(formula, nodatas):
+    """A raster_calculator op applying a chain formula wherever every input is valid, NODATA
+    elsewhere."""
+    def op(*arrays):
+        valid = np.ones(arrays[0].shape, dtype=bool)
+        for array, nodata in zip(arrays, nodatas):
+            if nodata is not None:
+                valid &= (array != nodata)
+        return np.where(valid, formula(*arrays), chain.NODATA).astype(np.float32)
+    return op
+
+
 def compute_soil_hydraulic_properties(p):
     """The four SI inputs derived from soil texture, bulk density and conductivity. Each
     formula is a chain function; this task supplies the rasters and the nodata masks."""
@@ -902,81 +914,30 @@ def compute_soil_hydraulic_properties(p):
             p.L.info('Soil hydraulic properties already computed.')
             return p
 
-        sand = p.soilgrids_paths['sand_pct']
-        clay = p.soilgrids_paths['clay_pct']
-        org_carbon = p.soilgrids_paths['org_carbon_pct']
-        bulk_density = p.soilgrids_paths['bulk_density']
-        ksat = p.ksat_path
-        soil_depth = p.soil_depth_path
-
-        def nodata_of(path):
-            return pygeo.get_raster_info(path)['nodata'][0]
-
-        def valid_mask(*pairs):
-            valid = np.ones(pairs[0][0].shape, dtype=bool)
-            for array, nodata in pairs:
-                if nodata is not None:
-                    valid &= (array != nodata)
-            return valid
-
-        def masked(values, valid):
-            return np.where(valid, values, chain.NODATA).astype(np.float32)
-
-        # ---- Friction angle ----
-        sand_nodata, clay_nodata = nodata_of(sand), nodata_of(clay)
-
-        def friction_angle_op(sand_arr, clay_arr):
-            valid = valid_mask((sand_arr, sand_nodata), (clay_arr, clay_nodata))
-            return masked(chain.friction_angle_from_texture(sand_arr, clay_arr), valid)
-
-        pygeo.raster_calculator(
-            [(sand, 1), (clay, 1)], friction_angle_op,
-            p.friction_angle_path, gdal.GDT_Float32, chain.NODATA,
-            calc_raster_stats=True,
-        )
-        p.L.info(f'Friction angle: {p.friction_angle_path}')
-
-        # ---- Soil cohesion ----
-        org_carbon_nodata = nodata_of(org_carbon)
-
-        def cohesion_op(clay_arr, org_carbon_arr):
-            valid = valid_mask((clay_arr, clay_nodata), (org_carbon_arr, org_carbon_nodata))
-            return masked(chain.soil_cohesion_from_texture(clay_arr, org_carbon_arr), valid)
-
-        pygeo.raster_calculator(
-            [(clay, 1), (org_carbon, 1)], cohesion_op,
-            p.cohesion_soil_path, gdal.GDT_Float32, chain.NODATA,
-            calc_raster_stats=True,
-        )
-        p.L.info(f'Soil cohesion: {p.cohesion_soil_path}')
-
-        # ---- Unit weight, derived from bulk density (SoilGrids ships kg/dm3 = Mg/m3) ----
-        bulk_density_nodata = nodata_of(bulk_density)
-
-        def unit_weight_op(bulk_density_arr):
-            valid = valid_mask((bulk_density_arr, bulk_density_nodata))
-            return masked(chain.unit_weight_from_bulk_density(bulk_density_arr), valid)
-
-        pygeo.raster_calculator(
-            [(bulk_density, 1)], unit_weight_op,
-            p.unit_weight_path, gdal.GDT_Float32, chain.NODATA,
-            calc_raster_stats=True,
-        )
-        p.L.info(f'Unit weight (derived from bulk density): {p.unit_weight_path}')
-
-        # ---- Transmissivity = K_sat x soil_depth ----
-        ksat_nodata, soil_depth_nodata = nodata_of(ksat), nodata_of(soil_depth)
-
-        def transmissivity_op(ksat_arr, soil_depth_arr):
-            valid = valid_mask((ksat_arr, ksat_nodata), (soil_depth_arr, soil_depth_nodata))
-            return masked(chain.transmissivity_from_ksat(ksat_arr, soil_depth_arr), valid)
-
-        pygeo.raster_calculator(
-            [(ksat, 1), (soil_depth, 1)], transmissivity_op,
-            p.transmissivity_path, gdal.GDT_Float32, chain.NODATA,
-            calc_raster_stats=True,
-        )
-        p.L.info(f'Transmissivity (UNITS UNVERIFIED, see note): {p.transmissivity_path}')
+        recipes = [
+            (chain.friction_angle_from_texture,
+             [p.soilgrids_paths['sand_pct'], p.soilgrids_paths['clay_pct']],
+             p.friction_angle_path, 'Friction angle'),
+            (chain.soil_cohesion_from_texture,
+             [p.soilgrids_paths['clay_pct'], p.soilgrids_paths['org_carbon_pct']],
+             p.cohesion_soil_path, 'Soil cohesion'),
+            # SoilGrids ships bulk density in kg/dm3 = Mg/m3.
+            (chain.unit_weight_from_bulk_density,
+             [p.soilgrids_paths['bulk_density']],
+             p.unit_weight_path, 'Unit weight (derived from bulk density)'),
+            # Transmissivity = K_sat x soil_depth.
+            (chain.transmissivity_from_ksat,
+             [p.ksat_path, p.soil_depth_path],
+             p.transmissivity_path, 'Transmissivity (UNITS UNVERIFIED, see note)'),
+        ]
+        for formula, in_paths, out_path, label in recipes:
+            nodatas = [pygeo.get_raster_info(path)['nodata'][0] for path in in_paths]
+            pygeo.raster_calculator(
+                [(path, 1) for path in in_paths], _nodata_masked_op(formula, nodatas),
+                out_path, gdal.GDT_Float32, chain.NODATA,
+                calc_raster_stats=True,
+            )
+            p.L.info(f'{label}: {out_path}')
     return p
 
 
@@ -1075,6 +1036,84 @@ def compute_si_scenarios(p):
 # ==================================================================== #
 
 
+def _draw_land_controls(p, gaez_band, gaez_nodata, ref_gt, x_size, y_size, rng, n_needed):
+    """Uniform-random pixel draws over the full grid, kept only if they land on valid land
+    (per GAEZ nodata)."""
+    accepted_x, accepted_y = [], []
+    attempts = 0
+    max_attempts = n_needed * chain.CONTROL_DRAW_MAX_ATTEMPTS_FACTOR
+    while len(accepted_x) < n_needed and attempts < max_attempts:
+        batch_size = min(n_needed * 2, chain.CONTROL_DRAW_BATCH_CAP)
+        cols = rng.integers(0, x_size, size=batch_size)
+        rows = rng.integers(0, y_size, size=batch_size)
+        attempts += batch_size
+
+        # Single-pixel windowed reads via GAEZ band
+        for r, c in zip(rows, cols):
+            val = gaez_band.ReadAsArray(int(c), int(r), 1, 1)[0, 0]
+            if gaez_nodata is None or val != gaez_nodata:
+                x, y = chain.pixel_center_coords(r, c, ref_gt)
+                accepted_x.append(x)
+                accepted_y.append(y)
+                if len(accepted_x) >= n_needed:
+                    break
+
+    if len(accepted_x) < n_needed:
+        p.L.warning(
+            f'Only drew {len(accepted_x)}/{n_needed} valid land '
+            f'controls after {attempts} attempts -- land-valid '
+            f'fraction may be lower than expected, or nodata '
+            f'check is wrong.'
+        )
+    return np.array(accepted_x), np.array(accepted_y)
+
+
+def _sample_panel_covariates(p, panel, observed_years):
+    """The panel with its covariates sampled at each row's coordinates: the static three, then
+    the per-year three one year at a time (avoids opening every year's raster for every row),
+    then rows missing a critical covariate dropped (the MIN_SLOPE_DEG exclusion in the stability
+    index, or ocean/nodata GAEZ edge cases)."""
+    panel['gaez_zone'] = lmf.sample_raster_at_points(
+        p.gaez_path, panel['ease_x'], panel['ease_y'])
+    panel['road_density'] = lmf.sample_raster_at_points(
+        p.road_density_path, panel['ease_x'], panel['ease_y'])
+    panel['slope_degrees'] = lmf.sample_raster_at_points(
+        p.slope_path, panel['ease_x'], panel['ease_y'])
+
+    panel['si_observed'] = np.nan
+    panel['rain_max_daily'] = np.nan
+    panel['population'] = np.nan
+    for year in observed_years:
+        mask = panel['year'] == year
+        if not mask.any():
+            continue
+
+        si_path = p.si_paths['observed'].get(year)
+        if si_path:
+            panel.loc[mask, 'si_observed'] = lmf.sample_raster_at_points(
+                si_path, panel.loc[mask, 'ease_x'], panel.loc[mask, 'ease_y'])
+
+        rain_path = os.path.join(p.input_data_dir, 'era5_land', f'era5_max_daily_mm_{year}.tif')
+        if os.path.exists(rain_path):
+            panel.loc[mask, 'rain_max_daily'] = lmf.sample_raster_at_points(
+                rain_path, panel.loc[mask, 'ease_x'], panel.loc[mask, 'ease_y'])
+        else:
+            p.L.warning(f'{year}: rain_max_daily raster not found at {rain_path}')
+
+        pop_path = os.path.join(p.input_data_dir, 'landscan_1km', f'landscan_{year}_1km.tif')
+        if os.path.exists(pop_path):
+            panel.loc[mask, 'population'] = lmf.sample_raster_at_points(
+                pop_path, panel.loc[mask, 'ease_x'], panel.loc[mask, 'ease_y'])
+        else:
+            p.L.warning(f'{year}: population raster not found at {pop_path}')
+
+    before = len(panel)
+    panel = panel.dropna(subset=['si_observed', 'rain_max_daily', 'gaez_zone'])
+    p.L.info(f'Dropped {before - len(panel)} rows with missing critical '
+             f'covariates (likely the min-slope exclusion or nodata edges).')
+    return panel
+
+
 def build_estimation_table(p):
     """The case-control panel the hazard and severity models are fitted on: one row per
     recorded landslide pixel-year, plus p.control_ratio uniform land pixel-years per case,
@@ -1100,39 +1139,8 @@ def build_estimation_table(p):
         gaez_band = gaez_ds.GetRasterBand(1)
         gaez_nodata = gaez_band.GetNoDataValue()
 
+        # One rng across every year's draw, so the control sequence is a single seeded stream.
         rng = np.random.default_rng(seed=chain.CONTROL_DRAW_SEED)
-
-        def draw_land_controls(n_needed):
-            """Uniform-random pixel draws over the full grid, kept only if
-            they land on valid land (per GAEZ nodata)
-            """
-            accepted_x, accepted_y = [], []
-            attempts = 0
-            max_attempts = n_needed * chain.CONTROL_DRAW_MAX_ATTEMPTS_FACTOR
-            while len(accepted_x) < n_needed and attempts < max_attempts:
-                batch_size = min(n_needed * 2, chain.CONTROL_DRAW_BATCH_CAP)
-                cols = rng.integers(0, x_size, size=batch_size)
-                rows = rng.integers(0, y_size, size=batch_size)
-                attempts += batch_size
-
-                # Single-pixel windowed reads via GAEZ band
-                for r, c in zip(rows, cols):
-                    val = gaez_band.ReadAsArray(int(c), int(r), 1, 1)[0, 0]
-                    if gaez_nodata is None or val != gaez_nodata:
-                        x, y = chain.pixel_center_coords(r, c, ref_gt)
-                        accepted_x.append(x)
-                        accepted_y.append(y)
-                        if len(accepted_x) >= n_needed:
-                            break
-
-            if len(accepted_x) < n_needed:
-                p.L.warning(
-                    f'Only drew {len(accepted_x)}/{n_needed} valid land '
-                    f'controls after {attempts} attempts -- land-valid '
-                    f'fraction may be lower than expected, or nodata '
-                    f'check is wrong.'
-                )
-            return np.array(accepted_x), np.array(accepted_y)
 
         # ---- Build per-year case + control rows ----
         all_rows = []
@@ -1148,66 +1156,13 @@ def build_estimation_table(p):
                 p.L.warning(f'{year}: no UGLC events, skipping controls for this year too.')
                 continue
 
-            control_x, control_y = draw_land_controls(int(round(p.control_ratio * n_cases)))
+            control_x, control_y = _draw_land_controls(
+                p, gaez_band, gaez_nodata, ref_gt, x_size, y_size, rng,
+                int(round(p.control_ratio * n_cases)))
             all_rows.append(chain.case_control_rows(cases_year, control_x, control_y, year))
             p.L.info(f'{year}: {n_cases} cases + {len(control_x)} controls')
 
-        panel = pd.concat(all_rows, ignore_index=True)
-
-        # ---- Sample static covariates (same for every row regardless of year) ----
-        panel['gaez_zone'] = lmf.sample_raster_at_points(
-            p.gaez_path, panel['ease_x'], panel['ease_y']
-        )
-        panel['road_density'] = lmf.sample_raster_at_points(
-            p.road_density_path, panel['ease_x'], panel['ease_y']
-        )
-        panel['slope_degrees'] = lmf.sample_raster_at_points(
-            p.slope_path, panel['ease_x'], panel['ease_y']
-        )
-
-        # ---- Sample per-year covariates, one year at a time (avoids
-        # opening/sampling every year's raster for every row) ----
-        panel['si_observed'] = np.nan
-        panel['rain_max_daily'] = np.nan
-        panel['population'] = np.nan
-
-        for year in observed_years:
-            mask = panel['year'] == year
-            if not mask.any():
-                continue
-
-            si_path = p.si_paths['observed'].get(year)
-            if si_path:
-                panel.loc[mask, 'si_observed'] = lmf.sample_raster_at_points(
-                    si_path, panel.loc[mask, 'ease_x'], panel.loc[mask, 'ease_y']
-                )
-
-            rain_path = os.path.join(
-                p.input_data_dir, 'era5_land', f'era5_max_daily_mm_{year}.tif'
-            )
-            if os.path.exists(rain_path):
-                panel.loc[mask, 'rain_max_daily'] = lmf.sample_raster_at_points(
-                    rain_path, panel.loc[mask, 'ease_x'], panel.loc[mask, 'ease_y']
-                )
-            else:
-                p.L.warning(f'{year}: rain_max_daily raster not found at {rain_path}')
-
-            pop_path = os.path.join(
-                p.input_data_dir, 'landscan_1km', f'landscan_{year}_1km.tif'
-            )
-            if os.path.exists(pop_path):
-                panel.loc[mask, 'population'] = lmf.sample_raster_at_points(
-                    pop_path, panel.loc[mask, 'ease_x'], panel.loc[mask, 'ease_y']
-                )
-            else:
-                p.L.warning(f'{year}: population raster not found at {pop_path}')
-
-        # ---- Drop rows with missing critical covariates (e.g. the MIN_SLOPE_DEG
-        # exclusion in the stability index, or ocean/nodata GAEZ edge cases) ----
-        before = len(panel)
-        panel = panel.dropna(subset=['si_observed', 'rain_max_daily', 'gaez_zone'])
-        p.L.info(f'Dropped {before - len(panel)} rows with missing critical '
-                 f'covariates (likely the min-slope exclusion or nodata edges).')
+        panel = _sample_panel_covariates(p, pd.concat(all_rows, ignore_index=True), observed_years)
 
         panel.to_csv(out_path, index=False)
         p.L.info(f'Estimation table built: {out_path} ({len(panel)} rows)')
@@ -1678,6 +1633,56 @@ def predict_mortality_scenarios(p):
     return p
 
 
+def _stitch_one_global_raster(p, blocks_list, grid, spec, year):
+    """One global raster from its per-tile predictions: a NODATA-filled canvas on the reference
+    grid, each existing tile written at its block offset."""
+    out_path = os.path.join(p.cur_dir, spec['global_filename'].format(year=year))
+
+    if os.path.exists(out_path) and not getattr(p, 'force_run', False):
+        p.L.info(f'Skipping existing: {out_path}')
+        return
+    if os.path.exists(out_path):
+        os.remove(out_path)
+
+    p.L.info(f'Stitching {spec["name"]} {year}')
+
+    ds_out = gdal.GetDriverByName('GTiff').Create(
+        out_path, grid['n_cols'], grid['n_rows'], 1, gdal.GDT_Float32,
+        options=list(chain.STITCH_CREATION_OPTIONS),
+    )
+    ds_out.SetGeoTransform(grid['geotransform'])
+    ds_out.SetProjection(grid['projection'])
+    band_out = ds_out.GetRasterBand(1)
+    band_out.SetNoDataValue(chain.NODATA)
+    band_out.Fill(chain.NODATA)
+
+    written, missing = 0, 0
+    for block in blocks_list:
+        col_off, row_off, _, _ = [int(x) for x in block]
+        tile_path = os.path.join(
+            p.tile_zones_dir, f'{row_off}_{col_off}',
+            spec['tile_subdir'], spec['tile_filename'].format(year=year)
+        )
+
+        if not os.path.exists(tile_path):
+            missing += 1
+            continue
+
+        ds_tile = gdal.Open(tile_path)
+        arr = ds_tile.GetRasterBand(1).ReadAsArray().astype(np.float32)
+        ds_tile = None
+
+        band_out.WriteArray(np.where(np.isnan(arr), chain.NODATA, arr), col_off, row_off)
+        written += 1
+
+    band_out.FlushCache()
+    ds_out = None
+
+    p.L.info(f'  Wrote {written} tiles')
+    if missing:
+        p.L.info(f'  Missing {missing} tiles')
+
+
 def stitch_tiles(p):
     """Stitch tile-level hazard and mortality predictions into global rasters."""
     publish_inputs(p)
@@ -1689,13 +1694,9 @@ def stitch_tiles(p):
     blocks_list = blocks_df.values.tolist()
 
     ref_ds = gdal.Open(p.gaez_path)
-    n_cols_full = ref_ds.RasterXSize
-    n_rows_full = ref_ds.RasterYSize
-    gt = ref_ds.GetGeoTransform()
-    proj = ref_ds.GetProjection()
+    grid = {'n_cols': ref_ds.RasterXSize, 'n_rows': ref_ds.RasterYSize,
+            'geotransform': ref_ds.GetGeoTransform(), 'projection': ref_ds.GetProjection()}
     ref_ds = None
-
-    driver = gdal.GetDriverByName('GTiff')
 
     outputs = []
     for scenario_name in p.si_paths.keys():
@@ -1716,51 +1717,7 @@ def stitch_tiles(p):
 
     for year in p.prediction_years:
         for spec in outputs:
-            out_path = os.path.join(p.cur_dir, spec['global_filename'].format(year=year))
-
-            if os.path.exists(out_path) and not getattr(p, 'force_run', False):
-                p.L.info(f'Skipping existing: {out_path}')
-                continue
-            if os.path.exists(out_path):
-                os.remove(out_path)
-
-            p.L.info(f'Stitching {spec["name"]} {year}')
-
-            ds_out = driver.Create(
-                out_path, n_cols_full, n_rows_full, 1, gdal.GDT_Float32,
-                options=list(chain.STITCH_CREATION_OPTIONS),
-            )
-            ds_out.SetGeoTransform(gt)
-            ds_out.SetProjection(proj)
-            band_out = ds_out.GetRasterBand(1)
-            band_out.SetNoDataValue(chain.NODATA)
-            band_out.Fill(chain.NODATA)
-
-            written, missing = 0, 0
-            for block in blocks_list:
-                col_off, row_off, _, _ = [int(x) for x in block]
-                tile_path = os.path.join(
-                    p.tile_zones_dir, f'{row_off}_{col_off}',
-                    spec['tile_subdir'], spec['tile_filename'].format(year=year)
-                )
-
-                if not os.path.exists(tile_path):
-                    missing += 1
-                    continue
-
-                ds_tile = gdal.Open(tile_path)
-                arr = ds_tile.GetRasterBand(1).ReadAsArray().astype(np.float32)
-                ds_tile = None
-
-                band_out.WriteArray(np.where(np.isnan(arr), chain.NODATA, arr), col_off, row_off)
-                written += 1
-
-            band_out.FlushCache()
-            ds_out = None
-
-            p.L.info(f'  Wrote {written} tiles')
-            if missing:
-                p.L.info(f'  Missing {missing} tiles')
+            _stitch_one_global_raster(p, blocks_list, grid, spec, year)
 
     p.L.info('Stitching complete.')
     return p
@@ -1839,86 +1796,92 @@ def build_vsl_raster(p):
     return p
 
 
+def _avoided_mortality_for_year(p, year):
+    """One year's avoided-mortality pair: full_impacts minus observed deaths, and that
+    difference priced at the pixel's VSL."""
+    deaths_observed_path = os.path.join(
+        p.stitch_tiles_dir, f'expected_deaths_observed_{year}.tif'
+    )
+    deaths_full_impacts_path = os.path.join(
+        p.stitch_tiles_dir, f'expected_deaths_full_impacts_{year}.tif'
+    )
+    vsl_path = os.path.join(p.valuation_dir, 'vsl_usd_2019_1km.tif')
+
+    avoided_mortality_path = os.path.join(p.valuation_dir, f'avoided_mortality_{year}.tif')
+    avoided_mortality_value_path = os.path.join(
+        p.valuation_dir, f'avoided_mortality_value_{year}.tif'
+    )
+
+    if (os.path.exists(avoided_mortality_path)
+            and os.path.exists(avoided_mortality_value_path)
+            and not p.force_run):
+        p.L.info(f'{year}: avoided mortality outputs already exist, skipping.')
+        return
+
+    for path, label in [(deaths_observed_path, 'expected_deaths_observed'),
+                        (deaths_full_impacts_path, 'expected_deaths_full_impacts'),
+                        (vsl_path, 'vsl_usd')]:
+        if not os.path.exists(path):
+            raise FileNotFoundError(f'{label} missing for {year}: {path}')
+
+    # ---- avoided_mortality = full_impacts - observed ----
+    deaths_obs_nodata = pygeo.get_raster_info(deaths_observed_path)['nodata'][0]
+    deaths_fi_nodata = pygeo.get_raster_info(deaths_full_impacts_path)['nodata'][0]
+
+    negative_count = [0]  # mutable closure for the sanity check below
+
+    def avoided_op(deaths_obs, deaths_fi):
+        valid = np.ones(deaths_obs.shape, dtype=bool)
+        if deaths_obs_nodata is not None:
+            valid &= (deaths_obs != deaths_obs_nodata)
+        if deaths_fi_nodata is not None:
+            valid &= (deaths_fi != deaths_fi_nodata)
+
+        avoided = deaths_fi - deaths_obs
+        negative_count[0] += int(((avoided < 0) & valid).sum())
+        return np.where(valid, avoided, chain.NODATA).astype(np.float32)
+
+    pygeo.raster_calculator(
+        [(deaths_observed_path, 1), (deaths_full_impacts_path, 1)],
+        avoided_op, avoided_mortality_path, gdal.GDT_Float32, chain.NODATA,
+        calc_raster_stats=True,
+    )
+
+    if negative_count[0] > 0:
+        p.L.warning(
+            f'{year}: {negative_count[0]} pixels have NEGATIVE avoided '
+            f'mortality (full_impacts predicts FEWER deaths than observed '
+            f'forest cover) -- this should not happen physically. Worth '
+            f'investigating (e.g. severity-model covariates that happen to '
+            f'differ between scenarios, though they should not; or SI clip '
+            f'edge cases) before trusting results near these locations.'
+        )
+    p.L.info(f'Avoided mortality {year}: {avoided_mortality_path}')
+
+    # ---- avoided_mortality_value = avoided_mortality x VSL ----
+    vsl_nodata = pygeo.get_raster_info(vsl_path)['nodata'][0]
+
+    def value_op(avoided, vsl):
+        valid = (avoided != chain.NODATA)
+        if vsl_nodata is not None:
+            valid &= (vsl != vsl_nodata)
+        return np.where(valid, avoided * vsl, chain.NODATA).astype(np.float32)
+
+    pygeo.raster_calculator(
+        [(avoided_mortality_path, 1), (vsl_path, 1)],
+        value_op, avoided_mortality_value_path, gdal.GDT_Float32, chain.NODATA,
+        calc_raster_stats=True,
+    )
+    p.L.info(f'Avoided mortality value {year}: {avoided_mortality_value_path}')
+
+
 def compute_avoided_mortality(p):
     """The service's quantity and value: deaths the counterfactual predicts that the observed
     forest cover does not, and that difference priced at the pixel's VSL."""
     publish_inputs(p)
     if p.run_this:
         for year in p.prediction_years:
-            deaths_observed_path = os.path.join(
-                p.stitch_tiles_dir, f'expected_deaths_observed_{year}.tif'
-            )
-            deaths_full_impacts_path = os.path.join(
-                p.stitch_tiles_dir, f'expected_deaths_full_impacts_{year}.tif'
-            )
-            vsl_path = os.path.join(p.valuation_dir, 'vsl_usd_2019_1km.tif')
-
-            avoided_mortality_path = os.path.join(p.valuation_dir, f'avoided_mortality_{year}.tif')
-            avoided_mortality_value_path = os.path.join(
-                p.valuation_dir, f'avoided_mortality_value_{year}.tif'
-            )
-
-            if (os.path.exists(avoided_mortality_path)
-                    and os.path.exists(avoided_mortality_value_path)
-                    and not p.force_run):
-                p.L.info(f'{year}: avoided mortality outputs already exist, skipping.')
-                continue
-
-            for path, label in [(deaths_observed_path, 'expected_deaths_observed'),
-                                (deaths_full_impacts_path, 'expected_deaths_full_impacts'),
-                                (vsl_path, 'vsl_usd')]:
-                if not os.path.exists(path):
-                    raise FileNotFoundError(f'{label} missing for {year}: {path}')
-
-            # ---- avoided_mortality = full_impacts - observed ----
-            deaths_obs_nodata = pygeo.get_raster_info(deaths_observed_path)['nodata'][0]
-            deaths_fi_nodata = pygeo.get_raster_info(deaths_full_impacts_path)['nodata'][0]
-
-            negative_count = [0]  # mutable closure for the sanity check below
-
-            def avoided_op(deaths_obs, deaths_fi):
-                valid = np.ones(deaths_obs.shape, dtype=bool)
-                if deaths_obs_nodata is not None:
-                    valid &= (deaths_obs != deaths_obs_nodata)
-                if deaths_fi_nodata is not None:
-                    valid &= (deaths_fi != deaths_fi_nodata)
-
-                avoided = deaths_fi - deaths_obs
-                negative_count[0] += int(((avoided < 0) & valid).sum())
-                return np.where(valid, avoided, chain.NODATA).astype(np.float32)
-
-            pygeo.raster_calculator(
-                [(deaths_observed_path, 1), (deaths_full_impacts_path, 1)],
-                avoided_op, avoided_mortality_path, gdal.GDT_Float32, chain.NODATA,
-                calc_raster_stats=True,
-            )
-
-            if negative_count[0] > 0:
-                p.L.warning(
-                    f'{year}: {negative_count[0]} pixels have NEGATIVE avoided '
-                    f'mortality (full_impacts predicts FEWER deaths than observed '
-                    f'forest cover) -- this should not happen physically. Worth '
-                    f'investigating (e.g. severity-model covariates that happen to '
-                    f'differ between scenarios, though they should not; or SI clip '
-                    f'edge cases) before trusting results near these locations.'
-                )
-            p.L.info(f'Avoided mortality {year}: {avoided_mortality_path}')
-
-            # ---- avoided_mortality_value = avoided_mortality x VSL ----
-            vsl_nodata = pygeo.get_raster_info(vsl_path)['nodata'][0]
-
-            def value_op(avoided, vsl):
-                valid = (avoided != chain.NODATA)
-                if vsl_nodata is not None:
-                    valid &= (vsl != vsl_nodata)
-                return np.where(valid, avoided * vsl, chain.NODATA).astype(np.float32)
-
-            pygeo.raster_calculator(
-                [(avoided_mortality_path, 1), (vsl_path, 1)],
-                value_op, avoided_mortality_value_path, gdal.GDT_Float32, chain.NODATA,
-                calc_raster_stats=True,
-            )
-            p.L.info(f'Avoided mortality value {year}: {avoided_mortality_value_path}')
+            _avoided_mortality_for_year(p, year)
     return p
 
 
@@ -2057,87 +2020,90 @@ TERM_LABELS = {
 SEVERITY_COLUMN_LABELS = ('Pr(Mortality > 0)', 'log(Fatalities)')
 
 
+def _export_hazard_table(p, out_dir):
+    with open(os.path.join(p.modeling_dir, 'hazard_model_coefficients.json')) as f:
+        hazard = json.load(f)
+
+    hazard_coef_rows = [
+        ('Intercept', hazard['alpha_raw'], hazard['std_err']['const'], hazard['p_value']['const']),
+        (TERM_LABELS['si_observed'], hazard['beta_si'],
+         hazard['std_err']['si_observed'], hazard['p_value']['si_observed']),
+        (TERM_LABELS['rain_max_daily'], hazard['beta_rain'],
+         hazard['std_err']['rain_max_daily'], hazard['p_value']['rain_max_daily']),
+    ]
+    hazard_bottom_rows = [
+        ('Observations', f"{hazard.get('n_train'):,}"),
+        ('Pseudo R-squared (McFadden)', f"{hazard.get('pseudo_r_squared'):.4f}"),
+        ('Case-control corrected intercept', f"{hazard.get('alpha_corrected'):.4f}"),
+        ('Training AUC', f"{hazard.get('train_auc'):.4f}"),
+        ('Held-out AUC', f"{hazard.get('holdout_auc'):.4f}"),
+        ('Fixed effects', 'No'),
+    ]
+    hazard_notes = (
+        'Logit model estimated on a stratified case-control sample; absolute probabilities '
+        'corrected for case-control oversampling. Standard errors in '
+        'parentheses. * p < 0.05, ** p < 0.01, *** p < 0.001. Variable definitions: '
+        f"Stability Index = {VARIABLE_NOTES['si_observed']}; "
+        f"Extreme Precipitation = {VARIABLE_NOTES['rain_max_daily']}."
+    )
+    _save_table(
+        chain.publication_table(hazard_coef_rows, hazard_bottom_rows, 'Pr(Landslide)'),
+        os.path.join(out_dir, 'hazard_model_table'),
+        'Hazard Model of Landslide Occurrence', hazard_notes,
+    )
+
+
+def _export_severity_table(p, out_dir):
+    """The severity model as a single table, hurdle and severity stages as columns."""
+    with open(os.path.join(p.modeling_dir, 'severity_model_coefficients.json')) as f:
+        severity = json.load(f)
+
+    part_a = chain.coefficients_by_term(severity['part_a_params'], severity['part_a_std_err'],
+                                        severity['part_a_p_value'])
+    part_b = chain.coefficients_by_term(severity['part_b_params'], severity['part_b_std_err'],
+                                        severity['part_b_p_value'])
+    column_a, column_b = SEVERITY_COLUMN_LABELS
+
+    rows = chain.hurdle_table_rows(part_a, part_b, TERM_LABELS, SEVERITY_COLUMN_LABELS)
+    rows.extend([
+        {' ': 'Observations',
+         column_a: f"{severity.get('n_train_landslides'):,}",
+         column_b: f"{severity.get('n_train_fatal'):,}"},
+        {' ': 'Pseudo R-squared (McFadden)',
+         column_a: f"{severity.get('part_a_pseudo_r_squared'):.4f}",
+         column_b: ''},
+        {' ': 'R-squared',
+         column_a: '',
+         column_b: f"{severity.get('part_b_r_squared'):.4f}"},
+        {' ': "Duan's smearing factor",
+         column_a: '',
+         column_b: f"{severity.get('smearing_factor'):.4f}"},
+        {' ': 'Fixed effects', column_a: 'No', column_b: 'No'},
+    ])
+
+    severity_notes = (
+        'Two-part hurdle model of landslide fatalities. Column (1) is the logistic hurdle stage, '
+        'estimated on realized landslide occurrences only. Column (2) is the log-linear severity '
+        "stage, estimated on the fatal-event subsample and back-transformed using Duan's (1983) "
+        'smearing correction. Standard errors in parentheses. * p < 0.05, ** p < 0.01, *** p < 0.001. '
+        'Variable definitions: '
+        f"Population (log scale) = {VARIABLE_NOTES['population_log1p']}; "
+        f"Extreme Precipitation = {VARIABLE_NOTES['rain_max_daily']}; "
+        f"Slope = {VARIABLE_NOTES['slope_degrees']}; "
+        f"Road Density = {VARIABLE_NOTES['road_density']}."
+    )
+    _save_table(
+        pd.DataFrame(rows), os.path.join(out_dir, 'severity_combined_table'),
+        'Two-Part Hurdle Model of Landslide Fatalities', severity_notes,
+    )
+
+
 def export_regression_tables(p):
     publish_inputs(p)
     if p.run_this:
-        out_dir = p.tables_figures_dir
-
-        # ---- Hazard model ----
-        with open(os.path.join(p.modeling_dir, 'hazard_model_coefficients.json')) as f:
-            hazard = json.load(f)
-
-        hazard_coef_rows = [
-            ('Intercept', hazard['alpha_raw'], hazard['std_err']['const'], hazard['p_value']['const']),
-            (TERM_LABELS['si_observed'], hazard['beta_si'],
-             hazard['std_err']['si_observed'], hazard['p_value']['si_observed']),
-            (TERM_LABELS['rain_max_daily'], hazard['beta_rain'],
-             hazard['std_err']['rain_max_daily'], hazard['p_value']['rain_max_daily']),
-        ]
-        hazard_bottom_rows = [
-            ('Observations', f"{hazard.get('n_train'):,}"),
-            ('Pseudo R-squared (McFadden)', f"{hazard.get('pseudo_r_squared'):.4f}"),
-            ('Case-control corrected intercept', f"{hazard.get('alpha_corrected'):.4f}"),
-            ('Training AUC', f"{hazard.get('train_auc'):.4f}"),
-            ('Held-out AUC', f"{hazard.get('holdout_auc'):.4f}"),
-            ('Fixed effects', 'No'),
-        ]
-        hazard_notes = (
-            'Logit model estimated on a stratified case-control sample; absolute probabilities '
-            'corrected for case-control oversampling. Standard errors in '
-            'parentheses. * p < 0.05, ** p < 0.01, *** p < 0.001. Variable definitions: '
-            f"Stability Index = {VARIABLE_NOTES['si_observed']}; "
-            f"Extreme Precipitation = {VARIABLE_NOTES['rain_max_daily']}."
-        )
-        _save_table(
-            chain.publication_table(hazard_coef_rows, hazard_bottom_rows, 'Pr(Landslide)'),
-            os.path.join(out_dir, 'hazard_model_table'),
-            'Hazard Model of Landslide Occurrence', hazard_notes,
-        )
-
-        # ---- Severity model: single table, hurdle and severity stages as columns ----
-        with open(os.path.join(p.modeling_dir, 'severity_model_coefficients.json')) as f:
-            severity = json.load(f)
-
-        part_a = chain.coefficients_by_term(severity['part_a_params'], severity['part_a_std_err'],
-                                            severity['part_a_p_value'])
-        part_b = chain.coefficients_by_term(severity['part_b_params'], severity['part_b_std_err'],
-                                            severity['part_b_p_value'])
-        column_a, column_b = SEVERITY_COLUMN_LABELS
-
-        rows = chain.hurdle_table_rows(part_a, part_b, TERM_LABELS, SEVERITY_COLUMN_LABELS)
-        rows.extend([
-            {' ': 'Observations',
-             column_a: f"{severity.get('n_train_landslides'):,}",
-             column_b: f"{severity.get('n_train_fatal'):,}"},
-            {' ': 'Pseudo R-squared (McFadden)',
-             column_a: f"{severity.get('part_a_pseudo_r_squared'):.4f}",
-             column_b: ''},
-            {' ': 'R-squared',
-             column_a: '',
-             column_b: f"{severity.get('part_b_r_squared'):.4f}"},
-            {' ': "Duan's smearing factor",
-             column_a: '',
-             column_b: f"{severity.get('smearing_factor'):.4f}"},
-            {' ': 'Fixed effects', column_a: 'No', column_b: 'No'},
-        ])
-
-        severity_notes = (
-            'Two-part hurdle model of landslide fatalities. Column (1) is the logistic hurdle stage, '
-            'estimated on realized landslide occurrences only. Column (2) is the log-linear severity '
-            "stage, estimated on the fatal-event subsample and back-transformed using Duan's (1983) "
-            'smearing correction. Standard errors in parentheses. * p < 0.05, ** p < 0.01, *** p < 0.001. '
-            'Variable definitions: '
-            f"Population (log scale) = {VARIABLE_NOTES['population_log1p']}; "
-            f"Extreme Precipitation = {VARIABLE_NOTES['rain_max_daily']}; "
-            f"Slope = {VARIABLE_NOTES['slope_degrees']}; "
-            f"Road Density = {VARIABLE_NOTES['road_density']}."
-        )
-        _save_table(
-            pd.DataFrame(rows), os.path.join(out_dir, 'severity_combined_table'),
-            'Two-Part Hurdle Model of Landslide Fatalities', severity_notes,
-        )
-
-        p.L.info(f'Publication-style regression tables (csv/tex/md) exported to {out_dir}')
+        _export_hazard_table(p, p.tables_figures_dir)
+        _export_severity_table(p, p.tables_figures_dir)
+        p.L.info(f'Publication-style regression tables (csv/tex/md) exported to {p.tables_figures_dir}')
     return p
 
 
@@ -2309,71 +2275,77 @@ def export_pi_audit_table(p):
     return p
 
 
+def _plot_raster(p, failures, raster_path, out_png, title, cmap, cbar_format):
+    """One raster to one PNG, downsampled to the plot dimension cap, ranged on the plot
+    percentiles. A missing raster or an unplottable range is recorded in failures rather
+    than stopping the sweep."""
+    if os.path.exists(out_png):
+        p.L.info(f'Plot already exists: {out_png}')
+        return True
+    if not os.path.exists(raster_path):
+        msg = f'Raster not found: {raster_path}'
+        p.L.info(f'WARNING: {msg}')
+        failures.append(msg)
+        return False
+
+    try:
+        with rasterio.open(raster_path) as src:
+            max_dim = int(getattr(p, 'plot_raster_max_dim', chain.PLOT_RASTER_MAX_DIM))
+            scale = max(src.height / max_dim, src.width / max_dim, 1.0)
+            arr = src.read(
+                1,
+                out_shape=(max(1, int(np.ceil(src.height / scale))),
+                           max(1, int(np.ceil(src.width / scale)))),
+                resampling=Resampling.nearest,
+            ).astype(np.float32)
+            ndv = src.nodata
+
+        if ndv is not None:
+            arr = np.where(arr == ndv, np.nan, arr)
+
+        finite = arr[np.isfinite(arr)]
+        if finite.size == 0:
+            msg = f'Raster has no finite data: {raster_path}'
+            p.L.info(f'WARNING: {msg}')
+            failures.append(msg)
+            return False
+
+        vmin, vmax = np.nanpercentile(finite, list(chain.PLOT_PERCENTILES))
+        if not np.isfinite(vmin) or not np.isfinite(vmax):
+            msg = f'Invalid plotting range: {raster_path}'
+            p.L.info(f'WARNING: {msg}')
+            failures.append(msg)
+            return False
+
+        if vmin == vmax:
+            eps = abs(vmin) * 1e-6 if vmin != 0 else 1e-6
+            vmin -= eps
+            vmax += eps
+
+        fig, ax = plt.subplots(figsize=(9, 4.8), dpi=220)
+        im = ax.imshow(arr, cmap=cmap, vmin=vmin, vmax=vmax)
+        ax.set_axis_off()
+        cbar = plt.colorbar(im, ax=ax, fraction=0.03, pad=0.02, shrink=0.4)
+        cbar.ax.tick_params(labelsize=8)
+        cbar.ax.yaxis.set_major_formatter(mtick.StrMethodFormatter(cbar_format))
+        plt.tight_layout()
+        plt.savefig(out_png, dpi=300, bbox_inches='tight')
+        plt.close(fig)
+        p.L.info(f'Saved figure: {out_png}')
+        return True
+    except Exception as e:
+        msg = f'Failed plotting {os.path.basename(raster_path)}: {e}'
+        p.L.info(f'WARNING: {msg}')
+        failures.append(msg)
+        plt.close('all')
+        return False
+
+
 def plot_global_rasters_png(p):
     publish_inputs(p)
+    if not p.run_this:
+        return p
     failures = []
-
-    def _plot_raster(raster_path, out_png, title, cmap, cbar_format):
-        if os.path.exists(out_png):
-            p.L.info(f'Plot already exists: {out_png}')
-            return True
-        if not os.path.exists(raster_path):
-            msg = f'Raster not found: {raster_path}'
-            p.L.info(f'WARNING: {msg}')
-            failures.append(msg)
-            return False
-
-        try:
-            with rasterio.open(raster_path) as src:
-                max_dim = int(getattr(p, 'plot_raster_max_dim', chain.PLOT_RASTER_MAX_DIM))
-                scale = max(src.height / max_dim, src.width / max_dim, 1.0)
-                arr = src.read(
-                    1,
-                    out_shape=(max(1, int(np.ceil(src.height / scale))),
-                               max(1, int(np.ceil(src.width / scale)))),
-                    resampling=Resampling.nearest,
-                ).astype(np.float32)
-                ndv = src.nodata
-
-            if ndv is not None:
-                arr = np.where(arr == ndv, np.nan, arr)
-
-            finite = arr[np.isfinite(arr)]
-            if finite.size == 0:
-                msg = f'Raster has no finite data: {raster_path}'
-                p.L.info(f'WARNING: {msg}')
-                failures.append(msg)
-                return False
-
-            vmin, vmax = np.nanpercentile(finite, list(chain.PLOT_PERCENTILES))
-            if not np.isfinite(vmin) or not np.isfinite(vmax):
-                msg = f'Invalid plotting range: {raster_path}'
-                p.L.info(f'WARNING: {msg}')
-                failures.append(msg)
-                return False
-
-            if vmin == vmax:
-                eps = abs(vmin) * 1e-6 if vmin != 0 else 1e-6
-                vmin -= eps
-                vmax += eps
-
-            fig, ax = plt.subplots(figsize=(9, 4.8), dpi=220)
-            im = ax.imshow(arr, cmap=cmap, vmin=vmin, vmax=vmax)
-            ax.set_axis_off()
-            cbar = plt.colorbar(im, ax=ax, fraction=0.03, pad=0.02, shrink=0.4)
-            cbar.ax.tick_params(labelsize=8)
-            cbar.ax.yaxis.set_major_formatter(mtick.StrMethodFormatter(cbar_format))
-            plt.tight_layout()
-            plt.savefig(out_png, dpi=300, bbox_inches='tight')
-            plt.close(fig)
-            p.L.info(f'Saved figure: {out_png}')
-            return True
-        except Exception as e:
-            msg = f'Failed plotting {os.path.basename(raster_path)}: {e}'
-            p.L.info(f'WARNING: {msg}')
-            failures.append(msg)
-            plt.close('all')
-            return False
 
     # Hazard probabilities and expected deaths are per pixel-year and therefore small:
     # three decimals would show mostly zeros, so those colour bars carry five.
@@ -2382,6 +2354,7 @@ def plot_global_rasters_png(p):
         if si_path:
             p.L.info(f'\nPlotting Stability Index for {year}...')
             _plot_raster(
+                p, failures,
                 si_path,
                 os.path.join(p.tables_figures_dir, f'si_observed_{year}.png'),
                 f'Stability Index (Observed Forest Cover), {year}',
@@ -2392,6 +2365,7 @@ def plot_global_rasters_png(p):
         for scenario_name in p.si_paths.keys():
             p.L.info(f'\nPlotting hazard probability for {year} / {scenario_name}...')
             _plot_raster(
+                p, failures,
                 os.path.join(p.stitch_tiles_dir, f'hazard_prob_{scenario_name}_{year}.tif'),
                 os.path.join(p.tables_figures_dir, f'hazard_prob_{scenario_name}_{year}.png'),
                 f'Landslide Hazard Probability ({scenario_name}), {year}',
@@ -2402,6 +2376,7 @@ def plot_global_rasters_png(p):
         for scenario_name in p.si_paths.keys():
             p.L.info(f'\nPlotting expected deaths for {year} / {scenario_name}...')
             _plot_raster(
+                p, failures,
                 os.path.join(p.stitch_tiles_dir, f'expected_deaths_{scenario_name}_{year}.tif'),
                 os.path.join(p.tables_figures_dir, f'expected_deaths_{scenario_name}_{year}.png'),
                 f'Expected Deaths ({scenario_name}), {year}',
@@ -2411,6 +2386,7 @@ def plot_global_rasters_png(p):
 
         p.L.info(f'\nPlotting avoided mortality for {year}...')
         _plot_raster(
+            p, failures,
             os.path.join(p.valuation_dir, f'avoided_mortality_{year}.tif'),
             os.path.join(p.tables_figures_dir, f'avoided_mortality_{year}.png'),
             f'Avoided Landslide Mortality, {year}',
@@ -2418,6 +2394,7 @@ def plot_global_rasters_png(p):
             '{x:.5f}',
         )
         _plot_raster(
+            p, failures,
             os.path.join(p.valuation_dir, f'avoided_mortality_value_{year}.tif'),
             os.path.join(p.tables_figures_dir, f'avoided_mortality_value_{year}.png'),
             f'Economic Value of Avoided Mortality, {year}',

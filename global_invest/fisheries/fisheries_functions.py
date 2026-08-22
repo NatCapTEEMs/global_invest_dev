@@ -25,6 +25,109 @@ def read_fisheries_headers(cwon_path, headers):
     return out
 
 
+# NGFS scenario -> fisheries RCP header. RCP2.6=FI26 (below_2c/net_zero/low_demand),
+# RCP4.5=FI45 (ndcs/delayed_transition), RCP7.0=FI85 (current_policies/fragmented_world/stress_test).
+# RCP -> FI header. The headers ARE RCP-named (FI26=RCP2.6, FI45=RCP4.5, FI85=RCP8.5; FI85 also
+# serves RCP7.0 as the closest available -- provenance #16). When the scenarios CSV carries a
+# climate_label column (hydrate_es_scenarios publishes p.es_shock_climate_labels), the header is
+# derived from the scenario's RCP and scenario NAMES need no translation at all.
+RCP_FI_MAP = {'rcp26': 'FI26', 'rcp45': 'FI45', 'rcp60': 'FI85', 'rcp70': 'FI85', 'rcp85': 'FI85'}
+
+FISH_HEADER_MAP = {
+    'below_2c': 'FI26', 'net_zero': 'FI26', 'low_demand': 'FI26',
+    'ndcs': 'FI45', 'delayed_transition': 'FI45',
+    'current_policies': 'FI85', 'fragmented_world': 'FI85', 'stress_test': 'FI85',
+}
+FISH_CAP = 2.0          # +-2% backstop. Every legitimate FI value across FI26/FI45/FI85 is <=1.6%, so real
+                        # signal passes untouched. Kept as a catch-all; known-bad values are now IMPUTED by
+                        # FISH_VALUE_OVERRIDES below rather than merely clipped.
+
+# (header, region) -> imputed value, for entries that are demonstrably corrupt at source.
+#
+# 'nor' FI26 = +13.504 while its FI45 = +0.565 and FI85 = +0.558. A 24x larger gain under the WEAKEST
+# warming inverts the physics -- DBEM's high-latitude gains grow with warming, they do not peak at RCP2.6
+# -- so the value is an error, not signal. Clipping it to the +-2 cap does not fix the problem: with only
+# 50 regions the global mean is dominated by this one cell (RCP2.6 mean +0.3037, of which 'nor' alone
+# contributes +0.270; capped it still supplies ~half the remaining mean), so the SIGN of the below_2c
+# fisheries shock rested on a number we know is wrong.
+#
+# Imputed from Norway's OWN other-RCP values by OLS across the other 49 regions:
+#   FI26 ~ FI45 : r=+0.813, slope +0.7411, intercept +0.0583 -> +0.4767   <- used (best correlated)
+#   FI26 ~ FI85 : r=+0.482                                   -> +0.2916
+#   median FI26/FI45 ratio (n=39, |FI45|>0.05) = +0.8902     -> +0.5026   (independent corroboration)
+# Result: nor = +0.477 (2.6), +0.565 (4.5), +0.558 (8.5) -- gains rise then flatten with warming.
+# ⚠ This is an IMPUTATION, not a correction at source. Flag it to Erwin with #16.
+FISH_VALUE_OVERRIDES = {('FI26', 'nor'): 0.4767}
+
+
+def resolve_fisheries_header(scen, header_map, climate_labels):
+    """FI header for a scenario: explicit map (consumer) -> the scenario's RCP (scenarios CSV)
+    -> identity (FI-native labels pass straight through)."""
+    return header_map.get(scen) or RCP_FI_MAP.get(climate_labels.get(scen), scen)
+
+
+def fisheries_headers_to_read(header_map):
+    """The HAR headers to read: the union of the consumer map's targets and every RCP-derivable
+    header. Must NOT depend on header_map alone -- with the legacy default deleted, an empty map
+    would read no headers and every scenario would be dropped regardless of what the RCP
+    derivation resolves (found by the ngfs session: 9/9 scenarios -> 0/9 in simulation)."""
+    return tuple(sorted(set(header_map.values()) | set(RCP_FI_MAP.values())))
+
+
+def static_shock_rows(fi_data, scenarios, header_map, climate_labels, overrides, sectors,
+                      base_year, end_year, time_varying, constant_year,
+                      ramp_to_end, ramp_end_year, log=print):
+    """The per-region FSH shock rows, one per (sector, region, scenario, year), uncapped.
+
+    Each scenario resolves to an FI header (a scenario whose header the data lacks contributes no
+    rows), each (header, region) takes its imputation override if one exists, and the value is
+    either ramped linearly from 0 at base_year to its full size at ramp_end_year or read from the
+    year's own series entry. The caller applies the +-cap AFTER asserting the table sound, so a
+    contaminated source value fails the assertion instead of being clamped into health.
+
+    Args:
+        fi_data (dict): {header: {region: {year: value}}} from read_fisheries_headers.
+        scenarios (list): the scenario labels to shock.
+        header_map (dict): scenario -> FI header; resolve_fisheries_header's first layer.
+        climate_labels (dict): scenario -> rcp label; its second layer.
+        overrides (dict): (header, region) -> imputed value for source-corrupt entries.
+        sectors (tuple): the ACTS labels every row is repeated over.
+        base_year (int): the ramp's zero point and the first year written.
+        end_year (int): the last year written.
+        time_varying (bool): with the ramp off, read each year's own series entry rather than
+            holding constant_year's value.
+        constant_year (int): the series entry used when a year is missing or time_varying is off.
+        ramp_end_year (int): the horizon the full FI value belongs to; sets the ramp's slope.
+
+    Returns:
+        list: row dicts ready for the shock table.
+    """
+    n_years = max(ramp_end_year - base_year, 1)
+    rows = []
+    for scen in scenarios:
+        hdr = resolve_fisheries_header(scen, header_map, climate_labels)
+        if hdr not in fi_data:
+            continue
+        for reg, series in fi_data[hdr].items():
+            const_val = series.get(constant_year)
+            full_val = const_val if not time_varying else series.get(end_year, const_val)
+            if (hdr, reg) in overrides:
+                full_val = overrides[(hdr, reg)]
+                log('  fisheries shock: OVERRIDE %s/%s -> %+.4f (corrupt at source, imputed)'
+                    % (hdr, reg, full_val))
+            for year in range(base_year, end_year + 1):
+                if ramp_to_end:
+                    # clipped at 1.0 so a run extending past ramp_end_year holds the full value
+                    # rather than extrapolating the ramp beyond the horizon it was defined on
+                    val = full_val * min((year - base_year) / n_years, 1.0)
+                else:
+                    val = series.get(year, const_val) if time_varying else const_val
+                for sector in sectors:
+                    rows.append({'ACTS': sector, 'REG': reg, 'scenario': scen,
+                                 'year': year, 'shock_pct': val, 'fisheries_header': hdr})
+    return rows
+
+
 # =============================================================================
 # GEP valuation (commercial capture fisheries, CWoN method). Ported from the
 # source repo's 2026 script (gep_commcapturefisheries_cwonmethod_20260720.R):

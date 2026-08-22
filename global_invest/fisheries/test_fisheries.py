@@ -120,3 +120,64 @@ def test_subsistence_keeps_the_first_tcuv_per_admin_and_no_data_stays_nan():
     out = ff.subsistence_fisheries_by_country(lynch, countries).set_index('iso3_r250_label')
     assert np.isclose(out.loc['ATL', 'subsistence_fisheries_gep'], 10.0)   # first, not max
     assert np.isnan(out.loc['NOW', 'subsistence_fisheries_gep'])           # absent stays NaN
+
+
+# ---------------------------------------------------------------------------
+# Static shock rows (the ES-shock task's row builder).
+# ---------------------------------------------------------------------------
+
+def _fi_series(value):
+    """The real file's shape: zero in the first slice, then a constant to 2050."""
+    return {year: (0.0 if year == 2017 else value) for year in range(2017, 2051)}
+
+
+def test_static_shock_rows_ramp_from_zero_to_the_full_value_at_the_horizon():
+    fi_data = {'FI26': {'usa': _fi_series(0.8)}}
+    rows = ff.static_shock_rows(
+        fi_data, ['below_2c'], ff.FISH_HEADER_MAP, {}, {}, ('FSH',),
+        base_year=2020, end_year=2030, time_varying=True, constant_year=2030,
+        ramp_to_end=True, ramp_end_year=2030)
+    by_year = {row['year']: row['shock_pct'] for row in rows}
+    assert by_year[2020] == 0.0
+    assert by_year[2025] == 0.4        # halfway up the ramp
+    assert by_year[2030] == 0.8
+
+
+def test_static_shock_rows_hold_the_full_value_past_the_ramp_horizon():
+    """A run extending beyond the horizon holds the value rather than extrapolating the ramp."""
+    fi_data = {'FI26': {'usa': _fi_series(0.8)}}
+    rows = ff.static_shock_rows(
+        fi_data, ['below_2c'], ff.FISH_HEADER_MAP, {}, {}, ('FSH',),
+        base_year=2020, end_year=2040, time_varying=True, constant_year=2040,
+        ramp_to_end=True, ramp_end_year=2030)
+    by_year = {row['year']: row['shock_pct'] for row in rows}
+    assert by_year[2030] == 0.8
+    assert by_year[2040] == 0.8
+
+
+def test_static_shock_rows_apply_the_imputation_override_before_the_ramp():
+    fi_data = {'FI26': {'nor': _fi_series(13.504)}}
+    rows = ff.static_shock_rows(
+        fi_data, ['below_2c'], ff.FISH_HEADER_MAP, {}, ff.FISH_VALUE_OVERRIDES, ('FSH',),
+        base_year=2020, end_year=2030, time_varying=True, constant_year=2030,
+        ramp_to_end=True, ramp_end_year=2030, log=lambda *a: None)
+    by_year = {row['year']: row['shock_pct'] for row in rows}
+    assert by_year[2030] == 0.4767     # the imputed value, not the corrupt 13.504
+
+
+def test_static_shock_rows_drop_a_scenario_whose_header_the_data_lacks():
+    fi_data = {'FI26': {'usa': _fi_series(0.8)}}
+    rows = ff.static_shock_rows(
+        fi_data, ['below_2c', 'current_policies'], ff.FISH_HEADER_MAP, {}, {}, ('FSH',),
+        base_year=2020, end_year=2021, time_varying=True, constant_year=2021,
+        ramp_to_end=True, ramp_end_year=2021)
+    assert {row['scenario'] for row in rows} == {'below_2c'}    # FI85 absent -> no invented rows
+
+
+def test_static_shock_rows_repeat_each_value_over_every_sector():
+    fi_data = {'FI26': {'usa': _fi_series(0.8)}}
+    rows = ff.static_shock_rows(
+        fi_data, ['below_2c'], ff.FISH_HEADER_MAP, {}, {}, ('FSH', 'WTR'),
+        base_year=2020, end_year=2020, time_varying=True, constant_year=2020,
+        ramp_to_end=True, ramp_end_year=2030)
+    assert [row['ACTS'] for row in rows] == ['FSH', 'WTR']
