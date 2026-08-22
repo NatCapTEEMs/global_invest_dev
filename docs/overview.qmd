@@ -483,10 +483,14 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 | local_climate_regulation | the city kwh-x-price identity, the version-lineage sum, the final's parse and totals, the CDD math |
 | extractive_energy | components and sum against the three fuel tables. Coal-only countries valued, no-table countries NaN |
 | timber_provision | the join and total against the committed output |
-| fisheries | header resolution and the HAR read-list union. The CWoN rent-trend math on series small enough to compute by hand |
-| landslide_mitigation | run parameters only. The science awaits the cluster run |
-| the five accounting services | the shared library tests only |
+| fisheries | header resolution and the HAR read-list union. The CWoN rent-trend math, and the shock's ramp, imputation override and header fallback |
+| landslide_mitigation | the chain on synthetic inputs: stability index, discharge, hazard probability, severity expectation, the VSL join and its income-group fallback |
+| crop_provision | the FAOSTAT clean-up, the decade rental rates, the thousand-USD conversion, the M49 successor codes, the split-country join |
+| livestock_provision | the same steps on its own tables, plus the ecosystem share of feed intake |
+| extractive_materials_provision | the rent-share formula, the wide-table melt against the expression it replaced, the byte-order-mark guard |
+| renewable_energy_provision | each pipeline step on hand-built tables: the IRENA aggregation, the price conversion, the joins, the base-year selection, the per-resource split |
+| coastal_protection | the deflator compounding, mangrove and coral valuation with a split country counted once, the undeflatable-country rule |
 | library-wide | every shipped CSV row hydrates, every shock seam stays grafted, the split-country guard stays present |
 
 - Any new configuration row or service is covered automatically: the shared tests sweep every row of the shipped CSVs and every service's entry points.
-- Six services (the five accounting ones and landslide) have no tests of their own arithmetic yet. Only the shared library tests cover them.
+- Every service now pins its own arithmetic. Where a chain was extracted from working code, the old and new versions were run on the same inputs and had to agree exactly, and five services reproduce their committed totals to the cent in fresh runs.
