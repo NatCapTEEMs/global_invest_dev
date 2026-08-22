@@ -3,7 +3,8 @@ from global_invest.ntfp import ntfp_tasks
 
 
 def build_gep_service_calculation_task_tree(p):
-    """GEP calculation tree: accessible-forest valuation, both source-script variants."""
+    """GEP calculation tree: the accessibility stage, then the valuation it feeds."""
+    p.accessible_forest_task = p.add_task(ntfp_tasks.accessible_forest)
     p.gep_calculation_task = p.add_task(ntfp_tasks.gep_calculation)
     return p
 
