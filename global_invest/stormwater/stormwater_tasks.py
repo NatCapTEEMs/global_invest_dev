@@ -40,6 +40,12 @@ def gep_calculation(p):
     retention = pd.read_csv(p.stormwater_retention_by_country_path)
     df_gep = sf.stormwater_gep_by_country(retention, sf.STORMWATER_PRICE_PER_M3_PLACEHOLDER)
     df_gep['year'] = int(p.gep_base_year)
+    # Carry the country attributes every other service's table carries, so this output can be
+    # read, grouped and reported the same way. Without them the report cannot even name a country.
+    attribute_columns = ['iso3_r250_id', 'iso3_r250_name', 'continent', 'region_un',
+                         'region_wb', 'income_grp', 'subregion']
+    countries = p.df_countries[attribute_columns].drop_duplicates('iso3_r250_id')
+    df_gep = countries.merge(df_gep, on='iso3_r250_id', how='right')
     hb.df_write(df_gep, service_results['gep_by_country_base_year'])
     hb.log('Total stormwater retention: %.4g m3/yr over %d countries; GEP %.4g USD at the '
            'placeholder price of %s per m3 (the open ask).' % (
