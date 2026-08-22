@@ -1,0 +1,74 @@
+---
+title: "Overview of Ecosystem Service: Extractive Energy Provision"
+format:
+  html:
+    embed-resources: true
+    standalone: true
+---
+
+Extractive energy provision covers natural gas, coal and petroleum. The account values it as the
+resource rent each country earns from extraction, read from the World Bank's Changing Wealth of
+Nations 2024 package at the GEP base year of 2019.
+
+## Quantity and price
+
+There is no separate quantity step and no separate price step. CWoN reports the rent itself, in
+current USD per country per year, so the module reads that number and carries it through. The
+price convention recorded for this service in `es_config.csv` is `resource rent`.
+
+## Valuation
+
+`fuel_rent_by_country_from_cwon` takes one CWoN table and returns one row per country holding the
+`YR<year>` column at the requested year. The CWoN tables are wide, keyed on `countrycode` with
+World Bank codes that match `iso3_r250_label` directly, Kosovo included as XKX.
+
+`extractive_energy_gep_from_cwon` runs that read once per fuel and sums the three components with
+`min_count=1`. A country absent from one fuel's table stays NaN in that component and still
+receives a service total from the components that do exist, so a country with only coal is a coal
+country rather than a missing one. Components sum by the same commodity convention that
+extractive materials provision uses.
+
+## Inputs
+
+From `es_parameters.csv`, all scoped to the `extractive_energy` service:
+
+- `extractive_energy_cwon_gas_path`, `extractive_energy_cwon_coal_path` and
+  `extractive_energy_cwon_oil_path`, the Stata rent tables the valuation computes from. Each
+  carries a `_source_url` row pointing at the World Bank reproducibility archive and a
+  `_source_archive_member` row naming the file inside it, under
+  `Reproducibility package/Output/Latest/`.
+- `extractive_energy_gas_path`, `extractive_energy_coal_path` and `extractive_energy_oil_path`,
+  the three committed per-country CSVs from the consortium drive, kept as the replication anchor.
+
+The shared country references come from `initialize_country_paths`, which publishes the r264
+correspondence and loads `p.df_countries`.
+
+## Output
+
+`gep_calculation` writes `gep_by_country_base_year.csv` into its own task directory. The columns
+are the r250 identifiers and attributes, `year`, the three per-fuel columns
+`extractive_energy_gas_gep`, `extractive_energy_coal_gep` and `extractive_energy_oil_gep`, and
+their sum `extractive_energy_gep`.
+
+## Method constants
+
+`EXTRACTIVE_ENERGY_FUELS = ('gas', 'coal', 'oil')` names the three components and fixes the order
+the summation reads them in.
+
+`COMMITTED_DUPLICATE_VALUE_ROWS` records eight rows of the committed drive CSVs that carry another
+country's full rent value. Bouvet Island and Svalbard take Norway's, Christmas Island and the
+Cocos Islands take Australia's, Tokelau takes New Zealand's, Western Sahara takes Morocco's,
+Palestine takes Israel's, and Kosovo takes Serbia's. In the Kosovo row the committed name column
+itself reads "Serbia". The values were verified equal in every fuel where the row is non-empty.
+
+## Taken as given
+
+The CWoN rent estimation is upstream science and is used as published.
+
+## What is open
+
+The eight duplicate rows are a name-join artefact that counts the source countries twice, and for
+Kosovo it overrides the CWoN table's own coal value. CWoN carries no rows at all for the first
+six. The module therefore computes from the CWoN tables, one country one row, rather than
+adopting the committed CSVs. `gep_calculation` logs the computed total beside the committed total
+so the gap stays visible on every run.

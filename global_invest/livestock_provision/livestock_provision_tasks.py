@@ -103,52 +103,25 @@ def gep_calculation(p):
         hb.log("All results already exist. Skipping GEP calculation for livestock provision.")
     else:
         hb.log("Starting GEP calculation for livestock provision.")
-        
-        # Optimization here,
-        # p.gdf_countries = hb.read_vector(p.gdf_countries)
-        p.gdf_countries = hb.read_vector(p.gdf_countries_simplified)
-
 
         if not getattr(p, 'livestock_provision_subservices', None):
             p.commercial_attribute_subservices = OWNER_LIVESTOCK_VALUE_CODES
 
-        # 1. Read and process data
         df_crop_value = livestock_provision_functions.read_crop_values(p.fao_input_path, p.commercial_attribute_subservices)
         df_crop_coefs = livestock_provision_functions.read_crop_coefs(p.cwon_crop_coefficients_path)
 
         df_gep_by_country_year_crop = livestock_provision_functions.merge_crop_with_coefs(df_crop_value, df_crop_coefs)
-        # String mangle the FAO M49 codes to integers.
-        df_gep_by_country_year_crop['area_code_M49'] = df_gep_by_country_year_crop['area_code_M49'].str.replace('\'', '')
-        df_gep_by_country_year_crop['area_code_M49'] = df_gep_by_country_year_crop['area_code_M49'].astype(int)
-    
-        replacements = {
-            159: 156,  # China
-            891: 688,  # Serbia and Montenegro
-            200: 203,  # Czechoslovakia
-            230: 231,  # Ethiopia PDR
-            736: 729,  # Sudan (former)     
-        }
-        
-        # Replace wrong codes in the m49
-        df_gep_by_country_year_crop['area_code_M49'] = df_gep_by_country_year_crop['area_code_M49'].replace(replacements)    
+        df_gep_by_country_year_crop = livestock_provision_functions.normalize_m49_codes(df_gep_by_country_year_crop)
+        df_gep_by_country_year_crop = livestock_provision_functions.attach_countries(
+            df_gep_by_country_year_crop, p.df_countries)
 
-        # One row per country: r264 splits large countries, so the correspondence is
-        # collapsed before the join.
-        ee_r264_to_250 = utilities.collapse_countries_to_r250(
-            p.df_countries, keep_columns=['area_code_M49', 'area_code', 'country', 'crop_code', 'crop', 'year', 'rental_rate', 'livestock_provision_gep'])
-        
-        # Merge so it has all the good labels from the  
-        df_gep_by_country_year_crop = hb.df_merge(ee_r264_to_250, df_gep_by_country_year_crop, how='right', left_on='iso3_r250_id', right_on='area_code_M49')
-        
-        # Rename Valu to livestock_provision_gep
-        # df_gep_by_country_year_crop.rename(columns={'livestock_provision_gep': 'livestock_provision_gep'}, inplace=True)
-        
         df_gep_by_country_year = livestock_provision_functions.group_crops(df_gep_by_country_year_crop)
 
         df_gep_by_year = livestock_provision_functions.group_countries(df_gep_by_country_year)
-        
-        df_gep_by_country_base_year = df_gep_by_country_year.loc[df_gep_by_country_year['year'] == 2019].copy()
-        
+
+        df_gep_by_country_base_year = df_gep_by_country_year.loc[
+            df_gep_by_country_year['year'] == int(p.gep_base_year)].copy()
+
         # Write to CSVs
         hb.df_write(df_gep_by_country_year_crop, p.results['livestock_provision']['gep_by_country_year_crop'])
         hb.df_write(df_gep_by_country_year, p.results['livestock_provision']['gep_by_country_year'])
@@ -156,15 +129,14 @@ def gep_calculation(p):
         hb.df_write(df_gep_by_year, p.results['livestock_provision']['gep_by_year'], handle_quotes='all')
         hb.df_write(df_gep_by_year, hb.replace_ext(p.results['livestock_provision']['gep_by_year'], 'xlsx'), handle_quotes='all')
         
-        # Use geopandas to merge the df_gep_by_country_base_year with the  to get the country names and other attributes
+        # Map only: the r264-expanded boundaries, each sub-region carrying its country's value.
         gdf_gep_by_country_base_year = hb.df_merge(p.gdf_countries_simplified, df_gep_by_country_base_year, how='outer', left_on='ee_r264_id', right_on='ee_r264_id')
         gdf_gep_by_country_base_year.to_file(p.results['livestock_provision']['gep_by_country_base_year'].replace('.csv', '.gpkg'), driver='GPKG')
 
-        # Then sum the values across all countries. 
         value_gep_base_year = df_gep_by_country_base_year['livestock_provision_gep'].sum()
-        
-        hb.log(f"Total GEP value for base year 2019: {value_gep_base_year}")
-        
+
+        hb.log(f"Total GEP value for base year {p.gep_base_year}: {value_gep_base_year}")
+
         return value_gep_base_year
 
 def gep_result(p):

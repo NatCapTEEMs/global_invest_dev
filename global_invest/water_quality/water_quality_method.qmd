@@ -1,0 +1,77 @@
+---
+title: "Overview of Ecosystem Service: Water Quality"
+format:
+  html:
+    embed-resources: true
+    standalone: true
+---
+
+Water quality, or water purification, is valued as the nutrient retention ecosystems provide,
+priced at what it would cost to treat the same load. Two nutrients are carried, nitrogen and
+phosphorus, for the base year 2019. The price convention recorded in `es_config.csv` reads
+`treatment cost (intl dollars question open)`, which names the open item on the currency below.
+
+## Quantity
+
+Retained nutrient in kilograms, restricted to the share of water that reaches domestic use:
+
+$$
+\text{EstimatedRetention (kg)} = \text{TotalRetention (kg)} \times \text{DomesticWaterUseFraction}
+$$
+
+The domestic-water-use fraction is the AQUASTAT share. The total retention figures come from an
+NDR-style estimation upstream.
+
+## Price
+
+The treatment cost per kilogram of the nutrient, the committed table's `<nutrient>_Price(usd)`
+column.
+
+## Valuation
+
+$$
+\text{ServiceValue (USD)} = \text{EstimatedRetention (kg)} \times \text{Price (USD/kg)}
+$$
+
+`element_service_values` recomputes both identities per nutrient and compares them against the
+committed columns at rtol 1e-9, raising if either breaks. `water_quality_gep_by_country` sums the
+two nutrients into `water_quality_gep_usd` and joins the result onto the country list, then
+attaches the committed international-dollar column beside it.
+
+## Inputs
+
+From `es_parameters.csv`, scoped to the `water_quality` service:
+
+- `water_quality_retention_path`, the per-country retention estimates carrying the total
+  retention, the domestic-water-use fraction, the prices and the committed intermediate columns
+  the recomputation is checked against.
+- `water_quality_international_path`, the final accounting table in international dollars.
+
+## Output
+
+`gep_calculation` writes `gep_by_country_base_year.csv` into its own task directory, holding the
+r250 identifiers and attributes, `year`, `nitrogen_gep_usd`, `phosphorus_gep_usd`,
+`water_quality_gep_usd` and `water_quality_gep`. Both totals are logged, the market-USD sum and
+the international-dollar sum.
+
+## Method constants
+
+`WATER_QUALITY_NUTRIENTS = ('n', 'p')` names the two nutrients and drives the column lookups.
+
+## Taken as given
+
+The retention totals themselves. The folder carries the committed chain but no script, so the
+NDR-style estimation behind `TotalRetention(kg)` is adopted as produced.
+
+## What is open
+
+The final accounting output is expressed in 2019 international dollars, per the drive's method
+note, and that conversion stage is not identified. It is not the plain sum of the USD components,
+with per-country ratios reaching about 11 times. The single-factor XR over PPP hypothesis was
+tested against the WDI series and rejected, missing by a median of 36 percent. The harmonisation
+appears to use per-source-year cost inputs the folder does not carry. The committed
+international-dollar values are therefore carried as the provisional account column, and the
+conversion script with its inputs is the ask.
+
+This also raises a cross-cutting question flagged on the deck. Every other service in the account
+values in 2019 market USD.

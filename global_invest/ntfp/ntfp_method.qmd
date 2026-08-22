@@ -1,0 +1,69 @@
+---
+title: "Overview of Ecosystem Service: Non-Timber Forest Products"
+format:
+  html:
+    embed-resources: true
+    standalone: true
+---
+
+Non-timber forest products cover what forests yield other than wood. The account values them per
+hectare of forest people can actually reach. The base year is 2019 and the price convention
+recorded in `es_config.csv` is `value per accessible hectare`.
+
+## Quantity
+
+Hectares of accessible forest. Forest is the ESA CCI class range 50 to 90 inclusive. Accessible
+means inside a 10 km buffer around roads and rivers. The source repository, `geo_ntfp`, implements
+that intersection two ways, a vector-buffer chain and a distance-raster chain, and commits no
+output from either. The library therefore runs both variants and presents both, following the
+pattern fire protection uses for its variants.
+
+## Price
+
+The CWoN 2024 non-wood forest product value per hectare per country, in current USD, read at the
+GEP base year.
+
+## Valuation
+
+`ntfp_gep_by_country` filters the value series to the base year, joins it onto the accessible-area
+table by country label, and multiplies:
+
+$$
+\text{NTFP GEP} = \text{accessible forest (ha)} \times \text{NWFP value (USD/ha)}
+$$
+
+The function is in place and unit-tested.
+
+## Inputs
+
+From `es_parameters.csv`, scoped to the `ntfp` service:
+
+- `ntfp_roads_region1_path`, the GRIP4 Region 1 vector geodatabase, with a `_source_url` row
+  pointing at the public PBL download.
+
+## Output
+
+`gep_by_country_base_year.csv` in the `gep_calculation` task directory, holding the country label,
+the accessible forest hectares, the value per hectare and `ntfp_gep`. It is not yet produced.
+
+## Method constants
+
+- `NTFP_ACCESS_BUFFER_M = 10_000`, the accessibility buffer around roads and rivers.
+- `ESA_FOREST_CLASS_MIN = 50` and `ESA_FOREST_CLASS_MAX = 90`, the inclusive ESA CCI forest class
+  range.
+
+## Taken as given
+
+The CWoN NWFP value-per-hectare series.
+
+## What is open
+
+The accessibility raster stage is being ported and is not yet built, so `gep_calculation` raises
+`NotImplementedError` naming exactly what is missing rather than emitting a partial number.
+
+The committed roads file is unusable, because only the sidecar files were committed and the `.shp`
+itself never was. The accessibility stage therefore runs on a public global roads dataset, and the
+original roads file remains a replication ask.
+
+The CWoN value-per-hectare table has no `es_parameters.csv` row yet, so the price side of the
+valuation has no recorded path.

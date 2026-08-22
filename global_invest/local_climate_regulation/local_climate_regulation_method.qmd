@@ -1,0 +1,83 @@
+---
+title: "Overview of Ecosystem Service: Local Climate Regulation"
+format:
+  html:
+    embed-resources: true
+    standalone: true
+---
+
+Local climate regulation is urban cooling. Vegetation lowers city temperatures, buildings spend
+less electricity on air conditioning, and the account values that saved electricity. The base year
+is 2019 and the price convention recorded in `es_config.csv` is `avoided energy cost`.
+
+## Quantity
+
+InVEST urban cooling gives each city-month a vegetation cooling effect, which the chain converts
+into an electricity difference in kilowatt-hours, the `kwh_diff` column of the committed
+city-month files.
+
+The cooling-degree measure behind that conversion is `temp_degc_to_cdd_smooth`, v04's smoothed
+exceedance. Below the base minus the window it returns zero, above the base plus the window it is
+linear in temperature, and across the window it follows `smoothstep01`, the cubic
+$t^2(3-2t)$ on [0, 1].
+
+## Price
+
+The national electricity price in USD per kilowatt-hour, the `price_usd_per_kwh` column.
+
+## Valuation
+
+$$
+\text{total\_savings\_usd} = \text{kwh\_diff} \times \text{price\_usd\_per\_kwh}
+$$
+
+`city_savings_identity` recomputes that product at rtol 1e-6 and raises if it breaks. Summing
+cities to countries gives the December 2025 version of the accounting table.
+
+The current final applies v04's correction, written explicitly in that version's code and ported
+verbatim in `apply_country_marginal_consumption`. It divides out the old global
+marginal-consumption slope embedded in the v02 values and multiplies by each country's own
+consumption per cooling-degree-day, which is cooling energy per capita over the IEA-CMCC 2019
+humid-CDD total.
+
+$$
+\text{corrected} = \frac{\text{value}}{\text{URBAN\_COOLING\_OLD\_GLOBAL\_MC}} \times \text{consumption per CDD}
+$$
+
+## What the library reports
+
+`gep_calculation` reads the committed final table, parses its dollar-formatted string column
+through `parse_dollar_column`, and joins it onto the r250 country list by label.
+
+Three things verify against staged data. The kilowatt-hour times price identity is exact. The
+merged-sum identity against the December 2025 version is exact on every country tested. The
+current final's parse and totals check out.
+
+## Inputs
+
+From `es_parameters.csv`, scoped to the `local_climate_regulation` service:
+
+- `local_climate_regulation_final_path`, the committed final accounting table.
+
+## Output
+
+`gep_calculation` writes `gep_by_country_base_year.csv` into its own task directory, holding the
+r250 identifiers and attributes, `year`, and `local_climate_regulation_gep`.
+
+## Method constants
+
+- `URBAN_COOLING_OLD_GLOBAL_MC = 1.71737465916468`, the old global marginal-consumption slope that
+  v04 divides out.
+- `URBAN_COOLING_CDD_BASE_C = 18.0`, the humid cooling-degree-day base the chain uses (CDDhum18).
+- `URBAN_COOLING_SMOOTH_WINDOW_C = 1.0`, the width of the smoothing window either side of the base.
+
+## Taken as given
+
+The InVEST urban cooling run itself and the national electricity prices.
+
+## What is open
+
+The v04 correction's own inputs are not reproducible here. The IEA-CMCC cooling-degree-day file
+and the v2_nkd energy workbook live only on the author's machine, and the staged VERSION4 energy
+CSV is a different vintage that does not validate the inversion. Those two files are the named
+asks.

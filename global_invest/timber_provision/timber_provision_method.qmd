@@ -1,0 +1,92 @@
+---
+title: "Overview of Ecosystem Service: Timber Provision"
+format:
+  html:
+    embed-resources: true
+    standalone: true
+---
+
+Timber provision values managed forestry. The valuation runs on a 10 arcsecond grid and is
+reported as one row per country for the GEP base year of 2019. The price convention recorded in
+`es_config.csv` is `stumpage value`.
+
+## Quantity
+
+Annual harvestable biomass yield in cubic metres per hectare, built from MC2 forest types crossed
+with Tian et al. timber regions and adjusted for net primary productivity. This layer is produced
+by the consortium drive's Forestry chain and is staged for the library rather than rebuilt in it.
+
+## Price
+
+The national log price in USD per cubic metre, from Siikamaki and Santiago-Avila 2014 as the
+Forestry chain's method appendix cites it.
+
+## Valuation
+
+Gross return is converted to net return with the GTAP land factor share (Damania et al. 2023) and
+then reduced by a per-pixel transport cost built from Weiss et al. travel time and a trucking
+cost. `net_forest_return` is that decomposition:
+
+$$
+\text{net return} = \text{land factor share} \times \text{biomass} \times \text{price} - \text{transport cost}
+$$
+
+`forest_value_from_net_return` keeps a pixel only where the Lesiv et al. (2022) forest management
+map marks current timber activity, categories 2 to 5 on forested ESA classes. Negative net returns
+and nodata floor to zero, which is the value raster's own nodata convention.
+
+`gep_by_zone` then sums the value raster per country. It runs blockwise with `np.bincount` over
+the 10 arcsecond r250 country-id raster, 2048 rows at a time, accumulating into an array indexed by
+`iso3_r250_id`. `timber_gep_from_zone_sums` keys those sums onto the country list.
+
+## What the library reports
+
+The reported number is the library's own run of the zonal sum over the staged value raster. The
+committed Forestry CSV is the comparison anchor, logged next to the computed total and pinned in
+the test suite, and is never written out as the result.
+
+Three checks are recorded against the staged rasters:
+
+- `current_forest_value.tif` equals `forestry_land_share_return_tcost_before_2022_07_23.tif`
+  bit-exactly on every one of its 265,210,379 positive pixels, with zero mismatches globally. The
+  remaining 802,119,863 positive net-return pixels are dropped by the management mask, which is
+  external to the staged layers and cannot be derived from them.
+- The net-return decomposition reproduces the net-return raster with a per-region fitted land
+  factor share, R2 between 0.78 and 0.9999 over twelve continental windows and median relative
+  error between 0.5 and 4 percent. The share applies at GTAP region by AEZ level with separate
+  plantation and natural estimates, so it enters as an input rather than as a constant.
+- The committed per-country table, $88.74bn over 166 countries, is the plain pixel sum of
+  `current_forest_value.tif` inside each r250 country polygon, ratio 1.0000 on all countries
+  tested. The raster is per-pixel USD.
+
+## Inputs
+
+From `es_parameters.csv`, scoped to the `timber_provision` service:
+
+- `timber_provision_value_raster_path`, the staged current-forest-value raster.
+- `timber_provision_zone_raster_path`, `cartographic/ee/ee_r250_id_10sec.tif`, the country-id
+  raster the zonal sum keys on.
+- `timber_provision_gep_path`, the committed Forestry table used as the anchor.
+
+## Output
+
+`gep_calculation` writes `gep_by_country_base_year.csv` into its own task directory, holding the
+r250 identifiers and attributes, `year`, and `timber_provision_gep`.
+
+## Method constants
+
+`NET_RETURN_NDV = -99999.0` is the net-return raster's nodata value, which
+`forest_value_from_net_return` excludes alongside negative returns.
+
+The zonal sum is sized by `n_zones = 1000` and reads `rows_per_block = 2048` at a time.
+
+## Taken as given
+
+The upstream raster valuation, meaning the biomass yield, the aligned log prices and the transport
+cost surface, is taken as produced by the Forestry chain. The management mask is not derivable
+from the staged layers and is likewise adopted.
+
+## What is open
+
+The status sheet lists timber's draft as In Progress. The committed output and the verified
+replication above correct that status.

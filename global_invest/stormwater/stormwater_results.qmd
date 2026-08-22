@@ -53,11 +53,11 @@ pd.set_option('display.max_rows', 1000)
 service_label = 'stormwater'
 
 df = hb.df_read(p.results[service_label]['gep_by_country_base_year'])
-total_flood = df['stormwater_gep'].sum()
+total_stormwater = df['stormwater_gep'].sum()
 p.gep_by_country_base_year_table = df[['iso3_r250_name', 'stormwater_gep']]
 ```
 
-The analysis values flood control as the expected annual damage ecosystems avoid: the drive's pipeline couples flood hazard, JRC depth-damage functions and protection levels with and without ecosystems, and the committed per-country result totals $`{python} f"{total_flood:,.0f}"` in 2019 USD (148 countries with non-zero values of 236 assessed). The upstream geospatial chain is taken as given; the anchor reproduces the pipeline's own global summary exactly.
+The analysis values the stormwater urban vegetation and soils retain, from the InVEST urban stormwater retention model run wall to wall on the drive's own configuration and inputs. Retained volume is priced per cubic metre, and the committed configuration carries a placeholder price of 1, so the total of $`{python} f"{total_stormwater:,.0f}"` stands in until the intended price is set. The retention model is taken as given.
 
 ## GEP by Country in Base Year
 ```{python}

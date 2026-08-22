@@ -9,6 +9,10 @@ import csv
 from global_invest.crop_provision import crop_provision_initialize
 from global_invest.crop_provision import crop_provision_functions
 
+# The year the service reports. It is a literal because crop_provision's es_config row leaves
+# gep_base_year empty, so p.gep_base_year is never hydrated for this service (recorded as an
+# open item, not fixed here: filling the cell would change which year the CSV reports).
+CROP_PROVISION_BASE_YEAR = 2019
 
 # Project content/config (was crop_provision_defaults.py; the template keeps content in the task module).
 
@@ -238,42 +242,25 @@ def gep_calculation(p):
         hb.log("All results already exist. Skipping GEP calculation for commercial agriculture.")
     else:
         hb.log("Starting GEP calculation for commercial agriculture.")
-        
-        # Optimization here,
-        # p.gdf_countries = hb.read_vector(p.gdf_countries)
-        p.gdf_countries = hb.read_vector(p.gdf_countries_simplified)
-
 
         if not getattr(p, 'crop_provision_subservices', None):
             p.commercial_attribute_subservices = DEFAULT_CROP_ITEMS
 
-        # 1. Read and process data
         df_crop_value = crop_provision_functions.read_crop_values(p.fao_input_path, p.commercial_attribute_subservices)
         df_crop_coefs = crop_provision_functions.read_crop_coefs(p.cwon_crop_coefficients_path)
 
         df_gep_by_country_year_crop = crop_provision_functions.merge_crop_with_coefs(df_crop_value, df_crop_coefs)
         df_gep_by_country_year_crop = crop_provision_functions.normalize_m49_codes(df_gep_by_country_year_crop)
+        df_gep_by_country_year_crop = crop_provision_functions.attach_countries_in_usd(
+            df_gep_by_country_year_crop, p.df_countries)
 
-        # One row per country: r264 splits large countries, so the correspondence is
-        # collapsed before the join.
-        ee_r264_to_250 = utilities.collapse_countries_to_r250(
-            p.df_countries, keep_columns=['area_code_M49', 'area_code', 'country', 'crop_code', 'crop', 'year', 'rental_rate', 'Value'])
-        
-        # Merge so it has all the good labels from the  
-        df_gep_by_country_year_crop = hb.df_merge(ee_r264_to_250, df_gep_by_country_year_crop, how='right', left_on='iso3_r250_id', right_on='area_code_M49')
-        
-        # Rename value to crop_provision_gep
-        df_gep_by_country_year_crop.rename(columns={'Value': 'crop_provision_gep'}, inplace=True)
-        # FAOSTAT ships Value in thousand USD. The library convention is plain USD, so convert
-        # here, once, before any grouping (the reference table stays in the source's units).
-        df_gep_by_country_year_crop['crop_provision_gep'] *= crop_provision_functions.FAOSTAT_THOUSAND_USD
-        
         df_gep_by_country_year = crop_provision_functions.group_crops(df_gep_by_country_year_crop)
 
         df_gep_by_year = crop_provision_functions.group_countries(df_gep_by_country_year)
-        
-        df_gep_by_country_base_year = df_gep_by_country_year.loc[df_gep_by_country_year['year'] == 2019].copy()
-        
+
+        df_gep_by_country_base_year = df_gep_by_country_year.loc[
+            df_gep_by_country_year['year'] == CROP_PROVISION_BASE_YEAR].copy()
+
         # Write to CSVs
         hb.df_write(df_gep_by_country_year_crop, p.results['crop_provision']['gep_by_country_year_crop'])
         hb.df_write(df_gep_by_country_year, p.results['crop_provision']['gep_by_country_year'])
@@ -281,15 +268,14 @@ def gep_calculation(p):
         hb.df_write(df_gep_by_year, p.results['crop_provision']['gep_by_year'], handle_quotes='all')
         hb.df_write(df_gep_by_year, hb.replace_ext(p.results['crop_provision']['gep_by_year'], 'xlsx'), handle_quotes='all')
         
-        # Use geopandas to merge the df_gep_by_country_base_year with the  to get the country names and other attributes
+        # Map only: the r264-expanded boundaries, each sub-region carrying its country's value.
         gdf_gep_by_country_base_year = hb.df_merge(p.gdf_countries_simplified, df_gep_by_country_base_year, how='outer', left_on='ee_r264_id', right_on='ee_r264_id')
         gdf_gep_by_country_base_year.to_file(p.results['crop_provision']['gep_by_country_base_year'].replace('.csv', '.gpkg'), driver='GPKG')
 
-        # Then sum the values across all countries. 
         value_gep_base_year = df_gep_by_country_base_year['crop_provision_gep'].sum()
-        
-        hb.log(f"Total GEP value for base year 2019: {value_gep_base_year}")
-        
+
+        hb.log(f"Total GEP value for base year {CROP_PROVISION_BASE_YEAR}: {value_gep_base_year}")
+
         return value_gep_base_year
 
 def gep_result(p):
