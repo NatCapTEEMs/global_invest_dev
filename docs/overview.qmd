@@ -123,7 +123,7 @@ format:
 ## The state in numbers
 
 - {{< meta n_services >}} services are in the library, and {{< meta n_replicating >}} of them reproduce a committed reference or the manuscript.
-- Eighteen compute their reported number here from source data. Four report a value another team computed, because no chain behind it exists in the library: coastal protection, urban cooling, stormwater's retained volume, and water quality's headline column. Non-timber forest products has no number yet.
+- Nineteen compute their reported number from source data. Three report a value another team computed, because no chain behind it exists in the library: coastal protection, urban cooling, and water quality's headline column. Non-timber forest products has no number yet.
 - {{< meta n_awaiting_file >}} await one file to finish verification: recreation, commercial fisheries and landslide each need a reference output we could not find. Erosion's replication rerun is under way.
 - Livestock's numbers are provisional until the feed-share attribution replaces the land rental rate standing in for it.
 
@@ -290,7 +290,7 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 ## extractive_materials
 
 - [Values mineral extraction as the resource-rent share of mining output. Computed in the library from the World Bank rent and GDP tables, and our run reproduces the reference per country.]{.state}
-- **Q1:** what is the source of the 0.49 factor? The valuation multiplies mineral rents times GDP by it, and without it the total would be {{< meta extractive_alt >}} instead of {{< meta extractive_total >}}.
+- **Q1:** what is the source of the {{< meta extractive_factor >}} factor? The valuation multiplies mineral rents times GDP by it, and without it the total would be {{< meta extractive_alt >}} instead of {{< meta extractive_total >}}.
 - **Q2:** should the 9 countries with no World Bank rent data stay unvalued rather than zero? We leave them empty today, which is the convention the group's guidance asks us to confirm.
 
 ## renewable_energy
@@ -358,7 +358,7 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 
 ## stormwater
 
-- [Values stormwater retained by urban vegetation and soils. An urban stormwater retention run retains {{< meta stormwater_volume >}} per year across 104 countries, wall to wall rather than urban-masked, and the module prices that volume.]{.state}
+- [Values stormwater retained by urban vegetation and soils. Our own retention run on the drive's configuration retains {{< meta stormwater_volume >}} per year across 104 countries, wall to wall rather than urban-masked, and the module prices that volume. The run and the country step sit beside the task tree rather than inside it.]{.state}
 - **Q1:** what is the intended price per cubic metre retained? The configuration carries a placeholder of 1, so today's value is the volume.
 - **Q2:** should the run be masked to urban areas? It currently covers the whole land surface.
 
@@ -381,7 +381,7 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 - **landslide_mitigation:** one machine-readable v0.2.0 output, its input versions, and which value of a statistical life it uses.
 - **fisheries:** confirm the RCP substitution, name the shock file's CWoN vintage, and confirm or replace the rent-based value now running in the library.
 - **livestock_provision:** the GLEAM 3 intake extract, the item-grouping confirmation, and a reference output.
-- **extractive_materials:** the source of the 0.49 factor.
+- **extractive_materials:** the source of the {{< meta extractive_factor >}} factor.
 - **renewable_energy:** whether the code or the drive CSVs are current.
 - **extractive_energy:** whether the eight duplicated rows are a join error, and which total the account keeps.
 - **recreation:** one reference results_by_country.csv.

@@ -64,8 +64,12 @@ def water_supply_gep_by_country(hydropower_df, countries_df):
 # cleaned table bit-exactly, the country-year GEP table to the anchor CSV's own
 # 15-significant-digit rounding (max 3e-15 relative).
 #
-# The drive's PER-COUNTRY outputs are NOT this chain's outputs and stay adopted
-# as the components' values: the agriculture table equals 1000 x GEP_total from
+# The drive's PER-COUNTRY outputs are NOT this chain's outputs, and the library
+# does not adopt them. The components it reports are computed here from the raw
+# AQUASTAT export, by water_use_components_from_chain over script 02's
+# country-year table (water_supply_tasks.water_use_components). The committed
+# tables stay as comparison anchors, logged beside our values on every run and
+# pinned in the test suite. The agriculture table equals 1000 x GEP_total from
 # the crop-water valuation (share_20260618/gep_agwater_country_source.csv, a
 # separate chain whose scripts are not on the drive), and the all-sector table
 # was computed on a newer AQUASTAT vintage with the appendix's deflate-to-2015

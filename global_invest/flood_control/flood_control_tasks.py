@@ -4,7 +4,6 @@ import os
 import pandas as pd
 import hazelbean as hb
 from global_invest import utilities
-from global_invest.flood_control import flood_control_functions as fc
 
 
 def publish_inputs(p):

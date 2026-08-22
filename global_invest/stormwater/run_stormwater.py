@@ -4,8 +4,9 @@ Thin runner: builds ONE tree and executes it. Inputs are published by each task 
 (publish_inputs in the tasks module); base_data_dir is resolved by ProjectFlow (default /
 machine.env), never hardcoded here.
 
-The InVEST retention run of the port is in progress (see stormwater_tasks.gep_calculation),
-so a run currently stops there with the state spelled out.
+Requires (es_parameters row): stormwater_retention_by_country_path, the per-country retention
+volumes from the InVEST urban stormwater retention run and the zonal step in
+stormwater_zonal.py. Neither is part of this tree; both are made outside it.
 """
 import hazelbean as hb
 

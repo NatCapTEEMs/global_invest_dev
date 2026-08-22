@@ -1,6 +1,8 @@
-"""Stormwater GEP tasks. The valuation function is in place and unit-tested; the InVEST
-urban stormwater retention run over the staged global inputs is the in-progress part --
-it produces the retention volumes the valuation prices."""
+"""Stormwater GEP tasks: the retained volume from the InVEST run, priced per cubic metre.
+
+The volumes are made outside this task tree, by an InVEST urban stormwater retention run
+and the zonal step in stormwater_zonal.py. These tasks read the per-country table those
+steps write (stormwater_retention_by_country_path in es_parameters) and price it."""
 import os
 
 import hazelbean as hb
@@ -21,8 +23,8 @@ def publish_inputs(p):
 
 def gep_calculation(p):
     """GEP valuation for stormwater: retained volume times the price per cubic metre.
-    The InVEST retention run is in progress; running this task before its output lands
-    stops here with the state spelled out."""
+    The volumes are read from the zonal table stormwater_zonal.py writes, named in
+    es_parameters as stormwater_retention_by_country_path."""
     publish_inputs(p)
     service_results = {}
     p.results['stormwater'] = service_results

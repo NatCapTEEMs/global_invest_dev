@@ -12,11 +12,12 @@ base year is 2019 and the price convention recorded in `es_config.csv` is `repla
 
 ## Quantity
 
-Annual retained volume in cubic metres per country, from an InVEST 3.14.2 Urban Stormwater
-Retention run. The consortium drive carries that model configuration with its inputs staged, the
-biophysical coefficient table, ESA 2020 land cover, WorldClim precipitation and SLGWRB soils, but
-no completed run. The library runs the retention model itself, and that stage is the in-progress
-part of the module.
+Annual retained volume in cubic metres per country, from an InVEST Urban Stormwater Retention run
+over the inputs the consortium drive staged, the biophysical coefficient table, ESA 2020 land
+cover, WorldClim precipitation and SLGWRB soils. That run is made outside the task tree, on the
+drive's own configuration, which `base_data/global_invest/stormwater/run_recipe.md` records.
+`stormwater_zonal.py` then sums the run's retention raster inside each r250 country and writes the
+per-country table. The library reads that table; it does not run the retention model.
 
 ## Price
 
@@ -54,6 +55,6 @@ GEP, and the placeholder price it was computed at.
 ## What is open
 
 The price. Every output built on the placeholder is provisional by construction, which is why the
-constant is named for what it is and logged on every run. The InVEST retention run over the staged
-global inputs is the other outstanding piece, and until it lands `gep_calculation` stops at the
-missing retention table.
+constant is named for what it is and logged on every run. Whether the retained volumes should be
+masked to urban areas is the other open question. The run was made wall to wall over the global
+land cover, because the committed configuration carries no urban boundaries.
