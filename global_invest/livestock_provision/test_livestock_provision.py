@@ -115,7 +115,7 @@ def test_merge_crop_with_coefs_applies_the_decade_in_force_and_leaves_uncovered_
     assert pd.isna(out.loc[(2, 2015)])           # country absent from the CWoN table
 
 
-def test_attach_countries_does_not_repeat_a_split_country_and_keeps_values_as_read():
+def test_attach_countries_does_not_repeat_a_split_country_and_converts_to_usd():
     items = pd.DataFrame({
         'area_code_M49': [10, 10, 20],
         'area_code': [1, 1, 2],
@@ -130,8 +130,8 @@ def test_attach_countries_does_not_repeat_a_split_country_and_keeps_values_as_re
 
     # AAA is split across two r264 rows; the join must still produce three rows, not five.
     assert len(out) == 3
-    # No unit conversion happens here, unlike crop_provision: the values pass through unchanged.
-    assert out['livestock_provision_gep'].tolist() == [30.0, 15.0, 40.0]
+    # FAOSTAT's thousand USD becomes plain USD here, as in crop_provision.
+    assert out['livestock_provision_gep'].tolist() == [30000.0, 15000.0, 40000.0]
     assert out.set_index('crop_code').loc[1017, 'iso3_r250_label'].tolist() == ['AAA', 'BBB']
 
 
@@ -150,7 +150,7 @@ def test_attach_countries_keeps_a_row_whose_code_the_correspondence_lacks():
     assert len(out) == 2
     unmatched = out[out['area_code_M49'] == 999].iloc[0]
     assert pd.isna(unmatched['iso3_r250_label'])
-    assert unmatched['livestock_provision_gep'] == 7.0
+    assert unmatched['livestock_provision_gep'] == 7000.0
 
 
 def test_group_crops_then_group_countries_sum_to_the_same_total():

@@ -29,6 +29,8 @@ from global_invest import utilities
 # valuation reads gross production value in current USD, which the file reports as element 57
 # with unit "1000 USD".
 FAOSTAT_VALUE_UNIT = '1000 USD'
+# FAOSTAT ships value in thousand USD; the library reports plain USD, as crop_provision does.
+FAOSTAT_THOUSAND_USD = 1000.0
 FAOSTAT_GROSS_PRODUCTION_VALUE_ELEMENT = 57
 # The bulk file's year columns run Y1961 to Y2022, each shadowed by a Y<year>F data-quality flag.
 FAOSTAT_FIRST_YEAR = 1961
@@ -251,11 +253,8 @@ def attach_countries(df_crop_value, df_countries):
     row, so a row whose M49 code the correspondence does not carry keeps missing identifiers
     rather than disappearing.
 
-    todo The values pass through in FAOSTAT's thousand USD. crop_provision multiplies by
-    FAOSTAT_THOUSAND_USD at this same point, so the two provisioning services report in different
-    units and this service's total is a thousand times too small against the rest of the library.
-    Flagged for the service owner rather than fixed here, because fixing it changes the published
-    number.
+    FAOSTAT ships these values in thousand USD, so they are converted here, at the same point
+    crop_provision converts, and the service reports plain USD like the rest of the library.
 
     Args:
         df_crop_value (pd.DataFrame): long item values with integer area_code_M49.
@@ -268,8 +267,10 @@ def attach_countries(df_crop_value, df_countries):
         df_countries,
         keep_columns=['area_code_M49', 'area_code', 'country', 'crop_code', 'crop', 'year',
                       'rental_rate', 'livestock_provision_gep'])
-    return hb.df_merge(ee_r264_to_250, df_crop_value, how='right',
-                       left_on='iso3_r250_id', right_on='area_code_M49')
+    df = hb.df_merge(ee_r264_to_250, df_crop_value, how='right',
+                     left_on='iso3_r250_id', right_on='area_code_M49')
+    df['livestock_provision_gep'] = df['livestock_provision_gep'] * FAOSTAT_THOUSAND_USD
+    return df
 
 
 def group_crops(df):
