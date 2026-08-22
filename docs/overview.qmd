@@ -131,8 +131,9 @@ format:
 
 ## The state in numbers
 
-- The test of whether a service is ours is whether we can run it: our own code, read, rewritten and tested here. That holds for 19 of the {{< meta n_services >}}.
-- Four fail that test, in two different ways. Coastal protection's coral component and water quality's headline figure pass a number through with no chain here to run. Erosion and non-timber forest products are our code, held up by one missing input each: four upstream layers, and a price per hectare.
+- The test of whether a service is ours is whether we can run it: our own code, read, rewritten and tested here. 21 of the {{< meta n_services >}} produce their number that way today.
+- Two cannot run at all, and both are our code held up by one missing input: erosion needs four upstream layers that sit at an unreachable path, and non-timber forest products needs a price per hectare.
+- Two more run but carry one borrowed component each: coastal protection computes its mangrove half and reads its coral half, and water quality computes its dollar figures and reads its international-dollar headline. Those two components are the only numbers left with no chain here to run.
 - Running our code is one thing, checking it against someone else's is another. {{< meta n_replicating >}} of our runs land on a committed reference or the manuscript. {{< meta n_awaiting_file >}} have nothing to check against, because no reference output exists: recreation, commercial fisheries and landslide. Erosion's run is ongoing.
 - Livestock's numbers are provisional until the feed-share attribution replaces the land rental rate standing in for it.
 
