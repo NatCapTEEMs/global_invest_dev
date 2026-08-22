@@ -240,7 +240,7 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 
 ## pollination
 
-- [Values the crop production attributable to wild pollinators, a sufficiency-weighted value raster built from pollinator habitat around cropland. Built on the template and running. Aggregation verified. Two defensible definitions, 28 times apart. NOT yet at the account's 2019 base year (the August 31 alignment): the value raster is 2023, and its regeneration at 2019 follows the definition decision.]{.state}
+- [Values the crop production attributable to wild pollinators (a sufficiency-weighted value raster built from pollinator habitat around cropland). Aggregation verified. The raster is 2023, and its regeneration at 2019 follows the definition decision.]{.state}
 - **Q1:** is pollination's GEP the service nature currently delivers ({{< meta poll_raster >}}, the sufficiency-weighted raster) or the production value at stake ({{< meta poll_fao >}}, dependence-weighted FAO value)? The country ranking is identical. Only the definition differs.
 - **Q2:** the rasters on hand are 2023 and the account values at 2019. We would regenerate at 2019 once the definition is settled, and we can: the generation recipe is on hand.
 - Erosion's GEP records the habitat-supplied share, so the raster-side definition is the internally consistent choice.
@@ -368,7 +368,7 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 - **Subsistence:** crop, livestock, and fisheries carry subsistence subgroups in the service sheet. In scope or not, per service?
 - **The universe crosswalk:** the sheet lists roughly 26 services. The library covers ten. We propose a tested crosswalk table (sheet label to module to output) instead of restructuring modules to mirror the sheet. And the sheet's label typos should be fixed before anything inherits them.
 
-## The August 31 write-up pass maps onto today
+## The group's write-up request
 
 - The August 31 housekeeping request asks every group for consistent parameters and clean write-ups. Today's answers complete most of it a week early.
 - **2019 dollars:** confirms our base year. Pollination's regeneration will follow the sheet's deflator-conversion guidance once its definition is settled.
@@ -402,7 +402,7 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 ## Leads, priorities, and the label typos
 
 - The sheet itself lists a category of feasible services still unclaimed. Can leads be named today?
-- Which sheet services should enter the library NEXT? Twelve services or components are new in the library (recreation, fire protection, both fisheries components, hydropower and water use, air filtration, sandstorm prevention, water quality, flood control, urban cooling, extractive energy, timber). Every sheet service with a complete SI table and global feasibility now has a module. One blocker found while auditing: the sheet's water-quality repo link points to a fork that does not contain the water-quality code. Where does that pipeline actually live?
+- Which sheet services should enter the library next? Twelve services or components are new in the library (recreation, fire protection, both fisheries components, hydropower and water use, air filtration, sandstorm prevention, water quality, flood control, urban cooling, extractive energy, timber). Every sheet service with a complete SI table and global feasibility now has a module. One blocker found while auditing: the sheet's water-quality repo link points to a fork that does not contain the water-quality code. Where does that pipeline actually live?
 - The sheet's label typos (wind_enery_provision and siblings) now need a coordinated fix: our configuration table's crosswalk cells reproduce them faithfully, because a crosswalk key must match the sheet as written. Ask: fix the three labels in the sheet, and we update our three cells in the same change, a two-place lockstep edit, since either alone breaks the join.
 
 # What we need
