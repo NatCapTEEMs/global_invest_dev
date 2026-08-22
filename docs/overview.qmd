@@ -45,6 +45,9 @@ renewable_geothermal: "$6.56bn"
 stormwater_volume: "185.85bn m3"
 stormwater_value: "$185.85bn"
 hydro_manuscript: "$287.7bn"
+cp_total: "$36.72bn"
+lcr_ours: "$175.56bn"
+lcr_committed: "$14.19bn"
 
 format:
     revealjs:
@@ -129,7 +132,7 @@ format:
 ## The state in numbers
 
 - The test of whether a service is ours is whether we can run it: our own code, read, rewritten and tested here. That holds for 19 of the {{< meta n_services >}}.
-- Three fail that test. They pass a number through from another team with no chain here to run, so we could not find an error in them if there were one: coastal protection, urban cooling and water quality's headline figure. Non-timber forest products has the code but not its last input.
+- Four fail that test, in two different ways. Coastal protection's coral component and water quality's headline figure pass a number through with no chain here to run. Erosion and non-timber forest products are our code, held up by one missing input each: four upstream layers, and a price per hectare.
 - Running our code is one thing, checking it against someone else's is another. {{< meta n_replicating >}} of our runs land on a committed reference or the manuscript. {{< meta n_awaiting_file >}} have nothing to check against, because no reference output exists: recreation, commercial fisheries and landslide. Erosion's run is ongoing.
 - Livestock's numbers are provisional until the feed-share attribution replaces the land rental rate standing in for it.
 
@@ -158,6 +161,8 @@ format:
 | recreation | visits to natural recreation sites, valued at travel cost |
 | fire_protection | wildfire damage avoided by nature's fire regulation |
 | water_supply | hydropower rent, and water withdrawal priced by sector |
+| ntfp | non-timber forest products from forest within reach of a road or river |
+| stormwater | stormwater retained by urban vegetation and soils |
 
 : {tbl-colwidths="[30,70]"}
 
@@ -185,7 +190,7 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 | coastal_carbon | {{< meta coastal_eez >}} EEZ-only, {{< meta coastal_all >}} all rows | yes. Reproduces the author's reported numbers |
 | crop_provision | {{< meta crop_total >}} | yes. Reproduces the reference table |
 | livestock_provision | provisional | no. Awaits the GLEAM intake data and a reference output |
-| coastal_protection | not reported | no. Both source tables already carry a final per-country value, so there is no chain here to run |
+| coastal_protection | {{< meta cp_total >}} | partially. Mangroves are computed here and land within $5k of the published figure; the coral component is read through |
 | extractive_materials | {{< meta extractive_total >}} | yes. Reproduces the author's reference table |
 | renewable_energy | {{< meta renewable_total >}} | partially. The code and the drive's reference CSVs give different values, and which one is current is the open question |
 
@@ -213,7 +218,7 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 | sandstorm_prevention | {{< meta sandstorm_total >}} | yes. Reproduces the same workbook's dust channel |
 | water_quality | {{< meta wq_usd >}} USD and {{< meta wq_intl >}} intl$ | partially. We recompute the nutrient valuations and reproduce the committed intermediates; the headline international-dollar column is read through |
 | flood_control | {{< meta flood_total >}} | partially. Our recompute matches the pipeline's table, Morocco excepted |
-| local_climate_regulation | not reported | no. We cannot run this: the correction's inputs exist only on the author's machine |
+| local_climate_regulation | {{< meta lcr_ours >}} ours | no. We compute it from the chain's city valuations; the committed table's {{< meta lcr_committed >}} differs by a country-varying factor |
 | extractive_energy | {{< meta xe_total >}} (gas + coal + petroleum) | yes. Computed from the public CWoN rent tables, and the committed tables double-count eight rows |
 | timber_provision | {{< meta timber_total >}} | yes. All 166 countries match the committed output |
 | ntfp | in progress | no. The accessibility run is going on the public roads data |
@@ -286,12 +291,12 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 - [Values livestock production and attributes to nature the share of feed ecosystems provide. Computed in the library the way crop_provision is, but on a land rental rate standing in for the feed share, so the numbers are provisional. On the 65 FAO item codes India recovers from zero to {{< meta livestock_ind >}} and the world total reads {{< meta livestock_world >}}.]{.state}
 - **Q1:** should milk and the other missing products count as livestock production? The library's old list covered meat and eggs only and captured 4 percent of India's FAO livestock value, while the method repo's list of 65 products includes milk.
 - **Q2:** is nature's share the part of feed that comes from ecosystems (grass, leaves, crop residues, by-products) rather than from crops and concentrates? We have written and tested that formula, and it would replace the land rental rate standing in for it now.
-- **Q3:** can you share the GLEAM 3 intake extract (gleam3_dmi.xlsx), and a per-country output to replicate? We checked the public dashboard directly: it serves six of the eight feed categories, and the two it omits sit in the denominator only. A share computed from it is therefore an upper bound on nature's contribution rather than an estimate of it, which is also why it could not reproduce your figures.
+- **Q3:** can you share the GLEAM 3 intake extract (gleam3_dmi.xlsx) to check ours against, and a per-country output? We have harvested the intake from FAO's public dashboard for 231 countries, and it does carry all eight feed categories, shown a different subset per species. So we can compute the feed share; what we lack is anything to validate it against.
 
 ## coastal_protection
 
-- [Values storm damage mangroves and corals prevent along coastlines. Both source tables already carry a final per-country value, so the module carries the coral value to the base year with a deflator and sums the two. It does not rebuild the underlying damage estimate.]{.state}
-- **Q1:** is there a chain behind the two committed value tables that we should be running instead? Today we report the tables' own values, so a discrepancy with the author could not surface.
+- [Values storm damage that mangroves and coral reefs prevent along coastlines, two components of one service. Mangroves we compute, as protected hectares times value per hectare, landing within $5k of the published figure. Coral reefs we cannot: that table carries a finished benefit and nothing underneath it, so we carry it to the base year with a deflator and add it.]{.state}
+- **Q1:** is there a chain behind the coral-reef benefit table that we should be running? That half is still someone else's number, so a disagreement with it could not surface.
 - **Q2:** should the 9 countries missing from the deflator table be left unvalued rather than zero? They are currently zeroed by the join, which reads as no damage prevented.
 
 ## extractive_materials
@@ -345,8 +350,8 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 
 ## local_climate_regulation
 
-- [Values cooling energy avoided by urban vegetation: an urban cooling model gives each city-month a cooling effect, priced at national electricity prices. Our run reproduces the committed final.]{.state}
-- **Q1:** is the account's value the plain city sum or the cooling-degree-day correction? The committed final equals the plain sum, so the correction is computed and then not applied.
+- [Values cooling energy avoided by urban vegetation: an urban cooling model gives each city-month a cooling effect, priced at national electricity prices. We now sum the chain's own city files ourselves, {{< meta lcr_ours >}} across 177 countries, instead of reading the committed table.]{.state}
+- **Q1:** what turns those city valuations into the committed accounting table's {{< meta lcr_committed >}}? The gap is not a constant factor, ranging from about 2.5 to 766 across countries, so it is not a units slip.
 
 ## extractive_energy
 
@@ -451,9 +456,12 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 | extractive_materials | the rent-share formula, the wide-table melt against the expression it replaced, the byte-order-mark guard |
 | renewable_energy | each pipeline step on hand-built tables: the IRENA aggregation, the price conversion, the joins, the base-year selection, the per-resource split |
 | coastal_protection | the deflator compounding, mangrove and coral valuation with a split country counted once, the undeflatable-country rule |
+| sandstorm_prevention | the same module and the same tests as air filtration, on its dust channel |
+| ntfp | the ESA forest classes, the road-and-river buffer edge, the hectare accounting and the per-country sums |
+| stormwater | the retained volume priced per cubic metre, and the placeholder price named as one |
 | library-wide | every shipped CSV row hydrates, every shock seam stays grafted, the split-country guard stays present |
 
 : {tbl-colwidths="[26,74]"}
 
 - Any new configuration row or service is covered automatically: the shared tests sweep every row of the shipped CSVs and every service's entry points.
-- Every service now pins its own arithmetic. Where a chain was extracted from working code, the old and new versions were run on the same inputs and had to agree exactly, and five services reproduce their committed totals to the cent in fresh runs.
+- Every service now pins its own arithmetic. Where a chain was extracted from working code, the old and new versions were run on the same inputs and had to agree exactly.
