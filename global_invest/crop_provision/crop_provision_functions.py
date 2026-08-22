@@ -243,3 +243,35 @@ def group_countries(df: pd.DataFrame):
 #         "gep_by_year_country": df_gep_by_year_country,
 #         "gep_by_country_year_crop": df_gep_by_country_year_crop,
 #     }
+
+
+# FAOSTAT keeps dissolved states under their own M49 codes. Each maps to the successor the
+# country correspondence uses, so their production joins to a country instead of dropping.
+M49_SUCCESSORS = {
+    159: 156,   # China (mainland) -> China
+    891: 688,   # Serbia and Montenegro -> Serbia
+    200: 203,   # Czechoslovakia -> Czechia
+    230: 231,   # Ethiopia PDR -> Ethiopia
+    736: 729,   # Sudan (former) -> Sudan
+}
+# FAOSTAT ships crop values in thousand USD; every service in the library reports plain USD.
+FAOSTAT_THOUSAND_USD = 1000.0
+
+
+def normalize_m49_codes(df, column='area_code_M49', successors=None):
+    """FAOSTAT's M49 area codes as integers, with dissolved states mapped to their successor.
+
+    The codes arrive quoted ("'156"), so they are unquoted and cast before the mapping.
+
+    Args:
+        df (pd.DataFrame): a frame holding FAOSTAT area codes.
+        column (str): the code column.
+        successors (dict): code -> successor code, defaulting to M49_SUCCESSORS.
+
+    Returns:
+        pd.DataFrame: the frame with that column as integers, successors applied.
+    """
+    out = df.copy()
+    out[column] = out[column].astype(str).str.replace("'", '', regex=False).astype(int)
+    out[column] = out[column].replace(M49_SUCCESSORS if successors is None else successors)
+    return out

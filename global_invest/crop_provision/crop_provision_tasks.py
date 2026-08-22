@@ -261,20 +261,7 @@ def gep_calculation(p):
         df_crop_coefs = crop_provision_functions.read_crop_coefs(p.cwon_crop_coefficients_path)
 
         df_gep_by_country_year_crop = crop_provision_functions.merge_crop_with_coefs(df_crop_value, df_crop_coefs)
-        # String mangle the FAO M49 codes to integers.
-        df_gep_by_country_year_crop['area_code_M49'] = df_gep_by_country_year_crop['area_code_M49'].str.replace('\'', '')
-        df_gep_by_country_year_crop['area_code_M49'] = df_gep_by_country_year_crop['area_code_M49'].astype(int)
-    
-        replacements = {
-            159: 156,  # China
-            891: 688,  # Serbia and Montenegro
-            200: 203,  # Czechoslovakia
-            230: 231,  # Ethiopia PDR
-            736: 729,  # Sudan (former)     
-        }
-        
-        # Replace wrong codes in the m49
-        df_gep_by_country_year_crop['area_code_M49'] = df_gep_by_country_year_crop['area_code_M49'].replace(replacements)    
+        df_gep_by_country_year_crop = crop_provision_functions.normalize_m49_codes(df_gep_by_country_year_crop)
 
         # One row per country: r264 splits large countries, so the correspondence is
         # collapsed before the join.
@@ -288,7 +275,7 @@ def gep_calculation(p):
         df_gep_by_country_year_crop.rename(columns={'Value': 'crop_provision_gep'}, inplace=True)
         # FAOSTAT ships Value in thousand USD. The library convention is plain USD, so convert
         # here, once, before any grouping (the reference table stays in the source's units).
-        df_gep_by_country_year_crop['crop_provision_gep'] *= 1000.0
+        df_gep_by_country_year_crop['crop_provision_gep'] *= crop_provision_functions.FAOSTAT_THOUSAND_USD
         
         df_gep_by_country_year = crop_provision_functions.group_crops(df_gep_by_country_year_crop)
 
