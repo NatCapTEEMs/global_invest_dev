@@ -276,10 +276,8 @@ def gep_calculation(p):
         # Replace wrong codes in the m49
         df_gep_by_country_year_crop['area_code_M49'] = df_gep_by_country_year_crop['area_code_M49'].replace(replacements)    
 
-        # LEARNING POINT: I wasted lots of time not realizing the a how='right' operates differently than I expect. The left had IDs that were not in right under r264_id, but they thus had the a 
-        # repeated ID in the r250. I had wrongly thought that the how='right' would only then return 1 row for each r250_id, but it actually a duplicate row repeated for each unique r264_id
-        # even tho the r_250_id was the same. Thus, I had to drop the repeated ones.
-        
+        # Keep one row per country: a right join on r264 would repeat an r250 country once per
+        # sub-region, so the sub-region rows are dropped before the join.
         # Drop repeated ids in df_countries
         ee_r264_to_250 = p.df_countries.copy()
         ee_r264_to_250 = ee_r264_to_250[ee_r264_to_250['ee_r264_label'] == ee_r264_to_250['iso3_r250_label']]

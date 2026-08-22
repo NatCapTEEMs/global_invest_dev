@@ -66,9 +66,8 @@ def gep_calculation(p):
         df_mangrove_value = coastal_protection_functions.read_mangrove_values(p.gep_quantity_input_path)
         df_coral_reef_value = coastal_protection_functions.read_coral_reef_values(p.coral_reef_ref_path)
 
-        # LEARNING POINT: I wasted lots of time not realizing the a how='right' operates differently than I expect. The left had IDs that were not in right under r264_id, but they thus had the a 
-        # repeated ID in the r250. I had wrongly thought that the how='right' would only then return 1 row for each r250_id, but it actually a duplicate row repeated for each unique r264_id
-        # even tho the r_250_id was the same. Thus, I had to drop the repeated ones.
+        # Keep one row per country: a right join on r264 would repeat an r250 country once per
+        # sub-region, so the sub-region rows are dropped before the join.
         
         
         # Merge so it has all the good labels from the  
