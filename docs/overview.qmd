@@ -48,6 +48,8 @@ renewable_solar: "$53.95bn"
 renewable_geothermal: "$6.56bn"
 mar_committed: "$53 thousand"
 mar_recomputed: "$43 million"
+stormwater_volume: "185.85bn m3"
+stormwater_value: "$185.85bn"
 hydro_manuscript: "$287.7bn"
 n_services_at_2019: "20"
 
@@ -69,9 +71,9 @@ format:
 ## Nature is invisible in the accounts
 
 - Ecosystems supply services the economy depends on, from pollination and soil retention to coastal protection and carbon storage, yet none of them appear in standard national accounts.
-- Unmeasured, the loss of these services surfaces only later, as lower yields, higher damages and higher prices.
+- Unmeasured, their loss shows up later as lower yields and higher damages.
 - The Gross Ecosystem Product (GEP) account values what ecosystems supply, country by country and service by service, so natural capital can be tracked alongside GDP.
-- The same service models also drive scenario analysis. They trace how climate and land-use scenarios change the services economies depend on, feeding the macroeconomic pipelines.
+- The same service models also drive scenario analysis. They trace how climate and land-use scenarios change the services economies depend on, and the results feed the macroeconomic pipelines.
 
 ## Why one reviewed library
 
@@ -213,8 +215,8 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 | local_climate_regulation | {{< meta lcr_total >}} | yes. Reproduces the committed final |
 | extractive_energy | {{< meta xe_total >}} (gas + coal + petroleum) | yes. Computed from the public CWoN rent tables, and the committed tables double-count eight rows |
 | timber_provision | {{< meta timber_total >}} | yes. All 166 countries match the committed output |
-| ntfp | in progress | no. The accessibility run on the public roads data comes next |
-| stormwater | in progress | no. The retention run is complete, and no author run exists |
+| ntfp | in progress | no. The accessibility run is going on the public roads data |
+| stormwater | {{< meta stormwater_volume >}} retained ({{< meta stormwater_value >}} at the placeholder price) | no. No author run exists to compare against |
 
 : {tbl-colwidths="[22,32,46]"}
 
@@ -246,16 +248,16 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 - [Values the crop production attributable to wild pollinators (a sufficiency-weighted value raster built from pollinator habitat around cropland). The raster is 2023. Once the definition is decided, we regenerate it at 2019.]{.state}
 - **Q1:** is pollination's GEP the service nature currently delivers ({{< meta poll_raster >}}, the sufficiency-weighted raster) or the production value at stake ({{< meta poll_fao >}}, dependence-weighted FAO value)? The country ranking is identical, but the definition differs.
 - Erosion's GEP records the habitat-supplied share, so the raster-side definition is the internally consistent choice.
-- The FAO-side number comes directly from the author's committed per-country table (its 2023 total is the {{< meta poll_fao >}}, and the same table already holds the 2019 values). The raster-side number is our country aggregation of the author's value raster.
+- The FAO-side number comes directly from the author's committed per-country table . The raster-side number is our country aggregation of the author's value raster.
 
 ## erosion
 
-- [Values the soil that land cover keeps in place (prevented erosion mapped by the SDR model, valued through crop productivity). The full chain runs end to end, provisional. The rerun with the author's original input tables is under way.]{.state}
+- [Values the soil that land cover keeps in place (prevented erosion mapped by the SDR model, valued through crop productivity). The full chain runs end to end, provisional.]{.state}
 - The drive's erosion folder carries the author's three input tables and per-country results, and the rerun's comparison against the author's table verifies by replication.
 
 ## erosion (continued)
 
-- One biophysical chain feeds everything. InVEST's SDR model yields actual soil loss (USLE) and bare-soil loss (RKLS), and their difference is the erosion the land cover prevents.
+- One biophysical chain feeds both products. InVEST's SDR model yields actual soil loss (USLE) and bare-soil loss (RKLS), and their difference is the erosion the land cover prevents.
 - Two products come from it. The GEP valuation runs the chain once on observed land cover (prevention shares, on-farm and upstream, valued per country). The scenario shock reruns it per scenario and year on the SEALS maps.
 - The shock has two paths. Static reads the frozen dependency table (the default today), and dynamic recomputes the full chain per map (expensive), so each step saves its output and skips itself on rerun.
 - Three shock methods are computed side by side and reported together: damage (thresholded area share), service (threshold-free, magnitude-weighted per crop), and service-threshold (service restricted to a fixed severe-pixel set). The last is the default that becomes the GTAP shock, and one configuration row selects which.
@@ -356,8 +358,8 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 
 ## ntfp and stormwater
 
-- [Values non-timber forest products as accessible forest area (near roads and rivers) times the CWoN value per hectare. Both of the repo's script variants run next on the public roads database.]{.state}
-- [Values retained stormwater at a price per cubic metre, from the InVEST urban stormwater model. The global retention run is complete, and the per-country volumes are the step in progress.]{.state}
+- [Values non-timber forest products as accessible forest area (near roads and rivers) times the CWoN value per hectare. Both of the repo's script variants are running on the public roads database.]{.state}
+- [Values retained stormwater at a price per cubic metre, from the InVEST urban stormwater model. The run retains {{< meta stormwater_volume >}} per year over 104 countries, wall to wall rather than urban-masked, and the value waits on the price.]{.state}
 - **Q:** the intended price per cubic metre retained. The committed configuration carries a placeholder of 1.
 
 # Cross-cutting decisions
@@ -436,7 +438,7 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 
 ## What happens with the answers
 
-- Every answer starts an already-scoped step, most of them mechanical: reference outputs trigger exact-replication verification (erosion, landslide, livestock), decisions trigger one-pass conversions (the map dissolve), and the definitional calls trigger the regenerations that are already written up (pollination at 2019, the shoreline diagnostic).
+- Most answers start an already-scoped step. A reference output gets an exact-replication check, and a decision gets its conversion or regeneration, already written up.
 - The questions live in a tracked document, and each closes with a verified number or a recorded decision.
 - Each answer extends the same reproducibility to one more service. The goal for the next session is no questions slide at all.
 
