@@ -280,7 +280,7 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 ## crop_provision
 
 - [Values crop production from FAOSTAT production values (quantity times producer price per country), and it reproduces the reference table.]{.state}
-- FAOSTAT's production values already count part of subsistence output: meat includes farm slaughter, and FAO estimates non-commercial crops where countries report only sales. Kitchen gardens, scattered trees and wild harvest are usually missing, so a separate subsistence-crop value would double-count the covered part.
+- FAOSTAT already counts part of subsistence output, so a separate subsistence-crop value would double-count it.
 - **No open questions.**
 
 ## livestock_provision
