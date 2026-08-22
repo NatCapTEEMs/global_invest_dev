@@ -253,15 +253,7 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 ## erosion
 
 - [Values the soil that land cover keeps in place (prevented erosion mapped by the SDR model, valued through crop productivity). The verification is provisional.]{.state}
-- The drive's erosion folder carries the author's three input tables and per-country results, and the rerun's comparison against the author's table verifies by replication.
-
-## erosion (continued)
-
-- One biophysical chain feeds both products. InVEST's SDR model yields actual soil loss (USLE) and bare-soil loss (RKLS), and their difference is the erosion the land cover prevents.
-- Two products come from it. The GEP valuation runs the chain once on observed land cover (prevention shares, on-farm and upstream, valued per country). The scenario shock reruns it per scenario and year on the SEALS maps.
-- The shock has two paths. Static reads the frozen dependency table (the default today), and dynamic recomputes the full chain per map (expensive), so each step saves its output and skips itself on rerun.
-- Three shock methods are computed side by side and reported together: damage (thresholded area share), service (threshold-free, magnitude-weighted per crop), and service-threshold (service restricted to a fixed severe-pixel set). The last is the default that becomes the GTAP shock, and one configuration row selects which.
-- The chain runs at two resolutions, a 6.45 km analysis grid on a laptop or native 300 m on a cluster, and one configuration row switches them.
+- Three shock methods are computed side by side and reported together: damage (thresholded area share), service (threshold-free, magnitude-weighted per crop), and service-threshold (service restricted to a fixed severe-pixel set).
 - The method's constants (the SES-11 thresholds) are named in code and await the author's confirmation. Every number from this service is provisional until then.
 
 ## landslide_mitigation
