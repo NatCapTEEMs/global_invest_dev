@@ -241,7 +241,7 @@ def _write_storage_value(p, ecosystem, stock_csv_path, out_path):
     each pool at the base-year rental SCC. The written CSV holds the stock columns, the value
     columns, the year, and the price it was valued at.
     """
-    if hb.path_all_exist(out_path):
+    if hb.path_exists(out_path):
         hb.log(f'{ecosystem} storage value: skipped (output exists at {out_path})')
         return
     if not hb.path_exists(stock_csv_path):
@@ -257,8 +257,9 @@ def _write_storage_value(p, ecosystem, stock_csv_path, out_path):
                                       p.gep_base_year, p.gep_price_convention)
     df_value.to_csv(out_path, index=False)
 
-    *pool_items, (total_stock_col, total_value_col) = stock_to_value.items()
-    for stock_col, value_col in pool_items:
+    pool_items = list(stock_to_value.items())
+    total_stock_col, total_value_col = pool_items[-1]
+    for stock_col, value_col in pool_items[:-1]:
         hb.log(f'  {ecosystem} {stock_col}: {df_value[stock_col].sum():,.0f} Mg C, '
                f'value ${df_value[value_col].sum():,.2f}')
     total_stock = df_value[total_stock_col].sum()

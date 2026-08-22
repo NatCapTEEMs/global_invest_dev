@@ -1,0 +1,163 @@
+---
+title: "Coastal blue carbon"
+format: html
+bibliography: references.bib
+---
+
+## Purpose
+
+Value the carbon held in the world's three mapped coastal blue-carbon habitats — mangrove, salt
+marsh and seagrass — as part of Gross Ecosystem Product. The quantity is mapped habitat area
+multiplied by a per-habitat carbon density; the price is the same annual rental social cost of
+carbon that terrestrial carbon storage is valued at [@parisa2022]. The service values storage
+only. The figure it reports is the carbon standing in the base year, not a flow between years.
+
+## Method
+
+### Extent
+
+Each habitat comes from its own published extent map, read as polygons:
+
+| Habitat | Extent |
+|---|---|
+| Mangrove | Global Mangrove Watch v3, 2019 [@bunting2018; @bunting2022] |
+| Salt marsh | `global_salt_marsh2019.gpkg` |
+| Seagrass | UNEP-WCMC013-014 SeagrassPtPy v7.1 [@unepwcmc2021] |
+
+The salt marsh extent is the one input with no published source named in the module — neither the
+code nor the module bibliography identifies where `global_salt_marsh2019.gpkg` came from.
+
+Seagrass is optional at the tree level (`include_seagrass`). A tree built with seagrass but no
+extent file raises rather than running, so a data gap cannot quietly understate the coastal
+total; a tree built without seagrass writes every seagrass column at zero, so the combined table
+has the same shape either way.
+
+### Aggregation surface
+
+Coastal habitat is aggregated on the **marine** surface, `eemarine_r566` — one row per exclusive
+economic zone and coastal region — rather than on the land country surface the other services
+use. Each habitat layer is clipped to every marine region in turn, and the clipped pieces are
+measured in the equal-area projection EPSG:6933 (NSIDC EASE-Grid 2.0 Global), which is what turns
+polygon geometry into hectares.
+
+Salt marsh additionally runs a zonal pass over the hectares-per-cell pyramid, written out as
+`salt_marsh_with_area.gpkg` for inspection. The area that reaches the country table is the
+equal-area geometric area, the same measure the other two habitats use.
+
+### Carbon density
+
+Density is resolved per pixel for mangrove and salt marsh, and per polygon for seagrass. Every
+pool is reported in Mg C per hectare, and soil carbon throughout is the stock in the **top 20 cm**.
+The external soil products report the top 1 m, and are taken as a linear share of that profile.
+
+**Mangrove.** Above-ground biomass follows the Hamilton & Friess latitude regression
+[@hamilton2018], AGB (t/ha) = −6.4305 × |lat| + 271.747, floored at zero (the line crosses zero at
+roughly 42°, and the floor is what stops it going negative beyond that). Below-ground biomass is
+AGB times the
+IPCC zone-specific root-to-shoot ratio [@ipcc2014]: 0.49 in the wet tropics, 0.29 in the dry
+tropics, 0.96 subtropical, with the tropical boundary at |lat| = 23.5° and the wet/dry split at
+2000 mm mean annual precipitation. Biomass converts to carbon at 0.48 for AGB [@hamilton2018] and
+0.39 for BGB [@howard2014]. Soil carbon is read from the Sanderman 30 m mangrove soil map
+[@sanderman2018]. Where no precipitation raster is supplied the whole tropics take the wet ratio;
+where no soil raster is supplied, soil falls back to a latitude step function running from 80
+Mg C/ha at the equator down to 50 Mg C/ha poleward of 25°.
+
+**Salt marsh.** Above-ground biomass is the Chmura median of 5 t/ha [@chmura2003], raised by a
+factor of 1.2 below |lat| = 25° for tropical productivity. Below-ground biomass is 2.5 times AGB,
+for the extensive root systems of tidal marsh. Carbon fractions are 0.45 for AGB and 0.41
+for BGB. Soil carbon is read from the Maxwell MarSOC map of tidal marsh soils [@maxwell2024]; the
+fallback step function runs the other way from mangrove, 36 Mg C/ha in the tropics up to 70
+Mg C/ha poleward of 45°.
+
+**Seagrass.** Biomass carbon is genus-specific, from the Gomis global synthesis [@gomis2025], and
+is the one density that is an attribute of the polygon rather than of the pixel — the extent map
+carries a `GENUS` field. Genera group by life-history strategy: persistent (*Posidonia* at 9.78
+Mg C/ha, the other persistent genera at 3.70), opportunistic (*Zostera*, *Syringodium*,
+*Halodule* at 0.94) and colonising (*Ruppia* 0.33, *Halophila* 0.19). A polygon whose genus is
+unknown, unreported or absent from the table takes the global mean, 1.55 Mg C/ha. Biomass splits
+30% above ground and 70% below. Soil carbon is a constant 22 Mg C/ha, the Fourqurean global mean
+for the top 20 cm [@fourqurean2012]. Freshwater genera present in the extent map (*Trapa*,
+*Myriophyllum*, *Valisneria*, *Najas* and the rest) are zeroed across every pool, soil included,
+so they contribute nothing to a country's stock.
+
+### Stock
+
+For mangrove and salt marsh, stock is accumulated pixel by pixel on the 10 arc-second grid. Each
+pixel's density is evaluated at its latitude, multiplied by the hectares in that cell, and added
+to the marine region it falls in. A pixel counts only where the habitat mask is set, a region id
+is present and the cell has area. A no-data pixel inside a soil raster contributes zero soil
+rather than a missing value, and its biomass still counts. The pass runs in row blocks and skips
+any block the habitat does not reach.
+
+For seagrass, stock is each clipped polygon's genus density multiplied by its hectares, summed to
+the region.
+
+Every habitat therefore reports four columns per region: above-ground, below-ground and soil
+carbon, and their sum. The total is always the three pools added, never a separately computed
+figure, so it cannot drift away from the parts it is printed beside.
+
+### Price and valuation
+
+The price is the annual rental social cost of carbon for the base year, read from the carbon
+price series (`carbon_prices.xlsx`) under the run's price convention — the same series and
+convention terrestrial carbon uses, so the two carbon services are priced identically. GEP is
+then
+
+$$
+\text{GEP}_{\text{coastal carbon}} = \text{carbon stock (Mg C)} \times \text{rental SCC (\$ per Mg C)}
+$$
+
+applied pool by pool, so the written table carries a value for above-ground, below-ground and soil
+carbon as well as the habitat total. The year and the price used travel in the table beside the
+values.
+
+### Collapse to one row per country
+
+The service produces two tables. The first, `gep_by_country_base_year_r566`, is the full marine
+surface: per-habitat area, stock pools and storage values for each of the r566 marine regions,
+with a matching GeoPackage for mapping. Regions with no coastal habitat at all are dropped from
+it — they are ocean rows, not zero-value countries.
+
+The second, `gep_by_country_base_year`, is the country table. Building it takes two steps that
+each guard against counting the same coast twice:
+
+1. **Keep the `_EEZ` rows.** The marine surface carries a country's coast more than once, as an
+   EEZ row plus land and territorial rows over the same habitat. Only the `_EEZ` rows are valued.
+2. **Collapse through the canonical r264 row.** The r264 correspondence splits large countries
+   into sub-regions (China ×6, India ×6, and four two-way splits), so it is filtered to
+   `ee_r264_label == iso3_r250_label` before the join. Without that filter the join repeats a
+   split country once per sub-region and the sum multiplies its value. Countries with no coastal
+   habitat report zero rather than dropping out.
+
+## Open question: EEZ-only versus all rows
+
+Step 1 above is a choice, not a cleanup. Valuing every r566 row instead of the `_EEZ` rows returns
+a strictly larger total, and the gap is exactly the non-EEZ rows — the same coastal habitat
+counted again under a land or territorial label. The two totals answer different questions. What
+the module writes is the EEZ-only figure; the all-rows figure is what summing the r566 table
+gives, and the module does not compute it. The arithmetic of the distinction is pinned in
+`test_eez_only_is_a_strict_subset_of_all_rows`.
+
+## Sensitivity worth naming
+
+The latitude fallbacks — mangrove soil without the Sanderman raster, salt marsh soil without
+MarSOC, and the mangrove root ratio without a precipitation raster — change the number a run
+produces. Which source each run used is written to the log at the point the raster is aligned.
+
+## Outputs
+
+Per habitat, in the habitat's own task directory:
+
+- `<habitat>_area_by_countries2019.{gpkg,csv}` — hectares per marine region.
+- `<habitat>_carbon_stock_by_countries2019.csv` — the four stock pools per marine region (Mg C).
+- `<habitat>_storage_value_by_countries2019.csv` — the stock pools priced (USD), with the year and
+  the rental SCC used.
+
+Then, across habitats:
+
+- `combined_ecosystem_areas.csv` — every habitat's area and stock on one row per marine region,
+  plus total coastal area and total carbon stock.
+- `gep_by_country_base_year_r566.{csv,gpkg}` — the marine-surface GEP detail.
+- `gep_by_country_base_year.csv` — one row per country, the service's GEP result.
+
+## References

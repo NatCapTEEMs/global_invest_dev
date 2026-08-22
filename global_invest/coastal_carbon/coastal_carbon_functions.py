@@ -69,7 +69,8 @@ def calculate_mangrove_density_array(latitude_arr, precipitation_arr=None,
          dry, 0.96 subtropical). If precipitation_arr is None, all tropics use
          the wet ratio (0.49). Tropical/subtropical split at |lat| = 23.5 deg.
     SOC: from soc_arr (Sanderman 2018 raster) when provided; otherwise a
-         latitude step function (400 to 250 Mg C/ha by zone).
+         latitude step function, 80 down to 50 Mg C/ha by zone -- the 400-to-250
+         Mg C/ha profile for the top 1 m, scaled to the top 20 cm.
     """
     lat_abs = np.abs(latitude_arr).astype(np.float64)
     agb_t_per_ha = np.maximum(
@@ -128,7 +129,8 @@ def calculate_salt_marsh_density_array(latitude_arr, soc_arr=None):
     AGB: Chmura et al. 2003 median (5 t/ha) with 1.2x tropical boost (|lat| < 25).
     BGB: AGB x 2.5 (extensive root systems).
     SOC: from soc_arr (Maxwell 2024 MarSOC raster) when provided; otherwise a
-         latitude step function (180 to 350 Mg C/ha by zone).
+         latitude step function, 36 up to 70 Mg C/ha by zone -- the 180-to-350
+         Mg C/ha profile for the top 1 m, scaled to the top 20 cm.
     """
     lat_abs = np.abs(latitude_arr).astype(np.float64)
 
