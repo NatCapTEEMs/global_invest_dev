@@ -19,9 +19,28 @@ def publish_inputs(p):
     return p
 
 
+def read_city_savings(merged_dir):
+    """The per-country city-month valuation files, concatenated.
+
+    One file per country, each a row per city and month. Reading them here rather than in the
+    science module keeps the summing testable on a small frame.
+    """
+    import glob
+    paths = sorted(glob.glob(os.path.join(merged_dir, '*_all_urban_valuations.csv')))
+    if not paths:
+        raise FileNotFoundError(f'no city valuation files under {merged_dir}')
+    return pd.concat([pd.read_csv(path) for path in paths], ignore_index=True)
+
+
 def gep_calculation(p):
-    """GEP valuation for local climate regulation: the committed final table, one row per
-    country (the v04 correction's own inputs are the open asks; see the functions module)."""
+    """GEP valuation for local climate regulation, computed from the chain's own city-month
+    valuations: avoided cooling energy priced at the national electricity price, summed over
+    every city in a country.
+
+    The committed accounting table is carried beside it as the comparison anchor rather than
+    reported. The two disagree by a wide and country-varying margin, which is the open ask:
+    something sits between these city values and that table which is not in anything we hold.
+    """
     publish_inputs(p)
     service_results = {}
     p.results['local_climate_regulation'] = service_results
@@ -32,17 +51,32 @@ def gep_calculation(p):
         return
     hb.log('Starting GEP calculation for local_climate_regulation.')
 
-    final = pd.read_csv(p.local_climate_regulation_final_path)
+    city = read_city_savings(p.local_climate_regulation_city_savings_path)
+    ours = lc.city_savings_by_country(city)
+
     attr_cols = ['iso3_r250_id', 'iso3_r250_label', 'iso3_r250_name',
                  'continent', 'region_un', 'region_wb', 'income_grp', 'subregion']
     countries = p.df_countries[attr_cols].drop_duplicates('iso3_r250_id')
-    df_gep = lc.local_climate_gep_by_country(final, countries)
+    df_gep = countries.merge(ours, on='iso3_r250_id', how='left')
+
+    anchor = lc.local_climate_gep_by_country(
+        pd.read_csv(p.local_climate_regulation_final_path), countries[['iso3_r250_label']])
+    df_gep = df_gep.merge(
+        anchor.rename(columns={'local_climate_regulation_gep':
+                               'local_climate_regulation_gep_committed'}),
+        on='iso3_r250_label', how='left')
     df_gep['year'] = int(p.gep_base_year)
-    hb.df_write(df_gep[attr_cols + ['year', 'local_climate_regulation_gep']],
+    hb.df_write(df_gep[attr_cols + ['year', 'local_climate_regulation_gep',
+                                    'local_climate_regulation_gep_committed']],
                 service_results['gep_by_country_base_year'])
 
+    ours_total = df_gep['local_climate_regulation_gep'].sum()
+    committed_total = df_gep['local_climate_regulation_gep_committed'].sum()
     hb.log(f'Total local_climate_regulation GEP for base year {p.gep_base_year}: '
-           f'{df_gep["local_climate_regulation_gep"].sum():,.2f}')
+           f'{ours_total:,.2f} over '
+           f'{int(df_gep["local_climate_regulation_gep"].notna().sum())} countries')
+    hb.log(f'  the committed accounting table totals {committed_total:,.2f}; the gap is not a '
+           f'constant factor and is the open ask on this service')
     return True
 
 

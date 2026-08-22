@@ -69,3 +69,27 @@ def local_climate_gep_by_country(final_df, countries_df):
     out = countries_df.merge(df[['iso3_r250_label', 'local_climate_regulation_gep']],
                              on='iso3_r250_label', how='left')
     return out
+
+
+# The city-month files are the chain's own output, one per country, carrying the avoided
+# kilowatt-hours, the national price and their product. Summing them is how the country value is
+# produced here, rather than reading the committed accounting table through.
+CITY_SAVINGS_COLUMN = 'total_savings_usd'
+
+
+def city_savings_by_country(city_df):
+    """One row per country: the avoided cooling energy priced and summed over its cities.
+
+    The file's own identity (kilowatt-hours times price equals savings) is asserted before the
+    sum, so a file that has drifted fails here rather than contributing a wrong total.
+
+    Args:
+        city_df (pd.DataFrame): the concatenated city-month valuations, carrying iso3_r250_id,
+            kwh_diff, price_usd_per_kwh and total_savings_usd.
+
+    Returns:
+        pd.DataFrame: iso3_r250_id and local_climate_regulation_gep.
+    """
+    city_savings_identity(city_df)
+    grouped = city_df.groupby('iso3_r250_id', as_index=False)[CITY_SAVINGS_COLUMN].sum(min_count=1)
+    return grouped.rename(columns={CITY_SAVINGS_COLUMN: 'local_climate_regulation_gep'})

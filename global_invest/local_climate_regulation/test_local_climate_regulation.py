@@ -59,3 +59,26 @@ def test_es_config_and_parameters_rows_hydrate_local_climate_regulation(tmp_path
     assert p.gep_base_year == 2019
     utilities.hydrate_es_parameters(p, 'local_climate_regulation', log=lambda *a: None)
     assert p.local_climate_regulation_final_path.endswith('local_climate_regulation_gep.csv')
+
+
+def test_city_savings_sum_to_one_row_per_country():
+    city = pd.DataFrame({
+        'iso3_r250_id': [250, 250, 276],
+        'kwh_diff': [100.0, 50.0, 10.0],
+        'price_usd_per_kwh': [0.2, 0.2, 0.3],
+        'total_savings_usd': [20.0, 10.0, 3.0],
+    })
+    out = lc.city_savings_by_country(city).set_index('iso3_r250_id')
+    assert out.loc[250, 'local_climate_regulation_gep'] == 30.0
+    assert out.loc[276, 'local_climate_regulation_gep'] == 3.0
+
+
+def test_a_city_file_that_has_drifted_fails_rather_than_summing():
+    """The savings column must stay the product of the two beside it, or the file has changed
+    under us and its total means something else."""
+    city = pd.DataFrame({
+        'iso3_r250_id': [250],
+        'kwh_diff': [100.0], 'price_usd_per_kwh': [0.2], 'total_savings_usd': [999.0],
+    })
+    with pytest.raises(ValueError, match='kwh'):
+        lc.city_savings_by_country(city)
