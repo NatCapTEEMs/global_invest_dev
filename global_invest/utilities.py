@@ -675,3 +675,76 @@ def assert_join_coverage(joined_df, value_column, expected_rows, service, log=pr
             f'match a country in the correspondence. A label that does not match is dropped '
             f'silently, so the join key needs checking before this total is used.')
     log(f'{service}: all {expected_rows} valued rows matched a country.')
+
+
+# The choropleth every service's report closes with. It is here rather than pasted into each
+# results page because only seven of the twenty pages had it, each with its own copy, and a
+# service should not need its own geopackage to draw one: the shared country geometry plus the
+# per-country table this service already writes is enough.
+CHOROPLETH_COLORMAP = 'OrRd'
+CHOROPLETH_FIGSIZE = (15, 10)
+CHOROPLETH_DPI = 300
+
+
+def plot_gep_choropleth(df_by_country, value_column, countries_vector_path, out_png_path,
+                        title='GEP by Country in Base Year', label=None):
+    """Draw one service's per-country values on the shared country geometry.
+
+    Values are shaded on a log scale, because a handful of countries carry most of every
+    service's total and a linear ramp renders the rest indistinguishable. A country the table
+    does not value is left unshaded rather than shaded as zero.
+
+    Args:
+        df_by_country (pd.DataFrame): one row per country, carrying iso3_r250_id and value_column.
+        value_column (str): the column to map.
+        countries_vector_path (str): the shared country geometry (any r250 or r264 gpkg).
+        out_png_path (str): where the figure is written.
+        title (str): the figure title.
+        label (str): the colour-bar label; defaults to the value column.
+
+    Returns:
+        str: out_png_path, or None if the table had no positive value to scale a log ramp on.
+    """
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib as mpl
+    import matplotlib.pyplot as plt
+    import geopandas as gpd
+    import pandas as pd
+
+    gdf = gpd.read_file(countries_vector_path)
+    join_column = 'iso3_r250_id' if 'iso3_r250_id' in gdf.columns else 'ee_r264_id'
+    values = df_by_country[['iso3_r250_id', value_column]].dropna(subset=['iso3_r250_id'])
+    values = values.groupby('iso3_r250_id', as_index=False)[value_column].sum(min_count=1)
+    gdf = gdf.merge(values, how='left', left_on=join_column, right_on='iso3_r250_id')
+
+    positive = gdf[value_column][gdf[value_column] > 0]
+    if not len(positive):
+        return None
+
+    norm = mpl.colors.LogNorm(vmin=positive.min(), vmax=gdf[value_column].max())
+    figure, axes = plt.subplots(figsize=CHOROPLETH_FIGSIZE)
+    gdf.plot(column=value_column, cmap=CHOROPLETH_COLORMAP, legend=False, norm=norm, ax=axes)
+    gdf.boundary.plot(ax=axes, color='black', linewidth=0.5)
+
+    scalar_map = plt.cm.ScalarMappable(cmap=CHOROPLETH_COLORMAP, norm=norm)
+    scalar_map._A = []
+    colour_bar = figure.colorbar(scalar_map, ax=axes, orientation='vertical',
+                                 fraction=0.03, pad=0.02)
+    colour_bar.set_label(label or value_column)
+    colour_bar.ax.yaxis.set_major_formatter(
+        mpl.ticker.FuncFormatter(lambda x, _: f'{int(x):,}'))
+    axes.set_title(title)
+    axes.set_axis_off()
+    hb_create_directories(out_png_path)
+    plt.savefig(out_png_path, bbox_inches='tight', dpi=CHOROPLETH_DPI)
+    plt.close(figure)
+    return out_png_path
+
+
+def hb_create_directories(path):
+    """The output directory for a file path, created if it is missing."""
+    import os
+    directory = os.path.dirname(path)
+    if directory and not os.path.exists(directory):
+        os.makedirs(directory, exist_ok=True)

@@ -65,3 +65,27 @@ The analysis values water purification as nutrient retention priced at treatment
 ```{python}
 p.gep_by_country_base_year_table
 ```
+
+## GEP by Country in Base Year, mapped
+
+```{python}
+#| output: false
+
+from global_invest import utilities
+
+# The service's own value column, not merely the first one ending in _gep: water_supply
+# writes several and the wrong one would map a component as though it were the total.
+map_value_column = (f'{service_label}_gep' if f'{service_label}_gep' in df.columns
+                    else [c for c in df.columns if c.endswith('_gep')][0])
+map_png_path = os.path.join(
+    os.path.dirname(p.results[service_label]['gep_by_country_base_year']),
+    f'{service_label}_gep_by_country_base_year_map.png')
+map_png_path = utilities.plot_gep_choropleth(
+    df, map_value_column, p.gdf_countries_vector_simplified_path, map_png_path,
+    title=f'{service_label} GEP by country', label=map_value_column)
+```
+
+```{python}
+from IPython.display import Image
+Image(map_png_path) if map_png_path else 'No positive value to map.'
+```

@@ -97,8 +97,10 @@ format:
 | initialize.py | The table of contents (the list of steps, and the entry point other pipelines call). |
 | run_\<service\>.py | The main script. Opens a workspace and runs the steps. |
 | method.qmd | The written explanation of the method. |
+| results.qmd | The report of the results, rendered at the end of every run. |
 
 - run_\<service\>.py asks initialize.py for the list of steps, each step in tasks.py calls the equations in functions.py and writes its output, and the next step reads that output.
+- A run ends by rendering results.qmd into a standalone HTML report for that service, carrying its total and the per-country table. It reads the run it was rendered from, so the report and the numbers cannot drift apart.
 - A service with a shock has a second runner for it, run_\<service\>_shock.py (one runner per task tree).
 - Three shared CSVs carry the configuration (the next slide).
 
@@ -110,6 +112,12 @@ format:
 - es_scenarios_test.csv: the standard SEALS scenarios, with matching test maps shipped, so a standalone shock run works on any machine.
 - es_parameters.csv: the run parameters and the references to each service's data.
 - Results aggregate to one row per country (r250). Sub-national tables (r264, marine r566) serve as computation surfaces and maps.
+
+## Every service reports itself {.smaller}
+
+![Terrestrial carbon's report: its total, the same figures by income group, region and continent, the per-country table, and this map.](images/terrestrial_carbon_report_map.png)
+
+- Seventeen of the twenty services with a run have rendered their report. Nine of those draw the map above; the other eight report tables only, which is a difference in the reports rather than in the numbers, and one we should settle.
 
 ## The library's two callers
 
