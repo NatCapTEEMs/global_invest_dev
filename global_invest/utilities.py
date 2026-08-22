@@ -545,30 +545,44 @@ def download_missing_inputs(p, service, log=print):
     """Fetch any of a service's inputs that are missing and have a recorded source.
 
     es_parameters carries one row per input path (`<name>_path`). An input that can be
-    downloaded carries a second row, `<name>_source_url`, holding the public URL it comes
-    from. This walks the service's rows, and for every `_path` whose file is absent and whose
-    `_source_url` exists, downloads it to that path. Present files are left alone, so a rerun
-    fetches nothing.
+    fetched carries companion rows:
 
-    Inputs without a `_source_url` row are the ones a collaborator has to send; they are
-    logged by name rather than silently skipped.
+      `<name>_source_url`             the public URL it comes from
+      `<name>_source_archive_member`  the member to extract, when the URL is an archive
+      `<name>_source_note`            the human instruction, when no URL can exist
+                                      (an interactive export, or a file only a
+                                      collaborator has)
+
+    Only missing files are fetched, so a rerun downloads nothing. Inputs with a note, or
+    with no source at all, are returned by name rather than silently skipped: that list is
+    what a collaborator has to send.
+
+    This is a deliberate step, not part of publish_inputs. A task that quietly refetches
+    could swap a file's vintage mid-analysis, and checking every path on every task would
+    cost a run more than it saves.
 
     Returns:
-        (downloaded, missing_without_source): the paths written, and the input names that
-        have no recorded source.
+        (downloaded, needs_a_person): the paths written, and {input name: reason} for the
+        inputs a person has to supply.
     """
     import os
+    import shutil
     import urllib.request
+    import zipfile
     import pandas as pd
     import hazelbean as hb
 
     df = pd.read_csv(seed_input_template(p, 'es_parameters.csv', log))
     rows = df[df['service'] == service]
-    urls = {str(r['parameter'])[:-len('_source_url')]: str(r['value'])
-            for _, r in rows.iterrows()
-            if str(r['parameter']).endswith('_source_url') and not pd.isna(r['value'])}
 
-    downloaded, missing = [], []
+    def companions(suffix):
+        return {str(r['parameter'])[:-len(suffix)]: str(r['value'])
+                for _, r in rows.iterrows()
+                if str(r['parameter']).endswith(suffix) and not pd.isna(r['value'])}
+
+    urls, members, notes = companions('_source_url'), companions('_source_archive_member'), companions('_source_note')
+
+    downloaded, needs_a_person = [], {}
     for _, row in rows.iterrows():
         attribute = str(row['parameter'])
         if not attribute.endswith('_path'):
@@ -576,15 +590,44 @@ def download_missing_inputs(p, service, log=print):
         path = getattr(p, attribute, None)
         if path is None or hb.path_exists(path):
             continue
-        url = urls.get(attribute[:-len('_path')])
-        if url is None:
-            missing.append(attribute)
+        name = attribute[:-len('_path')]
+        if name not in urls:
+            needs_a_person[attribute] = notes.get(name, 'no recorded source')
             continue
         os.makedirs(os.path.dirname(path), exist_ok=True)
-        log(f'{service}: downloading {attribute} from {url}')
-        urllib.request.urlretrieve(url, path)
+        log(f'{service}: downloading {attribute} from {urls[name]}')
+        if name in members:
+            archive = path + '.download'
+            urllib.request.urlretrieve(urls[name], archive)
+            with zipfile.ZipFile(archive) as zf, open(path, 'wb') as out:
+                shutil.copyfileobj(zf.open(members[name]), out)
+            os.remove(archive)
+        else:
+            urllib.request.urlretrieve(urls[name], path)
         downloaded.append(path)
 
-    if missing:
-        log(f'{service}: no recorded source for {", ".join(missing)}')
-    return downloaded, missing
+    for attribute, reason in needs_a_person.items():
+        log(f'{service}: {attribute} needs a person ({reason})')
+    return downloaded, needs_a_person
+
+
+def download_inputs_task(service):
+    """Build a ProjectFlow task that fetches a service's missing inputs.
+
+    Deliberately opt-in: add it to a tree when a machine needs its inputs, and leave it out
+    of routine runs, so no run silently refetches a file mid-analysis.
+
+        p.add_task(utilities.download_inputs_task('extractive_energy'))
+    """
+    import hazelbean as hb
+
+    def download_inputs(p):
+        if not p.run_this:
+            return
+        downloaded, needs_a_person = download_missing_inputs(p, service, log=hb.log)
+        hb.log(f'{service}: {len(downloaded)} inputs downloaded, '
+               f'{len(needs_a_person)} still need a person')
+        return True
+
+    download_inputs.__name__ = f'download_{service}_inputs'
+    return download_inputs

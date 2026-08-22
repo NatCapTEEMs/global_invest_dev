@@ -86,8 +86,44 @@ def test_download_missing_inputs_fetches_only_what_is_absent(tmp_path, monkeypat
     monkeypatch.setattr('urllib.request.urlretrieve',
                         lambda url, path: (fetched.append(url), open(path, 'w').write('new')))
 
-    downloaded, missing = utilities.download_missing_inputs(p, 'demo', log=lambda *a: None)
+    downloaded, needs_a_person = utilities.download_missing_inputs(p, 'demo', log=lambda *a: None)
     assert fetched == ['https://example.invalid/absent.csv']
     assert downloaded == [str(absent)]
-    assert missing == ['demo_unsourced_path']
+    assert needs_a_person == {'demo_unsourced_path': 'no recorded source'}
     assert present.read_text() == 'kept'
+
+
+def test_download_missing_inputs_extracts_an_archive_member_and_reports_notes(tmp_path, monkeypatch):
+    """An input whose source is an archive is extracted from it, and an input whose source is
+    a note (an interactive export, a colleague's file) is reported with that note."""
+    import zipfile
+    import pandas as pd
+    from types import SimpleNamespace
+    from global_invest import utilities
+
+    template = tmp_path / 'es_parameters.csv'
+    pd.DataFrame([
+        {'service': 'demo', 'parameter': 'demo_member_path', 'value': 'demo/member.csv'},
+        {'service': 'demo', 'parameter': 'demo_member_source_url', 'value': 'https://example.invalid/pack.zip'},
+        {'service': 'demo', 'parameter': 'demo_member_source_archive_member', 'value': 'inner/wanted.csv'},
+        {'service': 'demo', 'parameter': 'demo_noted_path', 'value': 'demo/noted.csv'},
+        {'service': 'demo', 'parameter': 'demo_noted_source_note', 'value': 'exported by hand from the dashboard'},
+    ]).to_csv(template, index=False)
+
+    archive = tmp_path / 'pack.zip'
+    with zipfile.ZipFile(archive, 'w') as zf:
+        zf.writestr('inner/wanted.csv', 'the wanted member')
+        zf.writestr('inner/other.csv', 'not this one')
+
+    member = tmp_path / 'member.csv'
+    noted = tmp_path / 'noted.csv'
+    p = SimpleNamespace(demo_member_path=str(member), demo_noted_path=str(noted))
+    monkeypatch.setattr(utilities, 'seed_input_template', lambda *a, **k: str(template))
+    monkeypatch.setattr('urllib.request.urlretrieve',
+                        lambda url, path: __import__('shutil').copyfile(archive, path))
+
+    downloaded, needs_a_person = utilities.download_missing_inputs(p, 'demo', log=lambda *a: None)
+    assert downloaded == [str(member)]
+    assert member.read_text() == 'the wanted member'
+    assert needs_a_person == {'demo_noted_path': 'exported by hand from the dashboard'}
+    assert not noted.exists()
