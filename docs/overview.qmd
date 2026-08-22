@@ -289,7 +289,7 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 - With the 65 FAO item codes, India recovers from zero to {{< meta livestock_ind >}} and the world total reads {{< meta livestock_world >}}, both provisional.
 - **Q1:** is the method repo's meat/milk/other item grouping current, and does milk belong as it suggests? The library's 29-item meats-and-eggs list (which captures 4 percent of India's FAO livestock value) appears to be a stale fork of it.
 - **Q2:** is the intended nature share the GLEAM-3 feed-share lambda (GLEAM, FAO's Global Livestock Environmental Assessment Model): ecosystem-provided feed over total feed, per country, as the repo's lambda.py computes?
-- **Q3:** do you have a per-country output table, to verify by replication? The GLEAM intake data (how much feed livestock consume per country and from which sources, grass and roughage versus crops and concentrates) is public behind FAO's dashboard, so we download it and build the lambda ourselves.
+- **Q3:** do you have a per-country output table, to verify by replication? FAO's dashboard serves the intake data one country and species at a time, so the practical route is the compiled extract the method repo used (gleam3_dmi.xlsx).
 
 ## coastal_protection
 
