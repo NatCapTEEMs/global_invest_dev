@@ -252,7 +252,7 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 
 ## erosion
 
-- [Values the soil that land cover keeps in place (prevented erosion mapped by the SDR model, valued through crop productivity). The full chain runs end to end, provisional.]{.state}
+- [Values the soil that land cover keeps in place (prevented erosion mapped by the SDR model, valued through crop productivity). The verification is provisional.]{.state}
 - The drive's erosion folder carries the author's three input tables and per-country results, and the rerun's comparison against the author's table verifies by replication.
 
 ## erosion (continued)
