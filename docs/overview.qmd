@@ -228,7 +228,7 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 - [Sums the carbon stored in mangroves, salt marshes and seagrass (mapped habitat times per-habitat density) and prices it like terrestrial carbon. Reproduces the author's reported numbers.]{.state}
 - **Q1:** was EEZ-only chosen to avoid double-counting the landward pixels with terrestrial carbon? Most of the mapped habitat sits landward of the shoreline (97.5 percent of mangrove area, 84 percent of salt marsh), so including it multiplies the total by 4.5.
 - **Q2:** which exact seagrass and salt marsh input versions produced the report's {{< meta coastal_report >}}? Our replication gives {{< meta coastal_eez >}} with the mangrove component matching, and the report's own seagrass area (62.21 Mha) exceeds the published range it cites (16 to 26.7 Mha).
-- **Q3: if both sides count, a landward mask must prevent double-counting with terrestrial carbon. Does one exist?**
+- **Q3:** if both sides count, a landward mask must prevent double-counting with terrestrial carbon. Does one exist?
 
 ## Marine carbon
 
