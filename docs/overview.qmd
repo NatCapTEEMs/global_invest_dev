@@ -223,14 +223,14 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 - A double-count in the code overstated its total by 23.5 percent (split countries entered once per sub-region, China six times). The corrected aggregation reproduces the manuscript's total.
 - **No open questions.** This service is the template the others are held to.
 
-## coastal_carbon: seaward pixels only, or the full habitat?
+## coastal_carbon
 
 - [Sums the carbon stored in mangroves, salt marshes and seagrass (mapped habitat times per-habitat density) and prices it like terrestrial carbon. Reproduces the author's reported numbers. The same run yields {{< meta coastal_eez >}} counting seaward rows only and {{< meta coastal_all >}} counting both sides.]{.state}
 - **Q1 (design):** was EEZ-only chosen to avoid double-counting the landward pixels with terrestrial carbon? Most of the mapped habitat sits landward of the shoreline (97.5 percent of mangrove area, 84 percent of salt marsh), so including it multiplies the total by 4.5.
 - **Q2 (inputs):** which exact seagrass and salt marsh input versions produced the report's {{< meta coastal_report >}}? Our replication gives {{< meta coastal_eez >}} with the mangrove component matching, and the report's own seagrass area (62.21 Mha) exceeds the published range it cites (16 to 26.7 Mha).
 - **Q3: if both sides count, a landward mask must prevent double-counting with terrestrial carbon. Does one exist?**
 
-## Marine carbon: no module yet
+## Marine carbon
 
 - [The service sheet lists Terrestrial, Coastal, and Marine carbon. No marine module found in any repo.]{.state}
 - **Q1:** is marine carbon in scope for the account at all, and on what horizon?
@@ -238,7 +238,7 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 - **Q3:** most open-ocean carbon sits in the high seas, inside no country's EEZ. Which attribution convention should a per-country account use?
 - The sheet lists one more subgroup under the same service, equally without a module we could find: **Other Non-Carbon GHG**. The same three questions apply.
 
-## pollination: which definition is the GEP?
+## pollination
 
 - [Values the crop production attributable to wild pollinators, a sufficiency-weighted value raster built from pollinator habitat around cropland. Built on the template and running. Aggregation verified. Two defensible definitions, 28 times apart. NOT yet at the account's 2019 base year (the August 31 alignment): the value raster is 2023, and its regeneration at 2019 follows the definition decision.]{.state}
 - **Q1:** is pollination's GEP the service nature currently delivers ({{< meta poll_raster >}}, the sufficiency-weighted raster) or the production value at stake ({{< meta poll_fao >}}, dependence-weighted FAO value)? The country ranking is identical. Only the definition differs.
@@ -251,7 +251,7 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 - [Values the soil that land cover keeps in place (prevented erosion mapped by the SDR model, valued through crop productivity). The full chain runs end to end and gives {{< meta erosion_total >}}, provisional. The rerun with the author's original input tables is under way. A unit test checks the rebuilt country formula's three behaviors on a sample input: the production-weighted elasticity average, the cap of elasticity at one, and the numerical floor that keeps a tiny positive shock from vanishing.]{.state}
 - Both former asks are closed. The drive's erosion folder carries the author's three input tables and the per-country results, all copied. The rerun with the originals is under way, and its comparison against the author's own table verifies by replication.
 
-## erosion: how the valuation and the shock share the chain
+## erosion (continued)
 
 - One biophysical chain feeds everything. InVEST's SDR model yields actual soil loss (USLE) and bare-soil loss (RKLS), and their difference is the erosion the land cover prevents.
 - Two products come from it. The GEP valuation runs the chain once on observed land cover (prevention shares, on-farm and upstream, valued per country). The scenario shock reruns it per scenario and year on the SEALS maps.
@@ -266,7 +266,7 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 - **Q1: needed, one machine-readable per-country output from a v0.2.0 run. A CSV is enough.** With it, our run is checked country by country against the author's own output.
 - **Q2: which input versions did the run behind the v0.2.0 release use?**
 
-## fisheries: the RCP substitution
+## fisheries
 
 - [Values commercial capture fisheries as the economic rent of the catch, and subsistence fisheries as the consumptive-use value of home catch. The shock file derives from DBEM (Cheung 2021), built from CWoN inputs. The GEP valuation is ported to Python from the source repo's 2026 CWoN-method script (FAO-based economic rent from the CWoN 2024 reproducibility package (FR_WLD_2024_195), deflated to 2019 USD, extrapolated to 2019 by each country's own 2009–2018 trend, floored at zero), provisional until the source choice is confirmed.]{.state}
 - **Q1: should the RCP8.5-for-RCP7.0 substitution stand, or is there a replacement?** The 8.5 series stands in because no 7.0 series exists.
@@ -285,7 +285,7 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 - [Values crop production from FAOSTAT production values (quantity times producer price per country). Converted from FAOSTAT's native thousand-USD to plain USD, matching every other service. Reproduces the reference table.]{.state}
 - FAOSTAT's production values already count part of subsistence output (checked in FAO's methodology): meat includes farm slaughter, and FAO estimates non-commercial crops where countries report only sales. Kitchen gardens, scattered trees and wild harvest are usually missing, so a separate subsistence-crop value would double-count the covered part.
 
-## livestock_provision: three open method decisions
+## livestock_provision
 
 - [Values livestock production and attributes to nature the share of feed ecosystems provide. Provisional numbers. The service's method repo answers more than we hoped, and step 1 of that method is already implemented as a draft: with its 65 FAO item codes replacing the stale 29-name list, India recovers from zero to {{< meta livestock_ind >}}, China reads {{< meta livestock_chn >}}, and the world total {{< meta livestock_world >}}, all provisional pending the lambda input. The old name list matched only 13 of its own 29 items against current FAO files.]{.state}
 - **Q1: is the method repo's meat/milk/other item grouping current, and does milk belong as it suggests?** The library's 29-item meats-and-eggs list (which captures 4 percent of India's FAO livestock value) appears to be a stale fork of it.
@@ -296,24 +296,24 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 
 - [Values the storm damage mangroves and corals prevent along coastlines (avoided expected damage from the CWoN data). Verified by identical rerun at {{< meta cp_total >}}.]{.state}
 
-## extractive_materials: the 0.49 factor
+## extractive_materials
 
 - [Values mineral extraction as the resource-rent share of mining output. Per-country replication of the reference, including the rendered tables.]{.state}
 - **Q1: what is the source or derivation of the 0.49 factor?** The valuation multiplies mineral rents times GDP by it. Without it the total would be {{< meta extractive_alt >}} instead of {{< meta extractive_total >}}.
 
-## renewable_energy: which source is current?
+## renewable_energy
 
 - [Values wind, solar and geothermal electricity as production times price with a resource-rent share. Conformed and rerun-identical at {{< meta renewable_total >}} (wind {{< meta renewable_wind >}}, solar {{< meta renewable_solar >}}, geothermal {{< meta renewable_geothermal >}}).]{.state}
 - **Q1: which is current, the code's {{< meta renewable_total >}} or the drive CSVs' {{< meta renewable_ref >}}?** More than 100 countries differ per source, both cannot be right, and the folder's "gepNEW" method note suggests the CSVs are older than the code.
 - **Q2: the sheet lists wind, solar and geothermal as three services. The library computes them in one module with per-source tables. Is one module the right structure, or would three separate ones make more sense?**
 
-## fire_protection: three variants
+## fire_protection
 
 - [Translated to Python from the GEP wildfire repo's R pipeline (function by function. The R source stays the reference). Per-country fire-persistence regressions (committed in the source repo) give three betas: baseline persistence, the nature-vs-human CAUSE difference, and the nature-vs-human AREA difference. Each beta times the country's 2018 burned area gives avoided acres in 2019, valued at EM-DAT wildfire damage per burned acre. The port reproduces the repo's committed per-country output, 161 countries. The replication runs inside the test suite, so it re-verifies on every change.]{.state}
 - **Q1: which of the three GEP variants is the account's fire_protection value?** Baseline persistence totals −$22.4bn and the cause difference −$1.3bn (both globally negative), while the area comparison totals +$16.7bn. The choice sets both the number and its sign. The cause difference is the module's provisional default, marked as such.
 - **Q3: the regressions cover 161 of the account's 250 countries. The other 89 carry no value.** No data is not zero avoided damage. Whether and how to treat them is an account question.
 
-## water_supply: three components
+## water_supply
 
 - [New module, now with three components. HYDROPOWER: the method was identified against the drive's committed output and holds for all 95 valued countries (CWoN 2024 capitalized wealth divided by the 4-percent, 100-year annuity factor). Live at {{< meta water_supply_total >}}. WATER USE (the drive's two-script chain, sector efficiency times sector withdrawal): computed in the library and reported as our run, agriculture {{< meta water_use_ag_total >}} across 126 countries and all-sector {{< meta water_use_all_total >}} across 154. The drive's committed tables ($554.5bn and $36.08T) come from two other chains (a crop-water chain for agriculture, a newer AQUASTAT vintage for all sectors) and stay as comparison anchors.]{.state}
 - **Q1: which hydropower total is the account's?** The manuscript records {{< meta hydro_manuscript >}} (roughly double the committed output's {{< meta water_supply_total >}}), consistent with the drive's earlier direct-use script (price times generation) versus the CWoN-rent method. The account needs one of the two.
@@ -326,7 +326,7 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 - **Q1: needed, the VSL build behind the workbook.** The folder's vsl.R documents the method (US-anchored, GDP- and life-years-adjusted) but its committed raw data is a different vintage and does not reproduce the workbook's VSL column.
 - **Q2: the vintage of the avoided-death columns**, for the record and the methods writeup.
 
-## water_quality: two currencies
+## water_quality
 
 - [New module. The drive carries the committed chain, but we could not find a script: nitrogen and phosphorus retention per country (upstream NDR-style estimation, taken as given), scaled by the AQUASTAT domestic-water-use fraction and priced at treatment cost per kilogram. Both identities replicate the committed intermediates ({{< meta wq_usd >}} in 2019 USD, 209 countries). The committed accounting output is {{< meta wq_intl >}} in 2019 INTERNATIONAL dollars (a purchasing-power unit, one international dollar buys in each country what one US dollar buys in the United States), 178 countries. That conversion stage is not identified from the available material. It is not one exchange factor per country, because the factors implied by the two committed values sit far from the World Bank's published ones.]{.state}
 - **Q1: needed, the USD-to-international-dollars conversion script and its inputs.** The method note describes per-source-year cost harmonization the folder does not carry.
