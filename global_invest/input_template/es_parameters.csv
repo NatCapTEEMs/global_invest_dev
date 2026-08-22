@@ -58,6 +58,7 @@ water_supply,water_supply_cwon_hydro_wealth_path,global_invest/water_supply/hydr
 water_supply,water_use_agriculture_path,global_invest/water_supply/water_use/wateruse_ag_gep.csv
 water_supply,water_use_all_sector_path,global_invest/water_supply/water_use/final/wateruse_gep.csv
 water_supply,water_use_efficiency_input_path,global_invest/water_supply/water_use/data/Raw/aquastat/aquastat_water_efficiency.csv
+water_supply,water_use_efficiency_input_source_url,https://data.apps.fao.org/aquastat/api/v1/data?variables=SDG%206.4.1&format=csv
 water_supply,water_use_withdrawal_path,global_invest/water_supply/water_use/data/water_withdraw.csv
 air_filtration,air_filtration_workbook_path,global_invest/air_filtration/air_filtration_gep.xlsx
 water_quality,water_quality_retention_path,global_invest/water_quality/Results/EstimationOutput/retention_estimates.csv
@@ -78,6 +79,8 @@ timber_provision,timber_provision_gep_path,global_invest/timber_provision/timber
 timber_provision,timber_provision_value_raster_path,global_invest/timber_provision/input/current_forest_value.tif
 timber_provision,timber_provision_zone_raster_path,cartographic/ee/ee_r250_id_10sec.tif
 stormwater,stormwater_retention_by_country_path,global_invest/stormwater/retention_m3_by_country.csv
+ntfp,ntfp_roads_region1_path,global_invest/ntfp/input/roads/GRIP4_Region1_vector_fgdb.zip
+ntfp,ntfp_roads_region1_source_url,https://dataportaal.pbl.nl/downloads/GRIP4/GRIP4_Region1_vector_fgdb.zip
 landslide_mitigation,force_run,false
 landslide_mitigation,run_in_parallel,true
 landslide_mitigation,num_workers,8

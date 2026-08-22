@@ -539,3 +539,52 @@ def assert_zonal_conservation(country_totals_sum, raster_path, service, lower=0.
             f'(allowed {lower:.0%} to {upper:.1%}). Above 100% means double-counting; '
             f'far below means dropped value.')
     return coverage
+
+
+def download_missing_inputs(p, service, log=print):
+    """Fetch any of a service's inputs that are missing and have a recorded source.
+
+    es_parameters carries one row per input path (`<name>_path`). An input that can be
+    downloaded carries a second row, `<name>_source_url`, holding the public URL it comes
+    from. This walks the service's rows, and for every `_path` whose file is absent and whose
+    `_source_url` exists, downloads it to that path. Present files are left alone, so a rerun
+    fetches nothing.
+
+    Inputs without a `_source_url` row are the ones a collaborator has to send; they are
+    logged by name rather than silently skipped.
+
+    Returns:
+        (downloaded, missing_without_source): the paths written, and the input names that
+        have no recorded source.
+    """
+    import os
+    import urllib.request
+    import pandas as pd
+    import hazelbean as hb
+
+    df = pd.read_csv(seed_input_template(p, 'es_parameters.csv', log))
+    rows = df[df['service'] == service]
+    urls = {str(r['parameter'])[:-len('_source_url')]: str(r['value'])
+            for _, r in rows.iterrows()
+            if str(r['parameter']).endswith('_source_url') and not pd.isna(r['value'])}
+
+    downloaded, missing = [], []
+    for _, row in rows.iterrows():
+        attribute = str(row['parameter'])
+        if not attribute.endswith('_path'):
+            continue
+        path = getattr(p, attribute, None)
+        if path is None or hb.path_exists(path):
+            continue
+        url = urls.get(attribute[:-len('_path')])
+        if url is None:
+            missing.append(attribute)
+            continue
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        log(f'{service}: downloading {attribute} from {url}')
+        urllib.request.urlretrieve(url, path)
+        downloaded.append(path)
+
+    if missing:
+        log(f'{service}: no recorded source for {", ".join(missing)}')
+    return downloaded, missing

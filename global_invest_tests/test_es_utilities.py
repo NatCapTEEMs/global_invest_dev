@@ -56,3 +56,38 @@ def test_nature_off_spellings_are_mutual_aliases_by_default():
     # non-baseline scenarios keep pure identity: no accidental cross-matching
     assert utilities.resolve_raw_scenario(
         ['baseline_ignore_damages'], {}, 'below_2c', 'erosion', log=quiet) is None
+
+
+def test_download_missing_inputs_fetches_only_what_is_absent(tmp_path, monkeypatch):
+    """A missing input with a recorded source is downloaded; a present one is left alone,
+    and an input with no source is reported by name."""
+    import pandas as pd
+    from types import SimpleNamespace
+    from global_invest import utilities
+
+    template = tmp_path / 'es_parameters.csv'
+    pd.DataFrame([
+        {'service': 'demo', 'parameter': 'demo_present_path', 'value': 'demo/present.csv'},
+        {'service': 'demo', 'parameter': 'demo_present_source_url', 'value': 'https://example.invalid/present.csv'},
+        {'service': 'demo', 'parameter': 'demo_absent_path', 'value': 'demo/absent.csv'},
+        {'service': 'demo', 'parameter': 'demo_absent_source_url', 'value': 'https://example.invalid/absent.csv'},
+        {'service': 'demo', 'parameter': 'demo_unsourced_path', 'value': 'demo/unsourced.csv'},
+    ]).to_csv(template, index=False)
+
+    present = tmp_path / 'present.csv'
+    present.write_text('kept')
+    absent = tmp_path / 'absent.csv'
+    unsourced = tmp_path / 'unsourced.csv'
+
+    p = SimpleNamespace(demo_present_path=str(present), demo_absent_path=str(absent),
+                        demo_unsourced_path=str(unsourced))
+    monkeypatch.setattr(utilities, 'seed_input_template', lambda *a, **k: str(template))
+    fetched = []
+    monkeypatch.setattr('urllib.request.urlretrieve',
+                        lambda url, path: (fetched.append(url), open(path, 'w').write('new')))
+
+    downloaded, missing = utilities.download_missing_inputs(p, 'demo', log=lambda *a: None)
+    assert fetched == ['https://example.invalid/absent.csv']
+    assert downloaded == [str(absent)]
+    assert missing == ['demo_unsourced_path']
+    assert present.read_text() == 'kept'
