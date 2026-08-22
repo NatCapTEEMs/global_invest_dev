@@ -273,7 +273,7 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 
 ## recreation
 
-- [Ranks 1 km sites by land-cover shares, protected areas and road access. A gravity model sends residents (daily) and allocated overnight stays (UNWTO) into the high-quality sites, and visits are valued at national fuel cost times travel distance. Ported from the source repo.]{.state}
+- [Ranks 1 km sites by land-cover shares, protected areas and road access. A gravity model sends residents on day trips and tourists on overnight stays (UNWTO) into the high-quality sites, and visits are valued at national fuel cost times travel distance. Ported from the source repo.]{.state}
 - **Q1:** do you have the source pipeline's results_by_country.csv? We could not find it anywhere we can reach, and one copy verifies the port by replication.
 - **Q2:** did the travel-cost step intend kilometres? It multiplies a USD-per-km fuel cost by a distance measured in the raster's pixel units (degrees), which understates values roughly a hundredfold.
 
