@@ -333,19 +333,22 @@ def terrestrial_carbon_shock(p):
         num = {y: (scn_by_year[y] - base_by_year[y]) for y in anchor_years}  # shared numerator
         # (1) contemporaneous /base_Y -- the GTAP shock (unchanged behaviour)
         anchor_contemp = pd.DataFrame({
-            y: num[y] / base_by_year[y].replace(0, np.nan) * 100.0 for y in anchor_years}).dropna()
+            y: terrestrial_carbon_functions.shock_percent(scn_by_year[y], base_by_year[y])
+            for y in anchor_years}).dropna()
         # (2) fixed-base /base_{es_shock_base_year} -- reporting/comparability measure
         anchor_fixed = (pd.DataFrame({
-            y: num[y] / base_at_base.replace(0, np.nan) * 100.0 for y in anchor_years}).dropna()
+            y: terrestrial_carbon_functions.shock_percent(scn_by_year[y], base_by_year[y], base_at_base)
+            for y in anchor_years}).dropna()
             if base_at_base is not None else None)
         for zid, s in anchor_contemp.iterrows():
             if zid not in labels:
                 continue
             endw, reg = labels[zid]
-            annual_c = np.interp(all_years, [es_shock_base_year] + anchor_years, [0.0] + list(s.values))
+            annual_c = terrestrial_carbon_functions.interpolate_annual_shock(
+                all_years, anchor_years, s.values, es_shock_base_year)
             if anchor_fixed is not None and zid in anchor_fixed.index:
-                annual_f = np.interp(all_years, [es_shock_base_year] + anchor_years,
-                                     [0.0] + list(anchor_fixed.loc[zid].values))
+                annual_f = terrestrial_carbon_functions.interpolate_annual_shock(
+                    all_years, anchor_years, anchor_fixed.loc[zid].values, es_shock_base_year)
             else:
                 annual_f = [np.nan] * len(all_years)
             for year, vc, vf in zip(all_years, annual_c, annual_f):

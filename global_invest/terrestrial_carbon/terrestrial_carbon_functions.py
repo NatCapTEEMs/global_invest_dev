@@ -144,3 +144,35 @@ def generate_carbon_density_raster(lulc_path, cz_path, carbon_density_lookup_tab
 from global_invest.utilities import summarize_raster_by_region  # noqa: F401
 
 
+
+
+def shock_percent(scenario_values, baseline_values, denominator_values=None):
+    """The scenario's departure from its baseline, in percent.
+
+    The two measures the chain reports share this numerator and differ only in what they
+    divide by: the contemporaneous measure divides by that year's baseline, the fixed-base
+    measure by the base year's, which is what `denominator_values` supplies.
+
+    Args:
+        scenario_values (pd.Series): per-zone scenario means for one year.
+        baseline_values (pd.Series): per-zone baseline means for the same year.
+        denominator_values (pd.Series): what to divide by, defaulting to baseline_values.
+
+    Returns:
+        pd.Series: percent departure, with a zero denominator giving NaN rather than an
+        infinite shock.
+    """
+    import numpy as np
+    denominator = baseline_values if denominator_values is None else denominator_values
+    return (scenario_values - baseline_values) / denominator.replace(0, np.nan) * 100.0
+
+
+def interpolate_annual_shock(years, anchor_years, anchor_values, base_year):
+    """Anchor-year shocks spread over every year, starting from no shock at the base year.
+
+    The chain computes a shock only at the years the scenario maps exist for; the economic
+    model reads one value per year, so the anchors are joined by straight lines with the
+    base year pinned at zero.
+    """
+    import numpy as np
+    return np.interp(years, [base_year] + list(anchor_years), [0.0] + list(anchor_values))
