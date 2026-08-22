@@ -176,7 +176,7 @@ format:
 
 Full per-service status, one row per sheet service, updated as work lands: [the library status sheet](https://docs.google.com/spreadsheets/d/1sQOUT7TRKVLxc-TSfPWeuCFm0vwk-6iLk-AnA6jyEiY).
 
-| Service | Total | Verification |
+| Service | Total | Verified |
 |---|---|---|
 | terrestrial_carbon | {{< meta terrestrial_total >}} | yes. Reproduces the manuscript's total |
 | coastal_carbon | {{< meta coastal_eez >}} EEZ-only, {{< meta coastal_all >}} all rows | yes. Reproduces the author's reported numbers |
@@ -190,7 +190,7 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 
 ## Services and totals (continued) {.smaller}
 
-| Service | Total | Verification |
+| Service | Total | Verified |
 |---|---|---|
 | pollination | {{< meta poll_raster >}} raster side (2023). {{< meta poll_fao >}} FAO side | partially. Two definitions of the same service, and the decision between them is open |
 | erosion | {{< meta erosion_total >}} provisional | not yet. The rerun with the author's original inputs is under way |
@@ -204,7 +204,7 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 
 ## Services and totals (continued) {.smaller}
 
-| Service | Total | Verification |
+| Service | Total | Verified |
 |---|---|---|
 | air_filtration | {{< meta air_filtration_total >}} | yes. Reproduces the drive's committed workbook and the manuscript's total |
 | sandstorm_prevention | {{< meta sandstorm_total >}} | yes. Reproduces the same workbook's dust channel |
@@ -213,6 +213,8 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 | local_climate_regulation | {{< meta lcr_total >}} | yes. Reproduces the committed final |
 | extractive_energy | {{< meta xe_total >}} (gas + coal + petroleum) | yes. Computed from the public CWoN rent tables, and the committed tables double-count eight rows |
 | timber_provision | {{< meta timber_total >}} | yes. All 166 countries match the committed output |
+| ntfp | in progress | no. The accessibility run on the public roads data comes next |
+| stormwater | in progress | no. The retention run is complete, and no author run exists |
 
 : {tbl-colwidths="[22,32,46]"}
 
@@ -241,8 +243,8 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 
 ## pollination
 
-- [Values the crop production attributable to wild pollinators (a sufficiency-weighted value raster built from pollinator habitat around cropland). Aggregation verified. The raster is 2023, and its regeneration at 2019 follows the definition decision.]{.state}
-- **Q1:** is pollination's GEP the service nature currently delivers ({{< meta poll_raster >}}, the sufficiency-weighted raster) or the production value at stake ({{< meta poll_fao >}}, dependence-weighted FAO value)? The country ranking is identical. Only the definition differs.
+- [Values the crop production attributable to wild pollinators (a sufficiency-weighted value raster built from pollinator habitat around cropland). The raster is 2023, and its regeneration at 2019 follows the definition decision.]{.state}
+- **Q1:** is pollination's GEP the service nature currently delivers ({{< meta poll_raster >}}, the sufficiency-weighted raster) or the production value at stake ({{< meta poll_fao >}}, dependence-weighted FAO value)? The country ranking is identical, only the definition differs.
 - **Q2:** the rasters on hand are 2023 and the account values at 2019. We would regenerate at 2019 once the definition is settled, and we can: the generation recipe is on hand.
 - Erosion's GEP records the habitat-supplied share, so the raster-side definition is the internally consistent choice.
 - The FAO-side number comes directly from the author's committed per-country table (its 2023 total is the {{< meta poll_fao >}}, and it carries 2019 ready-made). The raster-side number is our country aggregation of the author's value raster. The manuscript becomes its reference once regenerated at 2019.
@@ -288,7 +290,8 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 
 ## livestock_provision
 
-- [Values livestock production and attributes to nature the share of feed ecosystems provide. Provisional numbers. The service's method repo answers more than we hoped, and step 1 of that method is already implemented as a draft: with its 65 FAO item codes replacing the stale 29-name list, India recovers from zero to {{< meta livestock_ind >}}, China reads {{< meta livestock_chn >}}, and the world total {{< meta livestock_world >}}, all provisional pending the lambda input. The old name list matched only 13 of its own 29 items against current FAO files.]{.state}
+- [Values livestock production and attributes to nature the share of feed ecosystems provide. The product list and the feed-share formula are implemented, and the numbers stay provisional until the feed-share attribution replaces the current stand-in.]{.state}
+- With the 65 FAO item codes replacing the stale 29-name list, India recovers from zero to {{< meta livestock_ind >}} and the world total reads {{< meta livestock_world >}}, both provisional.
 - **Q1:** is the method repo's meat/milk/other item grouping current, and does milk belong as it suggests? The library's 29-item meats-and-eggs list (which captures 4 percent of India's FAO livestock value) appears to be a stale fork of it.
 - **Q2:** is the intended nature share the GLEAM-3 feed-share lambda (GLEAM, FAO's Global Livestock Environmental Assessment Model): ecosystem-provided feed over total feed, per country, as the repo's lambda.py computes? That construction is now implemented in the library and unit-tested on sample inputs. The answer decides whether it replaces the current crop-coefficient stand-in.
 - **Q3:** needed, one per-country output table, to verify the method by replication. The remaining input takes care of itself: the GLEAM intake data (how much feed livestock consume per country and from which sources, grass and roughage versus crops and concentrates) is public behind FAO's dashboard, so we download it and build the lambda ourselves.
@@ -351,6 +354,12 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 - [Extractive energy is now computed in the library from the public CWoN 2024 rent tables the method appendices name: gas, coal and petroleum rents at 2019, summed by the same commodity convention extractive_materials uses. Timber: the chain is reimplemented, and all 166 country sums match the committed output. One status correction: the sheet lists timber's draft as In Progress, but its output exists and reproduces.]{.state}
 - **The extractive port caught a real error: eight rows of the committed tables carry another country's full value.** Christmas Island and Cocos hold Australia's rents, Bouvet and Svalbard Norway's, Tokelau New Zealand's, Western Sahara Morocco's, Palestine Israel's, and Kosovo Serbia's (the committed name column itself reads "Serbia"). The committed total of {{< meta xe_committed >}} counts those countries twice. Computed one-country-one-row, the total is {{< meta xe_total >}}.
 - **Q1:** confirmation that the eight duplicated rows are a join error, and which total the account keeps.
+
+## ntfp and stormwater
+
+- [Values non-timber forest products as accessible forest area (near roads and rivers) times the CWoN value per hectare. Both of the repo's script variants run next on the public roads database.]{.state}
+- [Values retained stormwater at a price per cubic metre, from the InVEST urban stormwater model. The global retention run is complete, and the per-country volumes are the step in progress.]{.state}
+- **Q:** the intended price per cubic metre retained. The committed configuration carries a placeholder of 1.
 
 # Cross-cutting decisions
 
