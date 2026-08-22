@@ -111,7 +111,7 @@ format:
 - es_config.csv: one row per service, with the GEP formula (quantity, price, attribution) plus the land base, the base year, the price convention and the crosswalk to the status sheet.
 - es_scenarios_test.csv: the standard SEALS scenarios, with matching test maps shipped, so a standalone shock run works on any machine.
 - es_parameters.csv: the run parameters and the references to each service's data.
-- Results aggregate to one row per country (r250). Sub-national tables (r264, marine r566) serve as computation surfaces and maps.
+- Every service reports one row per country (r250). The r264 table is the same 250 countries with fourteen disputed and overseas territories split out (India into six, China into four, and so on); it carries the map geometry and is what crosses with the AEZ zones the economic model needs. No account value is computed on it, and collapsing it back to r250 is a shared, tested step, because counting a split country once per sub-region is exactly how terrestrial carbon overstated its total by 23.5 percent.
 
 ## Automatic report by service {.smaller}
 
@@ -128,9 +128,9 @@ format:
 
 ## The state in numbers
 
-- {{< meta n_services >}} services are in the library, and {{< meta n_replicating >}} of them reproduce a committed reference or the manuscript.
-- 19 of them we run ourselves, from the source data up. Three we cannot run, because no chain behind the number exists in the library: coastal protection, urban cooling and water quality's headline figure. Non-timber forest products has no number yet.
-- {{< meta n_awaiting_file >}} of the runs we have cannot yet be validated: recreation, commercial fisheries and landslide each need a reference output we could not find. Erosion's replication is ongoing.
+- The test of whether a service is ours is whether we can run it: our own code, read, rewritten and tested here. That holds for 19 of the {{< meta n_services >}}.
+- Three fail that test. They pass a number through from another team with no chain here to run, so we could not find an error in them if there were one: coastal protection, urban cooling and water quality's headline figure. Non-timber forest products has the code but not its last input.
+- Running our code is one thing, checking it against someone else's is another. {{< meta n_replicating >}} of our runs land on a committed reference or the manuscript. {{< meta n_awaiting_file >}} have nothing to check against, because no reference output exists: recreation, commercial fisheries and landslide. Erosion's run is ongoing.
 - Livestock's numbers are provisional until the feed-share attribution replaces the land rental rate standing in for it.
 
 ## What each service is {.smaller}
