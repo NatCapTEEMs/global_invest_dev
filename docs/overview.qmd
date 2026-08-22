@@ -235,7 +235,7 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 - **Q2:** which exact seagrass and salt marsh input versions produced the report's {{< meta coastal_report >}}? Our replication gives {{< meta coastal_eez >}} with the mangrove component matching, and the report's own seagrass area (62.21 Mha) exceeds the published range it cites (16 to 26.7 Mha).
 - **Q3:** if both sides count, a landward mask must prevent double-counting with terrestrial carbon. Does one exist?
 
-## Marine carbon
+## marine_carbon
 
 - [The service sheet lists Terrestrial, Coastal, and Marine carbon. No marine module found in any repo.]{.state}
 - **Q1:** is marine carbon in scope for the account?
