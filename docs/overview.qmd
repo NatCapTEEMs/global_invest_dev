@@ -90,7 +90,7 @@ format:
 
 ## How every GEP number is built
 
-- Every service's number is the same construction. It multiplies a QUANTITY of service delivered by a PRICE and by NATURE'S SHARE of it, summed to one row per country.
+- Every service's number is the same construction. It multiplies a quantity of service delivered by a price and by nature's share of it, summed to one row per country.
 - The three parts differ per service (recreation's quantity is visits and its price is travel cost, livestock's nature share is the ecosystem-provided part of feed), but the construction never changes, which is why one configuration table can describe every service.
 
 ## The code structure {.smaller}
@@ -103,6 +103,7 @@ format:
 | run_\<service\>.py | The main script. Opens a workspace and runs the steps. |
 | method.qmd | The written explanation of the method. |
 
+- The scripts interact in one direction: run_\<service\>.py asks initialize.py for the list of steps, each step in tasks.py calls the equations in functions.py and writes its output, and the next step reads that output.
 - A service with a shock has a second runner for it, run_\<service\>_shock.py (one runner per task tree).
 - Three shared CSVs carry the configuration (the next slide).
 
@@ -328,7 +329,7 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 
 ## water_quality
 
-- [New module. The drive carries the committed chain, but we could not find a script: nitrogen and phosphorus retention per country (upstream NDR-style estimation, taken as given), scaled by the AQUASTAT domestic-water-use fraction and priced at treatment cost per kilogram. Both identities replicate the committed intermediates. The committed accounting output is in 2019 INTERNATIONAL dollars (a purchasing-power unit, one international dollar buys in each country what one US dollar buys in the United States), 178 countries. That conversion stage is not identified from the available material. It is not one exchange factor per country, because the factors implied by the two committed values sit far from the World Bank's published ones.]{.state}
+- [New module. The drive carries the committed chain, but we could not find a script: nitrogen and phosphorus retention per country (upstream NDR-style estimation, taken as given), scaled by the AQUASTAT domestic-water-use fraction and priced at treatment cost per kilogram. Both identities replicate the committed intermediates. The committed accounting output is in 2019 international dollars (a purchasing-power unit, one international dollar buys in each country what one US dollar buys in the United States), 178 countries. That conversion stage is not identified from the available material. It is not one exchange factor per country, because the factors implied by the two committed values sit far from the World Bank's published ones.]{.state}
 - **Q1:** needed, the USD-to-international-dollars conversion script and its inputs. The method note describes per-source-year cost harmonization the folder does not carry.
 - **Q2:** the account's currency. Water quality proposes 2019 international dollars. Every other service values in 2019 market USD. One account cannot mix the two.
 
