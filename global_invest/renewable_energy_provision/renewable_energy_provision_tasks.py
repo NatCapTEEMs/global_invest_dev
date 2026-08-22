@@ -149,14 +149,15 @@ def gep_calculation(p):
         
         
         
-        # Drop repeated ids in df_countries.
-        # The source data is keyed by ISO3 strings rather than r250 ids, so the join below
-        # matches on label. A country whose label drifts drops out silently.
+        # The source data is keyed by ISO3 strings, so the join matches on the r250 label.
         # One row per country: r264 splits large countries, so the correspondence is
         # collapsed before the join.
         ee_r264_to_250 = utilities.collapse_countries_to_r250(p.df_countries)
-        
+        valued_rows_before_join = int(df_gep_by_country_base_year['renewable_energy_provision_gep'].notna().sum())
+
         df_gep_by_country_base_year = hb.df_merge(ee_r264_to_250, df_gep_by_country_base_year, left_on='iso3_r250_label', right_on='iso3_r250_label', how='left')
+        utilities.assert_join_coverage(df_gep_by_country_base_year, 'renewable_energy_provision_gep',
+                                       valued_rows_before_join, 'renewable_energy_provision', log=hb.log)
         
         
         

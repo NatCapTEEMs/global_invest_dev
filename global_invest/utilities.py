@@ -655,3 +655,19 @@ def collapse_countries_to_r250(df_countries, keep_columns=()):
     wanted = identifiers + attributes + list(keep_columns)
     one_row_per_country = df_countries[df_countries['ee_r264_label'] == df_countries['iso3_r250_label']]
     return one_row_per_country[[c for c in wanted if c in one_row_per_country.columns]].copy()
+
+
+def assert_join_coverage(joined_df, value_column, expected_rows, service, log=print):
+    """Every source row must survive a country join, or the loss is named.
+
+    A join on country labels drops any row whose label the correspondence does not carry,
+    and the result still looks like a valid table. This compares the surviving valued rows
+    against what went in and raises with the count when they disagree.
+    """
+    survived = int(joined_df[value_column].notna().sum())
+    if survived < expected_rows:
+        raise ValueError(
+            f'{service}: {expected_rows - survived} of {expected_rows} valued rows did not '
+            f'match a country in the correspondence. A label that does not match is dropped '
+            f'silently, so the join key needs checking before this total is used.')
+    log(f'{service}: all {expected_rows} valued rows matched a country.')

@@ -154,3 +154,16 @@ def test_collapse_countries_to_r250_keeps_one_row_per_country():
     assert sorted(out['iso3_r250_label']) == ['BRA', 'CHN']
     assert 'area_code' in out.columns
     assert 'noise' not in out.columns
+
+
+def test_assert_join_coverage_raises_when_a_country_drops_out():
+    """A label the correspondence does not carry vanishes in the join, and the total still
+    looks valid: the check has to catch the loss."""
+    import pandas as pd
+    import pytest
+    from global_invest import utilities
+
+    joined = pd.DataFrame({'iso3_r250_label': ['BRA', 'CHN', 'XXX'], 'value': [1.0, 2.0, None]})
+    utilities.assert_join_coverage(joined, 'value', expected_rows=2, service='demo', log=lambda *a: None)
+    with pytest.raises(ValueError, match='did not match a country'):
+        utilities.assert_join_coverage(joined, 'value', expected_rows=3, service='demo', log=lambda *a: None)
