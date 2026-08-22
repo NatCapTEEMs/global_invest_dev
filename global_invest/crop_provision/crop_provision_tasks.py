@@ -209,8 +209,6 @@ def crop_provision(p):
     Parent task for commercial agriculture.
     """
     publish_inputs(p)
-    p.fao_input_ref_path = os.path.join('global_invest', 'crop_provision', 'Value_of_Production_E_All_Data.csv')
-    p.cwon_crop_coefficients_ref_path = os.path.join('global_invest', 'crop_provision', "CWON2024_crop_coef.csv")
 
 def gep_preprocess(p):
     """
@@ -245,13 +243,6 @@ def gep_calculation(p):
         # p.gdf_countries = hb.read_vector(p.gdf_countries)
         p.gdf_countries = hb.read_vector(p.gdf_countries_simplified)
 
-        # TODOOO: Could automate this by inspecting all ref_paths in a task. Or, could formalize a tasks inputs in p.inputs = {} like results.
-        if not getattr(p, 'fao_input_path', None):
-            # TODO: ProjectFlow Feature: make a similar p.load_path(). Get gets the file to storage, load gets it to memory. Also consider extending this to p.load_metadata() where, for eg tifs, it just loads the gdal ds, not the array
-            p.fao_input_path = p.get_path(p.fao_input_ref_path)
-
-        if not getattr(p, 'cwon_crop_coefficients_path', None):
-            p.cwon_crop_coefficients_path = p.get_path(p.cwon_crop_coefficients_ref_path)
 
         if not getattr(p, 'crop_provision_subservices', None):
             p.commercial_attribute_subservices = DEFAULT_CROP_ITEMS

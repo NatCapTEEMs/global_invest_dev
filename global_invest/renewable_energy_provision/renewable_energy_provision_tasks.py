@@ -150,7 +150,8 @@ def gep_calculation(p):
         
         
         # Drop repeated ids in df_countries.
-        # TODO Need to make this more robust by having a r250 dataset as the starting point.
+        # The source data is keyed by ISO3 strings rather than r250 ids, so the join below
+        # matches on label. A country whose label drifts drops out silently.
         # One row per country: r264 splits large countries, so the correspondence is
         # collapsed before the join.
         ee_r264_to_250 = utilities.collapse_countries_to_r250(p.df_countries)

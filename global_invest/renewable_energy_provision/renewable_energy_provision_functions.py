@@ -6,7 +6,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 import hazelbean as hb
 
-# TODOO Obviously these should be built into hazelbean instead of duplicated all over.
+# merge_dfs and its siblings below are generic frame joins with nothing renewable-specific
+# in them: they are promotion candidates for hazelbean, on the second caller outside this
+# module.
 
 def merge_dfs(main_df, list_of_dfs):
     """
