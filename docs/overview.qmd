@@ -268,7 +268,7 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 - [Values commercial capture fisheries as the economic rent of the catch, and subsistence fisheries as the consumptive-use value of home catch. The valuation is ported from the source repo's CWoN-method script, provisional until the source choice is confirmed.]{.state}
 - **Q1:** should the RCP8.5-for-RCP7.0 substitution stand, or is there a replacement?
 - **Q2:** which CWoN vintage produced the shock file (cwon_shocks.har)?
-- **Q3:** is the CWoN method the account's fisheries GEP? It runs across 165 countries on the two CWoN tables copied from the public World Bank package. Needed: the source pipeline's output CSV for replication. The FishStatJ pipeline is the alternative source.
+- **Q3:** is the CWoN method the account's fisheries GEP? It runs across 165 countries on the two CWoN tables from the public WB package, and the FishStatJ pipeline is the alternative source. Do you have the source pipeline's output CSV, for replication?
 - The subsistence component is also in the library. It is the Lynch et al. (2024) consumptive-use value per country across 85 countries, and it replicates the source repo's committed output. Whether and how commercial and subsistence combine into the account's fisheries value is the open scope question.
 
 ## recreation
@@ -326,7 +326,7 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 
 ## water_quality
 
-- [Values avoided water-treatment costs: nitrogen and phosphorus retention per country (upstream NDR-style estimation, taken as given), scaled by the AQUASTAT domestic-water-use fraction and priced at treatment cost per kilogram. The drive carries the committed chain without a script, so we rebuilt it, and both identities replicate the committed intermediates. The committed accounting output is in 2019 international dollars (a purchasing-power unit, one international dollar buys in each country what one US dollar buys in the United States), 178 countries. The conversion is not one exchange factor per country, because the factors implied by the two committed values sit far from the World Bank's published ones.]{.state}
+- [Values avoided water-treatment costs: nitrogen and phosphorus retention per country (upstream NDR-style estimation, taken as given), scaled by the AQUASTAT domestic-water-use fraction and priced at treatment cost per kilogram. The drive carries the committed chain without a script, so we rebuilt it, and both identities replicate the committed intermediates. The committed accounting output is in 2019 international dollars (a purchasing-power unit, one international dollar buys in each country what one US dollar buys in the United States), 178 countries. The conversion is not one exchange factor per country, because the factors implied by the two committed values sit far from the WB's published ones.]{.state}
 - **Q1:** where is the USD-to-international-dollars conversion script? The method note describes per-source-year cost harmonization the folder does not carry.
 - **Q2:** which currency does the account use? Water quality proposes 2019 international dollars while every other service values in 2019 market USD, and one account cannot mix the two.
 
