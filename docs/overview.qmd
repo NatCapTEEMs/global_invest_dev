@@ -264,9 +264,9 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 ## fisheries
 
 - [Values commercial capture fisheries as the economic rent of the catch, and subsistence fisheries as the consumptive-use value of home catch. The commercial rent is computed in the library from the CWoN tables. The subsistence component reports the published per-country values, and reproduces them exactly.]{.state}
-- **Q1:** should the RCP8.5-for-RCP7.0 substitution stand, or is there a replacement?
+- **Q1:** should the RCP8.5-for-RCP7.0 substitution stand?
 - **Q2:** which CWoN vintage produced the shock file (cwon_shocks.har)?
-- **Q3:** should the account's fisheries value come from the CWoN resource rents or from the FishStatJ catch pipeline? Do you have a per-country CSV from your own run of the CWoN script?
+- **Q3:** should the account's fisheries value come from the CWoN resource rents or from the FishStatJ catch pipeline? Is there a per-country CSV from the run of the CWoN script?
 - **Q4:** does the subsistence value add to the commercial number, or does that number already contain the subsistence catch? Where FAO catch statistics already include subsistence fishing, summing the two counts it twice.
 
 ## recreation
@@ -427,7 +427,7 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 
 - The remaining services' rows follow the same columns. Blank price-convention cells fill as each module's convention is named. Every row is under test the moment it is edited.
 
-## What the tests pin, per service {.smaller}
+## The tests per service {.smaller}
 
 | Service | What its tests pin |
 |---|---|

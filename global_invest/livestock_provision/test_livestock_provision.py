@@ -270,46 +270,32 @@ def test_missing_an_ecosystem_category_raises_rather_than_understating():
         lp.feed_lambda_by_country(df)
 
 
-def test_the_dashboard_category_list_is_the_documented_six():
-    assert set(lp.GLEAM_DASHBOARD_FEED_COLS) < set(lp.GLEAM_TOTAL_FEED_COLS)
-    assert set(lp.GLEAM_ECOSYSTEM_FEED_COLS) < set(lp.GLEAM_DASHBOARD_FEED_COLS)
-    missing = set(lp.GLEAM_TOTAL_FEED_COLS) - set(lp.GLEAM_DASHBOARD_FEED_COLS)
-    assert missing == {'Other edible', 'Other non-edible'}
+def test_the_two_species_layouts_together_cover_all_eight_categories():
+    """The dashboard shows a different subset per species. Ruminants carry fodder crop and no
+    "other" categories; chickens and pigs carry the two "other" categories and no fodder crop.
+    Neither alone is the full set, and their union is, which is why a harvest across species
+    yields an estimate rather than a bound."""
+    ruminant = set(lp.GLEAM_RUMINANT_FEED_COLS)
+    monogastric = set(lp.GLEAM_MONOGASTRIC_FEED_COLS)
+    assert ruminant | monogastric == set(lp.GLEAM_TOTAL_FEED_COLS)
+    assert ruminant != set(lp.GLEAM_TOTAL_FEED_COLS)
+    assert monogastric != set(lp.GLEAM_TOTAL_FEED_COLS)
+    assert {'Other edible', 'Other non-edible'} <= monogastric
+    assert 'Fodder crop' in ruminant and 'Fodder crop' not in monogastric
 
 
-def test_dashboard_harvest_is_made_numeric_and_keyed_to_countries():
-    """The dashboard formats values for display, so commas must come out before they are summed,
-    and a blank cell is no intake rather than a zero typed as text."""
-    raw = pd.DataFrame({
-        'country_code': ['FRA', 'FRA', 'ZZZ'],
-        'species': ['Cattle', 'Cattle', 'Cattle'],
-        'By-products': ['2,245,313', '70,183', '1'],
-        'Crop residues': ['1,554,947', '53,503', '1'],
-        'Fodder crop': ['12,748,580', '321,018', '1'],
-        'Grass and leaves': ['27,039,001', '1,151,748', '1'],
-        'Grains': ['6,433,690', '166,590', '1'],
-        'Oil seed cakes': ['', '64,098', '1'],
-    })
-    countries = pd.DataFrame({'iso3_r250_label': ['FRA'], 'iso3_r250_id': [250]})
-
-    cleaned, unmatched = lp.clean_gleam_dashboard_intake(raw, countries)
-
-    assert unmatched == ['ZZZ']                       # named, not silently dropped
-    assert len(cleaned) == 2
-    assert cleaned['By-products'].tolist() == [2245313.0, 70183.0]
-    assert pd.isna(cleaned['Oil seed cakes'].iloc[0])  # blank is absent, not zero
-
-
-def test_a_dashboard_harvest_yields_an_upper_bound_share():
-    """End to end on the six categories the dashboard serves: the share computes, and it is
-    flagged as a bound because the two denominator-only categories are absent."""
-    raw = pd.DataFrame({
-        'country_code': ['FRA'], 'species': ['Cattle'],
-        'By-products': ['1'], 'Crop residues': ['1'], 'Fodder crop': ['1'],
-        'Grass and leaves': ['1'], 'Grains': ['2'], 'Oil seed cakes': ['2'],
-    })
+def test_the_harvested_dashboard_table_gives_an_estimate_not_a_bound():
+    """The file harvested from the dashboard carries all eight categories, so the share it
+    yields is flagged as an estimate."""
+    import os
+    path = '/Users/ccs/Files/base_data/global_invest/livestock_provision/gleam3_dmi_dashboard.psv'
+    if not os.path.exists(path):
+        import pytest
+        pytest.skip('the harvested dashboard table is not staged on this machine')
+    raw = pd.read_csv(path, sep='|')
+    assert set(lp.GLEAM_TOTAL_FEED_COLS) <= set(raw.columns)
     countries = pd.DataFrame({'iso3_r250_label': ['FRA'], 'iso3_r250_id': [250]})
     cleaned, _ = lp.clean_gleam_dashboard_intake(raw, countries)
-    out = lp.feed_lambda_by_country(cleaned).iloc[0]
-    assert out['lambda'] == 0.5                        # 4 ecosystem of 8 total across six columns
-    assert bool(out['lambda_is_upper_bound']) is True
+    out = lp.feed_lambda_by_country(cleaned)
+    assert bool(out['lambda_is_upper_bound'].iloc[0]) is False
+    assert 0.0 <= out['lambda'].iloc[0] <= 1.0

@@ -289,13 +289,16 @@ def group_countries(df):
 GLEAM_ECOSYSTEM_FEED_COLS = ("By-products", "Crop residues", "Fodder crop", "Grass and leaves")
 GLEAM_TOTAL_FEED_COLS = GLEAM_ECOSYSTEM_FEED_COLS + ("Grains", "Oil seed cakes",
                                                      "Other edible", "Other non-edible")
-# What the public GLEAM 3 dashboard serves, confirmed against the live Input Data table on
-# 2026-08-22: it carries all four ecosystem categories but only two of the four others, so
-# "Other edible" and "Other non-edible" are missing. Both are DENOMINATOR-ONLY. A lambda
-# computed without them divides by too small a total, so it is biased upward: it is an UPPER
-# BOUND on nature's share of feed, not an estimate of it. That is also exactly why a run on
-# dashboard data cannot reproduce the author's figures, whose extract carries all eight.
-GLEAM_DASHBOARD_FEED_COLS = GLEAM_ECOSYSTEM_FEED_COLS + ("Grains", "Oil seed cakes")
+# The public GLEAM 3 dashboard serves ALL EIGHT categories, but its table shows a different
+# subset per species, which is why a first look at one species suggested only six existed:
+# ruminants (buffalo, cattle, goats, sheep) get fodder crop and crop residues and no "other"
+# categories, while chickens and pigs get "Other edible" and "Other non-edible" and no fodder
+# crop. Harvesting every species and unioning the columns gives the full eight, so a share
+# built from the dashboard is an estimate rather than a bound. The per-species layouts are
+# recorded in howto_harvest_gleam_intake.md.
+GLEAM_RUMINANT_FEED_COLS = GLEAM_ECOSYSTEM_FEED_COLS + ("Grains", "Oil seed cakes")
+GLEAM_MONOGASTRIC_FEED_COLS = ("By-products", "Crop residues", "Grains", "Grass and leaves",
+                               "Oil seed cakes", "Other edible", "Other non-edible")
 
 
 def feed_lambda_by_country(gleam_dmi_df):
