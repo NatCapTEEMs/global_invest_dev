@@ -100,13 +100,15 @@ RULES = [
      r"\bfor the time being\b",
      "State the absence. 'No reference output' already means we do not have one."),
 
+    # "value chain" and "supply chain" are ordinary English and are excluded; the rule is
+    # about "chain" used as a stand-in for the code, the calculation, a model or a run.
     ("V7", "'chain' standing in for a concrete thing",
-     r"\bchains?\b",
+     r"(?<!value )(?<!supply )(?<!food )(?<!Markov )\bchains?\b",
      "Name it: the code, the calculation, our own city files, the group's model, the run. "
      "One word was doing all five jobs and nobody could tell which was meant."),
 
     ("V6", "unit written out where the short form reads better",
-     r"\bper kilogram\b|\bper hectare of\b|\bper square kilometre\b",
+     r"\bper kilogram\b|\bper square kilometre\b|\bper square kilometer\b",
      "per kg, per ha, per km2."),
 ]
 

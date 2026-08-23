@@ -260,6 +260,10 @@ def attach_countries(df_crop_value, df_countries):
     df = hb.df_merge(ee_r264_to_250, df_crop_value, how='right',
                      left_on='iso3_r250_id', right_on='area_code_M49')
     df['livestock_provision_gep'] = df['livestock_provision_gep'] * FAOSTAT_THOUSAND_USD
+    if 'gross_production_value' in df.columns:
+        # The same conversion, or the feed-share attribution downstream would multiply a share by
+        # a figure still in thousands and come out a thousand times too small.
+        df['gross_production_value'] = df['gross_production_value'] * FAOSTAT_THOUSAND_USD
     return df
 
 

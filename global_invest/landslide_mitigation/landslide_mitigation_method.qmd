@@ -22,7 +22,7 @@ fold of `m-braaksma/landslide_mitigation` v0.2.0 (folded 2026-08-16); the arithm
 Everything is computed on the **NSIDC EASE-Grid 2.0 global 1km grid** (EPSG:6933), built from the
 authoritative `EASE2_M01km.gpd` grid definition rather than assumed. EASE-Grid is equal-area, so a
 pixel count converts to real area by one constant multiply and no latitude weighting is needed
-anywhere in the chain. Every input is warped onto that exact grid and then checked against it for
+anywhere in the calculation. Every input is warped onto that exact grid and then checked against it for
 matching size, pixel resolution and projection before the model runs.
 
 | Input | Source | Resampling onto the 1km grid |

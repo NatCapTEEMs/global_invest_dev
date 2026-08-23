@@ -14,12 +14,12 @@ reported as one row per country for the GEP base year of 2019. The price convent
 
 Annual harvestable biomass yield in cubic metres per hectare, built from MC2 forest types crossed
 with Tian et al. timber regions and adjusted for net primary productivity. This layer is produced
-by the consortium drive's Forestry chain and is staged for the library rather than rebuilt in it.
+by the consortium drive's Forestry calculation and is staged for the library rather than rebuilt in it.
 
 ## Price
 
 The national log price in USD per cubic metre, from Siikamaki and Santiago-Avila 2014 as the
-Forestry chain's method appendix cites it.
+Forestry calculation's method appendix cites it.
 
 ## Valuation
 
@@ -83,7 +83,7 @@ The zonal sum is sized by `n_zones = 1000` and reads `rows_per_block = 2048` at 
 ## Taken as given
 
 The upstream raster valuation, meaning the biomass yield, the aligned log prices and the transport
-cost surface, is taken as produced by the Forestry chain. The management mask is not derivable
+cost surface, is taken as produced by the Forestry calculation. The management mask is not derivable
 from the staged layers and is likewise adopted.
 
 ## What is open

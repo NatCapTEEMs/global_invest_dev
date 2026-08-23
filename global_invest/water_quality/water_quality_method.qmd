@@ -24,7 +24,7 @@ NDR-style estimation upstream.
 
 ## Price
 
-The treatment cost per kilogram of the nutrient, the committed table's `<nutrient>_Price(usd)`
+The treatment cost per kg of the nutrient, the committed table's `<nutrient>_Price(usd)`
 column.
 
 ## Valuation
@@ -60,7 +60,7 @@ the international-dollar sum.
 
 ## Taken as given
 
-The retention totals themselves. The folder carries the committed chain but no script, so the
+The retention totals themselves. The folder carries the committed calculation but no script, so the
 NDR-style estimation behind `TotalRetention(kg)` is adopted as produced.
 
 ## What is open

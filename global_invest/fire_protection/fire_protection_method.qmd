@@ -7,7 +7,7 @@ format:
 ---
 
 Fire protection asks how much wildfire damage is avoided because fires do not persist as strongly
-where nature dominates. The chain is ported function by function from the GEP wildfire
+where nature dominates. The calculation is ported function by function from the GEP wildfire
 repository's R pipeline, `gep_wildfire_2019.R`. The base year is 2019 and the price convention
 recorded in `es_config.csv` is `avoided damage`.
 

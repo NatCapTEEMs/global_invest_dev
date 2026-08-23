@@ -67,7 +67,7 @@ totals are logged.
 
 ## Taken as given
 
-The science behind the avoided-death columns, a coupled chain of process-based emissions models,
+The science behind the avoided-death columns, a coupled set of process-based emissions models,
 Global InMAP and health impacts as the appendix describes it, is not rebuildable here and is
 adopted as published. The valuation layer on top of it is rebuilt and verified against the
 workbook exactly.

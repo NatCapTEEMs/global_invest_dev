@@ -7,7 +7,7 @@ format:
 ---
 
 Flood control is valued as expected annual damage on flood-exposed assets, computed per country
-for the GEP base year of 2019 and reported in 2019 USD. The chain is the consortium drive's
+for the GEP base year of 2019 and reported in 2019 USD. The calculation is the consortium drive's
 FINAL_GEP_FLOOD pipeline of December 2025, ported step by step into
 `flood_control_chain.py` as pure functions that take arrays and DataFrames.
 
@@ -55,7 +55,7 @@ every iso3 and marking countries without a step-4C result as `missing_step4c` wi
 
 ## What the library reports
 
-`gep_calculation` runs the ported chain country by country, windowing the SDA and depth rasters to
+`gep_calculation` runs the ported calculation country by country, windowing the SDA and depth rasters to
 each country geometry, and writes its own `chain_country_ead.csv`. That is the reported value. The
 committed pipeline table is the comparison anchor, logged and pinned in the test suite. The known
 difference between the two is Morocco.
@@ -98,7 +98,7 @@ Countries it never assessed stay NaN.
 
 ## Taken as given
 
-The upstream geospatial chain, meaning the flood hazard rasters, the JRC curves and the protection
+The upstream geospatial calculation, meaning the flood hazard rasters, the JRC curves and the protection
 levels behind them, is adopted as produced.
 
 ## What is open
@@ -110,7 +110,7 @@ on the author's cluster. The ported functions take arrays and DataFrames, so the
 those are staged.
 
 `service_flow_from_spa` implements step 3, which clips the upstream SPA ratio to [0, 1] and zeroes
-it outside the SDA mask. The staged monetary chain never multiplies by that fraction, and the
+it outside the SDA mask. The staged monetary calculation never multiplies by that fraction, and the
 drive's `global_upstream_spa_ratio.tif` is a byte copy of the binary `global_prr_spa.tif`.
 
 `build_sda_class` carries an `include_pasture` flag because the two runs disagree. The pipeline's

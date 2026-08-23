@@ -14,7 +14,7 @@ recorded in `es_config.csv` is `value per accessible hectare`.
 
 Hectares of accessible forest. Forest is the ESA CCI class range 50 to 90 inclusive. Accessible
 means inside a 10 km buffer around roads and rivers. The source repository, `geo_ntfp`, implements
-that intersection two ways, a vector-buffer chain and a distance-raster chain, and commits no
+that intersection two ways, a vector-buffer calculation and a distance-raster calculation, and commits no
 output from either. The library therefore runs both variants and presents both, following the
 pattern fire protection uses for its variants.
 

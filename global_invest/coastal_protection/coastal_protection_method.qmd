@@ -76,7 +76,7 @@ component.
 
 ## Known limitations
 
-Three properties of the chain are worth stating because they affect coverage rather than
+Three properties of the calculation are worth stating because they affect coverage rather than
 arithmetic, and none of them is silent once you know to look for it.
 
 The coral table is joined on country name, not on a code. A name that the correspondence spells

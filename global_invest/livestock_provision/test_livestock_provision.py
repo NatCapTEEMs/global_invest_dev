@@ -324,3 +324,17 @@ def test_feed_share_attribution_runs_beside_the_rental_rate_not_instead_of_it():
     # say ecosystems contributed nothing to its livestock.
     assert pd.isna(out.loc[3, 'livestock_provision_gep_feed_share'])
     assert out.loc[3, 'livestock_provision_gep'] == pytest.approx(60.0)
+
+
+def test_both_value_columns_leave_the_country_join_in_dollars():
+    # FAOSTAT reports value in thousands of dollars and attach_countries converts. The conversion
+    # reached the attributed column only, so the gross value stayed in thousands and the
+    # feed-share attribution downstream came out a thousand times too small. Both must convert.
+    df_crop_value = pd.DataFrame({
+        'area_code_M49': [10], 'area_code': [1], 'country': ['Aaaland'], 'year': [2019],
+        'livestock_provision_gep': [1_000.0],       # thousands of USD, after the rental rate
+        'gross_production_value': [5_000.0],        # thousands of USD, before it
+    })
+    out = lp.attach_countries(df_crop_value, COUNTRIES)
+    assert out['livestock_provision_gep'].iloc[0] == pytest.approx(1_000_000.0)
+    assert out['gross_production_value'].iloc[0] == pytest.approx(5_000_000.0)

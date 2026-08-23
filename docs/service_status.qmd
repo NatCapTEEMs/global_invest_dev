@@ -77,8 +77,8 @@ that does not apply is a single dash.
 - **in the library:** yes
 - **run:** in progress
 - **total:** -
-- **code:** Folded in from the author's repo, then refactored onto the library template and hazelbean conventions: the prevention shares, the severity threshold and the valuation now sit in their own science module, tested, and give numbers identical to before. Added the step that builds the upstream prevention share by routing the erosion rasters down the DEM, which the code used to read from the author's cluster.
-- **number:** Running now for the first time. The $15.54bn that has circulated is not ours and we do not stand behind it.
+- **code:** Folded in from the author's repo, then refactored onto the library template and hazelbean conventions: the prevention shares, the severity threshold and the valuation now sit in their own science module, tested, and give numbers identical to before. Added the step that builds the upstream prevention share by routing the erosion rasters down the DEM, which the code used to read from the author's cluster. Fixed a defect that reached the number: the severity threshold is lower for small countries, and because the boundary file splits 13 countries into territories, China and India were qualifying as small on the strength of an island and taking the low threshold, which counts far more of their cropland as severely eroding. Areas are now summed per country. Seven countries were affected: AUS, CHN, FRA, IND, NOR, NZL, SRB.
+- **number:** Values the crop production that soil retention protects: the share of soil loss prevented by a field's own cover and by everything upslope of it, turned into a production shock and priced against the country's crop output. Running now for the first time. The $15.54bn that has circulated is not ours and we do not stand behind it.
 - **need:** -
 
 
@@ -136,10 +136,10 @@ that does not apply is a single dash.
 - **module:** livestock_provision
 - **in the library:** yes
 - **run:** in progress
-- **total:** $2.29T draft (incomplete: the nature-attribution step is still missing)
-- **code:** Refactored onto the library template and hazelbean conventions. Plus a units fix. The feed-share formula is written and tested, and its data is now harvested.
-- **number:** Computes on the 65-product FAO list. The attribution still uses a land rental rate standing in for the feed share, so the reported numbers remain provisional: India $136bn, world $2.29T. The feed share itself is now available: GLEAM 3 intake was harvested from FAO's public dashboard for 231 countries, 205 of which match a country in the account, giving a real share rather than a bound (Mongolia 0.998, India 0.911, Brazil 0.847, France 0.651, United States 0.567, China 0.513).
-- **need:** The compiled GLEAM extract (gleam3_dmi.xlsx) to validate our harvest against, the confirmation of which FAO products count as livestock, and one per-country output. Correction to what we said earlier: the dashboard does serve all eight feed categories. It shows a different subset per species, so ruminants carry fodder crop and monogastrics carry the two 'other' categories, and only their union is complete.
+- **total:** $519bn on the rental rate. $1.37T on the feed share.
+- **code:** Refactored onto the library template and hazelbean conventions. Plus a units fix. The feed share is now wired through the task layer, which previously never called it, so a run writes the feed-share value beside the rental-rate one.
+- **number:** Values livestock output and attributes the part of it nature provided. The 65-product FAO list gives $2.29T of gross production; the two attribution factors give very different answers from it, which is why the choice matters: the CWoN land rental rate gives $519bn over 178 countries, the GLEAM feed share gives $1.37T over 171, a factor of 2.6. Provisional until that choice is made. The feed share comes from GLEAM 3 intake harvested from FAO's public dashboard for 231 countries, 205 matching a country in the account, giving a real share rather than a bound (median 0.73; Mongolia 0.998, India 0.911, Brazil 0.847, France 0.651, United States 0.567, China 0.513).
+- **need:** Which factor the account attributes livestock value with: the CWoN land rental rate it uses now, or the GLEAM feed share. The rental rate is the crop method's factor and is a stand-in here, but this service's method page defines it as the factor, and that page is in fact the crop method page, referring to crop items throughout. Also the compiled GLEAM extract (gleam3_dmi.xlsx) to validate our harvest against, the confirmation of which FAO products count as livestock, and one per-country output. Correction to what we said earlier: the dashboard does serve all eight feed categories. It shows a different subset per species, so ruminants carry fodder crop and monogastrics carry the two 'other' categories, and only their union is complete.
 
 
 ## Coastal Protection
@@ -270,7 +270,7 @@ that does not apply is a single dash.
 - **run:** yes
 - **total:** $1.07T agriculture. $36.61T all sectors.
 - **code:** Refactored onto the library template and hazelbean conventions. Translated from R to Python, with tests covering the sector arithmetic and the country name matching.
-- **number:** Computes sector efficiency times sector withdrawal from the raw AQUASTAT export: agriculture $1.07T across 126 countries, all-sector $36.61T across 154. The drive's committed tables, $554.5bn and $36.08T, come from two different sources and serve as comparison anchors. No nature-attribution step exists yet.
+- **number:** Computes sector efficiency times sector withdrawal from the raw AQUASTAT export: agriculture $1.07T across 126 countries, all-sector $36.61T across 154. The drive holds a committed figure for each: $554.5bn against our $1.07T for agriculture, and $36.08T against our $36.61T for all sectors. The all-sector pair is close and the agriculture pair is not, and because the two drive tables were produced separately neither is a reference we can check against. No nature-attribution step exists yet.
 - **need:** The crop-water valuation scripts behind the agriculture component, and whether its factor of 1000 is a units conversion. The data vintage behind the all-sector component. An attribution factor. The current totals are the gross value of water use, and the account needs the share of that value credited to nature.
 
 
@@ -280,9 +280,9 @@ that does not apply is a single dash.
 - **module:** extractive_energy
 - **in the library:** yes
 - **run:** yes
-- **total:** $1,048.9bn
-- **code:** Refactored onto the library template and hazelbean conventions. The valuation was written from the published CWoN rent tables, since the drive had outputs but no script. Tests cover the three fuels and their sum, a country with only coal, and a country absent from every table.
-- **number:** Computes gas, coal and petroleum rents at 2019, one country one row, $1,048.9bn. The committed tables total $1,140.4bn because eight rows carry another country's full value.
+- **total:** $1.05T
+- **code:** Refactored onto the library template and hazelbean conventions. There is no model here: the World Bank publishes each country's gas, coal and petroleum resource rents, and the module reads those tables, takes the base year and sums the three fuels. The drive had the outputs but no script, so we wrote the read. Tests cover the three fuels and their sum, a country that appears in the coal table but not the other two (its total is its coal, not missing), and a country in none of the three (missing, not zero).
+- **number:** Computes gas, coal and petroleum rents at 2019, one country one row, $1.05T. The committed tables total $1.14T because eight rows carry another country's full value.
 - **need:** confirmation that the eight duplicated rows are a join error, and which total the account keeps
 
 
@@ -293,9 +293,9 @@ that does not apply is a single dash.
 - **in the library:** yes
 - **run:** yes
 - **total:** $88.74bn
-- **code:** Refactored onto the library template and hazelbean conventions. The calculation was rewritten to work from the drive's rasters, with tests covering the country totals against the committed output.
-- **number:** Recomputes the zonal aggregation of the value raster and matches the committed output for all 166 countries, $88.74bn. The per-pixel valuation cannot be rebuilt here, because its forest-management mask is not derivable from the staged layers.
-- **need:** -
+- **code:** Refactored onto the library template and hazelbean conventions. The country totals are now computed from the drive's value raster rather than read from its summary table, and tested against the committed output.
+- **number:** Values the timber a forest yields, as roundwood production times price times the GTAP land factor share, minus the cost of getting it to market. Sums the value raster to countries and matches the committed output for all 166 countries, $88.74bn. What we cannot rebuild is the raster itself: making it needs a forest-management mask saying which forest is available for harvest, and that mask is not derivable from the layers we hold.
+- **need:** The forest-management mask behind the value raster, or the code that builds it. Without it we can sum someone else's raster but not make our own.
 
 
 ## Floods
@@ -305,9 +305,9 @@ that does not apply is a single dash.
 - **in the library:** yes
 - **run:** yes
 - **total:** $112.78bn
-- **code:** Refactored onto the library template and hazelbean conventions. Every step of the flood calculation was rewritten as a function that can be tested on its own, rather than one long script.
-- **number:** Recomputes expected annual damage from the depth, damage-curve and asset inputs and matches the pipeline's table for 146 of 148 non-zero countries, $112.78bn. Morocco's committed value is $53 thousand for the whole country where the recompute gives $43 million. South Sudan was dropped by the mapping layer, which codes it SDS against the account's SSD, and our copy fixes that. The pipeline computes an ecosystem service-flow fraction but never applies it, so the number is expected flood damage rather than damage ecosystems avoid.
-- **need:** Confirmation that the FINAL_GEP_FLOOD outputs are current. Whether the service-flow fraction should enter the valuation. The committed number is the expected annual damage of floodplain assets, and the pipeline's ecosystem fraction is computed but never applied to it. And the Morocco row: the committed value is $53 thousand for the whole country where the recompute gives $43 million.
+- **code:** Refactored onto the library template and hazelbean conventions. Every step of the flood calculation was rewritten as a function that can be tested on its own.
+- **number:** Recomputes expected annual damage from the depth, damage-curve and asset inputs and matches the pipeline's table for 146 of 148 non-zero countries, $112.78bn. Morocco's committed value is $53 thousand for the whole country where the recompute gives $43 million. South Sudan was dropped by the mapping layer, now fixed. The number is expected flood damage, not the damage ecosystems avoid, and the step that would turn one into the other is stuck. The pipeline has a service-flow fraction and we have implemented and tested it, but the raster it needs is not usable: the drive's upstream ratio file is a byte-for-byte copy of a binary mask, so multiplying by it would switch damages on and off rather than scale them by an ecosystem share.
+- **need:** The real upstream service-provision ratio raster, or the code that makes it, since the drive's copy is a binary mask. Confirmation that the FINAL_GEP_FLOOD outputs are current. And whether the service-flow fraction should enter the valuation at all.
 
 
 ## NTFP (non-timber forest products)
@@ -317,9 +317,9 @@ that does not apply is a single dash.
 - **in the library:** yes
 - **run:** in progress
 - **total:** -
-- **code:** Refactored onto the library template and hazelbean conventions. The valuation is a tested function, and the accessibility stage intersects the ESA forest mask with a 10 km road and river buffer on an equal-area grid, so the buffer is ten kilometres everywhere rather than narrowing toward the poles.
-- **number:** No number yet, but no longer blocked on anyone. The roads (GRIP4) and rivers (Natural Earth) are staged, and the missing price is now derived from the public CWoN 2024 reproducibility package: non-wood forest product annual value over the matching forest area, 148 countries in 2019, a median of $10.10 per hectare. What remains is running the accessibility stage over the global rasters.
-- **need:** Nothing external any more. Worth flagging one methodological seam: CWoN prices over its own forest area while the quantity we multiply is accessible forest from the ESA land cover, which is the source method's construction rather than ours, but the two definitions differ.
+- **code:** Refactored onto the library template and hazelbean conventions. The valuation is tested. The accessibility stage decides which forest people can actually reach to gather from: it grows a 10 km buffer around every road and river, on an equal-area grid so 10 km means the same distance everywhere, and keeps the forest inside it.
+- **number:** Values what forests yield besides timber, as reachable forest hectares times an annual value per hectare. No number yet: the accessibility stage is running over the global rasters now, which is the only thing left. The roads (GRIP4) and rivers (Natural Earth) are staged, and the missing price is derived from the public CWoN 2024 reproducibility package: non-wood forest product annual value over the matching forest area, 148 countries in 2019, a median of $10.10 per hectare.
+- **need:** A decision on the denominator. The CWoN price is an annual value spread over CWoN's own forest area, and we multiply it by accessible forest from the ESA land cover, which is a smaller area. So either the price should be rescaled to the accessible area, or accessibility should not restrict the quantity at all. Taking the price as published and the quantity as accessible, which is the source method's construction, values the same forest at two different extents.
 
 
 ## Stormwater
@@ -329,8 +329,8 @@ that does not apply is a single dash.
 - **in the library:** yes
 - **run:** yes
 - **total:** 185.85bn m3 retained. $185.85bn at the placeholder price.
-- **code:** Refactored onto the library template and hazelbean conventions. The step that totals retained water inside each country used to live in a scratch folder outside version control, and is now in the repo.
-- **number:** An urban stormwater retention run gives 185.85 billion cubic metres retained across 104 countries, wall to wall rather than urban-masked. The module prices that volume at a placeholder of 1, so the value currently equals the volume. No author run exists to compare against.
+- **code:** Refactored onto the library template and hazelbean conventions. The step that totals retained water inside each country is in the repo.
+- **number:** An urban stormwater retention run gives 185.85 billion cubic metres retained across 104 countries. The run covers all land rather than only the urban areas the service is defined on, so the volume is an overestimate until the urban mask is applied. The module prices that volume at a placeholder of 1, so the value currently equals the volume. No author run exists to compare against.
 - **need:** the intended price per cubic metre retained
 
 
@@ -343,7 +343,7 @@ that does not apply is a single dash.
 - **total:** -
 - **code:** -
 - **number:** -
-- **need:** The scope decision. The sheet's own note argues recharge is natural-capital value rather than an ecosystem service flow, and that its end products are already valued in other services (water purification, irrigation, flood mitigation), so counting it again would double-count. The author's public repo holds a working R script and a per-country output, so if the decision goes the other way the port is quick.
+- **need:** The sheet's own note argues recharge is natural-capital value rather than an ecosystem service flow, and that its end products are already valued in other services (water purification, irrigation, flood mitigation), so counting it again would double-count.
 
 
 ## Fuelwood
@@ -355,8 +355,7 @@ that does not apply is a single dash.
 - **total:** -
 - **code:** -
 - **number:** the drive folder is empty
-- **need:** a feasibility statement (the sheet lists it as unknown)
-
+- **need:** should we include it?
 
 ## Health
 
