@@ -30,7 +30,8 @@ sandstorm_total: "$595.36bn"
 wq_usd: "$638.34bn"
 wq_intl: "$655.91bn"
 flood_total: "$112.78bn"
-xe_total: "$1,048.9bn"
+xe_total: "$1.05T"
+terrestrial_total_r3: "$3.4627T"
 xe_committed: "$1,140.4bn"
 timber_total: "$88.74bn"
 landslide_total: "$770.7M"
@@ -232,7 +233,7 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 ## terrestrial_carbon
 
 - [Values carbon stored by land ecosystems: a zone-by-class density table on the land-cover map, priced at the rental social cost of carbon. Our run reproduces the manuscript's total, once a double-count that entered split countries once per sub-region (China six times, overstating the total by 23.5 percent) was fixed.]{.state}
-- **No open questions.** The price is the rental social cost of carbon at 2 percent, the rate the group specifies, and the table carries a 3 percent column for the sensitivity.
+- **No open questions.** The price is the rental social cost of carbon at 2 percent, the rate the group specifies. The 3 percent sensitivity is a run of its own and gives {{< meta terrestrial_total_r3 >}} against {{< meta terrestrial_total >}}. The price table has no 1 percent column, and one cannot be derived: the rental price is the social cost of carbon times the rate, and the social cost of carbon is a discounted damage integral that falls 57 percent between 2 and 3 percent, so extrapolating below 2 from two points above it would be a guess.
 
 ## coastal_carbon
 
