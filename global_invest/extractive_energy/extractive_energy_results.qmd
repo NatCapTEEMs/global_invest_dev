@@ -58,7 +58,7 @@ total_xe = df['extractive_energy_gep'].sum()
 p.gep_by_country_base_year_table = df[['iso3_r250_name', 'extractive_energy_gep']]
 ```
 
-The analysis carries the committed per-fuel valuations from the consortium drive — natural gas, coal, and petroleum — summed into the service total of $`{python} f"{total_xe:,.0f}"` for the base year. The upstream fuel valuations are taken as given.
+The analysis carries the committed per-fuel valuations from the consortium drive (natural gas, coal, and petroleum) summed into the service total of $`{python} f"{total_xe:,.0f}"` for the base year. The upstream fuel valuations are taken as given.
 
 ## GEP by Country in Base Year
 ```{python}

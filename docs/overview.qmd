@@ -187,6 +187,7 @@ format:
 - Every service is built the same way, in two files. One holds the maths and never opens or saves anything, so any step in it can be called with a few made-up numbers and checked against an answer worked out by hand, which is what the tests do. The other does the reading and writing: it loads the input data, calls the maths, and writes the results.
 - Keeping them apart is what lets a service be tested without a global dataset, and it is why a run and a test can only ever disagree about the data.
 - The sheet's columns follow from that. A dash means the field does not apply.
+- The methods are not settled. Every service has a method page in its own folder, and those pages are work in progress: some describe a calculation we have since changed, two of them described a different service entirely until today, and several leave the attribution factor open. Read the method column for what the code does now, and the page for the reasoning, but do not treat either as decided.
 
 | column | what it holds |
 |---|---|

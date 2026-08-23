@@ -58,7 +58,7 @@ total_tp = df['timber_provision_gep'].sum()
 p.gep_by_country_base_year_table = df[['iso3_r250_name', 'timber_provision_gep']]
 ```
 
-The analysis values timber harvests at their net return after harvest and transport costs. The value raster is recomputed here from the drive's net-return layer and summed per country, totalling $`{python} f"{total_tp:,.0f}"` for the base year across 166 countries. The committed per-country table from the Forestry chain is kept as the comparison anchor, and every country matches it.
+The analysis values timber harvests at their net return after harvest and transport costs. The value raster is recomputed here from the drive's net-return layer and summed per country, totalling $`{python} f"{total_tp:,.0f}"` for the base year across 166 countries. The committed per-country table from the Forestry pipeline is kept as the comparison anchor, and every country matches it.
 
 ## GEP by Country in Base Year
 ```{python}

@@ -58,7 +58,7 @@ total_fisheries_value = df['fisheries_gep'].sum()
 p.gep_by_country_base_year_table = df[['iso3_r250_name', 'fisheries_gep']]
 ```
 
-The analysis estimates a commercial capture-fisheries GEP of $`{python} f"{total_fisheries_value:,.0f}"` for the base year (`{python} f"{int(p.gep_base_year)}"`), PROVISIONAL as the account's fisheries value until the source choice is blessed. The estimate follows the CWoN method: FAO-based economic rent per country from the CWoN 2024 reproducibility package, deflated to 2019 USD, extrapolated to 2019 by each country's own 2009–2018 trend and floored at zero. Countries without CWoN rent data carry no value rather than zero — no data is not zero rent.
+The analysis estimates a commercial capture-fisheries GEP of $`{python} f"{total_fisheries_value:,.0f}"` for the base year (`{python} f"{int(p.gep_base_year)}"`), PROVISIONAL as the account's fisheries value until the source choice is blessed. The estimate follows the CWoN method: FAO-based economic rent per country from the CWoN 2024 reproducibility package, deflated to 2019 USD, extrapolated to 2019 by each country's own 2009–2018 trend and floored at zero. Countries without CWoN rent data carry no value rather than zero, no data is not zero rent.
 
 ## GEP by Country in Base Year
 ```{python}

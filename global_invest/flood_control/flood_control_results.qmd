@@ -58,7 +58,7 @@ total_flood = df['flood_control_gep'].sum()
 p.gep_by_country_base_year_table = df[['iso3_r250_name', 'flood_control_gep']]
 ```
 
-The analysis values flood control as the expected annual damage ecosystems avoid: the drive's pipeline couples flood hazard, JRC depth-damage functions and protection levels with and without ecosystems, and the committed per-country result totals $`{python} f"{total_flood:,.0f}"` in 2019 USD (148 countries with non-zero values of 236 assessed). The upstream geospatial chain is taken as given; the anchor reproduces the pipeline's own global summary exactly.
+The analysis values flood control as the expected annual damage ecosystems avoid: the drive's pipeline couples flood hazard, JRC depth-damage functions and protection levels with and without ecosystems, and the committed per-country result totals $`{python} f"{total_flood:,.0f}"` in 2019 USD (148 countries with non-zero values of 236 assessed). The upstream geospatial pipeline is taken as given; the anchor reproduces the pipeline's own global summary exactly.
 
 ## GEP by Country in Base Year
 ```{python}

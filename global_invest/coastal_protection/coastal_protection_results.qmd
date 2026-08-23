@@ -160,7 +160,7 @@ for k, v in p.results[service_label].items():
 
 ```
 
-Storm damage avoided by mangroves and coral reefs is valued at $`{python} f"{total_value:,.2f}"` in the base year. Both source tables already carry a final per-country value, so this page reports them rather than a chain we ran. The tables below aggregate by income group, region and continent.
+Storm damage avoided by mangroves and coral reefs is valued at $`{python} f"{total_value:,.2f}"` in the base year. Both source tables already carry a final per-country value, so this page reports them rather than a calculation we ran. The tables below aggregate by income group, region and continent.
 
 ```{python}
 # Display the GEP by income group table

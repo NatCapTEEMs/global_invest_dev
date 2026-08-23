@@ -59,7 +59,7 @@ total_intl = df['water_quality_gep'].sum()
 p.gep_by_country_base_year_table = df[['iso3_r250_name', 'nitrogen_gep_usd', 'phosphorus_gep_usd', 'water_quality_gep']]
 ```
 
-The analysis values water purification as nutrient retention priced at treatment cost: nitrogen and phosphorus retention per country, scaled by the AQUASTAT domestic-water-use fraction and priced per kilogram, totalling $`{python} f"{total_usd:,.0f}"` in 2019 USD across 209 countries. The committed accounting output expresses the service in 2019 INTERNATIONAL dollars — $`{python} f"{total_intl:,.0f}"` across 178 countries — and that conversion stage is not yet identified from the available material; the USD chain replicates the committed intermediates exactly.
+The analysis values water purification as nutrient retention priced at treatment cost: nitrogen and phosphorus retention per country, scaled by the AQUASTAT domestic-water-use fraction and priced per kg, totalling $`{python} f"{total_usd:,.0f}"` in 2019 USD across 209 countries. The committed accounting output expresses the service in 2019 INTERNATIONAL dollars ($`{python} f"{total_intl:,.0f}"` across 178 countries) and that conversion stage is not yet identified from the available material; the USD calculation replicates the committed intermediates exactly.
 
 ## GEP by Country in Base Year
 ```{python}

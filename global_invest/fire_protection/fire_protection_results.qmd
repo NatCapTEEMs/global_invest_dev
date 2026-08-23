@@ -61,7 +61,7 @@ p.gep_by_country_base_year_table = df[['iso3_r250_name', 'GEP_wildfire_2019_base
                                        'GEP_wildfire_2019_nn_hh', 'GEP_wildfire_2019_ttn_tth']]
 ```
 
-The analysis estimates three wildfire-protection GEP variants for the base year (`{python} f"{int(p.gep_base_year)}"`), all derived from per-country AR(1) fire-persistence regressions: the baseline persistence effect totals $`{python} f"{total_baseline:,.0f}"`, the nature-vs-human cause difference totals $`{python} f"{total_nn_hh:,.0f}"`, and the nature-vs-human area comparison totals $`{python} f"{total_ttn_tth:,.0f}"`. Which variant is the account's fire_protection value is an open question — two of the three are globally negative, so the choice defines both the number and its interpretation. Values are avoided burned acres priced at EM-DAT wildfire damage per burned acre (global-average filled where a country reports no damages).
+The analysis estimates three wildfire-protection GEP variants for the base year (`{python} f"{int(p.gep_base_year)}"`), all derived from per-country AR(1) fire-persistence regressions: the baseline persistence effect totals $`{python} f"{total_baseline:,.0f}"`, the nature-vs-human cause difference totals $`{python} f"{total_nn_hh:,.0f}"`, and the nature-vs-human area comparison totals $`{python} f"{total_ttn_tth:,.0f}"`. Which variant is the account's fire_protection value is an open question, two of the three are globally negative, so the choice defines both the number and its interpretation. Values are avoided burned acres priced at EM-DAT wildfire damage per burned acre (global-average filled where a country reports no damages).
 
 ## GEP by Country in Base Year
 ```{python}

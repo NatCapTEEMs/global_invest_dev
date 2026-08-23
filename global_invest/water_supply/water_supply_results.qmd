@@ -58,7 +58,7 @@ total_water_supply_value = df['hydropower_gep'].sum()
 p.gep_by_country_base_year_table = df[['iso3_r250_name', 'hydropower_gep']]
 ```
 
-The analysis estimates a water-supply GEP (hydropower component) of $`{python} f"{total_water_supply_value:,.0f}"` for the base year (`{python} f"{int(p.gep_base_year)}"`): the constant annual rent implied by CWoN 2024's capitalized hydropower wealth at the CWoN-standard 4 percent discount over a 100-year horizon, replicating the committed reference output exactly. Countries without CWoN wealth data carry no value rather than zero — no data is not zero rent. The agriculture and household components join beside hydropower when their science surfaces.
+The analysis estimates a water-supply GEP (hydropower component) of $`{python} f"{total_water_supply_value:,.0f}"` for the base year (`{python} f"{int(p.gep_base_year)}"`): the constant annual rent implied by CWoN 2024's capitalized hydropower wealth at the CWoN-standard 4 percent discount over a 100-year horizon, replicating the committed reference output exactly. Countries without CWoN wealth data carry no value rather than zero, no data is not zero rent. The agriculture and household components join beside hydropower when their science surfaces.
 
 ## GEP by Country in Base Year
 ```{python}

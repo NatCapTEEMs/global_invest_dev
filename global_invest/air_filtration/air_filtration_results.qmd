@@ -59,7 +59,7 @@ total_sandstorm_value = df['sandstorm_prevention_gep'].sum()
 p.gep_by_country_base_year_table = df[['iso3_r250_name', 'air_filtration_gep', 'sandstorm_prevention_gep']]
 ```
 
-The analysis estimates an air-filtration GEP of $`{python} f"{total_air_filtration_value:,.0f}"` for the base year (`{python} f"{int(p.gep_base_year)}"`) — avoided deaths from vegetation's dry pollutant deposition, valued at a GDP-adjusted VSL — and, from the same workbook's dust channel, a sandstorm-prevention GEP of $`{python} f"{total_sandstorm_value:,.0f}"`. The avoided-death columns come from the group's coupled emissions–InMAP–health modeling chain and are taken as given; the valuation layer replicates the committed workbook exactly.
+The analysis estimates an air-filtration GEP of $`{python} f"{total_air_filtration_value:,.0f}"` for the base year (`{python} f"{int(p.gep_base_year)}"`) (avoided deaths from vegetation's dry pollutant deposition, valued at a GDP-adjusted VSL) and, from the same workbook's dust channel, a sandstorm-prevention GEP of $`{python} f"{total_sandstorm_value:,.0f}"`. The avoided-death columns come from the group's coupled emissions, InMAP and health model and are taken as given; the valuation layer replicates the committed workbook exactly.
 
 ## GEP by Country in Base Year
 ```{python}
