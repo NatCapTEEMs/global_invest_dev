@@ -1,6 +1,6 @@
 """Unit tests for the erosion module.
 
-The account's science lives in `erosion_chain`, over arrays and frames rather than over rasters,
+The account's science lives in `erosion_functions`, over arrays and frames rather than over rasters,
 so these run on four countries and a handful of pixels instead of on a global grid: the two
 prevention shares and how they combine, the severity threshold each country gets, the
 production-weighted shock, and the valuation. The two tests that come first pin the same
@@ -16,6 +16,7 @@ import pandas as pd
 import pytest
 
 from global_invest.erosion import erosion_functions as ef
+from global_invest.erosion import erosion_tasks as et
 
 
 def test_country_gep_weights_clips_and_floors(monkeypatch, tmp_path):
@@ -32,11 +33,11 @@ def test_country_gep_weights_clips_and_floors(monkeypatch, tmp_path):
                         'crop_gpv_const2019_2019': [1000.0, 400.0, 1e9]})
     gdp = pd.DataFrame({'iso3': ['AAA', 'BBB', 'CCC'],
                         'gdp_const2019_2019': [10000.0, 8000.0, 1e12]})
-    monkeypatch.setattr(ef, 'load_fao_gpv_iso3_const2019_with_fallback',
+    monkeypatch.setattr(et, 'load_fao_gpv_iso3_const2019_with_fallback',
                         lambda *a, **k: fao)
-    monkeypatch.setattr(ef, 'load_wb_gdp_current_2019', lambda *a, **k: gdp)
+    monkeypatch.setattr(et, 'load_wb_gdp_current_2019', lambda *a, **k: gdp)
 
-    out = ef.compute_country_gep_from_country_crop(
+    out = et.compute_country_gep_from_country_crop(
         dfc, fao_iso3_csv=Path('unused.csv'), prices_full_csv=Path('unused.csv'),
         base_year=2019, gdp_current_2019_csv=Path('unused.csv'),
         component='combined').set_index('iso3')
@@ -65,16 +66,16 @@ def test_read_erosion_dependency_normalizes_scenario_labels(tmp_path):
         'aez18_id': [1, 1, 1], 'gtapv7_r50_label': ['usa'] * 3, 'value': [1.0, 2.0, 3.0],
     }).to_csv(dep, index=False)
 
-    df = ef.read_erosion_dependency(dep)
+    df = et.read_erosion_dependency(dep)
     assert set(df['scenario']) == {'below_2c', 'baseline_ignore_damages', 'baseline_2023'}
 
 
 # ---------------------------------------------------------------------------
-# The science in erosion_chain: prevention shares, the severity threshold, and the shock.
+# The science in erosion_functions: prevention shares, the severity threshold, and the shock.
 # ---------------------------------------------------------------------------
 import numpy as np
 
-from global_invest.erosion import erosion_chain as ec
+from global_invest.erosion import erosion_functions as ec
 
 
 def test_two_kinds_of_protection_combine_as_a_union_not_a_sum():
