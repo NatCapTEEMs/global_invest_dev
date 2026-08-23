@@ -8,12 +8,24 @@ takes the arrays in and hands per-zone series back, which is what the tests exer
 The vendored steps live in pollination_sufficiency, imported at the top like any other module (or
 running the static shock task, which needs none of it) does not require the package installed.
 """
+from __future__ import annotations
 import os
 from pathlib import Path
 
 import numpy as np
+import gc
+import logging
+import math
+from dataclasses import dataclass
+from typing import Any, Dict, List, Set, Tuple
+import rasterio
+from joblib import Parallel, delayed
+from rasterio.enums import Resampling
+from rasterio.warp import reproject
+from rasterio.windows import Window
+from scipy.ndimage import convolve
+from tqdm import tqdm
 
-from global_invest.pollination import pollination_sufficiency
 import pandas as pd
 
 BASELINE_LABEL = '2023_pnas'
@@ -265,7 +277,7 @@ def configure_sufficiency(p, target_year):
     which meant a missing or wrong config did not fail up front, it proceeded.
     """
     crop_benefits_dir = p.get_path('crop_benefits')
-    return pollination_sufficiency.SufficiencySettings(
+    return SufficiencySettings(
         output_dir=Path(p.cur_dir),
         value_raster_dir=Path(crop_benefits_dir),
         country_raster_path=Path(os.path.join(
@@ -275,9 +287,9 @@ def configure_sufficiency(p, target_year):
 
 def baseline_denominator(cfg, baseline_lulc_path, target_year):
     """Unpaired 2023 pollination value (the % change denominator), computed once."""
-    pollination_sufficiency.run_pollination_sufficiency_300m(cfg, lulc_path=baseline_lulc_path, scenario=BASELINE_LABEL)
-    pollination_sufficiency.run_pollination_sufficiency_5km(cfg, scenario=BASELINE_LABEL)
-    pollination_sufficiency.run_pollination_valuation_5km(cfg, scenario=BASELINE_LABEL, target_year=target_year)
+    run_pollination_sufficiency_300m(cfg, lulc_path=baseline_lulc_path, scenario=BASELINE_LABEL)
+    run_pollination_sufficiency_5km(cfg, scenario=BASELINE_LABEL)
+    run_pollination_valuation_5km(cfg, scenario=BASELINE_LABEL, target_year=target_year)
     return cfg.output_dir / f'value_pollination_sufficiency_{BASELINE_LABEL}_5km.tif'
 
 
@@ -290,12 +302,113 @@ def scenario_diff_raster(cfg, scenario, lulc_path, baseline_lulc_path, target_ye
     stab, b_stab = f'{scenario}_stab', f'{BASELINE_LABEL}_stab_{scenario}'
     for suff_scen, lulc, other in [(stab, lulc_path, baseline_lulc_path),
                                    (b_stab, baseline_lulc_path, lulc_path)]:
-        pollination_sufficiency.run_pollination_sufficiency_300m_stable_ag(cfg, lulc_path=lulc, other_lulc_path=other, scenario=suff_scen)
-        pollination_sufficiency.run_pollination_sufficiency_5km(cfg, scenario=suff_scen)
-        pollination_sufficiency.run_pollination_valuation_5km(cfg, scenario=suff_scen, target_year=target_year)
+        run_pollination_sufficiency_300m_stable_ag(cfg, lulc_path=lulc, other_lulc_path=other, scenario=suff_scen)
+        run_pollination_sufficiency_5km(cfg, scenario=suff_scen)
+        run_pollination_valuation_5km(cfg, scenario=suff_scen, target_year=target_year)
 
     suff_dir = cfg.output_dir
-    return pollination_sufficiency.run_pollination_diff_5km_pnas(
+    return run_pollination_diff_5km_pnas(
         cfg, scenario=scenario, baseline_scenario=BASELINE_LABEL,
         scenario_value_path=suff_dir / f'value_pollination_sufficiency_{stab}_5km.tif',
         baseline_value_path=suff_dir / f'value_pollination_sufficiency_{b_stab}_5km.tif')
+
+
+# ---------------------------------------------------------------------------------------------
+# Vendored from crop_benefits: the pieces of its sufficiency and value calculation that hold
+# no file handling. The raster steps they belong to are in the task module.
+# ---------------------------------------------------------------------------------------------
+
+@dataclass
+class SufficiencySettings:
+    """What the raster steps below need, in place of the crop_benefits Config they used to read.
+
+    That Config was loaded from a gitignored local.yaml with `validate=False`, so a missing or
+    wrong file did not fail up front, it just proceeded. These seven fields are everything the
+    four vendored modules ever read off it, and the pollination task fills them from the
+    ProjectFlow object.
+
+    Attributes:
+        output_dir (Path): where the sufficiency and value rasters are written, the task's own dir.
+        value_raster_dir (Path): where the precomputed baseline pollination-value raster lives.
+        country_raster_path (Path): the raster defining the 5 km target grid. The valuation needs
+            sufficiency and value on one grid, so this points at the value raster itself.
+        lulc_path (Path): the land-cover map the sufficiency is computed from.
+        pa_raster_300m_path (Path): the protected-area raster, for the protected-area summary.
+        tile_size (int): rows per block when streaming a raster.
+        n_workers (int): parallel workers for the tiled sufficiency pass.
+    """
+    output_dir: Path
+    value_raster_dir: Path
+    country_raster_path: Path
+    lulc_path: Path = None
+    pa_raster_300m_path: Path = None
+    tile_size: int = 2048
+    n_workers: int = 4
+
+
+# The compression profiles the vendored writers ask for, which used to come off the same Config.
+COMPRESSION_PROFILES = {
+    'continuous': {'compress': 'DEFLATE', 'predictor': 3, 'zlevel': 6, 'tiled': True,
+                   'blockxsize': 256, 'blockysize': 256, 'BIGTIFF': 'IF_SAFER'},
+    'categorical': {'compress': 'DEFLATE', 'predictor': 2, 'zlevel': 6, 'tiled': True,
+                    'blockxsize': 256, 'blockysize': 256, 'BIGTIFF': 'IF_SAFER'},
+    'defaults': {'compress': 'DEFLATE', 'tiled': True, 'BIGTIFF': 'IF_SAFER'},
+}
+
+
+def build_area_km2_raster(meta: dict) -> np.ndarray:
+    """
+    Build a 2-D pixel-area raster (km²) from a rasterio profile.
+    
+    The resulting raster has the same shape as defined in 'meta'.
+    """
+    transform = meta["transform"]
+    nrows = meta["height"]
+    ncols = meta["width"]
+    
+    # Latitude of pixel centers: y = f + e * (row + 0.5)
+    # Note: 'e' is usually negative (pixel height) in north-up images
+    latitudes = transform.f + transform.e * (np.arange(nrows) + 0.5)
+    
+    area_per_row = pixel_area_km2(latitudes)
+    # Broadcast row areas across all columns
+    return np.repeat(area_per_row[:, None], ncols, axis=1).astype(np.float32)
+
+
+def convert_density_to_mass(density_raster: np.ndarray, area_km2_raster: np.ndarray) -> np.ndarray:
+    """
+    Convert density (e.g. tonnes/km²) to mass (e.g. tonnes).
+    
+    mass = density * area
+    """
+    mass = np.full_like(density_raster, np.nan, dtype=np.float32)
+    valid = np.isfinite(density_raster) & (area_km2_raster > 0)
+    mass[valid] = density_raster[valid] * area_km2_raster[valid]
+    return mass
+
+
+def get_compression_profile(
+    cfg: SufficiencySettings,
+    profile_name: str = "continuous"
+) -> Dict[str, Any]:
+    """
+    Retrieve compression settings for a given profile name.
+
+    Parameters
+    ----------
+    cfg : Config
+        Pipeline configuration.
+    profile_name : str
+        Name of the profile (e.g., 'continuous', 'categorical', 'defaults').
+
+    Returns
+    -------
+    dict
+        Dictionary of rasterio creation options (compress, predictor, etc.).
+    """
+    if profile_name == "continuous":
+        return COMPRESSION_PROFILES['continuous'].copy()
+    elif profile_name == "categorical":
+        return COMPRESSION_PROFILES['categorical'].copy()
+    else:
+        return COMPRESSION_PROFILES['defaults'].copy()

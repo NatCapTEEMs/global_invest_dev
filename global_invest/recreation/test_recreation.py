@@ -48,8 +48,8 @@ def test_distance_kernels_ring_one_is_full_block_rings_beyond_are_hollow(tmp_pat
     import pygeoprocessing
     k1 = str(tmp_path / 'k1.tif')
     k3 = str(tmp_path / 'k3.tif')
-    rf.create_distance_kernel(k1, 1)
-    rf.create_distance_kernel(k3, 3)
+    rt.create_distance_kernel(k1, 1)
+    rt.create_distance_kernel(k3, 3)
     a1 = pygeoprocessing.raster_to_numpy_array(k1)
     a3 = pygeoprocessing.raster_to_numpy_array(k3)
     assert a1.shape == (3, 3) and a1.sum() == 9          # ring 1: full block, center included
@@ -185,7 +185,7 @@ def test_country_sums_key_on_the_id_raster_and_respect_nodata(tmp_path):
     vals = np.array([[10.0, 5.0], [2.0, 100.0]], dtype='float32')       # 100 sits on nodata id
     _write_tif(tmp_path / 'ids.tif', ids)
     _write_tif(tmp_path / 'vals.tif', vals)
-    df = rf.sum_rasters_by_country_id({'daily_value': str(tmp_path / 'vals.tif')},
+    df = rt.sum_rasters_by_country_id({'daily_value': str(tmp_path / 'vals.tif')},
                                       str(tmp_path / 'ids.tif'))
     assert df.set_index('iso3_r250_id')['daily_value'].to_dict() == {1: 15.0, 2: 2.0}
 

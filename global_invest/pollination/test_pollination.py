@@ -275,8 +275,7 @@ def test_the_module_imports_without_the_crop_benefits_package():
     cached = {name: sys.modules.pop(name) for name in list(sys.modules)
               if name.startswith('crop_benefits')}
     try:
-        for name in ('pollination_sufficiency', 'pollination_functions', 'pollination_tasks',
-                     'pollination_initialize'):
+        for name in ('pollination_functions', 'pollination_tasks', 'pollination_initialize'):
             module = importlib.import_module(f'global_invest.pollination.{name}')
             assert module is not None
     finally:
@@ -290,12 +289,12 @@ def test_the_settings_object_replaces_the_config_that_was_loaded_from_a_gitignor
     # config file cannot silently produce a run against the wrong paths.
     from pathlib import Path
 
-    from global_invest.pollination import pollination_sufficiency as ps
+    from global_invest.pollination import pollination_functions as pf
 
-    settings = ps.SufficiencySettings(
+    settings = pf.SufficiencySettings(
         output_dir=Path('/tmp/out'), value_raster_dir=Path('/tmp/base'),
         country_raster_path=Path('/tmp/base/poll_value_global_2023usd.tif'))
     assert settings.tile_size == 2048 and settings.n_workers == 4
     assert settings.lulc_path is None and settings.pa_raster_300m_path is None
-    # The compression profiles came off that Config too, and are now named here.
-    assert set(ps.COMPRESSION_PROFILES) == {'continuous', 'categorical', 'defaults'}
+    # The compression profiles came off that Config too, and are now named constants.
+    assert set(pf.COMPRESSION_PROFILES) == {'continuous', 'categorical', 'defaults'}
