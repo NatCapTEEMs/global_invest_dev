@@ -226,7 +226,7 @@ engineering work we did. **number** is what the figure is and what it was checke
 - **module:** fire_protection
 - **in the library:** yes
 - **run:** yes
-- **ours:** not yet. The district-year panel the regressions were fitted on is staged and the regression is a one-year lag, so we could refit rather than adopt their coefficients.
+- **ours:** no. The module reads GEP_wildfire_2019_baseline straight out of the source repo's output file and reports it. Nothing between the panel and that column is recomputed here, so reproducing the file is not the same as producing the number.
 - **method:** Burned acres avoided because fires persist less where nature dominates, from a per-country regression of burned area on last year's, times a per-acre damage value.
 - **total:** three variants: -$22.4bn / -$1.3bn / +$16.7bn
 - **code:** Translated from R to Python and refactored. Fixed: Kosovo (GADM XKO vs the account's XKX) and India's Z01 and Z07 fell out of the country join, leaving $34.09M attached to no country while still inside the total.
@@ -240,7 +240,7 @@ engineering work we did. **number** is what the figure is and what it was checke
 - **module:** local_climate_regulation
 - **in the library:** yes
 - **run:** yes
-- **ours:** yes
+- **ours:** no for the reported figure. The city-month valuations are ours, but the number the sheet shows is parsed out of a dollar column in a committed file.
 - **method:** A city runs hotter than the countryside around it, because buildings and roads absorb heat that vegetation would have released as moisture. That gap is the urban heat island, and city trees and parks narrow it. The service is the air conditioning a city therefore does not run: the cooling energy avoided, per city and month, times the national electricity price, summed to countries.
 - **total:** $175.56bn 
 - **code:** Refactored onto the library template and hazelbean conventions. The valuation was ported from the author's v04 script, and the country value is summed from our own city-month files.
@@ -297,7 +297,7 @@ engineering work we did. **number** is what the figure is and what it was checke
 - **in the library:** yes
 - **run:** yes
 - **ours:** yes
-- **method:** CWoN reports hydropower as an asset: the whole future stream of rents, valued today as one number. The account wants the year's service instead, so that asset is divided by the annuity factor at 4 percent over 100 years, which is 24.5. A country with $1bn of capitalized hydropower wealth therefore contributes $40.8M a year. It is the same stock-to-flow step as carbon's rental.
+- **method:** CWoN reports hydropower as an asset: the whole future stream of rents, valued today as one number. The account wants the year's service instead, so that asset is divided by the annuity factor at 4 percent over 100 years, which is 24.5. A country with $1bn of capitalized hydropower wealth therefore contributes $40.8M a year. Same stock-to-flow step as carbon's rental.
 - **total:** $144.68bn
 - **code:** Refactored onto the library template and hazelbean conventions. The method behind the committed output was not documented, so we worked it out and implemented it. Two fixes: the reported figure had been blanking 17 countries, and two spellings of the same country in the AQUASTAT file were both matching, so those countries were counted twice.
 - **number:** Computes CWoN capitalized wealth divided by a 4 percent, 100-year annuity for every country the wealth table values: $146.08bn across 112 countries. The 95-country reference-matching variant reproduces the committed anchor ($144,68bn). The manuscript records $287.7bn from a direct-use method.
@@ -310,12 +310,12 @@ engineering work we did. **number** is what the figure is and what it was checke
 - **module:** water_supply
 - **in the library:** yes
 - **run:** yes
-- **ours:** yes
+- **ours:** no. The module reads gep_water_agricultural from their output. The valuation is efficiency times withdrawal, both staged, and their R script is staged too, so this is a port nobody has done rather than something we lack.
 - **method:** Sector water withdrawal times sector efficiency, from the AQUASTAT export. No nature-attribution step yet, so this is the gross value of water use.
 - **total:** $1.07T agriculture. $36.61T all sectors.
 - **code:** Refactored onto the library template and hazelbean conventions. Translated from R to Python, with tests covering the sector arithmetic and the country name matching.
 - **number:** Computes sector efficiency times sector withdrawal from the raw AQUASTAT export: agriculture $1.07T across 126 countries, all-sector $36.61T across 154. The drive holds a committed figure for each: $554.5bn against our $1.07T for agriculture, and $36.08T against our $36.61T for all sectors. The all-sector pair is close and the agriculture pair is not, and because the two drive tables were produced separately neither is a reference we can check against. No nature-attribution step exists yet.
-- **need:** The crop-water valuation scripts behind the agriculture component, and whether its factor of 1000 is a units conversion. The data vintage behind the all-sector component. An attribution factor. The current totals are the gross value of water use, and the account needs the share of that value credited to nature.
+- **need:** A port of the valuation, which is a small job: gep_wateruse_02_calc_gep_wateruse.R is staged in base data beside the inputs and computes agricultural GEP as water-use efficiency in dollars per cubic metre times agricultural withdrawal, with the same two lines for industry and municipal. Correcting an earlier ask: we do have those scripts. Also whether the factor of 1000 in the agriculture component is a units conversion, the data vintage behind the all-sector component, and an attribution factor, since these totals are the gross value of water use with no share credited to nature.
 
 
 ## Extractive Energy
@@ -324,12 +324,12 @@ engineering work we did. **number** is what the figure is and what it was checke
 - **module:** extractive_energy
 - **in the library:** yes
 - **run:** yes
-- **ours:** yes
-- **method:** The World Bank's published gas, coal and petroleum resource rents at the base year, summed per country. No model: the rents are read, not derived.
+- **ours:** no in the sense that matters. The World Bank publishes each fuel's resource rent per country and the module sums three of those columns. What we add is catching eight rows that carry another country's value, not a valuation.
+- **method:** The WB's published gas, coal and petroleum resource rents at the base year, summed per country. No model: the rents are read, not derived.
 - **total:** $1.05T
-- **code:** Refactored onto the library template and hazelbean conventions. There is no model here: the World Bank publishes each country's gas, coal and petroleum resource rents, and the module reads those tables, takes the base year and sums the three fuels. The drive had the outputs but no script, so we wrote the read. Tests cover the three fuels and their sum, a country that appears in the coal table but not the other two (its total is its coal, not missing), and a country in none of the three (missing, not zero).
+- **code:** Refactored onto the library template and hazelbean conventions. There is no model here: the WB publishes each country's gas, coal and petroleum resource rents, and the module reads those tables, takes the base year and sums the three fuels. The drive had the outputs but no script, so we wrote the read. Tests cover the three fuels and their sum, a country that appears in the coal table but not the other two (its total is its coal, not missing), and a country in none of the three (missing, not zero).
 - **number:** Computes gas, coal and petroleum rents at 2019, one country one row, $1.05T. The committed tables total $1.14T because eight rows carry another country's full value.
-- **need:** confirmation that the eight duplicated rows are a join error, and which total the account keeps
+- **need:** confirmation that the eight duplicated rows are a join error, and which total the account keeps. Is there a model that we should use instead?
 
 
 ## Forestry (Timber)
@@ -343,8 +343,7 @@ engineering work we did. **number** is what the figure is and what it was checke
 - **total:** $88.74bn
 - **code:** Refactored onto the library template and hazelbean conventions. The country totals are now computed from the drive's value raster rather than read from its summary table, and tested against the committed output.
 - **number:** Values the timber a forest yields, as roundwood production times price times the GTAP land factor share, minus the cost of getting it to market. Sums the value raster to countries and matches the committed output for all 166 countries, $88.74bn. What we cannot rebuild is the raster itself: making it needs a forest-management mask saying which forest is available for harvest, and that mask is not derivable from the layers we hold.
-- **need:** The forest-management mask behind the value raster, or the code that builds it. Without it we can sum someone else's raster but not make our own.
-
+- **need:** The forest-management mask behind the value raster, or the code that builds it. 
 
 ## Floods
 
@@ -355,7 +354,7 @@ engineering work we did. **number** is what the figure is and what it was checke
 - **ours:** the damage yes. The ecosystem share needs a service-flow raster, and the drive's copy is a binary mask rather than a ratio.
 - **method:** Flood depth by return period, through JRC depth-damage curves, times asset value per pixel, integrated into expected annual damage.
 - **total:** $112.78bn
-- **code:** Refactored onto the library template and hazelbean conventions. Every step of the flood calculation was rewritten as a function that can be tested on its own.
+- **code:** Refactored onto the library template and hazelbean conventions. Every step of the flood calculation was rewritten as a function.
 - **number:** Recomputes expected annual damage from the depth, damage-curve and asset inputs and matches the pipeline's table for 146 of 148 non-zero countries, $112.78bn. Morocco's committed value is $53 thousand for the whole country where the recompute gives $43 million. South Sudan was dropped by the mapping layer, now fixed. The number is expected flood damage, not the damage ecosystems avoid, and the step that would turn one into the other is stuck. The pipeline has a service-flow fraction and we have implemented and tested it, but the raster it needs is not usable: the drive's upstream ratio file is a byte-for-byte copy of a binary mask, so multiplying by it would switch damages on and off rather than scale them by an ecosystem share.
 - **need:** The real upstream service-provision ratio raster, or the code that makes it, since the drive's copy is a binary mask. Confirmation that the FINAL_GEP_FLOOD outputs are current. And whether the service-flow fraction should enter the valuation at all.
 
