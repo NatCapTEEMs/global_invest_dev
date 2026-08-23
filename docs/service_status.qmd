@@ -35,7 +35,7 @@ engineering work we did. **number** is what the figure is and what it was checke
 - **total:** $5.365T
 - **code:** Refactored onto the library template and hazelbean conventions. Corrected division by the wrong baseline for the shock, and corrected a double-count that had entered split countries once per sub-region.
 - **number:** Computes carbon stock from the zone-by-class density table and prices it at the rental social cost of carbon. Reproduces the manuscript total of $5.365T, after fixing a double-count that entered split countries once per sub-region (China six times, 23.5 percent overstatement). Priced at the rental social cost of carbon at 2 percent. The 3 percent sensitivity is a run of its own and gives $3.4627T. There is no 1 percent column. 
-- **need:** The 1 percent price. It cannot be derived from the table we hold, carbon_prices.xlsx in base data, which is 29 rows of years from 1992 to 2020 and carries the social cost of carbon and its rental equivalent at 2 and 3 percent only: its two rate columns are one base price times a rate-dependent multiple, in a fixed ratio of 2.3125 across all 21 years, and fitting the growing-perpetuity formula that implies gives a damage growth rate of 1.24 percent a year. A 1 percent discount rate is below that, so the present value does not converge. It would have to come from the integrated assessment model behind the table.
+- **need:** The 1 percent price. It cannot be derived from carbon_prices.xlsx in base data, which is 29 rows of years from 1992 to 2020 and carries the social cost of carbon and its rental equivalent at 2 and 3 percent only: its 2 and 3 percent columns are the same base price multiplied by a number that depends only on the rate, so one column is exactly 2.3125 times the other in every one of its 21 years, and fitting the growing-perpetuity formula that implies gives a damage growth rate of 1.24 percent a year. A 1 percent discount rate is below that, so the present value does not converge. It would have to come from the integrated assessment model behind the table.
 
 
 ## Coastal Carbon
@@ -70,9 +70,9 @@ engineering work we did. **number** is what the figure is and what it was checke
 - **module:** pollination
 - **in the library:** yes
 - **run:** yes
-- **method:** The author's sufficiency-weighted pollination value raster, summed to countries by our own zonal code.
+- **method:** For every cropland pixel, the natural habitat within a roughly 2 km foraging radius, scored 0 to 1 against a 30 percent habitat threshold, so a pixel with 30 percent or more nearby scores 1 and one with none scores 0. That sufficiency multiplies the crop value that depends on pollinators, which is production times price times each crop's dependence ratio, and the result is summed to countries.
 - **total:** $18.28bn raster side (valued at 2023). $515bn FAO side.
-- **code:** Refactored onto the library template and hazelbean conventions. The step that adds up the pollination value raster inside each region is now a separate (tested) function (not written inline).
+- **code:** Folded in from the author's repo, then refactored onto the library template and hazelbean conventions. The step that adds up the pollination value raster inside each region is now a separate (tested) function (not written inline).
 - **number:** Aggregates the author's sufficiency-weighted value raster to countries with our own zonal code, $18.28bn at 2023. The FAO-side alternative of $515bn is read from the author's committed table, not computed here. There is no separate reference for our aggregation, so nothing checks it beyond the raster it sums.
 - **need:** Do we want to focus on the service nature currently delivers (the raster side) or the production value at stake (the FAO side)? Then regeneration at the GEP base year (2019). And whether the GEP total adds pollination on top of crop production, since both attribute part of the same crop output to nature.
 

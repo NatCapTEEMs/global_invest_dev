@@ -3,9 +3,9 @@
 The account's science lives in `erosion_functions`, over arrays and frames rather than over rasters,
 so these run on four countries and a handful of pixels instead of on a global grid: the two
 prevention shares and how they combine, the severity threshold each country gets, the
-production-weighted shock, and the valuation. The two tests that come first pin the same
-valuation through `erosion_functions` with the price loaders monkeypatched, which is what keeps
-the thin wrapper over the calculation honest, and the dependency table's scenario labels.
+production-weighted shock, and the valuation. No test here replaces a file reader: every function
+it touches takes arrays or frames and returns them, which is what keeping the file handling in
+the task module buys.
 
 The InVEST SDR run that produces the erosion rasters is not covered here; it is verified against
 staged data.
@@ -19,28 +19,27 @@ from global_invest.erosion import erosion_functions as ef
 from global_invest.erosion import erosion_tasks as et
 
 
-def test_country_gep_weights_clips_and_floors(monkeypatch, tmp_path):
+def test_country_gep_weights_clips_and_floors():
     # Three countries: AAA exercises the production-weighted elasticity mean; BBB the elasticity
     # clip at 1.0; CCC the tiny-positive numerical floor (MIN_SHOCK_FLOOR = 8e-10).
-    dfc = pd.DataFrame({
+    #
+    # This used to monkeypatch the two price loaders, because the only way in was a function that
+    # opened them. It is not needed: the shock and the valuation are separate pure functions, so
+    # the frames go straight in. A test that has to replace file readers is testing the wiring.
+    df_country_crop = pd.DataFrame({
         'ISO3': ['AAA', 'AAA', 'BBB', 'CCC'],
         'protected_production_tons': [50.0, 100.0, 25.0, 1e-10],
         'total_production_tons':     [100.0, 100.0, 100.0, 100.0],
         'share_protected_production': [0.5, 1.0, 0.25, 1e-12],
         'elasticity_used':            [0.4, 0.2, 1.5, 1.0],       # BBB's 1.5 must clip to 1.0
     })
-    fao = pd.DataFrame({'iso3': ['AAA', 'BBB', 'CCC'],
-                        'crop_gpv_const2019_2019': [1000.0, 400.0, 1e9]})
-    gdp = pd.DataFrame({'iso3': ['AAA', 'BBB', 'CCC'],
-                        'gdp_const2019_2019': [10000.0, 8000.0, 1e12]})
-    monkeypatch.setattr(et, 'load_fao_gpv_iso3_const2019_with_fallback',
-                        lambda *a, **k: fao)
-    monkeypatch.setattr(et, 'load_wb_gdp_current_2019', lambda *a, **k: gdp)
+    df_crop_gpv = pd.DataFrame({'iso3': ['AAA', 'BBB', 'CCC'],
+                                'crop_gpv_const2019_2019': [1000.0, 400.0, 1e9]})
+    df_gdp = pd.DataFrame({'iso3': ['AAA', 'BBB', 'CCC'],
+                           'gdp_const2019_2019': [10000.0, 8000.0, 1e12]})
 
-    out = et.compute_country_gep_from_country_crop(
-        dfc, fao_iso3_csv=Path('unused.csv'), prices_full_csv=Path('unused.csv'),
-        base_year=2019, gdp_current_2019_csv=Path('unused.csv'),
-        component='combined').set_index('iso3')
+    out = ef.country_gep(ef.country_erosion_shock(df_country_crop),
+                         df_crop_gpv, df_gdp, component='combined').set_index('iso3')
 
     # AAA: shock = (100*0.5*0.4 + 100*1.0*0.2) / 200 = 0.2 -> GEP = 1000 * 0.2 = 200; GDP% = 2.0
     assert out.loc['AAA', 'erosion_shock_share'] == pytest.approx(0.2)
