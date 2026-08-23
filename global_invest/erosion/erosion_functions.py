@@ -977,6 +977,71 @@ RESAMPLE_DEM        = Resampling.average
 # first; the source repo's stem-only aliases never exact-matched the FAO names, so every crop
 # silently took the 0.08 fallback).
 
+def accumulate_upstream_prevention_share(dem_path, avoided_path, potential_path, work_dir,
+                                         output_path):
+    """Route the two erosion rasters down the drainage network and write the upstream share.
+
+    A field is protected not only by its own cover but by everything upslope of it, so the share
+    upstream cover prevents is the flow-accumulated avoided erosion over the flow-accumulated
+    potential erosion. Both are accumulated on the same D8 network, so the pixel area cancels and
+    the result is a share the on-farm one can be combined with.
+
+    This is the layer the valuation used to read from the source repo's cluster workspace. It is
+    computed here instead, from the DEM and the SDR outputs, which is what lets the account run
+    without that workspace.
+
+    Args:
+        dem_path (str): elevation, resampled here to the erosion rasters' grid.
+        avoided_path (str): avoided erosion, t/ha/yr.
+        potential_path (str): potential (bare-soil) erosion, t/ha/yr.
+        work_dir (str): where the filled DEM, flow direction and accumulation rasters go.
+        output_path (str): where to write the share.
+
+    Returns:
+        str: `output_path`.
+    """
+    import pygeoprocessing as pgp
+    import pygeoprocessing.routing as routing
+
+    os.makedirs(work_dir, exist_ok=True)
+    info = pgp.get_raster_info(avoided_path)
+    pixel_size, geotransform, wkt = (
+        info['pixel_size'], info['geotransform'], info['projection_wkt'])
+    origin = (geotransform[0], geotransform[3])
+
+    def _weight(source_path, destination_path):
+        # Flow accumulation sums its weight raster, so nodata and negatives have to become zero
+        # first: left as they are, a nodata sentinel would be routed downstream as if it were mass.
+        source_ndv = pgp.get_raster_info(source_path)['nodata'][0]
+        array = hb.as_array(source_path).astype('float64')
+        array = np.where(np.isfinite(array) & (array != source_ndv) & (np.abs(array) < 1e30),
+                         np.maximum(array, 0.0), 0.0)
+        pgp.numpy_array_to_raster(array.astype('float32'), -1.0, pixel_size, origin, wkt,
+                                  destination_path)
+        return destination_path
+
+    dem_on_grid = os.path.join(work_dir, 'dem_grid.tif')
+    hb.resample_to_match(dem_path, avoided_path, dem_on_grid, resample_method='bilinear')
+    avoided_weight = _weight(avoided_path, os.path.join(work_dir, 'avoided_w.tif'))
+    potential_weight = _weight(potential_path, os.path.join(work_dir, 'rkls_w.tif'))
+
+    filled = os.path.join(work_dir, 'filled.tif')
+    flow_direction = os.path.join(work_dir, 'fdir.tif')
+    accumulated_avoided = os.path.join(work_dir, 'acc_avoided.tif')
+    accumulated_potential = os.path.join(work_dir, 'acc_rkls.tif')
+    routing.fill_pits((dem_on_grid, 1), filled)
+    routing.flow_dir_d8((filled, 1), flow_direction)
+    routing.flow_accumulation_d8((flow_direction, 1), accumulated_avoided,
+                                 weight_raster_path_band=(avoided_weight, 1))
+    routing.flow_accumulation_d8((flow_direction, 1), accumulated_potential,
+                                 weight_raster_path_band=(potential_weight, 1))
+
+    share = erosion_chain.upstream_prevention_share(
+        hb.as_array(accumulated_avoided), hb.as_array(accumulated_potential))
+    pgp.numpy_array_to_raster(share, -9999.0, pixel_size, origin, wkt, output_path)
+    return output_path
+
+
 def load_elasticity_map(elasticity_csv: Path, fallback_value: float) -> tuple[dict, pd.DataFrame]:
     assert_exists(elasticity_csv, "Provide elasticity CSV in inputs/.")
     df = pd.read_csv(elasticity_csv, encoding="utf-8-sig")

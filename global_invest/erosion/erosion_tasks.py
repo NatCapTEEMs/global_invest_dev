@@ -190,48 +190,19 @@ def erosion_upstream(p):
     p.erosion_upstream_dir = p.cur_dir
     if not p.run_this:
         return
-    import numpy as np
-    import hazelbean as hb
-    import pygeoprocessing as pgp
-    import pygeoprocessing.routing as routing
-
     dem = p.get_path(p.erosion_dem_path)
-
-    def _clean_weight(src, dst, ps, gt, wkt):        # nodata/negatives -> 0 for weighted accumulation
-        info = pgp.get_raster_info(src); nd = info['nodata'][0]
-        a = hb.as_array(src).astype('float64')
-        a = np.where(np.isfinite(a) & (a != nd) & (np.abs(a) < 1e30), np.maximum(a, 0.0), 0.0)
-        pgp.numpy_array_to_raster(a.astype('float32'), -1.0, ps, (gt[0], gt[3]), wkt, dst)
 
     n = 0
     for scenario, by_year in p.scenario_lulc_paths.items():
         for year in by_year:
             suffix = '%s_%d' % (scenario, year)
             sdr_dir = os.path.join(p.erosion_sdr_dir, suffix)
-            avoided = os.path.join(sdr_dir, 'avoided_erosion_%s.tif' % suffix)
-            rkls    = os.path.join(sdr_dir, 'rkls_%s.tif' % suffix)
-            work = os.path.join(p.cur_dir, suffix); os.makedirs(work, exist_ok=True)
-            info = pgp.get_raster_info(avoided)
-            ps, gt, wkt = info['pixel_size'], info['geotransform'], info['projection_wkt']
-
-            dem_g = os.path.join(work, 'dem_grid.tif')
-            hb.resample_to_match(dem, avoided, dem_g, resample_method='bilinear')
-            _clean_weight(avoided, os.path.join(work, 'avoided_w.tif'), ps, gt, wkt)
-            _clean_weight(rkls,    os.path.join(work, 'rkls_w.tif'),    ps, gt, wkt)
-
-            routing.fill_pits((dem_g, 1), os.path.join(work, 'filled.tif'))
-            routing.flow_dir_d8((os.path.join(work, 'filled.tif'), 1), os.path.join(work, 'fdir.tif'))
-            routing.flow_accumulation_d8((os.path.join(work, 'fdir.tif'), 1), os.path.join(work, 'acc_avoided.tif'),
-                                         weight_raster_path_band=(os.path.join(work, 'avoided_w.tif'), 1))
-            routing.flow_accumulation_d8((os.path.join(work, 'fdir.tif'), 1), os.path.join(work, 'acc_rkls.tif'),
-                                         weight_raster_path_band=(os.path.join(work, 'rkls_w.tif'), 1))
-
-            acc_av = hb.as_array(os.path.join(work, 'acc_avoided.tif')).astype('float64')
-            acc_rk = hb.as_array(os.path.join(work, 'acc_rkls.tif')).astype('float64')
-            with np.errstate(invalid='ignore', divide='ignore'):
-                ups = np.where(acc_rk > 0, np.clip(acc_av / acc_rk, 0.0, 1.0), -9999.0).astype('float32')
-            pgp.numpy_array_to_raster(ups, -9999.0, ps, (gt[0], gt[3]), wkt,
-                                      os.path.join(p.cur_dir, 'upstream_%s.tif' % suffix))
+            ef.accumulate_upstream_prevention_share(
+                dem,
+                os.path.join(sdr_dir, 'avoided_erosion_%s.tif' % suffix),
+                os.path.join(sdr_dir, 'rkls_%s.tif' % suffix),
+                os.path.join(p.cur_dir, suffix),
+                os.path.join(p.cur_dir, 'upstream_%s.tif' % suffix))
             n += 1
     print('  erosion upstream: %d maps -> upstream_<scn>_<yr>.tif in %s' % (n, p.cur_dir))
     return True
@@ -787,6 +758,54 @@ def invest_sdr(p):
         return
     ef.configure_sdr(p)
     p.erosion_sdr_args, p.erosion_sdr_file_registry = ef.run_invest_sdr()
+    return True
+
+
+def upstream_prevention_share(p):
+    """The share of soil loss that upslope land cover prevents, routed from the SDR outputs.
+
+    Section A gives actual erosion and avoided erosion, so potential (bare-soil) erosion is their
+    sum, by the definition of avoided. Accumulating avoided and potential down the same D8 network
+    gives the upstream share that Section B combines with the on-farm one.
+
+    The source repo read this layer out of its own cluster workspace, which is why the valuation
+    used to need that workspace. Computing it here from the DEM and Section A's own outputs is
+    what lets the account run wherever the SDR does.
+    """
+    publish_inputs(p)
+    # Published before the run_this guard: Section B reads this path off p whether or not this
+    # task ran, the same way it reads Section A's.
+    p.erosion_upstream_prevention_share_path = os.path.join(
+        p.cur_dir, 'upstream_prevention_share.tif')
+    if not p.run_this:
+        return
+    if hb.path_exists(p.erosion_upstream_prevention_share_path):
+        hb.log('upstream_prevention_share.tif already exists. Skipping the D8 routing.')
+        return True
+    import numpy as np
+    import pygeoprocessing as pgp
+
+    work_dir = os.path.join(p.cur_dir, 'routing')
+    os.makedirs(work_dir, exist_ok=True)
+
+    # Potential erosion, as avoided + actual. InVEST writes rkls to its intermediate directory,
+    # but forming it from the two rasters Section A publishes keeps this task independent of
+    # InVEST's internal layout, and is exact rather than approximate.
+    info = pgp.get_raster_info(p.erosion_avoided_erosion_path)
+    avoided = hb.as_array(p.erosion_avoided_erosion_path).astype('float64')
+    actual = hb.as_array(p.erosion_usle_path).astype('float64')
+    avoided_ndv = info['nodata'][0]
+    actual_ndv = pgp.get_raster_info(p.erosion_usle_path)['nodata'][0]
+    valid = (np.isfinite(avoided) & (avoided != avoided_ndv)
+             & np.isfinite(actual) & (actual != actual_ndv))
+    potential_path = os.path.join(work_dir, 'rkls.tif')
+    pgp.numpy_array_to_raster(
+        np.where(valid, avoided + actual, -1.0).astype('float32'), -1.0, info['pixel_size'],
+        (info['geotransform'][0], info['geotransform'][3]), info['projection_wkt'], potential_path)
+
+    ef.accumulate_upstream_prevention_share(
+        p.get_path(p.erosion_dem_path), p.erosion_avoided_erosion_path, potential_path,
+        work_dir, p.erosion_upstream_prevention_share_path)
     return True
 
 

@@ -14,10 +14,14 @@ from global_invest.erosion import erosion_tasks
 # GEP task trees (folded from global_erosion_gep; template names, cf. terrestrial_carbon).
 # ---------------------------------------------------------------------------------------------
 def build_gep_service_calculation_task_tree(p):
-    """GEP calculation tree: InVEST SDR run + prevention-share per-country GEP valuation.
-    skip_existing=1 on the SDR task (dir present -> paths published, work skipped); the valuation
-    registers plain and skips on its registered result, like every service's gep_calculation."""
+    """GEP calculation tree: InVEST SDR, the upstream prevention share routed from its outputs,
+    then the per-country GEP valuation.
+
+    skip_existing=1 on the SDR and routing tasks (dir present -> paths published, work skipped),
+    since both cost minutes and are deterministic; the valuation registers plain and skips on its
+    registered result, like every service's gep_calculation."""
     p.invest_sdr = p.add_task(erosion_tasks.invest_sdr, skip_existing=1)
+    p.upstream_prevention_share = p.add_task(erosion_tasks.upstream_prevention_share, skip_existing=1)
     p.prevention_shares = p.add_task(erosion_tasks.prevention_shares)
     return p
 

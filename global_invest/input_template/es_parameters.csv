@@ -118,3 +118,4 @@ livestock_provision,cwon_crop_coefficients_path,global_invest/livestock_provisio
 livestock_provision,cwon_crop_coefficients_source_note,"the CWoN land rental-rate coefficients, from the drive"
 livestock_provision,gleam_dmi_path,global_invest/livestock_provision/gleam3_dmi_dashboard.psv
 livestock_provision,gleam_dmi_source_note,"GLEAM 3 dry-matter intake per country, harvested from FAO's public dashboard by the recipe in howto_harvest_gleam_intake.md. Carries all eight feed categories: the four the ruminant tables omit are served on the chicken and pig tables instead."
+erosion,erosion_use_upslope_lulc_diagnostics,false

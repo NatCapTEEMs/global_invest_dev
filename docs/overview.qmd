@@ -132,8 +132,8 @@ format:
 ## The state in numbers
 
 - The test of whether a service is ours is whether we can run it: our own code, read, rewritten and tested here. 21 of the {{< meta n_services >}} produce their number that way today.
-- One cannot run at all: erosion needs four upstream layers that sit at an unreachable path. Non-timber forest products was in the same position this morning, until its missing price turned out to be derivable from the public CWoN package, so what is left there is our own compute.
-- Two more run but carry one borrowed component each: coastal protection computes its mangrove half and reads its coral half, and water quality computes its dollar figures and reads its international-dollar headline. Those two components are the only numbers left with no chain here to run.
+- None is blocked on anyone. Erosion was the last one we called blocked, on four upstream layers at a cluster path we cannot reach. Those four turn out to be diagnostics the run does not need, and the one layer it does need we now build ourselves from the elevation model. Every erosion input is in the shared base data, and the chain is running.
+- Two run but carry one borrowed component each: coastal protection computes its mangrove half and reads its coral half, and water quality computes its dollar figures and reads its international-dollar headline. Those two components are the only numbers left with no chain here to run.
 - Running our code is one thing, checking it against someone else's is another. {{< meta n_replicating >}} of our runs land on a committed reference or the manuscript. {{< meta n_awaiting_file >}} have nothing to check against, because no reference output exists: recreation, commercial fisheries and landslide. Erosion's run is ongoing.
 - Livestock's numbers are provisional until the feed-share attribution replaces the land rental rate standing in for it.
 
@@ -232,7 +232,7 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 ## terrestrial_carbon
 
 - [Values carbon stored by land ecosystems: a zone-by-class density table on the land-cover map, priced at the rental social cost of carbon. Our run reproduces the manuscript's total, once a double-count that entered split countries once per sub-region (China six times, overstating the total by 23.5 percent) was fixed.]{.state}
-- **Q1:** does the rental social cost of carbon we apply use the discount rate the account settles on? The price convention embeds one, and the group's guidance asks for 2 percent with 1 and 3 as sensitivities.
+- **No open questions.** The price is the rental social cost of carbon at 2 percent, the rate the group specifies, and the table carries a 3 percent column for the sensitivity.
 
 ## coastal_carbon
 
@@ -257,9 +257,8 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 
 ## erosion
 
-- [Values soil the land cover keeps in place: prevented erosion mapped by running the sediment-delivery model ourselves, valued through crop productivity. The replication is ongoing and we report no number for it yet.]{.state}
+- [Values soil the land cover keeps in place: prevented erosion mapped by running the sediment-delivery model ourselves, valued through crop productivity. The chain is running for the first time, and we report no number until it lands.]{.state}
 - **Q1:** which of the three shock methods is the account's? We compute damage (thresholded area share), service (threshold-free and magnitude-weighted per crop) and service-threshold (service restricted to a fixed severe-pixel set) side by side.
-- **Q2:** where do the four upstream attribution layers (the forest, grass, cropland and bare shares that decide which land cover prevented the erosion) live?
 
 ## landslide_mitigation
 

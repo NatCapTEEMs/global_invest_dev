@@ -188,3 +188,28 @@ def country_gep(df_shock, df_crop_gpv, df_gdp, component):
     return out[['component', 'iso3', 'protected_production_tons', 'total_production_tons',
                 'share_protected_production', 'erosion_shock_share', 'crop_gpv_const2019_2019',
                 'gdp_const2019_2019', 'gep_const2019_usd', 'gdp_loss_pct']]
+
+
+def upstream_prevention_share(accumulated_avoided, accumulated_potential, ndv=-9999.0):
+    """The share of soil loss that upslope land cover prevents, at each pixel.
+
+    Both arguments are flow-accumulated down the drainage network, so each pixel carries what its
+    whole catchment contributes: `accumulated_avoided` the soil that upslope cover held back, and
+    `accumulated_potential` what bare soil would have lost. Their ratio is a share, so the pixel
+    area cancels and the result can be combined with the on-farm share directly.
+
+    Args:
+        accumulated_avoided (numpy.ndarray): flow-accumulated avoided erosion.
+        accumulated_potential (numpy.ndarray): flow-accumulated potential (bare-soil) erosion.
+        ndv (float): what to write where nothing drains, so a ridge pixel reads as no data rather
+            than as no prevention.
+
+    Returns:
+        numpy.ndarray: the share in [0, 1], or `ndv` where there is no potential erosion to hold.
+    """
+    accumulated_avoided = np.asarray(accumulated_avoided, dtype='float64')
+    accumulated_potential = np.asarray(accumulated_potential, dtype='float64')
+    with np.errstate(invalid='ignore', divide='ignore'):
+        return np.where(accumulated_potential > 0,
+                        np.clip(accumulated_avoided / accumulated_potential, 0.0, 1.0),
+                        ndv).astype('float32')
