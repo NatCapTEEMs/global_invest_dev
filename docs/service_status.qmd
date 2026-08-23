@@ -12,14 +12,17 @@ This drives the service status. Change the
 prose here, then run `python3 docs/publish_service_status.py` to refresh the group's shared
 sheet from it.
 
-Refactoring onto the library template means the same shape in every service: the equations in
-their own file with no file handling in them, so each can be run on a small table with the
-answer worked out by hand; the steps in a task file that reads and writes; and one shared way
-of matching countries and rendering the report.
+Refactoring onto the library template means every service is built the same way, in two files.
 
-The fields mean: **code** is the engineering work we did, **number** is what the figure is and
-what it was checked against, and **need** is what we are waiting on from someone else. A field
-that does not apply is a single dash.
+One file holds the maths and never opens or saves anything. The second file does the opening and saving. It reads the input data,
+calls the maths, and writes the results.
+
+Every service joins its results to the same country list and builds its results
+page the same way.
+
+The fields mean: **method** is how the number is computed. **code** is the
+engineering work we did. **number** is what the figure is and what it was checked against.
+**need** is what we are waiting on from someone else. 
 
 
 ## Terrestrial Carbon
@@ -31,8 +34,8 @@ that does not apply is a single dash.
 - **method:** Carbon density by climate zone and land-cover class, times hectares per cell, summed to countries, times the rental social cost of carbon.
 - **total:** $5.365T
 - **code:** Refactored onto the library template and hazelbean conventions. Corrected division by the wrong baseline for the shock, and corrected a double-count that had entered split countries once per sub-region.
-- **number:** Computes carbon stock from the zone-by-class density table and prices it at the rental social cost of carbon. Reproduces the manuscript total of $5.365T, after fixing a double-count that entered split countries once per sub-region (China six times, 23.5 percent overstatement). Priced at the rental social cost of carbon at 2 percent. The 3 percent sensitivity is a run of its own and gives $3.4627T. There is no 1 percent column and the table cannot produce one: its two rate columns are one base price times a rate-dependent multiple, in a fixed ratio of 2.3125 across all 21 years, and fitting the growing-perpetuity formula that implies gives a damage growth rate of 1.24 percent a year. One percent is below that, so the present value does not converge. A 1 percent price would have to come from the integrated assessment model behind the table. The price table carries a 3 percent column for the sensitivity.
-- **need:** -
+- **number:** Computes carbon stock from the zone-by-class density table and prices it at the rental social cost of carbon. Reproduces the manuscript total of $5.365T, after fixing a double-count that entered split countries once per sub-region (China six times, 23.5 percent overstatement). Priced at the rental social cost of carbon at 2 percent. The 3 percent sensitivity is a run of its own and gives $3.4627T. There is no 1 percent column and the table cannot produce one. The price table carries a 3 percent column for the sensitivity.
+- **need:** The 1 percent price, if the group wants that sensitivity. It cannot be derived from the table we hold: its two rate columns are one base price times a rate-dependent multiple, in a fixed ratio of 2.3125 across all 21 years, and fitting the growing-perpetuity formula that implies gives a damage growth rate of 1.24 percent a year. A 1 percent discount rate is below that, so the present value does not converge. It would have to come from the integrated assessment model behind the table.
 
 
 ## Coastal Carbon
@@ -149,7 +152,7 @@ that does not apply is a single dash.
 - **total:** $519bn on the rental rate. $1.37T on the feed share.
 - **code:** Refactored onto the library template and hazelbean conventions. Plus a units fix. The feed share is now wired through the task layer, which previously never called it, so a run writes the feed-share value beside the rental-rate one.
 - **number:** Values livestock output and attributes the part of it nature provided. The 65-product FAO list gives $2.29T of gross production; the two attribution factors give very different answers from it, which is why the choice matters: the CWoN land rental rate gives $519bn over 178 countries, the GLEAM feed share gives $1.37T over 171, a factor of 2.6. Provisional until that choice is made. The feed share comes from GLEAM 3 intake harvested from FAO's public dashboard for 231 countries, 205 matching a country in the account, giving a real share rather than a bound (median 0.73; Mongolia 0.998, India 0.911, Brazil 0.847, France 0.651, United States 0.567, China 0.513).
-- **need:** Which factor the account attributes livestock value with: the CWoN land rental rate it uses now, or the GLEAM feed share. The rental rate is the crop method's factor and is a stand-in here, but this service's method page defines it as the factor, and that page is in fact the crop method page, referring to crop items throughout. Also the compiled GLEAM extract (gleam3_dmi.xlsx) to validate our harvest against, the confirmation of which FAO products count as livestock, and one per-country output. Correction to what we said earlier: the dashboard does serve all eight feed categories. It shows a different subset per species, so ruminants carry fodder crop and monogastrics carry the two 'other' categories, and only their union is complete.
+- **need:** Which factor the account attributes livestock value with. This is a contradiction rather than a gap: the code computes both, and they differ by 2.6 times, $519bn on the CWoN land rental rate against $1.37T on the GLEAM feed share. The rental rate is the crop method's factor and stands in here, but this service's method page defines it as the factor, and that page is in fact the crop method page, referring to crop items throughout and describing crop production. So the document says the rental rate and the intent says the feed share. Whichever is chosen, the method page needs rewriting for livestock. Also the compiled GLEAM extract (gleam3_dmi.xlsx) to validate our harvest against, the confirmation of which FAO products count as livestock, and one per-country output. Correction to what we said earlier: the dashboard does serve all eight feed categories. It shows a different subset per species, so ruminants carry fodder crop and monogastrics carry the two 'other' categories, and only their union is complete.
 
 
 ## Coastal Protection

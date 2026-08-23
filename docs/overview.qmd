@@ -182,6 +182,21 @@ format:
 
 : {tbl-colwidths="[30,70]"}
 
+## What the status sheet's columns mean {.smaller}
+
+- Every service is built the same way, in two files. One holds the maths and never opens or saves anything, so any step in it can be called with a few made-up numbers and checked against an answer worked out by hand, which is what the tests do. The other does the reading and writing: it loads the input data, calls the maths, and writes the results.
+- Keeping them apart is what lets a service be tested without a global dataset, and it is why a run and a test can only ever disagree about the data.
+- The sheet's columns follow from that. A dash means the field does not apply.
+
+| column | what it holds |
+|---|---|
+| method | how the number is computed, in one line |
+| code | the engineering work we did |
+| number | what the figure is, and what it was checked against |
+| need | what we are waiting on from someone else |
+
+: {tbl-colwidths="[18,82]"}
+
 ## Services and totals (base year 2019) {.smaller}
 
 Full per-service status, one row per sheet service, updated as work lands: [the library status sheet](https://docs.google.com/spreadsheets/d/1sQOUT7TRKVLxc-TSfPWeuCFm0vwk-6iLk-AnA6jyEiY).
