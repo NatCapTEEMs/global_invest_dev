@@ -132,7 +132,7 @@ format:
 ## The state in numbers
 
 - The test of whether a service is ours is whether we can run it: our own code, read, rewritten and tested here. 21 of the {{< meta n_services >}} produce their number that way today.
-- None is blocked on anyone. Erosion was the last one we called blocked, on four upstream layers at a cluster path we cannot reach. Those four turn out to be diagnostics the run does not need, and the one layer it does need we now build ourselves from the elevation model. Every erosion input is in the shared base data, and the chain is running.
+- No service is waiting on a file from anyone. Erosion was the last one we called blocked, on four upstream layers at a cluster path we cannot reach. Those four are diagnostics the run does not need, and the one layer it does need we now build ourselves from the elevation model. Every erosion input is in the shared base data, and the chain is running.
 - Two run but carry one borrowed component each: coastal protection computes its mangrove half and reads its coral half, and water quality computes its dollar figures and reads its international-dollar headline. Those two components are the only numbers left with no chain here to run.
 - Running our code is one thing, checking it against someone else's is another. {{< meta n_replicating >}} of our runs land on a committed reference or the manuscript. {{< meta n_awaiting_file >}} have nothing to check against, because no reference output exists: recreation, commercial fisheries and landslide. Erosion's run is ongoing.
 - Livestock's numbers are provisional until the feed-share attribution replaces the land rental rate standing in for it.

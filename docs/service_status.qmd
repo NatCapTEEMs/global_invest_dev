@@ -90,7 +90,7 @@ that does not apply is a single dash.
 - **run:** yes
 - **total:** $770.7M (570.66 avoided deaths)
 - **code:** Folded in from the v0.2.0 release, then refactored onto the library template and hazelbean conventions. Also two small fixes: the option meant to force a step to rerun actually disabled it, and the figure step ignored the setting that says whether to run at all.
-- **number:** Computes slope stability with and without forest root cohesion end to end, and values avoided deaths at a value of a statistical life. Full cluster run gives 570.66 avoided deaths, $770.7M. 
+- **number:** Computes slope stability with and without forest root cohesion end to end, and values avoided deaths at a value of a statistical life. The full run gives 570.66 avoided deaths, $770.7M. 
 - **need:** one per-country output from a v0.2.0 run, and its input versions
 
 
@@ -161,8 +161,8 @@ that does not apply is a single dash.
 - **in the library:** yes
 - **run:** yes
 - **total:** $99.54bn
-- **code:** Refactored onto the library template and hazelbean conventions. We also pinned the step that reshapes the World Bank table against the code it replaced, and guarded against an invisible character Excel writes at the start of a file, which had previously broken a column name.
-- **number:** Computes World Bank mineral rents share times GDP times the 0.49 factor. A fresh run reproduces $99.54bn to the cent. The factor's source is unknown; without it the total would be $203bn.
+- **code:** Refactored onto the library template and hazelbean conventions. We also pinned the step that reshapes the WB table against the code it replaced, and guarded against an invisible character Excel writes at the start of a file, which had previously broken a column name.
+- **number:** Computes World Bank mineral rents share times GDP times the 0.49 factor. The factor's source is unknown; without it the total would be $203bn.
 - **need:** the source of the 0.49 factor
 
 
