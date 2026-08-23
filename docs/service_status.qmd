@@ -242,7 +242,7 @@ engineering work we did. **number** is what the figure is and what it was checke
 - **total:** $638bn USD. $655.91bn international dollars.
 - **code:** Refactored onto the library template and hazelbean conventions. We could not find the original pipeline's code, but its committed intermediates carry the retained nitrogen and phosphorus in kilograms, the treatment price per kg and the domestic-water-use fraction beside the values, so the calculation could be rebuilt in Python from the inputs rather than reverse-engineered from the answer.
 - **number:** Values the nitrogen and phosphorus that land keeps out of the water, priced at what removing them at a treatment plant would cost, $638bn. Reproduces the committed intermediates for 178 countries. How much N and P the land retains is modelled elsewhere; we take those quantities as given and value them. The $655.91bn international-dollar headline is not ours, and we now know why no factor recovers it. 
-- **need:** The treatment-cost observations behind the international-dollar regression. We hold the fitted prices but not the data they were fitted to, which is the one thing stopping us implementing the method note ourselves. Also the account's currency decision between market dollars and international dollars, the purchasing-power unit in which one dollar buys in each country what it buys in the United States. Note the method note is headed 'proposed' and dated 9 August 2026, so the committed figure may predate the method it describes. And the four nitrogen coefficients for an InVEST NDR biophysical table: load_n, eff_n, crit_len_n and proportion_subsurface_n. That is the whole gap between us and computing the retention ourselves rather than taking it as given, which is worth closing because we already run NDR's sister model, SDR, for erosion. Checked rather than assumed: NDR is installed, and the DEM, land cover, watersheds and precipitation it needs are staged for erosion already. The phosphorus half of that table is complete, 37 rows with load_p, eff_p and crit_len_p and no gaps, so a phosphorus run could go today. Nothing in base data mentions load_n.
+- **need:** The treatment-cost observations behind the international-dollar regression. We hold the fitted prices but not the data they were fitted to, which is the one thing stopping us implementing the method note ourselves. Also the account's currency decision between market dollars and international dollars, the purchasing-power unit in which one dollar buys in each country what it buys in the United States. And the four nitrogen coefficients for an InVEST NDR biophysical table: load_n, eff_n, crit_len_n and proportion_subsurface_n.
 
 
 ## Air Filtration
@@ -253,8 +253,8 @@ engineering work we did. **number** is what the figure is and what it was checke
 - **run:** yes
 - **method:** Deaths avoided because vegetation removes air pollution, times a GDP-adjusted value of a statistical life.
 - **total:** $17.81bn
-- **code:** Refactored onto the library template and hazelbean conventions. The valuation itself was written from scratch, since only the workbook existed. Tests cover both channels, the fill rule for a country with no value-of-life figure of its own (it takes the mean of the countries that have one), and the check that refuses the join when the workbook stops lining up with the country list. The workbook carries no country code, only row order, so it can be joined only by position, and a silent reordering would give every country its neighbour's deaths.
-- **number:** Recomputes avoided deaths times a GDP-adjusted value of a statistical life, $17.81bn, and reproduces the committed totals. The avoided-death counts come from the group's emissions-to-health model, which turns fire emissions into excess deaths. We do not rebuild it and take its counts as given.
+- **code:** Refactored onto the library template and hazelbean conventions. The valuation itself was written based on the workbook. Tests cover this channel and the dust one the sandstorm row reports, the fill rule for a country with no value-of-life figure of its own (it takes the mean of the countries that have one), and the check that refuses the join when the workbook stops lining up with the country list. The workbook carries no country code, only row order, so it can be joined only by position, and a silent reordering would give every country its neighbour's deaths.
+- **number:** Recomputes avoided deaths times a GDP-adjusted value of a statistical life, $17.81bn, and reproduces the committed totals. The avoided-death counts are the deposition channel of the drive's workbook: deaths avoided because vegetation captures dry pollutant out of the air. They come from three models run in sequence that we do not hold: process-based emissions, then Global InMAP, then health impact functions. We do not rebuild it and take its counts as given.
 - **need:** the VSL calculation behind the workbook, and the vintage of the avoided-death estimates
 
 
@@ -264,11 +264,11 @@ engineering work we did. **number** is what the figure is and what it was checke
 - **module:** air_filtration (dust channel)
 - **in the library:** yes
 - **run:** yes
-- **method:** The same calculation on the dust channel: deaths avoided from dust storms, times the same value of a statistical life.
+- **method:** Deaths avoided from dust storms, times the value of a statistical life.
 - **total:** $595.36bn
-- **code:** Computed by the air filtration module and covered by the same tests but for the dust channel.
-- **number:** Recomputes the dust channel the same way, $595.36bn, and reproduces the committed totals. Same upstream dependency as air filtration.
-- **need:** The same as air filtration. And whether this magnitude is expected. The dust value is 33 times the air-filtration value from the same workbook.
+- **code:** There is no separate module. One workbook carries two death columns, and the air filtration module values both: deposition becomes air filtration, dust becomes this. Same code, same tests, same value of a statistical life; only the column differs.
+- **number:** Deaths avoided because vegetation holds windblown dust down, times the same GDP-adjusted value of a statistical life, $595.36bn, reproducing the committed totals. Those death counts come from the same three models as air filtration's and are taken as given: nothing we hold rebuilds them.
+- **need:** The same as air filtration. And whether this magnitude is expected. The dust value is 33 times the air-filtration value.
 
 
 ## Hydropower
