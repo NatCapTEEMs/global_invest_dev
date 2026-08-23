@@ -72,7 +72,7 @@ engineering work we did. **number** is what the figure is and what it was checke
 - **method:** For every cropland pixel, the natural habitat within a roughly 2 km foraging radius, scored 0 to 1 against a 30 percent habitat threshold, so a pixel with 30 percent or more nearby scores 1 and one with none scores 0. That sufficiency multiplies the crop value that depends on pollinators, which is production times price times each crop's dependence ratio, and the result is summed to countries.
 - **total:** $18.28bn raster side (valued at 2023). $515bn FAO side.
 - **code:** Folded in from the author's repo, then refactored onto the library template and hazelbean conventions. The step that adds up the pollination value raster inside each region is now a separate (tested) function (not written inline).
-- **number:** $18.28bn at 2023, from summing a ready-made value raster to countries. Not good enough: we should be building that raster ourselves, and the scenario shock already builds the sufficiency half. Rebuilding it is close. Everything it needs is in base data except two things: the arabica-robusta coffee split, and per-crop FAO median producer prices, which come from a second pipeline we have not folded in. An earlier run of that pipeline left a price table erosion already uses, so it may serve. The FAO-side alternative of $515bn is read from their table. Nothing checks either.
+- **number:** $18.28bn at 2023, from summing a ready-made value raster to countries. Not good enough: we should be building that raster ourselves, and the scenario shock already builds the sufficiency half. Rebuilding it is close. Everything it needs is in base data except two things: the arabica-robusta coffee split, and per-crop FAO median producer prices, which come from a second pipeline we have not folded in. The FAO price path is now folded in and wired as a task, so that half is ours; it has not been run yet. The FAO-side alternative of $515bn is read from their table. Nothing checks either.
 - **need:** Do we want to focus on the service nature currently delivers (the raster side) or the production value at stake (the FAO side)? Then regeneration at the GEP base year (2019). And whether the GEP total adds pollination on top of crop production, since both attribute part of the same crop output to nature.
 
 
@@ -146,12 +146,12 @@ engineering work we did. **number** is what the figure is and what it was checke
 - **subgroup:** commercial
 - **module:** livestock_provision
 - **in the library:** yes
-- **run:** in progress
+- **run:** yes
 - **method:** FAOSTAT gross production value over 65 livestock products, times an attribution factor: either the CWoN land rental rate or the GLEAM share of feed intake that ecosystems provided.
 - **total:** $519bn on the rental rate. $1.37T on the feed share.
-- **code:** Refactored onto the library template and hazelbean conventions. Plus a units fix. The feed share is now wired through the task layer, which previously never called it, so a run writes the feed-share value beside the rental-rate one.
+- **code:** Refactored onto the library template and hazelbean conventions. Plus a units fix. The feed share is now wired through the task layer, so a run writes the feed-share value beside the rental-rate one.
 - **number:** Values livestock output and attributes the part of it nature provided. The 65-product FAO list gives $2.29T of gross production; the two attribution factors give very different answers from it, which is why the choice matters: the CWoN land rental rate gives $519bn over 178 countries, the GLEAM feed share gives $1.37T over 171, a factor of 2.6. Provisional until that choice is made. The feed share comes from GLEAM 3 intake harvested from FAO's public dashboard for 231 countries, 205 matching a country in the account, giving a real share rather than a bound (median 0.73; Mongolia 0.998, India 0.911, Brazil 0.847, France 0.651, United States 0.567, China 0.513).
-- **need:** Which factor the account attributes livestock value with. This is a contradiction rather than a gap: the code computes both, and they differ by 2.6 times, $519bn on the CWoN land rental rate against $1.37T on the GLEAM feed share. The rental rate is the crop method's factor and stands in here, but this service's method page defines it as the factor, and that page is in fact the crop method page, referring to crop items throughout and describing crop production. So the document says the rental rate and the intent says the feed share. Whichever is chosen, the method page needs rewriting for livestock. Also the compiled GLEAM extract (gleam3_dmi.xlsx) to validate our harvest against, the confirmation of which FAO products count as livestock, and one per-country output. Correction to what we said earlier: the dashboard does serve all eight feed categories. It shows a different subset per species, so ruminants carry fodder crop and monogastrics carry the two 'other' categories, and only their union is complete.
+- **need:** Which factor the account attributes livestock value with. The code computes both, and they differ by 2.6 times, $519bn on the CWoN land rental rate against $1.37T on the GLEAM feed share. The rental rate is the crop method's factor. Also the compiled GLEAM extract (gleam3_dmi.xlsx) to validate our harvest against, the confirmation of which FAO products count as livestock, and one per-country output. 
 
 
 ## Coastal Protection
@@ -162,7 +162,7 @@ engineering work we did. **number** is what the figure is and what it was checke
 - **run:** yes
 - **method:** Mangroves: protected hectares times value per hectare. Corals: a published annual benefit per country, deflated to the base year.
 - **total:** $36.72bn
-- **code:** Refactored onto the library template and hazelbean conventions. The mangrove value is now ours: we multiply protected area by value per hectare rather than reading their published total, which is what makes it a replication and not a copy.
+- **code:** Refactored onto the library template and hazelbean conventions. The mangrove value is run: we multiply protected area by value per hectare rather than reading their published total.
 - **number:** Two components. Mangroves are computed as protected hectares times value per hectare, $37bn in total, which lands within $4,983 of the published figure. Coral reefs carry a finished annual benefit per country and nothing underneath it, so there is no code behind it to run; we carry it from 2011 to the base year with the WB deflator and add it. Nine countries missing from the deflator table are zeroed by the join where they should be left unvalued.
 - **need:** Whether code exists behind the coral-reef benefit table that we should be running.
 

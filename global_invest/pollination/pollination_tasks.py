@@ -41,6 +41,8 @@ from global_invest.pollination import pollination_functions as pf
 # ---------------------------------------------------------------------------------------------
 
 
+FAO_MEDIAN_PRICES_REF_PATH = os.path.join('fao', 'median_prices')
+
 # ---------------------------------------------------------------------------------------------
 # Vendored from crop_benefits: the FAO price path, the parts that download and write.
 # ---------------------------------------------------------------------------------------------
@@ -623,12 +625,19 @@ def fao_median_prices(p):
     deterministic once it has, the same reason erosion's SDR step skips.
     """
     publish_inputs(p)
-    p.fao_median_prices_dir = os.path.join(p.cur_dir, 'median_prices')
+    # A base-data-generating task: the prices are an input other services and other machines will
+    # want, not a per-run result, so they are written under base data at a stable relative path.
+    # get_path finds them there on any later run, on any machine that has synced it.
+    p.fao_median_prices_dir = p.get_path(FAO_MEDIAN_PRICES_REF_PATH,
+                                         possible_dirs=[p.base_data_dir],
+                                         raise_error_if_fail=False)
     if not p.run_this:
         return
     if hb.path_exists(p.fao_median_prices_dir) and os.listdir(p.fao_median_prices_dir):
-        hb.log('FAO median prices already built. Skipping the download.')
+        hb.log('FAO median prices already in base data at %s. Skipping the download.'
+               % p.fao_median_prices_dir)
         return True
+    hb.create_directories(p.fao_median_prices_dir)
     settings = pf.FaoPriceSettings(
         crosswalk_m49_iso3_path=Path(p.get_path(os.path.join('fao', 'crosswalks',
                                                              'crosswalk_m49_iso3.csv'))),
@@ -636,7 +645,7 @@ def fao_median_prices(p):
                                                              'fao_classification.csv'))),
         crosswalk_fao_cropgrids_path=Path(p.get_path(os.path.join('fao', 'crosswalks',
                                                                   'crosswalk_fao_cropgrids.csv'))),
-        output_dir=Path(p.cur_dir))
+        output_dir=Path(os.path.dirname(p.fao_median_prices_dir)))
     pf.run_fao_production(settings)
     pf.run_fao_prices(settings)
     run_fao_values(settings)
