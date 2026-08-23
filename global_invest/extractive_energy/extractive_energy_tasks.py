@@ -47,7 +47,7 @@ def gep_calculation(p):
 
     hb.log(f'Total extractive_energy GEP for base year {p.gep_base_year}: '
            f'{df_gep["extractive_energy_gep"].sum():,.2f}')
-    committed_total = sum(pd.read_csv(path).iloc[:, -1].sum() for path in (
+    committed_total = sum(hb.df_read(path).iloc[:, -1].sum() for path in (
         p.extractive_energy_gas_path, p.extractive_energy_coal_path, p.extractive_energy_oil_path))
     hb.log(f'Committed drive tables sum to {committed_total:,.2f}; the difference is the '
            f'territory join artifact plus the Kosovo coal row (see the functions docstring).')

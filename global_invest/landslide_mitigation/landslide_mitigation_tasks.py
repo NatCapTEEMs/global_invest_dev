@@ -1194,7 +1194,7 @@ def calibrate_si_to_probability(p):
                 p.hazard_model_coefficients = json.load(f)
             return p
 
-        panel = pd.read_csv(p.estimation_table_path)
+        panel = hb.df_read(p.estimation_table_path)
 
         train = panel[panel['year'].isin(set(p.modeling_range))].copy()
         holdout = panel[panel['year'].isin(set(p.prediction_years))].copy()
@@ -1295,7 +1295,7 @@ SEVERITY_BASE_FORMULA = 'population_log1p + rain_max_daily + slope_degrees + roa
 
 def _severity_training_rows(p):
     """The realized landslides used to fit severity, with the two derived columns."""
-    panel = pd.read_csv(p.estimation_table_path)
+    panel = hb.df_read(p.estimation_table_path)
     train = panel[
         (panel['year'].isin(set(p.modeling_range))) & (panel['case'] == 1)
     ].copy()
@@ -1746,7 +1746,7 @@ def build_vsl_raster(p):
         if not oecd_candidates:
             raise FileNotFoundError(f'No CSV found in {p.landslide_input_data_dir}/oecd_vsl/')
 
-        vsl_by_iso3 = chain.vsl_usd_2019_by_iso3(pd.read_csv(oecd_candidates[0]))
+        vsl_by_iso3 = chain.vsl_usd_2019_by_iso3(hb.df_read(oecd_candidates[0]))
         p.L.info(f'OECD VSL: {len(vsl_by_iso3)} countries with direct estimates (deflated to '
                  f'2019 constant USD, factor={chain.DEFLATOR_2022_TO_2019:.4f}).')
 
@@ -2116,7 +2116,7 @@ def export_results_tables(p):
                 p.L.warning(f'{year}: {zonal_csv_path} not found, skipping.')
                 continue
 
-            df = pd.read_csv(zonal_csv_path)
+            df = hb.df_read(zonal_csv_path)
 
             def as_deaths(series):
                 return series.map(lambda v: f'{v:,.2f}')

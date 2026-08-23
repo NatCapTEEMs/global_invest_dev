@@ -253,7 +253,7 @@ def _write_storage_value(p, ecosystem, stock_csv_path, out_path):
     rental_scc = ccf.rental_price_for_year(
         pd.read_excel(p.gep_price_input_path), p.gep_base_year, p.gep_price_convention)
     stock_to_value = ccf.stock_to_value_columns(ecosystem)
-    df_value = ccf.apply_rental_price(pd.read_csv(stock_csv_path), stock_to_value, rental_scc,
+    df_value = ccf.apply_rental_price(hb.df_read(stock_csv_path), stock_to_value, rental_scc,
                                       p.gep_base_year, p.gep_price_convention)
     df_value.to_csv(out_path, index=False)
 
@@ -534,14 +534,14 @@ def combined_ecosystem_areas(p):
         return
 
     area_frames = {
-        'mangrove': pd.read_csv(
+        'mangrove': hb.df_read(
             p.mangrove_area_by_countries_base_year_path.replace('.gpkg', '.csv')),
-        'salt_marsh': pd.read_csv(
+        'salt_marsh': hb.df_read(
             p.salt_marsh_area_by_countries_base_year_path.replace('.gpkg', '.csv')),
     }
     stock_frames = {
-        'mangrove': pd.read_csv(p.mangrove_carbon_stock_path),
-        'salt_marsh': pd.read_csv(p.salt_marsh_carbon_stock_path),
+        'mangrove': hb.df_read(p.mangrove_carbon_stock_path),
+        'salt_marsh': hb.df_read(p.salt_marsh_carbon_stock_path),
     }
 
     seagrass_area_gpkg = getattr(p, 'seagrass_area_by_countries_base_year_path', None)
@@ -549,14 +549,14 @@ def combined_ecosystem_areas(p):
         seagrass_area_gpkg.replace('.gpkg', '.csv') if seagrass_area_gpkg else None
     )
     if hb.path_exists(seagrass_area_csv):
-        area_frames['seagrass'] = pd.read_csv(seagrass_area_csv)
+        area_frames['seagrass'] = hb.df_read(seagrass_area_csv)
     else:
         hb.log('combined_ecosystem_areas: seagrass area CSV not found '
                f'({seagrass_area_csv!r}); seagrass area set to 0.')
 
     seagrass_stock_path = getattr(p, 'seagrass_carbon_stock_path', None)
     if hb.path_exists(seagrass_stock_path):
-        stock_frames['seagrass'] = pd.read_csv(seagrass_stock_path)
+        stock_frames['seagrass'] = hb.df_read(seagrass_stock_path)
     elif 'seagrass' in area_frames:
         hb.log('combined_ecosystem_areas: seagrass area present but seagrass stock CSV missing '
                f'({seagrass_stock_path!r}); seagrass stock columns set to 0.')
@@ -598,15 +598,15 @@ def gep_calculation(p):
 
     # Stage 1: the marine surface (r566).
     if hb.path_all_exist(r566_csv, r566_gpkg):
-        df_gep = pd.read_csv(r566_csv)
+        df_gep = hb.df_read(r566_csv)
         hb.log("gep_calculation: r566 cached, reusing.")
     else:
         hb.log("gep_calculation: computing r566 storage values "
                "(mangrove + salt marsh + seagrass)...")
         df_gep = ccf.coastal_carbon_storage_value_frame(
-            df_areas=pd.read_csv(p.combined_area_path),
+            df_areas=hb.df_read(p.combined_area_path),
             df_price=pd.read_excel(p.gep_price_input_path)[['year', p.gep_price_convention]],
-            value_frames={ecosystem: pd.read_csv(getattr(p, f'{ecosystem}_storage_value_path'))
+            value_frames={ecosystem: hb.df_read(getattr(p, f'{ecosystem}_storage_value_path'))
                           for ecosystem in ccf.COASTAL_ECOSYSTEMS},
             id_col=p.gep_regions_id_col,
             base_year=p.gep_base_year,
@@ -623,7 +623,7 @@ def gep_calculation(p):
 
     # Stage 2: the iso3_r250 final.
     df_r250_final = ccf.collapse_to_iso3_r250(
-        ccf.eez_storage_value_by_iso3(df_gep), pd.read_csv(p.df_countries_csv_path))
+        ccf.eez_storage_value_by_iso3(df_gep), hb.df_read(p.df_countries_csv_path))
     df_r250_final.to_csv(final_csv, index=False)
     hb.log(f"Final iso3_r250 GEP saved: {final_csv}  "
            f"({len(df_r250_final)} iso3 countries, "

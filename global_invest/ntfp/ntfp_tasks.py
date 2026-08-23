@@ -103,8 +103,8 @@ def gep_calculation(p):
         return
     hb.log('Starting GEP calculation for ntfp.')
 
-    accessible = pd.read_csv(p.ntfp_accessible_forest_path)
-    value_per_ha = pd.read_csv(p.ntfp_value_per_ha_path)
+    accessible = hb.df_read(p.ntfp_accessible_forest_path)
+    value_per_ha = hb.df_read(p.ntfp_value_per_ha_path)
     df_gep = nf.ntfp_gep_by_country(accessible, value_per_ha, int(p.gep_base_year))
 
     attribute_columns = ['iso3_r250_id', 'iso3_r250_label', 'iso3_r250_name',

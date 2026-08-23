@@ -175,7 +175,7 @@ def pollination_shock_static(p):
         print('  pollination shock: dependency csv not found (%s) -- skipping' % poll_path)
         return
 
-    df = pd.read_csv(poll_path)
+    df = hb.df_read(poll_path)
     # Normalise the one year-suffixed label so pollination's table presents the same scenario names as
     # the other services (carbon is plain everywhere, erosion strips '_2050' on read). net_zero_2050 is
     # the only alias here, so target it explicitly rather than a blunt '_2050' strip that would silently
@@ -229,7 +229,7 @@ def pollination_value_by_region(p):
         year=p.gep_base_year, id_column=p.gep_regions_id_col)
     # Full-scale conservation: the region sums must add up to the raster's own total
     # (verified at 100.0000% on the real raster when this check was added).
-    df_regions = pd.read_csv(p.pollination_value_by_region_path)
+    df_regions = hb.df_read(p.pollination_value_by_region_path)
     utilities.assert_zonal_conservation(df_regions['total'].sum(),
                                         p.gep_quantity_input_path, 'pollination')
     return True
@@ -251,7 +251,7 @@ def gep_calculation(p):
     # 1. Per-region (r264) USD value -> one row per COUNTRY (r250), written as the per-country CSV
     #    that is the source of truth for every sum. Summing the r264-expanded table instead would
     #    double-count split countries (see utilities docstring).
-    df_q264 = pd.read_csv(p.pollination_value_by_region_path)
+    df_q264 = hb.df_read(p.pollination_value_by_region_path)
     df_gep = pf.collapse_regions_to_countries(df_q264)
     hb.df_write(df_gep, service_results['gep_by_country_base_year'])
 

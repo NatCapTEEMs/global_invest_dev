@@ -42,7 +42,7 @@ def gep_calculation(p):
 
     workbook = pd.read_excel(p.air_filtration_workbook_path)
     af.verify_global_average_fill(workbook)
-    r250_order = pd.read_csv(os.path.join(MODULE_REFERENCE_DIR, 'r250_gpkg_order.csv'))
+    r250_order = hb.df_read(os.path.join(MODULE_REFERENCE_DIR, 'r250_gpkg_order.csv'))
     df = af.air_quality_gep_by_country(workbook, r250_order)
 
     attr_cols = ['iso3_r250_id', 'iso3_r250_label', 'iso3_r250_name',

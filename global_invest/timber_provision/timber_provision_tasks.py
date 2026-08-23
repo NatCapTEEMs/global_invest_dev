@@ -59,7 +59,7 @@ def gep_calculation(p):
 
     hb.log(f'Total timber_provision GEP for base year {p.gep_base_year}: '
            f'{df_gep["timber_provision_gep"].sum():,.2f}')
-    committed = pd.read_csv(p.timber_provision_gep_path)
+    committed = hb.df_read(p.timber_provision_gep_path)
     hb.log(f'Committed Forestry table total: {committed.select_dtypes("number").iloc[:, -1].sum():,.2f} (the test anchor).')
     return True
 

@@ -29,7 +29,7 @@ def read_city_savings(merged_dir):
     paths = sorted(glob.glob(os.path.join(merged_dir, '*_all_urban_valuations.csv')))
     if not paths:
         raise FileNotFoundError(f'no city valuation files under {merged_dir}')
-    return pd.concat([pd.read_csv(path) for path in paths], ignore_index=True)
+    return pd.concat([hb.df_read(path) for path in paths], ignore_index=True)
 
 
 def gep_calculation(p):
@@ -60,7 +60,7 @@ def gep_calculation(p):
     df_gep = countries.merge(ours, on='iso3_r250_id', how='left')
 
     anchor = lc.local_climate_gep_by_country(
-        pd.read_csv(p.local_climate_regulation_final_path), countries[['iso3_r250_label']])
+        hb.df_read(p.local_climate_regulation_final_path), countries[['iso3_r250_label']])
     df_gep = df_gep.merge(
         anchor.rename(columns={'local_climate_regulation_gep':
                                'local_climate_regulation_gep_committed'}),

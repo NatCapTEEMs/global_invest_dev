@@ -50,13 +50,13 @@ def gep_calculation(p):
         return
     hb.log('Starting GEP calculation for water_supply.')
 
-    hydropower = pd.read_csv(p.hydropower_rent_path)
+    hydropower = hb.df_read(p.hydropower_rent_path)
     attr_cols = ['iso3_r250_id', 'iso3_r250_label', 'iso3_r250_name',
                  'continent', 'region_un', 'region_wb', 'income_grp', 'subregion']
     countries = p.df_countries[attr_cols].drop_duplicates('iso3_r250_id')
     df_gep = wf.water_supply_gep_by_country(hydropower, countries)
     if hb.path_exists(getattr(p, 'water_use_components_path', None)):
-        components = pd.read_csv(p.water_use_components_path)
+        components = hb.df_read(p.water_use_components_path)
         df_gep = df_gep.merge(components.drop(columns=['iso3_r250_label']),
                               on='iso3_r250_id', how='left')
     else:
@@ -124,8 +124,8 @@ def water_use_components(p):
                    out['water_use_agriculture_gep'].sum(), out['water_use_agriculture_gep'].notna().sum(),
                    out['water_use_all_sector_gep'].sum(), out['water_use_all_sector_gep'].notna().sum(),
                    out['iso3_r250_label'].isna().sum()))
-        committed_ag = pd.read_csv(p.water_use_agriculture_path)
-        committed_all = pd.read_csv(p.water_use_all_sector_path)
+        committed_ag = hb.df_read(p.water_use_agriculture_path)
+        committed_all = hb.df_read(p.water_use_all_sector_path)
         hb.log('committed anchors: agriculture %.4g USD, all-sector %.4g USD -- different source '
                'chains (see the functions module), compared in the test suite' % (
                    committed_ag['wateruse_ag_gep'].sum(), committed_all['wateruse_gep'].sum()))

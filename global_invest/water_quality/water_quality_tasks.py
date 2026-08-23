@@ -33,8 +33,8 @@ def gep_calculation(p):
         return
     hb.log('Starting GEP calculation for water_quality.')
 
-    retention = pd.read_csv(p.water_quality_retention_path)
-    international = pd.read_csv(p.water_quality_international_path)
+    retention = hb.df_read(p.water_quality_retention_path)
+    international = hb.df_read(p.water_quality_international_path)
     attr_cols = ['iso3_r250_id', 'iso3_r250_label', 'iso3_r250_name',
                  'continent', 'region_un', 'region_wb', 'income_grp', 'subregion']
     countries = p.df_countries[attr_cols].drop_duplicates('iso3_r250_id')

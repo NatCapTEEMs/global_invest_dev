@@ -39,7 +39,7 @@ def initialize_country_paths(p, simplified='300sec'):
     p.df_countries_csv_path = ref.replace('.gpkg', '.csv')
     simplified_ref = ref.replace('_correspondence.gpkg', f'_simplified{simplified}.gpkg')
     p.gdf_countries_vector_simplified_path = simplified_ref if hb.path_exists(simplified_ref) else ref
-    p.df_countries = pd.read_csv(p.df_countries_csv_path)
+    p.df_countries = hb.df_read(p.df_countries_csv_path)
     # The GDFs stay as path strings; hb.read_vector converts on demand.
     p.gdf_countries = p.gdf_countries_vector_path
     p.gdf_countries_simplified = p.gdf_countries_vector_simplified_path
@@ -355,7 +355,8 @@ def hydrate_es_config(p, service, log=print):
     template; delete it (or use a fresh project) to pick up template changes.
     """
     import pandas as pd
-    df = pd.read_csv(seed_input_template(p, 'es_config.csv', log))
+    import hazelbean as hb
+    df = hb.df_read(seed_input_template(p, 'es_config.csv', log))
     rows = df[df['service'] == service]
     if rows.empty:
         log(f"es_config.csv has no row for service '{service}' -- nothing hydrated.")
@@ -399,7 +400,8 @@ def hydrate_es_parameters(p, service, log=print):
     """
     import json
     import pandas as pd
-    df = pd.read_csv(seed_input_template(p, 'es_parameters.csv', log))
+    import hazelbean as hb
+    df = hb.df_read(seed_input_template(p, 'es_parameters.csv', log))
     for _, row in df[df['service'] == service].iterrows():
         attribute, value = str(row['parameter']), row['value']
         if pd.isna(value) or str(value) == '':
@@ -458,8 +460,9 @@ def hydrate_es_scenarios(p, log=print):
     """
     import os
     import pandas as pd
+    import hazelbean as hb
     file_name = getattr(p, 'es_scenario_definitions_filename', None) or 'es_scenarios_test.csv'
-    df = pd.read_csv(seed_input_template(p, file_name, log))
+    df = hb.df_read(seed_input_template(p, file_name, log))
 
     def unset(attribute):
         # The defaults-layer contract in one predicate: hydrate only what the caller
@@ -581,7 +584,7 @@ def download_missing_inputs(p, service, log=print):
     import pandas as pd
     import hazelbean as hb
 
-    df = pd.read_csv(seed_input_template(p, 'es_parameters.csv', log))
+    df = hb.df_read(seed_input_template(p, 'es_parameters.csv', log))
     rows = df[df['service'] == service]
 
     def companions(suffix):

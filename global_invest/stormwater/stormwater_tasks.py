@@ -37,7 +37,7 @@ def gep_calculation(p):
 
     import pandas as pd
     from global_invest.stormwater import stormwater_functions as sf
-    retention = pd.read_csv(p.stormwater_retention_by_country_path)
+    retention = hb.df_read(p.stormwater_retention_by_country_path)
     df_gep = sf.stormwater_gep_by_country(retention, sf.STORMWATER_PRICE_PER_M3_PLACEHOLDER)
     df_gep['year'] = int(p.gep_base_year)
     # Carry the country attributes every other service's table carries, so this output can be

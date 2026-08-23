@@ -26,7 +26,7 @@ def read_erosion_dependency(ero_path):
     utilities.resolve_base_scenario (this function previously hardcoded 'baseline_ignore_damages'
     as the base, silently ignoring p.es_shock_base_scenario -- right only by spelling coincidence).
     """
-    df = pd.read_csv(ero_path)
+    df = hb.df_read(str(ero_path))
     df['scenario'] = df['scenario'].str.replace('_2050', '').str.replace('2023.0', 'baseline_2023')
     return df
 
@@ -109,7 +109,7 @@ def build_seals7_biophysical_table(src_csv, out_csv):
     a `seals_lucode` column, and usle_c/usle_p are CONSTANT within each SEALS class (verified: min == max
     for all 7), so the collapse is unambiguous -- no area weighting to choose. Returns the written path.
     """
-    df = pd.read_csv(src_csv)
+    df = hb.df_read(str(src_csv))
     df.columns = [str(c).strip().lower() for c in df.columns]
     if 'seals_lucode' not in df.columns:
         raise ValueError('%s has no seals_lucode column, so it cannot be re-keyed onto SEALS7 classes; '
@@ -1552,7 +1552,7 @@ def run_biophysical_decomposed():
     df_threshold.rename(columns={"iso3": "ISO3"}).to_csv(OUT_DIR / "threshold_policy.csv", index=False)
 
     # ---- Bandmap + elasticity
-    bandmap = pd.read_csv(BANDMAP_CSV)
+    bandmap = hb.df_read(str(BANDMAP_CSV))
     bandmap = _normcols(bandmap)
     if "band" not in bandmap.columns or "crop" not in bandmap.columns:
         raise ValueError("BANDMAP_CSV must have columns: 'band', 'crop'.")
@@ -2000,7 +2000,7 @@ def generate_all_maps_and_figures():
     # 2) LOAD DATA
     # =============================================================================
     assert_exists(INTEGRATED_CSV, "Run the latest integrated pipeline first.")
-    df = pd.read_csv(INTEGRATED_CSV)
+    df = hb.df_read(str(INTEGRATED_CSV))
     df.columns = [c.strip() for c in df.columns]
     
     if "ISO3" in df.columns and "iso3" not in df.columns:
@@ -2051,7 +2051,7 @@ def generate_all_maps_and_figures():
         df["country_name"] = df["iso3"]
     
     if COUNTRY_CROP_LONG_CSV.exists():
-        df_crop_long = pd.read_csv(COUNTRY_CROP_LONG_CSV)
+        df_crop_long = hb.df_read(str(COUNTRY_CROP_LONG_CSV))
         df_crop_long.columns = [c.strip() for c in df_crop_long.columns]
         if "ISO3" in df_crop_long.columns and "iso3" not in df_crop_long.columns:
             df_crop_long = df_crop_long.rename(columns={"ISO3": "iso3"})

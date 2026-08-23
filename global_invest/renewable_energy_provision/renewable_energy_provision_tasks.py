@@ -53,10 +53,10 @@ def gep_calculation(p):
         return
     hb.log("Starting GEP calculation for renewable energy provision.")
 
-    generation_frames = rf.generation_by_technology(pd.read_csv(p.gep_quantity_input_path))
-    df_price = rf.price_in_usd_per_gwh(pd.read_csv(p.gep_price_input_path))
+    generation_frames = rf.generation_by_technology(hb.df_read(p.gep_quantity_input_path))
+    df_price = rf.price_in_usd_per_gwh(hb.df_read(p.gep_price_input_path))
     priced_frames = rf.merge_price_onto_generation(df_price, generation_frames)
-    df_valued = rf.valued_generation(priced_frames, pd.read_csv(p.gep_attribution_input_path))
+    df_valued = rf.valued_generation(priced_frames, hb.df_read(p.gep_attribution_input_path))
     df_gep = rf.base_year_valued_rows(df_valued, int(p.gep_base_year))
 
     # The source is keyed by ISO3 strings, so the join matches on the r250 label. One row per

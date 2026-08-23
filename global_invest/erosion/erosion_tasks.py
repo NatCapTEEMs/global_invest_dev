@@ -443,7 +443,7 @@ def erosion_shock(p):
 
     yield_stack = p.get_path(p.erosion_yield_stack_path)
     area_stack = p.get_path(p.erosion_area_stack_path)
-    bandmap = pd.read_csv(p.get_path(p.erosion_bandmap_csv_path))
+    bandmap = hb.df_read(p.get_path(p.erosion_bandmap_csv_path))
     bcol = next(c for c in bandmap.columns if 'band' in c.lower())
     crcol = next(c for c in bandmap.columns if c.lower() in ('crop', 'crop_name', 'name'))
     coef_map = ef.load_erosion_yield_coefficients(p.get_path(p.erosion_elasticity_csv_path))

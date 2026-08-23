@@ -154,7 +154,7 @@ def gep_calculation(p):
         return
     hb.log("Starting GEP calculation for terrestrial carbon.")
 
-    df_regions = pd.read_csv(p.carbon_by_region_base_year_path)
+    df_regions = hb.df_read(p.carbon_by_region_base_year_path)
     df_price = pd.read_excel(p.gep_price_input_path)[[p.gep_price_convention, 'year']]
     df_gep = tcf.collapse_regions_to_countries(df_regions, df_price, p.gep_price_convention)
     hb.df_write(df_gep, service_results['gep_by_country_base_year'])
@@ -210,7 +210,7 @@ def _zone_mean(p, scenario, year, density_lookup):
     if not os.path.exists(summary_path):
         tcf.summarize_raster_by_region(density_path, p.region_boundary_path, summary_path,
                                        year=year, id_column=p.terrestrial_carbon_shock_id_col)
-    return pd.read_csv(summary_path).set_index('region_id')[
+    return hb.df_read(summary_path).set_index('region_id')[
         getattr(p, 'terrestrial_carbon_shock_value_col', 'mean')]
 
 
@@ -364,7 +364,7 @@ def terrestrial_carbon_shock_static(p):
         print('  carbon shock: dependency csv not found (%s) -- skipping' % carb_path)
         return
 
-    df = pd.read_csv(carb_path)
+    df = hb.df_read(carb_path)
     # The base resolves through the same candidate mechanism as the data scenarios (and FATALLY if it
     # can't): the frozen tables spell the nature-off baseline two ways across services, and an
     # exact-match miss here gave an empty base -> empty output -> silent GTAP zero.

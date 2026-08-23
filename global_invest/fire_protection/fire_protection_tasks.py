@@ -47,7 +47,7 @@ def beta_differences(p):
     if not p.run_this:
         return
     if not hb.path_exists(p.fire_beta_path):
-        regression_df = pd.read_csv(p.fire_regression_results_path)
+        regression_df = hb.df_read(p.fire_regression_results_path)
         beta = ffn.compute_beta_differences(regression_df)
         beta.to_csv(p.fire_beta_path, index=False)
     return True
@@ -62,9 +62,9 @@ def avoided_burned_area(p):
     if not p.run_this:
         return
     if not hb.path_exists(p.fire_avoided_acres_path):
-        beta = pd.read_csv(p.fire_beta_path)
+        beta = hb.df_read(p.fire_beta_path)
         if hb.path_exists(getattr(p, 'fire_panel_path', None)):
-            panel = pd.read_csv(p.fire_panel_path)
+            panel = hb.df_read(p.fire_panel_path)
             year_2018 = panel[panel['year'] == 2018]
             burned_2018 = (year_2018.groupby('GID_0')
                            .agg(total_burned_areas_ha_2018=('total_burned_areas_ha', 'sum'),
@@ -73,7 +73,7 @@ def avoided_burned_area(p):
         else:
             hb.log('fire_protection: ADM2 panel not staged -- 2018 burned areas read from '
                    'the frozen reference output (the open data ask).')
-            burned_2018 = pd.read_csv(os.path.join(
+            burned_2018 = hb.df_read(os.path.join(
                 MODULE_REFERENCE_DIR, 'GEP_wildfire_2019_results.csv'))[
                 ['GID_0', 'total_burned_areas_ha_2018', 'n_adm2_units']]
         ffn.compute_avoided_acres(beta, burned_2018).to_csv(p.fire_avoided_acres_path, index=False)
@@ -100,7 +100,7 @@ def damage_per_acre(p):
         else:
             hb.log('fire_protection: ADM2 panel not staged -- damage rates read from the '
                    'frozen reference output (the open data ask).')
-            rates = pd.read_csv(os.path.join(
+            rates = hb.df_read(os.path.join(
                 MODULE_REFERENCE_DIR, 'GEP_wildfire_2019_results.csv'))[
                 ['GID_0', 'damages_usd_per_acre_country']]
         rates.to_csv(p.fire_damage_per_acre_path, index=False)
@@ -122,8 +122,8 @@ def gep_calculation(p):
         return
     hb.log('Starting GEP calculation for fire_protection.')
 
-    avoided = pd.read_csv(p.fire_avoided_acres_path)
-    rates = pd.read_csv(p.fire_damage_per_acre_path)
+    avoided = hb.df_read(p.fire_avoided_acres_path)
+    rates = hb.df_read(p.fire_damage_per_acre_path)
     global_average = float(rates['damages_usd_per_acre_country'].mode().iloc[0])
     out = ffn.compute_gep(avoided, rates, global_average)
     out.to_csv(p.fire_results_reference_shape_path, index=False)

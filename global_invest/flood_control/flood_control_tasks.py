@@ -48,7 +48,7 @@ def gep_calculation(p):
         depth_srcs = {rp: rasterio.open(p.get_path(p.flood_control_depth_path_template.format(rp=rp)))
                       for rp in rps}
         pix_area = abs(sda_src.transform[0] * sda_src.transform[4])
-        curves = fchain.damage_curves_from_wide(pd.read_csv(p.flood_control_damage_wide_path))
+        curves = fchain.damage_curves_from_wide(hb.df_read(p.flood_control_damage_wide_path))
 
         rows = []
         for _, crow in gdf.iterrows():
@@ -72,7 +72,7 @@ def gep_calculation(p):
             rows.append({'iso3': iso, 'flood_control_gep': ead})
         pd.DataFrame(rows).to_csv(p.flood_control_chain_ead_path, index=False)
 
-    chain = pd.read_csv(p.flood_control_chain_ead_path).rename(columns={'iso3': 'iso3_r250_label'})
+    chain = hb.df_read(p.flood_control_chain_ead_path).rename(columns={'iso3': 'iso3_r250_label'})
     attr_cols = ['iso3_r250_id', 'iso3_r250_label', 'iso3_r250_name',
                  'continent', 'region_un', 'region_wb', 'income_grp', 'subregion']
     countries = p.df_countries[attr_cols].drop_duplicates('iso3_r250_id')
@@ -83,7 +83,7 @@ def gep_calculation(p):
 
     hb.log(f'Total flood_control GEP for base year {p.gep_base_year} (OUR chain): '
            f'{df_gep["flood_control_gep"].sum():,.2f}')
-    committed = pd.read_csv(p.flood_control_avoided_damage_path)
+    committed = hb.df_read(p.flood_control_avoided_damage_path)
     hb.log(f'Committed pipeline table total: {committed.select_dtypes("number").iloc[:, -1].sum():,.2f} '
            f'(the test anchor; the known difference is Morocco).')
     return True

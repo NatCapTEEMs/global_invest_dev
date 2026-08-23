@@ -139,7 +139,7 @@ def gep_calculation(p):
         return
     hb.log('Starting GEP calculation for fisheries.')
 
-    trends = pd.read_csv(p.fisheries_rent_trends_path)
+    trends = hb.df_read(p.fisheries_rent_trends_path)
     attr_cols = ['iso3_r250_id', 'iso3_r250_label', 'iso3_r250_name',
                  'continent', 'region_un', 'region_wb', 'income_grp', 'subregion']
     countries = p.df_countries[attr_cols].drop_duplicates('iso3_r250_id')
