@@ -70,6 +70,39 @@ RULES = [
     ("D8", "empty adjective pair",
      r"\bclear and concise\b|\bquick and easy\b|\bsimple and effective\b",
      "One word, or the fact."),
+
+    # V-rules: read off Chiara's own edits to service_status.qmd on 2026-08-22 and 2026-08-23.
+    # Every one of them cut a clause that explained a claim she had already made. What she did NOT
+    # do is shorten: the length distribution is unchanged by her pass (median 20 words before and
+    # after, longest 80 both), so there is deliberately no sentence-length rule here -- a long
+    # sentence where every clause carries new content is hers to keep.
+    # ", and which" was tried here and withdrawn: every hit was an indirect question
+    # ("and which one is current is open"), not an add-on clause.
+    ("V1", "trailing add-on clause",
+     r", which also\b|, which additionally\b",
+     "Cut it, or make it its own sentence with its own subject."),
+
+    ("V2", "purpose tail explaining a change already named",
+     r"\bso (it|they|these|those) could be \w+ed\b|\bso that (it|they) could be \w+ed\b|"
+     r"\bin order to make (it|them) \w+able\b",
+     "Name what moved. Why it moved is the commit message's job."),
+
+    ("V3", "colon-label where a question is meant",
+     r"\bThe (decision|question|open item) (what|whether|which|how)\b",
+     "Ask it: 'What is X?' rather than 'The decision what X is:'."),
+
+    ("V4", "filler quantifier",
+     r"\bon top\.|\bon top of that\b|\bas well\.|\bto boot\b",
+     "Delete it, or fold the item into the list it belongs to."),
+
+    ("V5", "hedge tail on an absence",
+     r"\bto compare against yet\b|\bnot (yet )?available at this (stage|point)\b|"
+     r"\bfor the time being\b",
+     "State the absence. 'No reference output' already means we do not have one."),
+
+    ("V6", "unit written out where the short form reads better",
+     r"\bper kilogram\b|\bper hectare of\b|\bper square kilometre\b",
+     "per kg, per ha, per km2."),
 ]
 
 
@@ -202,20 +235,23 @@ def check_literal_numbers(name, raw, body):
 
 
 def main():
-    path = Path(sys.argv[1] if len(sys.argv) > 1 else 'docs/overview.qmd')
-    raw = path.read_text()
-    body = strip_front_matter(raw)
-
-    failures = (check_prose(path.name, body)
-                + check_structure(path.name, body)
-                + check_tables(path.name, body)
-                + check_literal_numbers(path.name, raw, body))
+    paths = [Path(a) for a in sys.argv[1:]] or [Path('docs/overview.qmd')]
+    failures = []
+    for path in paths:
+        raw = path.read_text()
+        body = strip_front_matter(raw)
+        failures += check_prose(path.name, body)
+        # The structure, table and literal-number rules describe a slide deck. The voice rules
+        # above apply to any page Chiara writes, so the status page is checked for those only.
+        if path.name == 'overview.qmd':
+            failures += (check_structure(path.name, body) + check_tables(path.name, body)
+                         + check_literal_numbers(path.name, raw, body))
 
     print('=' * 78)
-    print('DECK GATE -- global_invest overview')
+    print('DECK GATE -- ' + ', '.join(p.name for p in paths))
     print('=' * 78)
     if not failures:
-        print('\nCLEAN: every deck rule holds.\n')
+        print('\nCLEAN: every rule holds.\n')
         return 0
 
     by_rule = {}

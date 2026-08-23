@@ -150,8 +150,8 @@ that does not apply is a single dash.
 - **run:** yes
 - **total:** $36.72bn
 - **code:** Refactored onto the library template and hazelbean conventions. The mangrove value is now computed from the table's own area and price per hectare instead of read out of its published total column.
-- **number:** Two components. Mangroves are OURS: computed as protected hectares times value per hectare, $36,721,148,443 in total, which lands within $4,983 of the published figure, that table's own per-row rounding. Coral reefs are NOT ours: their table carries a finished annual benefit per country and nothing underneath it, so there is no chain to run; we carry it from 2011 to the base year with the World Bank deflator and add it. Nine countries missing from the deflator table are zeroed by the join where they should be left unvalued.
-- **need:** Whether a chain exists behind the coral-reef benefit table that we should be running, since that half is still someone else's number.
+- **number:** Two components. Mangroves are computed as protected hectares times value per hectare, $37bn in total, which lands within $4,983 of the published figure. Coral reefs carry a finished annual benefit per country and nothing underneath it, so there is no chain to run; we carry it from 2011 to the base year with the WB deflator and add it. Nine countries missing from the deflator table are zeroed by the join where they should be left unvalued.
+- **need:** Whether a chain exists behind the coral-reef benefit table that we should be running.
 
 
 ## Mining Production

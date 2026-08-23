@@ -203,7 +203,7 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 |---|---|---|
 | pollination | {{< meta poll_raster >}} raster side (2023). {{< meta poll_fao >}} FAO side | partially. Two definitions of the same service, and the decision between them is open |
 | erosion | not reported | no. The replication is ongoing: four upstream attribution layers are not reachable from this machine |
-| landslide_mitigation | {{< meta landslide_total >}} ({{< meta landslide_deaths >}} avoided deaths) | no. No reference output exists to compare against yet |
+| landslide_mitigation | {{< meta landslide_total >}} ({{< meta landslide_deaths >}} avoided deaths) | no. No reference output exists |
 | fisheries | shock + commercial GEP {{< meta fisheries_total >}} provisional + subsistence {{< meta fisheries_subsistence_total >}} | partially. Subsistence reproduces its committed output, and the commercial run has no reference output yet |
 | recreation | {{< meta recreation_total >}} provisional | no. The author's output table is not reachable |
 | fire_protection | {{< meta fire_cause_total >}} provisional, one of three coefficients | partially. Reproduces the committed output, but reads the committed regression coefficients rather than refitting them. Kosovo and two Indian sub-regions now reach a country instead of no country |
@@ -338,7 +338,7 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 
 ## water_quality
 
-- [Values water-treatment costs avoided by nutrient retention: nitrogen and phosphorus retention per country, scaled by the AQUASTAT domestic-water-use fraction and priced at treatment cost per kilogram. Our rebuild reproduces the committed intermediates for 178 countries. The retention estimates come from an upstream nutrient-delivery model we take as given.]{.state}
+- [Values water-treatment costs avoided by nutrient retention: nitrogen and phosphorus retention per country, scaled by the AQUASTAT domestic-water-use fraction and priced at treatment cost per kg. Our rebuild reproduces the committed intermediates for 178 countries. The retention estimates come from an upstream nutrient-delivery model we take as given.]{.state}
 - **Q1:** where is the script that converts USD to international dollars? The factors implied by the two committed values sit far from the World Bank's published ones, so we could not identify the conversion, and the committed output is the only place it appears.
 - **Q2:** which currency does the account use? This service is in 2019 international dollars, every other service in 2019 market USD.
 
