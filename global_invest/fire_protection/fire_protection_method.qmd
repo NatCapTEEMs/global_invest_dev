@@ -15,7 +15,8 @@ recorded in `es_config.csv` is `avoided damage`.
 
 Burned acres avoided or added in 2019.
 
-The persistence side comes from per-country AR(1) regressions of burned area on its own one-year
+The persistence side comes from per-country AR(1) regressions, burned area on its own
+one-year lag, of burned area on its own one-year
 lag, run upstream with the results committed as a CSV. `build_regression_type_ids` filters the
 regressions the GEP does not read and assigns each remaining one a type id.
 `compute_beta_differences` then reads three quantities off the wide table:
@@ -58,7 +59,8 @@ From `es_parameters.csv`, scoped to the `fire_protection` service:
 
 - `fire_regression_results_path`, the committed per-country AR(1) regression results.
 - `fire_emdat_path`, the EM-DAT custom request workbook.
-- `fire_panel_path`, the ADM2 burned-area panel, with a `_source_note` row recording that it comes
+- `fire_panel_path`, the burned-area panel at GADM's second administrative level, one row
+  per district per year, with a `_source_note` row recording that it comes
   from the drive's Wildfires folder.
 
 `reference/GEP_wildfire_2019_results.csv` ships inside the module as the frozen replication
