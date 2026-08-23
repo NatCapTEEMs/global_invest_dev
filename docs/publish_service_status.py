@@ -10,6 +10,12 @@ The `method` field is the one-line answer to "how is this computed", written as 
 words. The long version is each module's `<service>_method.qmd`, which is where a reader who
 wants the equations should go; this column exists so the sheet can be read on its own.
 
+The `ours` field is the answer to whether we can produce the number independently, which is not
+the same question as whether a run completes. It takes three values. `yes` means we compute it
+here from inputs. `model here` means the thing that produced it is installed and we take its
+output as given anyway, so this is a choice rather than a limit. `no model` means what produced
+the number is not something we hold, so the number cannot be ours whatever we do.
+
     python3 docs/publish_service_status.py            # publish
     python3 docs/publish_service_status.py --check    # parse and report, write nothing
 
@@ -38,13 +44,14 @@ FIELD_COLUMNS = [
     ('module', 'module'),
     ('in the library', 'in the library'),
     ('run', 'run'),
+    ('ours', 'can we run it ourselves'),
     ('method', 'how it is computed'),
     ('code', 'what we did to the code'),
     ('total', 'total (2019 USD)'),
     ('number', 'what the number is, and what it is checked against'),
     ('need', 'what we need'),
 ]
-COLUMN_WIDTHS = (22, 16, 22, 11, 8, 52, 64, 16, 64, 40)
+COLUMN_WIDTHS = (22, 16, 22, 11, 8, 30, 52, 64, 16, 64, 40)
 LINE_HEIGHT_POINTS = 13.5
 MAX_LINES = 14
 
