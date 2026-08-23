@@ -24,7 +24,7 @@ import rasterio
 from osgeo import gdal
 import hazelbean as hb
 
-from global_invest.timber_provision import timber_provision_chain
+from global_invest.timber_provision import timber_provision_functions
 
 PROJECT_NAME = 'gep_stormwater'
 # The InVEST run's workspace under the project's intermediate dir, and the retention-volume
@@ -103,7 +103,7 @@ def retention_m3_by_country(retention_path, zone_ids_path, countries_df):
             volume = src.read(1, window=window)
             # Nodata and non-finite pixels contribute nothing to a country's total.
             valid = np.isfinite(volume) & (volume != src.nodata)
-            sums += timber_provision_chain.gep_by_zone(
+            sums += timber_provision_functions.gep_by_zone(
                 np.where(valid, volume, 0.0), zone_src.read(1, window=window), n_zones)
             if block_index % LOG_EVERY_N_BLOCKS == 0:
                 hb.log('stormwater zonal: row %d of %d' % (row_0, src.height))

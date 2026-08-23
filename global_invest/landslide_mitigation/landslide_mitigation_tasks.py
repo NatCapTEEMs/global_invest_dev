@@ -4,7 +4,7 @@ One tasks module per the service template; the source repo's five stage files su
 section banners below (input data -> preprocessing -> stability model -> valuation ->
 tables/figures). Each task publishes its inputs, resolves its own paths, guards on the outputs
 already existing, and then calls the science: the arithmetic itself lives in
-landslide_mitigation_chain.py as pure functions over arrays and frames, and the raster drivers
+landslide_mitigation_functions.py as pure functions over arrays and frames, and the raster drivers
 in landslide_mitigation_functions.py.
 """
 import glob
@@ -29,8 +29,125 @@ from sklearn.metrics import roc_auc_score
 
 import hazelbean as hb
 from global_invest import utilities
-from global_invest.landslide_mitigation import landslide_mitigation_chain as chain
+from global_invest.landslide_mitigation import landslide_mitigation_functions as chain
 from global_invest.landslide_mitigation import landslide_mitigation_functions as lmf
+
+
+
+def read_gpd_grid_definition(gpd_path):
+    """The .gpd file read, and its text handed to the parser in the functions module."""
+    with open(gpd_path, 'r') as file_handle:
+        return lmf.parse_gpd_grid_definition(file_handle.read())
+
+
+def create_reference_raster(out_path, geotransform, n_cols, n_rows, srs_wkt):
+    """An empty single-band Byte raster on the given grid, used as a warp target."""
+    driver = gdal.GetDriverByName('GTiff')
+    ds = driver.Create(out_path, n_cols, n_rows, 1, gdal.GDT_Byte,
+                       options=list(chain.GTIFF_CREATION_OPTIONS))
+    ds.SetGeoTransform(geotransform)
+    ds.SetProjection(srs_wkt)
+    ds.GetRasterBand(1).SetNoDataValue(0)
+    ds = None
+    return out_path
+
+
+def warp_to_reference(
+    src_path, dst_path, reference_raster_path,
+    resample_method='bilinear',
+    src_nodata=None, dst_nodata=None, output_type=None,
+    n_threads=4,
+    creation_options=chain.GTIFF_CREATION_OPTIONS,
+    show_progress=True,
+):
+    """Warp src_path onto the exact grid of reference_raster_path.
+
+    resample_method by variable type:
+      - 'average': continuous fields being downsampled (DEM, forest weight,
+        soil texture/bulk density/K_sat/soil depth)
+      - 'bilinear': continuous fields at similar resolution
+      - 'near' or 'mode': categorical fields (GAEZ zones)
+      - 'sum': count fields needing conservation (LandScan population)
+    """
+    ref_info = pygeo.get_raster_info(reference_raster_path)
+    ref_gt = ref_info['geotransform']
+    ref_x_size, ref_y_size = ref_info['raster_size']
+
+    x_min = ref_gt[0]
+    y_max = ref_gt[3]
+    x_max = x_min + ref_gt[1] * ref_x_size
+    y_min = y_max + ref_gt[5] * ref_y_size
+
+    resample_alg_map = {
+        'bilinear': gdal.GRA_Bilinear,
+        'average': gdal.GRA_Average,
+        'near': gdal.GRA_NearestNeighbour,
+        'mode': gdal.GRA_Mode,
+        'cubic': gdal.GRA_Cubic,
+        'sum': gdal.GRA_Sum,  # GDAL >= 3.1
+    }
+    if resample_method not in resample_alg_map:
+        raise ValueError(f"Unknown resample_method '{resample_method}', "
+                         f"choose from {list(resample_alg_map)}")
+
+    warp_options = gdal.WarpOptions(
+        format='GTiff',
+        outputBounds=(x_min, y_min, x_max, y_max),
+        xRes=ref_gt[1],
+        yRes=abs(ref_gt[5]),
+        dstSRS=ref_info['projection_wkt'],
+        resampleAlg=resample_alg_map[resample_method],
+        srcNodata=src_nodata,
+        dstNodata=dst_nodata if dst_nodata is not None else src_nodata,
+        outputType=output_type if output_type is not None else gdal.GDT_Unknown,
+        multithread=True,
+        warpOptions=[f'NUM_THREADS={n_threads}', 'UNIFIED_SRC_NODATA=YES'],
+        # UNIFIED_SRC_NODATA=YES avoids including nodata pixels as if they were valid data
+        # confirmed on the DEM's coastlines.
+        creationOptions=list(creation_options),
+        callback=gdal.TermProgress_nocb if show_progress else None,
+    )
+
+    if show_progress:
+        print(f'Warping: {os.path.basename(str(src_path))} -> {os.path.basename(dst_path)}')
+
+    os.makedirs(os.path.dirname(dst_path), exist_ok=True)
+    # str() both: this GDAL build's binding rejects pathlib.Path for src (wrong GDALDatasetShadow).
+    result_ds = gdal.Warp(str(dst_path), str(src_path), options=warp_options)
+    if result_ds is None:
+        raise RuntimeError(f'gdal.Warp failed: {src_path} -> {dst_path}')
+    result_ds = None
+    return dst_path
+
+
+def sample_raster_at_points(raster_path, x_coords, y_coords, band=1):
+    """Sample a raster at a list of (x, y) coordinates (in the raster's
+    own CRS -- EASE-Grid meters throughout this pipeline). Returns a
+    numpy array of values, with the raster's nodata replaced by np.nan.
+    """
+    with rasterio.open(raster_path) as src:
+        nodata = src.nodatavals[band - 1]
+        coords = list(zip(x_coords, y_coords))
+        values = np.array(
+            [v[band - 1] for v in src.sample(coords)], dtype=np.float64
+        )
+    if nodata is not None:
+        values = np.where(values == nodata, np.nan, values)
+    return values
+
+
+def write_raster_from_array(arr, gt, proj_wkt, out_path, nodata, dtype,
+                            creation_options=chain.GTIFF_CREATION_OPTIONS):
+    driver = gdal.GetDriverByName('GTiff')
+    ds = driver.Create(out_path, arr.shape[1], arr.shape[0], 1, dtype,
+                       options=list(creation_options))
+    ds.SetGeoTransform(gt)
+    ds.SetProjection(proj_wkt)
+    band = ds.GetRasterBand(1)
+    band.WriteArray(arr)
+    band.SetNoDataValue(nodata)
+    ds = None
+    return out_path
 
 
 def publish_inputs(p):
@@ -85,7 +202,7 @@ def build_ease_grid_reference(p):
     publish_inputs(p)
     if p.run_this:
         gpd_path = os.path.join(p.landslide_input_data_dir, 'nsidc_proj', 'EASE2_M01km.gpd')
-        grid = lmf.parse_gpd_grid_definition(gpd_path)
+        grid = read_gpd_grid_definition(gpd_path)
 
         out_path = os.path.join(p.input_data_dir, 'ease_grid_reference.tif')
         if os.path.exists(out_path) and not p.force_run:
@@ -95,7 +212,7 @@ def build_ease_grid_reference(p):
 
         geotransform = (grid['origin_x'], grid['pixel_size'], 0,
                         grid['origin_y'], 0, -grid['pixel_size'])
-        lmf.create_reference_raster(out_path, geotransform, grid['n_cols'], grid['n_rows'],
+        create_reference_raster(out_path, geotransform, grid['n_cols'], grid['n_rows'],
                                     grid['srs_wkt'])
 
         p.L.info(f'Built EASE-Grid reference raster from {gpd_path}: {out_path}')
@@ -117,7 +234,7 @@ def reproject_dem(p):
             p.dem_path = out_path
             return p
 
-        lmf.warp_to_reference(
+        warp_to_reference(
             src_path, out_path, p.ease_grid_reference_path,
             resample_method='average',
             src_nodata=chain.DEM_SOURCE_NODATA,
@@ -143,7 +260,7 @@ def reproject_gaez(p):
             p.gaez_path = out_path
             return p
 
-        lmf.warp_to_reference(
+        warp_to_reference(
             src_path, out_path, p.ease_grid_reference_path,
             resample_method='mode',  # categorical -- majority zone per cell
             output_type=gdal.GDT_Byte,  # 57 classes fit comfortably
@@ -208,7 +325,7 @@ def reproject_esacci_forest_share(p):
             ds_out = None
             p.L.info(f'{year}: classified forest weight block-wise -> {native_path}')
 
-            lmf.warp_to_reference(
+            warp_to_reference(
                 native_path, out_path, p.ease_grid_reference_path,
                 resample_method='average',  # 0-1 weight field -> fractional share
                 src_nodata=chain.NODATA, dst_nodata=chain.NODATA,
@@ -329,7 +446,7 @@ def reproject_landscan_population(p):
             if os.path.exists(out_path) and not p.force_run:
                 continue
 
-            lmf.warp_to_reference(
+            warp_to_reference(
                 src_path, out_path, p.ease_grid_reference_path,
                 resample_method='sum',        # conserve total population
                 src_nodata=chain.LANDSCAN_SOURCE_NODATA,
@@ -374,7 +491,7 @@ def reproject_soilgrids_properties(p):
             )
             p.L.info(f'{out_name}: combined 0-30cm + unit-converted -> {native_combined_path}')
 
-            lmf.warp_to_reference(
+            warp_to_reference(
                 native_combined_path, out_path, p.ease_grid_reference_path,
                 resample_method='average',
                 src_nodata=chain.NODATA, dst_nodata=chain.NODATA,
@@ -418,7 +535,7 @@ def reproject_worldclim_bio12(p):
             raster_driver_creation_tuple=('GTIFF', chain.GTIFF_CREATION_OPTIONS),
         )
 
-        lmf.warp_to_reference(
+        warp_to_reference(
             temp_path, out_path, p.ease_grid_reference_path,
             resample_method='average',
             src_nodata=chain.NODATA,
@@ -462,7 +579,7 @@ def reproject_hihydrosoil_ksat(p):
         lmf.thickness_weighted_combine(depth_paths_local, native_combined_path)
         p.L.info(f'K_sat combined 0-30cm: {native_combined_path}')
 
-        lmf.warp_to_reference(
+        warp_to_reference(
             native_combined_path, out_path, p.ease_grid_reference_path,
             resample_method='average',
             src_nodata=chain.NODATA, dst_nodata=chain.NODATA,
@@ -490,7 +607,7 @@ def reproject_soil_depth(p):
             p.soil_depth_path = out_path
             return p
 
-        lmf.warp_to_reference(
+        warp_to_reference(
             src_path, out_path, p.ease_grid_reference_path,
             resample_method='average',
             src_nodata=chain.SOIL_DEPTH_SOURCE_NODATA, dst_nodata=chain.NODATA,
@@ -539,7 +656,7 @@ def reproject_grip_roads(p):
             p.L.info('Assigned WGS84 CRS to GRIP4 .asc (confirmed via ReadMe.txt, '
                      'not embedded in the source file).')
 
-        lmf.warp_to_reference(
+        warp_to_reference(
             src_path_for_warp, out_path, p.ease_grid_reference_path,
             resample_method='bilinear',  # UPSAMPLING ~9km -> 1km, not downsampling
             src_nodata=chain.GRIP_SOURCE_NODATA,
@@ -579,7 +696,7 @@ def reproject_rain_daily(p):
             if os.path.exists(out_path) and not p.force_run:
                 continue
 
-            lmf.warp_to_reference(
+            warp_to_reference(
                 src_path, out_path, p.ease_grid_reference_path,
                 resample_method='bilinear',  # UPSAMPLING ~11km -> 1km
                 src_nodata=chain.NODATA, dst_nodata=chain.NODATA,
@@ -711,10 +828,10 @@ def build_uglc_annual_panels(p):
                 p.L.warning(f'No UGLC events for {year}, writing empty panels.')
             binary_arr, mortality_arr = chain.uglc_year_panels(yearly_gdf, gt, x_size, y_size)
 
-            lmf.write_raster_from_array(binary_arr, gt, ref_info['projection_wkt'],
+            write_raster_from_array(binary_arr, gt, ref_info['projection_wkt'],
                                         binary_out_path, nodata=UGLC_BINARY_NODATA,
                                         dtype=gdal.GDT_Byte)
-            lmf.write_raster_from_array(mortality_arr, gt, ref_info['projection_wkt'],
+            write_raster_from_array(mortality_arr, gt, ref_info['projection_wkt'],
                                         mortality_out_path, nodata=chain.NODATA,
                                         dtype=gdal.GDT_Float32)
 
@@ -832,7 +949,7 @@ def compute_slope(p):
 
         fine_ref_path = os.path.join(work_dir, 'ease_grid_reference_fine.tif')
         if not os.path.exists(fine_ref_path) or p.force_run:
-            lmf.create_reference_raster(
+            create_reference_raster(
                 fine_ref_path, fine_gt,
                 ref_cols * chain.SLOPE_FINE_FACTOR, ref_rows * chain.SLOPE_FINE_FACTOR,
                 ref_info['projection_wkt'])
@@ -841,7 +958,7 @@ def compute_slope(p):
         raw_dem_src = p.get_path('seals', 'static_regressors', 'alt_m.tif')
         dem_fine_path = os.path.join(work_dir, 'dem_fine.tif')
         if not os.path.exists(dem_fine_path) or p.force_run:
-            lmf.warp_to_reference(
+            warp_to_reference(
                 raw_dem_src, dem_fine_path, fine_ref_path,
                 resample_method='average',  # ~300m native -> ~250m, still continuous
                 src_nodata=chain.DEM_SOURCE_NODATA, dst_nodata=chain.NODATA,
@@ -869,7 +986,7 @@ def compute_slope(p):
 
         # ---- 4. Aggregate fine slope down to 1km via average ----
         if not os.path.exists(out_path) or p.force_run:
-            lmf.warp_to_reference(
+            warp_to_reference(
                 slope_fine_path, out_path, p.ease_grid_reference_path,
                 resample_method='average',
                 src_nodata=chain.NODATA, dst_nodata=chain.NODATA,
@@ -1073,11 +1190,11 @@ def _sample_panel_covariates(p, panel, observed_years):
     the per-year three one year at a time (avoids opening every year's raster for every row),
     then rows missing a critical covariate dropped (the MIN_SLOPE_DEG exclusion in the stability
     index, or ocean/nodata GAEZ edge cases)."""
-    panel['gaez_zone'] = lmf.sample_raster_at_points(
+    panel['gaez_zone'] = sample_raster_at_points(
         p.gaez_path, panel['ease_x'], panel['ease_y'])
-    panel['road_density'] = lmf.sample_raster_at_points(
+    panel['road_density'] = sample_raster_at_points(
         p.road_density_path, panel['ease_x'], panel['ease_y'])
-    panel['slope_degrees'] = lmf.sample_raster_at_points(
+    panel['slope_degrees'] = sample_raster_at_points(
         p.slope_path, panel['ease_x'], panel['ease_y'])
 
     panel['si_observed'] = np.nan
@@ -1090,19 +1207,19 @@ def _sample_panel_covariates(p, panel, observed_years):
 
         si_path = p.si_paths['observed'].get(year)
         if si_path:
-            panel.loc[mask, 'si_observed'] = lmf.sample_raster_at_points(
+            panel.loc[mask, 'si_observed'] = sample_raster_at_points(
                 si_path, panel.loc[mask, 'ease_x'], panel.loc[mask, 'ease_y'])
 
         rain_path = os.path.join(p.input_data_dir, 'era5_land', f'era5_max_daily_mm_{year}.tif')
         if os.path.exists(rain_path):
-            panel.loc[mask, 'rain_max_daily'] = lmf.sample_raster_at_points(
+            panel.loc[mask, 'rain_max_daily'] = sample_raster_at_points(
                 rain_path, panel.loc[mask, 'ease_x'], panel.loc[mask, 'ease_y'])
         else:
             p.L.warning(f'{year}: rain_max_daily raster not found at {rain_path}')
 
         pop_path = os.path.join(p.input_data_dir, 'landscan_1km', f'landscan_{year}_1km.tif')
         if os.path.exists(pop_path):
-            panel.loc[mask, 'population'] = lmf.sample_raster_at_points(
+            panel.loc[mask, 'population'] = sample_raster_at_points(
                 pop_path, panel.loc[mask, 'ease_x'], panel.loc[mask, 'ease_y'])
         else:
             p.L.warning(f'{year}: population raster not found at {pop_path}')
@@ -1547,7 +1664,7 @@ def predict_landslides_scenarios(p):
                                         coef['beta_si'], coef['beta_rain'])
 
         out_path = os.path.join(p.cur_dir, f'hazard_prob_{scenario_name}_{prediction_year}.tif')
-        lmf.write_raster_from_array(
+        write_raster_from_array(
             np.where(valid, prob, chain.NODATA).astype(np.float32),
             tile_gt, proj, out_path, chain.NODATA, gdal.GDT_Float32,
             creation_options=chain.TILE_CREATION_OPTIONS)
@@ -1623,7 +1740,7 @@ def predict_mortality_scenarios(p):
             valid_hazard &= (hazard != hazard_nodata)
 
         out_path = os.path.join(p.cur_dir, f'expected_deaths_{scenario_name}_{prediction_year}.tif')
-        lmf.write_raster_from_array(
+        write_raster_from_array(
             np.where(valid_hazard, hazard * severity_expectation, chain.NODATA).astype(np.float32),
             tile_gt, proj, out_path, chain.NODATA, gdal.GDT_Float32,
             creation_options=chain.TILE_CREATION_OPTIONS)

@@ -3,7 +3,7 @@
 The module has no committed anchor table to compare against (the author's v0.2.0 output is not
 machine-readable here), so every test below pins the ported arithmetic on hand-built inputs:
 small arrays and short frames whose expected values are worked out in the comments. Every pure
-function in landslide_mitigation_chain is exercised.
+function in landslide_mitigation_functions is exercised.
 """
 import math
 import os
@@ -13,7 +13,7 @@ import numpy as np
 import pandas as pd
 
 from global_invest import utilities
-from global_invest.landslide_mitigation import landslide_mitigation_chain as chain
+from global_invest.landslide_mitigation import landslide_mitigation_functions as chain
 from global_invest.landslide_mitigation import landslide_mitigation_tasks as tasks
 
 # A tiny reference grid: 1km pixels, origin at (0, 0), north-up.

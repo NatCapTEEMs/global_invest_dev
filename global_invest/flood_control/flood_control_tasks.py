@@ -40,7 +40,7 @@ def gep_calculation(p):
         import rasterio
         from rasterio.features import geometry_mask
         from rasterio.windows import from_bounds
-        from global_invest.flood_control import flood_control_chain as fchain
+        from global_invest.flood_control import flood_control_functions as fchain
 
         rps = (10, 20, 50, 500)  # the pipeline's final run
         gdf = gpd.read_file(p.flood_control_country_vector_path)

@@ -1,7 +1,7 @@
 """Timber-provision GEP tasks: the value raster summed to countries in the library.
 
 The reported number is OUR run: the pipeline's value raster (verified equal to the
-net-return layer masked and floored, see timber_provision_chain) summed per country on
+net-return layer masked and floored, see timber_provision_functions) summed per country on
 the 10-arcsecond country-id raster. The committed Forestry CSV stays as the test anchor
 the run is compared against, never as the output."""
 import os
@@ -11,7 +11,6 @@ import pandas as pd
 import rasterio
 import hazelbean as hb
 from global_invest import utilities
-from global_invest.timber_provision import timber_provision_chain as tc
 from global_invest.timber_provision import timber_provision_functions as tp
 
 
@@ -47,12 +46,12 @@ def gep_calculation(p):
     for row0 in range(0, value_src.shape[0], rows_per_block):
         h = min(rows_per_block, value_src.shape[0] - row0)
         win = rasterio.windows.Window(0, row0, value_src.shape[1], h)
-        zone_sums += tc.gep_by_zone(value_src.read(1, window=win), zone_src.read(1, window=win), n_zones)
+        zone_sums += tp.gep_by_zone(value_src.read(1, window=win), zone_src.read(1, window=win), n_zones)
 
     attr_cols = ['iso3_r250_id', 'iso3_r250_label', 'iso3_r250_name',
                  'continent', 'region_un', 'region_wb', 'income_grp', 'subregion']
     countries = p.df_countries[attr_cols].drop_duplicates('iso3_r250_id')
-    df_gep = tc.timber_gep_from_zone_sums(zone_sums, countries)
+    df_gep = tp.timber_gep_from_zone_sums(zone_sums, countries)
     df_gep['year'] = int(p.gep_base_year)
     hb.df_write(df_gep[attr_cols + ['year', 'timber_provision_gep']],
                 service_results['gep_by_country_base_year'])
