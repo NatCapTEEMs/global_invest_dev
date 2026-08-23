@@ -1,17 +1,19 @@
-"""Pollination science: a thin driver over William Sidemo-Holm's crop_benefits calculation, plus the
+"""Pollination science: the sufficiency and value calculation, plus the
 frame and array arithmetic the two shock tasks and the GEP valuation share.
 
 The raster science (300 m sufficiency, 5 km valuation, PNAS diff) is imported unchanged from
 crop_benefits; the driver functions at the bottom only run it per scenario on our SEALS maps,
 and the task layer reads the rasters it leaves behind. Nothing here opens a file: the zonal step
 takes the arrays in and hands per-zone series back, which is what the tests exercise. The
-crop_benefits imports are made inside the driver functions so that importing this module (or
+The vendored steps live in pollination_sufficiency, imported at the top like any other module (or
 running the static shock task, which needs none of it) does not require the package installed.
 """
 import os
 from pathlib import Path
 
 import numpy as np
+
+from global_invest.pollination import pollination_sufficiency
 import pandas as pd
 
 BASELINE_LABEL = '2023_pnas'
@@ -246,42 +248,37 @@ def expand_country_values_to_regions(df_regions, df_gep_by_country):
 # this module owns; it runs the imported science and names what it left behind.
 # =============================================================================
 
-def configure_crop_benefits(p, target_year):
-    """crop_benefits Config pointed at OUR base_data + task dir -- from p, no hardcoded machine paths.
+def configure_sufficiency(p, target_year):
+    """The settings the sufficiency and value steps need, filled from the ProjectFlow object.
 
-    validate=False: our calculation skips the FAO/CropGrids tabular stages, so the ONLY external input it
-    needs is the precomputed baseline pollination-value raster under base_data/crop_benefits/. The 5 km
-    resample template only has to define the target grid, and run_pollination_valuation_5km requires
-    sufficiency and value to share that grid -- so country_raster points at the value raster itself,
-    which removes the separate country-raster dependency. Sufficiency outputs go to the task dir.
+    Our calculation skips the FAO and CropGrids tabular stages, so the only external input it
+    needs is the precomputed baseline pollination-value raster under base_data/crop_benefits/.
+    That raster is the output of the source pipeline's FAO and raster stages, run once over
+    Monfreda yields times CropGrids area times FAO producer prices times pollination-dependence
+    ratios, and it is reused rather than rebuilt.
+
+    The 5 km resample template only has to define the target grid, and the valuation requires
+    sufficiency and value to share that grid, so the template points at the value raster itself.
+    That removes the separate country-raster input. Sufficiency outputs go to the task's own dir.
+
+    This replaces a crop_benefits Config loaded from a gitignored local.yaml with validate=False,
+    which meant a missing or wrong config did not fail up front, it proceeded.
     """
-    from crop_benefits.config import load_config
+    crop_benefits_dir = p.get_path('crop_benefits')
+    return pollination_sufficiency.SufficiencySettings(
+        output_dir=Path(p.cur_dir),
+        value_raster_dir=Path(crop_benefits_dir),
+        country_raster_path=Path(os.path.join(
+            crop_benefits_dir, 'poll_value_global_%dusd.tif' % int(target_year))))
 
-    cfg = load_config(validate=False)
-    cb = p.get_path('crop_benefits')
-    # poll_value_global_<year>usd.tif is a PRECOMPUTED baseline input, not built here. It is the
-    # output of the crop_benefits raster pipeline, run once over Monfreda yields x CropGrids area x
-    # FAO producer prices x pollination-dependence ratios:
-    #   crop_benefits: scripts/pipelines/run_fao_pipeline.py  then
-    #                  scripts/pipelines/run_raster_pipeline.py --step poll_value
-    #                  (src/crop_benefits/raster/pollination_value.py::run_pollination_value)
-    # Reuses that raster and skips the FAO/CropGrids tabular stages (validate=False).
-    cfg.paths.country_raster = Path(os.path.join(cb, 'poll_value_global_%dusd.tif' % int(target_year)))
-    cfg.outputs.pollination_value_2020 = Path(cb)
-    cfg.outputs.pollination_sufficiency = Path(p.cur_dir)
-    return cfg
 
 
 def baseline_denominator(cfg, baseline_lulc_path, target_year):
     """Unpaired 2023 pollination value (the % change denominator), computed once."""
-    from crop_benefits.pollination.sufficiency_poll import (
-        run_pollination_sufficiency_300m, run_pollination_sufficiency_5km)
-    from crop_benefits.pollination.sufficiency_value import run_pollination_valuation_5km
-
-    run_pollination_sufficiency_300m(cfg, lulc_path=baseline_lulc_path, scenario=BASELINE_LABEL)
-    run_pollination_sufficiency_5km(cfg, scenario=BASELINE_LABEL)
-    run_pollination_valuation_5km(cfg, scenario=BASELINE_LABEL, target_year=target_year)
-    return cfg.outputs.pollination_sufficiency / f'value_pollination_sufficiency_{BASELINE_LABEL}_5km.tif'
+    pollination_sufficiency.run_pollination_sufficiency_300m(cfg, lulc_path=baseline_lulc_path, scenario=BASELINE_LABEL)
+    pollination_sufficiency.run_pollination_sufficiency_5km(cfg, scenario=BASELINE_LABEL)
+    pollination_sufficiency.run_pollination_valuation_5km(cfg, scenario=BASELINE_LABEL, target_year=target_year)
+    return cfg.output_dir / f'value_pollination_sufficiency_{BASELINE_LABEL}_5km.tif'
 
 
 def scenario_diff_raster(cfg, scenario, lulc_path, baseline_lulc_path, target_year):
@@ -290,20 +287,15 @@ def scenario_diff_raster(cfg, scenario, lulc_path, baseline_lulc_path, target_ye
     Returns the path crop_benefits wrote it to; the task reads it and hands the array to
     zonal_pct_change.
     """
-    from crop_benefits.pollination.sufficiency_poll import (
-        run_pollination_sufficiency_300m_stable_ag, run_pollination_sufficiency_5km)
-    from crop_benefits.pollination.sufficiency_value import run_pollination_valuation_5km
-    from crop_benefits.pollination.sufficiency_diff import run_pollination_diff_5km_pnas
-
     stab, b_stab = f'{scenario}_stab', f'{BASELINE_LABEL}_stab_{scenario}'
     for suff_scen, lulc, other in [(stab, lulc_path, baseline_lulc_path),
                                    (b_stab, baseline_lulc_path, lulc_path)]:
-        run_pollination_sufficiency_300m_stable_ag(cfg, lulc_path=lulc, other_lulc_path=other, scenario=suff_scen)
-        run_pollination_sufficiency_5km(cfg, scenario=suff_scen)
-        run_pollination_valuation_5km(cfg, scenario=suff_scen, target_year=target_year)
+        pollination_sufficiency.run_pollination_sufficiency_300m_stable_ag(cfg, lulc_path=lulc, other_lulc_path=other, scenario=suff_scen)
+        pollination_sufficiency.run_pollination_sufficiency_5km(cfg, scenario=suff_scen)
+        pollination_sufficiency.run_pollination_valuation_5km(cfg, scenario=suff_scen, target_year=target_year)
 
-    suff_dir = cfg.outputs.pollination_sufficiency
-    return run_pollination_diff_5km_pnas(
+    suff_dir = cfg.output_dir
+    return pollination_sufficiency.run_pollination_diff_5km_pnas(
         cfg, scenario=scenario, baseline_scenario=BASELINE_LABEL,
         scenario_value_path=suff_dir / f'value_pollination_sufficiency_{stab}_5km.tif',
         baseline_value_path=suff_dir / f'value_pollination_sufficiency_{b_stab}_5km.tif')

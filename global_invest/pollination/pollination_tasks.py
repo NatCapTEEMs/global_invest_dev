@@ -1,6 +1,6 @@
 """Dynamic pollination ES-shock task (V_F, OSD).
 
-Runs William Sidemo-Holm's crop_benefits pollination calculation on our SEALS 300 m maps at EACH SEALS
+Runs the pollination sufficiency and value calculation on our SEALS 300 m maps at EACH SEALS
 anchor year (seals_years), then piecewise-linearly interpolates the shock to annual values. Writes
 pollination_interpolated.csv -- the file build_combined_afeall_cc_es reads -- into the shared ES-shock
 directory (p.es_shock_dir). Grafted by consumers via add_pollination_tasks (dispatch on p.dynamic_es).
@@ -17,9 +17,9 @@ from global_invest.pollination import pollination_functions as pf
 def publish_inputs(p):
     """Every GEP task's first line: the pollination es_config row (defaults layer -- a caller-set
     value wins) plus the shared country references and the results registry. gep_base_year and
-    the value raster (gep_quantity_input_path) are a PAIR defaulting to 2023 -- the crop_benefits
+    the value raster (gep_quantity_input_path) are a PAIR defaulting to 2023 -- the source
     rasters on hand; the GEP manuscript's base year is 2019, so regenerate
-    poll_value_global_2019usd.tif with the crop_benefits recipe and update BOTH cells (the row
+    poll_value_global_2019usd.tif with the recipe in pollination_sufficiency and update BOTH cells (the row
     names the year twice) before quoting a manuscript-aligned number."""
     utilities.hydrate_es_config(p, 'pollination', log=hb.log)
     utilities.hydrate_es_parameters(p, 'pollination', log=hb.log)
@@ -47,7 +47,7 @@ def _zonal_context(denominator_path, correspondence_gpkg):
     """
     import geopandas as gpd
     from rasterio.features import rasterize
-    from crop_benefits.raster.spatial import build_area_km2_raster
+    from global_invest.pollination.pollination_sufficiency import build_area_km2_raster
 
     gdf = gpd.read_file(correspondence_gpkg, engine='pyogrio')
     if gdf.crs is None or gdf.crs.to_epsg() != pf.LATLON_EPSG:
