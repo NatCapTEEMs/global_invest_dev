@@ -149,7 +149,7 @@ engineering work we did. **number** is what the figure is and what it was checke
 - **run:** yes
 - **method:** FAOSTAT gross production value over 65 livestock products, times an attribution factor: either the CWoN land rental rate or the GLEAM share of feed intake that ecosystems provided.
 - **total:** $519bn on the rental rate. $1.37T on the feed share.
-- **code:** Refactored onto the library template and hazelbean conventions. Plus a units fix. The feed share is now wired through the task layer, so a run writes the feed-share value beside the rental-rate one. Its method page is not this service's: the file is a copy of the crop provision text, describing crop items throughout, so the equations on it are the wrong ones.
+- **code:** Refactored onto the library template and hazelbean conventions. Plus a units fix. The feed share is now wired through the task layer, so a run writes the feed-share value beside the rental-rate one. Its method page was a copy of the crop provision text, describing crop items throughout; it has been rewritten for this service.
 - **number:** Values livestock output and attributes the part of it nature provided. The 65-product FAO list gives $2.29T of gross production; the two attribution factors give very different answers from it: the CWoN land rental rate gives $519bn over 178 countries, the GLEAM feed share gives $1.37T over 171, a factor of 2.6. Provisional until that choice is made. The feed share comes from GLEAM 3 intake harvested from FAO's public dashboard for 231 countries, 205 matching a country in the account, giving a real share rather than a bound (median 0.73; Mongolia 0.998, India 0.911, Brazil 0.847, France 0.651, United States 0.567, China 0.513).
 - **need:** Which factor the account attributes livestock value with. The code computes both, and they differ by 2.6 times, $519bn on the CWoN land rental rate against $1.37T on the GLEAM feed share. The rental rate is the crop method's factor. Also the compiled GLEAM extract (gleam3_dmi.xlsx) to validate our harvest against, the confirmation of which FAO products count as livestock, and one per-country output. 
 
@@ -188,7 +188,7 @@ engineering work we did. **number** is what the figure is and what it was checke
 - **run:** yes
 - **method:** For each of wind, solar and geothermal, the electricity a country generated from it in gigawatt hours, from IRENA's statistics, times the electricity price from the World Bank series, times the CWoN rent share, which is the part of that revenue attributable to the resource rather than to the turbines and grid.
 - **total:** $170.83bn
-- **code:** Refactored onto the library template and hazelbean conventions. The calculation had been written out as one block in the task file. Its method page is not this service's: the file is a copy of the crop provision text, describing crop items throughout, so the equations on it are the wrong ones.
+- **code:** Refactored onto the library template and hazelbean conventions. The calculation had been written out as one block in the task file. Its method page was a copy of the crop provision text, describing crop items throughout; it has been rewritten for this service.
 - **number:** Computes IRENA generation times World Bank price times the CWoN rent share. A fresh run reproduces $170.83bn and each resource: wind $110.31bn, solar $53.95bn, geothermal $6.56bn. The drive's reference CSVs hold $134.6bn, and which is current is open.
 - **need:** the decision which source is current. 
 
