@@ -206,6 +206,10 @@ def merge_crop_with_coefs(df_crop_value, df_crop_coefs):
         merged_parts.append(merged)
 
     df = pd.concat(merged_parts, ignore_index=True)
+    # Kept because the attribution factor is still an open decision: the rental rate is a
+    # stand-in for the share of feed that ecosystems provided, and comparing the two needs the
+    # value before either is applied.
+    df['gross_production_value'] = df['livestock_provision_gep']
     df['livestock_provision_gep'] = df['livestock_provision_gep'] * df['rental_rate']
     df = df.sort_values(by=['area_code', 'year'], ascending=[True, True])
     logging.info(f'Merged values + coefs ({df.shape[0]} rows).')
@@ -262,8 +266,11 @@ def attach_countries(df_crop_value, df_countries):
 def group_crops(df):
     """Item rows summed to one row per country and year."""
     hb.log('Grouping GEP by country-year.')
+    agg_dict = {'livestock_provision_gep': 'sum'}
+    if 'gross_production_value' in df.columns:
+        agg_dict['gross_production_value'] = 'sum'
     df_gep_by_year_country = hb.df_groupby(df, ['iso3_r250_id', 'year'],
-                                           agg_dict={'livestock_provision_gep': 'sum'},
+                                           agg_dict=agg_dict,
                                            preserve='keep_all_valid')
     df_gep_by_year_country = df_gep_by_year_country.sort_values(by=['iso3_r250_id', 'year'],
                                                                 ascending=[True, True])
@@ -372,3 +379,32 @@ def clean_gleam_dashboard_intake(df_raw, df_countries):
     unmatched = sorted(df.loc[df['iso3_r250_id'].isna(), 'country_code'].unique().tolist())
     matched = df[df['iso3_r250_id'].notna()]
     return matched[['iso3_r250_id', 'iso3_r250_label'] + feed_columns], unmatched
+
+
+def feed_share_gep(df_country_year, df_lambda):
+    """Livestock value attributed by the share of feed that ecosystems provided.
+
+    The account currently attributes livestock value with the CWoN land rental rate, which is
+    the crop method's factor and stands in for this one. Nature's contribution to a farmed animal
+    is the feed it ate that nature grew, which is what GLEAM's intake table measures, so this
+    applies that share to the same gross production value.
+
+    Both columns are produced and neither replaces the other: which factor the account uses is a
+    decision for the group, and the two differ by enough that making it silently would change the
+    headline.
+
+    Args:
+        df_country_year (pd.DataFrame): one row per country and year, carrying iso3_r250_id and
+            gross_production_value.
+        df_lambda (pd.DataFrame): feed_lambda_by_country's output, with iso3_r250_id and lambda.
+
+    Returns:
+        pd.DataFrame: df_country_year with feed_share and livestock_provision_gep_feed_share
+        added. A country GLEAM does not model keeps a missing share, so its feed-share value is
+        missing rather than zero.
+    """
+    df = df_country_year.merge(
+        df_lambda[['iso3_r250_id', 'lambda']].rename(columns={'lambda': 'feed_share'}),
+        on='iso3_r250_id', how='left')
+    df['livestock_provision_gep_feed_share'] = df['gross_production_value'] * df['feed_share']
+    return df

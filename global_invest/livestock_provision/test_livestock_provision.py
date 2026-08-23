@@ -299,3 +299,28 @@ def test_the_harvested_dashboard_table_gives_an_estimate_not_a_bound():
     out = lp.feed_lambda_by_country(cleaned)
     assert bool(out['lambda_is_upper_bound'].iloc[0]) is False
     assert 0.0 <= out['lambda'].iloc[0] <= 1.0
+
+
+def test_feed_share_attribution_runs_beside_the_rental_rate_not_instead_of_it():
+    # The account attributes livestock value with the CWoN land rental rate, which belongs to the
+    # crop method and stands in for the share of feed ecosystems provided. Both columns must come
+    # out of one run, because choosing between them is the group's decision and they differ a lot.
+    df_country_year = pd.DataFrame({
+        'iso3_r250_id': [1, 2, 3],
+        'year': [2019, 2019, 2019],
+        'gross_production_value': [1000.0, 2000.0, 500.0],
+        'livestock_provision_gep': [120.0, 240.0, 60.0],       # the rental-rate attribution
+    })
+    df_lambda = pd.DataFrame({
+        'iso3_r250_id': [1, 2], 'lambda': [0.9, 0.5], 'lambda_is_upper_bound': [False, False]})
+
+    out = lp.feed_share_gep(df_country_year, df_lambda).set_index('iso3_r250_id')
+
+    assert out.loc[1, 'livestock_provision_gep_feed_share'] == pytest.approx(900.0)
+    assert out.loc[2, 'livestock_provision_gep_feed_share'] == pytest.approx(1000.0)
+    # The rental-rate column is untouched, so a reader can see both attributions side by side.
+    assert out.loc[1, 'livestock_provision_gep'] == pytest.approx(120.0)
+    # A country GLEAM does not model gets no feed-share value rather than a zero one, which would
+    # say ecosystems contributed nothing to its livestock.
+    assert pd.isna(out.loc[3, 'livestock_provision_gep_feed_share'])
+    assert out.loc[3, 'livestock_provision_gep'] == pytest.approx(60.0)

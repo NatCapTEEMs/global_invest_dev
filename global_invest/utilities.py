@@ -134,7 +134,12 @@ def render_service_results(p):
         # machine would show the stable project's numbers instead of this run's.
         env['PROJECTFLOW_ROOT'] = p.project_dir
 
-        cmd = ['quarto', 'render', results_qmd_project_path, '--verbose']
+        # --to html is explicit because quarto renders EVERY format a qmd declares when it is
+        # omitted. Coastal carbon declares pdf and docx alongside html, so an unqualified render
+        # pulled in lualatex and died on a TeX Live too old to reach the current repository.
+        # The results report is the HTML page in every service; the other formats stay available
+        # to anyone who asks quarto for them directly.
+        cmd = ['quarto', 'render', results_qmd_project_path, '--to', 'html', '--verbose']
         hb.log('Running quarto command: %s' % ' '.join(cmd))
         process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                    env=env, text=True, bufsize=1, universal_newlines=True)

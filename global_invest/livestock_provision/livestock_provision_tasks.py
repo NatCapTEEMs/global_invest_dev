@@ -133,6 +133,19 @@ def gep_calculation(p):
 
         df_gep_by_country_year = livestock_provision_functions.group_crops(df_gep_by_country_year_crop)
 
+        # The feed share, beside the rental rate rather than instead of it. GLEAM 3 intake gives
+        # the share of what livestock ate that ecosystems grew, which is the factor this service
+        # wants; the rental rate is the crop method's factor standing in for it. Which one the
+        # account uses is the group's decision, so both columns are written.
+        df_gleam = livestock_provision_functions.clean_gleam_dashboard_intake(
+            hb.df_read(p.get_path(p.gleam_dmi_path), sep='|'), p.df_countries)
+        df_lambda = livestock_provision_functions.feed_lambda_by_country(df_gleam)
+        df_gep_by_country_year = livestock_provision_functions.feed_share_gep(
+            df_gep_by_country_year, df_lambda)
+        hb.log('Feed share attached for %d of %d countries; rental-rate and feed-share columns '
+               'are both written.' % (int(df_lambda['lambda'].notna().sum()),
+                                      df_gep_by_country_year['iso3_r250_id'].nunique()))
+
         df_gep_by_year = livestock_provision_functions.group_countries(df_gep_by_country_year)
 
         df_gep_by_country_base_year = df_gep_by_country_year.loc[
