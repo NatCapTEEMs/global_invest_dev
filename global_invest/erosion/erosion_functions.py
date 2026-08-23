@@ -12,6 +12,8 @@ import numpy as np
 import pandas as pd
 import hazelbean as hb
 import requests
+
+from global_invest.erosion import erosion_chain
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 from matplotlib.patches import Patch
@@ -936,7 +938,7 @@ APPLY_SEVERE_FILTER = True
 YIELD_REDUCTION_FOR_SHOCK = 0.08
 
 # Shock floor (applied only to (0 < shock < floor))
-MIN_SHOCK_FLOOR = 8e-10
+MIN_SHOCK_FLOOR = erosion_chain.MIN_SHOCK_FLOOR
 
 BASE_YEAR_FOR_CONSTANT = 2019
 
@@ -1390,55 +1392,16 @@ def compute_country_gep_from_country_crop(
     gdp_current_2019_csv: Path,
     component: str,
 ) -> pd.DataFrame:
+    """Country protected production, shock, value and GDP share, for one prevention component.
+
+    Reads the crop gross production value and GDP tables, then hands the frames to
+    `erosion_chain`, which holds the arithmetic.
     """
-    Returns country-level:
-      - protected/total/share_protected
-      - erosion_shock_share (elasticity-weighted)
-      - gep_const2019_usd
-      - gdp_loss_pct
-    """
-    dfc = df_country_crop_component.copy()
-
-    # country totals
-    phys = dfc.groupby("ISO3", as_index=False)[["protected_production_tons","total_production_tons"]].sum()
-    phys["share_protected_production"] = np.where(
-        phys["total_production_tons"] > 0,
-        np.clip(phys["protected_production_tons"] / phys["total_production_tons"], 0.0, 1.0),
-        np.nan
-    )
-    phys = phys.rename(columns={"ISO3":"iso3"})
-
-    # elasticity-weighted shock
-    for col in ["total_production_tons", "share_protected_production", "elasticity_used"]:
-        dfc[col] = pd.to_numeric(dfc[col], errors="coerce")
-    dfc["w"] = dfc["total_production_tons"].clip(lower=0.0)
-    dfc["term"] = dfc["w"] * dfc["share_protected_production"].clip(0.0, 1.0) * dfc["elasticity_used"].clip(0.0, 1.0)
-
-    agg = dfc.groupby("ISO3", as_index=False).agg(w_sum=("w","sum"), term_sum=("term","sum"))
-    agg["erosion_shock_share"] = np.where(
-        agg["w_sum"] > 0,
-        (agg["term_sum"] / agg["w_sum"]).clip(0.0, 1.0),
-        np.nan
-    )
-
-    # tiny positive floor
-    mpos = agg["erosion_shock_share"].notna() & (agg["erosion_shock_share"] > 0) & (agg["erosion_shock_share"] < MIN_SHOCK_FLOOR)
-    agg.loc[mpos, "erosion_shock_share"] = MIN_SHOCK_FLOOR
-    agg = agg.rename(columns={"ISO3":"iso3"})
-
-    fao = load_fao_gpv_iso3_const2019_with_fallback(fao_iso3_csv, prices_full_csv, base_year=base_year)
-    gdp = load_wb_gdp_current_2019(gdp_current_2019_csv)
-
-    out = phys.merge(agg[["iso3","erosion_shock_share"]], on="iso3", how="left").merge(fao, on="iso3", how="left").merge(gdp, on="iso3", how="left")
-    out["gep_const2019_usd"] = out["crop_gpv_const2019_2019"].fillna(0.0) * out["erosion_shock_share"].fillna(0.0)
-    out["gdp_loss_pct"] = np.where(
-        out["gdp_const2019_2019"].notna() & (out["gdp_const2019_2019"] > 0),
-        100.0 * out["gep_const2019_usd"] / out["gdp_const2019_2019"],
-        np.nan,
-    )
-    out["component"] = component
-    return out[["component","iso3","protected_production_tons","total_production_tons","share_protected_production",
-                "erosion_shock_share","crop_gpv_const2019_2019","gdp_const2019_2019","gep_const2019_usd","gdp_loss_pct"]]
+    df_shock = erosion_chain.country_erosion_shock(df_country_crop_component, MIN_SHOCK_FLOOR)
+    df_crop_gpv = load_fao_gpv_iso3_const2019_with_fallback(
+        fao_iso3_csv, prices_full_csv, base_year=base_year)
+    df_gdp = load_wb_gdp_current_2019(gdp_current_2019_csv)
+    return erosion_chain.country_gep(df_shock, df_crop_gpv, df_gdp, component)
 
 
 # ==========================================================
@@ -1494,36 +1457,24 @@ def run_biophysical_decomposed():
         ELEVATION_PATH if (ELEVATION_PATH and ELEVATION_PATH.exists()) else None
     )
 
-    iso_small = set(
-        iso_lut.merge(gdf_countries[["ISO3","area_km2"]], on="ISO3", how="left")
-        .query("area_km2.notna() & area_km2 < @SMALL_COUNTRY_AREA_KM2")["iso_id"].astype(int).tolist()
-    )
-    iso_low_elev = set([iso_id for iso_id, m in mean_elev_by_id.items()
-                        if np.isfinite(m) and m < LOW_ELEVATION_MEAN_M])
-    iso_low_threshold = iso_small.union(iso_low_elev)
+    df_threshold = erosion_chain.country_threshold_policy(
+        iso_lut.rename(columns={"ISO3": "iso3"})
+               .merge(gdf_countries[["ISO3", "area_km2"]].rename(columns={"ISO3": "iso3"}),
+                      on="iso3", how="left")
+               .assign(mean_elevation_m=lambda d: [mean_elev_by_id.get(int(i), np.nan)
+                                                   for i in d["iso_id"]]),
+        THRESH_HIGH, THRESH_LOW, SMALL_COUNTRY_AREA_KM2, LOW_ELEVATION_MEAN_M)
 
-    threshold_map = np.full((usle.rio.height, usle.rio.width), THRESH_HIGH, dtype="float32")
-    if iso_low_threshold:
-        mask_low = np.isin(iso_id_raster, np.fromiter(iso_low_threshold, dtype="int32"))
-        threshold_map[mask_low] = THRESH_LOW
+    threshold_by_id = np.full(max_id + 1, THRESH_HIGH, dtype="float32")
+    id_by_iso = dict(zip(iso_lut["ISO3"], iso_lut["iso_id"].astype(int)))
+    for iso3, threshold in zip(df_threshold["iso3"], df_threshold["threshold_t_ha_yr"]):
+        threshold_by_id[id_by_iso[iso3]] = threshold
+    threshold_map = threshold_by_id[iso_id_raster.astype("int32")]
 
     severe = (usle.values > threshold_map) if APPLY_SEVERE_FILTER else np.ones_like(usle.values, dtype=bool)
 
-    # ---- Save threshold policy
-    audit_rows = []
-    for _, r in iso_lut.iterrows():
-        iso = r["ISO3"]; iso_id = int(r["iso_id"])
-        thr = THRESH_LOW if (iso_id in iso_low_threshold) else THRESH_HIGH
-        reasons = []
-        if iso_id in iso_small: reasons.append("small-area")
-        if iso_id in iso_low_elev: reasons.append("low-elevation")
-        audit_rows.append({
-            "ISO3": iso,
-            "country_name": name_by_iso.get(iso, iso),
-            "threshold_t_ha_yr": thr,
-            "reason": " & ".join(reasons) if reasons else "default-high"
-        })
-    pd.DataFrame(audit_rows).to_csv(OUT_DIR / "threshold_policy.csv", index=False)
+    df_threshold.insert(1, "country_name", [name_by_iso.get(i, i) for i in df_threshold["iso3"]])
+    df_threshold.rename(columns={"iso3": "ISO3"}).to_csv(OUT_DIR / "threshold_policy.csv", index=False)
 
     # ---- Bandmap + elasticity
     bandmap = pd.read_csv(BANDMAP_CSV)
@@ -1569,18 +1520,11 @@ def run_biophysical_decomposed():
 
     cm = cropland_mask.values.astype(bool)
 
-    # ---- On-farm PS (rate-based): AE/(AE+USLE), then restrict to cropland & severe
-    eps = 1e-9
-    denom = np.maximum(avo.values + usle.values, eps)
-    ps_onfarm_raw = np.clip(avo.values / denom, 0.0, 1.0)
-    ps_onfarm = np.where(cm & severe, ps_onfarm_raw, 0.0).astype("float32")
-
-    # ---- Upstream PS: UPS at pixel j, restrict to cropland & severe
-    ps_upstream = np.where(cm & severe, ups_vals, 0.0).astype("float32")
-
-    # ---- Combined PS (union-of-protection; avoids double counting)
-    ps_combined = (1.0 - (1.0 - ps_onfarm) * (1.0 - ps_upstream)).astype("float32")
-    ps_combined = np.clip(ps_combined, 0.0, 1.0).astype("float32")
+    # ---- Prevention shares, on cropland where soil loss is severe (see erosion_chain)
+    ps_onfarm = erosion_chain.restrict_to_valued_pixels(
+        erosion_chain.onfarm_prevention_share(avo.values, usle.values), cm, severe).astype("float32")
+    ps_upstream = erosion_chain.restrict_to_valued_pixels(ups_vals, cm, severe).astype("float32")
+    ps_combined = erosion_chain.combined_prevention_share(ps_onfarm, ps_upstream).astype("float32")
 
     # ---- Save PS rasters for transparency
     _write_share(OUT_DIR / "ps_onfarm_cropland_severe.tif", usle, ps_onfarm)

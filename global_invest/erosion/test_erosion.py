@@ -1,9 +1,14 @@
-"""Unit tests for the erosion module: the GEP valuation math (folded from global_erosion_gep) and
-the dependency-table normalization. Synthetic and loader-free: the FAO/WB CSV loaders are
-monkeypatched so the tests pin compute_country_gep_from_country_crop's own arithmetic --
-production-weighted elasticity shock, clipping, the numerical floor, GPV x share, GDP% -- which is
-what the per-country GEP rests on. The SDR/biophysical chain is verified by the section-A run
-against staged data, not unit-testable at this scale.
+"""Unit tests for the erosion module.
+
+The account's science lives in `erosion_chain`, over arrays and frames rather than over rasters,
+so these run on four countries and a handful of pixels instead of on a global grid: the two
+prevention shares and how they combine, the severity threshold each country gets, the
+production-weighted shock, and the valuation. The two tests that come first pin the same
+valuation through `erosion_functions` with the price loaders monkeypatched, which is what keeps
+the thin wrapper over the chain honest, and the dependency table's scenario labels.
+
+The InVEST SDR run that produces the erosion rasters is not covered here; it is verified against
+staged data.
 """
 from pathlib import Path
 
@@ -62,3 +67,106 @@ def test_read_erosion_dependency_normalizes_scenario_labels(tmp_path):
 
     df = ef.read_erosion_dependency(dep)
     assert set(df['scenario']) == {'below_2c', 'baseline_ignore_damages', 'baseline_2023'}
+
+
+# ---------------------------------------------------------------------------
+# The science in erosion_chain: prevention shares, the severity threshold, and the shock.
+# ---------------------------------------------------------------------------
+import numpy as np
+
+from global_invest.erosion import erosion_chain as ec
+
+
+def test_two_kinds_of_protection_combine_as_a_union_not_a_sum():
+    # A pixel whose farm cover prevents 60 percent of soil loss and whose upstream catchment
+    # prevents 50 percent is protected 80 percent, not 110: the two act on the same soil, so the
+    # 50 percent applies to what the 60 percent let through. Summing would exceed total loss.
+    assert ec.combined_prevention_share(0.6, 0.5) == pytest.approx(0.8)
+    # Either one alone is itself, and full protection stays full however much is added to it.
+    assert ec.combined_prevention_share(0.6, 0.0) == pytest.approx(0.6)
+    assert ec.combined_prevention_share(1.0, 0.9) == pytest.approx(1.0)
+
+
+def test_onfarm_share_is_a_rate_and_a_bare_pixel_prevents_nothing():
+    # Equal avoided and actual loss means cover is preventing half of what would otherwise go.
+    assert ec.onfarm_prevention_share(np.array([5.0]), np.array([5.0]))[0] == pytest.approx(0.5)
+    assert ec.onfarm_prevention_share(np.array([9.0]), np.array([1.0]))[0] == pytest.approx(0.9)
+    # A pixel with neither avoided nor actual erosion reads as no prevention, not as a
+    # divide-by-zero and not as full protection.
+    assert ec.onfarm_prevention_share(np.array([0.0]), np.array([0.0]))[0] == 0.0
+
+
+def test_prevention_is_valued_only_on_cropland_where_loss_is_severe():
+    # The account pays for protected crop production, so prevention on non-crop land, or where
+    # soil loss is within what the soil tolerates, drops out before it can reach a country total.
+    share = np.array([0.8, 0.8, 0.8, 0.8])
+    cropland = np.array([True, True, False, False])
+    severe = np.array([True, False, True, False])
+    assert ec.restrict_to_valued_pixels(share, cropland, severe).tolist() == [0.8, 0.0, 0.0, 0.0]
+
+
+def test_small_or_low_lying_countries_take_the_low_tolerance_and_say_why():
+    # The default tolerance assumes deep soils on upland slopes. Either a small area or a low mean
+    # elevation moves a country to the low rate, and the reason records which test it failed --
+    # the audit is what lets a reviewer see that Bangladesh is not on the default by accident.
+    countries = pd.DataFrame({
+        'iso3': ['BIG', 'SMALL', 'FLAT', 'BOTH', 'UNKNOWN'],
+        'area_km2': [900000.0, 300.0, 900000.0, 300.0, np.nan],
+        'mean_elevation_m': [1200.0, 1200.0, 20.0, 20.0, np.nan],
+    })
+    out = ec.country_threshold_policy(countries, threshold_high=11.0, threshold_low=2.0,
+                                      small_country_area_km2=25000.0,
+                                      low_elevation_mean_m=100.0).set_index('iso3')
+    assert out.loc['BIG', 'threshold_t_ha_yr'] == 11.0
+    assert out.loc['BIG', 'reason'] == 'default-high'
+    assert out.loc['SMALL', 'threshold_t_ha_yr'] == 2.0
+    assert out.loc['SMALL', 'reason'] == 'small-area'
+    assert out.loc['FLAT', 'reason'] == 'low-elevation'
+    assert out.loc['BOTH', 'reason'] == 'small-area & low-elevation'
+    # A country we have neither measure for cannot fail either test, so it keeps the default.
+    assert out.loc['UNKNOWN', 'threshold_t_ha_yr'] == 11.0
+
+
+def test_the_shock_weights_crops_by_production_not_by_crop_count():
+    # One country grows a lot of a well-protected crop and a little of an unprotected one. The
+    # shock is 0.9-ish, near the big crop, not 0.5 -- averaging the two crops evenly would let a
+    # marginal crop pull a country's whole shock around.
+    df = pd.DataFrame({
+        'ISO3': ['AAA', 'AAA'],
+        'protected_production_tons': [9900.0, 0.0],
+        'total_production_tons': [10000.0, 100.0],
+        'share_protected_production': [0.99, 0.0],
+        'elasticity_used': [1.0, 1.0],
+    })
+    out = ec.country_erosion_shock(df).set_index('iso3')
+    assert out.loc['AAA', 'erosion_shock_share'] == pytest.approx(9900.0 / 10100.0)
+
+
+def test_a_country_with_no_production_has_no_shock_rather_than_a_zero_one():
+    # Zero would say erosion costs this country nothing, which is a finding. Missing says we have
+    # no production to take a share of, which is the truth, and it keeps the country out of a mean.
+    df = pd.DataFrame({
+        'ISO3': ['NONE'], 'protected_production_tons': [0.0], 'total_production_tons': [0.0],
+        'share_protected_production': [np.nan], 'elasticity_used': [0.5]})
+    out = ec.country_erosion_shock(df).set_index('iso3')
+    assert pd.isna(out.loc['NONE', 'erosion_shock_share'])
+    assert pd.isna(out.loc['NONE', 'share_protected_production'])
+
+
+def test_value_is_crop_output_times_the_shock_and_a_missing_price_is_not_a_zero_shock():
+    # The value is the country's crop gross production value times the shock. A country we have no
+    # GPV for values at zero -- but its shock stays visible, so the gap reads as a missing price
+    # rather than as a country where erosion does not matter.
+    shock = pd.DataFrame({
+        'iso3': ['AAA', 'NOGPV'], 'protected_production_tons': [50.0, 50.0],
+        'total_production_tons': [100.0, 100.0], 'share_protected_production': [0.5, 0.5],
+        'erosion_shock_share': [0.2, 0.2]})
+    gpv = pd.DataFrame({'iso3': ['AAA'], 'crop_gpv_const2019_2019': [1000.0]})
+    gdp = pd.DataFrame({'iso3': ['AAA', 'NOGPV'], 'gdp_const2019_2019': [10000.0, 0.0]})
+    out = ec.country_gep(shock, gpv, gdp, 'combined').set_index('iso3')
+    assert out.loc['AAA', 'gep_const2019_usd'] == pytest.approx(200.0)
+    assert out.loc['AAA', 'gdp_loss_pct'] == pytest.approx(2.0)
+    assert out.loc['NOGPV', 'gep_const2019_usd'] == 0.0
+    assert out.loc['NOGPV', 'erosion_shock_share'] == pytest.approx(0.2)
+    # A zero or missing GDP gives no percentage, rather than an infinite one.
+    assert pd.isna(out.loc['NOGPV', 'gdp_loss_pct'])
