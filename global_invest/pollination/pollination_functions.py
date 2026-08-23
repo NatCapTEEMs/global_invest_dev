@@ -12,6 +12,8 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+import logging
+from typing import Optional, Set, Tuple
 import numpy as np
 import gc
 import logging
@@ -412,3 +414,618 @@ def get_compression_profile(
         return COMPRESSION_PROFILES['categorical'].copy()
     else:
         return COMPRESSION_PROFILES['defaults'].copy()
+
+@dataclass
+class FaoPriceSettings:
+    """What the FAO price steps need, in place of the crop_benefits Config they used to read.
+
+    The prices are a base-data input rather than a per-run result: the pipeline downloads FAOSTAT
+    production and producer prices, reconstructs local currency where FAOSTAT reports only the old
+    series, converts to USD against World Bank exchange rates, and writes a median price per crop
+    over `price_years`. The pollination value raster is built against that table.
+
+    Attributes:
+        crosswalk_m49_iso3_path (Path): FAO M49 area codes to ISO3.
+        fao_classification_path (Path): the FAO item classification.
+        crosswalk_fao_cropgrids_path (Path): FAO items to CropGrids crop names.
+        output_dir (Path): where the production, price, value and median-price tables are written.
+        fao_start_year (int): first year of FAOSTAT data to keep.
+        fao_end_year (int): last year.
+        price_years (tuple): the years the median price is taken over.
+    """
+    crosswalk_m49_iso3_path: Path
+    fao_classification_path: Path
+    crosswalk_fao_cropgrids_path: Path
+    output_dir: Path
+    fao_start_year: int = 1991
+    fao_end_year: int = 2023
+    price_years: tuple = (2018, 2019, 2020, 2021, 2022)
+
+    # The vendored code reads these as nested attributes; these keep its call sites unchanged.
+    @property
+    def paths(self):
+        return self
+
+    @property
+    def outputs(self):
+        return self
+
+    @property
+    def run(self):
+        return self
+
+    @property
+    def crosswalk_m49_iso3(self):
+        return self.crosswalk_m49_iso3_path
+
+    @property
+    def fao_classification(self):
+        return self.fao_classification_path
+
+    @property
+    def crosswalk_fao_cropgrids(self):
+        return self.crosswalk_fao_cropgrids_path
+
+    @property
+    def fao_production(self):
+        return self.output_dir
+
+    @property
+    def fao_prices(self):
+        return self.output_dir
+
+    @property
+    def fao_values(self):
+        return self.output_dir
+
+    @property
+    def fao_median_prices(self):
+        return self.output_dir / 'median_prices'
+
+
+
+# ---------------------------------------------------------------------------------------------
+# Vendored from crop_benefits: the FAO price path, the parts that hold no file handling.
+# These build the per-crop median producer prices the pollination value raster is priced at.
+# ---------------------------------------------------------------------------------------------
+
+_URL = (
+    "https://fenixservices.fao.org/faostat/static/bulkdownloads/"
+    "Production_Crops_Livestock_E_All_Data_(Normalized).zip"
+)
+
+_CSV_NAME = "Production_Crops_Livestock_E_All_Data_(Normalized).csv"
+
+_ELEMENTS_KEEP = {"Yield", "Production"}
+
+_EXCLUDE_ITEM_CODES = {
+    836,    # Natural rubber in primary forms (processed latex)
+    1717,   # Cereals, primary (aggregate)
+    1720,   # Roots and Tubers, Total (aggregate)
+    1723,   # Sugar Crops Primary (aggregate)
+    1726,   # Pulses, Total (aggregate)
+    1729,   # Treenuts, Total (aggregate)
+    1732,   # Oilcrops, Oil Equivalent (derived equivalent)
+    1735,   # Vegetables Primary (aggregate)
+    1738,   # Fruit Primary (aggregate)
+    1804,   # Citrus Fruit, Total (aggregate)
+    1841,   # Oilcrops, Cake Equivalent (derived equivalent)
+    17530,  # Fibre Crops, Fibre Equivalent (derived equivalent)
+}
+
+_FAO_BULK_URL = (
+    "https://bulks-faostat.fao.org/production/"
+    "Prices_E_All_Data_(Normalized).zip"
+)
+
+_ELEMENTS_KEEP = [
+    "Producer Price (USD/tonne)",
+    "Producer Price (SLC/tonne)",
+    "Producer Price (LCU/tonne)",
+    "Producer Price Index (2014-2016 = 100)",
+]
+
+_TOL_NEAR_EQUAL_LCU_SLC = 0.01
+
+_ANCHOR_MAX_YEAR_DIST = 10
+
+_ANCHOR_MAX_TIMES_OFF = 10
+
+_GLOBAL_MED_MAX_TIMES_OFF = 10
+
+_QC_START_YEAR = 1993
+
+_QC_MIN_OVERLAP = 50
+
+_QC_BAD_MEDIAN_TIMES_OFF = 3
+
+_QC_BAD_SHARE_OVER_3X = 0.5
+
+_FX_INHERIT_ISO3 = {
+    "COK": "NZL",
+    "PRI": "USA",
+    "REU": "FRA",
+    "KNA": "DMA",
+    "VCT": "DMA",
+    "LCA": "DMA",
+}
+
+_IMF_RECODE = {
+    "Afghanistan, Islamic Republic of": "Afghanistan",
+    "Armenia, Republic of": "Armenia",
+    "Azerbaijan, Republic of": "Azerbaijan",
+    "Bahrain, Kingdom of": "Bahrain",
+    "Belarus, Republic of": "Belarus",
+    "Bolivia": "Bolivia (Plurinational State of)",
+    "Hong Kong Special Administrative Region, People's Republic of China": "China, Hong Kong SAR",
+    "China, People's Republic of": "China, mainland",
+    "Comoros, Union of the": "Comoros",
+    "Congo, Republic of": "Congo",
+    "Côte d'Ivoire": "Ivory Coast",
+    "Croatia, Republic of": "Croatia",
+    "Czech Republic": "Czechia",
+    "Egypt, Arab Republic of": "Egypt",
+    "Equatorial Guinea, Republic of": "Equatorial Guinea",
+    "Eritrea, The State of": "Eritrea",
+    "Estonia, Republic of": "Estonia",
+    "Ethiopia, The Federal Democratic Republic of": "Ethiopia",
+    "Fiji, Republic of": "Fiji",
+    "Gambia, The": "Gambia",
+    "Iran, Islamic Republic of": "Iran (Islamic Republic of)",
+    "Kazakhstan, Republic of": "Kazakhstan",
+    "Kyrgyz Republic": "Kyrgyzstan",
+    "Latvia, Republic of": "Latvia",
+    "Lesotho, Kingdom of": "Lesotho",
+    "Lithuania, Republic of": "Lithuania",
+    "Madagascar, Republic of": "Madagascar",
+    "Mauritania, Islamic Republic of": "Mauritania",
+    "Mozambique, Republic of": "Mozambique",
+    "Netherlands, The": "Netherlands (Kingdom of the)",
+    "North Macedonia, Republic of": "North Macedonia",
+    "Poland, Republic of": "Poland",
+    "Korea, Republic of": "Republic of Korea",
+    "Moldova, Republic of": "Republic of Moldova",
+    "Serbia, Republic of": "Serbia",
+    "Slovak Republic": "Slovakia",
+    "Slovenia, Republic of": "Slovenia",
+    "Tajikistan, Republic of": "Tajikistan",
+    "Timor-Leste, Democratic Republic of": "Timor-Leste",
+    "Türkiye, Republic of": "Turkey",
+    "United Kingdom": "United Kingdom of Great Britain and Northern Ireland",
+    "Tanzania, United Republic of": "United Republic of Tanzania",
+    "United States": "United States of America",
+    "Uzbekistan, Republic of": "Uzbekistan",
+    "Venezuela, República Bolivariana de": "Venezuela (Bolivarian Republic of)",
+    "Vietnam": "Viet Nam",
+    "Yemen, Republic of": "Yemen",
+}
+
+
+def _convert_yield_units(df: pd.DataFrame) -> pd.DataFrame:
+    """Convert yield from kg/ha -> t/ha."""
+    mask = df["Element"] == "Yield"
+    df.loc[mask, "Value"] = df.loc[mask, "Value"] / 1000
+    logger.info("Converted %d yield rows from kg/ha to t/ha", mask.sum())
+    return df
+
+
+def _add_geographic_and_classification_data(
+    df: pd.DataFrame,
+    classif: pd.DataFrame,
+    cfg: Config,
+) -> pd.DataFrame:
+    """Normalise columns, add ISO3 and FAO group."""
+
+    # Column rename
+    df = df.rename(columns={
+        "Area Code (M49)": "area_code_m49",
+        "Area": "area_fao",
+        "Item Code": "item_code_fao",
+        "Item": "item_fao",
+        "Element": "element",
+        "Year": "year",
+        "Value": "value",
+    })
+
+    # Normalise M49
+    df["area_code_m49"] = (
+        df["area_code_m49"]
+        .astype(str)
+        .str.replace(r"[^0-9]", "", regex=True)
+        .str.zfill(3)
+    )
+    df["item_code_fao"] = df["item_code_fao"].astype(int)
+    df["year"] = df["year"].astype(int)
+
+    # Load M49 crosswalk and join
+    cw, _ = load_m49_iso3(cfg)
+    df = df.merge(
+        cw[["area_code_m49", "iso3", "region_fao", "subregion_fao"]],
+        on="area_code_m49",
+        how="left",
+        validate="m:1",
+    )
+
+    n_before = len(df)
+    df = df.dropna(subset=["iso3"])
+    logger.info(
+        "Dropped %d rows without ISO3 mapping", n_before - len(df)
+    )
+
+    # Add FAO group
+    df = df.merge(
+        classif[["item_code_fao", "group_fao"]],
+        on="item_code_fao",
+        how="left",
+        validate="m:1",
+    )
+
+    return df
+
+
+def run_fao_production(cfg: Config) -> Path:
+    """
+    Execute the full FAO production pipeline.
+
+    Returns the path to the output parquet file.
+    """
+    logger.info("=== FAO Production Pipeline ===")
+
+    df, classif = _download_and_filter_fao_production(cfg)
+    df = _convert_yield_units(df)
+    df = _add_geographic_and_classification_data(df, classif, cfg)
+
+    outdir = cfg.outputs.fao_production
+    pq_path = _save_production_outputs(df, outdir)
+
+    logger.info("=== FAO Production Pipeline COMPLETE ===")
+    return pq_path
+
+
+def _recode_country(series: pd.Series, mapping: dict) -> pd.Series:
+    return series.map(mapping).fillna(series)
+
+
+def _log_df(name: str, df: pd.DataFrame) -> None:
+    logger.info("%s: %d rows, %d cols", name, df.shape[0], df.shape[1])
+
+
+def _reshape_prices(pp_raw: pd.DataFrame) -> pd.DataFrame:
+    """Keep relevant elements and pivot to wide format."""
+    logger.info("=== 2-3) FILTER ELEMENTS + RESHAPE TO WIDE ===")
+
+    pp = pp_raw[pp_raw["Element"].isin(_ELEMENTS_KEEP)].copy()
+
+    pp_wide = (
+        pp.pivot_table(
+            index=["Area", "Area Code (M49)", "Item", "Item Code", "Year"],
+            columns="Element", values="Value", aggfunc="first",
+        )
+        .reset_index()
+        .rename(columns={
+            "Area": "country", "Year": "year",
+            "Producer Price (USD/tonne)": "usd_tonne_obs",
+            "Producer Price (SLC/tonne)": "slc_tonne",
+            "Producer Price (LCU/tonne)": "lcu_tonne",
+            "Producer Price Index (2014-2016 = 100)": "price_index",
+        })
+    )
+    _log_df("pp_wide", pp_wide)
+    return pp_wide
+
+
+def _reconstruct_slc_lcu(pp_wide: pd.DataFrame) -> pd.DataFrame:
+    """Steps 4-7: base SLC, fill SLC, LCU/SLC ratios, fill LCU."""
+
+    # 4) Base SLC at index = 100
+    logger.info("=== 4) ESTIMATING BASE SLC AT INDEX=100 ===")
+    slc_base = (
+        pp_wide.dropna(subset=["slc_tonne", "price_index"])
+        .query("price_index > 0")
+        .assign(base_slc_implied=lambda d: d["slc_tonne"] * 100 / d["price_index"])
+        .groupby(["country", "Item"], as_index=False)
+        .agg(
+            slc_at_100_index=("base_slc_implied", "median"),
+            n_years_base=("base_slc_implied", "size"),
+        )
+    )
+
+    # 5) Fill SLC
+    logger.info("=== 5) FILLING SLC USING INDEX ===")
+    pp2 = pp_wide.merge(slc_base, on=["country", "Item"], how="left")
+
+    pp2["slc_filled"] = np.where(
+        pp2["slc_tonne"].notna(), pp2["slc_tonne"],
+        np.where(
+            pp2["price_index"].notna() & pp2["slc_at_100_index"].notna(),
+            pp2["slc_at_100_index"] * pp2["price_index"] / 100, np.nan,
+        ),
+    )
+    pp2["slc_source"] = np.select(
+        [pp2["slc_tonne"].notna(),
+         pp2["slc_tonne"].isna() & pp2["price_index"].notna() & pp2["slc_at_100_index"].notna()],
+        ["observed", "index_imputed"], default="missing",
+    )
+
+    # 6) LCU/SLC ratios
+    logger.info("=== 6) ESTIMATING LCU/SLC RATIOS ===")
+    lcu_slc_year = (
+        pp2.dropna(subset=["lcu_tonne", "slc_tonne"])
+        .query("slc_tonne > 0")
+        .assign(ratio=lambda d: d["lcu_tonne"] / d["slc_tonne"])
+        .groupby(["country", "year"], as_index=False)
+        .agg(lcu_per_slc_year_country=("ratio", "median"))
+    )
+    lcu_slc_country = (
+        lcu_slc_year.groupby("country", as_index=False)
+        .agg(lcu_per_slc_country=("lcu_per_slc_year_country", "median"))
+    )
+
+    # 7) Fill LCU
+    logger.info("=== 7) FILLING LCU USING SLC + RATIOS ===")
+    pp3 = (
+        pp2.merge(lcu_slc_year, on=["country", "year"], how="left")
+        .merge(lcu_slc_country, on="country", how="left")
+    )
+
+    pp3["lcu_filled"] = np.select(
+        [
+            pp3["lcu_tonne"].notna(),
+            pp3["lcu_tonne"].isna() & pp3["slc_filled"].notna() & pp3["lcu_per_slc_year_country"].notna(),
+            pp3["lcu_tonne"].isna() & pp3["slc_filled"].notna()
+            & pp3["lcu_per_slc_year_country"].isna() & pp3["lcu_per_slc_country"].notna()
+            & (pp3["lcu_per_slc_country"] - 1).abs() <= _TOL_NEAR_EQUAL_LCU_SLC,
+            pp3["lcu_tonne"].isna() & pp3["slc_filled"].notna()
+            & pp3["lcu_per_slc_year_country"].isna() & pp3["lcu_per_slc_country"].notna(),
+            pp3["lcu_tonne"].isna() & pp3["slc_filled"].notna(),
+        ],
+        [
+            pp3["lcu_tonne"],
+            pp3["slc_filled"] * pp3["lcu_per_slc_year_country"],
+            pp3["slc_filled"],
+            pp3["slc_filled"] * pp3["lcu_per_slc_country"],
+            pp3["slc_filled"],
+        ],
+        default=np.nan,
+    )
+
+    pp3["lcu_source"] = np.select(
+        [
+            pp3["lcu_tonne"].notna(),
+            pp3["lcu_tonne"].isna() & pp3["slc_filled"].notna() & pp3["lcu_per_slc_year_country"].notna(),
+            pp3["lcu_tonne"].isna() & pp3["slc_filled"].notna()
+            & pp3["lcu_per_slc_year_country"].isna() & pp3["lcu_per_slc_country"].notna()
+            & (pp3["lcu_per_slc_country"] - 1).abs() <= _TOL_NEAR_EQUAL_LCU_SLC,
+            pp3["lcu_tonne"].isna() & pp3["slc_filled"].notna()
+            & pp3["lcu_per_slc_year_country"].isna() & pp3["lcu_per_slc_country"].notna(),
+            pp3["lcu_tonne"].isna() & pp3["slc_filled"].notna(),
+        ],
+        [
+            "observed", "slc_filled_country_year_factor",
+            "slc_filled_country_factor_near_equal",
+            "slc_filled_country_factor", "slc_filled_assume_equal",
+        ],
+        default="missing",
+    )
+
+    logger.info("LCU source counts:\n%s", pp3["lcu_source"].value_counts())
+    return pp3
+
+
+def _build_usd_with_qc(
+    pp3: pd.DataFrame,
+    fx: pd.DataFrame,
+) -> pd.DataFrame:
+    """Merge FX, compute USD, apply 4 QC filters."""
+
+    # 14) Merge FX
+    logger.info("=== 14) MERGING FX INTO PRICE PANEL ===")
+    pp_usd = pp3.merge(fx, on=["iso3", "year"], how="left")
+
+    # 15) FX-implied USD
+    logger.info("=== 15) COMPUTING FX-IMPLIED USD ===")
+    pp_usd["usd_fx_implied"] = np.where(
+        pp_usd["lcu_filled"].notna() & pp_usd["lcu_per_usd"].notna() & (pp_usd["lcu_per_usd"] > 0),
+        pp_usd["lcu_filled"] / pp_usd["lcu_per_usd"], np.nan,
+    )
+    pp_usd["usd_filled"] = pp_usd["usd_tonne_obs"].combine_first(pp_usd["usd_fx_implied"])
+    pp_usd["usd_source"] = np.select(
+        [pp_usd["usd_tonne_obs"].notna(),
+         pp_usd["usd_tonne_obs"].isna() & pp_usd["usd_fx_implied"].notna()],
+        ["observed", "filled"], default="missing",
+    )
+
+    # 15a) Invalidate USD from bad LCU sources
+    logger.info("=== 15a) INVALIDATING USD FROM BAD LCU SOURCES ===")
+    bad_lcu = {"slc_filled_country_factor", "missing", "slc_filled_assume_equal"}
+    mask_bad = (pp_usd["usd_source"] == "filled") & pp_usd["lcu_source"].isin(bad_lcu)
+    pp_usd.loc[mask_bad, ["usd_fx_implied", "usd_filled", "usd_source"]] = [
+        np.nan, np.nan, "invalid_currency_mapping",
+    ]
+
+    # 15b) QC: closest observed USD anchor
+    logger.info("=== 15b) QC: CLOSEST OBSERVED USD ANCHOR ===")
+    obs_anchor = (
+        pp_usd.loc[pp_usd["usd_tonne_obs"].notna(), ["iso3", "Item", "year", "usd_tonne_obs"]]
+        .rename(columns={"year": "anchor_year", "usd_tonne_obs": "anchor_usd"})
+    )
+    tmp = pp_usd.merge(obs_anchor, on=["iso3", "Item"], how="left")
+    tmp["anchor_year_dist"] = (tmp["year"] - tmp["anchor_year"]).abs()
+    tmp = tmp.sort_values("anchor_year_dist")
+    closest_idx = tmp.groupby(["iso3", "Item", "year"])["anchor_year_dist"].idxmin().dropna().astype(int)
+    nearest = tmp.loc[closest_idx, ["iso3", "Item", "year", "anchor_year", "anchor_usd", "anchor_year_dist"]].copy()
+    pp_usd = pp_usd.merge(nearest, on=["iso3", "Item", "year"], how="left")
+
+    use_anchor = (
+        (pp_usd["usd_source"] == "filled")
+        & (pp_usd["anchor_year_dist"] <= _ANCHOR_MAX_YEAR_DIST)
+        & pp_usd["anchor_usd"].notna() & (pp_usd["anchor_usd"] > 0)
+        & pp_usd["usd_fx_implied"].notna() & (pp_usd["usd_fx_implied"] > 0)
+    )
+    pp_usd.loc[use_anchor, "times_off_closest_obs"] = np.maximum(
+        pp_usd.loc[use_anchor, "usd_fx_implied"] / pp_usd.loc[use_anchor, "anchor_usd"],
+        pp_usd.loc[use_anchor, "anchor_usd"] / pp_usd.loc[use_anchor, "usd_fx_implied"],
+    )
+    bad_anchor = use_anchor & (pp_usd["times_off_closest_obs"] > _ANCHOR_MAX_TIMES_OFF)
+    logger.warning("Anchor QC dropping %d rows", bad_anchor.sum())
+    pp_usd.loc[bad_anchor, ["usd_fx_implied", "usd_filled", "usd_source"]] = [
+        np.nan, np.nan, "implausible_vs_closest_observed_10x",
+    ]
+
+    # 15c) QC: global item-year median band
+    logger.info("=== 15c) QC: GLOBAL ITEM-YEAR MEDIAN BAND ===")
+    global_med = (
+        pp_usd.loc[pp_usd["usd_tonne_obs"].notna()]
+        .groupby(["Item", "year"])
+        .agg(global_median_usd=("usd_tonne_obs", "median"), n_obs=("usd_tonne_obs", "size"))
+        .reset_index()
+    )
+    pp_usd = pp_usd.merge(global_med, on=["Item", "year"], how="left")
+    use_global = (
+        (pp_usd["usd_source"] == "filled")
+        & pp_usd["global_median_usd"].notna() & (pp_usd["global_median_usd"] > 0)
+        & pp_usd["usd_fx_implied"].notna() & (pp_usd["usd_fx_implied"] > 0)
+    )
+    pp_usd.loc[use_global, "global_ratio"] = (
+        pp_usd.loc[use_global, "usd_fx_implied"] / pp_usd.loc[use_global, "global_median_usd"]
+    )
+    bad_global = use_global & (
+        (pp_usd["global_ratio"] > _GLOBAL_MED_MAX_TIMES_OFF)
+        | (pp_usd["global_ratio"] < 1 / _GLOBAL_MED_MAX_TIMES_OFF)
+    )
+    logger.warning("Global median QC dropping %d rows", bad_global.sum())
+    pp_usd.loc[bad_global, ["usd_fx_implied", "usd_filled", "usd_source"]] = [
+        np.nan, np.nan, "implausible_vs_global_median_10x",
+    ]
+
+    # 15d) QC: FX reliability by country
+    logger.info("=== 15d) QC: FX RELIABILITY BY COUNTRY ===")
+    qc = (
+        pp_usd.loc[
+            (pp_usd["year"] >= _QC_START_YEAR)
+            & pp_usd["usd_tonne_obs"].notna() & pp_usd["usd_fx_implied"].notna()
+            & (pp_usd["usd_tonne_obs"] > 0) & (pp_usd["usd_fx_implied"] > 0),
+            ["iso3", "usd_tonne_obs", "usd_fx_implied"],
+        ].copy()
+    )
+    qc["times_off"] = np.maximum(
+        qc["usd_tonne_obs"] / qc["usd_fx_implied"],
+        qc["usd_fx_implied"] / qc["usd_tonne_obs"],
+    )
+    country_qc = (
+        qc.groupby("iso3").agg(
+            n_overlap=("times_off", "size"),
+            median_times_off=("times_off", "median"),
+            share_over_3x=("times_off", lambda s: (s > 3).mean()),
+        ).reset_index()
+    )
+    bad_fx_countries = set(
+        country_qc.loc[
+            (country_qc["n_overlap"] >= _QC_MIN_OVERLAP)
+            & (
+                (country_qc["median_times_off"] > _QC_BAD_MEDIAN_TIMES_OFF)
+                | (country_qc["share_over_3x"] > _QC_BAD_SHARE_OVER_3X)
+            ),
+            "iso3",
+        ]
+    )
+    logger.warning("Bad FX countries: %d", len(bad_fx_countries))
+    bad_fx_mask = (pp_usd["usd_source"] == "filled") & pp_usd["iso3"].isin(bad_fx_countries)
+    pp_usd.loc[bad_fx_mask, ["usd_fx_implied", "usd_filled", "usd_source"]] = [
+        np.nan, np.nan, "invalid_fx_country",
+    ]
+
+    # 15e) Re-attach country column
+    country_lookup = pp3[["iso3", "region_fao", "subregion_fao", "year", "Item", "country"]].drop_duplicates()
+    pp_usd = pp_usd.merge(country_lookup, on=["iso3", "year", "Item"], how="left", suffixes=("", "_from_pp3"))
+    if "country_from_pp3" in pp_usd.columns:
+        pp_usd["country"] = pp_usd["country"].combine_first(pp_usd["country_from_pp3"])
+        pp_usd = pp_usd.drop(columns=["country_from_pp3"])
+
+    logger.info("USD source counts (final):\n%s", pp_usd["usd_source"].value_counts())
+    return pp_usd
+
+
+def run_fao_prices(cfg: Config) -> Path:
+    """
+    Execute the full FAO producer-price pipeline.
+
+    Returns the path to the output parquet file.
+    """
+    logger.info("=== FAO Prices Pipeline ===")
+
+    years = list(range(cfg.run.fao_start_year, cfg.run.fao_end_year + 1))
+
+    # Steps 1-3
+    pp_raw = _download_fao_prices(years)
+    pp_wide = _reshape_prices(pp_raw)
+
+    # Steps 4-7
+    pp3 = _reconstruct_slc_lcu(pp_wide)
+
+    # Steps 9-12
+    pp3, fx = _add_iso3_and_fx(pp3, cfg, years)
+
+    # Steps 13-15
+    pp_usd = _build_usd_with_qc(pp3, fx)
+
+    # Step 16
+    outdir = cfg.outputs.fao_prices
+    pq_path = _save_price_outputs(pp_usd, outdir)
+
+    logger.info("=== FAO Prices Pipeline COMPLETE ===")
+    return pq_path
+
+
+def _compute_annual_prices(prices: pd.DataFrame, cw: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """
+    Compute annual prices hierarchically: country, subregion, region, world.
+    """
+    if "region_fao" not in prices.columns:
+        prices = prices.merge(cw[["area_code_m49", "region_fao", "subregion_fao"]], on="area_code_m49", how="left")
+
+    pf = prices[
+        prices["price_usd_tonne"].notna()
+        & (prices["price_usd_tonne"] > 0)
+    ].copy()
+
+    # 1. Annual country prices
+    price_country = (
+        pf.groupby(
+            ["year", "area_code_m49", "region_fao", "subregion_fao", "item_code_fao"],
+            as_index=False, dropna=False
+        )
+        .agg(
+            price_usd_tonne=("price_usd_tonne", "mean"),
+            n_obs=("price_usd_tonne", "size"),
+        )
+    )
+    
+    # 2. Annual subregion median prices
+    price_subregion = (
+        price_country.dropna(subset=["subregion_fao"])
+        .groupby(["year", "subregion_fao", "item_code_fao"], as_index=False)
+        .agg(
+            subreg_price_usd_tonne=("price_usd_tonne", "median")
+        )
+    )
+
+    # 3. Annual region median prices
+    price_region = (
+        price_country.dropna(subset=["region_fao"])
+        .groupby(["year", "region_fao", "item_code_fao"], as_index=False)
+        .agg(
+            reg_price_usd_tonne=("price_usd_tonne", "median")
+        )
+    )
+    
+    # 4. Annual world median prices
+    price_world = (
+        price_country.groupby(["year", "item_code_fao"], as_index=False)
+        .agg(
+            world_price_usd_tonne=("price_usd_tonne", "median"),
+            n_countries_price=("area_code_m49", "nunique"),
+        )
+    )
+    
+    return price_country, price_subregion, price_region, price_world

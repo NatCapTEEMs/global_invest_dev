@@ -7,6 +7,11 @@ directory (p.es_shock_dir). Grafted by consumers via add_pollination_tasks (disp
 """
 from __future__ import annotations
 import os
+import wbgapi as wb
+import faostat
+import requests
+import zipfile
+import io as io_module
 import gc
 import logging
 import math
@@ -34,6 +39,610 @@ from global_invest.pollination import pollination_functions as pf
 # rasters window by window, so they open and write files and belong here rather than beside
 # the arithmetic.
 # ---------------------------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------------------------
+# Vendored from crop_benefits: the FAO price path, the parts that download and write.
+# ---------------------------------------------------------------------------------------------
+
+def _download_and_filter_fao_production(
+    cfg: Config,
+) -> pd.DataFrame:
+    """Download FAOSTAT QCL bulk data, filter years / elements / items."""
+
+    # Load classification to get valid item codes for items to keep
+    classif = load_fao_classification(cfg)
+    classif = (
+        classif[["item_code_fao", "item_fao", "group_fao"]]
+        .dropna(subset=["item_code_fao"])
+        .copy()
+    )
+    classif["item_code_fao"] = classif["item_code_fao"].astype(int)
+    item_codes = set(classif["item_code_fao"].unique()) - _EXCLUDE_ITEM_CODES
+    logger.info("Valid FAO crop item codes: %d", len(item_codes))
+
+    # Year range from config
+    years = set(range(cfg.run.fao_start_year, cfg.run.fao_end_year + 1))
+
+    # Download bulk ZIP
+    logger.info("Downloading FAOSTAT QCL bulk data …")
+    resp = requests.get(_URL, timeout=300)
+    resp.raise_for_status()
+
+    with zipfile.ZipFile(io.BytesIO(resp.content)) as zf:
+        with zf.open(_CSV_NAME) as f:
+            df = pd.read_csv(
+                f,
+                usecols=[
+                    "Area Code (M49)", "Area", "Item Code",
+                    "Item", "Element", "Year", "Value",
+                ],
+                low_memory=False,
+            )
+
+    logger.info("Bulk data loaded: %d rows", len(df))
+
+    # Numeric coercion and filtering
+    df["Year"] = pd.to_numeric(df["Year"], errors="coerce")
+    df["Item Code"] = pd.to_numeric(df["Item Code"], errors="coerce")
+    df["Value"] = pd.to_numeric(df["Value"], errors="coerce")
+
+    df = df[
+        df["Year"].isin(years)
+        & df["Element"].isin(_ELEMENTS_KEEP)
+        & df["Item Code"].isin(item_codes)
+        & (df["Value"] > 0)
+    ].copy()
+
+    logger.info("Rows after filtering: %d", len(df))
+    return df, classif
+
+
+def _save_production_outputs(
+    df: pd.DataFrame,
+    outdir: Path,
+) -> Path:
+    """Save final production dataset in standard column order."""
+    outdir.mkdir(parents=True, exist_ok=True)
+
+    col_order = [
+        "area_code_m49", "iso3", "region_fao", "subregion_fao",
+        "area_fao", "item_code_fao", "item_fao", "group_fao",
+        "element", "year", "value",
+    ]
+    df = df[col_order]
+
+    csv_out = outdir / "fao_production_1993_2024.csv"
+    pq_out = outdir / "fao_production_1993_2024.parquet"
+
+    save_csv(df, csv_out)
+    save_parquet(df, pq_out)
+
+    logger.info("Final dataset: %d rows", len(df))
+    return pq_out
+
+
+def _download_fao_prices(years: list[int]) -> pd.DataFrame:
+    """Download bulk FAOSTAT producer prices and return annual rows."""
+    logger.info("=== 1) DOWNLOADING FAOSTAT BULK PRODUCER PRICES ===")
+
+    resp = requests.get(_FAO_BULK_URL, timeout=120)
+    resp.raise_for_status()
+
+    with zipfile.ZipFile(io.BytesIO(resp.content)) as z:
+        csv_name = z.namelist()[0]
+        logger.info("Reading bulk file: %s", csv_name)
+        with z.open(csv_name) as f:
+            pp_raw = pd.read_csv(f, encoding="latin1", low_memory=False)
+
+    # Standardize column names
+    pp_raw.columns = [c.replace(" ", "_").lower() for c in pp_raw.columns]
+    pp_raw = pp_raw.rename(columns={
+        "area_code_(m49)": "Area Code (M49)",
+        "area": "Area", "item": "Item", "item_code": "Item Code",
+        "element": "Element", "year": "Year", "value": "Value",
+        "months": "Months",
+    })
+
+    pp_raw = pp_raw[pp_raw["Months"] == "Annual value"].copy()
+    pp_raw = pp_raw[pp_raw["Year"].isin(years)].copy()
+
+    # Type cleanup
+    pp_raw["Area Code (M49)"] = (
+        pp_raw["Area Code (M49)"]
+        .astype(str).str.replace("'", "", regex=False)
+        .str.strip().str.zfill(3)
+    )
+    pp_raw["Value"] = pd.to_numeric(pp_raw["Value"], errors="coerce")
+
+    # Text fixes
+    pp_raw["Item"] = (
+        pp_raw["Item"].astype(str)
+        .str.replace("MatÃ© leaves", "Mate leaves", regex=False)
+    )
+    pp_raw["Area"] = (
+        pp_raw["Area"].astype(str)
+        .str.replace("CÃ´te d'Ivoire", "Ivory Coast", regex=False)
+        .str.replace("RÃ©union", "Reunion", regex=False)
+        .str.replace("TÃ¼rkiye", "Turkey", regex=False)
+    )
+
+    _log_df("pp_raw (annual PP, bulk)", pp_raw)
+    return pp_raw
+
+
+def _add_iso3_and_fx(
+    pp3: pd.DataFrame,
+    cfg: Config,
+    years: list[int],
+) -> pd.DataFrame:
+    """Add ISO3, fetch WB + IMF FX, combine with inheritance."""
+
+    # 9) ISO3 via crosswalk
+    logger.info("=== 9) ADDING ISO3 ===")
+    cw, _ = load_m49_iso3(cfg)
+    pp3["Area Code (M49)"] = pp3["Area Code (M49)"].astype(int).astype(str).str.zfill(3)
+
+    pp3 = pp3.merge(
+        cw[["area_code_m49", "iso3", "region_fao", "subregion_fao"]],
+        left_on="Area Code (M49)", right_on="area_code_m49",
+        how="left", validate="m:1",
+    ).drop(columns=["area_code_m49"])
+
+    logger.info("Unique ISO3: %d", pp3["iso3"].nunique())
+
+    # 10) World Bank FX
+    logger.info("=== 10) FETCHING WORLD BANK FX ===")
+    wb_records = []
+    years_str = [str(y) for y in years]
+    for rec in wb.data.fetch("PA.NUS.FCRF", time=years_str):
+        iso3 = rec.get("economy")
+        year_raw = rec.get("time")
+        val = rec.get("value")
+        if iso3 is None or year_raw is None or val is None:
+            continue
+        year = int(str(year_raw).replace("YR", ""))
+        wb_records.append((iso3, year, float(val)))
+
+    wb_fx = pd.DataFrame(wb_records, columns=["iso3", "year", "lcu_per_usd"])
+    wb_fx["fx_source"] = "wb"
+    wb_fx = wb_fx.dropna(subset=["iso3", "lcu_per_usd"]).copy()
+    _log_df("wb_fx", wb_fx)
+
+    # 11) IMF FX (local file)
+    logger.info("=== 11) LOADING IMF FX ===")
+    imf_fx_path = cfg.paths.crosswalk_m49_iso3.parent.parent.parent / "currencies" / "imf"
+    imf_files = sorted(imf_fx_path.glob("dataset_*.csv"))
+    if not imf_files:
+        logger.warning("No IMF FX file found in %s; skipping IMF FX", imf_fx_path)
+        imf_fx = pd.DataFrame(columns=["iso3", "year", "lcu_per_usd", "fx_source"])
+    else:
+        imf_raw = pd.read_csv(imf_files[0])
+        imf_fx = imf_raw.query(
+            "INDICATOR == 'Domestic currency per US Dollar' and "
+            "TYPE_OF_TRANSFORMATION == 'Period average' and "
+            "FREQUENCY == 'Annual'"
+        )
+        year_cols = [c for c in imf_fx.columns if c.isdigit() and len(c) == 4]
+        imf_fx = (
+            imf_fx.melt(
+                id_vars=["COUNTRY"], value_vars=year_cols,
+                var_name="year", value_name="lcu_per_usd",
+            )
+            .assign(
+                year=lambda d: d["year"].astype(int),
+                country=lambda d: d["COUNTRY"].astype(str),
+                fx_source="imf",
+            )
+            .loc[:, ["country", "year", "lcu_per_usd", "fx_source"]]
+            .dropna(subset=["country", "lcu_per_usd"])
+        )
+
+        # 11b) Harmonise IMF country names
+        imf_fx["country"] = _recode_country(imf_fx["country"], _IMF_RECODE)
+
+        # 11c) Map IMF to ISO3
+        country_to_iso3 = pp3[["country", "iso3"]].dropna().drop_duplicates()
+        imf_fx = imf_fx.merge(country_to_iso3, on="country", how="left")
+        imf_fx = imf_fx.dropna(subset=["iso3"]).copy()
+
+    _log_df("imf_fx", imf_fx)
+
+    # 12) Combine FX (WB priority)
+    logger.info("=== 12) COMBINING FX (WB PRIORITY) ===")
+    fx = (
+        pd.concat([wb_fx, imf_fx[["iso3", "year", "lcu_per_usd", "fx_source"]]], ignore_index=True)
+        .sort_values(
+            ["iso3", "year", "fx_source"],
+            key=lambda s: s.map({"wb": 0, "imf": 1}).fillna(2) if s.name == "fx_source" else s,
+        )
+        .drop_duplicates(subset=["iso3", "year"], keep="first")
+    )
+
+    # 12b) FX inheritance
+    logger.info("=== 12b) FX INHERITANCE ===")
+    inherit_rows = []
+    for child, parent in _FX_INHERIT_ISO3.items():
+        parent_frame = fx.loc[fx["iso3"] == parent].copy()
+        if parent_frame.empty:
+            continue
+        parent_frame["iso3"] = child
+        inherit_rows.append(parent_frame)
+    if inherit_rows:
+        fx = pd.concat([fx] + inherit_rows, ignore_index=True)
+        fx = (
+            fx.sort_values(
+                ["iso3", "year", "fx_source"],
+                key=lambda s: s.map({"wb": 0, "imf": 1}).fillna(2) if s.name == "fx_source" else s,
+            )
+            .drop_duplicates(subset=["iso3", "year"], keep="first")
+        )
+    _log_df("fx (after inheritance)", fx)
+
+    return pp3, fx
+
+
+def _save_price_outputs(
+    pp_usd: pd.DataFrame,
+    outdir: Path,
+) -> Path:
+    """Rename columns and save final price panel."""
+    outdir.mkdir(parents=True, exist_ok=True)
+
+    pp_usd = pp_usd.rename(columns={
+        "country": "area_fao",
+        "Item": "item_fao",
+        "Item Code": "item_code_fao",
+        "Area Code (M49)": "area_code_m49",
+        "usd_filled": "price_usd_tonne",
+    })
+
+    final_cols = [
+        "area_code_m49", "iso3", "region_fao", "subregion_fao",
+        "area_fao", "item_code_fao", "item_fao", "year",
+        "price_usd_tonne", "usd_source",
+        "usd_tonne_obs", "usd_fx_implied", "fx_source",
+        "slc_filled", "slc_source", "lcu_filled", "lcu_source",
+        "price_index",
+    ]
+
+    pp_final = pp_usd[final_cols].copy()
+
+    csv_out = outdir / "fao_prices_1993_2024.csv"
+    pq_out = outdir / "fao_prices_1993_2024.parquet"
+
+    save_csv(pp_final, csv_out)
+    save_parquet(pp_final, pq_out)
+
+    logger.info("Final price panel: %d rows", len(pp_final))
+    return pq_out
+
+
+def _load_production_and_prices(cfg: Config) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Load the production and price parquets from earlier pipeline steps."""
+    prod_dir = cfg.outputs.fao_production
+    prod_pq = prod_dir / "fao_production_1993_2024.parquet"
+    logger.info("Loading production: %s", prod_pq)
+    prod = pd.read_parquet(prod_pq)
+
+    price_dir = cfg.outputs.fao_prices
+    price_pq = price_dir / "fao_prices_1993_2024.parquet"
+    logger.info("Loading prices: %s", price_pq)
+    prices = pd.read_parquet(price_pq)
+
+    return prod, prices
+
+
+def _compute_median_prices(
+    prices: pd.DataFrame,
+    price_years: list[int],
+    outdir: Path,
+    cw: pd.DataFrame,
+) -> pd.DataFrame:
+    """Compute median price per hierarchical level over the price window."""
+    logger.info("Computing median prices over years %s", price_years)
+
+    if "region_fao" not in prices.columns:
+        prices = prices.merge(cw[["area_code_m49", "region_fao", "subregion_fao"]], on="area_code_m49", how="left")
+
+    parent_frame = prices[
+        prices["year"].isin(price_years)
+        & prices["price_usd_tonne"].notna()
+        & (prices["price_usd_tonne"] > 0)
+    ].copy()
+
+    price_country = (
+        parent_frame.groupby(
+            ["area_code_m49", "iso3", "region_fao", "subregion_fao", "item_code_fao", "item_fao"],
+            as_index=False, dropna=False
+        )
+        .agg(
+            price_median_usd_tonne=("price_usd_tonne", "median"),
+            years_used=("year", "nunique"),
+        )
+    )
+    price_country["agg_level"] = "country"
+
+    price_subregion = (
+        price_country.dropna(subset=["subregion_fao"])
+        .groupby(["subregion_fao", "item_code_fao"], as_index=False)
+        .agg(
+            item_fao=("item_fao", "first"),
+            price_median_usd_tonne=("price_median_usd_tonne", "median"),
+            years_used=("years_used", "mean"),
+        )
+    )
+    price_subregion["agg_level"] = "subregion"
+
+    price_region = (
+        price_country.dropna(subset=["region_fao"])
+        .groupby(["region_fao", "item_code_fao"], as_index=False)
+        .agg(
+            item_fao=("item_fao", "first"),
+            price_median_usd_tonne=("price_median_usd_tonne", "median"),
+            years_used=("years_used", "mean"),
+        )
+    )
+    price_region["agg_level"] = "region"
+
+    price_world = (
+        price_country.groupby("item_code_fao", as_index=False)
+        .agg(
+            item_fao=("item_fao", "first"),
+            price_median_usd_tonne=("price_median_usd_tonne", "median"),
+            years_used=("years_used", "mean"),
+        )
+    )
+    price_world["agg_level"] = "world"
+    price_world["area_code_m49"] = "999"
+    price_world["iso3"] = "WOR"
+    price_world["item_code_fao"] = price_world["item_code_fao"].astype(int)
+
+    median_prices = pd.concat([price_country, price_subregion, price_region, price_world], ignore_index=True)
+
+    outdir.mkdir(parents=True, exist_ok=True)
+    yr_start, yr_end = min(price_years), max(price_years)
+    pq_out = outdir / f"price_median_usd_tonne_{yr_start}_{yr_end}.parquet"
+    save_parquet(median_prices, pq_out)
+
+    logger.info("Median prices: %d rows", len(median_prices))
+    return median_prices
+
+
+def _merge_production_value(
+    prod: pd.DataFrame,
+    price_country: pd.DataFrame,
+    price_subregion: pd.DataFrame,
+    price_region: pd.DataFrame,
+    price_world: pd.DataFrame,
+    outdir: Path,
+) -> Path:
+    """Merge production with annual prices (country -> subregion -> region -> world fallback)."""
+    logger.info("Merging production × annual prices (Hierarchical)")
+
+    prod_q = prod[prod["element"] == "Production"].copy()
+    if "value" in prod_q.columns:
+        prod_q = prod_q.rename(columns={"value": "total_production_tonnes"})
+
+    # 1. Merge country prices
+    merged = prod_q.merge(
+        price_country[["year", "area_code_m49", "item_code_fao", "price_usd_tonne"]],
+        on=["year", "area_code_m49", "item_code_fao"],
+        how="left",
+    )
+
+    # 2. Merge subregion prices
+    if "subregion_fao" in merged.columns:
+        merged = merged.merge(
+            price_subregion[["year", "subregion_fao", "item_code_fao", "subreg_price_usd_tonne"]],
+            on=["year", "subregion_fao", "item_code_fao"],
+            how="left"
+        )
+    else:
+        merged["subreg_price_usd_tonne"] = np.nan
+
+    # 3. Merge region prices
+    if "region_fao" in merged.columns:
+        merged = merged.merge(
+            price_region[["year", "region_fao", "item_code_fao", "reg_price_usd_tonne"]],
+            on=["year", "region_fao", "item_code_fao"],
+            how="left"
+        )
+    else:
+        merged["reg_price_usd_tonne"] = np.nan
+
+    # 4. Merge world prices
+    merged = merged.merge(
+        price_world[["year", "item_code_fao", "world_price_usd_tonne"]],
+        on=["year", "item_code_fao"],
+        how="left"
+    )
+
+    # Apply fallbacks
+    merged["price_source_agg_level"] = "country"
+    
+    # Subregion fallback
+    miss_ctry = merged["price_usd_tonne"].isna()
+    merged.loc[miss_ctry, "price_usd_tonne"] = merged.loc[miss_ctry, "subreg_price_usd_tonne"]
+    merged.loc[miss_ctry & merged["subreg_price_usd_tonne"].notna(), "price_source_agg_level"] = "subregion"
+    
+    # Region fallback
+    miss_subreg = merged["price_usd_tonne"].isna()
+    merged.loc[miss_subreg, "price_usd_tonne"] = merged.loc[miss_subreg, "reg_price_usd_tonne"]
+    merged.loc[miss_subreg & merged["reg_price_usd_tonne"].notna(), "price_source_agg_level"] = "region"
+    
+    # World fallback
+    miss_reg = merged["price_usd_tonne"].isna()
+    merged.loc[miss_reg, "price_usd_tonne"] = merged.loc[miss_reg, "world_price_usd_tonne"]
+    merged.loc[miss_reg & merged["world_price_usd_tonne"].notna(), "price_source_agg_level"] = "world"
+    
+    # Missing everywhere
+    merged.loc[merged["price_usd_tonne"].isna(), "price_source_agg_level"] = "missing"
+
+    merged["value_usd"] = merged["total_production_tonnes"] * merged["price_usd_tonne"]
+    
+    # Cleanup
+    merged = merged.drop(columns=["subreg_price_usd_tonne", "reg_price_usd_tonne", "world_price_usd_tonne"])
+
+    logger.info(
+        "Price sources: %s",
+        merged.groupby("price_source_agg_level").size().to_dict()
+    )
+    logger.info("Rows with value_usd: %d", merged["value_usd"].notna().sum())
+
+    outdir.mkdir(parents=True, exist_ok=True)
+    
+    # Drop element column if present (it's always 'Production')
+    if "element" in merged.columns:
+        merged = merged.drop(columns=["element"])
+
+    csv_out = outdir / "fao_values_1993_2024.csv"
+    pq_out = outdir / "fao_values_1993_2024.parquet"
+
+    save_csv(merged, csv_out)
+    save_parquet(merged, pq_out)
+
+    logger.info("Production value dataset: %d rows", len(merged))
+    return pq_out
+
+
+def run_fao_values(cfg: Config) -> Path:
+    """
+    Compute total production value by merging prices and production.
+
+    Returns the path to the output parquet file.
+    """
+    logger.info("=== FAO Values Pipeline ===")
+
+    prod, prices = _load_production_and_prices(cfg)
+
+    # Side-effect: generate smoothed median prices for rasters (2018-2022)
+    cw = pd.read_csv(cfg.paths.crosswalk_m49_iso3)
+    cw["area_code_m49"] = cw["area_code_m49"].astype(str).str.zfill(3)
+    
+    _ = _compute_median_prices(
+        prices,
+        cfg.run.price_years,
+        cfg.outputs.fao_median_prices,
+        cw,
+    )
+
+    # Main pipeline: use annual prices
+    price_country, price_subregion, price_region, price_world = _compute_annual_prices(prices, cw)
+
+    pq_path = _merge_production_value(
+        prod, price_country, price_subregion, price_region, price_world, cfg.outputs.fao_values,
+    )
+
+    logger.info("=== FAO Values Pipeline COMPLETE ===")
+    return pq_path
+
+
+def load_m49_iso3(cfg: Config) -> Tuple[pd.DataFrame, Set[str]]:
+    """
+    Load the M49 -> ISO3 crosswalk and return *(df, valid_m49)*.
+
+    The "area_code_m49" column is zero-filled to 3 chars to match the
+    convention used throughout the FAO and raster pipelines.
+
+    Parameters
+    ----------
+    cfg : Config
+
+    Returns
+    -------
+    df : pd.DataFrame
+        Columns include "area_code_m49", "iso3", "area_fao",
+        "region_fao", "subregion_fao".
+    valid_m49 : set[str]
+        The set of valid 3-digit M49 strings.
+    """
+    path = cfg.paths.crosswalk_m49_iso3
+    logger.info("Loading M49↔ISO3 crosswalk: %s", path)
+
+    df = pd.read_csv(path)
+
+    # Normalise M49 key
+    df["area_code_m49"] = (
+        df["area_code_m49"].astype(int).astype(str).str.zfill(3)
+    )
+    df["iso3"] = df["iso3"].astype(str)
+
+    valid_m49 = set(df["area_code_m49"])
+    logger.info("Valid M49 codes: %d", len(valid_m49))
+
+    return df, valid_m49
+
+
+def load_fao_classification(cfg: Config) -> pd.DataFrame:
+    """
+    Load the FAO crop classification table.
+
+    Parameters
+    ----------
+    cfg : Config
+
+    Returns
+    -------
+    pd.DataFrame
+    """
+    path = cfg.paths.fao_classification
+    logger.info("Loading FAO classification: %s", path)
+    return pd.read_csv(path)
+
+
+def load_fao_cropgrids(cfg: Config) -> pd.DataFrame:
+    """
+    Load the crosswalk that maps CropGrids crop names to FAO item codes.
+
+    Returns a DataFrame with columns "cropgrids_2024" and
+    "item_code_fao" (as string), plus "item_fao".
+    """
+    path = cfg.paths.crosswalk_fao_cropgrids
+    logger.info("Loading FAO↔CropGrids crosswalk: %s", path)
+
+    df = pd.read_csv(path)
+
+    df["item_code_fao"] = (
+        df["item_code_fao"].astype("Int64").astype(str)
+    )
+    df["cropgrids_2024"] = df["cropgrids_2024"].astype(str)
+
+    return df
+
+def fao_median_prices(p):
+    """Per-crop median producer prices in USD, downloaded and built here rather than taken as given.
+
+    The pollination value raster is production times price times each crop's dependence on
+    pollinators. The price half used to arrive as a finished table. This runs the path that makes
+    it: FAOSTAT production and producer prices are downloaded, local currency is reconstructed
+    where FAOSTAT reports only the discontinued series, USD is built against World Bank exchange
+    rates, and a median is taken over the price years.
+
+    Registered with skip_existing=1: it downloads several hundred megabytes from FAOSTAT and is
+    deterministic once it has, the same reason erosion's SDR step skips.
+    """
+    publish_inputs(p)
+    p.fao_median_prices_dir = os.path.join(p.cur_dir, 'median_prices')
+    if not p.run_this:
+        return
+    if hb.path_exists(p.fao_median_prices_dir) and os.listdir(p.fao_median_prices_dir):
+        hb.log('FAO median prices already built. Skipping the download.')
+        return True
+    settings = pf.FaoPriceSettings(
+        crosswalk_m49_iso3_path=Path(p.get_path(os.path.join('fao', 'crosswalks',
+                                                             'crosswalk_m49_iso3.csv'))),
+        fao_classification_path=Path(p.get_path(os.path.join('fao', 'crosswalks',
+                                                             'fao_classification.csv'))),
+        crosswalk_fao_cropgrids_path=Path(p.get_path(os.path.join('fao', 'crosswalks',
+                                                                  'crosswalk_fao_cropgrids.csv'))),
+        output_dir=Path(p.cur_dir))
+    pf.run_fao_production(settings)
+    pf.run_fao_prices(settings)
+    run_fao_values(settings)
+    hb.log('FAO median prices written to %s' % p.fao_median_prices_dir)
+    return True
+
 
 def read_raster(path: Path) -> Tuple[np.ndarray, Dict[str, Any]]:
     """
