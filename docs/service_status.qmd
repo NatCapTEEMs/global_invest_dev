@@ -101,9 +101,9 @@ that does not apply is a single dash.
 - **in the library:** yes
 - **run:** yes
 - **total:** $29bn provisional
-- **code:** Translated from R to Python, then refactored onto the library template and hazelbean conventions. The shock rows are now built in the science module rather than in the file-handling code, and come out identical.
-- **number:** Computes the CWoN economic rent per country and predicts 2019 by trend. Provisional at $29bn, with no reference output.
-- **need:** the source pipeline's output table, and the source decision (CWoN or FishStatJ)
+- **code:** Translated from R to Python, then refactored onto the library template and hazelbean conventions.
+- **number:** Computes the CWoN economic rent per country and predicts 2019 by trend. $29bn, provisional because the source is undecided: FishStatJ, FAO's capture-production database, would give a different number. Separately, there is no reference output to check it against.
+- **need:** the source pipeline's output table, and the source decision: the CWoN resource rents or FishStatJ, FAO's capture-production database
 
 
 ## Fisheries
@@ -113,7 +113,7 @@ that does not apply is a single dash.
 - **in the library:** yes
 - **run:** yes
 - **total:** $7.92bn
-- **code:** Refactored onto the library template and hazelbean conventions. The value is computed from the release's own quantities and prices.
+- **code:** Refactored onto the library template and hazelbean conventions. We multiply quantity by price ourselves rather than reading their published total.
 - **number:** Computes consumptive-use value as harvested quantity times price per kg, summed over species, $7.92bn across 65 countries. Every country whose quantities and prices the release carries reproduces the committed output. Twenty countries publish a value of exactly zero with no quantity or price behind it; those are left empty.
 - **need:** What is the account's fisheries value? The commercial rent alone, the sum of both components, or something else. The commercial side values the rent of the reported catch, the subsistence side the use value of the home catch. The commercial series is built from FAO catch statistics, so where a country's reported catch already includes subsistence fishing, a sum counts that catch twice.
 
@@ -149,7 +149,7 @@ that does not apply is a single dash.
 - **in the library:** yes
 - **run:** yes
 - **total:** $36.72bn
-- **code:** Refactored onto the library template and hazelbean conventions. The mangrove value is now computed from the table's own area and price per hectare instead of read out of its published total column.
+- **code:** Refactored onto the library template and hazelbean conventions. The mangrove value is now ours: we multiply protected area by value per hectare rather than reading their published total, which is what makes it a replication and not a copy.
 - **number:** Two components. Mangroves are computed as protected hectares times value per hectare, $37bn in total, which lands within $4,983 of the published figure. Coral reefs carry a finished annual benefit per country and nothing underneath it, so there is no chain to run; we carry it from 2011 to the base year with the WB deflator and add it. Nine countries missing from the deflator table are zeroed by the join where they should be left unvalued.
 - **need:** Whether a chain exists behind the coral-reef benefit table that we should be running.
 
@@ -161,7 +161,7 @@ that does not apply is a single dash.
 - **in the library:** yes
 - **run:** yes
 - **total:** $99.54bn
-- **code:** Refactored onto the library template and hazelbean conventions. We also pinned the step that reshapes the WB table against the code it replaced, and guarded against an invisible character Excel writes at the start of a file, which had previously broken a column name.
+- **code:** Refactored onto the library template and hazelbean conventions. A test checks our rewrite of the World Bank table, which turns one column per year into one row per country and year, against the code it replaced. Also guarded against the invisible character Excel writes at the start of a file, which had broken a column name.
 - **number:** Computes World Bank mineral rents share times GDP times the 0.49 factor. The factor's source is unknown; without it the total would be $203bn.
 - **need:** the source of the 0.49 factor
 
@@ -173,9 +173,9 @@ that does not apply is a single dash.
 - **in the library:** yes
 - **run:** yes
 - **total:** $170.83bn
-- **code:** Refactored onto the library template and hazelbean conventions. The calculation had been written out as one long block in the task file even though tidy functions for it already existed alongside; the task now calls those, and each step is tested against a small table worked out by hand.
-- **number:** Computes IRENA generation times World Bank price times the CWoN rent share. A fresh run reproduces $170.83bn and each resource to the cent: wind $110.31bn, solar $53.95bn, geothermal $6.56bn. The drive's reference CSVs hold $134.6bn, and which is current is open.
-- **need:** the decision which source is current. The folder's method note suggests the drive CSVs are older than the code.
+- **code:** Refactored onto the library template and hazelbean conventions. The calculation had been written out as one block in the task file; the task now calls those, and each step is tested against a small table.
+- **number:** Computes IRENA generation times World Bank price times the CWoN rent share. A fresh run reproduces $170.83bn and each resource: wind $110.31bn, solar $53.95bn, geothermal $6.56bn. The drive's reference CSVs hold $134.6bn, and which is current is open.
+- **need:** the decision which source is current. 
 
 
 ## Recreation
@@ -186,7 +186,7 @@ that does not apply is a single dash.
 - **run:** yes
 - **total:** $1.73bn provisional (a units question is open)
 - **code:** Refactored onto the library template and hazelbean conventions. Reading the UNWTO tourism workbook moved out of the calculation code, and the refactored reader returns exactly the same 3,610 rows from the real workbook.
-- **number:** Computes the site ranking, the gravity allocation and the travel-cost valuation end to end. Provisional at $1.73bn, and the author's output table is not reachable.
+- **number:** Computes the site ranking, the gravity allocation and the travel-cost valuation end to end. $1.73bn, provisional because the units question below would change it. Separately, the author's output table is not reachable, so there is nothing to check it against.
 - **need:** One per-country results CSV from the author's own run, to verify the port by replication. And whether the travel-cost step intended kilometres. The code multiplies a fuel cost per kilometre by a distance measured in the raster's pixel units, which understates the value about a hundredfold.
 
 
@@ -197,8 +197,8 @@ that does not apply is a single dash.
 - **in the library:** yes
 - **run:** yes
 - **total:** three variants: -$22.4bn / -$1.3bn / +$16.7bn
-- **code:** Translated from R to Python, function by function against the R source. The tests re-run the whole calculation against the author's committed output every time, and one test deliberately shuffles the input to prove the code notices rather than silently mismatching rows.
-- **number:** Computes avoided acres and their valuation and reproduces the source repo's committed output for all 161 units. THE REGRESSIONS THEMSELVES ARE NOT REFIT: their committed coefficients are an input, because the ADM2 panel they were fitted on is not staged. Three coefficients give three totals: baseline persistence -$22.4bn, cause difference -$1.3bn, area difference +$16.7bn. 89 of the account's 250 countries carry no value. Fixed 2026-08-22: Kosovo (GADM XKO vs the account's XKX) and India's Z01 and Z07 fell out of the country join, leaving $34.09M attached to no country while still inside the total.
+- **code:** Translated from R to Python and refactored. Fixed: Kosovo (GADM XKO vs the account's XKX) and India's Z01 and Z07 fell out of the country join, leaving $34.09M attached to no country while still inside the total.
+- **number:** Computes avoided acres and their valuation and reproduces the source repo's committed output for all 161 units. We did not refit the regressions: their committed coefficients are an input, because the ADM2 panel they were fitted on is not staged. Three coefficients give three totals: baseline persistence -$22.4bn, cause difference -$1.3bn, area difference +$16.7bn. 89 of the account's 250 countries carry no value. 
 - **need:** the decision which variant is the account's
 
 

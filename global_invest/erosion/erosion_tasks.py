@@ -833,6 +833,12 @@ def prevention_shares(p):
     return True
 
 
+def gep_result(p):
+    """Render the results report via utilities.render_service_results, as every service does."""
+    publish_inputs(p)
+    utilities.render_service_results(p)
+
+
 def maps_and_figures(p):
     """Section C: publication-ready choropleths, raster previews and charts from Section B's
     outputs (found via the shared erosion_gep_output_dir attr). Figures default into THIS task's

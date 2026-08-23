@@ -1,0 +1,117 @@
+---
+format:
+  html:
+    embed-resources: true
+    standalone: true
+execute:
+  echo: false          # results report shows tables/figures, not code
+  warning: false
+---
+
+# Erosion Control Results
+
+The service values the crop production that soil retention protects. InVEST SDR gives actual and
+potential soil loss on every pixel; the share of the loss that is prevented is the field's own
+cover plus everything upslope of it, combined as a union rather than a sum; that share becomes a
+country's crop production shock, weighted by each crop's production and its yield elasticity to
+erosion; and the shock is priced against the country's crop gross production value.
+
+The account reports the combined channel. The on-farm and upstream channels are reported beside
+it because they are what the combined one is built from, and because the difference between the
+combined value and either one alone is what that channel adds.
+
+```{python}
+#| output: false
+
+### SETUP CODE: loads the run's integrated table. Rendering is driven by the gep_result task,
+### which passes the project it is reporting on through PROJECTFLOW_ROOT.
+
+import os
+import glob
+
+import pandas as pd
+import hazelbean as hb
+
+from global_invest import utilities
+
+pd.set_option('display.float_format', '{:,.2f}'.format)
+pd.set_option('display.max_rows', 1000)
+from IPython.display import Image, display
+
+service_label = 'erosion'
+project_dir = os.environ.get('PROJECTFLOW_ROOT', os.path.join(
+    os.path.expanduser('~'), 'Files', 'global_invest', 'projects', 'gep_erosion'))
+
+hits = glob.glob(os.path.join(project_dir, 'intermediate', '**', 'integrated_country_gep.csv'),
+                 recursive=True)
+if not hits:
+    raise FileNotFoundError(
+        'No integrated_country_gep.csv under ' + project_dir + '. Run the erosion GEP tree first.')
+df = hb.df_read(hits[0])
+
+COMPONENTS = [('combined', 'Combined'), ('onfarm', 'On-farm'), ('upstream', 'Upstream')]
+totals = {label: df[f'gep_const2019_usd_{key}'].sum() for key, label in COMPONENTS}
+total_erosion_value = totals['Combined']
+n_valued = int((df['gep_const2019_usd_combined'] > 0).sum())
+soil_retained = df['soil_retained_cropland_tons'].sum()
+
+out_dir = os.path.join(project_dir, 'intermediate', service_label, 'gep_result')
+hb.create_directories(out_dir)
+
+df_decomposition = pd.DataFrame({
+    'component': [label for _, label in COMPONENTS],
+    'gep_const2019_usd': [totals[label] for _, label in COMPONENTS],
+    'mean_shock_share': [df[f'erosion_shock_share_{key}'].mean() for key, _ in COMPONENTS],
+    'countries_valued': [int((df[f'gep_const2019_usd_{key}'] > 0).sum()) for key, _ in COMPONENTS],
+})
+
+df_country = (df[['iso3', 'country_name', 'erosion_shock_share_combined',
+                  'gep_const2019_usd_combined', 'gdp_loss_pct_combined']]
+              .sort_values('gep_const2019_usd_combined', ascending=False)
+              .reset_index(drop=True))
+df_country.to_csv(os.path.join(out_dir, 'gep_by_country_base_year_table.csv'), index=False)
+
+# The map needs the r250 id the shared geometry joins on; the integrated table carries iso3 only.
+map_png = None
+try:
+    countries_path = hb.ProjectFlow(project_dir=project_dir).get_path(
+        os.path.join('cartographic', 'ee', 'ee_r264_correspondence.gpkg'))
+    import geopandas as gpd
+    lookup = gpd.read_file(countries_path, ignore_geometry=True)
+    iso_column = next(c for c in lookup.columns if c.endswith('iso3_r250_label')
+                      or c == 'iso3_r250_label')
+    lookup = lookup[[iso_column, 'iso3_r250_id']].drop_duplicates()
+    df_mapped = df_country.merge(lookup, how='left', left_on='iso3', right_on=iso_column)
+    map_png = utilities.plot_gep_choropleth(
+        df_mapped, 'gep_const2019_usd_combined', countries_path,
+        os.path.join(out_dir, 'gep_by_country_base_year_map.png'),
+        title='Erosion control GEP by country in the base year',
+        label='GEP, constant 2019 USD')
+except Exception as exception:
+    print('map skipped:', type(exception).__name__, exception)
+```
+
+Soil retention on cropland protects crop production worth
+$`{python} f"{total_erosion_value:,.2f}"` in the base year, across
+`{python} f"{n_valued}"` countries, holding
+`{python} f"{soil_retained:,.0f}"` tonnes of soil in place.
+
+```{python}
+if map_png:
+    display(Image(map_png))
+```
+
+## The three prevention channels
+
+The combined channel is not the sum of the other two. On-farm and upstream cover act on the same
+soil, so they are combined as `1 - (1 - onfarm)(1 - upstream)`: the loss that escapes both.
+
+```{python}
+display(df_decomposition)
+```
+
+## GEP by country in the base year
+
+```{python}
+display(df_country)
+```

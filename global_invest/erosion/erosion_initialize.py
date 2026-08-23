@@ -33,9 +33,10 @@ def build_gep_service_results_task_tree(p):
 
 
 def build_gep_service_task_tree(p):
-    """Full GEP run: SDR + valuation + maps/figures."""
+    """Full GEP run: SDR + valuation + maps/figures + the results report."""
     p = build_gep_service_calculation_task_tree(p)
     p.maps_and_figures = p.add_task(erosion_tasks.maps_and_figures, skip_existing=1)
+    p.erosion_gep_result_task = p.add_task(erosion_tasks.gep_result)
     return p
 
 
