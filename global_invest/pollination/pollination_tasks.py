@@ -11,7 +11,7 @@ import wbgapi as wb
 import faostat
 import requests
 import zipfile
-import io as io_module
+import io
 import gc
 import logging
 import math
@@ -32,6 +32,8 @@ import hazelbean as hb
 from global_invest import utilities
 from global_invest.pollination import pollination_functions as pf
 
+logger = logging.getLogger(__name__)
+
 
 
 # ---------------------------------------------------------------------------------------------
@@ -43,9 +45,211 @@ from global_invest.pollination import pollination_functions as pf
 
 FAO_MEDIAN_PRICES_REF_PATH = os.path.join('fao', 'median_prices')
 
+_RADIUS_METERS = 2000.0
+_THRESHOLD = 0.30
+_COS_LAT_FLOOR = 0.1
+_MAX_RX = 2048
+_MAX_RY = 1024
+_METERS_PER_DEG_LAT = 111320.0
+_AG_CLASSES = {10, 11, 12, 20, 30, 40}
+_NAT_CLASSES = {50, 60, 61, 62, 70, 71, 72, 80, 81, 82, 90, 100, 110, 120, 121, 122, 130, 140, 150, 152, 153}
+_SEALS_AG_CLASSES = {2}
+_SEALS_NAT_CLASSES = {3, 4, 5}
+
+
 # ---------------------------------------------------------------------------------------------
 # Vendored from crop_benefits: the FAO price path, the parts that download and write.
 # ---------------------------------------------------------------------------------------------
+
+
+
+# Helpers the vendored raster steps use, from the same source modules.
+
+def _make_elliptical_kernel(ry: int, rx: int) -> np.ndarray:
+    """Create a binary elliptical kernel of half-axes (ry, rx) pixels."""
+    ry = max(1, int(ry))
+    rx = max(1, int(rx))
+    size_y = ry * 2 + 1
+    size_x = rx * 2 + 1
+    yy, xx = np.ogrid[:size_y, :size_x]
+    cy, cx = ry, rx
+    dy = (yy - cy) / float(ry)
+    dx = (xx - cx) / float(rx)
+    dist = dy * dy + dx * dx
+    return (dist <= 1.0).astype(np.uint8)
+
+
+def _window_expand_aniso(window: Window, pad_y: int, pad_x: int, height: int, width: int) -> Window:
+    """Expand a rasterio Window by (pad_y, pad_x) pixels, clamped to raster bounds."""
+    r0 = max(0, int(window.row_off) - int(pad_y))
+    c0 = max(0, int(window.col_off) - int(pad_x))
+    r1 = min(height, int(window.row_off + window.height) + int(pad_y))
+    c1 = min(width, int(window.col_off + window.width) + int(pad_x))
+    return Window(c0, r0, c1 - c0, r1 - r0)
+
+
+def _tile_mid_lat(bounds_top: float, transform_e: float, row0: int, h: int) -> float:
+    """Mid-tile centroid latitude."""
+    mid_row = row0 + (h / 2.0)
+    return bounds_top + (mid_row + 0.5) * transform_e
+
+
+def _compute_radii_pixels(lat_deg: float, pixel_lat_deg: float, pixel_lon_deg: float) -> Tuple[int, int]:
+    """Convert the ~2 km foraging radius to pixel counts at a given latitude."""
+    cos_lat = abs(math.cos(math.radians(lat_deg)))
+    cos_lat = max(cos_lat, _COS_LAT_FLOOR)
+
+    radius_deg_lat = _RADIUS_METERS / _METERS_PER_DEG_LAT
+    radius_deg_lon = _RADIUS_METERS / (_METERS_PER_DEG_LAT * cos_lat)
+
+    ry = int(math.ceil(radius_deg_lat / pixel_lat_deg))
+    rx = int(math.ceil(radius_deg_lon / pixel_lon_deg))
+
+    ry = max(1, min(ry, _MAX_RY))
+    rx = max(1, min(rx, _MAX_RX))
+    return ry, rx
+
+
+def save_parquet(df: pd.DataFrame, path: Path | str) -> Path:
+    """Save DataFrame as parquet and log the result."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    df.to_parquet(path, index=False)
+    logger.info("Saved %d rows -> %s", len(df), path)
+    return path
+
+
+def baseline_denominator(cfg, baseline_lulc_path, target_year):
+    """Unpaired 2023 pollination value (the % change denominator), computed once."""
+    run_pollination_sufficiency_300m(cfg, lulc_path=baseline_lulc_path, scenario=pf.BASELINE_LABEL)
+    run_pollination_sufficiency_5km(cfg, scenario=pf.BASELINE_LABEL)
+    run_pollination_valuation_5km(cfg, scenario=pf.BASELINE_LABEL, target_year=target_year)
+    return cfg.output_dir / f'value_pollination_sufficiency_{pf.BASELINE_LABEL}_5km.tif'
+
+
+def scenario_diff_raster(cfg, scenario, lulc_path, baseline_lulc_path, target_year):
+    """The 5 km scenario-minus-baseline value raster, on cropland stable across the two maps.
+
+    Returns the path crop_benefits wrote it to; the task reads it and hands the array to
+    zonal_pct_change.
+    """
+    stab, b_stab = f'{scenario}_stab', f'{pf.BASELINE_LABEL}_stab_{scenario}'
+    for suff_scen, lulc, other in [(stab, lulc_path, baseline_lulc_path),
+                                   (b_stab, baseline_lulc_path, lulc_path)]:
+        run_pollination_sufficiency_300m_stable_ag(cfg, lulc_path=lulc, other_lulc_path=other, scenario=suff_scen)
+        run_pollination_sufficiency_5km(cfg, scenario=suff_scen)
+        run_pollination_valuation_5km(cfg, scenario=suff_scen, target_year=target_year)
+
+    suff_dir = cfg.output_dir
+    return run_pollination_diff_5km_pnas(
+        cfg, scenario=scenario, baseline_scenario=pf.BASELINE_LABEL,
+        scenario_value_path=suff_dir / f'value_pollination_sufficiency_{stab}_5km.tif',
+        baseline_value_path=suff_dir / f'value_pollination_sufficiency_{b_stab}_5km.tif')
+
+
+def _add_geographic_and_classification_data(
+    df: pd.DataFrame,
+    classif: pd.DataFrame,
+    cfg: Config,
+) -> pd.DataFrame:
+    """Normalise columns, add ISO3 and FAO group."""
+
+    # Column rename
+    df = df.rename(columns={
+        "Area Code (M49)": "area_code_m49",
+        "Area": "area_fao",
+        "Item Code": "item_code_fao",
+        "Item": "item_fao",
+        "Element": "element",
+        "Year": "year",
+        "Value": "value",
+    })
+
+    # Normalise M49
+    df["area_code_m49"] = (
+        df["area_code_m49"]
+        .astype(str)
+        .str.replace(r"[^0-9]", "", regex=True)
+        .str.zfill(3)
+    )
+    df["item_code_fao"] = df["item_code_fao"].astype(int)
+    df["year"] = df["year"].astype(int)
+
+    # Load M49 crosswalk and join
+    cw, _ = load_m49_iso3(cfg)
+    df = df.merge(
+        cw[["area_code_m49", "iso3", "region_fao", "subregion_fao"]],
+        on="area_code_m49",
+        how="left",
+        validate="m:1",
+    )
+
+    n_before = len(df)
+    df = df.dropna(subset=["iso3"])
+    logger.info(
+        "Dropped %d rows without ISO3 mapping", n_before - len(df)
+    )
+
+    # Add FAO group
+    df = df.merge(
+        classif[["item_code_fao", "group_fao"]],
+        on="item_code_fao",
+        how="left",
+        validate="m:1",
+    )
+
+    return df
+
+
+def run_fao_production(cfg: Config) -> Path:
+    """
+    Execute the full FAO production pipeline.
+
+    Returns the path to the output parquet file.
+    """
+    logger.info("=== FAO Production Pipeline ===")
+
+    df, classif = _download_and_filter_fao_production(cfg)
+    df = pf._convert_yield_units(df)
+    df = _add_geographic_and_classification_data(df, classif, cfg)
+
+    outdir = cfg.outputs.fao_production
+    pq_path = _save_production_outputs(df, outdir)
+
+    logger.info("=== FAO Production Pipeline COMPLETE ===")
+    return pq_path
+
+
+def run_fao_prices(cfg: Config) -> Path:
+    """
+    Execute the full FAO producer-price pipeline.
+
+    Returns the path to the output parquet file.
+    """
+    logger.info("=== FAO Prices Pipeline ===")
+
+    years = list(range(cfg.run.fao_start_year, cfg.run.fao_end_year + 1))
+
+    # Steps 1-3
+    pp_raw = _download_fao_prices(years)
+    pp_wide = pf._reshape_prices(pp_raw)
+
+    # Steps 4-7
+    pp3 = pf._reconstruct_slc_lcu(pp_wide)
+
+    # Steps 9-12
+    pp3, fx = _add_iso3_and_fx(pp3, cfg, years)
+
+    # Steps 13-15
+    pp_usd = pf._build_usd_with_qc(pp3, fx)
+
+    # Step 16
+    outdir = cfg.outputs.fao_prices
+    pq_path = _save_price_outputs(pp_usd, outdir)
+
+    logger.info("=== FAO Prices Pipeline COMPLETE ===")
+    return pq_path
+
 
 def _download_and_filter_fao_production(
     cfg: Config,
@@ -60,7 +264,7 @@ def _download_and_filter_fao_production(
         .copy()
     )
     classif["item_code_fao"] = classif["item_code_fao"].astype(int)
-    item_codes = set(classif["item_code_fao"].unique()) - _EXCLUDE_ITEM_CODES
+    item_codes = set(classif["item_code_fao"].unique()) - pf._EXCLUDE_ITEM_CODES
     logger.info("Valid FAO crop item codes: %d", len(item_codes))
 
     # Year range from config
@@ -68,11 +272,11 @@ def _download_and_filter_fao_production(
 
     # Download bulk ZIP
     logger.info("Downloading FAOSTAT QCL bulk data …")
-    resp = requests.get(_URL, timeout=300)
+    resp = requests.get(pf._URL, timeout=300)
     resp.raise_for_status()
 
     with zipfile.ZipFile(io.BytesIO(resp.content)) as zf:
-        with zf.open(_CSV_NAME) as f:
+        with zf.open(pf._CSV_NAME) as f:
             df = pd.read_csv(
                 f,
                 usecols=[
@@ -91,7 +295,7 @@ def _download_and_filter_fao_production(
 
     df = df[
         df["Year"].isin(years)
-        & df["Element"].isin(_ELEMENTS_KEEP)
+        & df["Element"].isin(pf._ELEMENTS_KEEP)
         & df["Item Code"].isin(item_codes)
         & (df["Value"] > 0)
     ].copy()
@@ -128,7 +332,7 @@ def _download_fao_prices(years: list[int]) -> pd.DataFrame:
     """Download bulk FAOSTAT producer prices and return annual rows."""
     logger.info("=== 1) DOWNLOADING FAOSTAT BULK PRODUCER PRICES ===")
 
-    resp = requests.get(_FAO_BULK_URL, timeout=120)
+    resp = requests.get(pf._FAO_BULK_URL, timeout=120)
     resp.raise_for_status()
 
     with zipfile.ZipFile(io.BytesIO(resp.content)) as z:
@@ -169,7 +373,7 @@ def _download_fao_prices(years: list[int]) -> pd.DataFrame:
         .str.replace("TÃ¼rkiye", "Turkey", regex=False)
     )
 
-    _log_df("pp_raw (annual PP, bulk)", pp_raw)
+    pf._log_df("pp_raw (annual PP, bulk)", pp_raw)
     return pp_raw
 
 
@@ -209,7 +413,7 @@ def _add_iso3_and_fx(
     wb_fx = pd.DataFrame(wb_records, columns=["iso3", "year", "lcu_per_usd"])
     wb_fx["fx_source"] = "wb"
     wb_fx = wb_fx.dropna(subset=["iso3", "lcu_per_usd"]).copy()
-    _log_df("wb_fx", wb_fx)
+    pf._log_df("wb_fx", wb_fx)
 
     # 11) IMF FX (local file)
     logger.info("=== 11) LOADING IMF FX ===")
@@ -241,14 +445,14 @@ def _add_iso3_and_fx(
         )
 
         # 11b) Harmonise IMF country names
-        imf_fx["country"] = _recode_country(imf_fx["country"], _IMF_RECODE)
+        imf_fx["country"] = pf._recode_country(imf_fx["country"], pf._IMF_RECODE)
 
         # 11c) Map IMF to ISO3
         country_to_iso3 = pp3[["country", "iso3"]].dropna().drop_duplicates()
         imf_fx = imf_fx.merge(country_to_iso3, on="country", how="left")
         imf_fx = imf_fx.dropna(subset=["iso3"]).copy()
 
-    _log_df("imf_fx", imf_fx)
+    pf._log_df("imf_fx", imf_fx)
 
     # 12) Combine FX (WB priority)
     logger.info("=== 12) COMBINING FX (WB PRIORITY) ===")
@@ -264,7 +468,7 @@ def _add_iso3_and_fx(
     # 12b) FX inheritance
     logger.info("=== 12b) FX INHERITANCE ===")
     inherit_rows = []
-    for child, parent in _FX_INHERIT_ISO3.items():
+    for child, parent in pf._FX_INHERIT_ISO3.items():
         parent_frame = fx.loc[fx["iso3"] == parent].copy()
         if parent_frame.empty:
             continue
@@ -279,7 +483,7 @@ def _add_iso3_and_fx(
             )
             .drop_duplicates(subset=["iso3", "year"], keep="first")
         )
-    _log_df("fx (after inheritance)", fx)
+    pf._log_df("fx (after inheritance)", fx)
 
     return pp3, fx
 
@@ -530,7 +734,7 @@ def run_fao_values(cfg: Config) -> Path:
     )
 
     # Main pipeline: use annual prices
-    price_country, price_subregion, price_region, price_world = _compute_annual_prices(prices, cw)
+    price_country, price_subregion, price_region, price_world = pf._compute_annual_prices(prices, cw)
 
     pq_path = _merge_production_value(
         prod, price_country, price_subregion, price_region, price_world, cfg.outputs.fao_values,
@@ -646,8 +850,8 @@ def fao_median_prices(p):
         crosswalk_fao_cropgrids_path=Path(p.get_path(os.path.join('fao', 'crosswalks',
                                                                   'crosswalk_fao_cropgrids.csv'))),
         output_dir=Path(os.path.dirname(p.fao_median_prices_dir)))
-    pf.run_fao_production(settings)
-    pf.run_fao_prices(settings)
+    run_fao_production(settings)
+    run_fao_prices(settings)
     run_fao_values(settings)
     hb.log('FAO median prices written to %s' % p.fao_median_prices_dir)
     return True
@@ -1594,7 +1798,7 @@ def pollination_shock(p):
                          'p.pollination_base_year_lulc_path) at the SEALS7 base-year map.')
     # The denominator (unpaired 2023 value) is year- and scenario-independent, so the fixed side of
     # the zonal step is built once.
-    denominator_path = pf.baseline_denominator(cfg, base_map, es_shock_base_year)
+    denominator_path = baseline_denominator(cfg, base_map, es_shock_base_year)
     baseline_arr, area_arr, zones_arr, zone_labels = _zonal_context(denominator_path, p.region_boundary_path)
 
     # value[scenario][year] = per-zone % change of that scenario's year-map vs the 2023 baseline (stable
@@ -1603,7 +1807,7 @@ def pollination_shock(p):
     value, level_usd = {}, None
     for year in anchor_years:
         for scen in [base_scenario] + es_shock_scenarios:
-            diff_arr, _ = _read_masked(pf.scenario_diff_raster(
+            diff_arr, _ = _read_masked(scenario_diff_raster(
                 cfg, scenario=f'{scen}_{year}', lulc_path=p.scenario_lulc_paths[scen][year],
                 baseline_lulc_path=base_map, target_year=es_shock_base_year))
             pct, level = pf.zonal_pct_change(diff_arr, baseline_arr, area_arr, zones_arr, zone_labels)

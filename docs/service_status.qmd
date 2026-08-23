@@ -149,8 +149,8 @@ engineering work we did. **number** is what the figure is and what it was checke
 - **run:** yes
 - **method:** FAOSTAT gross production value over 65 livestock products, times an attribution factor: either the CWoN land rental rate or the GLEAM share of feed intake that ecosystems provided.
 - **total:** $519bn on the rental rate. $1.37T on the feed share.
-- **code:** Refactored onto the library template and hazelbean conventions. Plus a units fix. The feed share is now wired through the task layer, so a run writes the feed-share value beside the rental-rate one.
-- **number:** Values livestock output and attributes the part of it nature provided. The 65-product FAO list gives $2.29T of gross production; the two attribution factors give very different answers from it, which is why the choice matters: the CWoN land rental rate gives $519bn over 178 countries, the GLEAM feed share gives $1.37T over 171, a factor of 2.6. Provisional until that choice is made. The feed share comes from GLEAM 3 intake harvested from FAO's public dashboard for 231 countries, 205 matching a country in the account, giving a real share rather than a bound (median 0.73; Mongolia 0.998, India 0.911, Brazil 0.847, France 0.651, United States 0.567, China 0.513).
+- **code:** Refactored onto the library template and hazelbean conventions. Plus a units fix. The feed share is now wired through the task layer, so a run writes the feed-share value beside the rental-rate one. Its method page is not this service's: the file is a copy of the crop provision text, describing crop items throughout, so the equations on it are the wrong ones.
+- **number:** Values livestock output and attributes the part of it nature provided. The 65-product FAO list gives $2.29T of gross production; the two attribution factors give very different answers from it: the CWoN land rental rate gives $519bn over 178 countries, the GLEAM feed share gives $1.37T over 171, a factor of 2.6. Provisional until that choice is made. The feed share comes from GLEAM 3 intake harvested from FAO's public dashboard for 231 countries, 205 matching a country in the account, giving a real share rather than a bound (median 0.73; Mongolia 0.998, India 0.911, Brazil 0.847, France 0.651, United States 0.567, China 0.513).
 - **need:** Which factor the account attributes livestock value with. The code computes both, and they differ by 2.6 times, $519bn on the CWoN land rental rate against $1.37T on the GLEAM feed share. The rental rate is the crop method's factor. Also the compiled GLEAM extract (gleam3_dmi.xlsx) to validate our harvest against, the confirmation of which FAO products count as livestock, and one per-country output. 
 
 
@@ -162,8 +162,8 @@ engineering work we did. **number** is what the figure is and what it was checke
 - **run:** yes
 - **method:** Mangroves: protected hectares times value per hectare. Corals: a published annual benefit per country, deflated to the base year.
 - **total:** $36.72bn
-- **code:** Refactored onto the library template and hazelbean conventions. The mangrove value is run: we multiply protected area by value per hectare rather than reading their published total.
-- **number:** Two components. Mangroves are computed as protected hectares times value per hectare, $37bn in total, which lands within $4,983 of the published figure. Coral reefs carry a finished annual benefit per country and nothing underneath it, so there is no code behind it to run; we carry it from 2011 to the base year with the WB deflator and add it. Nine countries missing from the deflator table are zeroed by the join where they should be left unvalued.
+- **code:** Refactored onto the library template and hazelbean conventions. The mangrove value is run: we multiply protected area by value per hectare.
+- **number:** Two components, and the $36.72bn total is the sum of them. Mangroves are run: hectares times value per hectare gives $30.4bn, as in the published table. Corals are not: the file carries a finished annual benefit per country, $5.17bn at 2011, with nothing underneath it, and we only carry it forward to the base year with the World Bank deflator, which makes it $6.32bn. Nine countries missing from the deflator table are zeroed by the join where they should be left unvalued.
 - **need:** Whether code exists behind the coral-reef benefit table that we should be running.
 
 
@@ -173,10 +173,10 @@ engineering work we did. **number** is what the figure is and what it was checke
 - **module:** extractive_materials_provision
 - **in the library:** yes
 - **run:** yes
-- **method:** World Bank mineral rents as a share of GDP, times GDP, times a 0.49 factor whose source is unknown.
+- **method:** WB mineral rents as a share of GDP, times GDP, times a 0.49 factor whose source is unknown.
 - **total:** $99.54bn
-- **code:** Refactored onto the library template and hazelbean conventions. A test checks our rewrite of the World Bank table, which turns one column per year into one row per country and year, against the code it replaced. Also guarded against the invisible character Excel writes at the start of a file, which had broken a column name.
-- **number:** Computes World Bank mineral rents share times GDP times the 0.49 factor, $99.54bn. Reproduces the author's reference table. The factor's source is unknown; without it the total would be $203bn.
+- **code:** Refactored onto the library template and hazelbean conventions. A test checks our rewrite of the WB table. Also guarded against the invisible character Excel writes at the start of a file, which had broken a column name.
+- **number:** Computes World Bank mineral rents share times GDP times the 0.49 factor, $99.54bn. Reproduces the reference table. The factor's source is unknown; without it the total would be $203bn.
 - **need:** the source of the 0.49 factor
 
 
@@ -186,9 +186,9 @@ engineering work we did. **number** is what the figure is and what it was checke
 - **module:** renewable_energy_provision
 - **in the library:** yes
 - **run:** yes
-- **method:** IRENA generation times the World Bank energy price times the CWoN rent share, per renewable resource.
+- **method:** For each of wind, solar and geothermal, the electricity a country generated from it in gigawatt hours, from IRENA's statistics, times the electricity price from the World Bank series, times the CWoN rent share, which is the part of that revenue attributable to the resource rather than to the turbines and grid.
 - **total:** $170.83bn
-- **code:** Refactored onto the library template and hazelbean conventions. The calculation had been written out as one block in the task file; the task now calls those, and each step is tested against a small table.
+- **code:** Refactored onto the library template and hazelbean conventions. The calculation had been written out as one block in the task file. Its method page is not this service's: the file is a copy of the crop provision text, describing crop items throughout, so the equations on it are the wrong ones.
 - **number:** Computes IRENA generation times World Bank price times the CWoN rent share. A fresh run reproduces $170.83bn and each resource: wind $110.31bn, solar $53.95bn, geothermal $6.56bn. The drive's reference CSVs hold $134.6bn, and which is current is open.
 - **need:** the decision which source is current. 
 
@@ -203,7 +203,7 @@ engineering work we did. **number** is what the figure is and what it was checke
 - **total:** $1.73bn provisional (a units question is open)
 - **code:** Refactored onto the library template and hazelbean conventions. Reading the UNWTO tourism workbook moved out of the calculation code, and the refactored reader returns exactly the same 3,610 rows from the real workbook.
 - **number:** Computes the site ranking, the gravity allocation and the travel-cost valuation end to end. $1.73bn, provisional because the units question below would change it. Separately, the author's output table is not reachable, so there is nothing to check it against.
-- **need:** One per-country results CSV from the author's own run, to verify the port by replication. And whether the travel-cost step intended kilometres. The code multiplies a fuel cost per kilometre by a distance measured in the raster's pixel units, which understates the value about a hundredfold.
+- **need:** One per-country results CSV from the author's own run, to verify the port by replication. And whether the travel-cost step intended kilometres. The code multiplies a fuel cost per kilometre by a distance measured in the raster's pixel units, which understates the value.
 
 
 ## Wildfires

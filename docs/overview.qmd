@@ -207,7 +207,7 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 | coastal_carbon | {{< meta coastal_eez >}} EEZ-only, {{< meta coastal_all >}} all rows | yes. Reproduces the author's reported numbers |
 | crop_provision | {{< meta crop_total >}} | yes. Reproduces the reference table |
 | livestock_provision | $519bn rental rate, {{< meta livestock_world >}} feed share | no. Both attributions run; which one the account uses is the open decision, and there is no reference output |
-| coastal_protection | {{< meta cp_total >}} | partially. Mangroves are computed here and land within $5k of the published figure; the coral component is read through |
+| coastal_protection | {{< meta cp_total >}} | partially. Mangroves are ours, $30.40bn against their $30.40bn; the coral half, $6.32bn deflated, is read through |
 | extractive_materials | {{< meta extractive_total >}} | yes. Reproduces the author's reference table |
 | renewable_energy | {{< meta renewable_total >}} | partially. The code and the drive's reference CSVs give different values, and which one is current is the open question |
 
@@ -311,7 +311,7 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 - **Q3:** can you share the GLEAM 3 intake extract (gleam3_dmi.xlsx) to check ours against, and a per-country output? We have harvested the intake from FAO's public dashboard for 231 countries, 205 matching a country in the account, and it does carry all eight feed categories, shown a different subset per species. So we compute the feed share; what we lack is anything to validate it against.
 ## coastal_protection
 
-- [Values storm damage that mangroves and coral reefs prevent along coastlines, two components of one service. Mangroves we compute, as protected hectares times value per hectare, landing within $5k of the published figure. Coral reefs we cannot: that table carries a finished benefit and nothing underneath it, so we carry it to the base year with a deflator and add it.]{.state}
+- [Values storm damage that mangroves and coral reefs prevent along coastlines. The {{< meta cp_total >}} is the sum of two halves that stand differently. Mangroves are ours: hectares times value per hectare gives $30,400,076,961 against the table's $30,400,082,253, a difference of $5,291 that is its own per-row rounding. Corals are not: that file carries a finished benefit per country with nothing underneath it, $5.17bn at 2011, and we only carry it to the base year with a deflator, making it $6.32bn.]{.state}
 - **Q1:** is there code behind the coral-reef benefit table that we should be running? That half is still someone else's number, so a disagreement with it could not surface.
 - **Q2:** should the 9 countries missing from the deflator table be left unvalued rather than zero? They are currently zeroed by the join, which reads as no damage prevented.
 

@@ -30,6 +30,8 @@ from tqdm import tqdm
 
 import pandas as pd
 
+logger = logging.getLogger(__name__)
+
 BASELINE_LABEL = '2023_pnas'
 
 # The country attributes every GEP per-country CSV carries, in the order the CSV writes them.
@@ -286,35 +288,6 @@ def configure_sufficiency(p, target_year):
             crop_benefits_dir, 'poll_value_global_%dusd.tif' % int(target_year))))
 
 
-
-def baseline_denominator(cfg, baseline_lulc_path, target_year):
-    """Unpaired 2023 pollination value (the % change denominator), computed once."""
-    run_pollination_sufficiency_300m(cfg, lulc_path=baseline_lulc_path, scenario=BASELINE_LABEL)
-    run_pollination_sufficiency_5km(cfg, scenario=BASELINE_LABEL)
-    run_pollination_valuation_5km(cfg, scenario=BASELINE_LABEL, target_year=target_year)
-    return cfg.output_dir / f'value_pollination_sufficiency_{BASELINE_LABEL}_5km.tif'
-
-
-def scenario_diff_raster(cfg, scenario, lulc_path, baseline_lulc_path, target_year):
-    """The 5 km scenario-minus-baseline value raster, on cropland stable across the two maps.
-
-    Returns the path crop_benefits wrote it to; the task reads it and hands the array to
-    zonal_pct_change.
-    """
-    stab, b_stab = f'{scenario}_stab', f'{BASELINE_LABEL}_stab_{scenario}'
-    for suff_scen, lulc, other in [(stab, lulc_path, baseline_lulc_path),
-                                   (b_stab, baseline_lulc_path, lulc_path)]:
-        run_pollination_sufficiency_300m_stable_ag(cfg, lulc_path=lulc, other_lulc_path=other, scenario=suff_scen)
-        run_pollination_sufficiency_5km(cfg, scenario=suff_scen)
-        run_pollination_valuation_5km(cfg, scenario=suff_scen, target_year=target_year)
-
-    suff_dir = cfg.output_dir
-    return run_pollination_diff_5km_pnas(
-        cfg, scenario=scenario, baseline_scenario=BASELINE_LABEL,
-        scenario_value_path=suff_dir / f'value_pollination_sufficiency_{stab}_5km.tif',
-        baseline_value_path=suff_dir / f'value_pollination_sufficiency_{b_stab}_5km.tif')
-
-
 # ---------------------------------------------------------------------------------------------
 # Vendored from crop_benefits: the pieces of its sufficiency and value calculation that hold
 # no file handling. The raster steps they belong to are in the task module.
@@ -483,7 +456,6 @@ class FaoPriceSettings:
         return self.output_dir / 'median_prices'
 
 
-
 # ---------------------------------------------------------------------------------------------
 # Vendored from crop_benefits: the FAO price path, the parts that hold no file handling.
 # These build the per-crop median producer prices the pollination value raster is priced at.
@@ -607,79 +579,6 @@ def _convert_yield_units(df: pd.DataFrame) -> pd.DataFrame:
     df.loc[mask, "Value"] = df.loc[mask, "Value"] / 1000
     logger.info("Converted %d yield rows from kg/ha to t/ha", mask.sum())
     return df
-
-
-def _add_geographic_and_classification_data(
-    df: pd.DataFrame,
-    classif: pd.DataFrame,
-    cfg: Config,
-) -> pd.DataFrame:
-    """Normalise columns, add ISO3 and FAO group."""
-
-    # Column rename
-    df = df.rename(columns={
-        "Area Code (M49)": "area_code_m49",
-        "Area": "area_fao",
-        "Item Code": "item_code_fao",
-        "Item": "item_fao",
-        "Element": "element",
-        "Year": "year",
-        "Value": "value",
-    })
-
-    # Normalise M49
-    df["area_code_m49"] = (
-        df["area_code_m49"]
-        .astype(str)
-        .str.replace(r"[^0-9]", "", regex=True)
-        .str.zfill(3)
-    )
-    df["item_code_fao"] = df["item_code_fao"].astype(int)
-    df["year"] = df["year"].astype(int)
-
-    # Load M49 crosswalk and join
-    cw, _ = load_m49_iso3(cfg)
-    df = df.merge(
-        cw[["area_code_m49", "iso3", "region_fao", "subregion_fao"]],
-        on="area_code_m49",
-        how="left",
-        validate="m:1",
-    )
-
-    n_before = len(df)
-    df = df.dropna(subset=["iso3"])
-    logger.info(
-        "Dropped %d rows without ISO3 mapping", n_before - len(df)
-    )
-
-    # Add FAO group
-    df = df.merge(
-        classif[["item_code_fao", "group_fao"]],
-        on="item_code_fao",
-        how="left",
-        validate="m:1",
-    )
-
-    return df
-
-
-def run_fao_production(cfg: Config) -> Path:
-    """
-    Execute the full FAO production pipeline.
-
-    Returns the path to the output parquet file.
-    """
-    logger.info("=== FAO Production Pipeline ===")
-
-    df, classif = _download_and_filter_fao_production(cfg)
-    df = _convert_yield_units(df)
-    df = _add_geographic_and_classification_data(df, classif, cfg)
-
-    outdir = cfg.outputs.fao_production
-    pq_path = _save_production_outputs(df, outdir)
-
-    logger.info("=== FAO Production Pipeline COMPLETE ===")
-    return pq_path
 
 
 def _recode_country(series: pd.Series, mapping: dict) -> pd.Series:
@@ -946,37 +845,6 @@ def _build_usd_with_qc(
     return pp_usd
 
 
-def run_fao_prices(cfg: Config) -> Path:
-    """
-    Execute the full FAO producer-price pipeline.
-
-    Returns the path to the output parquet file.
-    """
-    logger.info("=== FAO Prices Pipeline ===")
-
-    years = list(range(cfg.run.fao_start_year, cfg.run.fao_end_year + 1))
-
-    # Steps 1-3
-    pp_raw = _download_fao_prices(years)
-    pp_wide = _reshape_prices(pp_raw)
-
-    # Steps 4-7
-    pp3 = _reconstruct_slc_lcu(pp_wide)
-
-    # Steps 9-12
-    pp3, fx = _add_iso3_and_fx(pp3, cfg, years)
-
-    # Steps 13-15
-    pp_usd = _build_usd_with_qc(pp3, fx)
-
-    # Step 16
-    outdir = cfg.outputs.fao_prices
-    pq_path = _save_price_outputs(pp_usd, outdir)
-
-    logger.info("=== FAO Prices Pipeline COMPLETE ===")
-    return pq_path
-
-
 def _compute_annual_prices(prices: pd.DataFrame, cw: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """
     Compute annual prices hierarchically: country, subregion, region, world.
@@ -1029,3 +897,40 @@ def _compute_annual_prices(prices: pd.DataFrame, cw: pd.DataFrame) -> tuple[pd.D
     )
     
     return price_country, price_subregion, price_region, price_world
+
+
+# The CropGrids and yield grid, half a degree at 0.05, which pixel_area_km2 is written for.
+PIXEL_RES_DEG = 0.05
+
+
+def pixel_area_km2(lat_deg: np.ndarray, res_deg: float = PIXEL_RES_DEG) -> np.ndarray:
+    """
+    Pixel area in km² for each row of a lat/lon grid (spherical Earth).
+
+    Parameters
+    ----------
+    lat_deg : 1-D array
+        Latitude of each pixel-row centre (degrees, north-positive).
+    res_deg : float
+        Angular resolution in degrees (default 0.05° ≈ 5 km).
+
+    Returns
+    -------
+    1-D array of areas in km², one per row.
+
+    See Also
+    --------
+    crop_benefits.raster.grid.pixel_area_km2 :
+        Complementary function that accepts a rasterio Affine transform and
+        grid dimensions instead of a raw latitude array.  Use *that* function
+        when you only have a rasterio metadata dict; use *this* function when
+        you already have an explicit latitude array (e.g. inside
+        ``build_area_km2_raster``).
+    """
+    R = 6371.0  # Earth radius, km
+    lat_rad = np.deg2rad(lat_deg)
+    dlat = np.deg2rad(res_deg)
+    dlon = np.deg2rad(res_deg)
+    return (R ** 2) * dlon * (
+        np.sin(lat_rad + dlat / 2.0) - np.sin(lat_rad - dlat / 2.0)
+    )
