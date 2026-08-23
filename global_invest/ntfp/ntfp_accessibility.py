@@ -84,14 +84,18 @@ def accessible_forest_hectares_by_country(lulc_equal_area_path, access_mask, cou
 
 def build_access_mask(road_length_path, river_mask_path, out_path):
     """Roads and rivers combined into one 0/1 source mask on their shared grid."""
-    roads_band = gdal.Open(road_length_path).GetRasterBand(1)
-    rivers_band = gdal.Open(river_mask_path).GetRasterBand(1)
+    # The datasets are held in their own names: a band taken off gdal.Open(...) directly outlives
+    # the dataset only until the next collection, and then reading it raises on the C pointer.
+    roads_dataset = gdal.Open(road_length_path)
+    rivers_dataset = gdal.Open(river_mask_path)
+    roads_band = roads_dataset.GetRasterBand(1)
+    rivers_band = rivers_dataset.GetRasterBand(1)
     roads = roads_band.ReadAsArray().astype(np.float32)
     rivers = rivers_band.ReadAsArray().astype(np.float32)
     mask = nf.access_source_mask(roads, rivers, road_ndv=roads_band.GetNoDataValue(),
                                  river_ndv=None)
 
-    reference = gdal.Open(road_length_path)
+    reference = roads_dataset
     target = gdal.GetDriverByName('GTiff').Create(
         out_path, reference.RasterXSize, reference.RasterYSize, 1, gdal.GDT_Byte,
         options=list(GTIFF_CREATION_OPTIONS))

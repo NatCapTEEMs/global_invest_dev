@@ -315,10 +315,10 @@ that does not apply is a single dash.
 - **subgroup:** -
 - **module:** ntfp
 - **in the library:** yes
-- **run:** in progress
-- **total:** -
-- **code:** Refactored onto the library template and hazelbean conventions. The valuation is tested. The accessibility stage decides which forest people can actually reach to gather from: it grows a 10 km buffer around every road and river, on an equal-area grid so 10 km means the same distance everywhere, and keeps the forest inside it.
-- **number:** Values what forests yield besides timber, as reachable forest hectares times an annual value per hectare. No number yet: the accessibility stage is running over the global rasters now, which is the only thing left. The roads (GRIP4) and rivers (Natural Earth) are staged, and the missing price is derived from the public CWoN 2024 reproducibility package: non-wood forest product annual value over the matching forest area, 148 countries in 2019, a median of $10.10 per hectare.
+- **run:** yes
+- **total:** $19.86bn
+- **code:** Refactored onto the library template and hazelbean conventions. The valuation is tested. Fixed two of our own bugs that had stopped the run: a raster band read off a temporary dataset, which dies before it is used, and an empty land-cover path in the service's config row. The accessibility stage decides which forest people can actually reach to gather from: it grows a 10 km buffer around every road and river, on an equal-area grid so 10 km means the same distance everywhere, and keeps the forest inside it.
+- **number:** Values what forests yield besides timber, as reachable forest hectares times an annual value per hectare. $19.86bn over the 142 countries that have both, from 2,590 million accessible hectares over 214. That is 64 percent of the world's forest lying within 10 km of a road or river, and at the median price of $10.10 per hectare the whole accessible area would come to $26bn, so $19.86bn is what the 142 priced countries carry. No reference output exists to check it against: the price is ours, derived from the public CWoN 2024 reproducibility package as non-wood forest product annual value over the matching forest area, 148 countries in 2019.
 - **need:** A decision on the denominator. The CWoN price is an annual value spread over CWoN's own forest area, and we multiply it by accessible forest from the ESA land cover, which is a smaller area. So either the price should be rescaled to the accessible area, or accessibility should not restrict the quantity at all. Taking the price as published and the quantity as accessible, which is the source method's construction, values the same forest at two different extents.
 
 

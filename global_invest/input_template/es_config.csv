@@ -18,7 +18,7 @@ sandstorm_prevention,storm_mitigation,,2019,VSL (avoided mortality),,,,,,
 water_quality,water_quality,,2019,treatment cost (intl dollars question open),,,,,,
 flood_control,river_flood_mitigation,,2019,avoided damage,,,,,,
 local_climate_regulation,local_climate_regulation,,2019,avoided energy cost,,,,,,
-ntfp,ntfp,,2019,value per accessible hectare,,,,,,
+ntfp,ntfp,,2019,value per accessible hectare,,,,lulc/esa/lulc_esa_2019.tif,cartographic/ee/ee_r264_correspondence.gpkg,ee_r264_id
 stormwater,stormwater,,2019,replacement cost,,,,,,
 extractive_energy,extractive_energy_provision,,2019,resource rent,,,,,,
 timber_provision,timber_provision,,2019,stumpage value,,,,,,

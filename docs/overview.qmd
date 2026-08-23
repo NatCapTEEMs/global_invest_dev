@@ -15,10 +15,10 @@ renewable_ref: "$134.6bn"
 poll_raster: "$18.28bn"
 poll_fao: "$515bn"
 livestock_ind: "$136bn"
-livestock_world: "$2.29T"
+livestock_world: "$1.37T"
 n_services: "23"
 n_replicating: "9"
-n_awaiting_file: "3"
+n_awaiting_file: "5"
 fisheries_total: "$29bn"
 fisheries_subsistence_total: "$7.92bn"
 water_supply_total: "$146.08bn"
@@ -131,11 +131,11 @@ format:
 
 ## The state in numbers
 
-- The test of whether a service is ours is whether we can run it: our own code, read, rewritten and tested here. 21 of the {{< meta n_services >}} produce their number that way today.
+- The test of whether a service is ours is whether we can run it: our own code, read, rewritten and tested here. 22 of the {{< meta n_services >}} produce their number that way today, and the 23rd, erosion, is running.
 - No service is waiting on a file from anyone. Erosion was the last one we called blocked, on four upstream layers at a cluster path we cannot reach. Those four are diagnostics the run does not need, and the one layer it does need we now build ourselves from the elevation model. Every erosion input is in the shared base data, and the run is going.
 - Two run but carry one borrowed component each: coastal protection computes its mangrove half and reads its coral half, and water quality computes its dollar figures and reads its international-dollar headline. Those two components are the only numbers left with no code here to run.
-- Running our code is one thing, checking it against someone else's is another. {{< meta n_replicating >}} of our runs land on a committed reference or the manuscript. {{< meta n_awaiting_file >}} have nothing to check against, because no reference output exists: recreation, commercial fisheries and landslide. Erosion's run is ongoing.
-- Livestock's numbers are provisional until the feed-share attribution replaces the land rental rate standing in for it.
+- Running our code is one thing, checking it against someone else's is another. {{< meta n_replicating >}} of our runs land on a committed reference or the manuscript. {{< meta n_awaiting_file >}} have nothing to check against, because no reference output exists: recreation, commercial fisheries, landslide, non-timber forest products and stormwater. Erosion's run is ongoing.
+- Livestock now computes both attributions and they are far apart. The same $2.29T of gross production gives $519bn through the CWoN land rental rate and {{< meta livestock_world >}} through the GLEAM feed share, a factor of 2.6. Which factor the account uses is a decision, not a gap.
 
 ## What each service is {.smaller}
 
@@ -190,7 +190,7 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 | terrestrial_carbon | {{< meta terrestrial_total >}} | yes. Reproduces the manuscript's total |
 | coastal_carbon | {{< meta coastal_eez >}} EEZ-only, {{< meta coastal_all >}} all rows | yes. Reproduces the author's reported numbers |
 | crop_provision | {{< meta crop_total >}} | yes. Reproduces the reference table |
-| livestock_provision | provisional | no. Awaits the GLEAM intake data and a reference output |
+| livestock_provision | $519bn rental rate, {{< meta livestock_world >}} feed share | no. Both attributions run; which one the account uses is the open decision, and there is no reference output |
 | coastal_protection | {{< meta cp_total >}} | partially. Mangroves are computed here and land within $5k of the published figure; the coral component is read through |
 | extractive_materials | {{< meta extractive_total >}} | yes. Reproduces the author's reference table |
 | renewable_energy | {{< meta renewable_total >}} | partially. The code and the drive's reference CSVs give different values, and which one is current is the open question |
@@ -222,7 +222,7 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 | local_climate_regulation | {{< meta lcr_ours >}} ours | no. We compute it from our own city valuations; the committed table's {{< meta lcr_committed >}} differs by a country-varying factor |
 | extractive_energy | {{< meta xe_total >}} (gas + coal + petroleum) | yes. Computed from the public CWoN rent tables, and the committed tables double-count eight rows |
 | timber_provision | {{< meta timber_total >}} | yes. All 166 countries match the committed output |
-| ntfp | in progress | no. The accessibility run is going on the public roads data |
+| ntfp | $19.86bn | no. Ours end to end, on the public roads and rivers and a price we derived, with no reference output |
 | stormwater | {{< meta stormwater_volume >}} retained ({{< meta stormwater_value >}} at the placeholder price) | no. The retention run is ours, and no author run exists to compare against |
 
 : {tbl-colwidths="[22,32,46]"}
@@ -288,11 +288,10 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 
 ## livestock_provision
 
-- [Values livestock production and attributes to nature the share of feed ecosystems provide. Computed in the library the way crop_provision is, but on a land rental rate standing in for the feed share, so the numbers are provisional. On the 65 FAO item codes India recovers from zero to {{< meta livestock_ind >}} and the world total reads {{< meta livestock_world >}}.]{.state}
-- **Q1:** should milk and the other missing products count as livestock production? The library's old list covered meat and eggs only and captured 4 percent of India's FAO livestock value, while the method repo's list of 65 products includes milk.
-- **Q2:** is nature's share the part of feed that comes from ecosystems (grass, leaves, crop residues, by-products) rather than from crops and concentrates? We have written and tested that formula, and it would replace the land rental rate standing in for it now.
-- **Q3:** can you share the GLEAM 3 intake extract (gleam3_dmi.xlsx) to check ours against, and a per-country output? We have harvested the intake from FAO's public dashboard for 231 countries, and it does carry all eight feed categories, shown a different subset per species. So we can compute the feed share; what we lack is anything to validate it against.
-
+- [Values livestock production and attributes to nature the share of feed ecosystems provide. Both attributions now run: on $2.29T of gross production over the 65 FAO item codes, the CWoN land rental rate gives $519bn and the GLEAM feed share gives {{< meta livestock_world >}}, a factor of 2.6. India recovers from zero to {{< meta livestock_ind >}} on the item list alone.]{.state}
+- **Q1:** which factor does the account attribute with, the land rental rate or the feed share? They differ by 2.6 times. The rental rate belongs to the crop method, and this service's own method page defines it as the factor, but that page is the crop method page, referring to crop items throughout.
+- **Q2:** should milk and the other missing products count as livestock production? The library's old list covered meat and eggs only and captured 4 percent of India's FAO livestock value, while the method repo's list of 65 products includes milk.
+- **Q3:** can you share the GLEAM 3 intake extract (gleam3_dmi.xlsx) to check ours against, and a per-country output? We have harvested the intake from FAO's public dashboard for 231 countries, 205 matching a country in the account, and it does carry all eight feed categories, shown a different subset per species. So we compute the feed share; what we lack is anything to validate it against.
 ## coastal_protection
 
 - [Values storm damage that mangroves and coral reefs prevent along coastlines, two components of one service. Mangroves we compute, as protected hectares times value per hectare, landing within $5k of the published figure. Coral reefs we cannot: that table carries a finished benefit and nothing underneath it, so we carry it to the base year with a deflator and add it.]{.state}
@@ -365,9 +364,8 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 
 ## ntfp
 
-- [Values non-timber forest products as accessible forest area (near roads and rivers) times the CWoN value per hectare. Both inputs are now in hand: roads and rivers are staged, and the price is derived from the public CWoN package at a median of $10.10 per hectare across 148 countries. What is left is running the accessibility stage over the global rasters.]{.state}
-- **No open questions.** One seam worth naming: CWoN prices over its own forest area while the quantity we multiply is accessible forest from the ESA land cover. That is the source method's construction, not ours, but the two definitions of forest differ.
-
+- [Values non-timber forest products as accessible forest area (near roads and rivers) times the CWoN value per hectare. Ours end to end: $19.86bn over 142 countries, from 2,590 million accessible hectares, which is 64 percent of the world's forest lying within 10 km of a road or river. No reference output exists to check it against.]{.state}
+- **Q1:** should the price be rescaled to the accessible area, or should accessibility not restrict the quantity? CWoN spreads its annual value over its own forest area and we multiply it by the smaller accessible area, so the same forest is being valued at two different extents.
 ## stormwater
 
 - [Values stormwater retained by urban vegetation and soils. Our own retention run on the drive's configuration retains {{< meta stormwater_volume >}} per year across 104 countries, wall to wall rather than urban-masked, and the module prices that volume. The run and the country step sit beside the task tree rather than inside it.]{.state}
