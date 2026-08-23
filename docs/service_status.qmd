@@ -186,7 +186,7 @@ engineering work we did. **number** is what the figure is and what it was checke
 - **module:** renewable_energy_provision
 - **in the library:** yes
 - **run:** yes
-- **method:** For each of wind, solar and geothermal, the electricity a country generated from it in gigawatt hours, from IRENA's statistics, times the electricity price from the World Bank series, times the CWoN rent share, which is the part of that revenue attributable to the resource rather than to the turbines and grid.
+- **method:** For each of wind, solar and geothermal, the electricity a country generated from it in gigawatt hours, from IRENA's statistics, times the electricity price from the World Bank series, times the CWoN rent share, which is the part of that revenue attributable to the resource.
 - **total:** $170.83bn
 - **code:** Refactored onto the library template and hazelbean conventions. The calculation had been written out as one block in the task file. Its method page was a copy of the crop provision text, describing crop items throughout; it has been rewritten for this service.
 - **number:** Computes IRENA generation times World Bank price times the CWoN rent share. A fresh run reproduces $170.83bn and each resource: wind $110.31bn, solar $53.95bn, geothermal $6.56bn. The drive's reference CSVs hold $134.6bn, and which is current is open.
@@ -215,8 +215,8 @@ engineering work we did. **number** is what the figure is and what it was checke
 - **method:** Burned acres avoided because fires persist less where nature dominates, from per-country AR(1) regressions of burned area, times a per-acre damage value.
 - **total:** three variants: -$22.4bn / -$1.3bn / +$16.7bn
 - **code:** Translated from R to Python and refactored. Fixed: Kosovo (GADM XKO vs the account's XKX) and India's Z01 and Z07 fell out of the country join, leaving $34.09M attached to no country while still inside the total.
-- **number:** Computes avoided acres and their valuation and reproduces the source repo's committed output for all 161 units. We did not refit the regressions: their committed coefficients are an input, because the ADM2 panel they were fitted on is not staged. Three coefficients give three totals: baseline persistence -$22.4bn, cause difference -$1.3bn, area difference +$16.7bn. 89 of the account's 250 countries carry no value. 
-- **need:** the decision which variant is the account's
+- **number:** Computes avoided acres and their valuation and reproduces the source repo's committed output for all 161 units. We did not refit the regressions: their committed coefficients are an input, because the ADM2 panel they were fitted on is not staged. Three different regressions give three different totals, and they are three different questions. Baseline persistence regresses a country's burned area on last year's, which measures how much fire begets fire and says nothing about nature at all: -$22.4bn. The cause difference compares how strongly nature-caused fires persist against human-caused ones: -$1.3bn. The area difference compares persistence in districts where nature dominates against districts where people do: +$16.7bn. Two of the three come out negative, meaning nature makes fire damage worse rather than better, which is why the choice matters.
+- **need:** Which of the three is the account's. Baseline persistence should not be: it does not isolate nature's role, so it cannot answer what nature protects. Between the other two, the area difference matches how the service is described, fires persisting less where nature dominates, and is the only one that comes out positive. That is an argument, not a decision, and it is not ours to make. Also: 89 of the account's 250 countries carry no value, and whether they are unvalued or dropped somewhere in the join has not been checked.
 
 
 ## Urban Cooling
@@ -226,7 +226,7 @@ engineering work we did. **number** is what the figure is and what it was checke
 - **in the library:** yes
 - **run:** yes
 - **method:** Avoided cooling energy per city and month from the urban heat island effect, times the national electricity price, summed to countries.
-- **total:** $175.56bn (ours)
+- **total:** $175.56bn 
 - **code:** Refactored onto the library template and hazelbean conventions. The valuation was ported from the author's v04 script, and the country value is summed from our own city-month files.
 - **number:** Computed here: avoided cooling energy priced at the national electricity price, summed over every city, $176bn across 177 countries. The committed accounting table totals $14bn and is carried beside ours. Something sits between these city values and that table which is not in anything we hold.
 - **need:** What turns the city-month valuations into the committed accounting table. And confirmation of which figure the account takes.
