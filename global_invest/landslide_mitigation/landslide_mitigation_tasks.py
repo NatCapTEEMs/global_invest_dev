@@ -34,6 +34,97 @@ from global_invest.landslide_mitigation import landslide_mitigation_functions as
 
 
 
+
+def compute_si_global(
+    friction_angle_path,
+    cohesion_soil_path,
+    forest_share_path,
+    c_root_max,
+    unit_weight_path,
+    transmissivity_path,
+    static_q_path,
+    slope_path,
+    soil_depth_path,
+    output_si_path,
+    nodata=lmf.NODATA,
+    min_slope_deg=lmf.MIN_SLOPE_DEG,
+):
+    """Writes the stability index globally, block-wise, from the nine input rasters.
+
+    The formula and its clipping are lmf.stability_index; this function supplies the
+    nodata mask and the near-flat exclusion, which belong with the rasters rather than with
+    the arithmetic.
+
+    c_root_max is a plain scalar closed over by si_op (not passed through raster_calculator):
+    0.0 for the 'full_impacts' bound, C_ROOT_MAX_KPA otherwise (see
+    compute_si_scenarios in the tasks module).
+
+    min_slope_deg excludes near-flat terrain entirely -- infinite-slope theory does not apply
+    there, and the exclusion is standard in SHALSTAB/SINMAP/TRIGRS. It is not just a div/0
+    guard: without it both the friction and hydrological terms blow up near beta = 0 and swamp
+    the real forest-cover signal (the median observed-vs-full_impacts difference was exactly
+    zero before this exclusion was added).
+    """
+    paths = [
+        friction_angle_path, cohesion_soil_path, forest_share_path,
+        unit_weight_path, transmissivity_path, static_q_path,
+        slope_path, soil_depth_path,
+    ]
+    nodatas = [pygeo.get_raster_info(path)['nodata'][0] for path in paths]
+
+    def si_op(phi_deg, c_soil, forest_share, gamma, transmissivity, q, slope_deg, soil_depth):
+        arrays = [phi_deg, c_soil, forest_share, gamma, transmissivity, q, slope_deg, soil_depth]
+        valid = np.ones(phi_deg.shape, dtype=bool)
+        for array, source_nodata in zip(arrays, nodatas):
+            if source_nodata is not None:
+                valid &= (array != source_nodata)
+        valid &= (slope_deg >= min_slope_deg)
+
+        si = lmf.stability_index(phi_deg, c_soil, forest_share, gamma, transmissivity, q,
+                                   slope_deg, soil_depth, c_root_max)
+        return np.where(valid, si, nodata).astype(np.float32)
+
+    pygeo.raster_calculator(
+        [(path, 1) for path in paths],
+        si_op, output_si_path, gdal.GDT_Float32, nodata,
+        calc_raster_stats=True,
+    )
+    return output_si_path
+
+
+def thickness_weighted_combine(depth_raster_paths, out_path, nodata=lmf.NODATA,
+                               conv_factor=None):
+    """Combine the 0-5, 5-15 and 15-30cm rasters into one 0-30cm topsoil raster.
+
+    Inputs must share the same native grid (true for SoilGrids and HiHydroSoil), so the size
+    check is what stops a silently misaligned combine.
+    """
+    keys = list(lmf.DEPTH_WEIGHTS_0_30CM.keys())
+    paths = [depth_raster_paths[key] for key in keys]
+    weights = [lmf.DEPTH_WEIGHTS_0_30CM[key] for key in keys]
+
+    infos = [pygeo.get_raster_info(path) for path in paths]
+    first_size = infos[0]['raster_size']
+    for path, info in zip(paths, infos):
+        if info['raster_size'] != first_size:
+            raise ValueError(
+                f'{path} size {info["raster_size"]} does not match first '
+                f'input {first_size} -- inputs must share the same native '
+                f'grid before combining.'
+            )
+    src_nodatas = [info['nodata'][0] for info in infos]
+
+    def combine_op(*arrays):
+        combined = lmf.thickness_weighted_mean(arrays, weights, src_nodatas, conv_factor)
+        return np.where(np.isnan(combined), nodata, combined).astype(np.float32)
+
+    pygeo.raster_calculator(
+        [(path, 1) for path in paths], combine_op, out_path,
+        gdal.GDT_Float32, nodata,
+    )
+    return out_path
+
+
 def read_gpd_grid_definition(gpd_path):
     """The .gpd file read, and its text handed to the parser in the functions module."""
     with open(gpd_path, 'r') as file_handle:
@@ -486,7 +577,7 @@ def reproject_soilgrids_properties(p):
                     raise FileNotFoundError(f'Missing SoilGrids TIF: {path}')
 
             native_combined_path = os.path.join(work_dir, f'{out_name}_native.tif')
-            lmf.thickness_weighted_combine(
+            thickness_weighted_combine(
                 depth_paths_local, native_combined_path, conv_factor=conv_factor
             )
             p.L.info(f'{out_name}: combined 0-30cm + unit-converted -> {native_combined_path}')
@@ -576,7 +667,7 @@ def reproject_hihydrosoil_ksat(p):
                 raise FileNotFoundError(f'Missing HiHydroSoil file: {path}')
 
         native_combined_path = os.path.join(work_dir, 'ksat_native.tif')
-        lmf.thickness_weighted_combine(depth_paths_local, native_combined_path)
+        thickness_weighted_combine(depth_paths_local, native_combined_path)
         p.L.info(f'K_sat combined 0-30cm: {native_combined_path}')
 
         warp_to_reference(
@@ -1004,7 +1095,7 @@ def compute_slope(p):
 
 
 def _nodata_masked_op(formula, nodatas):
-    """A raster_calculator op applying a calculation formula wherever every input is valid, NODATA
+    """A raster_calculator op applying a calculation formula wherever every input is valid, lmf.NODATA
     elsewhere."""
     def op(*arrays):
         valid = np.ones(arrays[0].shape, dtype=bool)
@@ -1131,7 +1222,7 @@ def compute_si_scenarios(p):
                     p.input_data_dir, 'forest_share_1km', f'forest_share_{year}_1km.tif'
                 )
 
-                lmf.compute_si_global(
+                compute_si_global(
                     friction_angle_path=p.friction_angle_path,
                     cohesion_soil_path=p.cohesion_soil_path,
                     forest_share_path=forest_share_path,
@@ -1188,7 +1279,7 @@ def _draw_land_controls(p, gaez_band, gaez_nodata, ref_gt, x_size, y_size, rng, 
 def _sample_panel_covariates(p, panel, observed_years):
     """The panel with its covariates sampled at each row's coordinates: the static three, then
     the per-year three one year at a time (avoids opening every year's raster for every row),
-    then rows missing a critical covariate dropped (the MIN_SLOPE_DEG exclusion in the stability
+    then rows missing a critical covariate dropped (the lmf.MIN_SLOPE_DEG exclusion in the stability
     index, or ocean/nodata GAEZ edge cases)."""
     panel['gaez_zone'] = sample_raster_at_points(
         p.gaez_path, panel['ease_x'], panel['ease_y'])
@@ -1751,7 +1842,7 @@ def predict_mortality_scenarios(p):
 
 
 def _stitch_one_global_raster(p, blocks_list, grid, spec, year):
-    """One global raster from its per-tile predictions: a NODATA-filled canvas on the reference
+    """One global raster from its per-tile predictions: a lmf.NODATA-filled canvas on the reference
     grid, each existing tile written at its block offset."""
     out_path = os.path.join(p.cur_dir, spec['global_filename'].format(year=year))
 

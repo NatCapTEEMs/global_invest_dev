@@ -1,5 +1,7 @@
 import glob
 import os
+from tqdm import tqdm
+from osgeo import gdal
 
 import pandas as pd
 import hazelbean as hb
@@ -10,6 +12,61 @@ from global_invest import utilities
 from global_invest.terrestrial_carbon import terrestrial_carbon_functions as tcf
 
 SPAWN_INTEGER_SCALE = 0.1  # raw Spawn tiles store carbon as integers x10; x0.1 recovers Mg C/ha
+
+
+
+def stack_layers_summary(group_layer1_path, group_layer2_path, value_layer_path,
+                         group1_name="group1", group2_name="group2", value_name="value"):
+    """A value raster summarized over the pairs of two category rasters.
+
+    Args:
+        group_layer1_path (str): first grouping raster.
+        group_layer2_path (str): second grouping raster, on the same grid.
+        value_layer_path (str): the raster being summarized, on the same grid.
+        group1_name (str): column the first grouping raster is written under.
+        group2_name (str): column the second grouping raster is written under.
+        value_name (str): stem of the four summary columns.
+
+    Returns:
+        pd.DataFrame: one row per (group1, group2) pair, carrying the mean, min, max and count
+        of the value raster over the cells where all three rasters are valid.
+    """
+    from osgeo import gdal
+    # hb.iterblocks streams the value raster block by block; the two category rasters share its grid, so
+    # read them at the same window (raw gdal -- hb has no aligned multi-raster block reader). A cell is
+    # kept only where all three are valid. Groupby per block, then
+    # combine: only ~thousands of (g1, g2) pairs, so the accumulator stays tiny and nothing 33 GB is
+    # written (unlike composite-key + zonal).
+    ds1 = gdal.Open(group_layer1_path); g1b = ds1.GetRasterBand(1)   # hold the datasets, else the band handle dies
+    ds2 = gdal.Open(group_layer2_path); g2b = ds2.GetRasterBand(1)
+    ndv1, ndv2 = g1b.GetNoDataValue(), g2b.GetNoDataValue()
+    dsv = gdal.Open(value_layer_path); ndv_val = dsv.GetRasterBand(1).GetNoDataValue()
+
+    parts = []
+    for offset, value_block in tqdm(hb.iterblocks((value_layer_path, 1)), desc="Summarizing blocks"):
+        w = (offset['xoff'], offset['yoff'], offset['win_xsize'], offset['win_ysize'])
+        v = value_block.astype('float32').ravel()
+        g1 = g1b.ReadAsArray(*w).ravel()
+        g2 = g2b.ReadAsArray(*w).ravel()
+
+        keep = ~np.isnan(v)
+        if ndv_val is not None: keep &= v != ndv_val
+        if ndv1 is not None: keep &= g1 != ndv1
+        if ndv2 is not None: keep &= g2 != ndv2
+        if not keep.any():   # block is all-nodata -- expected at raster edges
+            continue
+
+        block = pd.DataFrame({group1_name: g1[keep], group2_name: g2[keep], value_name: v[keep]})
+        parts.append(block.groupby([group1_name, group2_name], as_index=False)[value_name]
+                     .agg(_sum='sum', _min='min', _max='max', _count='count'))
+
+    summary = pd.concat(parts).groupby([group1_name, group2_name], as_index=False).agg(
+        _sum=('_sum', 'sum'), _min=('_min', 'min'), _max=('_max', 'max'), _count=('_count', 'sum'))
+    summary[f'{value_name}_mean'] = summary['_sum'] / summary['_count']
+    summary = summary.rename(columns={'_min': f'{value_name}_min', '_max': f'{value_name}_max',
+                                      '_count': f'{value_name}_count'})
+    return summary[[group1_name, group2_name, f'{value_name}_mean', f'{value_name}_min',
+                    f'{value_name}_max', f'{value_name}_count']]
 
 
 def publish_inputs(p):
@@ -57,7 +114,7 @@ def carbon_density_table(p):
     if not p.run_this:
         return True
 
-    summary = tcf.stack_layers_summary(
+    summary = stack_layers_summary(
         group_layer1_path=p.gep_lulc_input_path,
         group_layer2_path=p.gep_quantity_input_path,
         value_layer_path=p.reprojected_total_carbon_density_path,

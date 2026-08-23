@@ -53,7 +53,7 @@ def test_stack_groups_by_two_rasters_with_mean_and_count(tmp_path):
     _write_tif(cz, [[101, 101], [101, 101]], gdal.GDT_UInt32)
     _write_tif(val, [[4.0, 6.0], [8.0, 10.0]], gdal.GDT_Float32, nodata=np.nan)
 
-    df = tcf.stack_layers_summary(str(lulc), str(cz), str(val),
+    df = tct.stack_layers_summary(str(lulc), str(cz), str(val),
                                   group1_name='lulc_id', group2_name='carbon_zone_id',
                                   value_name='carbon_density').set_index(['lulc_id', 'carbon_zone_id'])
     assert df.loc[(10, 101), 'carbon_density_mean'] == 5.0     # mean of [4, 6]

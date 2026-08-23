@@ -717,98 +717,10 @@ def bucket_legend_labels(bucket_edges, tick_format):
 # Infinite-slope stability index (SI) computation
 # ==================================================================== #
 
-def compute_si_global(
-    friction_angle_path,
-    cohesion_soil_path,
-    forest_share_path,
-    c_root_max,
-    unit_weight_path,
-    transmissivity_path,
-    static_q_path,
-    slope_path,
-    soil_depth_path,
-    output_si_path,
-    nodata=NODATA,
-    min_slope_deg=MIN_SLOPE_DEG,
-):
-    """Writes the stability index globally, block-wise, from the nine input rasters.
-
-    The formula and its clipping are stability_index; this function supplies the
-    nodata mask and the near-flat exclusion, which belong with the rasters rather than with
-    the arithmetic.
-
-    c_root_max is a plain scalar closed over by si_op (not passed through raster_calculator):
-    0.0 for the 'full_impacts' bound, C_ROOT_MAX_KPA otherwise (see
-    compute_si_scenarios in the tasks module).
-
-    min_slope_deg excludes near-flat terrain entirely -- infinite-slope theory does not apply
-    there, and the exclusion is standard in SHALSTAB/SINMAP/TRIGRS. It is not just a div/0
-    guard: without it both the friction and hydrological terms blow up near beta = 0 and swamp
-    the real forest-cover signal (the median observed-vs-full_impacts difference was exactly
-    zero before this exclusion was added).
-    """
-    paths = [
-        friction_angle_path, cohesion_soil_path, forest_share_path,
-        unit_weight_path, transmissivity_path, static_q_path,
-        slope_path, soil_depth_path,
-    ]
-    nodatas = [pygeo.get_raster_info(path)['nodata'][0] for path in paths]
-
-    def si_op(phi_deg, c_soil, forest_share, gamma, transmissivity, q, slope_deg, soil_depth):
-        arrays = [phi_deg, c_soil, forest_share, gamma, transmissivity, q, slope_deg, soil_depth]
-        valid = np.ones(phi_deg.shape, dtype=bool)
-        for array, source_nodata in zip(arrays, nodatas):
-            if source_nodata is not None:
-                valid &= (array != source_nodata)
-        valid &= (slope_deg >= min_slope_deg)
-
-        si = stability_index(phi_deg, c_soil, forest_share, gamma, transmissivity, q,
-                                   slope_deg, soil_depth, c_root_max)
-        return np.where(valid, si, nodata).astype(np.float32)
-
-    pygeo.raster_calculator(
-        [(path, 1) for path in paths],
-        si_op, output_si_path, gdal.GDT_Float32, nodata,
-        calc_raster_stats=True,
-    )
-    return output_si_path
-
 
 # ==================================================================== #
 # Thickness-weighted 0-30cm combine (SoilGrids + HiHydroSoil share this)
 # ==================================================================== #
-
-def thickness_weighted_combine(depth_raster_paths, out_path, nodata=NODATA,
-                               conv_factor=None):
-    """Combine the 0-5, 5-15 and 15-30cm rasters into one 0-30cm topsoil raster.
-
-    Inputs must share the same native grid (true for SoilGrids and HiHydroSoil), so the size
-    check is what stops a silently misaligned combine.
-    """
-    keys = list(DEPTH_WEIGHTS_0_30CM.keys())
-    paths = [depth_raster_paths[key] for key in keys]
-    weights = [DEPTH_WEIGHTS_0_30CM[key] for key in keys]
-
-    infos = [pygeo.get_raster_info(path) for path in paths]
-    first_size = infos[0]['raster_size']
-    for path, info in zip(paths, infos):
-        if info['raster_size'] != first_size:
-            raise ValueError(
-                f'{path} size {info["raster_size"]} does not match first '
-                f'input {first_size} -- inputs must share the same native '
-                f'grid before combining.'
-            )
-    src_nodatas = [info['nodata'][0] for info in infos]
-
-    def combine_op(*arrays):
-        combined = thickness_weighted_mean(arrays, weights, src_nodatas, conv_factor)
-        return np.where(np.isnan(combined), nodata, combined).astype(np.float32)
-
-    pygeo.raster_calculator(
-        [(path, 1) for path in paths], combine_op, out_path,
-        gdal.GDT_Float32, nodata,
-    )
-    return out_path
 
 
 # ==================================================================== #
