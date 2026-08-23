@@ -29,9 +29,9 @@ that does not apply is a single dash.
 - **in the library:** yes
 - **run:** yes
 - **total:** $5.365T
-- **code:** Refactored onto the library template and hazelbean conventions. Doing that exposed an error in the shock calculation: it was dividing by the wrong baseline, and the module's own tests caught it before it reached a number.
+- **code:** Refactored onto the library template and hazelbean conventions. Corrected division by the wrong baseline for the shock, and corrected a double-count that had entered split countries once per sub-region.
 - **number:** Computes carbon stock from the zone-by-class density table and prices it at the rental social cost of carbon. Reproduces the manuscript total of $5.365T, after fixing a double-count that entered split countries once per sub-region (China six times, 23.5 percent overstatement).
-- **need:** -
+- **need:** Confirmation that the rental social cost of carbon we apply uses the discount rate the account settles on. The price convention embeds one, and the group asks for 2 percent with 1 and 3 as sensitivities.
 
 
 ## Coastal Carbon
@@ -41,9 +41,9 @@ that does not apply is a single dash.
 - **in the library:** yes
 - **run:** yes
 - **total:** $22.84bn seaward only. $102.18bn both sides.
-- **code:** Merged the author's rework, then refactored onto the library template and hazelbean conventions. We checked the refactored code against the original on identical inputs and every output matched exactly.
-- **number:** Computes mapped habitat area times per-habitat density, priced like terrestrial carbon. Matches the author's reported numbers. EEZ-only gives $22.84bn; including the landward pixels gives $102.18bn.
-- **need:** The design decision: count only habitat pixels seaward of the shoreline, or the landward side too (4.5 times the total). The seagrass and marsh input versions.
+- **code:** Merged the author's rework, then refactored onto the library template and hazelbean conventions. Checked the refactored code against the original on identical inputs.
+- **number:** Computes mapped habitat area times per-habitat density, priced like terrestrial carbon. Matches the author's reported numbers. EEZ-only gives $22.84bn while including the landward pixels gives $102.18bn.
+- **need:** Count only habitat pixels seaward of the shoreline, or the landward side too (4.5 times the total)? The seagrass and marsh input versions.
 
 
 ## Marine Carbon
@@ -55,7 +55,7 @@ that does not apply is a single dash.
 - **total:** -
 - **code:** -
 - **number:** no marine module found
-- **need:** a decision whether marine carbon is in the account's scope
+- **need:** is marine carbon is in the account's scope?
 
 
 ## Pollination
@@ -65,9 +65,9 @@ that does not apply is a single dash.
 - **in the library:** yes
 - **run:** yes
 - **total:** $18.28bn raster side (valued at 2023). $515bn FAO side.
-- **code:** Refactored onto the library template and hazelbean conventions. The step that adds up the pollination value raster inside each region used to be written inline; it is now a separate tested function, and it returns identical numbers to the old code.
+- **code:** Refactored onto the library template and hazelbean conventions. The step that adds up the pollination value raster inside each region is now a separate (tested) function (not written inline).
 - **number:** Aggregates the author's sufficiency-weighted value raster to countries with our own zonal code, $18.28bn at 2023. The FAO-side alternative of $515bn comes from the author's committed table. Which definition the account uses is open.
-- **need:** The definition decision: the service nature currently delivers (the raster side) or the production value at stake (the FAO side). Then regeneration at the GEP base year (2019). And whether the GEP total adds pollination on top of crop production, since both attribute part of the same crop output to nature.
+- **need:** Do we want to focus on the service nature currently delivers (the raster side) or the production value at stake (the FAO side)? Then regeneration at the GEP base year (2019). And whether the GEP total adds pollination on top of crop production, since both attribute part of the same crop output to nature.
 
 
 ## Erosion Control
@@ -77,8 +77,8 @@ that does not apply is a single dash.
 - **in the library:** yes
 - **run:** yes
 - **total:** -
-- **code:** Folded in from the author's repo, with the valuation formulas rewritten so they can be tested. This is the one service not yet refactored onto the library template; that work waits until a replication run succeeds.
-- **number:** We could not replicate. Four upstream layers that decide which land cover prevented the erosion (upslope forest, grass, cropland and bare share) are referenced at a cluster path, /projects/standard/jajohns/..., that does not exist on this machine, so the run proceeded without them. An earlier run produced $15.54bn, but it ran under the same condition, so we do not report it.
+- **code:** Folded in from the author's repo. This is the one service not yet refactored onto the library template, and nothing external prevents it: the blocker is data, not code. The replication run cannot complete: four upstream layers that decide which land cover prevented the erosion (upslope forest, grass, cropland and bare share) are referenced at a cluster path, /projects/standard/jajohns/..., that we could not get. Nothing stops the refactor itself, which needs no data.
+- **number:** No number. The chain does not run to the end, so there is nothing to report and nothing to check against. The $15.54bn figure that has circulated came from an earlier run under the same missing-layer condition, so we do not stand behind it.
 - **need:** A reachable location for the four upstream attribution layers.
 
 
@@ -89,8 +89,8 @@ that does not apply is a single dash.
 - **in the library:** yes
 - **run:** yes
 - **total:** $770.7M (570.66 avoided deaths)
-- **code:** Folded in from the v0.2.0 release, then refactored onto the library template and hazelbean conventions. We also fixed two switches that did not do what they said: the option meant to force a step to rerun actually disabled it, and the figure step ignored the setting that says whether to run at all.
-- **number:** Computes slope stability with and without forest root cohesion end to end, and values avoided deaths at a value of a statistical life. First full cluster run gives 570.66 avoided deaths, $770.7M. No reference output exists to compare against.
+- **code:** Folded in from the v0.2.0 release, then refactored onto the library template and hazelbean conventions. Also two small fixes: the option meant to force a step to rerun actually disabled it, and the figure step ignored the setting that says whether to run at all.
+- **number:** Computes slope stability with and without forest root cohesion end to end, and values avoided deaths at a value of a statistical life. Full cluster run gives 570.66 avoided deaths, $770.7M. 
 - **need:** one per-country output from a v0.2.0 run, and its input versions
 
 
@@ -313,7 +313,7 @@ that does not apply is a single dash.
 ## NTFP (non-timber forest products)
 
 - **subgroup:** -
-- **module:** -
+- **module:** ntfp
 - **in the library:** yes
 - **run:** in progress
 - **total:** -
@@ -325,7 +325,7 @@ that does not apply is a single dash.
 ## Stormwater
 
 - **subgroup:** -
-- **module:** -
+- **module:** stormwater
 - **in the library:** yes
 - **run:** yes
 - **total:** 185.85bn m3 retained. $185.85bn at the placeholder price.

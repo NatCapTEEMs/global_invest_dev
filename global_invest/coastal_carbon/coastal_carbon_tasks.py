@@ -351,9 +351,8 @@ def mangrove_storage_value(p):
 def salt_marsh_area_within_countries(p):
     """Salt marsh area within each region's marine EEZ.
 
-    The zonal pass over ha_per_cell writes a per-polygon `salt_marsh_with_area.gpkg` for
-    inspection; the area that reaches the country table is the equal-area geometric area, the
-    same measure the other two habitats use.
+    The area is the equal-area geometric area of each clipped piece, the same measure the other
+    two habitats use.
     """
     publish_inputs(p)
     p.salt_marsh_area_by_countries_base_year_path = os.path.join(
@@ -364,33 +363,16 @@ def salt_marsh_area_within_countries(p):
         return
 
     gdf_regions = gpd.read_file(p.gep_regions_input_path)
-    gdf_salt_marsh = gpd.read_file(p.salt_marsh_vector_path)
+    gdf_salt_marsh = gpd.read_file(p.salt_marsh_vector_path).to_crs(gdf_regions.crs)
     hb.log(f'Loaded {len(gdf_salt_marsh)} salt marsh polygons, {len(gdf_regions)} marine regions')
 
-    with rasterio.open(p.ha_per_cell_10sec_path) as src:
-        ha_per_cell_crs = src.crs
-    gdf_salt_marsh = gdf_salt_marsh.to_crs(ha_per_cell_crs)
-
-    stats_list = []
-    for geom in tqdm(gdf_salt_marsh.geometry, desc="Computing zonal stats for salt marsh"):
-        stats_list.extend(zonal_stats(
-            vectors=[geom],
-            raster=p.ha_per_cell_10sec_path,
-            stats=['sum'],
-            geojson_out=True,
-            nodata=HA_PER_CELL_NDV,
-            all_touched=True,
-        ))
-
-    gdf_salt_marsh_zonal = gpd.GeoDataFrame.from_features(stats_list)
-    gdf_salt_marsh_zonal.set_crs(ha_per_cell_crs, inplace=True)
-    gdf_salt_marsh_zonal.rename(columns={'sum': 'area_ha'}, inplace=True)
-    gdf_salt_marsh_zonal = gdf_salt_marsh_zonal.to_crs(gdf_regions.crs)
-    gdf_salt_marsh_zonal.to_file(os.path.join(p.cur_dir, "salt_marsh_with_area.gpkg"),
-                                 driver="GPKG")
-
+    # There used to be a zonal pass over ha_per_cell here, summing hectares per polygon into an
+    # area_ha column and writing salt_marsh_with_area.gpkg "for inspection". Both were dead:
+    # add_equal_area_ha overwrites area_ha with the equal-area geometric area a line later, which
+    # is the measure the other two habitats use and the one that reaches the country table, and
+    # nothing read the gpkg. It cost hours per run to compute a column that was thrown away.
     pieces = ccf.add_equal_area_ha(ccf.intersect_features_with_regions(
-        gdf_salt_marsh_zonal, gdf_regions, desc='Intersecting salt marsh with countries'))
+        gdf_salt_marsh, gdf_regions, desc='Intersecting salt marsh with countries'))
 
     area = ccf.area_by_region(pieces, gdf_regions, p.gep_regions_id_col, how='right')
     area.to_file(p.salt_marsh_area_by_countries_base_year_path, driver="GPKG")
