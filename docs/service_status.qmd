@@ -1,0 +1,60 @@
+---
+title: "GEP service library: status"
+format:
+  html:
+    embed-resources: true
+    standalone: true
+    toc: true
+    toc-location: left
+execute:
+  echo: false
+  warning: false
+---
+
+This is `docs/service_status.csv` rendered. That CSV is the source of truth: edit it, and a
+change to any service's status shows up in a diff beside the code change that caused it. To
+refresh the group's shared sheet from it, run `python3 docs/publish_service_status.py`.
+
+```{python}
+#| output: false
+import os
+import pandas as pd
+from IPython.display import Markdown
+
+status = pd.read_csv(os.path.join(os.path.dirname(os.path.abspath('__file__')),
+                                  'service_status.csv'), encoding='utf-8-sig')
+status = status.fillna('')
+
+
+def section(frame, columns, widths):
+    """One column-subset of the table as markdown, so a wide sheet reads on a page."""
+    body = frame[columns].to_markdown(index=False)
+    return body + '\n\n: {tbl-colwidths="' + str(list(widths)) + '"}\n'
+```
+
+## Where each service stands
+
+```{python}
+Markdown(section(status,
+                 ['service', 'module', 'in the library', 'run', 'total (2019 USD)'],
+                 [26, 24, 12, 10, 28]))
+```
+
+## What the number is, and what it is checked against
+
+```{python}
+Markdown(section(status, ['service', 'what the number is, and what it is checked against'],
+                 [20, 80]))
+```
+
+## What we did to the code
+
+```{python}
+Markdown(section(status, ['service', 'what we did to the code'], [20, 80]))
+```
+
+## What we need
+
+```{python}
+Markdown(section(status, ['service', 'what we need'], [22, 78]))
+```

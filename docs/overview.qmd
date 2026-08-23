@@ -132,7 +132,7 @@ format:
 ## The state in numbers
 
 - The test of whether a service is ours is whether we can run it: our own code, read, rewritten and tested here. 21 of the {{< meta n_services >}} produce their number that way today.
-- Two cannot run at all, and both are our code held up by one missing input: erosion needs four upstream layers that sit at an unreachable path, and non-timber forest products needs a price per hectare.
+- One cannot run at all: erosion needs four upstream layers that sit at an unreachable path. Non-timber forest products was in the same position this morning, until its missing price turned out to be derivable from the public CWoN package, so what is left there is our own compute.
 - Two more run but carry one borrowed component each: coastal protection computes its mangrove half and reads its coral half, and water quality computes its dollar figures and reads its international-dollar headline. Those two components are the only numbers left with no chain here to run.
 - Running our code is one thing, checking it against someone else's is another. {{< meta n_replicating >}} of our runs land on a committed reference or the manuscript. {{< meta n_awaiting_file >}} have nothing to check against, because no reference output exists: recreation, commercial fisheries and landslide. Erosion's run is ongoing.
 - Livestock's numbers are provisional until the feed-share attribution replaces the land rental rate standing in for it.
@@ -366,8 +366,8 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 
 ## ntfp
 
-- [Values non-timber forest products as accessible forest area (near roads and rivers) times the CWoN value per hectare. The valuation is written and tested, and the accessibility stage is running on the public roads database, so there is no number yet.]{.state}
-- **No open questions.** What is missing is our own run finishing.
+- [Values non-timber forest products as accessible forest area (near roads and rivers) times the CWoN value per hectare. Both inputs are now in hand: roads and rivers are staged, and the price is derived from the public CWoN package at a median of $10.10 per hectare across 148 countries. What is left is running the accessibility stage over the global rasters.]{.state}
+- **No open questions.** One seam worth naming: CWoN prices over its own forest area while the quantity we multiply is accessible forest from the ESA land cover. That is the source method's construction, not ours, but the two definitions of forest differ.
 
 ## stormwater
 

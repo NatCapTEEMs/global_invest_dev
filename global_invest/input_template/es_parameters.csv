@@ -100,7 +100,8 @@ ntfp,ntfp_rivers_path,global_invest/ntfp/input/rivers/ne_10m_rivers_lake_centerl
 ntfp,ntfp_rivers_source_url,https://naciscdn.org/naturalearth/10m/physical/ne_10m_rivers_lake_centerlines.zip
 ntfp,ntfp_country_id_raster_path,cartographic/ee/ee_r250_id_10sec.tif
 ntfp,ntfp_value_per_ha_path,global_invest/ntfp/cwon_nwfp_value_per_ha.csv
-ntfp,ntfp_value_per_ha_source_note,"the CWoN non-wood forest product value per hectare per country and year. NOT YET STAGED: this is the remaining input, and the valuation cannot run without it"
+ntfp,ntfp_value_per_ha_source_url,https://reproducibility.worldbank.org/catalog/194/download/549
+ntfp,ntfp_value_per_ha_source_note,"derived from the public CWoN 2024 reproducibility package: the non-wood forest product annual value (forest_nontimber_annual_nwfp.dta) over the matching forest area (forest_nontimber_total_area.dta), per country and year. Note the areas differ in definition: CWoN prices over ITS forest area while the quantity we multiply is accessible forest from the ESA land cover, which is the source method's own construction"
 landslide_mitigation,force_run,false
 landslide_mitigation,run_in_parallel,true
 landslide_mitigation,num_workers,8
