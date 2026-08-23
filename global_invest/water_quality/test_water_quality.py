@@ -1,4 +1,4 @@
-"""Unit tests for the water_quality port (committed-chain anchored).
+"""Unit tests for the water_quality port (committed-calculation anchored).
 
 reference/ ships the drive's committed intermediates and final output, so every run verifies:
 the two per-nutrient identities (retention x domestic fraction; x price) against the

@@ -1,6 +1,6 @@
-"""Timber provision valuation chain, reimplemented from the drive's Forestry rasters.
+"""Timber provision valuation calculation, reimplemented from the drive's Forestry rasters.
 
-The Forestry chain values managed forestry at 10 arcsec: annual biomass yield (m3/ha, MC2
+The Forestry pipeline values managed forestry at 10 arcsec: annual biomass yield (m3/ha, MC2
 forest types x Tian et al. timber regions, NPP-adjusted) times the national log price
 (USD/m3, Siikamaki and Santiago-Avila 2014), converted from gross to net return with the
 GTAP land factor share (Damania et al. 2023), minus per-pixel transport cost (Weiss et al.

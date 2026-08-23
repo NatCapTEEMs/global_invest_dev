@@ -6,7 +6,7 @@ machine.env), never hardcoded here.
 
 Requires (es_parameters row): country_avoided_damage_usd2019.csv under base_data/global_invest/
 flood_regulation/ (extracted from the drive's FINAL_GEP_FLOOD mapping geopackage; also shipped
-in reference/ as the anchor). The upstream chain -- flood hazard x JRC depth-damage x
+in reference/ as the anchor). The upstream pipeline -- flood hazard x JRC depth-damage x
 protection levels, with and without ecosystems -- is the drive's December 2025 pipeline, taken
 as given; its code and method notes are on the drive.
 """

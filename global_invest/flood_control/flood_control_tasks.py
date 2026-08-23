@@ -20,7 +20,7 @@ def publish_inputs(p):
 
 def gep_calculation(p):
     """GEP valuation for flood control: per-country expected annual damage computed in the
-    library through the ported chain (depth x SDA x the country's damage curves, EAD over
+    library through the ported calculation (depth x SDA x the country's damage curves, EAD over
     the pipeline's four return periods). The committed pipeline table is the comparison
     anchor, logged and pinned in the test suite, never the reported value."""
     publish_inputs(p)

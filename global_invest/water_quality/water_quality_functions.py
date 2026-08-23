@@ -1,6 +1,6 @@
 """Water-quality (purification) science: nutrient retention valued at treatment cost.
 
-The consortium drive's Water Quality folder carries the committed chain but no script. The
+The consortium drive's Water Quality folder carries the committed calculation but no script. The
 verified stages, identities exact against the committed intermediates: per country and
 nutrient (nitrogen, phosphorus), EstimatedRetention(kg) = TotalRetention(kg) x the AQUASTAT
 domestic-water-use fraction, and ServiceValue(USD) = EstimatedRetention x the treatment cost

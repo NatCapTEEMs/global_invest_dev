@@ -1,7 +1,7 @@
 """The FINAL_GEP_FLOOD pipeline's per-step science, ported as pure functions.
 
 Source: base_data/global_invest/flood_regulation/input/code_dec_18_2025/ (the drive's
-December 2025 code tree). The chain, in the order the orchestrating notebook
+December 2025 code tree). The calculation, in the order the orchestrating notebook
 (gep_running_file_dec_14_final.ipynb) runs it:
 
   step 2A  sda_step_2A_make_lulc_to_sda_mapping_esa300.py
@@ -13,7 +13,7 @@ December 2025 code tree). The chain, in the order the orchestrating notebook
            floodplain intersect. Here: build_sda_class, build_depthbin_index.
   step 3   serviceflow_step3_spa_to_sda_ratio_global.py
            service_flow_frac = upstream SPA ratio on the SDA grid, zero outside SDA.
-           Here: service_flow_from_spa. NOTE: the staged monetary chain (4B-4D) never
+           Here: service_flow_from_spa. NOTE: the staged monetary pipeline (4B-4D) never
            multiplies by this fraction; the drive's global_upstream_spa_ratio.tif is a
            byte copy of the binary global_prr_spa.tif (notebook cell 6).
   step 4A  build_damage_table_USD2019.py

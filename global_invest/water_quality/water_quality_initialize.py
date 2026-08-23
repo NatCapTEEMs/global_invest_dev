@@ -3,7 +3,7 @@ from global_invest.water_quality import water_quality_tasks
 
 
 def build_gep_service_calculation_task_tree(p):
-    """GEP calculation tree: the retention chain -> r250 one-row-per-country table."""
+    """GEP calculation tree: the retention calculation -> r250 one-row-per-country table."""
     p.gep_calculation_task = p.add_task(water_quality_tasks.gep_calculation)
     return p
 

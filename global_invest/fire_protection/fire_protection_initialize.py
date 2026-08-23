@@ -17,7 +17,7 @@ def build_gep_service_calculation_task_tree(p):
 
 
 def build_gep_service_task_tree(p):
-    """Full GEP run: the calculation chain plus the results/report task."""
+    """Full GEP run: the calculation calculation plus the results/report task."""
     p = build_gep_service_calculation_task_tree(p)
     p.fire_protection_gep_result_task = p.add_task(fire_protection_tasks.gep_result)
     return p

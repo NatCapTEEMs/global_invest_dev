@@ -2,7 +2,7 @@
 
 Two layers. The shock and valuation arithmetic is pinned as pure functions over hand-built series
 whose expected values are written out in the assertions. Below that, one end-to-end test runs the
-real chain (a tiny USD value raster through utilities.summarize_raster_by_region into
+real calculation (a tiny USD value raster through utilities.summarize_raster_by_region into
 gep_calculation) to pin the r250 contract: a split country is summed once, and the map gpkg
 carries per-sub-region rows that are never summed.
 """

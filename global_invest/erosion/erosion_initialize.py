@@ -4,7 +4,7 @@ add_erosion_tasks dispatches STATIC (read the pre-computed erosion dependency ta
 (recompute from the SEALS maps via InVEST SDR) on whether 'erosion' is listed in p.dynamic_es.
 Consumers set the shared es_shock_* config on p, then call add_erosion_tasks(p) alongside the
 other seams. The GEP valuation (InVEST SDR -> on-farm/upstream prevention shares -> per-country
-GEP -> maps/figures) is exposed through the template builders (build_gep_service_*); that chain
+GEP -> maps/figures) is exposed through the template builders (build_gep_service_*); that calculation
 is cluster-scale (global InVEST SDR).
 """
 from global_invest.erosion import erosion_tasks

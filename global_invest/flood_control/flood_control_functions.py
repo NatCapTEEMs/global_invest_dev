@@ -3,9 +3,12 @@
 The consortium drive's FINAL_GEP_FLOOD tree carries the full December 2025 pipeline (flood
 hazard x JRC depth-damage x protection levels -> expected annual damage with and without
 ecosystems) plus its committed global outputs and extensive method notes. The upstream
-geospatial chain is taken as given; the committed per-country expected avoided damage
-(2019 USD) is the anchor, and its sum reproduces the pipeline's own global summary exactly
-($110.59bn, 148 countries non-zero of 236 assessed).
+geospatial pipeline is taken as given. This file holds the read of the committed per-country
+expected avoided damage (2019 USD), whose sum reproduces the pipeline's own global summary
+exactly ($110.59bn, 148 countries non-zero of 236 assessed). That is the anchor rather than the
+account's number: flood_control_chain recomputes the damage from the depth, damage-curve and
+asset inputs, and that recompute is what the account reports ($112.78bn, matching the committed
+table for 146 of the 148).
 """
 import numpy as np
 import pandas as pd

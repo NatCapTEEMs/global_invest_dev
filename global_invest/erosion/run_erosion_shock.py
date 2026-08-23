@@ -3,7 +3,7 @@
 Mirrors run_terrestrial_carbon_shock.py / run_pollination_shock.py: build a ProjectFlow, graft
 add_erosion_tasks, execute. Consumers (ngfs_pnas, nff_global) do NOT use this script -- they graft
 the same seam into their own task tree and set the es_shock_* seam attributes from their own
-scenarios CSV. This exists to run the SDR chain in isolation, which is the practical way to debug
+scenarios CSV. This exists to run the SDR pipeline in isolation, which is the practical way to debug
 it: the four dynamic tasks are the heaviest thing in the ES fold, and going through
 run_ngfs_pnas.py would drag in GTAP solves and SEALS as well.
 

@@ -7,7 +7,7 @@ severely-eroding pixels, the per-country SES-11 soil-loss-tolerance policy, and 
 weighted by crop production with per-crop erosion-yield elasticities. The biophysics below that is
 InVEST SDR plus pygeoprocessing's D8 routing.
 
-What differs here: that version runs one static 2019 map, so this recomputes the whole chain PER
+What differs here: that version runs one static 2019 map, so this recomputes the whole calculation PER
 SCENARIO AND YEAR on the SEALS maps and aggregates to r50xAEZ rather than to countries -- and, because
 scenarios exist here and not there, holds the severe-pixel set FIXED to the base scenario (a set that
 moves between scenarios would make part of the shock a change in WHICH pixels are averaged rather than
@@ -814,7 +814,7 @@ def prevention_shares(p):
     union-of-protection PS_combined, then country-crop protected production and the GEP valuation
     (onfarm / upstream / combined) -> integrated_country_gep.csv + the PS rasters the maps task
     reads. ProjectFlow-idiomatic: outputs default into THIS task's dir via erosion_gep_output_dir
-    (the same attr configure_maps chains on), USLE/avoided arrive from invest_sdr's
+    (the same attr configure_maps calculations on), USLE/avoided arrive from invest_sdr's
     published attrs, and the registered result is the skip check (like every gep_calculation).
     """
     publish_inputs(p)

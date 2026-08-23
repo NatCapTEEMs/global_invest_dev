@@ -1,4 +1,4 @@
-"""Full coastal-carbon GEP run: per-ecosystem chains (mangrove + salt marsh + seagrass) ->
+"""Full coastal-carbon GEP run: per-ecosystem calculations (mangrove + salt marsh + seagrass) ->
 combine -> gep_calculation -> results report.
 
 Thin runner: it builds ONE tree and executes it. All input paths are get_path REFERENCE paths

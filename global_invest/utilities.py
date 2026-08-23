@@ -50,7 +50,7 @@ def summarize_raster_by_region(value_raster_path, region_boundary_path, out_path
     """Per-polygon total / mean / pixel count of a value raster, via hb.zonal_statistics_flex.
 
     Shared by every GEP service that aggregates a value raster to regions (terrestrial_carbon's
-    stock chain and shock zones; pollination's USD value raster). Promoted here on its second
+    stock calculation and shock zones; pollination's USD value raster). Promoted here on its second
     caller. Heavy imports stay inside so importing utilities stays light.
 
     id_column: the vector column holding a unique integer id per polygon ('ee_r264_id' for the
@@ -314,7 +314,7 @@ def assert_shock_table_sound(df, requested_scenarios, label, abs_max=SHOCK_ABS_M
 def seed_input_template(p, file_name, log=print, required=True):
     """Return the project's input/ copy of a tracked input_template file, seeding it on first use.
 
-    The house input chain (same as ngfs/seals): the tracked template under
+    The house input calculation (same as ngfs/seals): the tracked template under
     global_invest/input_template/ is copied into the project's input/ if absent, and the run
     always reads the input/ copy -- edit that copy to configure a single project. file_name may
     be a relative path (e.g. the lulc test fixtures); the nesting is recreated under input/.
@@ -348,7 +348,7 @@ def hydrate_es_config(p, service, log=print):
     _path resolve through p.get_path (base_data-relative references); values that parse as
     integers become ints; everything else stays a string.
 
-    The csv follows the house input chain (same as ngfs/seals): the tracked template at
+    The csv follows the house input calculation (same as ngfs/seals): the tracked template at
     global_invest/input_template/es_config.csv is SEEDED into the project's input/ on first
     use, and the run always reads the project's own input/ copy -- edit that copy to configure
     a single project. Note the standard caveat: a stale input/ copy shadows an updated
@@ -452,7 +452,7 @@ def hydrate_es_scenarios(p, log=print):
 
     DEFAULTS layer, never an override: an attribute the caller already set on p wins, which is
     the same seam contract consumers rely on (they set these from their own scenarios CSV and
-    never read this one). The CSV follows the same input chain as es_config.csv (tracked
+    never read this one). The CSV follows the same input calculation as es_config.csv (tracked
     template seeded into the project's input/; the run reads the input/ copy). Set
     p.es_scenario_definitions_filename to run a different scenarios file.
     """

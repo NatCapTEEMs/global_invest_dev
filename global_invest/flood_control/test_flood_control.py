@@ -4,7 +4,7 @@ reference/ ships the extracted per-country avoided-damage table AND the pipeline
 summary, so every run verifies the anchor against the pipeline's own bookkeeping: the total,
 the country counts, and the zero/NaN distinction (assessed-zero vs never-assessed).
 
-The chain section pins the ported per-step science (flood_control_chain) on hand-built
+The calculation section pins the ported per-step science (flood_control_chain) on hand-built
 inputs: 3x3 arrays and 5-row tables whose expected values are computed in the comments.
 """
 import os

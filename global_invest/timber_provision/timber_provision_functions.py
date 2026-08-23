@@ -1,9 +1,8 @@
-"""Timber provision: the committed per-country output from the drive's Forestry chain.
+"""Timber provision: the committed per-country output from the drive's Forestry pipeline.
 
-The Forestry folder carries the raster chain (forest value, biomass, aligned log prices) and
+The Forestry folder carries the raster pipeline (forest value, biomass, aligned log prices) and
 its committed per-country output in the account's vocabulary. The upstream raster valuation is
-taken as given; the committed table is the anchor. NOTE the status sheet lists timber's draft
-as In Progress -- the committed output corrects that status.
+taken as given; the committed table is the anchor.
 """
 import pandas as pd
 

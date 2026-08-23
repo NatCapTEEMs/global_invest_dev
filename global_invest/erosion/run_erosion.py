@@ -1,6 +1,6 @@
 """Full erosion GEP run: InVEST SDR -> prevention-share valuation -> maps/figures.
 
-Thin runner: one tree, executed. The chain is cluster-scale (global InVEST SDR); the SDR input/
+Thin runner: one tree, executed. The calculation is cluster-scale (global InVEST SDR); the SDR input/
 output locations and table paths are set on p here or by the submitting script -- the configure_*
 functions in erosion_functions.py read them off p at run time (their defaults point at the source
 repo's cluster layout). The ES-shock runner is run_erosion_shock.py -- a separate tree, a separate

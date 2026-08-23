@@ -89,11 +89,11 @@ def gep_result(p):
 
 
 def water_use_components(p):
-    """The water-use chain computed from the raw inputs (script-01 cleaning, then script-02
+    """The water-use calculation computed from the raw inputs (script-01 cleaning, then script-02
     efficiency x withdrawal products at the survey years), reported as OUR run's components.
-    The drive's committed per-country tables are NOT this chain's outputs -- a newer AQUASTAT
+    The drive's committed per-country tables are NOT this calculation's outputs -- a newer AQUASTAT
     vintage plus the appendix's deflate-to-2015 step for the all-sector total, a separate
-    crop-water chain for agriculture (see the functions module) -- so they are the comparison
+    crop-water calculation for agriculture (see the functions module) -- so they are the comparison
     anchors, logged and pinned in the test suite, never the reported values."""
     publish_inputs(p)
     p.water_use_efficiency_path = os.path.join(p.cur_dir, 'aquastat_water_efficiency_cleaned.csv')

@@ -5,7 +5,7 @@ so these run on four countries and a handful of pixels instead of on a global gr
 prevention shares and how they combine, the severity threshold each country gets, the
 production-weighted shock, and the valuation. The two tests that come first pin the same
 valuation through `erosion_functions` with the price loaders monkeypatched, which is what keeps
-the thin wrapper over the chain honest, and the dependency table's scenario labels.
+the thin wrapper over the calculation honest, and the dependency table's scenario labels.
 
 The InVEST SDR run that produces the erosion rasters is not covered here; it is verified against
 staged data.

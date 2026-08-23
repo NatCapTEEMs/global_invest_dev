@@ -1,7 +1,7 @@
 """Fire-protection (wildfire) GEP tasks: persistence betas -> avoided acres -> avoided damage.
 
 Ported from the GEP wildfire repo's R pipeline in the house shape. Two input modes, decided
-per task by what is on disk: the FULL chain reads the ADM2 burned-area panel and the EM-DAT
+per task by what is on disk: the FULL calculation reads the ADM2 burned-area panel and the EM-DAT
 extract (panel not yet staged -- its own README says it lives on the drive; the open data
 ask); until then the burned-area and damage-rate columns come from the frozen reference
 output in reference/ (the committed anchor this port reproduces to the float), so the beta

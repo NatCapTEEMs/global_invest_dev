@@ -203,9 +203,9 @@ def water_use_components_by_country(agriculture_df, all_sector_df, countries_df)
 
 
 def water_use_components_from_chain(gep_by_country_year_df, countries_df):
-    """One row per country from OUR chain: the latest survey year's agriculture value and
+    """One row per country from OUR calculation: the latest survey year's agriculture value and
     all-sector sum, keyed to r250 by exact country-name match (iso3_r250_name, then
-    name_long). Unmatched chain countries keep an empty iso3 so a name drift is visible
+    name_long). Unmatched calculation countries keep an empty iso3 so a name drift is visible
     instead of silently dropped."""
     latest = (gep_by_country_year_df.sort_values('year')
               .groupby('country', as_index=False).last())

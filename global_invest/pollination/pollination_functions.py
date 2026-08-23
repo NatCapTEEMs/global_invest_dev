@@ -1,4 +1,4 @@
-"""Pollination science: a thin driver over William Sidemo-Holm's crop_benefits chain, plus the
+"""Pollination science: a thin driver over William Sidemo-Holm's crop_benefits calculation, plus the
 frame and array arithmetic the two shock tasks and the GEP valuation share.
 
 The raster science (300 m sufficiency, 5 km valuation, PNAS diff) is imported unchanged from
@@ -63,7 +63,7 @@ def zonal_pct_change(diff_arr, baseline_arr, area_arr, zones_arr, zone_labels):
     The second costs nothing to compute because it is the DENOMINATOR of the first (the baseline
     pollination-value raster summed over the zone, weighted by pixel area, in target-year USD).
     GEP wants the level, the economic model wants the ratio, so returning both means one task
-    serves both rather than two chains recomputing the same rasters. A zone with no baseline value
+    serves both rather than two calculations recomputing the same rasters. A zone with no baseline value
     is dropped from both series: there is nothing for a change to be a share of.
 
     Args:
@@ -123,7 +123,7 @@ def anchor_shock_tables(scenario_pct_by_year, baseline_pct_by_year):
 def dynamic_shock_rows(fixedbase, contemporaneous, level_usd, scenario, sectors, base_year):
     """Anchor-year shocks expanded to one row per zone, sector and year.
 
-    The chain computes a shock only at the years the scenario maps exist for; the economic model
+    The calculation computes a shock only at the years the scenario maps exist for; the economic model
     reads one value per year, so the anchors are joined by straight lines with the base year
     pinned at no shock. shock_pct is the contemporaneous measure, matching carbon: afeall is a
     productivity deviation from the baseline path, so it is normalised by the year's own baseline
@@ -134,7 +134,7 @@ def dynamic_shock_rows(fixedbase, contemporaneous, level_usd, scenario, sectors,
             per anchor year.
         contemporaneous (pd.DataFrame): the same zones rebased onto each year's baseline.
         level_usd (pd.Series): per-zone absolute baseline pollination value in base-year USD, or
-            None. Carried through so the GEP chain can consume this task instead of rerunning the
+            None. Carried through so the GEP calculation can consume this task instead of rerunning the
             same rasters.
         scenario (str): the scenario label written into every row.
         sectors (iterable): the GTAP activities the shock applies to.
@@ -249,7 +249,7 @@ def expand_country_values_to_regions(df_regions, df_gep_by_country):
 def configure_crop_benefits(p, target_year):
     """crop_benefits Config pointed at OUR base_data + task dir -- from p, no hardcoded machine paths.
 
-    validate=False: our chain skips the FAO/CropGrids tabular stages, so the ONLY external input it
+    validate=False: our calculation skips the FAO/CropGrids tabular stages, so the ONLY external input it
     needs is the precomputed baseline pollination-value raster under base_data/crop_benefits/. The 5 km
     resample template only has to define the target grid, and run_pollination_valuation_5km requires
     sufficiency and value to share that grid -- so country_raster points at the value raster itself,

@@ -33,7 +33,7 @@ def read_city_savings(merged_dir):
 
 
 def gep_calculation(p):
-    """GEP valuation for local climate regulation, computed from the chain's own city-month
+    """GEP valuation for local climate regulation, computed from the calculation's own city-month
     valuations: avoided cooling energy priced at the national electricity price, summed over
     every city in a country.
 

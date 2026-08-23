@@ -1,6 +1,6 @@
 """Unit tests for coastal_carbon: the science pinned on hand-built inputs.
 
-Synthetic data only (the full chain needs the coastal source data). Every pure function in
+Synthetic data only (the whole calculation needs the coastal source data). Every pure function in
 coastal_carbon_functions is checked here on arrays and frames small enough that the expected
 value is written out in the comment beside it.
 

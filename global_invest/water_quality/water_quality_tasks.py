@@ -1,4 +1,4 @@
-"""Water-quality GEP tasks: the verified USD chain plus the committed international-dollar
+"""Water-quality GEP tasks: the verified USD calculation plus the committed international-dollar
 accounting value (conversion stage unidentified -- see the functions module)."""
 import os
 
@@ -21,7 +21,7 @@ def publish_inputs(p):
 
 
 def gep_calculation(p):
-    """GEP valuation for water quality: recompute the USD chain from the retention estimates
+    """GEP valuation for water quality: recompute the USD calculation from the retention estimates
     and attach the committed international-dollar value, one row per country."""
     publish_inputs(p)
     service_results = {}

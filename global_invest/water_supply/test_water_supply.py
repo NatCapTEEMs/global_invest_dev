@@ -1,11 +1,11 @@
 """Unit tests for the water_supply hydropower component (CWoN resource-rent method) and the
-water-use chain.
+water-use calculation.
 
 The hydropower method was identified against the consortium drive's committed output, so the
 tests pin BOTH halves of that identification: the annuity identity (the observed constant
 0.040808 is exactly 1/annuity(4%, 100y)) and the exact replication of the committed anchor
 from the CWoN wealth table (both shipped in reference/). The water-use tests pin the ported
-two-script chain against its two committed intermediates (cleaning bit-exact, products to the
+two-script calculation against its two committed intermediates (cleaning bit-exact, products to the
 anchor's own CSV rounding) and the adopted per-country outputs' joins and totals.
 """
 import os

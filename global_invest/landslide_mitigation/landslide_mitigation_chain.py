@@ -5,7 +5,7 @@ was previously a closure or an inline block inside landslide_mitigation_tasks.py
 this module reads or writes a file or touches a ProjectFlow object -- the task module supplies
 the arrays and frames and writes the results, which is what makes the arithmetic testable.
 
-The chain, in the order the task tree runs it:
+The calculation, in the order the task tree runs it:
 
   input data      ESA-CCI class codes -> a 0-1 root-reinforcement weight per pixel
                   (forest_weight_lut, forest_weight_from_lulc).

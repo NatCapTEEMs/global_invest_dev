@@ -1,6 +1,6 @@
 """Dynamic pollination ES-shock task (V_F, OSD).
 
-Runs William Sidemo-Holm's crop_benefits pollination chain on our SEALS 300 m maps at EACH SEALS
+Runs William Sidemo-Holm's crop_benefits pollination calculation on our SEALS 300 m maps at EACH SEALS
 anchor year (seals_years), then piecewise-linearly interpolates the shock to annual values. Writes
 pollination_interpolated.csv -- the file build_combined_afeall_cc_es reads -- into the shared ES-shock
 directory (p.es_shock_dir). Grafted by consumers via add_pollination_tasks (dispatch on p.dynamic_es).

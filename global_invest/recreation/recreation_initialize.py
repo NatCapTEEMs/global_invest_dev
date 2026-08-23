@@ -1,6 +1,6 @@
 """Recreation wiring: GEP task trees (global_invest module layout).
 
-GEP-only service (no GTAP shock seam): the chain builds site quality from LULC shares and
+GEP-only service (no GTAP shock seam): the calculation builds site quality from LULC shares and
 accessibility, generates visits with a gravity model from residents and allocated UNWTO
 overnights, values them at travel cost, and aggregates to one row per country on r250 --
 the source pipeline's own surface, so aggregation and country collapse coincide.
@@ -30,7 +30,7 @@ def build_gep_service_results_task_tree(p):
 
 
 def build_gep_service_task_tree(p):
-    """Full GEP run: the calculation chain plus the results/report task."""
+    """Full GEP run: the calculation calculation plus the results/report task."""
     p = build_gep_service_calculation_task_tree(p)
     p.recreation_gep_result_task = p.add_task(recreation_tasks.gep_result)
     return p

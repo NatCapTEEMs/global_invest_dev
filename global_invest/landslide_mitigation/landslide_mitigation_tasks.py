@@ -35,7 +35,7 @@ from global_invest.landslide_mitigation import landslide_mitigation_functions as
 
 def publish_inputs(p):
     """Every landslide task's first line: the es_config row and run knobs (defaults layer -- a
-    caller-set value wins), the method constants from the chain, the module's input alias, the
+    caller-set value wins), the method constants from the calculation, the module's input alias, the
     logger, and the results registry. Idempotent, so the tree builder may also call it to read
     the iterator knobs at build time."""
     utilities.hydrate_es_config(p, 'landslide_mitigation', log=hb.log)
@@ -887,7 +887,7 @@ def compute_slope(p):
 
 
 def _nodata_masked_op(formula, nodatas):
-    """A raster_calculator op applying a chain formula wherever every input is valid, NODATA
+    """A raster_calculator op applying a calculation formula wherever every input is valid, NODATA
     elsewhere."""
     def op(*arrays):
         valid = np.ones(arrays[0].shape, dtype=bool)
@@ -900,7 +900,7 @@ def _nodata_masked_op(formula, nodatas):
 
 def compute_soil_hydraulic_properties(p):
     """The four SI inputs derived from soil texture, bulk density and conductivity. Each
-    formula is a chain function; this task supplies the rasters and the nodata masks."""
+    formula is a calculation function; this task supplies the rasters and the nodata masks."""
     publish_inputs(p)
     if p.run_this:
         p.friction_angle_path = os.path.join(p.preprocessing_dir, 'friction_angle_1km.tif')

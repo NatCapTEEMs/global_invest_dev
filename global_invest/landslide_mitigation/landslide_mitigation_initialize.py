@@ -15,7 +15,7 @@ from global_invest.landslide_mitigation import landslide_mitigation_tasks
 
 
 def build_gep_service_task_tree(p):
-    """Full landslide chain (source: the v0.2.0 run script tree, verbatim): input data ->
+    """Full landslide calculation (source: the v0.2.0 run script tree, verbatim): input data ->
     preprocessing -> stability model -> valuation -> tables/figures."""
     # Tasks publish their own inputs; the builder calls the same (idempotent) publish_inputs
     # only because add_iterator reads p.run_in_parallel at BUILD time.

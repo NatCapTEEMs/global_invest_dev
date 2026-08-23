@@ -1,7 +1,7 @@
 """Unit tests for the fire_protection port.
 
 The centerpiece is EXACT REPLICATION: reference/ carries the source repo's committed
-regression results (the chain's input) and its committed per-country output (the anchor),
+regression results (the calculation's input) and its committed per-country output (the anchor),
 so the whole calculation -- betas, avoided acres, valuation -- is verified against an
 external anchor on every test run, no staged data needed. The synthetic tests pin the pieces
 whose failure modes replication alone would not localize.

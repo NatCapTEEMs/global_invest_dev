@@ -1,4 +1,4 @@
-"""Full water-quality GEP run: the verified retention chain -> report.
+"""Full water-quality GEP run: the verified retention calculation -> report.
 
 Thin runner: builds ONE tree and executes it. Inputs are published by each task itself
 (publish_inputs in the tasks module); base_data_dir is resolved by ProjectFlow (default /

@@ -1,4 +1,4 @@
-"""Raster and grid drivers for the landslide chain: the file-touching layer.
+"""Raster and grid drivers for the landslide calculation: the file-touching layer.
 
 Everything here reads or writes a raster. The arithmetic each driver applies lives in
 landslide_mitigation_chain.py as a pure function over arrays, so the science is testable

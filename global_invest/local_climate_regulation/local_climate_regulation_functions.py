@@ -1,4 +1,4 @@
-"""Local climate regulation (urban cooling) science, from the repo's v04 valuation chain.
+"""Local climate regulation (urban cooling) science, from the repo's v04 valuation calculation.
 
 The pipeline: InVEST urban cooling gives each city-month a vegetation cooling effect; the
 avoided cooling energy is priced at the national electricity price (kwh_diff x price =

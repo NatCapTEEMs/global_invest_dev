@@ -166,7 +166,7 @@ from global_invest.utilities import summarize_raster_by_region  # noqa: F401
 def shock_percent(scenario_values, baseline_values, denominator_values=None):
     """The scenario's departure from its baseline, in percent.
 
-    The two measures the chain reports share this numerator and differ only in what they
+    The two measures the calculation reports share this numerator and differ only in what they
     divide by: the contemporaneous measure divides by that year's baseline, the fixed-base
     measure by the base year's, which is what `denominator_values` supplies.
 
@@ -186,7 +186,7 @@ def shock_percent(scenario_values, baseline_values, denominator_values=None):
 def interpolate_annual_shock(years, anchor_years, anchor_values, base_year):
     """Anchor-year shocks spread over every year, starting from no shock at the base year.
 
-    The chain computes a shock only at the years the scenario maps exist for; the economic
+    The calculation computes a shock only at the years the scenario maps exist for; the economic
     model reads one value per year, so the anchors are joined by straight lines with the
     base year pinned at zero.
     """

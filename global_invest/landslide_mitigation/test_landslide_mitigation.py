@@ -1,4 +1,4 @@
-"""Unit tests for the landslide_mitigation chain.
+"""Unit tests for the landslide_mitigation calculation.
 
 The module has no committed anchor table to compare against (the author's v0.2.0 output is not
 machine-readable here), so every test below pins the ported arithmetic on hand-built inputs:

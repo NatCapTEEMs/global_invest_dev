@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Livestock-provision science: FAOSTAT gross production value x the CWoN land rental rate.
 
-The valuation runs the same chain crop_provision does, on the livestock items of the same
+The valuation runs the same calculation crop_provision does, on the livestock items of the same
 FAOSTAT Value of Production file: gross production value per country, item and year, attributed
 to land by the Changing Wealth of Nations 2024 rental rate, which varies by decade and is applied
 by a backward as-of merge on year.
@@ -13,7 +13,7 @@ thousand USD where every other service reports plain USD. That second one is an 
 in the tracker, not a decision: see attach_countries.
 
 Step two of the port, feed_lambda_by_country, computes the ecosystem-provided share of livestock
-feed from GLEAM 3 and is not yet wired into the task chain.
+feed from GLEAM 3, wired through the task layer beside the rental-rate attribution.
 
 Every function here is a pure transformation over frames, which is what the tests exercise. The
 task module reads the FAOSTAT bulk file and the rental-rate table and passes the frames in.

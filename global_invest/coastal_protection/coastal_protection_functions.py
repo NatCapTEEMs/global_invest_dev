@@ -9,7 +9,7 @@ of those two rather than the published column read through. That reproduces the 
 to within 2e-7 and, unlike reading it, would show us a disagreement if one appeared.
 
 The coral-reef component is NOT computed here. Its table carries a finished annual benefit per
-country and nothing underneath it, so there is no chain to run; it is carried from 2011 to the
+country and nothing underneath it, so there is no calculation to run; it is carried from 2011 to the
 base year by the cumulative World Bank GDP deflator and added. That is the open ask on this
 service.
 
