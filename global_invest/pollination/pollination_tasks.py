@@ -958,7 +958,7 @@ def pollination_shock(p):
     es_shock_scenarios = list(p.es_shock_scenarios)      # was read unbound: this task raised NameError
     anchor_years = sorted(y for y in map(int, p.es_shock_years) if y > es_shock_base_year)
 
-    cfg = pf.configure_crop_benefits(p, es_shock_base_year)            # crop_benefits Config -> our base_data + task dir
+    cfg = pf.configure_sufficiency(p, es_shock_base_year)              # settings -> our base_data + task dir
 
     if not getattr(p, 'scenario_lulc_paths', None):
         tmpl = p.es_lulc_path_template

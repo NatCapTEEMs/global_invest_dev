@@ -30,7 +30,7 @@ def test_landslide_run_knobs_hydrate_typed_from_the_shipped_template(tmp_path):
     assert p.force_run is False and p.run_in_parallel is True
     assert p.num_workers == 8 and p.processing_resolution == 2000
     assert not hasattr(p, 'control_ratio')          # method constants are NOT rows
-    from global_invest.landslide_mitigation import landslide_mitigation_chain as chain
+    from global_invest.landslide_mitigation import landslide_mitigation_functions as chain
     assert chain.CONTROL_RATIO == 25 and chain.PREDICTION_YEARS == [2019]
 
 

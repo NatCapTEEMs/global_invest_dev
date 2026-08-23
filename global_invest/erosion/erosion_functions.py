@@ -700,3 +700,249 @@ def configure_maps(p):
     ROBINSON_CRS = getattr(p, 'erosion_robinson_crs', "+proj=robin")
     USD_TO_MILLIONS = getattr(p, 'erosion_usd_to_millions', 1e6)
     TOP_N = getattr(p, 'erosion_top_n', 20)
+
+# ---------------------------------------------------------------------------------------------
+# Helpers the rest of the module shares: array cleaning, formatting and column picking.
+# ---------------------------------------------------------------------------------------------
+
+SPAM_ALIAS_MAP = {
+    "whea": ["wheat"], "rice": ["rice"], "maiz": ["maize (corn)", "maize", "corn"],
+    "barl": ["barley"], "sorg": ["sorghum"], "mill": ["millet", "small millet"],
+    "pmil": ["millet", "pearl millet"], "pota": ["potatoes", "potato"],
+    "cass": ["cassava, fresh", "cassava"], "soyb": ["soya beans", "soybean", "soy"],
+    "grou": ["groundnut", "peanut"], "cott": ["seed cotton, unginned", "cotton"],
+    "sugc": ["sugar cane", "sugarcane"], "bana": ["bananas", "banana"],
+    "plnt": ["plantains and cooking bananas", "plantain"], "coco": ["cocoa beans", "cocoa"],
+    "coff": ["coffee, green", "arabica coffee", "coffee"], "rcof": ["coffee, green", "robusta coffee"],
+    "teas": ["tea leaves", "tea"], "toba": ["unmanufactured tobacco", "tobacco"],
+    "toma": ["tomatoes", "tomato"],
+    "onio": ["onions and shallots, dry (excluding dehydrated)", "onion"],
+    "vege": ["vegetable", "other vegetables"], "sunf": ["sunflower seed", "sunflower"],
+    "rape": ["rape or colza seed", "rapeseed", "canola"], "sesa": ["sesame seed", "sesame"],
+    "citr": ["oranges", "citrus"], "lent": ["lentils, dry", "lentil"],
+    "bean": ["beans, dry", "bean"], "chic": ["chick peas, dry", "chickpea"],
+    "cowp": ["cow peas, dry", "cowpea"], "pige": ["peas, dry", "pigeon pea"], "yams": ["yams"],
+    "swpo": ["sweet potatoes", "sweet potato"], "sugb": ["sugar beet", "sugarbeet"],
+    "oilp": ["oil palm fruit", "oilpalm", "oil palm"], "cnut": ["coconuts, in shell", "coconut"],
+    "ocer": ["other cereals"], "orts": ["other roots"],
+    "opul": ["other pulses n.e.c.", "other pulses"], "ooil": ["castor oil seeds", "other oil crops"],
+    "ofib": ["agave fibres, raw, n.e.c.", "other fibre crops"],
+    "rubb": ["natural rubber in primary forms", "rubber"],
+    "trof": ["other tropical fruits, n.e.c.", "other tropical fruit"],
+    "temf": ["apples", "temperate fruit"], "rest": ["rest of crops"],
+}
+
+
+def get_erosion_yield_coefficient(crop_key, coef_map, fallback=0.08):
+    """crop_key -> erosion-to-yield coefficient: direct hit, else SPAM alias, else the flat fallback."""
+    k = str(crop_key).strip().lower()
+    v = coef_map.get(k, np.nan)
+    if np.isfinite(v):
+        return float(np.clip(v, 0.0, 1.0))
+    for alias in SPAM_ALIAS_MAP.get(k, []):
+        v2 = coef_map.get(str(alias).strip().lower(), np.nan)
+        if np.isfinite(v2):
+            return float(np.clip(v2, 0.0, 1.0))
+    return float(np.clip(fallback, 0.0, 1.0))
+
+
+def assert_exists(p: Path, hint: str = ""):
+    if not p.exists():
+        raise FileNotFoundError(f"Missing: {p}\n{hint}")
+
+
+def _normcols(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
+    df.columns = [c.strip().lower() for c in df.columns]
+    return df
+
+
+def _http_get(url, params=None, headers=None, stream=False):
+    last_err = None
+    for attempt in range(_RETRY):
+        try:
+            r = requests.get(url, params=params, headers=headers,
+                             timeout=_HTTP_TIMEOUT, stream=stream)
+            if r.status_code == 200:
+                return r
+            last_err = RuntimeError(f"HTTP {r.status_code}: {r.text[:200]}")
+        except Exception as e:
+            last_err = e
+        time.sleep(1 + attempt)
+    raise last_err
+
+
+def _ensure_crs(da: xr.DataArray, name: str) -> xr.DataArray:
+    if da.rio.crs is None:
+        raise ValueError(f"{name} raster has no CRS. Fix metadata before running.")
+    return da
+
+
+def reproject_to_analysis_grid(da: xr.DataArray, analysis_crs: rioCRS, resampling: Resampling) -> xr.DataArray:
+    """Reproject to equal-area CRS if needed (does NOT match a template grid)."""
+    _ensure_crs(da, "input")
+    if da.rio.crs == analysis_crs:
+        return da
+    return da.rio.reproject(analysis_crs, resampling=resampling)
+
+
+def pixel_area_hectares(da: xr.DataArray) -> float:
+    """Pixel area (ha) in a projected CRS."""
+    if da.rio.crs is None or (not da.rio.crs.is_projected):
+        raise ValueError("pixel_area_hectares requires a projected CRS.")
+    res_x, res_y = map(abs, da.rio.resolution())
+    return (res_x * res_y) / 10_000.0
+
+
+def _clean_nonneg(da: xr.DataArray) -> xr.DataArray:
+    """Convert negative to 0, keep NaNs as NaN."""
+    out = da.copy()
+    vals = out.values
+    vals = np.where(np.isfinite(vals), np.maximum(vals, 0.0), np.nan)
+    out.values = vals
+    return out
+
+
+def _clip01_arr(arr: np.ndarray) -> np.ndarray:
+    out = arr.astype("float32", copy=False)
+    out = np.where(np.isfinite(out), np.clip(out, 0.0, 1.0), np.nan).astype("float32")
+    return out
+
+
+def _write_share(path: Path, template: xr.DataArray, arr01: np.ndarray):
+    """Write a float32 share raster (0–1) aligned to template."""
+    da = xr.DataArray(arr01.astype("float32"), coords=template.coords, dims=template.dims)
+    da = da.rio.write_crs(template.rio.crs, inplace=False)
+    da = da.rio.write_transform(template.rio.transform(), inplace=False)
+    da.rio.to_raster(path, compress="deflate", nodata=np.float32(-9999))
+
+
+def _bincount_weighted_mean(ids: np.ndarray, x: np.ndarray, max_id: int) -> np.ndarray:
+    """Compute mean(x) by integer id (1..max_id). ids and x must be 1D aligned."""
+    ok = np.isfinite(x) & (ids > 0)
+    if not np.any(ok):
+        return np.full(max_id + 1, np.nan, dtype="float64")
+    ids_ok = ids[ok].astype("int32", copy=False)
+    x_ok   = x[ok].astype("float64", copy=False)
+    s = np.bincount(ids_ok, weights=x_ok, minlength=max_id + 1).astype("float64")
+    c = np.bincount(ids_ok, minlength=max_id + 1).astype("float64")
+    return np.divide(s, c, out=np.full_like(s, np.nan), where=c > 0)
+
+
+def to_num(df: pd.DataFrame, cols: list[str]) -> pd.DataFrame:
+    for c in cols:
+        if c in df.columns:
+            df[c] = pd.to_numeric(df[c], errors="coerce")
+    return df
+
+
+def top_n(df: pd.DataFrame, col: str, n: int = TOP_N) -> pd.DataFrame:
+    d = df[np.isfinite(df[col])].copy()
+    return d.sort_values(col, ascending=False).head(n)
+
+
+def pick_iso3_column(gdf: gpd.GeoDataFrame) -> str | None:
+    candidates = ["iso3", "ISO3", "iso_a3", "ADM0_A3", "adm0_a3", "ISO_A3", "iso3_r250_label"]
+    for c in candidates:
+        if c in gdf.columns:
+            return c
+    return None
+
+
+def pick_name_column(gdf: gpd.GeoDataFrame) -> str | None:
+    candidates = [
+        "country_name", "NAME_EN", "ADMIN", "NAME_LONG", "NAME",
+        "COUNTRY", "NAME_0", "ADM0_NAME", "GEOUNIT", "iso3_r250_name"
+    ]
+    for c in candidates:
+        if c in gdf.columns:
+            return c
+    return None
+
+
+def fmt_usd_millions(x: float) -> str:
+    if not np.isfinite(x):
+        return "NA"
+    if abs(x) >= 1000:
+        return f"{x:,.0f}"
+    if abs(x) >= 100:
+        return f"{x:,.0f}"
+    if abs(x) >= 10:
+        return f"{x:,.1f}"
+    if abs(x) >= 1:
+        return f"{x:,.1f}"
+    return f"{x:,.2f}"
+
+
+def fmt_percent(x: float) -> str:
+    if not np.isfinite(x):
+        return "NA"
+    if abs(x) >= 10:
+        return f"{x:.1f}"
+    if abs(x) >= 1:
+        return f"{x:.2f}"
+    return f"{x:.3f}"
+
+
+def fmt_usd(x: float) -> str:
+    if not np.isfinite(x):
+        return "NA"
+    return f"${x:,.0f}"
+
+
+def build_interval_labels(edges: np.ndarray, label_format: str = "usd_millions") -> list[str]:
+    labels = []
+    for i in range(len(edges) - 1):
+        lo = edges[i]
+        hi = edges[i + 1]
+        if label_format == "usd_millions":
+            lo_txt = fmt_usd_millions(lo)
+            hi_txt = fmt_usd_millions(hi)
+        else:
+            lo_txt = fmt_percent(lo)
+            hi_txt = fmt_percent(hi)
+        labels.append(f"{lo_txt} – {hi_txt}")
+    return labels
+
+
+def compute_classification(values: pd.Series, scheme: str = "fisher_jenks", k: int = 5):
+    s = pd.to_numeric(values, errors="coerce")
+    m = np.isfinite(s)
+    clean = s[m]
+
+    if clean.empty:
+        return pd.Series(index=values.index, dtype="float64"), np.array([0.0, 1.0])
+
+    try:
+        import mapclassify
+
+        scheme = (scheme or "fisher_jenks").lower()
+        k_eff = min(k, int(clean.nunique()))
+        k_eff = max(k_eff, 1)
+
+        if scheme == "fisher_jenks":
+            classifier = mapclassify.FisherJenks(clean.to_numpy(), k=k_eff)
+        elif scheme == "equal_interval":
+            classifier = mapclassify.EqualInterval(clean.to_numpy(), k=k_eff)
+        elif scheme == "quantiles":
+            classifier = mapclassify.Quantiles(clean.to_numpy(), k=k_eff)
+        else:
+            classifier = mapclassify.FisherJenks(clean.to_numpy(), k=k_eff)
+
+        edges = np.concatenate(([clean.min()], np.asarray(classifier.bins, dtype=float)))
+        class_ids = pd.Series(np.nan, index=values.index)
+        class_ids.loc[m] = classifier.yb
+        return class_ids, edges
+
+    except Exception:
+        warnings.warn("mapclassify unavailable or failed; falling back to qcut quantiles.")
+        q = min(k, max(1, int(clean.nunique())))
+        cats = pd.qcut(clean, q=q, duplicates="drop")
+        codes = pd.Series(np.nan, index=values.index)
+        codes.loc[m] = cats.cat.codes.astype(float)
+
+        intervals = cats.cat.categories
+        edges = [intervals[0].left]
+        for iv in intervals:
+            edges.append(iv.right)
+        return codes, np.asarray(edges, dtype=float)

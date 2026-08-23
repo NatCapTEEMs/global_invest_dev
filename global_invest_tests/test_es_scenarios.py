@@ -108,3 +108,37 @@ def test_alternate_scenarios_file_via_filename_attribute(tmp_path):
     (tmp_path / 'input' / 'my_scenarios.csv').write_text(alternate)
     utilities.hydrate_es_scenarios(p)
     assert p.es_shock_scenarios == ['ssp2_rcp45_luh2-message_bau_myvariant']
+
+
+def test_every_cross_module_reference_in_a_task_file_resolves():
+    """Each `<alias>.<name>` a task module uses must exist in the module that alias points at.
+
+    A rename that misses a call site inside a task nobody's tests exercise fails only when that
+    task runs, which for the dynamic paths means on a collaborator's machine. This walks every
+    task module's imports, resolves each alias, and checks the attribute is there.
+    """
+    import ast
+    import glob
+    import importlib
+
+    problems = []
+    for path in sorted(glob.glob('global_invest/*/*_tasks.py')):
+        tree = ast.parse(open(path).read())
+        aliases = {}
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom) and node.module \
+               and node.module.startswith('global_invest'):
+                for name in node.names:
+                    aliases[name.asname or name.name] = f'{node.module}.{name.name}'
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name) \
+               and node.value.id in aliases:
+                module_path = aliases[node.value.id]
+                try:
+                    module = importlib.import_module(module_path)
+                except ImportError:
+                    continue                      # a package, not a module; not our concern here
+                if not hasattr(module, node.attr):
+                    problems.append(f'{path}:{node.lineno} {node.value.id}.{node.attr} '
+                                    f'is not in {module_path}')
+    assert not problems, 'references that resolve to nothing:\n  ' + '\n  '.join(problems)
