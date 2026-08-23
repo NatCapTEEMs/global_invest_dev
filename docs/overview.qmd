@@ -132,8 +132,8 @@ format:
 ## The state in numbers
 
 - The test of whether a service is ours is whether we can run it: our own code, read, rewritten and tested here. 21 of the {{< meta n_services >}} produce their number that way today.
-- No service is waiting on a file from anyone. Erosion was the last one we called blocked, on four upstream layers at a cluster path we cannot reach. Those four are diagnostics the run does not need, and the one layer it does need we now build ourselves from the elevation model. Every erosion input is in the shared base data, and the chain is running.
-- Two run but carry one borrowed component each: coastal protection computes its mangrove half and reads its coral half, and water quality computes its dollar figures and reads its international-dollar headline. Those two components are the only numbers left with no chain here to run.
+- No service is waiting on a file from anyone. Erosion was the last one we called blocked, on four upstream layers at a cluster path we cannot reach. Those four are diagnostics the run does not need, and the one layer it does need we now build ourselves from the elevation model. Every erosion input is in the shared base data, and the run is going.
+- Two run but carry one borrowed component each: coastal protection computes its mangrove half and reads its coral half, and water quality computes its dollar figures and reads its international-dollar headline. Those two components are the only numbers left with no code here to run.
 - Running our code is one thing, checking it against someone else's is another. {{< meta n_replicating >}} of our runs land on a committed reference or the manuscript. {{< meta n_awaiting_file >}} have nothing to check against, because no reference output exists: recreation, commercial fisheries and landslide. Erosion's run is ongoing.
 - Livestock's numbers are provisional until the feed-share attribution replaces the land rental rate standing in for it.
 
@@ -202,7 +202,7 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 | Service | Total | Verified |
 |---|---|---|
 | pollination | {{< meta poll_raster >}} raster side (2023). {{< meta poll_fao >}} FAO side | partially. Two definitions of the same service, and the decision between them is open |
-| erosion | not reported | no. The replication is ongoing: four upstream attribution layers are not reachable from this machine |
+| erosion | not reported | no. The run is going. The four upstream layers we called the blocker are diagnostics it does not need |
 | landslide_mitigation | {{< meta landslide_total >}} ({{< meta landslide_deaths >}} avoided deaths) | no. No reference output exists |
 | fisheries | shock + commercial GEP {{< meta fisheries_total >}} provisional + subsistence {{< meta fisheries_subsistence_total >}} | partially. Subsistence reproduces its committed output, and the commercial run has no reference output yet |
 | recreation | {{< meta recreation_total >}} provisional | no. The author's output table is not reachable |
@@ -219,7 +219,7 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 | sandstorm_prevention | {{< meta sandstorm_total >}} | yes. Reproduces the same workbook's dust channel |
 | water_quality | {{< meta wq_usd >}} USD and {{< meta wq_intl >}} intl$ | partially. We recompute the nutrient valuations and reproduce the committed intermediates; the headline international-dollar column is read through |
 | flood_control | {{< meta flood_total >}} | partially. Our recompute matches the pipeline's table, Morocco excepted |
-| local_climate_regulation | {{< meta lcr_ours >}} ours | no. We compute it from the chain's city valuations; the committed table's {{< meta lcr_committed >}} differs by a country-varying factor |
+| local_climate_regulation | {{< meta lcr_ours >}} ours | no. We compute it from our own city valuations; the committed table's {{< meta lcr_committed >}} differs by a country-varying factor |
 | extractive_energy | {{< meta xe_total >}} (gas + coal + petroleum) | yes. Computed from the public CWoN rent tables, and the committed tables double-count eight rows |
 | timber_provision | {{< meta timber_total >}} | yes. All 166 countries match the committed output |
 | ntfp | in progress | no. The accessibility run is going on the public roads data |
@@ -257,7 +257,7 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 
 ## erosion
 
-- [Values soil the land cover keeps in place: prevented erosion mapped by running the sediment-delivery model ourselves, valued through crop productivity. The chain is running for the first time, and we report no number until it lands.]{.state}
+- [Values soil the land cover keeps in place: prevented erosion mapped by running the sediment-delivery model ourselves, valued through crop productivity. It is running for the first time, and we report no number until it lands.]{.state}
 - **Q1:** which of the three shock methods is the account's? We compute damage (thresholded area share), service (threshold-free and magnitude-weighted per crop) and service-threshold (service restricted to a fixed severe-pixel set) side by side.
 
 ## landslide_mitigation
@@ -282,7 +282,7 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 
 ## crop_provision
 
-- [Values crop production from FAOSTAT production values, quantity times producer price per country, times the land rental rate. We run the chain ourselves and it replicates, validated against the reference table.]{.state}
+- [Values crop production from FAOSTAT production values, quantity times producer price per country, times the land rental rate. We run it ourselves and it replicates, validated against the reference table.]{.state}
 - **Q1:** does the account add crop_provision and pollination? Both attribute part of the same output to nature.
 - **Q2:** is subsistence in scope as a separate crop subgroup? Adding it would double-count, because FAOSTAT's production values already include part of what households grow and eat themselves.
 
@@ -296,7 +296,7 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 ## coastal_protection
 
 - [Values storm damage that mangroves and coral reefs prevent along coastlines, two components of one service. Mangroves we compute, as protected hectares times value per hectare, landing within $5k of the published figure. Coral reefs we cannot: that table carries a finished benefit and nothing underneath it, so we carry it to the base year with a deflator and add it.]{.state}
-- **Q1:** is there a chain behind the coral-reef benefit table that we should be running? That half is still someone else's number, so a disagreement with it could not surface.
+- **Q1:** is there code behind the coral-reef benefit table that we should be running? That half is still someone else's number, so a disagreement with it could not surface.
 - **Q2:** should the 9 countries missing from the deflator table be left unvalued rather than zero? They are currently zeroed by the join, which reads as no damage prevented.
 
 ## extractive_materials
@@ -309,7 +309,7 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 
 - [Values wind, solar and geothermal electricity as generation times price times a resource-rent share. Our run gives {{< meta renewable_wind >}} wind, {{< meta renewable_solar >}} solar and {{< meta renewable_geothermal >}} geothermal, and a fresh run reproduces each to the cent.]{.state}
 - **Q1:** which is current, the code's {{< meta renewable_total >}} or the drive CSVs' {{< meta renewable_ref >}}?
-- **Q2:** should wind, solar and geothermal be three services in the account or one? The sheet lists three, the library computes them in one chain and already writes a table per resource, so either shape is a configuration change rather than a rewrite.
+- **Q2:** should wind, solar and geothermal be three services in the account or one? The sheet lists three, the library computes them together and already writes a table per resource, so either shape is a configuration change rather than a rewrite.
 
 ## fire_protection
 
@@ -327,14 +327,14 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 
 ## air_filtration
 
-- [Values deaths avoided by vegetation capturing air pollution, priced at a GDP-adjusted value of a statistical life (the monetary value assigned to one avoided death). We recompute the valuation and reproduce the committed totals. The avoided-death counts come from the group's emissions-to-health modelling chain, which we cannot rebuild and take as given.]{.state}
+- [Values deaths avoided by vegetation capturing air pollution, priced at a GDP-adjusted value of a statistical life (the monetary value assigned to one avoided death). We recompute the valuation and reproduce the committed totals. The avoided-death counts come from the group's emissions-to-health model, which turns fire emissions into excess deaths; we do not rebuild it and take its counts as given.]{.state}
 - **Q1:** which VSL build produced the committed value column? The method is documented (US-anchored, adjusted for GDP and life-years) but the raw data shipped beside it is a different vintage and does not reproduce the column.
 - **Q2:** which vintage are the avoided-death counts?
 
 ## sandstorm_prevention
 
 - [Values deaths avoided by ecosystems suppressing windblown dust, priced the same way as air filtration and computed by the same module. We recompute the valuation and reproduce the committed totals.]{.state}
-- The two questions on the previous slide apply here unchanged, because both channels share one chain and one VSL column.
+- The two questions on the previous slide apply here unchanged, because both channels share one calculation and one VSL column.
 
 ## water_quality
 
@@ -350,7 +350,7 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 
 ## local_climate_regulation
 
-- [Values cooling energy avoided by urban vegetation: an urban cooling model gives each city-month a cooling effect, priced at national electricity prices. We now sum the chain's own city files ourselves, {{< meta lcr_ours >}} across 177 countries, instead of reading the committed table.]{.state}
+- [Values cooling energy avoided by urban vegetation: an urban cooling model gives each city-month a cooling effect, priced at national electricity prices. We now sum the city files ourselves, {{< meta lcr_ours >}} across 177 countries, instead of reading the committed table.]{.state}
 - **Q1:** what turns those city valuations into the committed accounting table's {{< meta lcr_committed >}}? The gap is not a constant factor, ranging from about 2.5 to 766 across countries, so it is not a units slip.
 
 ## extractive_energy
@@ -387,7 +387,7 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 ## What we need, by service
 
 - **coastal_carbon:** the shoreline rationale, and the seagrass and marsh input versions behind {{< meta coastal_report >}}.
-- **coastal_protection:** whether a chain sits behind the two committed value tables that we should run instead.
+- **coastal_protection:** whether code sits behind the two committed value tables that we should run instead.
 - **landslide_mitigation:** one machine-readable v0.2.0 output, its input versions, and which value of a statistical life it uses.
 - **fisheries:** confirm the RCP substitution, name the shock file's CWoN vintage, and confirm or replace the rent-based value now running in the library.
 - **livestock_provision:** the GLEAM 3 intake extract, the item-grouping confirmation, and a reference output.
@@ -450,7 +450,7 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 | extractive_energy | components and sum against the three fuel tables. Coal-only countries valued, no-table countries NaN |
 | timber_provision | the join and total against the committed output |
 | fisheries | header resolution and the HAR read-list union. The CWoN rent-trend math, and the shock's ramp, imputation override and header fallback |
-| landslide_mitigation | the chain on synthetic inputs: stability index, discharge, hazard probability, severity expectation, the VSL join and its income-group fallback |
+| landslide_mitigation | the calculation end to end on synthetic inputs: stability index, discharge, hazard probability, severity expectation, the VSL join and its income-group fallback |
 | crop_provision | the FAOSTAT clean-up, the decade rental rates, the thousand-USD conversion, the M49 successor codes, the split-country join |
 | livestock_provision | the same steps on its own tables, plus the ecosystem share of feed intake |
 | extractive_materials | the rent-share formula, the wide-table melt against the expression it replaced, the byte-order-mark guard |
@@ -464,4 +464,4 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 : {tbl-colwidths="[26,74]"}
 
 - Any new configuration row or service is covered automatically: the shared tests sweep every row of the shipped CSVs and every service's entry points.
-- Every service now pins its own arithmetic. Where a chain was extracted from working code, the old and new versions were run on the same inputs and had to agree exactly.
+- Every service now pins its own arithmetic. Where a calculation was extracted from working code, the old and new versions were run on the same inputs and had to agree exactly.

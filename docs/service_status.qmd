@@ -30,7 +30,7 @@ that does not apply is a single dash.
 - **run:** yes
 - **total:** $5.365T
 - **code:** Refactored onto the library template and hazelbean conventions. Corrected division by the wrong baseline for the shock, and corrected a double-count that had entered split countries once per sub-region.
-- **number:** Computes carbon stock from the zone-by-class density table and prices it at the rental social cost of carbon. Reproduces the manuscript total of $5.365T, after fixing a double-count that entered split countries once per sub-region (China six times, 23.5 percent overstatement). Priced at the rental social cost of carbon at 2 percent. The price table carries a 3 percent column for the sensitivity.
+- **number:** Computes carbon stock from the zone-by-class density table and prices it at the rental social cost of carbon. Reproduces the manuscript total of $5.365T, after fixing a double-count that entered split countries once per sub-region (China six times, 23.5 percent overstatement). Priced at the rental social cost of carbon at 2 percent. The 3 percent sensitivity is a run of its own and gives $3.4627T; the price table has no 1 percent column, so that rate cannot be run from it. The price table carries a 3 percent column for the sensitivity.
 - **need:** -
 
 
@@ -66,7 +66,7 @@ that does not apply is a single dash.
 - **run:** yes
 - **total:** $18.28bn raster side (valued at 2023). $515bn FAO side.
 - **code:** Refactored onto the library template and hazelbean conventions. The step that adds up the pollination value raster inside each region is now a separate (tested) function (not written inline).
-- **number:** Aggregates the author's sufficiency-weighted value raster to countries with our own zonal code, $18.28bn at 2023. The FAO-side alternative of $515bn comes from the author's committed table. Which definition the account uses is open.
+- **number:** Aggregates the author's sufficiency-weighted value raster to countries with our own zonal code, $18.28bn at 2023. The FAO-side alternative of $515bn is read from the author's committed table, not computed here. There is no separate reference for our aggregation, so nothing checks it beyond the raster it sums.
 - **need:** Do we want to focus on the service nature currently delivers (the raster side) or the production value at stake (the FAO side)? Then regeneration at the GEP base year (2019). And whether the GEP total adds pollination on top of crop production, since both attribute part of the same crop output to nature.
 
 
@@ -77,7 +77,7 @@ that does not apply is a single dash.
 - **in the library:** yes
 - **run:** in progress
 - **total:** -
-- **code:** Folded in from the author's repo, then refactored onto the library template and hazelbean conventions: the prevention shares, the severity threshold and the valuation now sit in erosion_chain, tested, and give numbers identical to before. Added the step that builds the upstream prevention share by routing the erosion rasters down the DEM, which the code used to read from the author's cluster.
+- **code:** Folded in from the author's repo, then refactored onto the library template and hazelbean conventions: the prevention shares, the severity threshold and the valuation now sit in their own science module, tested, and give numbers identical to before. Added the step that builds the upstream prevention share by routing the erosion rasters down the DEM, which the code used to read from the author's cluster.
 - **number:** Running now for the first time. The $15.54bn that has circulated is not ours and we do not stand behind it.
 - **need:** -
 
@@ -90,7 +90,7 @@ that does not apply is a single dash.
 - **run:** yes
 - **total:** $770.7M (570.66 avoided deaths)
 - **code:** Folded in from the v0.2.0 release, then refactored onto the library template and hazelbean conventions. Also two small fixes: the option meant to force a step to rerun actually disabled it, and the figure step ignored the setting that says whether to run at all.
-- **number:** Computes slope stability with and without forest root cohesion end to end, and values avoided deaths at a value of a statistical life. The full run gives 570.66 avoided deaths, $770.7M. 
+- **number:** Computes slope stability with and without forest root cohesion end to end, and values avoided deaths at a value of a statistical life. The full run gives 570.66 avoided deaths, $770.7M. No reference output exists to check it against. 
 - **need:** one per-country output from a v0.2.0 run, and its input versions
 
 
@@ -126,7 +126,7 @@ that does not apply is a single dash.
 - **run:** yes
 - **total:** $678bn
 - **code:** Refactored onto the library template and hazelbean conventions. Two fixes: FAOSTAT still lists countries that no longer exist, the USSR and Yugoslavia among them, so production was being stranded on codes matching no present-day country; those now map to their successor states. The reporting year was also written into the code as a fixed number and now comes from the shared configuration.
-- **number:** Computes FAOSTAT production value times the CWoN land rental rate.
+- **number:** Computes FAOSTAT production value times the CWoN land rental rate, $678bn. Reproduces the reference table.
 - **need:** Does the GEP total add crop production and pollination? Crop multiplies production value by the CWoN land rental rate, and pollination values the crop production attributable to wild pollinators, so both attribute part of the same output to nature.
 
 
@@ -150,8 +150,8 @@ that does not apply is a single dash.
 - **run:** yes
 - **total:** $36.72bn
 - **code:** Refactored onto the library template and hazelbean conventions. The mangrove value is now ours: we multiply protected area by value per hectare rather than reading their published total, which is what makes it a replication and not a copy.
-- **number:** Two components. Mangroves are computed as protected hectares times value per hectare, $37bn in total, which lands within $4,983 of the published figure. Coral reefs carry a finished annual benefit per country and nothing underneath it, so there is no chain to run; we carry it from 2011 to the base year with the WB deflator and add it. Nine countries missing from the deflator table are zeroed by the join where they should be left unvalued.
-- **need:** Whether a chain exists behind the coral-reef benefit table that we should be running.
+- **number:** Two components. Mangroves are computed as protected hectares times value per hectare, $37bn in total, which lands within $4,983 of the published figure. Coral reefs carry a finished annual benefit per country and nothing underneath it, so there is no code behind it to run; we carry it from 2011 to the base year with the WB deflator and add it. Nine countries missing from the deflator table are zeroed by the join where they should be left unvalued.
+- **need:** Whether code exists behind the coral-reef benefit table that we should be running.
 
 
 ## Mining Production
@@ -162,7 +162,7 @@ that does not apply is a single dash.
 - **run:** yes
 - **total:** $99.54bn
 - **code:** Refactored onto the library template and hazelbean conventions. A test checks our rewrite of the World Bank table, which turns one column per year into one row per country and year, against the code it replaced. Also guarded against the invisible character Excel writes at the start of a file, which had broken a column name.
-- **number:** Computes World Bank mineral rents share times GDP times the 0.49 factor. The factor's source is unknown; without it the total would be $203bn.
+- **number:** Computes World Bank mineral rents share times GDP times the 0.49 factor, $99.54bn. Reproduces the author's reference table. The factor's source is unknown; without it the total would be $203bn.
 - **need:** the source of the 0.49 factor
 
 
@@ -209,8 +209,8 @@ that does not apply is a single dash.
 - **in the library:** yes
 - **run:** yes
 - **total:** $175.56bn (ours)
-- **code:** Refactored onto the library template and hazelbean conventions. The valuation was ported from the author's v04 script, and the country value is now summed from the chain's own city-month files rather than read from the committed accounting table.
-- **number:** Computed here: avoided cooling energy priced at the national electricity price, summed over every city, $175,560,893,152 across 177 countries. The committed accounting table totals $14,188,882,295 and is carried beside ours as an anchor rather than reported. They disagree by a wide, country-varying margin, from about 2.5 to 766 times, so it is not a units slip: something sits between these city values and that table which is not in anything we hold.
+- **code:** Refactored onto the library template and hazelbean conventions. The valuation was ported from the author's v04 script, and the country value is summed from our own city-month files.
+- **number:** Computed here: avoided cooling energy priced at the national electricity price, summed over every city, $176bn across 177 countries. The committed accounting table totals $14bn and is carried beside ours. Something sits between these city values and that table which is not in anything we hold.
 - **need:** What turns the city-month valuations into the committed accounting table. And confirmation of which figure the account takes.
 
 
@@ -221,9 +221,9 @@ that does not apply is a single dash.
 - **in the library:** yes
 - **run:** yes
 - **total:** $638bn USD. $655.91bn international dollars.
-- **code:** Refactored onto the library template and hazelbean conventions. The original pipeline's code is nowhere we can reach, so the calculation was rebuilt in Python from its committed intermediate tables, and both nutrient identities reproduce them.
-- **number:** Replicates the nitrogen and phosphorus valuations and validates against the committed intermediates for 178 countries. The headline international-dollar figure, $655.91bn, is the author's and not ours: the conversion from US dollars could not be identified, so we cannot recompute it. The retention estimates come from an upstream nutrient model and are taken as given.
-- **need:** The currency-conversion script and its inputs. The account's currency decision between market dollars and international dollars, the purchasing-power unit in which one dollar buys in each country what it buys in the United States.
+- **code:** Refactored onto the library template and hazelbean conventions. We could not find the original pipeline's code, so the calculation was rebuilt in Python from its committed intermediate tables.
+- **number:** Values the nitrogen and phosphorus that land keeps out of the water, priced at what removing them at a treatment plant would cost, $638bn. Reproduces the committed intermediates for 178 countries. How much N and P the land retains is modelled elsewhere; we take those quantities as given and value them. The $655.91bn international-dollar headline is not ours, and we now know why no factor recovers it: it is not a conversion of the dollar figure at all. The drive's method note has the international-dollar price coming from its own regression on international-dollar income. Three conversions were tested against the committed pairs and all fail: a single global factor (per-country ratios run 0.46 to 10.9), one global international-dollar price per kg (13 percent off in total), and the textbook exchange-rate-over-PPP price level (86 percent off).
+- **need:** The treatment-cost observations behind the international-dollar regression. We hold the fitted prices but not the data they were fitted to, which is the one thing stopping us implementing the method note ourselves. Also the account's currency decision between market dollars and international dollars, the purchasing-power unit in which one dollar buys in each country what it buys in the United States. Note the method note is headed 'proposed' and dated 9 August 2026, so the committed figure may predate the method it describes.
 
 
 ## Air Filtration
@@ -233,8 +233,8 @@ that does not apply is a single dash.
 - **in the library:** yes
 - **run:** yes
 - **total:** $17.81bn
-- **code:** Refactored onto the library template and hazelbean conventions. The valuation itself was written from scratch, since only the workbook existed. Tests cover both channels, the rule that fills a missing value-of-life figure, and a guard against matching countries by row position instead of by name.
-- **number:** Recomputes avoided deaths times a GDP-adjusted value of a statistical life, $17.81bn, and reproduces the committed totals. The avoided-death counts come from the group's emissions-to-health chain and are taken as given.
+- **code:** Refactored onto the library template and hazelbean conventions. The valuation itself was written from scratch, since only the workbook existed. Tests cover both channels, the fill rule for a country with no value-of-life figure of its own (it takes the mean of the countries that have one), and the check that refuses the join when the workbook stops lining up with the country list. The workbook carries no country code, only row order, so it can be joined only by position, and a silent reordering would give every country its neighbour's deaths.
+- **number:** Recomputes avoided deaths times a GDP-adjusted value of a statistical life, $17.81bn, and reproduces the committed totals. The avoided-death counts come from the group's emissions-to-health model, which turns fire emissions into excess deaths. We do not rebuild it and take its counts as given.
 - **need:** the VSL calculation behind the workbook, and the vintage of the avoided-death estimates
 
 
@@ -245,7 +245,7 @@ that does not apply is a single dash.
 - **in the library:** yes
 - **run:** yes
 - **total:** $595.36bn
-- **code:** Computed by the air filtration module and covered by the same tests; this is its dust channel.
+- **code:** Computed by the air filtration module and covered by the same tests but for the dust channel.
 - **number:** Recomputes the dust channel the same way, $595.36bn, and reproduces the committed totals. Same upstream dependency as air filtration.
 - **need:** The same as air filtration. And whether this magnitude is expected. The dust value is 33 times the air-filtration value from the same workbook.
 
@@ -257,8 +257,8 @@ that does not apply is a single dash.
 - **in the library:** yes
 - **run:** yes
 - **total:** $144.68bn
-- **code:** Refactored onto the library template and hazelbean conventions. The method behind the committed output was not documented, so we worked it out and implemented it. Two later fixes: the reported figure had been blanking seventeen countries purely so it would match the reference, and two spellings of the same country in the AQUASTAT file were both matching, so those countries were counted twice.
-- **number:** Computes CWoN capitalized wealth divided by a 4 percent, 100-year annuity for every country the wealth table values: $146.08bn across 112 countries, which is what we report. The 95-country reference-matching variant reproduces the committed anchor ($144,680,445,650) to two dollars, its own rounding. Before the fix the reported figure was $146.57bn, which was the reference-fitted country set plus Korea and Russia counted twice. The manuscript records $287.7bn from a direct-use method.
+- **code:** Refactored onto the library template and hazelbean conventions. The method behind the committed output was not documented, so we worked it out and implemented it. Two fixes: the reported figure had been blanking 17 countries, and two spellings of the same country in the AQUASTAT file were both matching, so those countries were counted twice.
+- **number:** Computes CWoN capitalized wealth divided by a 4 percent, 100-year annuity for every country the wealth table values: $146.08bn across 112 countries. The 95-country reference-matching variant reproduces the committed anchor ($144,68bn). The manuscript records $287.7bn from a direct-use method.
 - **need:** the decision which hydropower total is the account's ($287.7bn direct use or $144.68bn rent), and the reason 17 countries are empty in the reference
 
 
@@ -270,8 +270,8 @@ that does not apply is a single dash.
 - **run:** yes
 - **total:** $1.07T agriculture. $36.61T all sectors.
 - **code:** Refactored onto the library template and hazelbean conventions. Translated from R to Python, with tests covering the sector arithmetic and the country name matching.
-- **number:** Computes sector efficiency times sector withdrawal from the raw AQUASTAT export: agriculture $1.07T across 126 countries, all-sector $36.61T across 154. The drive's committed tables, $554.5bn and $36.08T, come from two different chains and serve as comparison anchors. No nature-attribution step exists yet.
-- **need:** The crop-water valuation scripts behind the agriculture component, and whether its factor of 1000 is a units conversion. The data vintage behind the all-sector component. An attribution factor. The current totals are the gross value of water use, and the account needs the share of that value credited to nature before any of it enters.
+- **number:** Computes sector efficiency times sector withdrawal from the raw AQUASTAT export: agriculture $1.07T across 126 countries, all-sector $36.61T across 154. The drive's committed tables, $554.5bn and $36.08T, come from two different sources and serve as comparison anchors. No nature-attribution step exists yet.
+- **need:** The crop-water valuation scripts behind the agriculture component, and whether its factor of 1000 is a units conversion. The data vintage behind the all-sector component. An attribution factor. The current totals are the gross value of water use, and the account needs the share of that value credited to nature.
 
 
 ## Extractive Energy
@@ -293,7 +293,7 @@ that does not apply is a single dash.
 - **in the library:** yes
 - **run:** yes
 - **total:** $88.74bn
-- **code:** Refactored onto the library template and hazelbean conventions. The chain was rewritten to work from the drive's rasters, with tests covering the country totals against the committed output.
+- **code:** Refactored onto the library template and hazelbean conventions. The calculation was rewritten to work from the drive's rasters, with tests covering the country totals against the committed output.
 - **number:** Recomputes the zonal aggregation of the value raster and matches the committed output for all 166 countries, $88.74bn. The per-pixel valuation cannot be rebuilt here, because its forest-management mask is not derivable from the staged layers.
 - **need:** -
 
@@ -307,7 +307,7 @@ that does not apply is a single dash.
 - **total:** $112.78bn
 - **code:** Refactored onto the library template and hazelbean conventions. Every step of the flood calculation was rewritten as a function that can be tested on its own, rather than one long script.
 - **number:** Recomputes expected annual damage from the depth, damage-curve and asset inputs and matches the pipeline's table for 146 of 148 non-zero countries, $112.78bn. Morocco's committed value is $53 thousand for the whole country where the recompute gives $43 million. South Sudan was dropped by the mapping layer, which codes it SDS against the account's SSD, and our copy fixes that. The pipeline computes an ecosystem service-flow fraction but never applies it, so the number is expected flood damage rather than damage ecosystems avoid.
-- **need:** Confirmation that the FINAL_GEP_FLOOD outputs are current. Whether the service-flow fraction should enter the valuation chain. The committed number is the expected annual damage of floodplain assets, and the pipeline's ecosystem fraction is computed but never applied to it. And the Morocco row: the committed value is $53 thousand for the whole country where the recompute gives $43 million.
+- **need:** Confirmation that the FINAL_GEP_FLOOD outputs are current. Whether the service-flow fraction should enter the valuation. The committed number is the expected annual damage of floodplain assets, and the pipeline's ecosystem fraction is computed but never applied to it. And the Morocco row: the committed value is $53 thousand for the whole country where the recompute gives $43 million.
 
 
 ## NTFP (non-timber forest products)

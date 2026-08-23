@@ -100,6 +100,11 @@ RULES = [
      r"\bfor the time being\b",
      "State the absence. 'No reference output' already means we do not have one."),
 
+    ("V7", "'chain' standing in for a concrete thing",
+     r"\bchains?\b",
+     "Name it: the code, the calculation, our own city files, the group's model, the run. "
+     "One word was doing all five jobs and nobody could tell which was meant."),
+
     ("V6", "unit written out where the short form reads better",
      r"\bper kilogram\b|\bper hectare of\b|\bper square kilometre\b",
      "per kg, per ha, per km2."),

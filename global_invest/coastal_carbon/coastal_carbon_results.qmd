@@ -11,16 +11,6 @@ execute:
   echo: false
   warning: false
 format:
-  pdf:
-    toc: true
-    number-sections: true
-    geometry: margin=1in
-    fig-pos: H
-    tbl-pos: H
-    include-in-header:
-      text: |
-        \usepackage{caption}
-        \captionsetup{justification=centering}
   html:
     toc: true
     toc-location: left
@@ -37,6 +27,16 @@ format:
     number-sections: true
     fig-width: 6.5
     fig-dpi: 150
+  pdf:
+    toc: true
+    number-sections: true
+    geometry: margin=1in
+    fig-pos: H
+    tbl-pos: H
+    include-in-header:
+      text: |
+        \usepackage{caption}
+        \captionsetup{justification=centering}
 ---
 
 ```{python}
