@@ -67,10 +67,17 @@ def air_quality_benefits(workbook_df):
 
 
 def air_quality_gep_by_country(workbook_df, r250_order_df):
-    """Join the workbook onto the r250 ids by POSITION (both are the geopackage in row order;
-    the workbook's FID is the gpkg feature id). A name-equality floor guards the positional
-    join: fewer than AIR_FILTRATION_MIN_NAME_MATCHES identical names means the order changed
-    and the join must not proceed."""
+    """Join the workbook onto the r250 ids by POSITION, which is not a shortcut but a requirement.
+
+    The workbook carries no country code, only an FID that is the geopackage's feature id, so a
+    name join looks like the safer option. It is not: the workbook has two rows both called
+    Serbia, FID 137 and FID 232, and position 232 in the r250 order is XKX, Kosovo. Joining on the
+    name would give Serbia both rows and drop Kosovo entirely. The order carries information the
+    names do not.
+
+    A name-equality floor guards it: fewer than AIR_FILTRATION_MIN_NAME_MATCHES identical names
+    means the order changed and the join must not proceed. That is what stands between this and
+    every country taking its neighbour's deaths."""
     if len(workbook_df) != len(r250_order_df):
         raise ValueError(f'row-count mismatch: workbook {len(workbook_df)} vs r250 {len(r250_order_df)}')
     matches = int((workbook_df['Country'].values == r250_order_df['brk_name'].values).sum())
