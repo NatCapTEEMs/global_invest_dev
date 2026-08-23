@@ -72,7 +72,7 @@ engineering work we did. **number** is what the figure is and what it was checke
 - **module:** pollination
 - **in the library:** yes
 - **run:** yes
-- **ours:** model here, the sufficiency and value code is now in the repo and the GEP path still sums a ready-made raster
+- **ours:** not yet. The sufficiency and value code is in the repo now and the GEP path still sums a ready-made raster.
 - **method:** For every cropland pixel, the natural habitat within a roughly 2 km foraging radius, scored 0 to 1 against a 30 percent habitat threshold, so a pixel with 30 percent or more nearby scores 1 and one with none scores 0. That sufficiency multiplies the crop value that depends on pollinators, which is production times price times each crop's dependence ratio, and the result is summed to countries.
 - **total:** $18.28bn raster side (valued at 2023). $515bn FAO side.
 - **code:** Folded in from the author's repo, then refactored onto the library template and hazelbean conventions. The step that adds up the pollination value raster inside each region is now a separate (tested) function (not written inline).
@@ -170,7 +170,7 @@ engineering work we did. **number** is what the figure is and what it was checke
 - **module:** coastal_protection
 - **in the library:** yes
 - **run:** yes
-- **ours:** mixed: the mangrove half is ours, and no model exists for the coral half
+- **ours:** the mangrove half yes, the coral half no. That file holds a value per country and nothing underneath it.
 - **method:** Mangroves: protected hectares times value per hectare. Corals: a published annual benefit per country, deflated to the base year.
 - **total:** $36.72bn
 - **code:** Refactored onto the library template and hazelbean conventions. The mangrove value is run: we multiply protected area by value per hectare.
@@ -226,11 +226,11 @@ engineering work we did. **number** is what the figure is and what it was checke
 - **module:** fire_protection
 - **in the library:** yes
 - **run:** yes
-- **ours:** no model, the regressions were fitted on an ADM2 panel we do not hold
+- **ours:** not yet. The panel the regressions were fitted on is staged and the regression is an AR(1), so we could refit rather than adopt their coefficients.
 - **method:** Burned acres avoided because fires persist less where nature dominates, from per-country AR(1) regressions of burned area, times a per-acre damage value.
 - **total:** three variants: -$22.4bn / -$1.3bn / +$16.7bn
 - **code:** Translated from R to Python and refactored. Fixed: Kosovo (GADM XKO vs the account's XKX) and India's Z01 and Z07 fell out of the country join, leaving $34.09M attached to no country while still inside the total.
-- **number:** Computes avoided acres and their valuation and reproduces the source repo's committed output for all 161 units. We did not refit the regressions: their committed coefficients are an input, because the ADM2 panel they were fitted on is not staged. Three different regressions give three different totals, and they are three different questions. Baseline persistence regresses a country's burned area on last year's, which measures how much fire begets fire and says nothing about nature at all: -$22.4bn. The cause difference compares how strongly nature-caused fires persist against human-caused ones: -$1.3bn. The area difference compares persistence in districts where nature dominates against districts where people do: +$16.7bn. Two of the three come out negative, meaning nature makes fire damage worse rather than better, which is why the choice matters.
+- **number:** Computes avoided acres and their valuation and reproduces the source repo's committed output for all 161 units. We did not refit the regressions and took their committed coefficients as an input. That was not forced: the ADM2 panel is staged, 518 MB and 661,039 rows over 2010 to 2023, carrying burned area split by human and natural cause and the human-modification index the third regression splits on. Refitting an AR(1) on it is a small job nobody has done. Three different regressions give three different totals, and they are three different questions. Baseline persistence regresses a country's burned area on last year's, which measures how much fire begets fire and says nothing about nature at all: -$22.4bn. The cause difference compares how strongly nature-caused fires persist against human-caused ones: -$1.3bn. The area difference compares persistence in districts where nature dominates against districts where people do: +$16.7bn. Two of the three come out negative, meaning nature makes fire damage worse rather than better, which is why the choice matters.
 - **need:** Which of the three is the account's. Baseline persistence should not be: it does not isolate nature's role, so it cannot answer what nature protects. Between the other two, the area difference matches how the service is described, fires persisting less where nature dominates, and is the only one that comes out positive. That is an argument, not a decision, and it is not ours to make. Also: 89 of the account's 250 countries carry no value, and whether they are unvalued or dropped somewhere in the join has not been checked.
 
 
@@ -254,7 +254,7 @@ engineering work we did. **number** is what the figure is and what it was checke
 - **module:** water_quality
 - **in the library:** yes
 - **run:** yes
-- **ours:** model here, InVEST NDR is installed and we take its retention as given anyway
+- **ours:** not yet. InVEST NDR is installed and we take an NDR-style retention estimate as given anyway.
 - **method:** Nitrogen and phosphorus the landscape retains, restricted to the share of water reaching domestic use, times the per-kg cost of removing them at a treatment plant.
 - **total:** $638bn USD. $655.91bn international dollars.
 - **code:** Refactored onto the library template and hazelbean conventions. We could not find the original pipeline's code, but its committed intermediates carry the retained nitrogen and phosphorus in kilograms, the treatment price per kg and the domestic-water-use fraction beside the values, so the calculation could be rebuilt in Python from the inputs rather than reverse-engineered from the answer.
@@ -268,11 +268,11 @@ engineering work we did. **number** is what the figure is and what it was checke
 - **module:** air_filtration
 - **in the library:** yes
 - **run:** yes
-- **ours:** no model, the deaths come from Global InMAP which we do not hold
+- **ours:** not yet, and not blocked the way we first said. The deaths come from process-based emissions, then InMAP, then health impact functions. InMAP is open source and on PyPI at 1.2.7; it fails to install here only because its source distribution is missing a README, which is a packaging bug rather than a wall. What we have not checked is what emissions inventory and meteorology a global run needs, and that is the real question.
 - **method:** Deaths avoided because vegetation removes air pollution, times a GDP-adjusted value of a statistical life.
 - **total:** $17.81bn
 - **code:** Refactored onto the library template and hazelbean conventions. The valuation itself was written based on the workbook. Tests cover this channel and the dust one the sandstorm row reports, the fill rule for a country with no value-of-life figure of its own (it takes the mean of the countries that have one), and the check that refuses the join when the workbook stops lining up with the country list. The workbook carries no country code, only row order, so it can be joined only by position, and a silent reordering would give every country its neighbour's deaths.
-- **number:** Recomputes avoided deaths times a GDP-adjusted value of a statistical life, $17.81bn, and reproduces the committed totals. The avoided-death counts are the deposition channel of the drive's workbook: deaths avoided because vegetation captures dry pollutant out of the air. They come from three models run in sequence that we do not hold: process-based emissions, then Global InMAP, then health impact functions. We do not rebuild it and take its counts as given.
+- **number:** Recomputes avoided deaths times a GDP-adjusted value of a statistical life, $17.81bn, and reproduces the committed totals. The avoided-death counts are the deposition channel of the drive's workbook: deaths avoided because vegetation captures dry pollutant out of the air. They come from three models run in sequence: process-based emissions, then InMAP, then health impact functions. None is set up here, though InMAP itself is open source. We do not rebuild it and take its counts as given.
 - **need:** To stop using their workbook, which is the decision taken. It gives us the deaths, the value of a statistical life and the answer, and all we do is multiply the first two and check we get the third. Two things stand in the way, and they are different in kind. The VSL we could compute: the method is ported and tested, and needs life expectancy and median age per country, which are public and not staged, although the port does not reproduce their column with the raw data we hold, so the vintage is an open question. The deaths we cannot: they are the output of process-based emissions models, Global InMAP and health impact functions, none of which is here. So the workbook can be reduced to a deaths table, not removed.
 
 
@@ -282,7 +282,7 @@ engineering work we did. **number** is what the figure is and what it was checke
 - **module:** air_filtration (dust channel)
 - **in the library:** yes
 - **run:** yes
-- **ours:** no model, same as air filtration
+- **ours:** not yet, the same three models as air filtration produce the dust deaths, and the same answer applies.
 - **method:** Deaths avoided from dust storms, times the value of a statistical life.
 - **total:** $595.36bn
 - **code:** There is no separate module. One workbook carries two death columns, and the air filtration module values both: deposition becomes air filtration, dust becomes this. Same code, same tests, same value of a statistical life; only the column differs.
@@ -338,7 +338,7 @@ engineering work we did. **number** is what the figure is and what it was checke
 - **module:** timber_provision
 - **in the library:** yes
 - **run:** yes
-- **ours:** no model, the value raster needs a forest-management mask we cannot derive
+- **ours:** partly. The three rasters the value is built from, biomass, log prices and transport cost, are all staged, so the value could be rebuilt. What is missing is the forest-management mask that decides which pixels count as harvestable.
 - **method:** Roundwood production times price times the GTAP land factor share, minus per-pixel transport cost, summed to countries.
 - **total:** $88.74bn
 - **code:** Refactored onto the library template and hazelbean conventions. The country totals are now computed from the drive's value raster rather than read from its summary table, and tested against the committed output.
@@ -352,7 +352,7 @@ engineering work we did. **number** is what the figure is and what it was checke
 - **module:** flood_control
 - **in the library:** yes
 - **run:** yes
-- **ours:** mixed: the damage is ours, and the service-flow raster we would need is a binary copy
+- **ours:** the damage yes. The ecosystem share needs a service-flow raster, and the drive's copy is a binary mask rather than a ratio.
 - **method:** Flood depth by return period, through JRC depth-damage curves, times asset value per pixel, integrated into expected annual damage.
 - **total:** $112.78bn
 - **code:** Refactored onto the library template and hazelbean conventions. Every step of the flood calculation was rewritten as a function that can be tested on its own.
@@ -380,7 +380,7 @@ engineering work we did. **number** is what the figure is and what it was checke
 - **module:** stormwater
 - **in the library:** yes
 - **run:** yes
-- **ours:** model here, InVEST stormwater is installed and its run sits outside the tree
+- **ours:** not yet. InVEST stormwater is installed and its run sits outside the task tree.
 - **method:** Runoff the land cover holds back instead of sending to drainage, in cubic metres, priced at the cost of replacing the same capacity (currently a placeholder of 1).
 - **total:** 185.85bn m3 retained. $185.85bn at the placeholder price.
 - **code:** Refactored onto the library template and hazelbean conventions. The step that totals retained water inside each country is in the repo.
