@@ -1522,13 +1522,23 @@ def run_biophysical_decomposed():
         ELEVATION_PATH if (ELEVATION_PATH and ELEVATION_PATH.exists()) else None
     )
 
+    # A country's area is the sum of the sub-regions the boundary file splits it into, not any
+    # one of them. The boundary file is r264, which splits 13 countries out into territories, so
+    # taking a sub-region's area let China and India qualify as small on the strength of an
+    # island: they were being given the low soil-loss tolerance, which counts far more of their
+    # cropland as severely eroding. Seven countries changed on this: AUS, CHN, FRA, IND, NOR,
+    # NZL, SRB.
+    df_country_area = (gdf_countries[["ISO3", "area_km2"]].rename(columns={"ISO3": "iso3"})
+                       .groupby("iso3", as_index=False)["area_km2"].sum(min_count=1))
     df_threshold = erosion_chain.country_threshold_policy(
         iso_lut.rename(columns={"ISO3": "iso3"})
-               .merge(gdf_countries[["ISO3", "area_km2"]].rename(columns={"ISO3": "iso3"}),
-                      on="iso3", how="left")
+               .merge(df_country_area, on="iso3", how="left")
                .assign(mean_elevation_m=lambda d: [mean_elev_by_id.get(int(i), np.nan)
                                                    for i in d["iso_id"]]),
         THRESH_HIGH, THRESH_LOW, SMALL_COUNTRY_AREA_KM2, LOW_ELEVATION_MEAN_M)
+    if df_threshold["iso3"].duplicated().any():
+        raise ValueError("the threshold policy has more than one row for a country, so the "
+                         "per-country threshold raster would depend on row order.")
 
     threshold_by_id = np.full(max_id + 1, THRESH_HIGH, dtype="float32")
     id_by_iso = dict(zip(iso_lut["ISO3"], iso_lut["iso_id"].astype(int)))

@@ -170,3 +170,30 @@ def test_value_is_crop_output_times_the_shock_and_a_missing_price_is_not_a_zero_
     assert out.loc['NOGPV', 'erosion_shock_share'] == pytest.approx(0.2)
     # A zero or missing GDP gives no percentage, rather than an infinite one.
     assert pd.isna(out.loc['NOGPV', 'gdp_loss_pct'])
+
+
+def test_a_country_is_not_small_because_one_of_its_territories_is():
+    # The boundary file is r264, which splits 13 countries into territories, so a country arrives
+    # as several rows. Summing them is what keeps China from qualifying as a small country on the
+    # strength of Macau. Deciding on a single sub-region's area put AUS, CHN, FRA, IND, NOR, NZL
+    # and SRB on the low soil-loss tolerance, which counts far more of their cropland as severely
+    # eroding and so raises what the account says erosion protection is worth there.
+    sub_regions = pd.DataFrame({
+        'iso3': ['CHN', 'CHN', 'CHN', 'TUV'],
+        'area_km2': [9_300_000.0, 1_100.0, 30.0, 26.0],       # mainland, Hong Kong, Macau, Tuvalu
+    })
+    per_country = sub_regions.groupby('iso3', as_index=False)['area_km2'].sum(min_count=1)
+    per_country['mean_elevation_m'] = [1840.0, 2.0]
+
+    out = ec.country_threshold_policy(per_country, threshold_high=11.0, threshold_low=2.0,
+                                      small_country_area_km2=25000.0,
+                                      low_elevation_mean_m=100.0).set_index('iso3')
+
+    assert out.loc['CHN', 'threshold_t_ha_yr'] == 11.0
+    assert out.loc['CHN', 'reason'] == 'default-high'
+    # Tuvalu really is both small and low-lying, and still says so.
+    assert out.loc['TUV', 'threshold_t_ha_yr'] == 2.0
+    assert out.loc['TUV', 'reason'] == 'small-area & low-elevation'
+    # One row per country, because the threshold raster is filled from this table by country and
+    # would otherwise depend on which row happened to come last.
+    assert not out.index.duplicated().any()
