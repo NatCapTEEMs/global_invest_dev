@@ -31,7 +31,7 @@ engineering work we did. **number** is what the figure is and what it was checke
 - **module:** terrestrial_carbon
 - **in the library:** yes
 - **run:** yes
-- **method:** Carbon density by climate zone and land-cover class, times hectares per cell, summed to countries, times the rental social cost of carbon.
+- **method:** Carbon density by climate zone and land-cover class, times hectares per cell, summed to countries, times the rental social cost of carbon. Rental, not the full social cost: the full cost is what a tonne is worth as an asset, all the damage it would do over its life, and the rental is one year's service from holding it, which is that asset value times the discount rate. The account is an annual flow, so it takes the yearly service. At 2 percent the asset is $665.87 a tonne and the rental $13.19.
 - **total:** $5.365T
 - **code:** Refactored onto the library template and hazelbean conventions. Corrected division by the wrong baseline for the shock, and corrected a double-count that had entered split countries once per sub-region.
 - **number:** Computes carbon stock from the zone-by-class density table and prices it at the rental social cost of carbon. Reproduces the manuscript total of $5.365T, after fixing a double-count that entered split countries once per sub-region (China six times, 23.5 percent overstatement). Priced at the rental social cost of carbon at 2 percent. The 3 percent sensitivity is a run of its own and gives $3.4627T. There is no 1 percent column. 
