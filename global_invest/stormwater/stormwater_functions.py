@@ -3,7 +3,7 @@
 The retained volumes come from an InVEST Urban Stormwater Retention run over the inputs the
 drive staged (biophysical coefficient table, ESA 2020 land cover, WorldClim precipitation,
 SLGWRB soils). That run is made outside the task tree, and the step that turns its retention
-raster into per-country volumes is stormwater_zonal.py in this folder;
+raster into per-country volumes is the retention_by_country task;
 base_data/global_invest/stormwater/run_recipe.md records the run's configuration and inputs.
 The tasks module reads the per-country table those two steps produce, and the function below
 prices it.

@@ -46,7 +46,7 @@ def gep_calculation(p):
     for row0 in range(0, value_src.shape[0], rows_per_block):
         h = min(rows_per_block, value_src.shape[0] - row0)
         win = rasterio.windows.Window(0, row0, value_src.shape[1], h)
-        zone_sums += tp.gep_by_zone(value_src.read(1, window=win), zone_src.read(1, window=win), n_zones)
+        zone_sums += utilities.sum_by_zone(value_src.read(1, window=win), zone_src.read(1, window=win), n_zones)
 
     attr_cols = ['iso3_r250_id', 'iso3_r250_label', 'iso3_r250_name',
                  'continent', 'region_un', 'region_wb', 'income_grp', 'subregion']

@@ -77,27 +77,12 @@ def forest_value_from_net_return(net_return, managed_mask, ndv=NET_RETURN_NDV):
     kept = managed_mask & (net_return > 0) & (net_return != ndv)
     return np.where(kept, net_return, 0.0).astype(np.float32)
 
-def gep_by_zone(value, zone_ids, n_zones):
-    """Per-zone pixel sums of a value block, indexed by zone id.
-
-    Args:
-        value (np.ndarray): Value raster block (per-pixel USD).
-        zone_ids (np.ndarray): Integer zone-id block, same shape; 0 = background.
-        n_zones (int): Highest zone id; the output has n_zones + 1 entries.
-
-    Returns:
-        np.ndarray: float64 sums, index i = total for zone id i. Blockwise callers
-        accumulate by adding successive blocks' arrays.
-    """
-    return np.bincount(zone_ids.ravel(), weights=value.astype(np.float64).ravel(),
-                       minlength=n_zones + 1)
-
 
 def timber_gep_from_zone_sums(zone_sums, countries_df):
     """One row per country: the zonal pixel sums keyed to iso3_r250_id.
 
     Args:
-        zone_sums (np.ndarray): Per-zone sums from `gep_by_zone` (accumulated), indexed
+        zone_sums (np.ndarray): Per-zone sums from `sum_by_zone` (accumulated), indexed
             by iso3_r250_id.
         countries_df (pd.DataFrame): One row per country, with an iso3_r250_id column.
 

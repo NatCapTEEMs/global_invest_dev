@@ -16,7 +16,7 @@ Annual retained volume in cubic metres per country, from an InVEST Urban Stormwa
 over the inputs the consortium drive staged, the biophysical coefficient table, ESA 2020 land
 cover, WorldClim precipitation and SLGWRB soils. That run is made outside the task tree, on the
 drive's own configuration, which `base_data/global_invest/stormwater/run_recipe.md` records.
-`stormwater_zonal.py` then sums the run's retention raster inside each r250 country and writes the
+The `retention_by_country` task then sums the run's retention raster inside each r250 country and writes the
 per-country table. The library reads that table; it does not run the retention model.
 
 ## Price

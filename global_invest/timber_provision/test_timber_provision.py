@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import numpy as np
 import pandas as pd
 
+from global_invest import utilities
 from global_invest.timber_provision import timber_provision_functions as tp
 
 REFERENCE_DIR = os.path.join(os.path.dirname(tp.__file__), 'reference')
@@ -44,11 +45,11 @@ def test_forest_value_keeps_only_managed_positive_net_return():
 def test_gep_by_zone_sums_pixels_per_country_id():
     value = np.array([[10.0, 20.0], [0.0, 5.0]], dtype=np.float32)
     zone_ids = np.array([[3, 3], [0, 5]])
-    sums = tp.gep_by_zone(value, zone_ids, n_zones=5)
+    sums = utilities.sum_by_zone(value, zone_ids, n_zones=5)
     assert sums.shape == (6,)
     assert np.allclose(sums, [0.0, 0.0, 0.0, 30.0, 0.0, 5.0])
     # Blockwise accumulation is plain addition of successive blocks' arrays.
-    total = sums + tp.gep_by_zone(value, zone_ids, n_zones=5)
+    total = sums + utilities.sum_by_zone(value, zone_ids, n_zones=5)
     countries = pd.DataFrame({'iso3_r250_id': [3, 5], 'iso3_r250_label': ['AAA', 'BBB']})
     df = tp.timber_gep_from_zone_sums(total, countries)
     assert df['timber_provision_gep'].tolist() == [60.0, 10.0]
@@ -64,7 +65,7 @@ def test_chain_round_trip_on_synthetic_layers():
     value = tp.forest_value_from_net_return(net, managed)
     # px (0,0) and (1,0) kept; (0,1) unmanaged; (1,1) negative net return.
     assert np.allclose(value, [[178.0, 0.0], [106.0, 0.0]])
-    sums = tp.gep_by_zone(value, np.array([[1, 1], [2, 2]]), n_zones=2)
+    sums = utilities.sum_by_zone(value, np.array([[1, 1], [2, 2]]), n_zones=2)
     assert np.allclose(sums, [0.0, 178.0, 106.0])
 
 

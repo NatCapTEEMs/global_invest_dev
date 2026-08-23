@@ -756,3 +756,25 @@ def hb_create_directories(path):
     directory = os.path.dirname(path)
     if directory and not os.path.exists(directory):
         os.makedirs(directory, exist_ok=True)
+
+
+import numpy as np
+
+
+def sum_by_zone(value, zone_ids, n_zones):
+    """Per-zone pixel sums of a value block, indexed by zone id.
+
+    Shared because more than one service sums a raster inside country polygons block by
+    block: timber over its value raster, stormwater over its retention volume.
+
+    Args:
+        value (np.ndarray): Value raster block (per-pixel value: dollars, cubic metres, whatever the raster holds).
+        zone_ids (np.ndarray): Integer zone-id block, same shape; 0 = background.
+        n_zones (int): Highest zone id; the output has n_zones + 1 entries.
+
+    Returns:
+        np.ndarray: float64 sums, index i = total for zone id i. Blockwise callers
+        accumulate by adding successive blocks' arrays.
+    """
+    return np.bincount(zone_ids.ravel(), weights=value.astype(np.float64).ravel(),
+                       minlength=n_zones + 1)

@@ -6,7 +6,7 @@ machine.env), never hardcoded here.
 
 Requires (es_parameters row): stormwater_retention_by_country_path, the per-country retention
 volumes from the InVEST urban stormwater retention run and the zonal step in
-stormwater_zonal.py. Neither is part of this tree; both are made outside it.
+the retention_by_country task. Only the InVEST run is outside this tree.
 """
 import hazelbean as hb
 
