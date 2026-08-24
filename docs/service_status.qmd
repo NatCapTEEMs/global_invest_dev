@@ -311,7 +311,7 @@ engineering work we did. **number** is what the figure is and what it was checke
 - **module:** water_supply
 - **in the library:** yes
 - **run:** yes
-- **ours:** no. The module reads gep_water_agricultural from their output. Nothing forces that: the valuation is efficiency times withdrawal, both staged, and their script (gep_wateruse_02_calc_gep_wateruse.R) sits in base data beside the inputs, computing agricultural GEP as efficiency in dollars per cubic metre times withdrawal, with the same two lines for industry and municipal. So this is a port nobody has done rather than something we lack.
+- **ours:** yes. The valuation is ported and runs here: `water_use_gep_by_country_year` multiplies AQUASTAT water-use efficiency in dollars per cubic metre by the withdrawal volume, for agriculture, industry and municipal alike, and the module cleans the AQUASTAT export itself on the way in. Their script (gep_wateruse_02_calc_gep_wateruse.R) sits in base data beside the inputs as the reference the port was written against. What is not settled is the attribution: the result is the gross economic value of water used, with no step turning it into nature's share.
 - **method:** Sector water withdrawal times sector efficiency, from the AQUASTAT export. No nature-attribution step yet, so this is the gross value of water use.
 - **total:** $1.07T agriculture. $36.58T all sectors.
 - **code:** Refactored onto the library template and hazelbean conventions. Translated from R to Python, with tests covering the sector arithmetic and the country name matching.

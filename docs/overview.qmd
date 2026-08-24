@@ -22,10 +22,10 @@ n_replicating: "9"
 gep_naive_sum: "$11.2T"
 gep_naive_sum_all: "$46.7T"
 world_gdp_2019: "$87T"
-n_ours: "12"
+n_ours: "13"
 n_partly: "6"
 n_not_wired: "3"
-n_reads_a_value: "4"
+n_reads_a_value: "3"
 fisheries_total: "$29.00bn"
 fisheries_subsistence_total: "$7.92bn"
 water_supply_total: "$146.57bn"
@@ -142,9 +142,9 @@ format:
 
 | Accounts | Where the number comes from |
 |---|---|
-| {{< meta n_ours >}} | We compute it. The quantity, the price and nature's share are all built in the repo. Eleven of the twelve report a total; erosion's run is still going, so it has none yet. |
+| {{< meta n_ours >}} | We compute it. The quantity, the price and nature's share are all built in the repo. Twelve of the thirteen report a total; erosion's run is still going, so it has none yet. |
 | {{< meta n_partly >}} | We compute part of it. One component is ours and the other is read from a published source. |
-| {{< meta n_reads_a_value >}} | We take the economics from a published table. Two turn a published rent share into dollars; two report a finished per-country figure. |
+| {{< meta n_reads_a_value >}} | We take the economics from a published table. Two turn a published rent share into dollars; one reports a finished per-country figure. |
 | {{< meta n_not_wired >}} | We value the output of a model we do not yet run ourselves. Air filtration and sandstorm prevention report totals; stormwater reports retained volume only, because its price is a placeholder of 1. |
 - Every available input is in the shared base data.
 - {{< meta n_replicating >}} of our runs land on a committed reference or the manuscript. For the rest we could not find a reference to check against.
