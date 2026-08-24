@@ -1,0 +1,125 @@
+---
+title: "Overview of Ecosystem Service: Water Supply"
+format:
+  html:
+    embed-resources: true
+    standalone: true
+---
+
+Water supply is built one component at a time. Hydropower direct use is complete and is what
+`water_supply_gep` currently carries. A water-use calculation covering agriculture, industry and
+municipal withdrawals is ported and reported beside it as separate columns. The price convention
+recorded in `es_config.csv` is `resource rent (CWoN 2024)`, and the base year is 2019.
+
+## Hydropower
+
+### Quantity and price
+
+The hydropower valuation has no separate quantity and price step. CWoN 2024 publishes a
+capitalised hydropower wealth per country, and the annual rent that wealth implies is what the
+account wants.
+
+### Valuation
+
+`annuity_factor` is the present value of one dollar a year over the CWoN horizon,
+
+$$
+A = \sum_{t=1}^{100} \frac{1}{(1+r)^t}, \qquad r = 0.04
+$$
+
+and `hydropower_rent_from_wealth` divides each country's `YR2019` wealth by it. Countries without
+wealth stay NaN, because no data is not zero rent.
+
+The method was identified by reverse-engineering against the drive's committed 2019 output, whose
+script is not on the drive. It is exact across all 94 valued countries, with the ratio constant to
+1e-10. The test suite asserts the annuity identity and the exact replication. An earlier
+direct-use script on the drive, price times quantity from EIA and World Bank series dated November
+2024, is superseded by this method and is not ported.
+
+## Water use
+
+### Quantity and price
+
+Withdrawal volumes in cubic metres per sector come from the withdrawal table. The price is the
+AQUASTAT SDG 6.4.1 water-use efficiency series in US dollars per cubic metre, one series per
+sector.
+
+### Valuation
+
+`clean_aquastat_water_efficiency` is script 01 of the drive's R calculation. It keeps the US$/m3 rows of
+the four SDG 6.4.1 series and pivots them wide by country and year.
+
+`water_use_gep_by_country_year` is script 02. It applies three country renames onto the withdrawal
+table's spellings, fills iso codes for the names its country map does not carry, drops the
+regional aggregate rows, merges the two tables, restricts to the survey years, and multiplies
+efficiency by withdrawal per sector to give `gep_water_agricultural`, `gep_water_industrial` and
+`gep_water_municipal`.
+
+`water_use_components_from_chain` takes the latest survey year per country and keys it to r250 by
+exact country-name match, first on `iso3_r250_name` and then on `name_long`. A calculation country with
+no match keeps an empty iso3, so a name drift is visible instead of dropped.
+
+Both of the R calculation's own outputs replicate. The cleaned efficiency table matches bit-exactly. The
+country-year GEP table matches to the anchor CSV's own 15-significant-digit rounding, maximum
+relative difference 3e-15.
+
+## Inputs
+
+From `es_parameters.csv`, scoped to the `water_supply` service:
+
+- `water_supply_cwon_hydro_wealth_path`, the CWoN `hydro_wealth_cd` table, with a `_source_url`
+  row for the World Bank reproducibility archive and a `_source_archive_member` row naming the
+  file inside it.
+- `water_use_efficiency_input_path`, the raw AQUASTAT export, with a `_source_url` row for the
+  AQUASTAT data API.
+- `water_use_withdrawal_path`, the withdrawal table.
+- `water_use_agriculture_path` and `water_use_all_sector_path`, the drive's committed per-country
+  tables, held as comparison anchors.
+
+## Outputs
+
+- `hydropower_rent.csv` from the `hydropower_rent` task.
+- `aquastat_water_efficiency_cleaned.csv`, `water_use_gep_by_country_year.csv` and
+  `water_use_components.csv` from the `water_use_components` task.
+- `gep_by_country_base_year.csv` from `gep_calculation`, holding the r250 identifiers and
+  attributes, `year`, `hydropower_gep`, `water_use_agriculture_gep`,
+  `water_use_all_sector_gep` and `water_supply_gep`.
+
+## Method constants
+
+- `HYDROPOWER_DISCOUNT_RATE = 0.04`, the CWoN standard discount.
+- `HYDROPOWER_HORIZON_YEARS = 100`, the CWoN capitalisation horizon.
+- `HYDROPOWER_GEP_YEAR = 2019`, the wealth column the rent is read from. Current USD equals real
+  2019 USD in the 2019 base year, and this is the only variant that covers Venezuela.
+- `HYDROPOWER_REFERENCE_EXCLUDED`, seventeen iso3 codes set to NaN to reproduce the reference:
+  AZE, BGR, DOM, GRC, GTM, HTI, KAZ, LBR, MAR, MKD, NIC, POL, PRT, SLV, TJK, UKR and ZAF.
+- `WATER_USE_YEARS = (2000, 2005, 2010, 2015)`, the AQUASTAT survey years the calculation keeps.
+- `WATER_USE_EFFICIENCY_SERIES`, `WATER_USE_COUNTRY_RENAMES`, `WATER_USE_ISO_LOOKUP` and
+  `WATER_USE_REGIONS_DROPPED`, which reproduce script 02's name surgery verbatim.
+
+## Taken as given
+
+CWoN's own hydropower wealth estimate, and the AQUASTAT efficiency and withdrawal series.
+
+## What is open
+
+The seventeen excluded countries are the largest open item. The reference output leaves them empty
+although the CWoN wealth table values them, and no available material explains the drop, because
+the 2026 script is not on the drive and the package lacks its raw workbook. The exclusion is
+encoded to reproduce the reference, the reason is an ask on the deck, and changing the list is a
+reviewed-commit decision.
+
+The drive's per-country water-use tables are not this calculation's outputs and are held as anchors
+rather than adopted. The agriculture table equals 1000 times `GEP_total` from a separate crop-water
+valuation whose scripts are not on the drive. The all-sector table was computed on a newer AQUASTAT
+vintage with the appendix's deflate-to-2015 step, and only 3 of 183 countries reproduce from the
+staged inputs, with a median committed to computed-at-2019 ratio of 0.36 over a range of 0 to 1.25.
+
+Script 02's lookup countries keep their AQUASTAT names, so their efficiency and withdrawal rows
+share an iso code but never a country name. The merge leaves them as half-rows with no products,
+including USA, RUS and TUR. The anchor commits that behaviour and the port reproduces it.
+
+`water_supply_gep` stays the hydropower component alone. How, and whether, the water-use components
+combine with it is the account's subgroup question, flagged on the deck. The agriculture and
+household components named on the group's sheet are not yet built anywhere we have seen, and the
+module is laid out to receive them beside hydropower.

@@ -1,0 +1,458 @@
+---
+title: "GEP service library: status"
+format:
+  html:
+    embed-resources: true
+    standalone: true
+    toc: true
+    toc-location: left
+---
+
+This drives the service status. Change the
+prose here, then run `python3 docs/publish_service_status.py` to refresh the group's shared
+sheet from it.
+
+Refactoring onto the library template means every service is built the same way, in two files.
+
+One file holds the maths and never opens or saves anything. The second file does the opening and saving. It reads the input data,
+calls the maths, and writes the results.
+
+Every service joins its results to the same country list and builds its results
+page the same way.
+
+The fields mean: **method** is how the number is computed. **ours** is whether we can
+compute the number ourselves, or only read someone else's. **code** is the
+engineering work we did. **number** is what the figure is and what it was checked against.
+**need** is what we are waiting on from someone else. 
+
+
+## Terrestrial Carbon
+
+- **subgroup:** terrestrial
+- **module:** terrestrial_carbon
+- **in the library:** yes
+- **run:** yes
+- **ours:** yes
+- **method:** Carbon density by climate zone and land-cover class, times hectares per cell, summed to countries, times the rental social cost of carbon. Rental is not the full social cost: the full cost is what a tonne is worth as an asset, and the rental is one year's service from holding it. The account is an annual flow, so it takes the yearly service. The rental is P(1 - e^-r), which at 2 percent turns an asset worth $665.87 a tonne of carbon into $13.19 a year.
+- **total:** $5.365T
+- **code:** Refactored onto the library template and hazelbean conventions. Corrected division by the wrong baseline for the shock, and corrected a double-count that had entered split countries once per sub-region.
+- **number:** Values the carbon stored in land ecosystems, priced at the rental social cost of carbon. Reproduces the manuscript total of $5.365T, after fixing a double-count that entered split countries once per sub-region (China six times, 23.5 percent overstatement). Priced at the rental social cost of carbon at 2 percent. The 3 percent sensitivity is a run of its own and gives $3.4627T. There is no 1 percent column. 
+- **need:** Two decisions on the discount rate. First, whether carbon prices are taken to grow. The r in the rental formula is the net rate, the discount rate minus the growth rate of carbon prices, so our 2 percent column assumes prices do not grow. The table already carries the alternative: a column at 3 percent discounting minus 2.2 percent growth, so 0.8 percent net, which gives $2.29 a tonne against our $13.19. Second, the 1 percent price. It cannot be derived from carbon_prices.xlsx, which holds only $181.60 per tonne of CO2 at 2 percent and $78.53 at 3 percent. Not clear where they came from. 
+
+## Coastal Carbon
+
+- **subgroup:** coastal
+- **module:** coastal_carbon
+- **in the library:** yes
+- **run:** yes
+- **ours:** yes
+- **method:** Mapped mangrove, salt marsh and seagrass area, times carbon density per habitat and pool, priced like terrestrial carbon.
+- **total:** $22.84bn seaward only. $102.18bn both sides.
+- **code:** Merged the author's rework, then refactored onto the library template and hazelbean conventions. Checked the refactored code against the original on identical inputs.
+- **number:** Values the carbon held in mangroves, salt marshes and seagrass. Matches the author's reported numbers. EEZ-only gives $22.84bn while including the landward pixels gives $102.18bn.
+- **need:** Count only habitat pixels seaward of the shoreline, or the landward side too (4.5 times the total)? The seagrass and marsh input versions. Two rasters the code reaches for are not staged, so the run falls back: salt marsh soil carbon uses a latitude rule instead of the Maxwell 2024 MarSOC raster, and mangrove below-ground biomass uses the IPCC ratio without the precipitation layer. Both are public, so this is ours to fetch rather than an ask.
+
+
+## Marine Carbon
+
+- **subgroup:** -
+- **module:** -
+- **in the library:** no
+- **run:** -
+- **ours:** -
+- **method:** -
+- **total:** -
+- **code:** -
+- **number:** No marine module found.
+- **need:** Is marine carbon in the account's scope?
+
+
+## Pollination
+
+- **subgroup:** -
+- **module:** pollination
+- **in the library:** yes
+- **run:** yes
+- **ours:** yes for the value raster, which the account's number comes from. We built production times the world producer price we build ourselves times each crop's dependence on animal pollination, over 153 crops. The sufficiency side weights that value by how much habitat sits near each field. Its code is in our repo, copied across from the author's, but no task calls it yet, so we have not run it and have no number for it.
+- **method:** Each crop's production raster times its world producer price times its pollination dependence ratio, summed over crops and priced at the GEP base year, then summed to countries. Coffee is blended by country from what it grows, because FAO files arabica and robusta under one item code with different dependence.
+- **total:** $388.90bn at 2019 prices, from our own raster.
+- **code:** Folded in from the author's repo, then refactored onto the library template and hazelbean conventions. The value raster is now built by a task in the tree: `pollination_value_raster` reads the 158 CropGrids production rasters from base data and writes USD in the cell. Two fixes: The raster carried USD per square kilometre while the code that summed it assumed USD per cell. The price and dependence lookups were built by collapsing a table on a duplicated key, so the value kept was whichever row came last. 
+- **number:** Values the crop output pollinators are responsible for. $388.90bn at 2019 prices over 197 countries, from a raster we build (the original one was 2024). The previous $18.28bn was the same raster summed without cell area; area-weighted it gives $476.29bn, which is what the author's own summary CSV reports. Fixing coffee's dependence adds $3.76bn at 2024 prices. Our code reproduces the author's raster to 1.8e-08.
+- **need:** Which definition the account wants: the crop output at stake if pollinators vanished, or the service habitat currently delivers. We are producing both so the choice is made against two numbers. And whether the GEP total adds pollination on top of crop production.
+
+
+## Erosion Control
+
+- **subgroup:** -
+- **module:** erosion
+- **in the library:** yes
+- **run:** in progress
+- **ours:** yes
+- **method:** Soil loss prevented on cropland, on-farm and upslope combined as a union rather than a sum, turned into a crop production shock weighted by each crop's production and its yield elasticity to erosion, times the country's crop gross production value.
+- **total:** - (the run is still going)
+- **code:** Folded in from the author's repo, then refactored onto the library template and hazelbean conventions. The prevention shares, the severity threshold and the valuation are in the science module, tested. Added the step that builds the upstream prevention share by routing the erosion rasters down the DEM. Three fixes. The severity threshold is lower for small countries, and because the boundary file splits 13 countries into territories, China and India were qualifying as small; areas are now summed per country, which changed AUS, CHN, FRA, IND, NOR, NZL and SRB. The 40 paths that pointed at two specific machines now come from es_parameters, and a missing row raises an error naming it rather than falling back to a directory that does not exist. And the SPAM reprojection uses hazelbean rather than rioxarray, byte-identical and about 11 times faster per band. Added the `gep_calculation` the service had never had: it wrote its country totals into integrated_country_gep.csv, which is wide and carries the on-farm, upstream and combined components side by side, so nothing downstream could read it. It now writes the same per-country table as every other service, on the combined component.
+- **number:** Values the crop production that soil retention protects: the share of soil loss prevented by a field's own cover and by everything upslope of it, turned into a production shock and priced against the country's crop output. Running. 
+- **need:** -
+
+
+## Landslides
+
+- **subgroup:** -
+- **module:** landslide_mitigation
+- **in the library:** yes
+- **run:** yes
+- **ours:** yes
+- **method:** Slope stability computed with and without forest root cohesion, into landslide hazard and expected deaths, times a GDP-adjusted value of a statistical life.
+- **total:** $770.7M (570.66 avoided deaths)
+- **code:** Folded in from the v0.2.0 release, then refactored onto the library template and hazelbean conventions. Added the `gep_calculation` the service had never had: it wrote country totals into a zonal-statistics file that nothing downstream read, so the service had a run and no report. It now writes the same per-country table as every other service, summing the sub-region rows per country because the zonal table is on r264. Two small fixes: the option meant to force a step to rerun actually disabled it, and the figure step ignored the setting that says whether to run at all.
+- **number:** Values the deaths that forest root cohesion prevents. Computed end to end, the full run gives 570.66 avoided deaths, $770.7M. No reference output exists to check it against. 
+- **need:** One per-country output from a v0.2.0 run, and its input versions. This is also the one service that builds its own value of a statistical life, from the OECD country table deflated from 2022 to 2019 USD with an income-group fallback, so it is the row that has to move onto the air quality group's shared table for the account to price a death the same way everywhere. That move will change the number, because the two sources differ. The same three questions apply to that table as on the air filtration row: its currency year, an ISO3 column rather than a country name, and the countries it does not cover, which is what the income-group fallback is for.
+
+
+## Fisheries
+
+- **subgroup:** commercial
+- **module:** fisheries
+- **in the library:** yes
+- **run:** yes
+- **ours:** yes
+- **method:** The economic rent of the capture-fisheries catch, landed value less variable and fixed cost less subsidy, deflated to 2019 dollars and projected to the base year by trend.
+- **total:** $29.00bn provisional
+- **code:** Translated from R to Python, then refactored onto the library template and hazelbean conventions. The rent is now computed from its parts rather than read from CWoN's finished `FAOEconRent` column: landed value minus variable and fixed cost minus subsidy, which is what that column is. It reproduces theirs, largest per-country difference $17.62 on a $29.00bn total, and the total is unchanged to six figures. A blank subsidy is treated as none; a blank catch or cost leaves the rent undefined rather than zero.
+- **number:** Values the economic rent of the capture-fisheries catch, from CWoN's catch, cost and subsidy columns, predicted to 2019 by trend since their series stops at 2018. $29.00bn, provisional because the source is undecided: FishStatJ, FAO's capture-production database, would give a different number. Separately, there is no reference output to check it against.
+- **need:** The source pipeline's output table, and the source decision: the CWoN resource rents or FishStatJ, FAO's capture-production database
+
+
+## Fisheries
+
+- **subgroup:** subsistence
+- **module:** fisheries
+- **in the library:** yes
+- **run:** yes
+- **ours:** yes
+- **method:** Harvested subsistence quantity times price per kg, summed over species.
+- **total:** $7.92bn
+- **code:** Refactored onto the library template and hazelbean conventions. 
+- **number:** Values the home catch households consume, as harvested quantity times price per kg, $7.92bn across 65 countries. Every country whose quantities and prices the release carries reproduces the committed output. Twenty countries publish a value of exactly zero with no quantity or price behind it; those are left empty.
+- **need:** What is the account's fisheries value? The commercial rent alone, the sum of both components, or something else. The commercial side values the rent of the reported catch, the subsistence side the use value of the home catch. The commercial series is built from FAO catch statistics, so where a country's reported catch already includes subsistence fishing, a sum counts that catch twice.
+
+
+## Crop Production
+
+- **subgroup:** commercial
+- **module:** crop_provision
+- **in the library:** yes
+- **run:** yes
+- **ours:** yes, on the same footing as energy production rather than mining. FAOSTAT publishes the market value of the crop, not the part of it that belongs to nature, so no published figure is being relabelled. What is adopted is the CWoN land rental rate, and it is the entire attribution.
+- **method:** FAOSTAT gross production value (element 57, current USD) times the CWoN land rental rate, the share of crop value that accrues to land rather than to labour, capital or inputs. The rate is a per-country decade constant between 0.008 and 0.661, median 0.306 over 179 countries, applied by a backward as-of merge so each year takes the most recent decade that has started.
+- **total:** $678bn
+- **code:** Refactored onto the library template and hazelbean conventions. Two fixes: FAOSTAT still lists countries that no longer exist, the USSR and Yugoslavia among them, so production was being stranded on codes matching no present-day country; those now map to their successor states. The reporting year was also written into the code as a fixed number and now comes from the shared configuration.
+- **number:** $678bn across 177 countries. Reproduces the reference table.
+- **need:** Does the GEP total add crop production and pollination? Crop multiplies production value by the CWoN land rental rate, and pollination values the crop production attributable to wild pollinators, so both attribute part of the same output to nature. And how the CWoN land rental rate was derived. It is the whole of the attribution and moves the total proportionally.
+
+
+## Livestock Production
+
+- **subgroup:** commercial
+- **module:** livestock_provision
+- **in the library:** yes
+- **run:** yes
+- **ours:** yes, and more so on one of the two columns than the other. Neither FAOSTAT figure is a published ecosystem value, so nothing is relabelled. The CWoN rental-rate column adopts its attribution whole; the feed-share column derives it, computing each country's share of intake that ecosystems grew from the GLEAM 3 dashboard rather than taking a published share.
+- **method:** FAOSTAT gross production value (element 57, current USD) over 65 livestock products, times an attribution factor: either the CWoN land rental rate or the GLEAM share of feed intake that ecosystems provided.
+- **total:** $519bn on the rental rate. $1.37T on the feed share.
+- **code:** Refactored onto the library template and hazelbean conventions. Plus a units fix. The feed share is now wired through the task layer, so a run writes the feed-share value beside the rental-rate one. Its method page was a copy of the crop provision text, describing crop items throughout; it has been rewritten for this service.
+- **number:** Values livestock output and attributes the part of it nature provided. The 65-product FAO list gives $2.29T of gross production; the two attribution factors give very different answers from it: the CWoN land rental rate gives $519bn over 178 countries, the GLEAM feed share gives $1.37T over 171, a factor of 2.6. Provisional until that choice is made. The feed share comes from GLEAM 3 intake harvested from FAO's public dashboard for 231 countries, 205 matching a country in the account, giving a real share rather than a bound (median 0.73; Mongolia 0.998, India 0.911, Brazil 0.847, France 0.651, United States 0.567, China 0.513).
+- **need:** Which factor the account attributes livestock value with. The code computes both, and they differ by 2.6 times, $519bn on the CWoN land rental rate against $1.37T on the GLEAM feed share. The rental rate is the crop method's factor. Also the compiled GLEAM extract (gleam3_dmi.xlsx) to validate our harvest against, the confirmation of which FAO products count as livestock, and one per-country output. And how the CWoN land rental rate was derived. It is the whole of the attribution and moves the total proportionally.
+
+
+## Coastal Protection
+
+- **subgroup:** -
+- **module:** coastal_protection
+- **in the library:** yes
+- **run:** yes
+- **ours:** the mangrove half yes, the coral half no. That file holds a value per country and nothing underneath it.
+- **method:** Mangroves: protected hectares times value per hectare. Corals: a published annual benefit per country, deflated to the base year.
+- **total:** $36.72bn
+- **code:** Refactored onto the library template and hazelbean conventions. The mangrove value is run: we multiply protected area by value per hectare.
+- **number:** $36.72bn, and the total is the sum of them, of which 83 percent is ours and 17 percent is read through. Mangroves are ours, $30.4bn: hectares times value per hectare, matching the published table. Corals are not, and the reason is what the file holds rather than whether we found any code. The mangrove table carries hectares and value per hectare beside its total, so the total can be recomputed from them and checked. The coral file has three columns: country, value, year. There is no quantity and no price, so there is nothing to recompute from. All we do is carry its $5.17bn at 2011 forward to the base year with the World Bank deflator, making it $6.32bn. Nine countries missing from the deflator table are zeroed by the join where they should be left unvalued.
+- **need:** Whether code exists behind the coral-reef benefit table that we should be running.
+
+
+## Mining Production
+
+- **subgroup:** -
+- **module:** extractive_materials_provision
+- **in the library:** yes
+- **run:** yes
+- **ours:** no (similar to extractive energy). The WB computes the mineral rent and publishes it as a share of GDP, so multiplying by GDP recovers their figure in dollars. What the module adds to that is one multiplication and the 0.49. The script does only the reshaping, the join and the country handling.
+- **method:** WB mineral rents as a share of GDP, times GDP, times a 0.49 factor whose source is unknown. The multiplication converts the World Bank's published rent into dollars rather than deriving it.
+- **total:** $99.54bn
+- **code:** Refactored onto the library template and hazelbean conventions. A test checks our rewrite of the WB table. Also guarded against the invisible character Excel writes at the start of a file, which had broken a column name.
+- **number:** Values the mineral rent the World Bank publishes, scaled by the 0.49 factor, $99.54bn. Reproduces the reference table. The factor's source is unknown; without it the total would be $203bn.
+- **need:** The source of the 0.49 factor, which is the only judgement in the number and currently has no provenance in the code, the drive submission or its raw-data notes. And whether there is a model we should be running instead, the same question extractive energy carries: the World Bank's rent is a price-minus-cost calculation over extracted quantity, and if the account wants a mining figure it derives rather than adopts, that calculation is what it would have to redo.
+
+
+## Energy Production
+
+- **subgroup:** -
+- **module:** renewable_energy_provision
+- **in the library:** yes
+- **run:** yes
+- **ours:** yes: the value is built from a physical quantity and a market price rather than converted out of a published rent (mining). What is adopted is the CWoN share of the rent attributable to nature, a per-country-year parameter we take as given.
+- **method:** For each of wind, solar and geothermal, the electricity a country generated from it in gigawatt hours, from IRENA's statistics, times the electricity price from the World Bank series, times the CWoN rent share, which is the part ofthat revenue attributable to the resource.
+- **total:** $170.83bn
+- **code:** Refactored onto the library template and hazelbean conventions. The calculation had been written out as one block in the task file.
+- **number:** A fresh run reproduces $170.83bn and each resource: wind $110.31bn, solar $53.95bn, geothermal $6.56bn. The drive's reference CSVs hold $134.6bn, and which is current is open.
+- **need:** The decision which source is current. And whether the account accepts an attribution it adopts rather than computes: the CWoN rent share is the whole of the ecosystem attribution here and moves the total proportionally. The same question applies to crop and livestock's rental rate. 
+
+
+## Recreation
+
+- **subgroup:** -
+- **module:** recreation
+- **in the library:** yes
+- **run:** yes
+- **ours:** yes
+- **method:** Every 1 km cell scored as a recreation site, visits generated into the best sites by a gravity model from resident population and allocated UNWTO overnights, priced at the fuel cost of the trip.
+- **total:** $1.73bn provisional (a units question is open)
+- **code:** Refactored onto the library template and hazelbean conventions. Reading the UNWTO tourism workbook moved out of the calculation code, and the refactored reader returns exactly the same 3,610 rows from the real workbook.
+- **number:** Values the recreation trips people take into natural sites, at the fuel cost of getting there. $1.73bn, provisional because the units question below would change it. Separately, the author's output table is not reachable, so there is nothing to check it against.
+- **need:** One per-country results CSV from the author's own run, to verify the port by replication. And whether the travel-cost step intended kilometres. The code multiplies a fuel cost per kilometre by a distance measured in the raster's pixel units, which understates the value.
+
+
+## Wildfires
+
+- **subgroup:** -
+- **module:** fire_protection
+- **in the library:** yes
+- **run:** yes
+- **ours:** no. The module reads GEP_wildfire_2019_baseline straight out of the source repo's output file and reports it. Nothing between the panel and that column is recomputed here, so reproducing the file is not the same as producing the number. Nothing forces that: the district-year panel the regressions were fitted on is staged, 518 MB and 661,039 rows over 2010 to 2023, carrying burned area split by human and natural cause and the human-modification index the third regression splits on. Refitting it is work nobody has done rather than data we lack.
+- **method:** Burned acres avoided because fires persist less where nature dominates, from a per-country regression of burned area on last year's, times a per-acre damage value.
+- **total:** three variants: -$22.4bn / -$1.3bn / +$16.7bn
+- **code:** Translated from R to Python, then refactored onto the library template and hazelbean conventions. Fixed: Kosovo (GADM XKO vs the account's XKX) and India's Z01 and Z07 fell out of the country join, leaving $34.09M attached to no country while still inside the total.
+- **number:** Values the burned acres that nature prevents. Computes avoided acres and their valuation from their committed regression coefficients, and reproduces the source repo's output for all 161 units. Three regressions give three totals because they ask three different questions. Baseline persistence regresses a country's burned area on last year's, which says nothing about nature at all: -$22.4bn. The cause difference compares how strongly nature-caused fires persist against human-caused ones: -$1.3bn. The area difference compares persistence where nature dominates against where people do: +$16.7bn. Two of the three come out negative, meaning nature makes fire damage worse rather than better.
+- **need:** Which of the three is the account's. Baseline persistence should not be: it does not isolate nature's role, so it cannot answer what nature protects. Between the other two, the area difference matches how the service is described, fires persisting less where nature dominates, and is the only one that comes out positive. That is an argument, not a decision, and it is not ours to make. Also: 89 of the account's 250 countries carry no value, and whether they are unvalued or dropped somewhere in the join has not been checked.
+
+
+## Urban Cooling
+
+- **subgroup:** -
+- **module:** local_climate_regulation
+- **in the library:** yes
+- **run:** yes
+- **ours:** no for the reported figure. The city-month valuations are ours, but the number the sheet shows is parsed out of a dollar column in a committed file.
+- **method:** A city runs hotter than the countryside around it, because buildings and roads absorb heat that vegetation would have released as moisture. That gap is the urban heat island, and city trees and parks narrow it. The service is the air conditioning a city therefore does not run: the cooling energy avoided, per city and month, times the national electricity price, summed to countries.
+- **total:** $175.56bn 
+- **code:** Refactored onto the library template and hazelbean conventions. The valuation was ported from the author's v04 script, and the country value is summed from our own city-month files.
+- **number:** $175.56bn across 177 countries. The committed accounting table totals $14bn and is carried beside ours. Something sits between these city values and that table which is not in anything we hold.
+- **need:** What turns the city-month valuations into the committed accounting table. And confirmation of which figure the account takes.
+
+
+## Water Quality
+
+- **subgroup:** -
+- **module:** water_quality
+- **in the library:** yes
+- **run:** yes
+- **ours:** not yet. InVEST NDR is installed and we take an NDR-style retention estimate as given anyway.
+- **method:** Nitrogen and phosphorus the landscape retains, restricted to the share of water reaching domestic use, times the per-kg cost of removing them at a treatment plant.
+- **total:** $638bn USD. $655.91bn international dollars.
+- **code:** Refactored onto the library template and hazelbean conventions. We could not find the original pipeline's code, but its committed intermediates carry the retained nitrogen and phosphorus in kilograms, the treatment price per kg and the domestic-water-use fraction beside the values, so the calculation could be rebuilt in Python from the inputs rather than reverse-engineered from the answer.
+- **number:** Values the nitrogen and phosphorus that land keeps out of the water, priced at what removing them at a treatment plant would cost, $638bn. Reproduces the committed intermediates for 178 countries. How much N and P the land retains is modelled elsewhere; we take those quantities as given and value them. The $655.91bn international-dollar headline is not ours, and we now know why no factor recovers it. 
+- **need:** The treatment-cost observations behind the international-dollar regression. We hold the fitted prices but not the data they were fitted to, which is the one thing stopping us implementing the method note ourselves. Also the account's currency decision between market dollars and international dollars, the purchasing-power unit in which one dollar buys in each country what it buys in the United States. And the four nitrogen coefficients for an InVEST NDR biophysical table: load_n, eff_n, crit_len_n and proportion_subsurface_n.
+
+
+## Air Filtration
+
+- **subgroup:** -
+- **module:** air_filtration
+- **in the library:** yes
+- **run:** yes
+- **ours:** not yet. The workbook gives us the deaths and the answer, and we multiply the deaths by a value of a statistical life read from its own source, then check we recover the workbook's answer. That value is ours to the extent the source allows: the valuation reads the air quality group's country table directly and sources 218 of the 250 countries from it, with only Macao and Palestine left on the workbook's own figure. The deaths we could not until now: they come from process-based emissions, then InMAP, then health impact functions. InMAP is open source and on PyPI at 1.2.7, failing to install here only because its source distribution has no README, which is a packaging bug rather than a wall. So the workbook can be reduced to a deaths table, and eventually replaced.
+- **method:** Deaths avoided because vegetation removes air pollution, times a GDP-adjusted value of a statistical life.
+- **total:** $17.81bn
+- **code:** Refactored onto the library template and hazelbean conventions. The valuation multiplies the workbook's deaths by the value of life read from the air quality group's country table. Tests cover this channel and the dust one the sandstorm row reports, the fill rule for a country with no value-of-life figure of its own (it takes the mean of the countries that have one), the check that refuses the join when the workbook stops lining up with the country list, and that the value of life resolves each country to its own row, which matters because the workbook labels both Serbia and Kosovo "Serbia" and a join on the name would give Kosovo Serbia's figure. The workbook carries no country code, only row order, so it can be joined only by position, and a silent reordering would give every country its neighbour's deaths.
+- **number:** Values the deaths vegetation prevents by taking pollution out of the air, $17.81bn, and reproduces the committed totals. The avoided-death counts are the deposition channel of the drive's workbook: deaths avoided because vegetation captures dry pollutant out of the air. They come from three models run in sequence: process-based emissions, then InMAP, then health impact functions. None is set up here, though InMAP itself is open source. We do not rebuild it and take its counts as given.
+- **need:** Four things. **Serbia and Kosovo are swapped in the workbook**, which labels both rows Serbia: the row that is Serbia carries Kosovo's value of life, 2,288,310, and the row that is Kosovo carries Serbia's, 2,184,433. We read them the right way round from the table, so the account is correct and the workbook is not. Macao and Palestine are priced per country in the workbook, at 10,396,302 and 1,662,995, but appear nowhere in the table, so those two values have no source we hold. Which currency year the table is in, since our accounts are 2019 constant USD and a different base would rescale every mortality total. And an ISO3 column, because the table keys on a slugged country name and thirteen countries need a hand-written alias to match. Separately, what emissions inventory and meteorology a global InMAP run needs, which is what would let us produce the deaths rather than read them.
+
+
+## Sandstorm / Dust Storm Prevention
+
+- **subgroup:** -
+- **module:** air_filtration (dust channel)
+- **in the library:** yes
+- **run:** yes
+- **ours:** not yet, the same three models as air filtration produce the dust deaths, and the same answer applies.
+- **method:** Deaths avoided from dust storms, times the value of a statistical life.
+- **total:** $595.36bn
+- **code:** There is no separate module. One workbook carries two death columns, and the air filtration module values both: deposition becomes air filtration, dust becomes this. Same code, same tests, same value of a statistical life; only the column differs.
+- **number:** Values the deaths vegetation prevents by holding windblown dust down, at the same GDP-adjusted value of a statistical life, $595.36bn, reproducing the committed totals. Those death counts come from the same three models as air filtration's and are taken as given: nothing we hold rebuilds them.
+- **need:** The same as air filtration. And whether this magnitude is expected. The dust value is 33 times the air-filtration value.
+
+
+## Hydropower
+
+- **subgroup:** hydropower
+- **module:** water_supply
+- **in the library:** yes
+- **run:** yes
+- **ours:** yes
+- **method:** CWoN reports hydropower as an asset: the whole future stream of rents, valued today as one number. The account wants the year's service instead, so that asset is divided by the annuity factor at 4 percent over 100 years, which is 24.5. A country with $1bn of capitalized hydropower wealth therefore contributes $40.8M a year. Same stock-to-flow step as carbon's rental.
+- **total:** $146.57bn
+- **code:** Refactored onto the library template and hazelbean conventions. The method behind the committed output was not documented, so we worked it out and implemented it. Two fixes: the reported figure had been blanking 17 countries, and two spellings of the same country in the AQUASTAT file were both matching, so those countries were counted twice.
+- **number:** Values one year's service from a country's hydropower wealth, as CWoN capitalized wealth over a 4 percent 100-year annuity: $146.57bn across 97 countries. The CWoN wealth table carries a figure for 112, and the rent calculation produces a value for 97 of them. The reference-matching variant reproduces the committed anchor, $144.68bn over 95 countries. The manuscript records $287.7bn from a direct-use method.
+- **need:** The decision which hydropower total is the account's ($287.7bn direct use or $144.68bn rent), and the reason 17 countries are empty in the reference
+
+
+## Water Use
+
+- **subgroup:** water use
+- **module:** water_supply
+- **in the library:** yes
+- **run:** yes
+- **ours:** no. The module reads gep_water_agricultural from their output. Nothing forces that: the valuation is efficiency times withdrawal, both staged, and their script (gep_wateruse_02_calc_gep_wateruse.R) sits in base data beside the inputs, computing agricultural GEP as efficiency in dollars per cubic metre times withdrawal, with the same two lines for industry and municipal. So this is a port nobody has done rather than something we lack.
+- **method:** Sector water withdrawal times sector efficiency, from the AQUASTAT export. No nature-attribution step yet, so this is the gross value of water use.
+- **total:** $1.07T agriculture. $36.58T all sectors.
+- **code:** Refactored onto the library template and hazelbean conventions. Translated from R to Python, with tests covering the sector arithmetic and the country name matching.
+- **number:** Agriculture $1.07T across 123 countries, all-sector $36.58T across 149. The drive holds a committed figure for each: $554.5bn against our $1.07T for agriculture, and $36.08T against our $36.61T for all sectors. The all-sector pair is close and the agriculture pair is not, and because the two drive tables were produced separately neither is a reference we can check against. No nature-attribution step exists yet.
+- **need:** An attribution factor, since these totals are the gross value of water use with no share credited to nature. Whether the factor of 1000 in the agriculture component is a units conversion. And the data vintage behind the all-sector component.
+
+
+## Extractive Energy
+
+- **subgroup:** -
+- **module:** extractive_energy
+- **in the library:** yes
+- **run:** yes
+- **ours:** no in the sense that matters. The World Bank publishes each fuel's resource rent per country and the module sums three of those columns. What we add is catching eight rows that carry another country's value, not a valuation.
+- **method:** The WB's published gas, coal and petroleum resource rents at the base year, summed per country. No model: the rents are read, not derived.
+- **total:** $1.05T
+- **code:** Refactored onto the library template and hazelbean conventions. The drive had the outputs but no script, so we wrote the read. Tests cover the three fuels and their sum, a country that appears in the coal table but not the other two (its total is its coal, not missing), and a country in none of the three (missing, not zero).
+- **number:** Values the gas, coal and petroleum rents the World Bank publishes, at 2019, one country one row, $1.05T. The committed tables total $1.14T because eight rows carry another country's full value.
+- **need:** Confirmation that the eight duplicated rows are a join error, and which total the account keeps. Is there a model that we should use instead?
+
+
+## Forestry (Timber)
+
+- **subgroup:** -
+- **module:** timber_provision
+- **in the library:** yes
+- **run:** yes
+- **ours:** partly. The three rasters the value is built from, biomass, log prices and transport cost, are all staged, so the value could be rebuilt. What is missing is the forest-management mask that decides which pixels count as harvestable.
+- **method:** Roundwood production times price times the GTAP land factor share, minus per-pixel transport cost, summed to countries.
+- **total:** $88.74bn
+- **code:** Refactored onto the library template and hazelbean conventions. The country totals are now computed from the drive's value raster rather than read from its summary table, and tested against the committed output.
+- **number:** $88.74bn. Sums the value raster to countries and matches the committed output for all 166 countries, $88.74bn. What we cannot rebuild is the raster itself: making it needs a forest-management mask saying which forest is available for harvest, and that mask is not derivable from the layers we hold.
+- **need:** The forest-management mask behind the value raster, or the code that builds it. And a decision on the factor share: timber is the one service that takes its ecosystem share from GTAP rather than from CWoN, where the share is a whole-economy forestry land factor applied to a physical roundwood raster. Whether an economy-wide share is the right thing to apply pixel by pixel is a methodological question, not a data gap, and CWoN publishes a forest rent that would answer it in the same currency as the other services.
+
+## Floods
+
+- **subgroup:** -
+- **module:** flood_control
+- **in the library:** yes
+- **run:** yes
+- **ours:** the damage yes. The ecosystem share needs a service-flow raster, and the drive's copy is a binary mask rather than a ratio.
+- **method:** Flood depth by return period, through JRC depth-damage curves, times asset value per pixel, integrated into expected annual damage.
+- **total:** $112.78bn
+- **code:** Refactored onto the library template and hazelbean conventions. Every step of the flood calculation was rewritten as a function.
+- **number:** Values the flood damage that occurs, recomputed from the depth, damage-curve and asset inputs, matching the pipeline's table for 146 of 148 non-zero countries, $112.78bn. Morocco's committed value is $53 thousand for the whole country where the recompute gives $43 million. South Sudan was dropped by the mapping layer, now fixed. The number is expected flood damage, not the damage ecosystems avoid, and the step that would turn one into the other is stuck. The pipeline has a service-flow fraction and we have implemented and tested it, but the raster it needs is not usable: the drive's upstream ratio file is a byte-for-byte copy of a binary mask, so multiplying by it would switch damages on and off rather than scale them by an ecosystem share.
+- **need:** The real upstream service-provision ratio raster, or the code that makes it, since the drive's copy is a binary mask. Confirmation that the FINAL_GEP_FLOOD outputs are current. And whether the service-flow fraction should enter the valuation at all.
+
+
+## NTFP (non-timber forest products)
+
+- **subgroup:** -
+- **module:** ntfp
+- **in the library:** yes
+- **run:** yes
+- **ours:** the accessible area yes, the value no. The rate is now rescaled to the reachable forest, which makes the hectares cancel and the country total equal CWoN's published value. So accessibility is ours and decides where the value sits, and the amount is CWoN's.
+- **method:** The CWoN non-wood forest product value per country, priced over the forest within 10 km of a road or river rather than over CWoN's own forest area.
+- **total:** $28.87bn
+- **code:** Refactored onto the library template and hazelbean conventions. The valuation is tested. The accessibility stage decides which forest people can reach: a 10 km buffer around every road and river, on an equal-area grid.
+- **number:** Values what forests yield besides timber. The denominator question below is settled by rescaling: CWoN's value is spread over the forest people can reach instead of over all of it, which raises the rate from a median $10.00 to $13.67 a hectare and leaves the country total unchanged. $28.87bn over the 142 countries that have both a reachable area and a CWoN value, from 2,590 million accessible hectares over 214, which is 64 percent of the world's forest and 63 percent of CWoN's. The consequence is worth stating: because the reachable hectares divide out and multiply back in, the total is CWoN's own to the cent, and no arrangement of the accessibility raster would change it. What our code contributes is the rate and the map, not the sum.
+- **need:** Whether there is a model behind CWoN's non-wood forest product value, or whether it is a published table with no reproducible method. Now that the total is CWoN's by construction, that is the whole of what stands between this service and a number we compute. If a model exists we can run it; if the value is an assembled statistic, the account should say so rather than imply the figure is ours.
+
+
+## Stormwater
+
+- **subgroup:** -
+- **module:** stormwater
+- **in the library:** yes
+- **run:** yes
+- **ours:** not yet. InVEST stormwater is installed and its run sits outside the task tree.
+- **method:** Runoff the land cover holds back instead of sending to drainage, in cubic metres, priced at the cost of replacing the same capacity (currently a placeholder of 1).
+- **total:** 185.85bn m3 retained. No dollar total: the price is a placeholder of 1, so a dollar figure would be the volume relabelled.
+- **code:** Refactored onto the library template and hazelbean conventions. The step that totals retained water inside each country is in the repo.
+- **number:** 185.85 billion cubic metres retained across 104 countries. No author run exists to compare against, and no dollar total: at the placeholder price of 1 the value would just be the volume again.
+- **need:** The intended price per cubic metre retained. And an urban mask, or the InVEST run restricted to urban extents. The service is defined on urban areas, the retention run we were given covers all land, and we hold no mask to restrict it, so the volume is larger than the service.
+
+
+## Groundwater Recharge
+
+- **subgroup:** -
+- **module:** -
+- **in the library:** no
+- **run:** -
+- **ours:** -
+- **method:** -
+- **total:** -
+- **code:** -
+- **number:** No recharge module. The sheet's own note argues recharge is natural-capital value rather than an ecosystem service flow, and that its end products are already valued in water purification, irrigation and flood mitigation, so counting it again would double-count.
+- **need:** Whether the account excludes recharge on that reasoning.
+
+
+## Fuelwood
+
+- **subgroup:** -
+- **module:** -
+- **in the library:** no
+- **run:** -
+- **ours:** -
+- **method:** -
+- **total:** -
+- **code:** -
+- **number:** The drive folder is empty.
+- **need:** Should we include it?
+
+## Health
+
+- **subgroup:** -
+- **module:** -
+- **in the library:** no
+- **run:** -
+- **ours:** -
+- **method:** -
+- **total:** -
+- **code:** -
+- **number:** -
+- **need:** The method (the drive holds a literature review and a price table so far)
+
+
+## Pests
+
+- **subgroup:** -
+- **module:** -
+- **in the library:** no
+- **run:** -
+- **ours:** -
+- **method:** -
+- **total:** -
+- **code:** -
+- **number:** -
+- **need:** The method's completion (a processing script exists. No output yet).
+
+
+## Moisture Recycling (Regional Hydrology)
+
+- **subgroup:** -
+- **module:** -
+- **in the library:** no
+- **run:** -
+- **ours:** -
+- **method:** -
+- **total:** -
+- **code:** -
+- **number:** -
+- **need:** The valuation step (a country-to-country moisture matrix exists)
+

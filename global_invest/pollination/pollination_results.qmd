@@ -10,8 +10,6 @@ execute:
 
 # Pollination Results
 
-Text describing it. To be written by the service team (science source: the crop_benefits repo).
-
 ```{python}
 #| output: false
 
@@ -27,13 +25,15 @@ if __name__ == '__main__':
 
     p = hb.ProjectFlow()
     p.project_name = 'gep_pollination'
-    p.project_dir = os.path.join(os.path.expanduser('~'), 'Files', 'global_invest', 'projects', p.project_name)
+    # The rendering task passes the project it is reporting on; the home path is the
+    # fallback for someone opening this qmd directly.
+    p.project_dir = os.environ.get('PROJECTFLOW_ROOT', os.path.join(
+        os.path.expanduser('~'), 'Files', 'global_invest', 'projects', p.project_name))
     p.set_project_dir(p.project_dir)
 
     pollination_initialize.build_gep_service_calculation_task_tree(p)
 
     p.results = {}
-    pollination_initialize.initialize_paths(p)
 
     hb.log('Created ProjectFlow object at ' + p.project_dir + '\n    from script ' + p.calling_script + '\n    with base_data set at ' + p.base_data_dir)
     p.execute()
@@ -41,6 +41,8 @@ if __name__ == '__main__':
 
 ```{python}
 #| output: false
+
+from global_invest import utilities
 
 ### DISPLAY SETUP CODE
 
@@ -72,7 +74,8 @@ for k, v in p.results[service_label].items():
         if 'subregion' in df.columns:
             p.gep_by_subregion_base_year_table = df.groupby('subregion', as_index=False)['pollination_gep'].sum()
 
-        out_dir = os.path.join(p.intermediate_dir, service_label, 'gep_result')
+        # The report task's own directory, which is where the page reads its figures back from.
+        out_dir = utilities.report_dir()
         hb.create_directories(out_dir)
         p.gep_by_country_base_year_table.to_csv(os.path.join(out_dir, 'gep_by_country_base_year_table.csv'), index=False)
         hb.df_write(p.gep_by_income_grp_base_year_table, os.path.join(out_dir, 'gep_by_income_grp_base_year_table.csv'))
@@ -108,10 +111,12 @@ for k, v in p.results[service_label].items():
         plt.close()
 ```
 
-The analysis finds that insect pollination generates a total gross ecosystem product of $`{python} f"{total_pollination_value:,.2f}"` in the base year (`{python} f"{int(p.base_year)}"`). The value raster carries crop prices and per-crop pollination dependence already, so the per-country value is a direct spatial sum. Below we present the results in various aggregations, ending with the GEP by country in the base year.
+The analysis finds that insect pollination generates a total gross ecosystem product of $`{python} f"{total_pollination_value:,.2f}"` in the base year (`{python} f"{int(p.gep_base_year)}"`). The value raster carries crop prices and per-crop pollination dependence already, so the per-country value is a direct spatial sum. Below we present the results in various aggregations, ending with the GEP by country in the base year.
+
+## GEP by Country in Base Year, mapped
 
 ```{python}
-display(Image(os.path.join(p.intermediate_dir, service_label, 'gep_result', 'gep_by_country_base_year_map.png')))
+display(Image(os.path.join(utilities.report_dir(), 'gep_by_country_base_year_map.png')))
 ```
 
 ## GEP by Income Group in Base Year

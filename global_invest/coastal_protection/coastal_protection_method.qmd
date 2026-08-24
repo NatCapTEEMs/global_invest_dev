@@ -1,0 +1,95 @@
+---
+title: "Overview of Ecosystem Service: Coastal Protection"
+format:
+  html:
+    embed-resources: true
+    standalone: true
+  pdf:
+    toc: false
+---
+
+This section outlines how we value coastal protection as an ecosystem service within the GEP
+framework. Coastal habitats reduce the energy of waves and storm surge before it reaches the
+shore, so property and infrastructure behind them suffer less damage than they would on a bare
+coast. The service is therefore valued as avoided storm and flood damage, and it is reported for
+two habitats: mangroves and coral reefs. Both are attributed to the country whose coast they
+protect, and the two components are added to give one national coastal protection value.
+
+# Methods
+
+## Estimating Quantity
+
+Neither component is modelled from habitat extent inside this module. Both arrive as published
+per-country tables in which the physical protection modelling has already been done upstream, so
+the quantity stage here is the read and the aggregation onto the country list rather than a
+biophysical calculation.
+
+**Mangroves.** The mangrove component is the World Bank Changing Wealth of Nations mangrove
+table, staged as `data_mangroves_2019.xlsx`. It carries, per country, the mangrove area in
+hectares, a protection value per hectare, and the annual protection value that is their product,
+all for 2019 and all in current US dollars. The model reads the annual value column. Because the
+table is keyed on the r264 country label, a country that the correspondence splits into
+sub-regions arrives as several rows, and those rows are summed so that each country ends up with
+exactly one value.
+
+**Coral reefs.** The coral component is the annual expected flood protection benefit table
+staged as `coral_reefs_annual_expected_benefit_nfamara.xlsx`, which gives one annual benefit per
+country in 2011 US dollars. This table is keyed on country name rather than country code, so it
+is joined to the correspondence on the name and then reduced to one row per country before the
+currency conversion below.
+
+## Estimating Price
+
+No price is applied in this module. Both source tables are already monetary, which means the
+quantity and price stages are fused upstream and the attribution factor is one:
+
+$$
+\text{GEP}_{\text{coastal protection}} = Q \cdot P \cdot \lambda = \text{avoided damage} \times 1 \times 1
+$$
+
+The only monetary adjustment made here is a currency year alignment. The mangrove table is
+already in the base year's dollars and needs none. The coral table is in 2011 dollars, so each
+country's value is multiplied by the cumulative World Bank GDP deflator for that country over
+2012 through 2019 (the annual series
+[NY.GDP.DEFL.KD.ZG](https://data.worldbank.org/indicator/NY.GDP.DEFL.KD.ZG), where each year
+contributes a factor of one plus its rate divided by one hundred, and the eight years are
+multiplied together).
+
+## Valuation
+
+The two components are joined on country and year, a country present in only one table
+contributes that component alone, and the national value is their sum:
+
+$$
+\text{GEP}_{\text{coastal protection},c} = V^{\text{mangrove}}_{c,2019} + V^{\text{coral}}_{c,2011} \cdot D_{c,2012 \rightarrow 2019}
+$$
+
+where $V^{\text{mangrove}}_{c,2019}$ is the country's annual mangrove protection value in 2019
+dollars, $V^{\text{coral}}_{c,2011}$ is its annual coral reef protection benefit in 2011 dollars,
+and $D_{c,2012 \rightarrow 2019}$ is its cumulative GDP deflator over that span. The result is
+written as one row per country for the base year 2019, with the two components kept as separate
+columns beside the total so that either can be inspected on its own.
+
+On the currently staged input data this gives a global total of $36.72$ billion in 2019 US
+dollars, of which $30.40$ billion is the mangrove component and $6.32$ billion is the coral reef
+component.
+
+## Known limitations
+
+Three properties of the calculation are worth stating because they affect coverage rather than
+arithmetic, and none of them is silent once you know to look for it.
+
+The coral table is joined on country name, not on a code. A name that the correspondence spells
+differently would drop the country without failing, so the join is a place to check first when a
+coastal country is missing.
+
+A country the World Bank deflator series does not cover has no multiplier, so its coral value
+cannot be carried to the base year and the country comes out unvalued rather than valued at zero.
+On the currently staged data this affects nine countries holding about \$75 million of 2011 coral
+value: the Cook Islands, Guadeloupe, Martinique, Mayotte, Niue, Pitcairn, Réunion, Taiwan and
+Wallis and Futuna. None of the nine carries a mangrove value either, so their rows now read as
+missing and the reported global total is unchanged.
+
+Because the module consumes pre-valued national tables, it cannot separate the physical extent of
+a habitat from the value assigned to it. A change in either the mapped habitat area or the damage
+function behind these tables enters here only as a changed national total.

@@ -1,37 +1,28 @@
-"""Standalone runner for the marine-fisheries ES shock.
+"""Full fisheries GEP run (commercial capture, CWoN method): rent trends -> valuation -> report.
 
-Mirrors run_erosion.py / run_pollination.py: build a ProjectFlow, graft add_fisheries_tasks, execute.
-Consumers (ngfs_pnas, nff_global) do NOT use this script -- they graft the same seam into their own task
-tree. This exists for a standalone check of the FSH shock.
+Thin runner: builds ONE tree and executes it. Inputs are published by each task itself
+(publish_inputs in the tasks module); base_data_dir is resolved by ProjectFlow (default /
+machine.env), never hardcoded here. The ES-shock runner is run_fisheries_shock.py -- a separate
+tree, a separate thin runner, no mode switch.
 
-Unlike the other services there is no dynamic path to select: fisheries is marine, so it never reads the
-SEALS land-cover maps and p.dynamic_es does not apply to it. The task reads the pre-computed FI headers
-out of cwon_shocks.har by RCP, which makes this the cheapest of the four to run -- no rasters, no
-InVEST, seconds rather than hours.
-
-Requires:
-  - base_data/<aggregation_label>/cwon_shocks.har with the FI26 / FI45 / FI85 headers
+Requires (es_parameters rows under base_data/global_invest/fisheries/cwon/): cpi2019.dta and
+EconRent_Analysis_AllYears.dta from the CWoN 2024 reproducibility package (FR_WLD_2024_195,
+public World Bank download) -- NOT yet staged; the open data ask, together with the source
+pipeline's fish_provision_gep_20260720.csv as the replication anchor.
 """
 import hazelbean as hb
 
-from global_invest import utilities
 from global_invest.fisheries import fisheries_initialize
 
 
 def build_task_tree(p):
-    # This runner's tree IS the consumer seam: graft the tasks exactly as a pipeline would.
-    fisheries_initialize.add_fisheries_tasks(p)
+    # This project's task tree: delegates unchanged to the shared library builder.
+    fisheries_initialize.build_gep_service_task_tree(p)
 
 
 def run_project(p):
 
-    # The shared es_shock_* seam attributes come from the SAME scenarios CSV as every other
-    # service, as a defaults layer: anything the caller already set on p wins. Fisheries is the
-    # static marine service (no maps, no dynamic path); it keys on the scenario's RCP, which the
-    # CSV's climate_label column provides, so scenario names need no translation. The output CSV
-    # needs no line here -- the task defaults it.
-    utilities.hydrate_es_scenarios(p)
-
+    # Every task publishes its own inputs (publish_inputs in the tasks module): no setup call.
     build_task_tree(p)
 
     hb.log('Created ProjectFlow object at ' + p.project_dir + '\n    from script ' + p.calling_script)

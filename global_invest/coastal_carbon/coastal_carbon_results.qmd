@@ -11,16 +11,6 @@ execute:
   echo: false
   warning: false
 format:
-  pdf:
-    toc: true
-    number-sections: true
-    geometry: margin=1in
-    fig-pos: H
-    tbl-pos: H
-    include-in-header:
-      text: |
-        \usepackage{caption}
-        \captionsetup{justification=centering}
   html:
     toc: true
     toc-location: left
@@ -37,6 +27,16 @@ format:
     number-sections: true
     fig-width: 6.5
     fig-dpi: 150
+  pdf:
+    toc: true
+    number-sections: true
+    geometry: margin=1in
+    fig-pos: H
+    tbl-pos: H
+    include-in-header:
+      text: |
+        \usepackage{caption}
+        \captionsetup{justification=centering}
 ---
 
 ```{python}
@@ -67,9 +67,11 @@ if __name__ == '__main__':
     # ProjectFlow object
     p = hb.ProjectFlow()
     p.project_name = 'gep_coastal_carbon'
-    p.project_dir = os.path.join(
+    # The rendering task passes the project it is reporting on; the home path is the
+    # fallback for someone opening this qmd directly.
+    p.project_dir = os.environ.get('PROJECTFLOW_ROOT', os.path.join(
         os.path.expanduser('~'), 'Files', 'global_invest', 'projects', p.project_name
-    )
+    ))
     # base_data_dir resolves via ProjectFlow default / machine.env (never hardcoded).
     p.set_project_dir(p.project_dir)
 
@@ -155,6 +157,8 @@ if __name__ == '__main__':
 ```{python}
 #| include: false
 
+from global_invest import utilities
+
 ### DISPLAY SETUP CODE: Loads results and builds plot artifacts referenced by the Results section.
 
 import matplotlib.pyplot as plt
@@ -167,9 +171,9 @@ pd.set_option('display.max_rows', 1000)
 from IPython.display import Image, display
 
 service_label = 'coastal_carbon'
-value_col = 'value'
-results_display_dir = os.path.join(p.intermediate_dir, service_label, 'gep_result')
-os.makedirs(results_display_dir, exist_ok=True)
+value_col = 'coastal_carbon_gep'
+# The report task's own directory, which is where the page reads its figures back from.
+results_display_dir = utilities.report_dir()
 
 base_year_path = p.results[service_label]['gep_by_country_base_year']
 if not os.path.exists(base_year_path):
@@ -208,17 +212,23 @@ for k, v in p.results[service_label].items():
         import matplotlib as mpl
 
         gdf = hb.read_vector(p.gdf_countries_vector_simplified_path)
-        merge_key = None
-        for candidate_key in ['iso3_r250_label', 'iso3_r250_id', 'ee_r264_id']:
-            if candidate_key in gdf.columns and candidate_key in df.columns:
-                merge_key = candidate_key
-                break
-        if merge_key is None:
-            raise KeyError(
-                f"No shared country key found between geometry columns {list(gdf.columns)} "
-                f"and result columns {list(df.columns)}"
-            )
-        gdf = gdf.merge(df[[merge_key, value_col]], on=merge_key, how='left')
+        # The country table is on r250 and the simplified geometry is on r264, so the values are
+        # expanded through the correspondence first: each sub-region carries its country's value,
+        # never a share of it. This is the same step pollination and recreation take for their maps.
+        map_values = df[['iso3_r250_id', value_col]]
+        if 'ee_r264_id' in gdf.columns and 'ee_r264_id' not in df.columns:
+            map_values = (p.df_countries[['ee_r264_id', 'iso3_r250_id']]
+                          .merge(map_values, on='iso3_r250_id', how='left')[['ee_r264_id', value_col]])
+            merge_key = 'ee_r264_id'
+        else:
+            merge_key = next((k for k in ['iso3_r250_label', 'iso3_r250_id', 'ee_r264_id']
+                              if k in gdf.columns and k in df.columns), None)
+            if merge_key is None:
+                raise KeyError(
+                    f"No shared country key found between geometry columns {list(gdf.columns)} "
+                    f"and result columns {list(df.columns)}")
+            map_values = df[[merge_key, value_col]]
+        gdf = gdf.merge(map_values, on=merge_key, how='left')
         gdf[value_col] = gdf[value_col].fillna(0)
         gdf['plot_value'] = gdf[value_col].where(gdf[value_col] > 0, np.nan)
 
@@ -546,7 +556,7 @@ The map below shows country-level storage value on a logarithmic colour scale. C
 ```{python}
 #| label: fig-coastal-carbon-gep-country
 #| fig-cap: "Coastal carbon storage value by country in the base year."
-display(Image(os.path.join(p.intermediate_dir, service_label, 'gep_result', 'gep_by_country_base_year_map.png')))
+display(Image(os.path.join(utilities.report_dir(), 'gep_by_country_base_year_map.png')))
 ```
 
 Notes: Country values are shown on a logarithmic colour scale. Countries with no positive mapped coastal carbon storage value are shown in grey.

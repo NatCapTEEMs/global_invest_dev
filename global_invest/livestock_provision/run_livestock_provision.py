@@ -1,9 +1,7 @@
-import pandas as pd
 import hazelbean as hb
 
 from global_invest.livestock_provision import livestock_provision_initialize
 
-# TODO Note massive violation of DRY (Dont repeat yourself) here. This is a copy of the crop_provision run file, but with livestock_provision instead of crop_provision. I took this shortcut cause I couldn't think of the right way of combining the multiple different provisioning services.
 
 def build_task_tree(p):
     # This project's task tree: delegates unchanged to the shared library builder.
@@ -16,8 +14,6 @@ def run_project(p):
     build_task_tree(p)
 
     # Project level attributes
-    p.results = {}  # All results will be stored here by each child task.
-    livestock_provision_initialize.initialize_paths(p)
 
     # Run the model
     hb.log('Created ProjectFlow object at ' + p.project_dir + '\n    from script ' + p.calling_script)    

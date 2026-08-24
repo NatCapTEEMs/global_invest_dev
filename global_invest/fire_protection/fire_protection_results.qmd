@@ -1,0 +1,115 @@
+---
+format:
+  html:
+    embed-resources: true
+    standalone: true
+execute:
+  echo: false          # results report shows tables/figures, not code
+  warning: false
+---
+
+# Fire Protection Results
+
+```{python}
+#| output: false
+
+### SETUP CODE: Runs the whole model if it doesn't exist, else loads the results.
+
+import os
+import pandas as pd
+import hazelbean as hb
+
+from global_invest.fire_protection import fire_protection_initialize
+
+if __name__ == '__main__':
+
+    p = hb.ProjectFlow()
+    p.project_name = 'gep_fire_protection'
+    # The rendering task passes the project it is reporting on; the home path is the
+    # fallback for someone opening this qmd directly.
+    p.project_dir = os.environ.get('PROJECTFLOW_ROOT', os.path.join(
+        os.path.expanduser('~'), 'Files', 'global_invest', 'projects', p.project_name))
+    p.set_project_dir(p.project_dir)
+
+    fire_protection_initialize.build_gep_service_calculation_task_tree(p)
+
+    p.results = {}
+
+    hb.log('Created ProjectFlow object at ' + p.project_dir + '\n    from script ' + p.calling_script + '\n    with base_data set at ' + p.base_data_dir)
+    p.execute()
+```
+
+```{python}
+#| output: false
+
+### DISPLAY SETUP CODE
+
+import pandas as pd
+import os
+import hazelbean as hb
+
+pd.set_option('display.float_format', '{:,.2f}'.format)
+pd.set_option('display.max_rows', 1000)
+
+service_label = 'fire_protection'
+
+df = hb.df_read(p.results[service_label]['gep_by_country_base_year'])
+total_baseline = df['GEP_wildfire_2019_baseline'].sum()
+total_nn_hh = df['GEP_wildfire_2019_nn_hh'].sum()
+total_ttn_tth = df['GEP_wildfire_2019_ttn_tth'].sum()
+p.gep_by_country_base_year_table = df[['iso3_r250_name', 'GEP_wildfire_2019_baseline',
+                                       'GEP_wildfire_2019_nn_hh', 'GEP_wildfire_2019_ttn_tth']]
+```
+
+The analysis estimates three wildfire-protection GEP variants for the base year (`{python} f"{int(p.gep_base_year)}"`), all derived from per-country AR(1) fire-persistence regressions: the baseline persistence effect totals $`{python} f"{total_baseline:,.0f}"`, the nature-vs-human cause difference totals $`{python} f"{total_nn_hh:,.0f}"`, and the nature-vs-human area comparison totals $`{python} f"{total_ttn_tth:,.0f}"`. Which variant is the account's fire_protection value is an open question, two of the three are globally negative, so the choice defines both the number and its interpretation. Values are avoided burned acres priced at EM-DAT wildfire damage per burned acre (global-average filled where a country reports no damages).
+
+## GEP by Country in Base Year, mapped
+
+```{python}
+#| output: false
+
+from global_invest import utilities
+
+# The service's own value column, not merely the first one ending in _gep: water_supply
+# writes several and the wrong one would map a component as though it were the total.
+map_value_column = (f'{service_label}_gep' if f'{service_label}_gep' in df.columns
+                    else [c for c in df.columns if c.endswith('_gep')][0])
+map_png_path = os.path.join(utilities.report_dir(),
+                            f'{service_label}_gep_by_country_base_year_map.png')
+map_png_path = utilities.plot_gep_choropleth(
+    df, map_value_column, p.gdf_countries_vector_simplified_path, map_png_path,
+    title=f'{service_label} GEP by country', label=map_value_column)
+
+# The account read by region and by income group, which a country table cannot show.
+summary_tables = utilities.gep_summary_tables(df, map_value_column, utilities.report_dir(), log=hb.log)
+```
+
+```{python}
+from IPython.display import Image
+Image(map_png_path) if map_png_path else 'No positive value to map.'
+```
+
+## GEP by Income Group in Base Year
+```{python}
+summary_tables.get('income_grp', 'No income group column in this table.')
+```
+
+## GEP by Region in Base Year
+```{python}
+summary_tables.get('region_un', 'No UN region column in this table.')
+```
+
+## GEP by Continent in Base Year
+```{python}
+summary_tables.get('continent', 'No continent column in this table.')
+```
+
+## GEP by Subregion in Base Year
+```{python}
+summary_tables.get('subregion', 'No subregion column in this table.')
+```
+
+## GEP by Country in Base Year
+```{python}
+p.gep_by_country_base_year_table
+```

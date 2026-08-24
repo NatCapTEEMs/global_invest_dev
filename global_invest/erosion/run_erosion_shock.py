@@ -3,7 +3,7 @@
 Mirrors run_terrestrial_carbon_shock.py / run_pollination_shock.py: build a ProjectFlow, graft
 add_erosion_tasks, execute. Consumers (ngfs_pnas, nff_global) do NOT use this script -- they graft
 the same seam into their own task tree and set the es_shock_* seam attributes from their own
-scenarios CSV. This exists to run the SDR chain in isolation, which is the practical way to debug
+scenarios CSV. This exists to run the SDR pipeline in isolation, which is the practical way to debug
 it: the four dynamic tasks are the heaviest thing in the ES fold, and going through
 run_ngfs_pnas.py would drag in GTAP solves and SEALS as well.
 
@@ -21,12 +21,14 @@ table.
 Requires:
   - natcap.invest (conda-forge) for the SDR model, and pygeoprocessing for the D8 routing
   - base_data/global_invest/sdr/: the analysis grid, DEM, watersheds, biophysical table, SPAM2020
-    yield/area stacks, bandmap and crop-coefficient table (all resolved inside add_erosion_tasks)
+    yield/area stacks, bandmap and crop-coefficient table (all es_parameters rows, hydrated by
+    each task's publish_inputs)
   - base_data/soil/: erosivity and erodibility
 
 On the default 6.45 km analysis grid this is a ~25M-pixel global run, which is tractable locally --
 the multi-hour figures quoted for SDR refer to NATIVE-resolution global runs, roughly 56x larger.
-Set p.modality to 'sc' or 'msi' to run at native SEALS resolution on a cluster instead.
+Set the erosion_native_resolution row (or p.erosion_native_resolution) true to run at native
+SEALS resolution on a cluster instead.
 """
 import hazelbean as hb
 

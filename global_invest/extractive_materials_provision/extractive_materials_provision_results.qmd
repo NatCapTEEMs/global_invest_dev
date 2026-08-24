@@ -3,19 +3,13 @@ format:
   html:
     embed-resources: true
     standalone: true
-    code-fold: true           # Fold code by default in HTML
-    code-summary: "Show code"
-  pdf:
-    echo: false              # Hide code by default in PDF
-  docx:
-    echo: false              # Hide code by default in Word
-  ipynb: 
-    echo: true
+execute:
+  echo: false          # results report shows tables/figures, not code
+  warning: false
 ---
 
-# extractive materials provision Results
 
-Text describing it. To be written by service team.
+# extractive materials provision Results
 
 ```{python}
 #| output: false
@@ -40,9 +34,8 @@ p.set_project_dir(p.project_dir) # Set the project directory in the ProjectFlow 
 # CRITICAL AND UNOBVIOUS, you CANNOT run the full service because this includes the generation of the qmd and the render line itself, thus calling this would infinitely loop.
 extractive_materials_provision_initialize.build_gep_service_calculation_task_tree(p) # Defines the actual logic of the model. Navigate into here to see what the model does.
 
-# Inputs resolve in initialize_paths (one source of truth; shared country block).
+# Inputs resolve in publish_inputs (one source of truth; shared country block).
 p.results = {}  # All results will be stored here by each child task.
-extractive_materials_provision_initialize.initialize_paths(p)
 
 # Run the model. This should be instantaneous if you've run the model before.
 hb.log('Created ProjectFlow object at ' + p.project_dir + '\n    from script ' + p.calling_script + '\n    with base_data set at ' + p.base_data_dir)    
@@ -55,6 +48,8 @@ p.execute()
 
 ```{python}
 #| output: false
+
+from global_invest import utilities
 
 ### DISPLAY SETUP CODE: Based on the results in the prior cells, make the objectgs that will actually get displayed, like smol csvs or gpkg-as-pngs
 
@@ -103,11 +98,11 @@ for k, v in p.results[service_label].items():
             # p.gep_by_subregion_base_year_table = p.gep_by_country_base_year_table[['subregion', 'extractive_materials_provision_gep']]
         
         # Save each plot table as a CSV in the current directory
-        p.gep_by_country_base_year_table.to_csv(os.path.join(p.intermediate_dir, service_label, 'gep_result', 'gep_by_country_base_year_table.csv'), index=False)
-        hb.df_write(p.gep_by_income_grp_base_year_table, os.path.join(p.intermediate_dir, service_label, 'gep_result', 'gep_by_income_grp_base_year_table.csv'))
-        hb.df_write(p.gep_by_region_un_base_year_table, os.path.join(p.intermediate_dir, service_label, 'gep_result', 'gep_by_region_un_base_year_table.csv'))
-        hb.df_write(p.gep_by_continent_base_year_table, os.path.join(p.intermediate_dir, service_label, 'gep_result', 'gep_by_continent_base_year_table.csv'))
-        hb.df_write(p.gep_by_subregion_base_year_table, os.path.join(p.intermediate_dir, service_label, 'gep_result', 'gep_by_subregion_base_year_table.csv'))
+        p.gep_by_country_base_year_table.to_csv(os.path.join(utilities.report_dir(), 'gep_by_country_base_year_table.csv'), index=False)
+        hb.df_write(p.gep_by_income_grp_base_year_table, os.path.join(utilities.report_dir(), 'gep_by_income_grp_base_year_table.csv'))
+        hb.df_write(p.gep_by_region_un_base_year_table, os.path.join(utilities.report_dir(), 'gep_by_region_un_base_year_table.csv'))
+        hb.df_write(p.gep_by_continent_base_year_table, os.path.join(utilities.report_dir(), 'gep_by_continent_base_year_table.csv'))
+        hb.df_write(p.gep_by_subregion_base_year_table, os.path.join(utilities.report_dir(), 'gep_by_subregion_base_year_table.csv'))
 
         # Using the gpkg in gep_calculation, plot the GEP by country on a map
 
@@ -138,7 +133,7 @@ for k, v in p.results[service_label].items():
 
         ax.set_title('GEP by Country in Base Year')
         ax.set_axis_off()  # Hide the axis
-        plt.savefig(os.path.join(p.intermediate_dir, service_label, 'gep_result', 'gep_by_country_base_year_map.png'), bbox_inches='tight', dpi=300)
+        plt.savefig(os.path.join(utilities.report_dir(), 'gep_by_country_base_year_map.png'), bbox_inches='tight', dpi=300)
         plt.close()
 
     
@@ -147,7 +142,7 @@ for k, v in p.results[service_label].items():
         p.gep_by_year_table = df[['year', 'Value']]
         # Drop values that are zero
         p.gep_by_year_table = p.gep_by_year_table[p.gep_by_year_table['Value'] > 0]
-        hb.df_write(p.gep_by_year_table, os.path.join(p.intermediate_dir, service_label, 'gep_result', 'gep_by_year_table.csv'))
+        hb.df_write(p.gep_by_year_table, os.path.join(utilities.report_dir(), 'gep_by_year_table.csv'))
 
         # Also make a basic line graph as a png
         plt.figure(figsize=(10, 6))
@@ -156,16 +151,17 @@ for k, v in p.results[service_label].items():
         plt.xlabel('Year')
         plt.ylabel('Gross Economic Product (GEP)')
         plt.grid(True)
-        plt.savefig(os.path.join(p.intermediate_dir, service_label, 'gep_result', 'gep_by_year_plot.png'), dpi=300)
+        plt.savefig(os.path.join(utilities.report_dir(), 'gep_by_year_plot.png'), dpi=300)
         plt.close()
 
 ```
 
-The analysis reveals that total extractive materials provision value generates a total gross economic product of $`{python} f"{total_extractive_materials_provision_value:,.2f}"` across the study period. Below we present the results in various aggregations, ending with the GEP by country in the base year.
+Mineral extraction is valued at the resource-rent share of mining output, giving $`{python} f"{total_extractive_materials_provision_value:,.2f}"` in the base year. The tables below aggregate that by income group, region and continent, and end with the per-country table the account reads.
+
+## GEP by Country in Base Year, mapped
 
 ```{python}
-# Display the GEP by income group table   
-display(Image(os.path.join(p.intermediate_dir, service_label, 'gep_result', 'gep_by_country_base_year_map.png')))
+display(Image(os.path.join(utilities.report_dir(), 'gep_by_country_base_year_map.png')))
 ```
 
 ## GEP by Income Group in Base Year
@@ -191,7 +187,7 @@ display(p.gep_by_subregion_base_year_table)
 ## GEP  Over Time
 ```{python}
 
-display(Image(os.path.join(p.intermediate_dir, service_label, 'gep_result', 'gep_by_year_plot.png')))
+display(Image(os.path.join(utilities.report_dir(), 'gep_by_year_plot.png')))
 
 # Display the GEP by income group table   
 display(p.gep_by_year_table)

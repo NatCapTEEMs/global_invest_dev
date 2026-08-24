@@ -1,27 +1,44 @@
-"""
-Coastal carbon pipeline helpers.
+"""Coastal-carbon science: pure functions over arrays and frames.
 
-All ecosystem-density and per-country stock primitives used by the four-file
-pipeline (run / initialization / tasks / functions) live here. There are no
-runtime dependencies on the per-ecosystem reference modules in `archieve/`.
-"""
+Nothing here opens a file. The task layer reads the rasters and vectors, hands the arrays and
+frames in, and writes back what it gets -- so every step below can be pinned on a hand-built
+input in the test suite.
 
-import contextlib
-import os
+TWO SURFACES BY DESIGN. Every function up to and including `coastal_carbon_storage_value_frame`
+works on the marine surface (eemarine_r566: one row per EEZ or coastal region, the
+gep_regions_input_path cell in es_config). Only the last two collapse that surface to one row
+per country: `eez_storage_value_by_iso3` keeps the marine `_EEZ` rows, and
+`collapse_to_iso3_r250` joins them onto the canonical r264 row per country. Summing r264 rows
+directly would count a split country once per sub-region -- see global_invest/utilities.py.
+
+The valuation is storage-only, and identical in form to terrestrial carbon: mapped habitat
+area x per-habitat carbon density = stock (Mg C), stock x the base-year rental social cost of
+carbon = GEP ($).
+"""
 
 import geopandas as gpd
 import numpy as np
 import pandas as pd
-import rasterio
-import rasterio.features
-import rasterio.warp
-import rasterio.windows
-from rasterio.enums import Resampling
 from tqdm import tqdm
+
+# The three habitats this service values, in the order every combined frame is written in.
+COASTAL_ECOSYSTEMS = ('mangrove', 'salt_marsh', 'seagrass')
+
+M2_PER_HA = 10000.0
+# EPSG:6933 (NSIDC EASE-Grid 2.0 Global): the equal-area projection polygon extents are
+# measured in. Areas measured in a geographic CRS are not areas.
+EQUAL_AREA_EPSG = 6933
+MG_C_PER_PG = 1e9
+# The marine surface carries one row per EEZ plus land/territorial rows for the same coast;
+# only the EEZ rows are valued, so the coast is counted once.
+EEZ_LABEL_SUFFIX = '_EEZ'
+# External SOC products report the top 1 m; the stock convention here is the top 20 cm, taken
+# as a linear share of the profile.
+SOC_1M_TO_20CM_SCALAR = 0.2
 
 
 # ============================================================================
-# Per-pixel ecosystem carbon density helpers
+# Per-pixel ecosystem carbon density
 # ============================================================================
 
 # Mangrove (Hamilton & Friess 2018 + IPCC 2014 zone BGB + Sanderman 2018 SOC)
@@ -32,6 +49,13 @@ MANGROVE_TROPICAL_LAT_THRESHOLD = 23.5
 MANGROVE_TROPICAL_WET_PRECIP_THRESHOLD_MM = 2000.0
 MANGROVE_AGB_TO_C = 0.48   # Hamilton & Friess 2018
 MANGROVE_BGB_TO_C = 0.39   # Howard et al. 2014
+# Hamilton & Friess 2018 EQ5: AGB (t/ha) falls linearly with distance from the equator.
+MANGROVE_AGB_LAT_SLOPE_T_HA_PER_DEG = -6.4305
+MANGROVE_AGB_LAT_INTERCEPT_T_HA = 271.747
+# SOC used only when no SOC raster is supplied: Mg C/ha in the top 20 cm, poleward value first
+# and then narrower latitude bands overriding it, so the equator ends up richest.
+MANGROVE_FALLBACK_SOC_POLEWARD_MG_HA = 50.0
+MANGROVE_FALLBACK_SOC_BANDS_MG_HA = ((25.0, 60.0), (20.0, 70.0), (15.0, 75.0), (10.0, 80.0))
 
 
 def calculate_mangrove_density_array(latitude_arr, precipitation_arr=None,
@@ -45,10 +69,12 @@ def calculate_mangrove_density_array(latitude_arr, precipitation_arr=None,
          dry, 0.96 subtropical). If precipitation_arr is None, all tropics use
          the wet ratio (0.49). Tropical/subtropical split at |lat| = 23.5 deg.
     SOC: from soc_arr (Sanderman 2018 raster) when provided; otherwise a
-         latitude step function (400 to 250 Mg C/ha by zone).
+         latitude step function, 80 down to 50 Mg C/ha by zone -- the 400-to-250
+         Mg C/ha profile for the top 1 m, scaled to the top 20 cm.
     """
     lat_abs = np.abs(latitude_arr).astype(np.float64)
-    agb_t_per_ha = np.maximum(0.0, -6.4305 * lat_abs + 271.747)
+    agb_t_per_ha = np.maximum(
+        0.0, MANGROVE_AGB_LAT_SLOPE_T_HA_PER_DEG * lat_abs + MANGROVE_AGB_LAT_INTERCEPT_T_HA)
 
     is_tropical = lat_abs < MANGROVE_TROPICAL_LAT_THRESHOLD
     if precipitation_arr is not None:
@@ -69,15 +95,11 @@ def calculate_mangrove_density_array(latitude_arr, precipitation_arr=None,
     bgb_c = bgb_t_per_ha * MANGROVE_BGB_TO_C
 
     if soc_arr is not None:
-        # Scale Sanderman 1 m data to 20 cm assuming linear depth profile
-        soc = soc_arr.astype(np.float64) * 0.2
+        soc = soc_arr.astype(np.float64) * SOC_1M_TO_20CM_SCALAR
     else:
-        # Fallback step function scaled from 1 m to 20 cm (multiply by 0.2)
-        soc = np.full_like(lat_abs, 50.0, dtype=np.float64)  # was 250
-        soc = np.where(lat_abs < 25, 60.0, soc)   # was 300
-        soc = np.where(lat_abs < 20, 70.0, soc)   # was 350
-        soc = np.where(lat_abs < 15, 75.0, soc)   # was 375
-        soc = np.where(lat_abs < 10, 80.0, soc)   # was 400
+        soc = np.full_like(lat_abs, MANGROVE_FALLBACK_SOC_POLEWARD_MG_HA, dtype=np.float64)
+        for lat_below, soc_mg_per_ha in MANGROVE_FALLBACK_SOC_BANDS_MG_HA:
+            soc = np.where(lat_abs < lat_below, soc_mg_per_ha, soc)
 
     return {
         'agb_c_mg_per_ha':   agb_c,
@@ -94,6 +116,10 @@ SALT_MARSH_AGB_TO_C = 0.45
 SALT_MARSH_BGB_TO_C = 0.41
 SALT_MARSH_TROPICAL_BOOST_LAT = 25.0
 SALT_MARSH_TROPICAL_BOOST_FACTOR = 1.2
+# Same fallback convention as mangrove: poleward value first, narrower bands override it. Salt
+# marsh soils run the other way -- richest at high latitude.
+SALT_MARSH_FALLBACK_SOC_POLEWARD_MG_HA = 70.0
+SALT_MARSH_FALLBACK_SOC_BANDS_MG_HA = ((45.0, 50.0), (35.0, 44.0), (20.0, 36.0))
 
 
 def calculate_salt_marsh_density_array(latitude_arr, soc_arr=None):
@@ -103,7 +129,8 @@ def calculate_salt_marsh_density_array(latitude_arr, soc_arr=None):
     AGB: Chmura et al. 2003 median (5 t/ha) with 1.2x tropical boost (|lat| < 25).
     BGB: AGB x 2.5 (extensive root systems).
     SOC: from soc_arr (Maxwell 2024 MarSOC raster) when provided; otherwise a
-         latitude step function (180 to 350 Mg C/ha by zone).
+         latitude step function, 36 up to 70 Mg C/ha by zone -- the 180-to-350
+         Mg C/ha profile for the top 1 m, scaled to the top 20 cm.
     """
     lat_abs = np.abs(latitude_arr).astype(np.float64)
 
@@ -117,14 +144,11 @@ def calculate_salt_marsh_density_array(latitude_arr, soc_arr=None):
     bgb_c = bgb_t_per_ha * SALT_MARSH_BGB_TO_C
 
     if soc_arr is not None:
-        # Scale MarSOC to 20 cm assuming linear depth profile
-        soc = soc_arr.astype(np.float64) * 0.2
+        soc = soc_arr.astype(np.float64) * SOC_1M_TO_20CM_SCALAR
     else:
-        # Fallback step function scaled from 1 m to 20 cm (multiply by 0.2)
-        soc = np.full_like(lat_abs, 70.0, dtype=np.float64)   # was 350
-        soc = np.where(lat_abs < 45, 50.0, soc)   # was 250
-        soc = np.where(lat_abs < 35, 44.0, soc)   # was 220
-        soc = np.where(lat_abs < 20, 36.0, soc)   # was 180
+        soc = np.full_like(lat_abs, SALT_MARSH_FALLBACK_SOC_POLEWARD_MG_HA, dtype=np.float64)
+        for lat_below, soc_mg_per_ha in SALT_MARSH_FALLBACK_SOC_BANDS_MG_HA:
+            soc = np.where(lat_abs < lat_below, soc_mg_per_ha, soc)
 
     return {
         'agb_c_mg_per_ha':   agb_c,
@@ -210,285 +234,282 @@ def calculate_seagrass_pool_densities_array(genus_array):
 
 
 # ============================================================================
-# Raster utilities
+# Column conventions
 # ============================================================================
 
-def rasterize_polygons_to_template(vector_path, template_raster_path, out_path,
-                                   field=None, default_value=1, dtype='uint8',
-                                   nodata=0, all_touched=True):
-    """
-    Burn polygons from `vector_path` onto the grid of `template_raster_path`.
+def stock_columns(ecosystem):
+    """The four per-pool stock columns this module writes for an ecosystem, in write order (Mg C)."""
+    return [f'{ecosystem}_agb_c_total_mg', f'{ecosystem}_bgb_c_total_mg',
+            f'{ecosystem}_soil_c_total_mg', f'{ecosystem}_total_c_stock_mg']
 
-    Defaults produce a binary mask. Pass `field` to burn a numeric attribute
-    (e.g., country id). Vectors are reprojected into the template CRS as needed.
+
+def stock_to_value_columns(ecosystem):
+    """Stock column -> storage-value column, in write order; the last pair is the ecosystem total.
+
+    The ecosystem's own total drops the pool word (`mangrove_storage_value`), because that is
+    the column gep_calculation sums across ecosystems.
     """
-    gdf = gpd.read_file(vector_path)
-    with rasterio.open(template_raster_path) as src:
-        template_crs = src.crs
-        if gdf.crs != template_crs:
-            gdf = gdf.to_crs(template_crs)
-        meta = src.meta.copy()
-        meta.update({'count': 1, 'dtype': dtype, 'nodata': nodata, 'compress': 'lzw'})
-        if field is None:
-            shapes = ((geom, default_value) for geom in gdf.geometry if geom is not None)
+    agb, bgb, soil, total = stock_columns(ecosystem)
+    return {agb: f'{ecosystem}_agb_storage_value',
+            bgb: f'{ecosystem}_bgb_storage_value',
+            soil: f'{ecosystem}_soil_storage_value',
+            total: f'{ecosystem}_storage_value'}
+
+
+# ============================================================================
+# Per-pixel stock, accumulated per region
+# ============================================================================
+
+def pixel_stock_sums(mask_block, region_id_block, ha_per_cell_block, latitude_block,
+                     density_func, n_region_ids, extras=None):
+    """Per-region carbon stock (Mg C) contributed by one block of pixels.
+
+    Density is evaluated at each pixel's latitude -- plus whatever extra per-pixel rasters the
+    ecosystem's density function takes -- multiplied by the pixel's hectares, and accumulated
+    into the region the pixel falls in. A pixel counts only where the habitat mask is set, a
+    region id is present, and the cell has area. A NaN soil density (a nodata pixel inside an
+    external SOC raster) contributes zero instead of poisoning its region's total.
+
+    Returns a dict keyed 'agb', 'bgb', 'soil', 'total', each a float array of length
+    n_region_ids indexed by region id.
+    """
+    valid = (mask_block > 0) & (region_id_block > 0) & (ha_per_cell_block > 0)
+    densities = density_func(latitude_block, **(extras or {}))
+
+    ha_valid = ha_per_cell_block[valid]
+    region_valid = region_id_block[valid].astype(np.int64)
+    agb_pixels = ha_valid * densities['agb_c_mg_per_ha'][valid]
+    bgb_pixels = ha_valid * densities['bgb_c_mg_per_ha'][valid]
+    soil_pixels = ha_valid * np.nan_to_num(densities['soil_c_mg_per_ha'][valid], nan=0.0)
+
+    return {
+        'agb': np.bincount(region_valid, weights=agb_pixels, minlength=n_region_ids),
+        'bgb': np.bincount(region_valid, weights=bgb_pixels, minlength=n_region_ids),
+        'soil': np.bincount(region_valid, weights=soil_pixels, minlength=n_region_ids),
+        'total': np.bincount(region_valid, weights=agb_pixels + bgb_pixels + soil_pixels,
+                             minlength=n_region_ids),
+    }
+
+
+def stock_by_region_frame(region_ids, sums, ecosystem, id_col):
+    """The accumulated per-region sums as a frame, one row per region id in the order given."""
+    ids = [int(region_id) for region_id in region_ids]
+    agb, bgb, soil, total = stock_columns(ecosystem)
+    return pd.DataFrame({
+        id_col: ids,
+        agb: [sums['agb'][region_id] for region_id in ids],
+        bgb: [sums['bgb'][region_id] for region_id in ids],
+        soil: [sums['soil'][region_id] for region_id in ids],
+        total: [sums['total'][region_id] for region_id in ids],
+    })
+
+
+# ============================================================================
+# Habitat extent on the marine surface
+# ============================================================================
+
+def intersect_features_with_regions(gdf_features, gdf_regions, desc):
+    """Clip a habitat layer to each region, keeping the region's attributes on every piece.
+
+    Region by region rather than one bulk overlay, so a global run stays legible behind a
+    progress bar. Two things keep it from being slow:
+
+    The candidate set comes from the spatial index's `intersects` predicate rather than a
+    bounding-box hit. Coastal habitat is long and thin while an EEZ region is huge, so a box
+    test returns almost the whole layer; asking for real intersections drops about four fifths
+    of it.
+
+    A polygon that lies WHOLLY inside a region does not need clipping at all, only the region's
+    attributes, and about nine in ten of them do. Only the boundary-straddling remainder goes
+    through the overlay, which is the expensive part. On the largest regions that turns roughly
+    165,000 overlay inputs into 18,000.
+
+    Regions the habitat does not reach contribute no rows.
+    """
+    feature_sindex = gdf_features.sindex
+    region_columns = [c for c in gdf_regions.columns if c != 'geometry']
+    pieces = []
+    for _, region in tqdm(gdf_regions.iterrows(), total=len(gdf_regions), desc=desc):
+        touching = feature_sindex.query(region.geometry, predicate='intersects')
+        if not len(touching):
+            continue
+        wholly_inside = set(feature_sindex.query(region.geometry, predicate='contains').tolist())
+
+        inside_positions = [i for i in touching if i in wholly_inside]
+        if inside_positions:
+            whole = gdf_features.iloc[inside_positions].reset_index(drop=True)
+            for column in region_columns:
+                whole[column] = region[column]
+            pieces.append(whole)
+
+        cut_positions = [i for i in touching if i not in wholly_inside]
+        if cut_positions:
+            region_gdf = gpd.GeoDataFrame([region], crs=gdf_regions.crs)
+            clipped = gpd.overlay(gdf_features.iloc[cut_positions], region_gdf,
+                                  how='intersection')
+            if not clipped.empty:
+                pieces.append(clipped)
+
+    if not pieces:
+        raise ValueError(f'No intersections found ({desc}).')
+    return gpd.GeoDataFrame(pd.concat(pieces, ignore_index=True), crs=gdf_regions.crs)
+
+
+def add_equal_area_ha(gdf):
+    """Polygon extent measured on the equal-area grid, in m2 and hectares.
+
+    The returned frame is in the equal-area projection, which is what the polygon-level outputs
+    are written in.
+    """
+    gdf = gdf.to_crs(epsg=EQUAL_AREA_EPSG)
+    gdf['area_m2'] = gdf.geometry.area
+    gdf['area_ha'] = gdf['area_m2'] / M2_PER_HA
+    return gdf
+
+
+def area_by_region(gdf_pieces, gdf_regions, id_col, how):
+    """Hectares of habitat per region, carrying the region's attributes and geometry.
+
+    `how` is the merge onto the region table: 'right' keeps every region, so a region with no
+    habitat reports zero hectares; 'left' keeps only the regions the habitat reaches.
+    """
+    totals = gdf_pieces.groupby(id_col)['area_ha'].sum().reset_index()
+    totals = totals.merge(gdf_regions, how=how, on=id_col)
+    totals['area_ha'] = totals['area_ha'].fillna(0)
+    # The merge on the region id brought each region's geometry; never attach it by row position.
+    return gpd.GeoDataFrame(totals, geometry='geometry', crs=gdf_regions.crs)
+
+
+def seagrass_stock_by_region(gdf_pieces, id_col):
+    """Per-region seagrass stock (Mg C): each polygon's genus density times its hectares.
+
+    Seagrass is the one habitat whose density is an attribute of the polygon rather than of the
+    pixel, so it is aggregated from the clipped polygons instead of a streamed raster pass.
+    """
+    densities = calculate_seagrass_pool_densities_array(gdf_pieces['GENUS'].values)
+    area_ha = gdf_pieces['area_ha'].values.astype(np.float64)
+    agb, bgb, soil, total = stock_columns('seagrass')
+    per_polygon = pd.DataFrame({
+        id_col: gdf_pieces[id_col].values,
+        agb: densities['agb_c_mg_per_ha'] * area_ha,
+        bgb: densities['bgb_c_mg_per_ha'] * area_ha,
+        soil: densities['soil_c_mg_per_ha'] * area_ha,
+        total: densities['total_c_mg_per_ha'] * area_ha,
+    })
+    return per_polygon.groupby(id_col)[[agb, bgb, soil, total]].sum().reset_index()
+
+
+# ============================================================================
+# Physical stock -> GEP
+# ============================================================================
+
+def rental_price_for_year(df_prices, year, price_column):
+    """The rental social cost of carbon a year's stock is valued at ($ per Mg C)."""
+    return float(df_prices.loc[df_prices['year'] == year, price_column].iloc[0])
+
+
+def apply_rental_price(df_stock, stock_to_value, rental_scc, year, price_column):
+    """Physical to GEP: every pool's stock (Mg C) priced at the rental SCC ($ per Mg C).
+
+    The price and the year travel with the values so the written table states what it was
+    valued at rather than leaving it to the filename.
+    """
+    df = df_stock.copy()
+    df['year'] = year
+    df[price_column] = rental_scc
+    for stock_col, value_col in stock_to_value.items():
+        df[value_col] = df[stock_col] * rental_scc
+    return df
+
+
+def combine_ecosystem_areas_and_stocks(area_frames, stock_frames, df_regions, id_col):
+    """One row per region: each habitat's area and per-pool stock, plus the two totals.
+
+    `area_frames` and `stock_frames` map ecosystem -> frame. An ecosystem absent from a mapping
+    contributes zero columns rather than dropping the region, which is how a run built without
+    seagrass still reports a coastal total.
+    """
+    df_combined = None
+    for ecosystem in COASTAL_ECOSYSTEMS:
+        if ecosystem not in area_frames:
+            continue
+        area = area_frames[ecosystem][[id_col, 'area_ha']].rename(
+            columns={'area_ha': f'{ecosystem}_area_ha'})
+        df_combined = area if df_combined is None else df_combined.merge(
+            area, on=id_col, how='outer')
+
+    area_cols = [f'{ecosystem}_area_ha' for ecosystem in COASTAL_ECOSYSTEMS]
+    for ecosystem in COASTAL_ECOSYSTEMS:
+        if ecosystem not in area_frames:
+            df_combined[f'{ecosystem}_area_ha'] = 0
+    df_combined[area_cols] = df_combined[area_cols].fillna(0)
+    df_combined['total_coastal_carbon_area_ha'] = df_combined[area_cols].sum(axis=1)
+
+    for ecosystem in COASTAL_ECOSYSTEMS:
+        cols = stock_columns(ecosystem)
+        if ecosystem in stock_frames:
+            df_combined = df_combined.merge(
+                stock_frames[ecosystem][[id_col] + cols], on=id_col, how='left')
         else:
-            shapes = (
-                (geom, val)
-                for geom, val in zip(gdf.geometry, gdf[field])
-                if geom is not None and pd.notna(val)
-            )
-        arr = rasterio.features.rasterize(
-            shapes=shapes,
-            out_shape=(src.height, src.width),
-            fill=nodata,
-            transform=src.transform,
-            dtype=dtype,
-            all_touched=all_touched,
-        )
-        with rasterio.open(out_path, 'w', **meta) as dst:
-            dst.write(arr, 1)
-    return out_path
+            for col in cols:
+                df_combined[col] = 0
+    all_stock_cols = [col for ecosystem in COASTAL_ECOSYSTEMS for col in stock_columns(ecosystem)]
+    df_combined[all_stock_cols] = df_combined[all_stock_cols].fillna(0)
+    df_combined['total_carbon_stock_mg'] = df_combined[
+        [f'{ecosystem}_total_c_stock_mg' for ecosystem in COASTAL_ECOSYSTEMS]].sum(axis=1)
+
+    return df_combined.merge(df_regions, on=id_col, how='left')
 
 
-def align_raster_to_template(src_raster_path, template_raster_path, out_path,
-                             resampling='average', dtype=None):
+def coastal_carbon_storage_value_frame(df_areas, df_price, value_frames, id_col, base_year):
+    """The marine-surface (r566) GEP frame: every habitat's storage value and their sum.
+
+    The per-ecosystem storage_value tasks own stock x price; this merges their totals rather
+    than recomputing them, so the same fact cannot drift between two places. A region absent
+    from an ecosystem's table carries no value there, matching the zero stock in the combined
+    table. Regions with no coastal habitat at all are dropped -- they are ocean rows, not
+    zero-value countries.
     """
-    Reproject and resample a source raster to match the grid of a template raster.
+    df_gep = df_areas.copy()
+    df_gep['year'] = base_year
+    df_gep = df_gep.merge(df_price, on='year', how='left')
 
-    Used to bring external products like Sanderman 2018 SOC or Maxwell 2024
-    MarSOC onto the ha_per_cell template so they can be read in lockstep with
-    the windowed streaming pass. If `out_path` already exists, returns it
-    directly without recomputing.
+    for ecosystem in COASTAL_ECOSYSTEMS:
+        value_col = f'{ecosystem}_storage_value'
+        df_gep = df_gep.merge(value_frames[ecosystem][[id_col, value_col]], on=id_col, how='left')
+        df_gep[value_col] = df_gep[value_col].fillna(0)
+    df_gep['coastal_carbon_storage_value'] = df_gep[
+        [f'{ecosystem}_storage_value' for ecosystem in COASTAL_ECOSYSTEMS]].sum(axis=1)
+
+    return df_gep[df_gep['total_coastal_carbon_area_ha'] > 0]
+
+
+def eez_storage_value_by_iso3(df_r566, region_label_col='eemarine_r566_label'):
+    """The marine surface reduced to the rows that carry a country's coastal value.
+
+    The r566 surface holds an `_EEZ` row per country AND land/territorial rows for the same
+    coast, so summing every row counts habitat that the EEZ row already carries. Keeping only
+    the `_EEZ` rows is the service's open question, not a cleanup step: it is the difference
+    between the EEZ-only total and the all-rows total, and the two are reported as such.
     """
-    if os.path.exists(out_path):
-        return out_path
-
-    resampling_method = getattr(Resampling, resampling)
-    with rasterio.open(template_raster_path) as tmpl, \
-         rasterio.open(src_raster_path) as src:
-        out_dtype = dtype or src.dtypes[0]
-        out_meta = tmpl.meta.copy()
-        out_meta.update({
-            'count': 1,
-            'dtype': out_dtype,
-            'nodata': src.nodata if src.nodata is not None else 0,
-            'compress': 'lzw',
-        })
-        with rasterio.open(out_path, 'w', **out_meta) as dst:
-            rasterio.warp.reproject(
-                source=rasterio.band(src, 1),
-                destination=rasterio.band(dst, 1),
-                src_transform=src.transform,
-                src_crs=src.crs,
-                dst_transform=tmpl.transform,
-                dst_crs=tmpl.crs,
-                resampling=resampling_method,
-            )
-    return out_path
+    is_eez = df_r566[region_label_col].astype(str).str.endswith(EEZ_LABEL_SUFFIX)
+    return (df_r566[is_eez][['iso3_r250_label', 'coastal_carbon_storage_value']]
+            .rename(columns={'coastal_carbon_storage_value': 'value'}))
 
 
-# ============================================================================
-# Per-country streaming carbon stock pass
-# ============================================================================
+def collapse_to_iso3_r250(df_value_by_iso3, df_r264):
+    """One row per country: the marine values joined onto the canonical r264 row per country.
 
-def compute_carbon_stock_by_country(ecosystem_mask_path, country_id_raster_path,
-                                    ha_per_cell_path, density_func, country_ids,
-                                    chunk_rows=2048, extra_raster_paths=None):
+    The r264 correspondence splits large countries into sub-regions, so it is filtered to
+    `ee_r264_label == iso3_r250_label` first -- without that, the join repeats a split country
+    once per sub-region and the sum multiplies its value. Countries with no coastal value
+    report zero rather than dropping out of the table.
     """
-    Stream a global per-pixel carbon stock calculation aggregated per country.
+    canonical = df_r264[df_r264['ee_r264_label'] == df_r264['iso3_r250_label']]
+    df_merged = canonical.merge(df_value_by_iso3, on='iso3_r250_label', how='left')
+    df_merged['value'] = df_merged['value'].fillna(0)
 
-    For each row-block, computes density(latitude, **extras) x ha_per_cell x mask
-    and accumulates per-country totals via np.bincount.
-
-    Parameters
-    ----------
-    ecosystem_mask_path : str
-        Binary 0/1 mask aligned to ha_per_cell (any positive value is treated as 1).
-    country_id_raster_path : str
-        Integer country-id raster on the same grid (0 = nodata / outside).
-    ha_per_cell_path : str
-        Hectares-per-cell raster on the same grid; must have a geographic CRS.
-    density_func : callable
-        density_func(lat_array, **extras) -> dict with 'agb_c_mg_per_ha',
-        'bgb_c_mg_per_ha', 'soil_c_mg_per_ha', 'total_c_mg_per_ha'.
-    country_ids : iterable[int]
-        Set of valid country ids (used to size accumulators and order output rows).
-    chunk_rows : int
-        Row-block size to read per iteration.
-    extra_raster_paths : dict[str, str], optional
-        Mapping kwarg name -> raster path. Each raster must be aligned to the
-        ha_per_cell grid (use align_raster_to_template). The block is read per
-        chunk and passed as a kwarg to density_func.
-
-    Returns
-    -------
-    pandas.DataFrame
-        Columns: eemarine_r566_id, agb_c_total_mg, bgb_c_total_mg,
-        soil_c_total_mg, total_c_total_mg.
-    """
-    country_ids = np.asarray(list(country_ids), dtype=np.int64)
-    max_id = int(country_ids.max()) + 1
-    extra_raster_paths = extra_raster_paths or {}
-
-    with contextlib.ExitStack() as stack:
-        src_ha = stack.enter_context(rasterio.open(ha_per_cell_path))
-        src_mask = stack.enter_context(rasterio.open(ecosystem_mask_path))
-        src_cid = stack.enter_context(rasterio.open(country_id_raster_path))
-        extra_srcs = {
-            name: stack.enter_context(rasterio.open(path))
-            for name, path in extra_raster_paths.items()
-        }
-
-        if not src_ha.crs.is_geographic:
-            raise ValueError(
-                f"ha_per_cell raster must be in a geographic CRS (degrees); got {src_ha.crs}"
-            )
-        height, width = src_ha.height, src_ha.width
-        transform = src_ha.transform
-
-        agb_sum = np.zeros(max_id, dtype=np.float64)
-        bgb_sum = np.zeros(max_id, dtype=np.float64)
-        soil_sum = np.zeros(max_id, dtype=np.float64)
-        total_sum = np.zeros(max_id, dtype=np.float64)
-
-        for row_off in tqdm(
-            range(0, height, chunk_rows),
-            desc=f"Stock {os.path.basename(ecosystem_mask_path)}",
-        ):
-            rows = min(chunk_rows, height - row_off)
-            window = rasterio.windows.Window(0, row_off, width, rows)
-            mask_arr = src_mask.read(1, window=window)
-            if mask_arr.sum() == 0:
-                continue
-            ha_arr = src_ha.read(1, window=window).astype(np.float64)
-            cid_arr = src_cid.read(1, window=window)
-
-            row_indices = np.arange(row_off, row_off + rows)
-            lats_col = np.array(
-                [rasterio.transform.xy(transform, r, 0, offset='center')[1]
-                 for r in row_indices],
-                dtype=np.float64,
-            )
-            lat_arr = np.broadcast_to(lats_col[:, None], (rows, width))
-
-            valid = (mask_arr > 0) & (cid_arr > 0) & (ha_arr > 0)
-            if not valid.any():
-                continue
-
-            extras = {}
-            for name, src in extra_srcs.items():
-                arr = src.read(1, window=window).astype(np.float64)
-                if src.nodata is not None:
-                    arr = np.where(arr == src.nodata, np.nan, arr)
-                extras[name] = arr
-
-            d = density_func(lat_arr, **extras)
-            ha_v = ha_arr[valid]
-            cid_v = cid_arr[valid].astype(np.int64)
-
-            agb_pix = ha_v * d['agb_c_mg_per_ha'][valid]
-            bgb_pix = ha_v * d['bgb_c_mg_per_ha'][valid]
-            soil_pix = ha_v * np.nan_to_num(d['soil_c_mg_per_ha'][valid], nan=0.0)
-            total_pix = agb_pix + bgb_pix + soil_pix
-
-            agb_sum += np.bincount(cid_v, weights=agb_pix, minlength=max_id)
-            bgb_sum += np.bincount(cid_v, weights=bgb_pix, minlength=max_id)
-            soil_sum += np.bincount(cid_v, weights=soil_pix, minlength=max_id)
-            total_sum += np.bincount(cid_v, weights=total_pix, minlength=max_id)
-
-    rows_out = []
-    for cid in country_ids:
-        cid_i = int(cid)
-        rows_out.append({
-            'eemarine_r566_id': cid_i,
-            'agb_c_total_mg': agb_sum[cid_i],
-            'bgb_c_total_mg': bgb_sum[cid_i],
-            'soil_c_total_mg': soil_sum[cid_i],
-            'total_c_total_mg': total_sum[cid_i],
-        })
-    return pd.DataFrame(rows_out)
-
-
-# ============================================================================
-# Per-ecosystem stock orchestrators
-# ============================================================================
-
-def compute_mangrove_carbon_stock_with_sanderman(
-    project_dir,
-    mangrove_mask_path,
-    country_id_raster_path,
-    ha_per_cell_path,
-    country_ids,
-    sanderman_soc_path=None,
-    precipitation_path=None,
-):
-    """
-    Single-call orchestrator for per-pixel mangrove carbon stock by country.
-
-    Aligns Sanderman 2018 SOC and (optionally) a precipitation raster onto the
-    ha_per_cell grid (cached on disk under project_dir), then streams a global
-    carbon stock pass.
-    """
-    extra_raster_paths = {}
-
-    if sanderman_soc_path and os.path.exists(sanderman_soc_path):
-        soc_aligned = os.path.join(project_dir, "sanderman_soc_aligned_10sec.tif")
-        align_raster_to_template(sanderman_soc_path, ha_per_cell_path, soc_aligned,
-                                 resampling='average', dtype='float32')
-        extra_raster_paths['soc_arr'] = soc_aligned
-        print(f"  Mangrove SOC source: Sanderman 2018 raster ({sanderman_soc_path})")
-    else:
-        print("  Mangrove SOC source: latitude step function fallback")
-
-    if precipitation_path and os.path.exists(precipitation_path):
-        precip_aligned = os.path.join(project_dir, "precipitation_aligned_10sec.tif")
-        align_raster_to_template(precipitation_path, ha_per_cell_path, precip_aligned,
-                                 resampling='average', dtype='float32')
-        extra_raster_paths['precipitation_arr'] = precip_aligned
-        print(f"  Mangrove BGB ratio: IPCC zones using precipitation ({precipitation_path})")
-    else:
-        print("  Mangrove BGB ratio: latitude-only IPCC zones (tropics treated as wet)")
-
-    return compute_carbon_stock_by_country(
-        ecosystem_mask_path=mangrove_mask_path,
-        country_id_raster_path=country_id_raster_path,
-        ha_per_cell_path=ha_per_cell_path,
-        density_func=calculate_mangrove_density_array,
-        country_ids=country_ids,
-        extra_raster_paths=extra_raster_paths,
-    )
-
-
-def compute_salt_marsh_carbon_stock_with_maxwell(
-    project_dir,
-    salt_marsh_mask_path,
-    country_id_raster_path,
-    ha_per_cell_path,
-    country_ids,
-    maxwell_soc_path=None,
-):
-    """
-    Single-call orchestrator for per-pixel salt marsh carbon stock by country.
-
-    Aligns the Maxwell et al. 2024 MarSOC raster onto the ha_per_cell grid
-    (cached on disk under project_dir), then streams a global carbon stock pass.
-    """
-    extra_raster_paths = {}
-
-    if maxwell_soc_path and os.path.exists(maxwell_soc_path):
-        soc_aligned = os.path.join(project_dir, "maxwell_marsoc_aligned_10sec.tif")
-        align_raster_to_template(maxwell_soc_path, ha_per_cell_path, soc_aligned,
-                                 resampling='average', dtype='float32')
-        extra_raster_paths['soc_arr'] = soc_aligned
-        print(f"  Salt marsh SOC source: Maxwell 2024 MarSOC raster ({maxwell_soc_path})")
-    else:
-        print("  Salt marsh SOC source: latitude step function fallback")
-
-    return compute_carbon_stock_by_country(
-        ecosystem_mask_path=salt_marsh_mask_path,
-        country_id_raster_path=country_id_raster_path,
-        ha_per_cell_path=ha_per_cell_path,
-        density_func=calculate_salt_marsh_density_array,
-        country_ids=country_ids,
-        extra_raster_paths=extra_raster_paths,
-    )
+    metadata_cols = [c for c in df_merged.columns if c not in ('iso3_r250_label', 'value')]
+    agg = {'value': 'sum'}
+    agg.update({c: 'first' for c in metadata_cols})
+    return df_merged.groupby('iso3_r250_label', as_index=False).agg(agg)

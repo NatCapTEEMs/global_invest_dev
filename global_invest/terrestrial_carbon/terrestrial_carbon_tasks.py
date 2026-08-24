@@ -1,13 +1,71 @@
+import glob
 import os
+from tqdm import tqdm
+from osgeo import gdal
+
 import pandas as pd
 import hazelbean as hb
 import numpy as np
 
 
 from global_invest import utilities
-from global_invest.terrestrial_carbon import terrestrial_carbon_functions
+from global_invest.terrestrial_carbon import terrestrial_carbon_functions as tcf
 
 SPAWN_INTEGER_SCALE = 0.1  # raw Spawn tiles store carbon as integers x10; x0.1 recovers Mg C/ha
+
+
+
+def stack_layers_summary(group_layer1_path, group_layer2_path, value_layer_path,
+                         group1_name="group1", group2_name="group2", value_name="value"):
+    """A value raster summarized over the pairs of two category rasters.
+
+    Args:
+        group_layer1_path (str): first grouping raster.
+        group_layer2_path (str): second grouping raster, on the same grid.
+        value_layer_path (str): the raster being summarized, on the same grid.
+        group1_name (str): column the first grouping raster is written under.
+        group2_name (str): column the second grouping raster is written under.
+        value_name (str): stem of the four summary columns.
+
+    Returns:
+        pd.DataFrame: one row per (group1, group2) pair, carrying the mean, min, max and count
+        of the value raster over the cells where all three rasters are valid.
+    """
+    # hb.iterblocks streams the value raster block by block; the two category rasters share its grid, so
+    # read them at the same window (raw gdal -- hb has no aligned multi-raster block reader). A cell is
+    # kept only where all three are valid. Groupby per block, then
+    # combine: only ~thousands of (g1, g2) pairs, so the accumulator stays tiny and nothing 33 GB is
+    # written (unlike composite-key + zonal).
+    ds1 = gdal.Open(group_layer1_path); g1b = ds1.GetRasterBand(1)   # hold the datasets, else the band handle dies
+    ds2 = gdal.Open(group_layer2_path); g2b = ds2.GetRasterBand(1)
+    ndv1, ndv2 = g1b.GetNoDataValue(), g2b.GetNoDataValue()
+    dsv = gdal.Open(value_layer_path); ndv_val = dsv.GetRasterBand(1).GetNoDataValue()
+
+    parts = []
+    for offset, value_block in tqdm(hb.iterblocks((value_layer_path, 1)), desc="Summarizing blocks"):
+        w = (offset['xoff'], offset['yoff'], offset['win_xsize'], offset['win_ysize'])
+        v = value_block.astype('float32').ravel()
+        g1 = g1b.ReadAsArray(*w).ravel()
+        g2 = g2b.ReadAsArray(*w).ravel()
+
+        keep = ~np.isnan(v)
+        if ndv_val is not None: keep &= v != ndv_val
+        if ndv1 is not None: keep &= g1 != ndv1
+        if ndv2 is not None: keep &= g2 != ndv2
+        if not keep.any():   # block is all-nodata -- expected at raster edges
+            continue
+
+        block = pd.DataFrame({group1_name: g1[keep], group2_name: g2[keep], value_name: v[keep]})
+        parts.append(block.groupby([group1_name, group2_name], as_index=False)[value_name]
+                     .agg(_sum='sum', _min='min', _max='max', _count='count'))
+
+    summary = pd.concat(parts).groupby([group1_name, group2_name], as_index=False).agg(
+        _sum=('_sum', 'sum'), _min=('_min', 'min'), _max=('_max', 'max'), _count=('_count', 'sum'))
+    summary[f'{value_name}_mean'] = summary['_sum'] / summary['_count']
+    summary = summary.rename(columns={'_min': f'{value_name}_min', '_max': f'{value_name}_max',
+                                      '_count': f'{value_name}_count'})
+    return summary[[group1_name, group2_name, f'{value_name}_mean', f'{value_name}_min',
+                    f'{value_name}_max', f'{value_name}_count']]
 
 
 def publish_inputs(p):
@@ -24,6 +82,10 @@ def publish_inputs(p):
     return p
 
 
+def _raster_shape(raster_path):
+    return tuple(hb.get_raster_info_hb(raster_path)['raster_size'])
+
+
 def total_carbon_density(p):
     """
     Task to reproject the total carbon density raster to the project's coordinate reference system (CRS).
@@ -36,11 +98,12 @@ def total_carbon_density(p):
     if not p.run_this:
         return True
 
-    # Align the density raster to the base-year LULC grid. output_data_type=6 (Float32) keeps the
-    # carbon values (the LULC grid is uint8 and would round them); 'near' + NaN nodata preserve them exactly.
+    # Align the density raster to the base-year LULC grid. Float32 keeps the carbon values (the
+    # LULC grid is uint8 and would round them); 'near' + NaN nodata preserve them exactly.
     hb.resample_to_match(p.total_carbon_density_path, p.gep_lulc_input_path,
                          p.reprojected_total_carbon_density_path,
-                         resample_method='near', output_data_type=6, src_ndv=np.nan, ndv=np.nan)
+                         resample_method='near', output_data_type=tcf.GDAL_FLOAT32,
+                         src_ndv=np.nan, ndv=np.nan)
     return True
 
 
@@ -50,14 +113,14 @@ def carbon_density_table(p):
     if not p.run_this:
         return True
 
-    result = terrestrial_carbon_functions.stack_layers_to_csv(
+    summary = stack_layers_summary(
         group_layer1_path=p.gep_lulc_input_path,
         group_layer2_path=p.gep_quantity_input_path,
         value_layer_path=p.reprojected_total_carbon_density_path,
-        output_path=p.carbon_density_lookup_table_path,
         group1_name="lulc_id",
         group2_name="carbon_zone_id",
         value_name="carbon_density")
+    summary.to_csv(p.carbon_density_lookup_table_path, index=False)
     return True
 
 
@@ -66,10 +129,10 @@ def carbon_density_raster_base_year(p):
     p.carbon_density_raster_base_year_path = os.path.join(p.cur_dir, f"projected_carbon_density_{p.gep_base_year}.tif")
     if not p.run_this:
         return True
-    result = terrestrial_carbon_functions.generate_carbon_density_raster(
+    tcf.generate_carbon_density_raster(
         lulc_path=p.gep_lulc_input_path,
         cz_path=p.gep_quantity_input_path,
-        carbon_density_lookup_table_path=p.carbon_density_lookup_table_path,
+        density_lookup=tcf.carbon_density_lookup(pd.read_csv(p.carbon_density_lookup_table_path, index_col=False)),
         out_path=p.carbon_density_raster_base_year_path)
     return True
 
@@ -89,7 +152,7 @@ def carbon_by_region(p):
     p.carbon_by_region_base_year_path = os.path.join(p.cur_dir, "gep_by_country_base_year.csv")
     if not p.run_this:
         return True
-    result = terrestrial_carbon_functions.summarize_raster_by_region(
+    result = tcf.summarize_raster_by_region(
         value_raster_path=p.carbon_density_per_cell_base_year_path,
         region_boundary_path=p.gep_regions_input_path,
         out_path=p.carbon_by_region_base_year_path,
@@ -133,61 +196,34 @@ def gep_preprocess(p):
 
 
 def gep_calculation(p):
-    """ GEP calculation task for terrestrial carbon."""
+    """GEP valuation for terrestrial carbon: the r264 carbon quantity priced at the base-year
+    carbon price and collapsed to one row per country."""
     publish_inputs(p)
-    # Register what this task writes; the report renders from p.results.
-    service_results = {}
-    p.results['terrestrial_carbon'] = service_results
-    p.results['terrestrial_carbon']['gep_by_country_base_year'] = os.path.join(p.cur_dir, "gep_by_country_base_year.csv")
-    # Only register results this task actually writes. Per-year results (gep_by_country_year, gep_by_year)
-    # belong to a multi-year run and are registered there, not in this base-year valuation.
+    # Register what this task writes; the report renders from p.results. Only results this task
+    # actually writes: per-year results belong to a multi-year run and are registered there.
+    service_results, already_done = utilities.begin_gep_calculation(p, 'terrestrial_carbon')
+    if already_done:
+        return
 
-    if hb.path_all_exist(list(service_results.values())):
-        hb.log("All results already exist. Skipping GEP calculation for terrestrial carbon.")
-    else:
-        hb.log("Starting GEP calculation for terrestrial carbon.")
+    df_regions = hb.df_read(p.carbon_by_region_base_year_path)
+    df_price = pd.read_excel(p.gep_price_input_path)[[p.gep_price_convention, 'year']]
+    df_gep = tcf.collapse_regions_to_countries(df_regions, df_price, p.gep_price_convention)
+    hb.df_write(df_gep, service_results['gep_by_country_base_year'])
 
+    # Map only: r264-expanded, each sub-region carries its country's value, never summed.
+    gdf = hb.df_merge(p.gdf_countries_simplified,
+                      tcf.expand_country_values_to_regions(df_regions, df_gep),
+                      how='outer', left_on='ee_r264_id', right_on='ee_r264_id')
+    gdf.to_file(service_results['gep_by_country_base_year'].replace('.csv', '.gpkg'), driver='GPKG')
 
-        # 1. Per-region (r264) carbon quantity -> aggregate to one row per COUNTRY (r250).
-        df_carbon_q264 = pd.read_csv(p.carbon_by_region_base_year_path)
-        df_carbon_q250 = (
-            df_carbon_q264
-            .groupby(['iso3_r250_id', 'year'], as_index=False)['total']
-            .sum()
-            .rename(columns={'total': 'terrestrial_carbon_quantity'})
-        )
+    value_gep_base_year = df_gep['terrestrial_carbon_gep'].sum()
+    hb.log(f"Total GEP value for base year {p.gep_base_year}: {value_gep_base_year}")
+    return value_gep_base_year
 
-        # 2. Country-level (r250) GEP = quantity * price. ONE row per country: this is the source of truth
-        #    for the CSV, the national total and every aggregation. The r264-expanded table (used for the
-        #    map below) repeats a country's GEP across its sub-regions -- China spans 6 r264 rows, India 6,
-        #    France/Turkey/UK/Pakistan 2 -- so summing it double-counts split countries (~23% too high).
-        #    Only the map ever touches the r264 rows, and it never sums them.
-        df_carbon_p = pd.read_excel(p.gep_price_input_path)[[p.gep_price_convention, 'year']]
-        df_gep_250 = df_carbon_q250.merge(df_carbon_p, how='left', on='year')
-        df_gep_250['terrestrial_carbon_gep'] = df_gep_250['terrestrial_carbon_quantity'] * df_gep_250[p.gep_price_convention]
-
-        # Attach per-country attributes (one row per iso3 from the correspondence) and write the per-country CSV.
-        attr_cols = ['iso3_r250_id', 'iso3_r250_label', 'iso3_r250_name',
-                     'continent', 'region_un', 'region_wb', 'income_grp', 'subregion']
-        keep_cols = attr_cols + ['year', 'terrestrial_carbon_quantity', p.gep_price_convention, 'terrestrial_carbon_gep']
-        df_gep_by_country_base_year = df_gep_250.merge(
-            df_carbon_q264[attr_cols].drop_duplicates('iso3_r250_id'), how='left', on='iso3_r250_id')[keep_cols]
-        hb.df_write(df_gep_by_country_base_year, p.results['terrestrial_carbon']['gep_by_country_base_year'])
-
-        # 3. Map only: attach each country's GEP to the r264 boundary geometry for the choropleth (each
-        #    sub-region shows its country's value). These rows are for plotting and must never be summed.
-        df_regions = df_carbon_q264.merge(df_gep_250[['iso3_r250_id', 'terrestrial_carbon_gep']], how='left', on='iso3_r250_id')
-        gdf_gep_by_country_base_year = hb.df_merge(p.gdf_countries_simplified, df_regions, how='outer', left_on='ee_r264_id', right_on='ee_r264_id')
-        gdf_gep_by_country_base_year.to_file(p.results['terrestrial_carbon']['gep_by_country_base_year'].replace('.csv', '.gpkg'), driver='GPKG')
-
-        # 4. National total = sum over the one-row-per-country table.
-        value_gep_base_year = df_gep_by_country_base_year['terrestrial_carbon_gep'].sum()
-        hb.log(f"Total GEP value for base year {p.gep_base_year}: {value_gep_base_year}")
-
-        return value_gep_base_year
 
 def gep_result(p):
-    """Render the results report(s) via utilities.render_service_results."""
+    """Render the results report(s). Shared implementation in utilities."""
+    publish_inputs(p)
     utilities.render_service_results(p)
 
 def gep_load_results(p):
@@ -203,25 +239,82 @@ def gep_load_results(p):
             f"Run the calculation first (run_terrestrial_carbon.py), then re-run results.")
     p.results.setdefault('terrestrial_carbon', {})
     p.results['terrestrial_carbon']['gep_by_country_base_year'] = result_path
-        
+
 # =============================================================================
 # ES-shock tasks. These feed the GTAP shock; the GEP valuation above is a separate
 # consumer of the same carbon-density front-end. Neither depends on the other.
 # =============================================================================
 
+def _zone_mean(p, scenario, year, density_lookup):
+    """Mean carbon density per boundary polygon for one scenario map year.
+
+    Both stages are cached in the task dir so a partial re-run picks up where it stopped. The
+    polygon geometry is identical across scenarios, so the mean is sufficient and area cancels.
+    """
+    density_path = os.path.join(p.cur_dir, 'carbon_density_%s_%d.tif' % (scenario, year))
+    if not os.path.exists(density_path):
+        tcf.generate_carbon_density_raster(
+            lulc_path=p.scenario_lulc_paths[scenario][year],
+            cz_path=p.terrestrial_quantity_input_path,
+            density_lookup=density_lookup,
+            out_path=density_path)
+    summary_path = os.path.join(p.cur_dir, 'carbon_by_zone_%s_%d.csv' % (scenario, year))
+    if not os.path.exists(summary_path):
+        tcf.summarize_raster_by_region(density_path, p.region_boundary_path, summary_path,
+                                       year=year, id_column=p.terrestrial_carbon_shock_id_col)
+    return hb.df_read(summary_path).set_index('region_id')[
+        getattr(p, 'terrestrial_carbon_shock_value_col', 'mean')]
+
+
+def _align_zones_to_lulc_grid(p, reference_lulc_path):
+    """Point p.terrestrial_quantity_input_path at a carbon-zones raster on the reference map's grid.
+
+    generate_carbon_density_raster asserts LULC and carbon zones share a grid. The zones raster is
+    global 300 m and a SEALS LULC map may be a sub-window (single-country or short-horizon test
+    AOI). Same resolution and an aligned grid, so nearest is a lossless clip and the task works at
+    any extent. The clip is cached: the zones raster does not change between runs.
+    """
+    if _raster_shape(p.terrestrial_quantity_input_path) == _raster_shape(reference_lulc_path):
+        return
+    aligned_path = os.path.join(p.cur_dir, 'carbon_zones_aligned.tif')
+    if not os.path.exists(aligned_path):
+        hb.resample_to_match(p.terrestrial_quantity_input_path, reference_lulc_path,
+                             aligned_path, resample_method='near')
+    p.terrestrial_quantity_input_path = aligned_path
+
+
+def _inject_base_year_map(p, base_scenario, base_year, reference_lulc_path):
+    """Register the ES-shared SEALS7 base-year map as the baseline's base-year map, so the
+    fixed-base denominator can be measured on it.
+
+    NEVER p.base_year_lulc_path: SEALS OWNS that attribute and overwrites it at runtime with its
+    raw-ESA source, and the density lookup is keyed on SEALS7 classes, so a raw-ESA base map yields
+    all-NaN densities. A carbon-specific terrestrial_carbon_base_year_lulc_path overrides if a
+    caller sets one. The aligned copy is rebuilt every run because the map it comes from can change
+    while the aligned filename does not.
+    """
+    base_map = (getattr(p, 'terrestrial_carbon_base_year_lulc_path', None)
+                or getattr(p, 'es_base_year_lulc_path', None))
+    if not base_map or base_year in p.scenario_lulc_paths.get(base_scenario, {}):
+        return
+    if not os.path.isabs(base_map):
+        base_map = p.get_path(base_map)
+    if _raster_shape(base_map) != _raster_shape(reference_lulc_path):
+        aligned_path = os.path.join(p.cur_dir, 'lulc_base_year_aligned.tif')
+        hb.resample_to_match(base_map, reference_lulc_path, aligned_path, resample_method='near')
+        base_map = aligned_path
+    p.scenario_lulc_paths.setdefault(base_scenario, {})[base_year] = base_map
+
+
 def terrestrial_carbon_shock(p):
     """Turn per-scenario 300 m LULC into a carbon ES-productivity shock -- region-agnostic.
 
-    At each SEALS anchor year in es_shock_years (5-year MAgPIE steps), build a carbon-density
-    raster (generate_carbon_density_raster) for the baseline scenario and each scenario, and take
-    its mean tC/ha per polygon of p.region_boundary_path (summarize_raster_by_region -- untouched,
-    generic; the polygon geometry is identical across scenarios, so the mean is sufficient and area
-    cancels). The shock at year Y is (mean_scenario_Y - mean_baseline_Y) / mean_baseline_Y * 100 per
-    zone (contemporaneous /base_Y = the GTAP shock, column `shock_pct`), piecewise-linearly interpolated
-    across the anchor years (0 at base_year). ALSO emits a fixed-base measure (column `shock_pct_fixedbase`)
-    = same numerator / baseline density at base_year -- the "Value of Nature" % of base-year value, for
-    comparability with pollination (denominator decision). Emits an aoall table keyed by the boundary's ENDW/REG columns and p.terrestrial_carbon_shock_acts. The only region-specific knowledge is the column names,
-    supplied by the caller via p; nothing GTAP-specific is hardcoded.
+    At each SEALS anchor year in es_shock_years (5-year MAgPIE steps), measure the mean carbon
+    density per polygon of p.region_boundary_path for the baseline scenario and each scenario, and
+    hand those means to terrestrial_carbon_functions.dynamic_shock_rows, which reports both the
+    contemporaneous measure the GTAP shock reads (`shock_pct`) and the fixed-base measure
+    (`shock_pct_fixedbase`). The only region-specific knowledge is the boundary's column names,
+    supplied by the caller via p, so nothing GTAP-specific is hardcoded.
 
     Caller sets on p: es_shock_years (SEALS anchor years, from seals_years),
     scenario_lulc_paths {scenario: {year: path}} or es_lulc_path_template, es_shock_scenarios,
@@ -237,26 +330,18 @@ def terrestrial_carbon_shock(p):
         return
     import geopandas as gpd
 
-    # Locals bind seam attributes only under their OWN names (casting allowed); derived values
-    # get new names; single-use reads stay inline as p.<name>. No renaming: the base_year alias
-    # is what the gep_ rename sweep mangled, precisely because it hid the seam's name.
     # The export keys and boundary are SHIPPED DEFAULTS in es_parameters (GTAP r50xAEZ18 --
     # today's consumer family), hydrated as a defaults layer: a consumer's own tables win.
     utilities.hydrate_es_parameters(p, 'terrestrial_carbon', log=hb.log)
     base_scenario      = utilities.required_base_scenario(p, 'terrestrial_carbon')   # validated vs the caller's naming
     es_shock_base_year = int(p.es_shock_base_year)                # interp 0-anchor
     anchor_years = sorted(y for y in map(int, p.es_shock_years) if y > es_shock_base_year)  # SEALS anchors
-    end_year     = anchor_years[-1]
 
-    # Quantity raster + density lookup arrive from es_parameters with the export keys above
-    # (hydrated defaults; caller wins). The quantity ref equals es_config's gep_quantity cell --
-    # one fact stated twice in data, gated by test_shock_quantity_default_agrees_with_the_gep_cell.
     # Resolve the LULC map per scenario by globbing es_lulc_path_template ({scenario}/{year}
-    # placeholders) when the caller didn't pre-build scenario_lulc_paths. Globbing lives here so a
-    # project passes only a template string, not a path-building task.
+    # placeholders) when the caller didn't pre-build scenario_lulc_paths, so a project passes only
+    # a template string rather than a path-building task.
     scenarios = list(getattr(p, 'es_shock_scenarios', []))
     if not getattr(p, 'scenario_lulc_paths', None):
-        import glob
         tmpl = p.es_lulc_path_template
         p.scenario_lulc_paths = {
             scen: {y: glob.glob(tmpl.format(scenario=scen, year=y))[0]
@@ -265,95 +350,29 @@ def terrestrial_carbon_shock(p):
     if not scenarios:
         scenarios = [s for s in p.scenario_lulc_paths if s != base_scenario]
 
-    # generate_carbon_density_raster asserts LULC and carbon-zones share a grid. The zones raster is
-    # global 300 m; a SEALS LULC map may be a sub-window (single-country or short-horizon test AOI).
-    # When they differ, align the zones to the end-year LULC extent once -- same resolution and an
-    # aligned grid, so nearest is a lossless clip -- so the task works at any extent, not only global.
-    def _yx(path):
-        return tuple(hb.get_raster_info_hb(path)['raster_size'])
-    _ref_lulc = p.scenario_lulc_paths[base_scenario][end_year]
-    if _yx(p.terrestrial_quantity_input_path) != _yx(_ref_lulc):
-        _aligned_cz = os.path.join(p.cur_dir, 'carbon_zones_aligned.tif')
-        if not os.path.exists(_aligned_cz):
-            hb.resample_to_match(p.terrestrial_quantity_input_path, _ref_lulc, _aligned_cz, resample_method='near')
-        p.terrestrial_quantity_input_path = _aligned_cz
+    reference_lulc_path = p.scenario_lulc_paths[base_scenario][anchor_years[-1]]
+    _align_zones_to_lulc_grid(p, reference_lulc_path)
+    _inject_base_year_map(p, base_scenario, es_shock_base_year, reference_lulc_path)
 
-    def zone_mean(scenario, year):
-        dens = os.path.join(p.cur_dir, 'carbon_density_%s_%d.tif' % (scenario, year))
-        if not os.path.exists(dens):
-            terrestrial_carbon_functions.generate_carbon_density_raster(
-                lulc_path=p.scenario_lulc_paths[scenario][year],
-                cz_path=p.terrestrial_quantity_input_path,
-                carbon_density_lookup_table_path=p.terrestrial_carbon_density_lookup_table_path,
-                out_path=dens)
-        summ = os.path.join(p.cur_dir, 'carbon_by_zone_%s_%d.csv' % (scenario, year))
-        if not os.path.exists(summ):
-            terrestrial_carbon_functions.summarize_raster_by_region(dens, p.region_boundary_path, summ, year=year, id_column=p.terrestrial_carbon_shock_id_col)
-        return pd.read_csv(summ).set_index('region_id')[getattr(p, 'terrestrial_carbon_shock_value_col', 'mean')]
+    density_lookup = tcf.carbon_density_lookup(
+        pd.read_csv(p.terrestrial_carbon_density_lookup_table_path, index_col=False))
+    zone_labels = tcf.zone_labels_from_boundary(
+        gpd.read_file(p.region_boundary_path, engine='pyogrio'),
+        p.terrestrial_carbon_shock_id_col, p.terrestrial_carbon_shock_endw_col,
+        p.terrestrial_carbon_shock_reg_col, p.terrestrial_carbon_shock_endw_format)
 
-    # summarize_raster_by_region keys each zone by the boundary's stable id column (p.terrestrial_carbon_shock_id_col row),
-    # and DROPS empty zones, so map + align on that id, never on gpkg row position.
-    regions = gpd.read_file(p.region_boundary_path, engine='pyogrio')
-    def _fmt(v):
-        return (p.terrestrial_carbon_shock_endw_format % int(v)) if p.terrestrial_carbon_shock_endw_format is not None else v
-    labels = {(int(r[p.terrestrial_carbon_shock_id_col]) if p.terrestrial_carbon_shock_id_col in r.index else r.get('id', i)):
-              (_fmt(r[p.terrestrial_carbon_shock_endw_col]), r[p.terrestrial_carbon_shock_reg_col]) for i, r in regions.iterrows()}
-
-    # per-anchor-year zone means; shock_Y = (scenario_Y - baseline_Y)/baseline_Y * 100 (contemporaneous /base_Y),
-    # then piecewise-linear interp to annual values (0 at es_shock_base_year) -- one computed point per SEALS map year.
-    all_years = list(range(es_shock_base_year, end_year + 1))
-    base_by_year = {y: zone_mean(base_scenario, y) for y in anchor_years}
-
-    # FIXED-BASE denominator: baseline carbon density at the base year (the "Value of Nature"
-    # reference, % of base-year value). At es_shock_base_year every scenario shares the observed base map,
-    # so this is just that map's zone means. Emitted ALONGSIDE the contemporaneous shock so carbon
-    # and pollination are comparable on the fixed-base measure (denominator decision). Degrades to
-    # NaN if the base year isn't available, so shock_pct is never affected.
-    #
-    # Base map comes via the ES-shared p.es_base_year_lulc_path (SEALS7-classified), injected into
-    # scenario_lulc_paths[base_scenario][es_shock_base_year] exactly like erosion. NEVER p.base_year_lulc_path: SEALS
-    # OWNS it and overwrites it at runtime with its raw-ESA source, and the density lookup is keyed on
-    # SEALS7 classes, so a raw-ESA base map yields all-NaN densities. Align to the scenario grid first
-    # (categorical -> 'near' is a lossless clip; regenerate every run, no stale reuse). A carbon-specific
-    # terrestrial_carbon_base_year_lulc_path still overrides if a caller sets one.
-    _base_map = getattr(p, 'terrestrial_carbon_base_year_lulc_path', None) or getattr(p, 'es_base_year_lulc_path', None)
-    if _base_map and es_shock_base_year not in p.scenario_lulc_paths.get(base_scenario, {}):
-        _base_map = _base_map if os.path.isabs(_base_map) else p.get_path(_base_map)
-        if _yx(_base_map) != _yx(_ref_lulc):
-            _aligned_base = os.path.join(p.cur_dir, 'lulc_base_year_aligned.tif')
-            hb.resample_to_match(_base_map, _ref_lulc, _aligned_base, resample_method='near')
-            _base_map = _aligned_base
-        p.scenario_lulc_paths.setdefault(base_scenario, {})[es_shock_base_year] = _base_map
-    # erosion-style guard: only compute the fixed-base level if the base year is actually present.
-    base_at_base = zone_mean(base_scenario, es_shock_base_year) if es_shock_base_year in p.scenario_lulc_paths.get(base_scenario, {}) else None
+    baseline_by_year = {y: _zone_mean(p, base_scenario, y, density_lookup) for y in anchor_years}
+    # Only measure the fixed-base level if the base year is actually available; without it
+    # shock_pct_fixedbase degrades to NaN and shock_pct is untouched.
+    baseline_at_base_year = (_zone_mean(p, base_scenario, es_shock_base_year, density_lookup)
+                             if es_shock_base_year in p.scenario_lulc_paths.get(base_scenario, {}) else None)
 
     rows = []
     for scenario in scenarios:
-        scn_by_year = {y: zone_mean(scenario, y) for y in anchor_years}
-        num = {y: (scn_by_year[y] - base_by_year[y]) for y in anchor_years}  # shared numerator
-        # (1) contemporaneous /base_Y -- the GTAP shock (unchanged behaviour)
-        anchor_contemp = pd.DataFrame({
-            y: num[y] / base_by_year[y].replace(0, np.nan) * 100.0 for y in anchor_years}).dropna()
-        # (2) fixed-base /base_{es_shock_base_year} -- reporting/comparability measure
-        anchor_fixed = (pd.DataFrame({
-            y: num[y] / base_at_base.replace(0, np.nan) * 100.0 for y in anchor_years}).dropna()
-            if base_at_base is not None else None)
-        for zid, s in anchor_contemp.iterrows():
-            if zid not in labels:
-                continue
-            endw, reg = labels[zid]
-            annual_c = np.interp(all_years, [es_shock_base_year] + anchor_years, [0.0] + list(s.values))
-            if anchor_fixed is not None and zid in anchor_fixed.index:
-                annual_f = np.interp(all_years, [es_shock_base_year] + anchor_years,
-                                     [0.0] + list(anchor_fixed.loc[zid].values))
-            else:
-                annual_f = [np.nan] * len(all_years)
-            for year, vc, vf in zip(all_years, annual_c, annual_f):
-                # Explicit, same-named columns in both ES files (carbon + pollination) for the #14 diagnostic.
-                # shock_pct = the GTAP-primary alias (carbon primary = contemporaneous, so it equals shock_pct_contemp).
-                rows.append({'ENDW': endw, 'ACTS': p.terrestrial_carbon_shock_acts, 'REG': reg, 'scenario': scenario,
-                             'year': year, 'shock_pct': vc,
-                             'shock_pct_fixedbase': vf, 'shock_pct_contemp': vc})
+        rows += tcf.dynamic_shock_rows(
+            {y: _zone_mean(p, scenario, y, density_lookup) for y in anchor_years},
+            baseline_by_year, baseline_at_base_year, zone_labels, es_shock_base_year,
+            p.terrestrial_carbon_shock_acts, scenario)
 
     out = pd.DataFrame(rows)
     utilities.assert_shock_table_sound(out, scenarios, 'terrestrial_carbon')
@@ -387,7 +406,6 @@ def terrestrial_carbon_shock_static(p):
     utilities.hydrate_es_parameters(p, 'terrestrial_carbon', log=hb.log)   # shipped defaults; caller wins
     es_shock_base_year = int(p.es_shock_base_year)
     es_shock_end_year = int(p.es_shock_end_year)
-    n_years = es_shock_end_year - es_shock_base_year
     terrestrial_carbon_scenario_map = getattr(p, 'terrestrial_carbon_scenario_map', {})
     es_shock_scenarios = list(p.es_shock_scenarios)
     base_scenario = utilities.required_base_scenario(p, 'terrestrial_carbon')  # validated vs the caller's naming
@@ -398,13 +416,13 @@ def terrestrial_carbon_shock_static(p):
         print('  carbon shock: dependency csv not found (%s) -- skipping' % carb_path)
         return
 
-    df = pd.read_csv(carb_path)
+    df = hb.df_read(carb_path)
     # The base resolves through the same candidate mechanism as the data scenarios (and FATALLY if it
     # can't): the frozen tables spell the nature-off baseline two ways across services, and an
     # exact-match miss here gave an empty base -> empty output -> silent GTAP zero.
     raw_base = utilities.resolve_base_scenario(df['scenario'].values, terrestrial_carbon_scenario_map, base_scenario, 'terrestrial_carbon', log=hb.log)
     base = df[(df['scenario'] == raw_base) & (df['year'] == es_shock_end_year)]
-    base_vals = base.set_index(['ENDW', 'REG'])['percentage_change'].astype(float) * 100
+    base_vals = base.set_index(['ENDW', 'REG'])['percentage_change'].astype(float) * tcf.PERCENT
 
     rows = []
     for our_scn in es_shock_scenarios:
@@ -412,14 +430,9 @@ def terrestrial_carbon_shock_static(p):
         if raw_scn is None:
             continue
         scn = df[(df['scenario'] == raw_scn) & (df['year'] == es_shock_end_year)]
-        scn_vals = scn.set_index(['ENDW', 'REG'])['percentage_change'].astype(float) * 100
-        common = base_vals.index.intersection(scn_vals.index)
-        shock = (scn_vals.loc[common] - base_vals.loc[common]).dropna()
-        for year in range(es_shock_base_year, es_shock_end_year + 1):
-            frac = (year - es_shock_base_year) / n_years
-            for (endw, reg), val in shock.items():
-                rows.append({'ENDW': endw, 'ACTS': p.terrestrial_carbon_shock_acts, 'REG': reg,
-                             'scenario': our_scn, 'year': year, 'shock_pct': val * frac})
+        scn_vals = scn.set_index(['ENDW', 'REG'])['percentage_change'].astype(float) * tcf.PERCENT
+        rows += tcf.static_shock_rows(base_vals, scn_vals, our_scn, p.terrestrial_carbon_shock_acts,
+                                      es_shock_base_year, es_shock_end_year)
 
     out = pd.DataFrame(rows)
     utilities.assert_shock_table_sound(out, es_shock_scenarios, 'terrestrial_carbon')

@@ -12,7 +12,7 @@ model responds to how climate alters marine fish productivity along each scenari
 
 The other three services are computed from the pipeline's own 300 m SEALS land-use maps. Fisheries is
 **marine**: its productivity is not a function of terrestrial land cover, so nothing in the SEALS output
-can inform it. It therefore has no dynamic-from-maps variant, and `dynamic_es` does not apply to it —
+can inform it. It therefore has no dynamic-from-maps variant, and `dynamic_es` does not apply to it , 
 the seam grafts one task either way.
 
 This is a property of the service, not a gap in the implementation. A shock keyed to sea-surface
@@ -21,13 +21,13 @@ conditions cannot be derived from a land-cover map.
 ## Method
 
 Fish productivity change is taken from pre-computed marine projections, stored as `FI26`, `FI45` and
-`FI85` headers in `cwon_shocks.har` — one per representative concentration pathway. Each scenario is
+`FI85` headers in `cwon_shocks.har`, one per representative concentration pathway. Each scenario is
 matched to the header for the pathway closest to its temperature trajectory, the same RCP keying used
 for the climate crop-yield shock, so the marine and terrestrial climate signals stay consistent.
 
 Values are read per year over the horizon rather than frozen at an endpoint. For the current data this
 is equivalent to a constant, because the underlying series steps once and then plateaus across
-2023–2050; genuinely time-varying projections would flow through unchanged.
+2023–2050; time-varying projections would flow through unchanged.
 
 ## Capping
 
@@ -46,5 +46,5 @@ services which enter as factor-productivity terms.
 
 ## Compute
 
-Trivial — the task reads binary headers and writes a CSV, taking seconds. `run_fisheries.py` runs it
+Trivial, the task reads binary headers and writes a CSV, taking seconds. `run_fisheries.py` runs it
 standalone, needing only `cwon_shocks.har` for the configured aggregation.

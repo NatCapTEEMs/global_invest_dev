@@ -47,7 +47,7 @@ For each scenario, at each SEALS anchor year:
 8. **Annual series.** The per-anchor-year shocks are interpolated piecewise-linearly
    (`numpy.interp`) to annual values, anchored at 0 in the base year (all scenarios share the
    base-year land, so the shock is zero there by construction). Computing at every SEALS anchor
-   year — rather than only at the horizon — lets the series follow non-linear land trajectories
+   year (rather than only at the horizon) lets the series follow non-linear land trajectories
    instead of assuming a single straight ramp.
 
 ## Output

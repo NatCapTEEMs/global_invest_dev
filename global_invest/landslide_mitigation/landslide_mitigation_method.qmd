@@ -1,0 +1,246 @@
+---
+title: "Landslide mitigation: slope stability, avoided deaths, and their value"
+format: html
+---
+
+## Purpose
+
+Value the deaths that forest root cohesion averts by holding hillslopes together. The service is
+computed as a difference between two runs of the same model on the same grid: one in which forest
+roots reinforce the soil as the land-cover map says they do, and one in which root cohesion is
+removed entirely. Everything else -- terrain, soil, rainfall, population, roads, and the fitted
+statistical models -- is identical between the two, so the difference in predicted deaths is
+attributable to root reinforcement alone.
+
+This note describes what the code in `global_invest/landslide_mitigation/` does. The science is a
+fold of `m-braaksma/landslide_mitigation` v0.2.0 (folded 2026-08-16); the arithmetic lives in
+`landslide_mitigation_chain.py` as pure functions, the raster drivers in
+`landslide_mitigation_functions.py`, and the pipeline in `landslide_mitigation_tasks.py`.
+
+## Grid and inputs
+
+Everything is computed on the **NSIDC EASE-Grid 2.0 global 1km grid** (EPSG:6933), built from the
+authoritative `EASE2_M01km.gpd` grid definition rather than assumed. EASE-Grid is equal-area, so a
+pixel count converts to real area by one constant multiply and no latitude weighting is needed
+anywhere in the calculation. Every input is warped onto that exact grid and then checked against it for
+matching size, pixel resolution and projection before the model runs.
+
+| Input | Source | Resampling onto the 1km grid |
+|---|---|---|
+| Elevation | SEALS `alt_m.tif` (shared base data) | average |
+| Agro-ecological zones | FAO GAEZ v5 AEZ57 | mode (categorical) |
+| Forest cover | ESA-CCI annual land cover | class weights, then average |
+| Landslide events | UGLC point records | coordinate transform, not a warp |
+| Population | LandScan, per year | sum (conserves counts) |
+| Soil texture, organic carbon, bulk density | SoilGrids 0-5, 5-15, 15-30cm | thickness-weighted mean, then average |
+| Saturated conductivity | HiHydroSoil 0-5, 5-15, 15-30cm | thickness-weighted mean, then average |
+| Soil and sediment thickness | Pelletier/ORNL DAAC | average |
+| Mean annual precipitation | WorldClim BIO12 (1970-2000 normal) | average |
+| Annual maximum daily rainfall | ERA5-Land, per year | bilinear (upsampling) |
+| Road density | GRIP4 total density, m/km² | bilinear (upsampling) |
+
+The three soil-depth intervals are combined by their own thickness (5, 10 and 15cm), and only where
+each interval has data, so a pixel missing the deepest layer is the mean of the two shallower ones
+rather than a hole.
+
+Forest cover enters as a **root-reinforcement weight**, not as a binary forest mask. Closed-canopy
+and flooded tree-cover classes take weight 1; the two mosaic tree/shrub-herbaceous classes are 50/50
+land cover and take 0.5; sparse tree cover below 15% takes 0, as being below meaningful root
+reinforcement. Every other class is 0. Averaging that 0-1 weight field onto the 1km grid gives each
+pixel a fractional forest share.
+
+## Slope
+
+Slope is computed with `gdal.DEMProcessing` (Horn 1981) from the **raw** elevation at four times the
+target resolution (~250m) and then averaged down to 1km. Computing slope at 1km directly would
+flatten exactly the terrain the model is about. Because the grid is already in metres, no
+degree-to-metre scale factor enters.
+
+The elevation used for the hydrology is separately pit-filled at 1km: the trusted 300m DEM is already
+pit-filled, but averaging it down to 1km can create new local minima. D8 flow direction and flow
+accumulation run on the pit-filled version, and the accumulated pixel count is scaled to an upslope
+contributing area in m².
+
+## Slope stability with and without forest roots
+
+The stability model is the **infinite-slope** form used across the SHALSTAB / SINMAP / TRIGRS family.
+For every pixel,
+
+$$
+SI \;=\; \frac{\tan\phi}{\tan\beta}
+\;+\; \frac{c_{\text{soil}} + c_{\text{root}}}{\gamma\,h\,\sin\beta\,\cos\beta}
+\;-\; \min\!\left(\frac{q}{T\,\sin\beta},\,1\right)
+$$
+
+where $\phi$ is the internal friction angle, $\beta$ the slope, $c_{\text{soil}}$ the soil's own
+cohesion, $c_{\text{root}}$ the root reinforcement, $\gamma$ the soil unit weight, $h$ the soil
+depth, $q$ the specific discharge and $T$ the transmissivity. The first term is friction against
+geometry, the second is cohesion holding the slope together, and the third is the destabilising
+effect of water. Higher $SI$ is more stable.
+
+The four soil terms are derived from the mapped soil properties:
+
+- **Friction angle** $\phi = 25 + (\text{sand}\% - \text{clay}\%)/20$, clipped to 15-40 degrees:
+  sandier soils resist shear at a steeper angle than clay-rich ones.
+- **Soil cohesion** $c_{\text{soil}} = 2 + 0.03\,\text{clay}\% + 0.1\,\text{organic carbon}\%$ kPa,
+  clipped to 0-50 kPa.
+- **Unit weight** $\gamma = \rho\,g$, converting SoilGrids bulk density in Mg/m³ to kN/m³.
+- **Transmissivity** $T = K_{\text{sat}} \times h$, with HiHydroSoil's integer conductivity unscaled
+  and converted to m/day first.
+
+The specific discharge is static rather than event-based: the WorldClim annual rainfall total is
+spread evenly over the year, applied to the pixel's upslope contributing area, and divided by the
+cell width it enters through. The hydrological term is physically a saturation ratio, so it is capped
+at 1; uncapped, the heavily right-skewed upslope area drives most pixels onto the stability floor.
+
+**Root cohesion is the only thing that differs between the two runs.** It is
+$c_{\text{root}} = \text{forest share} \times c_{\text{root,max}}$ with
+$c_{\text{root,max}} = 5$ kPa in the `observed` run and $0$ in the `full_impacts` counterfactual.
+
+Three exclusions and clips are part of the method rather than defensive coding, and each changes
+results:
+
+- Pixels flatter than **2 degrees** are excluded entirely. Infinite-slope theory does not apply
+  there, and without the exclusion both the friction and hydrological terms blow up near
+  $\beta = 0$ and swamp the forest-cover signal -- the median observed-versus-counterfactual
+  difference was exactly zero before it was added.
+- Slope is clipped to 0.5-89.5 degrees and the friction angle to 15-40 degrees before the
+  trigonometry, since $\tan\beta$ goes to zero at flat and diverges near vertical.
+- $SI$ itself is clipped to $[-10, 10]$.
+
+The `observed` index is computed for every modelling year and the prediction year; the counterfactual
+only for the prediction year, since a counterfactual has no meaning during calibration.
+
+## Calibrating stability to landslide probability
+
+Recorded landslides are rare relative to land pixels, so the hazard model is fitted on a **stratified
+case-control sample** rather than on the whole grid.
+
+Cases are UGLC events. The events are filtered to those with a usable location accuracy -- the
+recorded accuracy must be present, positive, not one of the fill codes UGLC uses, and no coarser than
+**1000m** -- and then reprojected to EASE-Grid metres. Several events can fall in one 1km pixel, so
+within a year they are collapsed to one row per pixel carrying the highest fatality count of the
+group: the model is fitted on pixel-years.
+
+Controls are pixel-years drawn uniformly at random over the grid and kept only where the GAEZ raster
+says there is land, at **25 controls per case**, with a fixed seed so the draw is reproducible. Each
+row, case or control, is then sampled for its stability index, annual maximum daily rainfall,
+population, slope, road density and GAEZ zone. Rows missing stability, rainfall or zone are dropped
+-- most of them are the near-flat pixels the stability model excluded.
+
+An ordinary logit of case status on stability index and extreme rainfall is fitted on the modelling
+years. Its **slope coefficients are consistent** estimates of the population slopes, but its
+intercept carries the oversampling of cases, so it is corrected (Prentice and Pyke 1979):
+
+$$
+\alpha_{\text{corrected}} \;=\; \alpha_{\text{raw}} \;-\; \log\!\frac{\tau/(1-\tau)}{\pi/(1-\pi)}
+$$
+
+$\tau$ is the case fraction in the sample. $\pi$ is the prevalence in the population, and it is not
+assumed: it is counted from the UGLC annual panels themselves, as event pixel-years over
+**SI-eligible** land pixel-years across the same years used for training. Restricting the denominator
+to the pixels the stability model actually scores keeps the prevalence on the same population the
+model predicts over. The per-year counts behind it are exported as an audit table.
+
+To build those panels, each UGLC event is stamped onto the grid as a disc of its own location
+accuracy rather than as a single pixel: the binary panel marks every pixel the disc covers, and the
+mortality panel spreads the event's fatalities over the disc with a linear distance decay
+$1 - d/r$, summed across events.
+
+The fit is scored by AUC on the training years and on the held-out prediction year.
+
+## Fatalities given a landslide
+
+Severity is a **two-part hurdle model**, fitted only on realized landslides (the cases) in the
+modelling years, on the same four covariates in both parts: log(1+population), extreme rainfall,
+slope and road density.
+
+- **Part A**, a logit, gives $\Pr(\text{fatalities} > 0 \mid \text{landslide})$. If the maximum
+  likelihood fit fails on separation, it falls back to an L2-regularized fit; the coefficients are
+  then shrunk toward zero and the standard errors are not comparable to an unpenalized fit, so that
+  fallback is a point estimate rather than inference.
+- **Part B**, an OLS on the fatal subsample, gives $E[\log(\text{fatalities}) \mid \text{fatal}]$.
+
+Back-transforming part B needs care: $\exp$ of a predicted log understates the expectation by
+Jensen's inequality. The correction is **Duan's (1983) smearing factor**, the mean of $\exp$ of the
+part-B residuals, which estimates the bias from the residuals themselves rather than assuming
+log-normal errors. Expected fatalities given a landslide are therefore
+
+$$
+E[\text{deaths} \mid \text{landslide}] \;=\;
+\Pr(\text{fatal}) \times \exp\!\big(X\beta_B\big) \times \text{smearing}.
+$$
+
+A separate diagnostic refits both parts with the stability index in place of slope, to check whether
+stability subsumes slope's information in severity. It is written to its own output and never
+overwrites the production coefficients.
+
+## Prediction and avoided mortality
+
+Prediction runs tile by tile over the land-containing tiles of the grid (2000 pixels per side by
+default), so the global rasters are assembled from independent pieces.
+
+For each scenario, expected deaths per pixel-year are
+
+$$
+\text{deaths} \;=\; \Pr(\text{landslide} \mid SI, \text{rain}) \times E[\text{deaths} \mid \text{landslide}].
+$$
+
+Rainfall is the prediction year's, and the severity covariates do not vary by scenario, so the
+severity expectation is computed once per tile and reused. The scenarios differ only through the
+stability index that enters the hazard probability -- which is to say, only through root cohesion.
+
+**Avoided mortality** is then the counterfactual minus the observed:
+
+$$
+\text{avoided deaths} \;=\; \text{deaths}_{\text{full\_impacts}} \;-\; \text{deaths}_{\text{observed}}.
+$$
+
+Physically this cannot be negative -- removing root cohesion cannot make a slope safer -- so pixels
+where it comes out negative are counted and warned about rather than silently floored.
+
+## Valuation
+
+Avoided deaths are priced at the **value of a statistical life**, per country, in 2019 constant USD
+to match the rest of GEP.
+
+Countries with a published OECD country estimate take it directly. The published figures are 2022 USD
+and are reported with a power-of-ten multiplier, so they are scaled up and then deflated to 2019
+using the PMPRB CPI-based cumulative price-adjustment factor of 1.050 from 2019 to 2022.
+
+Countries without a direct estimate take their income group's figure from Table 6.1 of OECD (2025),
+*Mortality Risk Valuation in Policy Assessment*: 7.1 USD million for high-income OECD, 7.9 for
+high-income non-OECD, and 1.1 for the upper-middle, lower-middle and low-income groups. A row whose
+income group is unclassified takes the global figure of 2.7 USD million. These are 2022 USD millions
+and are deflated the same way.
+
+The per-country values are joined onto the EE r264 correspondence and rasterized onto the 1km grid,
+so every pixel carries its country's VSL. The service's value raster is the avoided-death raster
+times the VSL raster, and country totals are the zonal sums of both rasters over the correspondence
+polygons.
+
+Note that the r264 correspondence splits large countries into sub-regions. Each sub-region carries
+its country's ISO3 and therefore its national VSL, which is what the rasterization needs; a
+one-row-per-country table has to sum the sub-regions back together, which is what the results report
+does.
+
+## What the module does not do
+
+- The stability model is static: one specific discharge from a climatological rainfall normal, not an
+  event-based or seasonal hydrology.
+- Rainfall enters the hazard model as the annual maximum daily total, so hazard is a per-pixel-year
+  probability, not a per-storm one.
+- Transmissivity units are flagged as unverified in the code and have not been checked against the
+  HiHydroSoil documentation here.
+- The module has been run end to end once on the cluster, but its numbers have not been replicated
+  against a machine-readable v0.2.0 output from the author, so they remain provisional.
+
+## References
+
+The citations below are the ones the code itself names. They are the model family and the specific
+corrections applied, not a general literature review.
+
+1. Duan, N. (1983). Smearing estimate: a nonparametric retransformation method.
+2. Horn, B. K. P. (1981). Hill shading and the reflectance map. (The slope algorithm `gdal.DEMProcessing` uses.)
+3. OECD (2025). *Mortality Risk Valuation in Policy Assessment*, Table 6.1.
+4. Prentice, R. L., and Pyke, R. (1979). Logistic disease incidence models and case-control studies.

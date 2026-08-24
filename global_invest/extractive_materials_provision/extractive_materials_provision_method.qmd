@@ -1,0 +1,83 @@
+---
+title: "Overview of Ecosystem Service: Extractive Materials Provision"
+format:
+  html:
+    embed-resources: true
+    standalone: true
+---
+
+Extractive materials provision covers mineral extraction. The account values it from two World
+Bank series, the share of a country's GDP that mineral rents represent and the GDP itself, with an
+attribution factor applied to the resulting rent. The base year is 2019.
+
+## Quantity
+
+GDP in current USD, the World Bank series `NY.GDP.MKTP.CD`, read from the path recorded in
+`es_config.csv` as `gep_quantity_input_path`.
+
+## Price
+
+Mineral rents as a percentage of GDP, the World Bank series `NY.GDP.MINR.RT.ZS`, read from the
+path recorded in `es_config.csv` as `gep_attribution_input_path`.
+
+## Attribution
+
+A factor of 0.49 is applied to the rent. `MINERAL_RENT_GEP_FACTOR` holds it in the tasks module.
+
+## Valuation
+
+`mineral_rent_gep` is the whole product:
+
+$$
+\text{GEP} = \frac{\text{mineral rent (\% of GDP)}}{100} \times \text{GDP (current USD)} \times 0.49
+$$
+
+The task reads each wide World Bank CSV and passes the frame to `world_bank_wide_to_long`, which
+melts the year columns into long form keyed on `Country Code` and drops the descriptive columns
+by not naming them. The two long tables are merged on `Country Code` and `year` and deduplicated
+on that pair. `collapse_countries_to_r250` reduces the r264 correspondence to one canonical row
+per country before the join, so a country that r264 splits is not repeated. The base-year table
+is the rows where `year` equals `p.gep_base_year`. `group_countries` aggregates the value column
+by year for the time series.
+
+Country references are published at 30 arcsecond simplification for this service, rather than the
+300 arcsecond default the other modules use.
+
+## Inputs
+
+Both data paths come from `es_config.csv` rather than `es_parameters.csv`. The
+`extractive_materials_provision` row names `gep_quantity_input_path` for the GDP series and
+`gep_attribution_input_path` for the mineral rent share, along with
+`gep_regions_input_path` as `cartographic/ee/ee_r264_correspondence.gpkg` and `gep_regions_id_col`
+as `ee_r264_id`. The service has no `es_parameters.csv` rows.
+
+## Outputs
+
+`gep_calculation` writes four tables into its own task directory:
+
+- `gep_by_country_year_mineral.csv`, the merged long table with the valuation column.
+- `gep_by_country_year.csv`, the same table carried forward.
+- `gep_by_country_base_year.csv`, the 2019 rows, plus a matching `.gpkg` for mapping.
+- `gep_by_year.csv` and an `.xlsx` alongside it, the annual totals.
+
+The valuation column is `extractive_materials_provision_gep`, mirrored into a `Value` column for
+the annual aggregation.
+
+## Method constants
+
+`MINERAL_RENT_GEP_FACTOR = 0.49`, applied to mineral rents times GDP in the valuation.
+
+## Taken as given
+
+Both World Bank series are used as published.
+
+## What is open
+
+The attribution factor's provenance is undocumented as of 2026-08-16. There is no source for 0.49
+in the code, in the drive submission, or in its `raw_data` notes, and it is an open question for
+the service owner. The staged reference output embeds the factor, so it should not change without
+an owner-blessed source.
+
+`gep_by_country_year.csv` and `gep_by_country_year_mineral.csv` are the same table written twice.
+The valuation produces one row per country and year, so there is nothing for the second table to
+add until the service gains a per-mineral breakdown.

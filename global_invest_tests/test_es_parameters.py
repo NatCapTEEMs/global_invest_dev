@@ -22,16 +22,16 @@ def fake_p(tmp_path, preset=None):
     return p
 
 
-def test_landslide_knobs_hydrate_typed_from_the_shipped_template(tmp_path):
+def test_landslide_run_knobs_hydrate_typed_from_the_shipped_template(tmp_path):
+    # RUN-shaping knobs are rows; METHOD constants live in code (the sorting rule's split:
+    # published science changes cost a reviewed commit, not an input/-copy edit).
     p = fake_p(tmp_path)
     utilities.hydrate_es_parameters(p, 'landslide_mitigation', log=lambda *a: None)
     assert p.force_run is False and p.run_in_parallel is True
     assert p.num_workers == 8 and p.processing_resolution == 2000
-    assert p.data_processing_range == list(range(2007, 2020))
-    assert p.modeling_range == list(range(2007, 2019))
-    assert p.prediction_years == [2019]
-    assert p.max_location_accuracy_m == 1000 and p.control_ratio == 25
-    assert p.c_root_scenarios == {'observed': 'observed', 'full_impacts': 0}
+    assert not hasattr(p, 'control_ratio')          # method constants are NOT rows
+    from global_invest.landslide_mitigation import landslide_mitigation_functions as chain
+    assert chain.CONTROL_RATIO == 25 and chain.PREDICTION_YEARS == [2019]
 
 
 def test_blank_machine_key_is_skipped_until_a_machine_fills_it(tmp_path):

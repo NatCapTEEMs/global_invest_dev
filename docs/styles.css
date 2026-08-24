@@ -8,3 +8,23 @@
 .reveal ul { line-height: 1.35; }
 .reveal li { margin-bottom: 0.3em; }
 .reveal .state { color: #444444; font-size: 0.85em; font-style: italic; }
+
+/* Uniform table size on all .smaller table slides, immune to reveal's auto-scaling. */
+.reveal .smaller table {
+  font-size: 0.85em;
+  width: 100%;
+}
+.reveal .smaller table td, .reveal .smaller table th {
+  padding: 0.5em 0.5em;
+}
+
+/* .smaller shrinks the whole slide in reveal, so a bullet on a table slide rendered smaller than
+ * the same bullet anywhere else. Only the table should be smaller: put the prose back to the
+ * deck's base size, and leave table cells to the rule above. */
+.reveal .smaller > ul,
+.reveal .smaller > ul > li,
+.reveal .smaller > ol,
+.reveal .smaller > ol > li,
+.reveal .smaller > p {
+  font-size: 32px;
+}

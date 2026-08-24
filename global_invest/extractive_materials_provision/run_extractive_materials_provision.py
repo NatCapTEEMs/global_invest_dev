@@ -1,4 +1,3 @@
-import pandas as pd
 import hazelbean as hb
 
 from global_invest.extractive_materials_provision import extractive_materials_provision_initialize
@@ -13,9 +12,6 @@ def run_project(p):
     # Task tree
     build_task_tree(p)
 
-    # Inputs resolve in initialize_paths (one source of truth; shared country block).
-    p.results = {}  # All results will be stored here by each child task.
-    extractive_materials_provision_initialize.initialize_paths(p)
 
     # Run the model
     hb.log('Created ProjectFlow object at ' + p.project_dir + '\n    from script ' + p.calling_script)    

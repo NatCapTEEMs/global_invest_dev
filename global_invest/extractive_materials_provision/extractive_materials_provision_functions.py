@@ -1,69 +1,58 @@
 # -*- coding: utf-8 -*-
-import os
+"""Extractive-materials science: the mineral-rent share of GDP, valued.
+
+Nothing here opens a file. The task layer reads the two World Bank CSVs, hands the frames in and
+writes back what it gets, so every step below can be pinned on a hand-built input in the test
+suite.
+"""
 import logging
-import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
+
 import hazelbean as hb
 
-def read_mineral_values(path: str):
+# The World Bank publishes one indicator per file in wide form: four descriptive columns
+# (country name, country code, indicator name, indicator code) and then one column per year.
+WORLD_BANK_COUNTRY_COLUMN = 'Country Code'
+
+
+def world_bank_wide_to_long(df_wide, value_column):
+    """A wide World Bank indicator table reshaped to one row per country and year.
+
+    Args:
+        df_wide (pd.DataFrame): the indicator as published, descriptive columns ahead of one
+            column per year.
+        value_column (str): the name the indicator's values take in the long table.
+
+    Returns:
+        pd.DataFrame: WORLD_BANK_COUNTRY_COLUMN, year, and value_column. Melting the year
+        columns and nothing else is what drops the descriptive ones, so a byte-order mark on
+        the first header cannot reach the result.
     """
-    Read FAO crop production values, filter by unit, drop unwanted columns/crops/countries,
-    and reshape to long format.
+    year_columns = [column for column in df_wide.columns if str(column).isdigit()]
+    return df_wide.melt(id_vars=[WORLD_BANK_COUNTRY_COLUMN], value_vars=year_columns,
+                        var_name='year', value_name=value_column)
 
-    Returns DataFrame with columns: [area_code, country, crop_code, crop, year, gep].
-    """
 
-    try:
-        df_raw_mineral_values = pd.read_csv(path, encoding="ISO-8859-1")
-        logging.info(f"Loaded crop values from {path} ({df_raw_mineral_values.shape[0]} rows).")
-    except Exception as e:
-        logging.error(f"Failed to read crop values file '{path}': {e}")
-        raise
-
-    df_raw_mineral_values.drop(columns=['ï»¿Country Name','Indicator Name','Indicator Code'], inplace=True)
-
-    df_mineral_values = df_raw_mineral_values.melt(
-    id_vars=["Country Code"],        # keep this column fixed
-    var_name="year",                 # new column for year
-    value_name="mineral_rent"       # new column for value
-    )  
-    return df_mineral_values
-
-def read_GDP_values(path: str):
-    """
-    Read FAO crop production values, filter by unit, drop unwanted columns/crops/countries,
-    and reshape to long format.
-
-    Returns DataFrame with columns: [area_code, country, crop_code, crop, year, gep].
-    """
-
-    try:
-        df_raw_GDP_values = pd.read_csv(path, encoding="ISO-8859-1")
-        logging.info(f"Loaded crop values from {path} ({df_raw_GDP_values.shape[0]} rows).")
-    except Exception as e:
-        logging.error(f"Failed to read crop values file '{path}': {e}")
-        raise
-
-    df_raw_GDP_values.drop(columns=['ï»¿Country Name','Indicator Name','Indicator Code'], inplace=True)
-
-    df_GDP_values = df_raw_GDP_values.melt(
-    id_vars=["Country Code"],        # keep this column fixed
-    var_name="year",                 # new column for year
-    value_name="GDP_currentUSD"       # new column for value
-    )  
-    return df_GDP_values
-
-def group_countries(df: pd.DataFrame):
-    """
-    Aggregate total GEP across all countries by year.
-    """
-    df_gep_by_year = hb.df_groupby(df, groupby_cols='year', agg_cols="Value", preserve='keep_all_valid')
-
-    
-    # START HERE: df_gep_by_year = hb.df_groupby(df, groupby_cols='iso3_r250_label', agg_dict={"Value": "sum"}). This line causes a really wrongly formatted DataFrame.
-    df_gep_by_year.set_index("year", inplace=False)
-    # df_gep_by_year.rename(columns={"gep": "total_gep"}, inplace=True)
-    df_gep_by_year.sort_values("year", inplace=True)
-    logging.info(f"Grouped total by year ({df_gep_by_year.shape[0]} rows).")
+def group_countries(df):
+    """Country-year rows summed to one global row per year."""
+    # agg_cols, not agg_dict: hb.df_groupby(df, groupby_cols='year', agg_dict={'Value': 'sum'})
+    # returns a badly shaped frame here.
+    df_gep_by_year = hb.df_groupby(df, groupby_cols='year', agg_cols='Value',
+                                   preserve='keep_all_valid')
+    df_gep_by_year.sort_values('year', inplace=True)
+    logging.info(f'Grouped total by year ({df_gep_by_year.shape[0]} rows).')
     return df_gep_by_year
+
+
+def mineral_rent_gep(mineral_rent_percent, gdp_current_usd, factor):
+    """Mineral provision value: the rent share of GDP, times the attribution factor.
+
+    Args:
+        mineral_rent_percent: mineral rents as a percentage of GDP (the World Bank series).
+        gdp_current_usd: GDP in current USD.
+        factor: the attribution factor applied to the rent (the 0.49 whose source is the
+            service's open question).
+
+    Returns:
+        The valued rent, in the same units as gdp_current_usd.
+    """
+    return (mineral_rent_percent / 100.0) * gdp_current_usd * factor

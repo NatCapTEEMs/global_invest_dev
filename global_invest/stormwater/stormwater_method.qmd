@@ -1,0 +1,60 @@
+---
+title: "Overview of Ecosystem Service: Stormwater Retention"
+format:
+  html:
+    embed-resources: true
+    standalone: true
+---
+
+Stormwater retention values the runoff that land cover holds back instead of sending into drainage
+systems. The account prices that volume at what it would cost to replace the same capacity. The
+base year is 2019 and the price convention recorded in `es_config.csv` is `replacement cost`.
+
+## Quantity
+
+Annual retained volume in cubic metres per country, from an InVEST Urban Stormwater Retention run
+over the inputs the consortium drive staged, the biophysical coefficient table, ESA 2020 land
+cover, WorldClim precipitation and SLGWRB soils. That run is made outside the task tree, on the
+drive's own configuration, which `base_data/global_invest/stormwater/run_recipe.md` records.
+The `retention_by_country` task then sums the run's retention raster inside each r250 country and writes the
+per-country table. The library reads that table; it does not run the retention model.
+
+## Price
+
+USD per cubic metre retained. The committed InVEST configuration prices retention at 1, which is a
+placeholder rather than a valuation. The intended price is the open ask, and it is held in one
+named constant until the author answers.
+
+## Valuation
+
+`stormwater_gep_by_country` is the whole valuation:
+
+$$
+\text{stormwater GEP} = \text{retention (m}^3) \times \text{price (USD/m}^3)
+$$
+
+The function is in place and unit-tested.
+
+## Inputs
+
+From `es_parameters.csv`, scoped to the `stormwater` service:
+
+- `stormwater_retention_by_country_path`, the per-country retention volumes the valuation prices.
+
+## Output
+
+`gep_calculation` writes `gep_by_country_base_year.csv` into its own task directory, holding
+`iso3_r250_label`, `retention_m3`, `year` and `stormwater_gep`. The log line reports the total
+retention in cubic metres a year, the number of countries with positive retention, the resulting
+GEP, and the placeholder price it was computed at.
+
+## Method constants
+
+`STORMWATER_PRICE_PER_M3_PLACEHOLDER = 1.0`, the committed configuration's price per cubic metre.
+
+## What is open
+
+The price. Every output built on the placeholder is provisional by construction, which is why the
+constant is named for what it is and logged on every run. Whether the retained volumes should be
+masked to urban areas is the other open question. The run was made wall to wall over the global
+land cover, because the committed configuration carries no urban boundaries.

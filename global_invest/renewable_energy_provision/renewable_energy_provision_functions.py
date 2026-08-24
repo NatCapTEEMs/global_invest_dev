@@ -1,63 +1,155 @@
 # -*- coding: utf-8 -*-
-import os
-import logging
+"""Renewable-energy science: generation, priced, times nature's contribution share.
+
+Nothing here opens a file. The task layer reads the three source tables (IRENA generation, the
+World Bank price series, the CWoN resource rents), hands the frames in and writes back what it
+gets, so every step below can be pinned on a hand-built input in the test suite.
+"""
 import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
-import hazelbean as hb
 
-# TODOO Obviously these should be built into hazelbean instead of duplicated all over.
+# Subservice key -> the 'Group Technology' label IRENA gives that resource. Also the order the
+# per-resource frames are built and concatenated in.
+SUBSERVICE_TECHNOLOGIES = {
+    'wind_energy_provision': 'Wind energy',
+    'solar_energy_provision': 'Solar energy',
+    'geothermal_energy_provision': 'Geothermal energy',
+}
+# The IRENA table splits each resource across sub-technologies and producer types; generation is
+# summed over both, within a country, year and resource.
+GENERATION_GROUP_COLUMNS = ['Year', 'ISO3 code', 'Country', 'Group Technology']
+GENERATION_COLUMN = 'Electricity Generation (GWh)'
+PRICE_COLUMN = 'Price (USD/GWh)'
+# The World Bank price series arrives in US cents per kilowatt-hour, and generation is in
+# gigawatt-hours: 1e6 kWh per GWh over 100 cents per USD leaves this factor.
+CENTS_PER_KWH_TO_USD_PER_GWH = 10000.0
+# What a valued row carries, in write order. The country column is renamed to the r250 label
+# after the selection, so it stays first.
+VALUED_COLUMNS = ['ISO3 code', 'Country', 'Year', 'Group Technology', PRICE_COLUMN,
+                  GENERATION_COLUMN, 'nat_contrib', 'renewable_energy_provision_gep']
 
-def merge_dfs(main_df, list_of_dfs):
-    """
-    Merge a main DataFrame with a list of DataFrames on common columns ['ISO3 code', 'Year'].
 
-    Parameters:
-        main_df (pd.DataFrame): The main DataFrame with columns ['ISO3 code', 'Country', 'Year', 'Price'].
-        list_of_dfs (list): List of renewable energy demand dfs 
+def generation_by_technology(df_generation):
+    """One generation frame per valued resource, summed over sub-technology and producer type.
+
+    Args:
+        df_generation (pd.DataFrame): the IRENA table, one row per country, year, technology,
+            sub-technology and producer type.
 
     Returns:
-        list: A list of merged DataFrames.
+        list: a frame per entry of SUBSERVICE_TECHNOLOGIES, in that order. Fossil and other
+        non-valued technologies are dropped by keeping only those labels.
     """
-    merged_dfs = []
+    aggregated = df_generation.groupby(GENERATION_GROUP_COLUMNS,
+                                       as_index=False)[GENERATION_COLUMN].sum()
+    return [aggregated[aggregated['Group Technology'] == technology]
+            for technology in SUBSERVICE_TECHNOLOGIES.values()]
 
-    # Define the common columns for the merge
+
+def price_in_usd_per_gwh(df_price):
+    """The World Bank price series converted to USD per GWh, on the column names the join uses.
+
+    Args:
+        df_price (pd.DataFrame): Economy ISO3, Economy Name, Year and Price in US cents per kWh.
+
+    Returns:
+        pd.DataFrame: the same rows with the price converted and the country columns renamed to
+        the labels the generation frames carry.
+    """
+    df = df_price.copy()
+    df['Price'] = df['Price'] * CENTS_PER_KWH_TO_USD_PER_GWH
+    return df.rename(columns={'Economy ISO3': 'ISO3 code', 'Economy Name': 'Country',
+                              'Price': PRICE_COLUMN})
+
+
+def merge_price_onto_generation(df_price, generation_frames):
+    """Each resource's generation frame carrying that country-year's electricity price.
+
+    The join is inner on country and year, so a country-year the price series does not cover
+    contributes no valued row. Both sides carry a Country column; the price table's copy is the
+    one dropped, which is why the join is on the ISO3 code rather than on the name.
+
+    Args:
+        df_price (pd.DataFrame): the priced table from price_in_usd_per_gwh.
+        generation_frames (list): the per-resource frames from generation_by_technology.
+
+    Returns:
+        list: one merged frame per input frame, in the same order.
+    """
     merge_columns = ['ISO3 code', 'Year']
-
-    for df in list_of_dfs:
-        # Perform the merge
-        merged_df = pd.merge(main_df, df, on=merge_columns, how='inner')
-        # remove redundant country cols
-        merged_df = merged_df.drop('Country_y', axis=1) 
-        merged_df = merged_df.rename(columns={'Country_x' : 'Country'})
-        # Append the merged DataFrame to the results list
-        merged_dfs.append(merged_df)
-
-    return merged_dfs
+    merged_frames = []
+    for df_generation in generation_frames:
+        merged = pd.merge(df_price, df_generation, on=merge_columns, how='inner')
+        merged = merged.drop('Country_y', axis=1)
+        merged = merged.rename(columns={'Country_x': 'Country'})
+        merged_frames.append(merged)
+    return merged_frames
 
 
+def renewable_energy_gep(nature_contribution, price_usd_per_gwh, generation_gwh):
+    """Renewable provision value: generation, priced, times nature's contribution share.
 
-# Function to filter dataframe for 2019 and save CSVs by Technology
-def filter_and_split_by_resource(df):
+    Args:
+        nature_contribution: the resource-rent share attributable to nature.
+        price_usd_per_gwh: electricity price in USD per gigawatt-hour.
+        generation_gwh: electricity generated, gigawatt-hours.
+
+    Returns:
+        The valued generation, USD.
+    """
+    return nature_contribution * price_usd_per_gwh * generation_gwh
 
 
+def valued_generation(priced_frames, df_attribution):
+    """The priced resource frames stacked and valued at each country-year's rent share.
 
-    # Rename columns
+    The join onto the CWoN resource-rent table is inner and on the country NAME, which the two
+    sources spell alike, plus the year.
+
+    Args:
+        priced_frames (list): the merged frames from merge_price_onto_generation.
+        df_attribution (pd.DataFrame): Country, Year and nat_contrib, the share of the resource
+            rent attributable to nature.
+
+    Returns:
+        pd.DataFrame: every valued row, with renewable_energy_provision_gep added.
+    """
+    combined = pd.concat(priced_frames, ignore_index=True)
+    df = combined.merge(df_attribution, on=['Country', 'Year'], how='inner')
+    df['renewable_energy_provision_gep'] = renewable_energy_gep(
+        df['nat_contrib'], df[PRICE_COLUMN], df[GENERATION_COLUMN])
+    return df
+
+
+def base_year_valued_rows(df_valued, base_year):
+    """The base year's valued rows, keyed by the r250 country label.
+
+    Rows valued at zero or below are dropped. A non-positive value comes out of the resource-rent
+    attribution rather than out of generation, so it is not a country that generated nothing.
+
+    Args:
+        df_valued (pd.DataFrame): the frame from valued_generation.
+        base_year (int): the year the account values.
+
+    Returns:
+        pd.DataFrame: VALUED_COLUMNS, with ISO3 code renamed to iso3_r250_label.
+    """
+    df = df_valued[VALUED_COLUMNS]
+    df = df.loc[df['Year'] == base_year]
+    df = df.loc[df['renewable_energy_provision_gep'] > 0]
+    return df.rename(columns={'ISO3 code': 'iso3_r250_label'})
+
+
+def split_by_resource(df):
+    """The valued rows as one frame per resource, keyed by the IRENA Group Technology label.
+
+    The columns are renamed to the subservice tables' own vocabulary on the way out, so the
+    per-resource CSVs read as standalone outputs rather than as slices of the parent table.
+    """
     df_filtered = df.rename(columns={
-        # 'ISO3 code': 'Country_Code',
         'Country': 'Country_Name',
         'Group Technology': 'Resource',
-        'Price (USD/GWh)': 'P_electricity_USD_per_GWh',
-        'Electricity Generation (GWh)': 'energy_prod_GWh'
+        PRICE_COLUMN: 'P_electricity_USD_per_GWh',
+        GENERATION_COLUMN: 'energy_prod_GWh',
     })
-
-    # Reorder columns
-    # df_filtered = df_filtered[['Resource', 'Country_Name', 'Year', 'iso3_r250_label', 'P_electricity_USD_per_GWh', 'energy_prod_GWh', 'nat_contrib', 'renewable_energy_provision_gep']]
-
-
-
-    # Create dictionary of dataframes split by Resource
-    technology_dfs = {resource: df_resource.copy() for resource, df_resource in df_filtered.groupby('Resource')}
-
-
-    return technology_dfs
+    return {resource: df_resource.copy()
+            for resource, df_resource in df_filtered.groupby('Resource')}

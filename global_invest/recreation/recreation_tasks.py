@@ -1,0 +1,416 @@
+"""Recreation/tourism GEP tasks: site quality -> visits -> travel-cost value -> country GEP.
+
+Ported from the GEP recreation repo into the house shape: tasks publish their own inputs
+(publish_inputs), read data references from es_parameters.csv, and aggregate DIRECTLY on r250
+(the source pipeline's own choice -- its country-id raster is iso3_r250_id -- so the aggregation
+surface and the one-row-per-country collapse coincide; no r264 sum can double-count here).
+
+Data staging map (drive Recreation/data/ tree -> base_data/global_invest/recreation/):
+0_inputs/* -> the module root; 0_processed_raster_inputs/<sub>/* -> <sub>/*. File names are
+kept EXACTLY as shipped (including the fuel-cost CSV's spelling) so staging is a copy, not a
+rename layer.
+"""
+import os
+import numpy as np
+import pygeoprocessing
+from osgeo import gdal
+
+import pandas as pd
+import hazelbean as hb
+from global_invest import utilities
+from global_invest.recreation import recreation_functions as rf
+
+
+
+# --- Raster-chain steps ---
+def calculate_environment_index(lulc_share_paths, pa_share_path, output_path):
+    """LULC class-share rasters + PA share -> environment class raster (0-3)."""
+    def op(crop, forest, grass, othernat, urban, water, pa):
+        return rf.environment_class_array(crop, forest, grass, othernat, urban, water, pa)
+    base_list = [(lulc_share_paths[c], 1) for c in rf.RECREATION_LULC_CLASSES] + [(pa_share_path, 1)]
+    pygeoprocessing.raster_calculator(base_list, op, output_path, gdal.GDT_Int32, rf.INT_NDV,
+                                      calc_raster_stats=True)
+
+
+def calculate_accessibility_index(urban_share_path, road_distance_path, output_path):
+    """Urban share + distance-to-road rasters -> accessibility class raster (1-5)."""
+    pygeoprocessing.raster_calculator(
+        [(urban_share_path, 1), (road_distance_path, 1)], rf.accessibility_class_array,
+        output_path, gdal.GDT_Int32, rf.INT_NDV)
+
+
+def rank_recreation_sites(accessibility_index_path, environment_index_path, output_path):
+    pygeoprocessing.raster_calculator(
+        [(accessibility_index_path, 1), (environment_index_path, 1)], rf.site_rank_array,
+        output_path, gdal.GDT_Int32, rf.INT_NDV)
+
+
+def extract_high_quality_sites(ranked_sites_path, output_path):
+    def op(site_class):
+        return np.where(site_class == rf.RECREATION_HQ_SITE_CLASS, 1, 0).astype(np.int32)
+    pygeoprocessing.raster_calculator([(ranked_sites_path, 1)], op, output_path,
+                                      gdal.GDT_Int32, rf.INT_NDV)
+
+
+def create_distance_kernel(kernel_path, buffer_zone):
+    """Chebyshev ring kernel: ring 1 is the full 3x3 block (center included), ring n>1 the
+    cells exactly n steps away."""
+    kernel_size = 2 * buffer_zone + 1
+    offsets = np.abs(np.arange(kernel_size) - buffer_zone)
+    chebyshev = np.maximum.outer(offsets, offsets)
+    if buffer_zone == 1:
+        kernel_array = (chebyshev <= buffer_zone).astype(np.float32)
+    else:
+        kernel_array = (chebyshev == buffer_zone).astype(np.float32)
+    pygeoprocessing.numpy_array_to_raster(
+        kernel_array, target_nodata=None, pixel_size=None, origin=None,
+        projection_wkt=None, target_path=kernel_path)
+
+
+def add_to_total(total_path, addition_path):
+    """total += addition in place, nodata-aware, clamped at zero against float drift."""
+    def op(total, addition):
+        valid_total = total != rf.FLOAT_NDV
+        valid_addition = addition != rf.FLOAT_NDV
+        result = np.full_like(total, rf.FLOAT_NDV, dtype=np.float32)
+        both = valid_total & valid_addition
+        result[both] = total[both] + addition[both]
+        result[valid_total & ~valid_addition] = total[valid_total & ~valid_addition]
+        result[~valid_total & valid_addition] = addition[~valid_total & valid_addition]
+        valid_result = result != rf.FLOAT_NDV
+        result[valid_result] = np.maximum(result[valid_result], 0.0)
+        return result
+    temporary_path = total_path.replace('.tif', '_partial.tif')
+    pygeoprocessing.raster_calculator([(total_path, 1), (addition_path, 1)], op,
+                                      temporary_path, gdal.GDT_Float32, rf.FLOAT_NDV)
+    os.replace(temporary_path, total_path)
+
+
+def mask_to_sites(input_path, sites_path, output_path):
+    """Keep values only where the high-quality-site raster is 1."""
+    def op(values, sites):
+        result = np.full_like(values, rf.FLOAT_NDV, dtype=np.float32)
+        result[sites == 1] = values[sites == 1]
+        return result
+    pygeoprocessing.raster_calculator([(input_path, 1), (sites_path, 1)], op,
+                                      output_path, gdal.GDT_Float32, rf.FLOAT_NDV)
+
+
+def calculate_kernel_recreation(population_path, country_id_path, fuel_cost_df,
+                                hq_sites_path, visits_output_path, value_output_path, working_dir):
+    """The visit/value engine shared by daily recreation and tourism: for each Chebyshev ring,
+    build the potential surfaces and convolve them over the population, then mask the summed
+    totals to high-quality sites. population_path is residents (daily) or allocated overnights
+    (tourism); everything else is identical between the two."""
+    country_costs = dict(zip(fuel_cost_df['iso3_r250_id'], fuel_cost_df[rf.RECREATION_FUEL_COST_COL]))
+    max_country_id = max(country_costs.keys()) if country_costs else 0
+    cost_lookup = np.zeros(max_country_id + 1, dtype=np.float32)
+    for country_id, cost in country_costs.items():
+        cost_lookup[country_id] = cost
+
+    pixel_size = abs(pygeoprocessing.get_raster_info(population_path)['pixel_size'][0])
+    os.makedirs(working_dir, exist_ok=True)
+    total_visits_path = os.path.join(working_dir, 'total_visits.tif')
+    total_value_path = os.path.join(working_dir, 'total_value.tif')
+    for total_path in (total_visits_path, total_value_path):
+        pygeoprocessing.new_raster_from_base(population_path, total_path, gdal.GDT_Float32,
+                                             [rf.FLOAT_NDV], fill_value_list=[0.0])
+
+    for buffer_index, buffer_zone in enumerate(rf.RECREATION_DIST_BUFFERS):
+        k = rf.RECREATION_GRAVITY_K[buffer_index]
+        alpha = rf.RECREATION_GRAVITY_ALPHA[buffer_index]
+
+        kernel_path = os.path.join(working_dir, f'kernel_buffer_{buffer_zone}.tif')
+        create_distance_kernel(kernel_path, buffer_zone)
+
+        visit_potential_path = os.path.join(working_dir, f'pop_visit_potential_buffer_{buffer_zone}.tif')
+        pygeoprocessing.raster_calculator(
+            [(population_path, 1), (country_id_path, 1)],
+            lambda population, country_id: rf.visit_potential_array(population, country_id, k, alpha),
+            visit_potential_path, gdal.GDT_Float32, rf.FLOAT_NDV)
+
+        value_potential_path = os.path.join(working_dir, f'pop_value_potential_buffer_{buffer_zone}.tif')
+        pygeoprocessing.raster_calculator(
+            [(population_path, 1), (country_id_path, 1)],
+            lambda population, country_id: rf.value_potential_array(
+                population, country_id, cost_lookup, k, alpha, buffer_zone, pixel_size),
+            value_potential_path, gdal.GDT_Float32, rf.FLOAT_NDV)
+
+        for potential_path, buffer_output_name, total_path in (
+                (visit_potential_path, f'visits_buffer_{buffer_zone}.tif', total_visits_path),
+                (value_potential_path, f'value_buffer_{buffer_zone}.tif', total_value_path)):
+            buffer_output_path = os.path.join(working_dir, buffer_output_name)
+            pygeoprocessing.convolve_2d(
+                (potential_path, 1), (kernel_path, 1), buffer_output_path,
+                ignore_nodata_and_edges=False, mask_nodata=True, normalize_kernel=False,
+                target_datatype=gdal.GDT_Float32, target_nodata=rf.FLOAT_NDV, working_dir=working_dir)
+            add_to_total(total_path, buffer_output_path)
+
+    mask_to_sites(total_visits_path, hq_sites_path, visits_output_path)
+    mask_to_sites(total_value_path, hq_sites_path, value_output_path)
+
+
+def rasterize_presence(vector_path, ref_raster_path, output_path):
+    """Vector features -> additive presence counts on the reference grid (hotel points)."""
+    ref_info = pygeoprocessing.geoprocessing.get_raster_info(ref_raster_path)
+    pygeoprocessing.geoprocessing.create_raster_from_bounding_box(
+        target_bounding_box=ref_info['bounding_box'], target_raster_path=output_path,
+        target_pixel_size=ref_info['pixel_size'], target_pixel_type=gdal.GDT_Int16,
+        target_srs_wkt=ref_info['projection_wkt'], target_nodata=rf.INT_NDV, fill_value=0)
+    pygeoprocessing.geoprocessing.rasterize(
+        vector_path=vector_path, target_raster_path=output_path, burn_values=[1],
+        option_list=['ALL_TOUCHED=TRUE', 'MERGE_ALG=ADD'])
+
+
+def rasterize_id_column(vector_path, ref_raster_path, id_column, output_path):
+    """Vector id column -> raster on the reference grid (country ids)."""
+    ref_info = pygeoprocessing.geoprocessing.get_raster_info(ref_raster_path)
+    pygeoprocessing.geoprocessing.create_raster_from_bounding_box(
+        target_bounding_box=ref_info['bounding_box'], target_raster_path=output_path,
+        target_pixel_size=ref_info['pixel_size'], target_pixel_type=ref_info['datatype'],
+        target_srs_wkt=ref_info['projection_wkt'], target_nodata=ref_info['nodata'][0],
+        fill_value=0)
+    pygeoprocessing.geoprocessing.rasterize(
+        vector_path=vector_path, target_raster_path=output_path, burn_values=None,
+        option_list=['ALL_TOUCHED=TRUE', f'ATTRIBUTE={id_column}'])
+
+
+def allocate_overnights_raster(country_overnights_map, hotel_raster_path, country_id_path,
+                               output_path):
+    pygeoprocessing.raster_calculator(
+        [(hotel_raster_path, 1), (country_id_path, 1)],
+        lambda hotels, countries: rf.allocate_overnights_array(hotels, countries,
+                                                           country_overnights_map),
+        output_path, gdal.GDT_Float32, rf.FLOAT_NDV)
+
+
+def sum_rasters_by_country_id(value_raster_paths, country_id_path):
+    """Country-id raster + named value rasters -> one row per iso3_r250_id with nansums.
+
+    Whole-array aggregation (the source repo's approach, kept for anchor fidelity); at 1 km
+    global this holds several ~4 GB float arrays, so run it on a machine with headroom.
+    """
+    country_id_array = pygeoprocessing.raster_to_numpy_array(country_id_path)
+    ndv = pygeoprocessing.get_raster_info(country_id_path)['nodata'][0]
+    valid_mask = (country_id_array != ndv) & (~np.isnan(country_id_array))
+    country_ids = np.unique(country_id_array[valid_mask])
+    country_ids = country_ids[country_ids > 0]
+
+    results_arrays = {}
+    for key, path in value_raster_paths.items():
+        array = pygeoprocessing.raster_to_numpy_array(path)
+        array_ndv = pygeoprocessing.get_raster_info(path)['nodata'][0]
+        results_arrays[key] = np.where(array == array_ndv, np.nan, array)
+
+    rows = []
+    for country_id in country_ids:
+        mask = (country_id_array == country_id)
+        row = {'iso3_r250_id': int(country_id)}
+        for key, array in results_arrays.items():
+            row[key] = np.nansum(array[mask])
+        rows.append(row)
+    return pd.DataFrame(rows)
+
+
+def read_unwto_sheets(path):
+    """The UNWTO all-data workbook's two accommodation sheets, each read from its own header row.
+
+    Args:
+        path (str): the UNWTO all-data workbook.
+
+    Returns:
+        dict: tourism type -> that type's accommodation sheet, ready for clean_unwto_data.
+    """
+    sheets = {}
+    for tourism_type, sheet_name in rf.UNWTO_ACCOMMODATION_SHEETS.items():
+        banner_sheet = pd.read_excel(path, sheet_name=sheet_name)
+        sheets[tourism_type] = pd.read_excel(
+            path, sheet_name=sheet_name, skiprows=rf.unwto_header_row_index(banner_sheet))
+    return sheets
+
+
+def publish_inputs(p):
+    """Every GEP task's first line: the recreation es_config row (defaults layer -- a caller-set
+    value wins), the recreation data references from es_parameters (the staged drive data), the
+    shared country references and the results registry. The aggregation surface
+    (gep_regions_input_path) is the r250 country vector itself; gep_base_year (2019) is also the
+    UNWTO overnight target year and the fuel-cost price year."""
+    utilities.hydrate_es_config(p, 'recreation', log=hb.log)
+    utilities.hydrate_es_parameters(p, 'recreation', log=hb.log)
+    utilities.initialize_country_paths(p)
+    if not hasattr(p, 'results'):
+        p.results = {}
+    return p
+
+
+def environment_index(p):
+    """Environment class raster (0-3) from the six SEALS7 class-share rasters + PA share."""
+    publish_inputs(p)
+    p.environment_index_path = os.path.join(p.cur_dir, 'env_index_1km.tif')
+    if not p.run_this:
+        return
+    if not hb.path_exists(p.environment_index_path):
+        lulc_share_paths = {
+            lulc_class: p.get_path(p.recreation_lulc_share_path_template.format(lulc_class=lulc_class))
+            for lulc_class in rf.RECREATION_LULC_CLASSES}
+        calculate_environment_index(lulc_share_paths, p.recreation_pa_share_path,
+                                       p.environment_index_path)
+    return True
+
+
+def accessibility_index(p):
+    """Accessibility class raster (1-5) from urban share + distance-to-road."""
+    publish_inputs(p)
+    p.accessibility_index_path = os.path.join(p.cur_dir, 'accessibility_index_1km.tif')
+    if not p.run_this:
+        return
+    if not hb.path_exists(p.accessibility_index_path):
+        urban_share_path = p.get_path(
+            p.recreation_lulc_share_path_template.format(lulc_class='urban'))
+        calculate_accessibility_index(urban_share_path, p.recreation_road_distance_path,
+                                         p.accessibility_index_path)
+    return True
+
+
+def recreation_sites(p):
+    """Site rank raster (1-9) from the two indices, and the high-quality-site (rank 9) mask."""
+    publish_inputs(p)
+    p.recreation_sites_ranked_path = os.path.join(p.cur_dir, 'rec_sites_ranked_1km.tif')
+    p.recreation_hq_sites_path = os.path.join(p.cur_dir, 'high_quality_sites_1km.tif')
+    if not p.run_this:
+        return
+    if not hb.path_exists(p.recreation_sites_ranked_path):
+        rank_recreation_sites(p.accessibility_index_path, p.environment_index_path,
+                                 p.recreation_sites_ranked_path)
+    if not hb.path_exists(p.recreation_hq_sites_path):
+        extract_high_quality_sites(p.recreation_sites_ranked_path, p.recreation_hq_sites_path)
+    return True
+
+
+def overnight_allocation(p):
+    """UNWTO national overnights allocated to hotel pixels; also rasterizes the r250 country ids
+    (the id raster every downstream task keys on). Overnight target year = gep_base_year."""
+    publish_inputs(p)
+    p.recreation_country_id_path = os.path.join(p.cur_dir, 'iso3_r250_ids_1km.tif')
+    p.recreation_hotels_raster_path = os.path.join(p.cur_dir, 'hotels_1km.tif')
+    p.recreation_unwto_panel_path = os.path.join(p.cur_dir, 'unwto_panel.csv')
+    p.recreation_overnights_path = os.path.join(p.cur_dir, 'overnights_1km.tif')
+    if not p.run_this:
+        return
+    # The road-length raster is used ONLY as the 1 km reference grid for rasterization.
+    if not hb.path_exists(p.recreation_hotels_raster_path):
+        rasterize_presence(p.recreation_hotels_path, p.recreation_road_length_path,
+                              p.recreation_hotels_raster_path)
+    if not hb.path_exists(p.recreation_country_id_path):
+        rasterize_id_column(p.gep_regions_input_path, p.recreation_road_length_path,
+                               p.gep_regions_id_col, p.recreation_country_id_path)
+    if not hb.path_exists(p.recreation_overnights_path):
+        if hb.path_exists(p.recreation_unwto_panel_path):
+            overnight_df = hb.df_read(p.recreation_unwto_panel_path)
+        else:
+            overnight_df = rf.clean_unwto_data(read_unwto_sheets(p.recreation_unwto_path))
+            overnight_df.to_csv(p.recreation_unwto_panel_path, index=False)
+        country_overnights_map = rf.build_country_overnights_map(overnight_df, int(p.gep_base_year))
+        hb.log('recreation: overnight totals mapped for %d countries (%.4g total overnights @%d)'
+               % (len(country_overnights_map), sum(country_overnights_map.values()),
+                  int(p.gep_base_year)))
+        allocate_overnights_raster(country_overnights_map, p.recreation_hotels_raster_path,
+                                      p.recreation_country_id_path, p.recreation_overnights_path)
+    return True
+
+
+def daily_recreation(p):
+    """Resident visits and travel-cost value into high-quality sites (gravity kernels)."""
+    publish_inputs(p)
+    p.daily_recreation_visits_path = os.path.join(p.cur_dir, 'site_visits_1km.tif')
+    p.daily_recreation_value_path = os.path.join(p.cur_dir, 'site_value_1km.tif')
+    if not p.run_this:
+        return
+    if not hb.path_all_exist([p.daily_recreation_visits_path, p.daily_recreation_value_path]):
+        calculate_kernel_recreation(
+            p.recreation_population_path, p.recreation_country_id_path,
+            hb.df_read(p.recreation_fuel_cost_path), p.recreation_hq_sites_path,
+            p.daily_recreation_visits_path, p.daily_recreation_value_path,
+            working_dir=os.path.join(p.cur_dir, 'kernel'))
+    return True
+
+
+def tourist_recreation(p):
+    """Tourist visits and travel-cost value into high-quality sites: the same kernel engine,
+    with the allocated-overnights raster in the population role."""
+    publish_inputs(p)
+    p.tourist_recreation_visits_path = os.path.join(p.cur_dir, 'site_visits_1km.tif')
+    p.tourist_recreation_value_path = os.path.join(p.cur_dir, 'site_value_1km.tif')
+    if not p.run_this:
+        return
+    if not hb.path_all_exist([p.tourist_recreation_visits_path, p.tourist_recreation_value_path]):
+        calculate_kernel_recreation(
+            p.recreation_overnights_path, p.recreation_country_id_path,
+            hb.df_read(p.recreation_fuel_cost_path), p.recreation_hq_sites_path,
+            p.tourist_recreation_visits_path, p.tourist_recreation_value_path,
+            working_dir=os.path.join(p.cur_dir, 'kernel'))
+    return True
+
+
+def gep_calculation(p):
+    """GEP valuation for recreation: sum the four result rasters per country (already r250 --
+    the id raster is iso3_r250_id, so no crosswalk collapse is needed) and write ONE row per
+    country. recreation_gep = daily value + tourist value; visit columns are the quantities."""
+    publish_inputs(p)
+    service_results, already_done = utilities.begin_gep_calculation(p, 'recreation')
+    if already_done:
+        return
+
+    # 1. Per-country sums of the four value/visit rasters, keyed on the r250 id raster.
+    df = sum_rasters_by_country_id(
+        {'daily_visits': p.daily_recreation_visits_path,
+         'daily_value': p.daily_recreation_value_path,
+         'tourist_visits': p.tourist_recreation_visits_path,
+         'tourist_value': p.tourist_recreation_value_path},
+        p.recreation_country_id_path)
+    df['recreation_gep'] = df['daily_value'] + df['tourist_value']
+    df['year'] = int(p.gep_base_year)
+
+    # 2. Attach per-country attributes (from the r264 correspondence, one row per iso3) and
+    #    write the per-country CSV (source of truth for every sum).
+    attr_cols = ['iso3_r250_id', 'iso3_r250_label', 'iso3_r250_name',
+                 'continent', 'region_un', 'region_wb', 'income_grp', 'subregion']
+    attrs = utilities.collapse_countries_to_r250(p.df_countries)[attr_cols]
+    keep_cols = attr_cols + ['year', 'daily_visits', 'daily_value',
+                             'tourist_visits', 'tourist_value', 'recreation_gep']
+    df_gep = df.merge(attrs, how='left', on='iso3_r250_id')[keep_cols]
+    hb.df_write(df_gep, service_results['gep_by_country_base_year'])
+
+    # 3. Map only: r264-expanded, each sub-region carries its country's value, never summed.
+    #    The simplified gpkg is keyed by ee_r264_id, so the r250 values expand through the
+    #    correspondence first (the pollination pattern).
+    map_df = (p.df_countries[['ee_r264_id', 'iso3_r250_id']]
+              .merge(df[['iso3_r250_id', 'recreation_gep']], how='left', on='iso3_r250_id'))
+    gdf = hb.df_merge(p.gdf_countries_simplified, map_df,
+                      how='outer', left_on='ee_r264_id', right_on='ee_r264_id')
+    gdf.to_file(service_results['gep_by_country_base_year'].replace('.csv', '.gpkg'),
+                driver='GPKG')
+
+    # 4. National total = sum over the one-row-per-country table.
+    value_gep_base_year = df_gep['recreation_gep'].sum()
+    hb.log(f'Total recreation GEP for base year {p.gep_base_year}: {value_gep_base_year}')
+    return value_gep_base_year
+
+
+def gep_load_results(p):
+    """Load GEP results from a PRIOR calculation run so the report renders without recomputing.
+    Fails loudly if absent (run run_recreation.py first). The results-only entry point."""
+    publish_inputs(p)
+    result_path = os.path.join(p.intermediate_dir, 'gep_calculation', 'gep_by_country_base_year.csv')
+    if not hb.path_exists(result_path):
+        raise FileNotFoundError(
+            f'recreation GEP results not found at {result_path}. '
+            f'Run the calculation first (run_recreation.py), then re-run results.')
+    p.results.setdefault('recreation', {})
+    p.results['recreation']['gep_by_country_base_year'] = result_path
+
+
+def gep_result(p):
+    """Render the results report(s). Shared implementation in utilities."""
+    publish_inputs(p)
+    utilities.render_service_results(p)

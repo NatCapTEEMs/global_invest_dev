@@ -2,7 +2,7 @@
 to itself). A repo doc asset, not a ProjectFlow task: the diagram is static (no run data flows in),
 so regenerating it belongs with the docs, not in the per-run tree.
 
-Three phases, matching the implemented chain (terrestrial_carbon_tasks.py):
+Three phases, matching the implemented calculation (terrestrial_carbon_tasks.py):
 (a) data preparation: Spawn 2010 density + base-year ESA LULC + carbon zones -> density lookup table
 (b) application: lookup applied to base-year LULC x zones -> per-cell density -> x cell area -> stock
 (c) valuation: sum by country (r250) -> x annual rental SCC -> GEP by country

@@ -1,4 +1,4 @@
-service,parameter,value
+﻿service,parameter,value
 erosion,erosion_gep_root,
 terrestrial_carbon,region_boundary_path,gtap_invest/region_boundaries/ee_r50_aez18_correspondence.gpkg
 terrestrial_carbon,terrestrial_carbon_shock_endw_col,aez18_id
@@ -10,19 +10,115 @@ terrestrial_carbon,terrestrial_carbon_density_lookup_table_path,global_invest/te
 terrestrial_carbon,terrestrial_carbon_shock_id_col,ee_r50_aez18_id
 terrestrial_carbon,total_carbon_density_path,global_invest/terrestrial_carbon/spawn_total_biomass_carbon_2010.tif
 terrestrial_carbon,spawn_raw_input_path,terrestrial_carbon/spawn_2020
+pollination,region_boundary_path,gtap_invest/region_boundaries/ee_r50_aez18_correspondence.gpkg
+pollination,pollination_shock_acts,"[""V_F"", ""OSD""]"
 coastal_carbon,mangrove_vector_path,global_invest/coastal_carbon/gmw_v3_2019_vec/gmw_v3_2019_vec.shp
 coastal_carbon,salt_marsh_vector_path,global_invest/coastal_carbon/global_salt_marsh2019.gpkg
 coastal_carbon,seagrass_vector_path,global_invest/coastal_carbon/014_001_WCMC013-014_SeagrassPtPy2021_v7_1/01_Data/WCMC013_014_Seagrasses_Py_v7_1.shp
 coastal_carbon,mangrove_soc_path,global_invest/coastal_carbon/soc.tha_tnc.mangroves.typology_m_30m_b0..100cm_2019_2020_go_epsg.4326_v1.2.tif
 coastal_carbon,salt_marsh_soc_path,global_invest/coastal_carbon/maxwell_2024_marsoc_0_100cm.tif
 coastal_carbon,precipitation_path,global_invest/coastal_carbon/mean_annual_precipitation_mm.tif
+fisheries,fisheries_shock_acts,"[""FSH""]"
+fisheries,cwon_shocks_path_template,gtappy/cge_releases/gtapv7-aez-rd/data/{aggregation_label}/cwon_shocks.har
+fisheries,fisheries_cwon_cpi_path,global_invest/fisheries/cwon/cpi2019.dta
+fisheries,fisheries_cwon_econ_rent_path,global_invest/fisheries/cwon/EconRent_Analysis_AllYears.dta
+fisheries,fisheries_subsistence_lynch_path,global_invest/fisheries/subsistence/Rec fish food_20230509_for USGS data release.xlsx
+erosion,erosion_dem_path,global_invest/erosion/global_dem_reproj.tif
+erosion,erosion_lulc_path,global_invest/erosion/lulc_esa_2019_reproj_6p45km.tif
+erosion,erosion_biophysical_table_path,global_invest/erosion/expanded_biophysical_table_gura.csv
+erosion,erosion_erodibility_path,soil/erodibility_30s.tif
+erosion,erosion_erosivity_path,soil/erosivity_30s.tif
+erosion,erosion_watersheds_path,global_invest/erosion/hybas_global_lev06_v1c.gpkg
+erosion,erosion_usle_path,global_invest/erosion/usle_2019_revised_feb_13.tif
+erosion,erosion_avoided_erosion_path,global_invest/erosion/avoided_erosion_2019_revised_feb_13.tif
+erosion,erosion_analysis_grid_path,global_invest/erosion/erosion_analysis_grid_6p45km.tif
+erosion,erosion_yield_stack_path,global_invest/erosion/spam2020_yield_stack_TA.tif
+erosion,erosion_area_stack_path,global_invest/erosion/spam2020_harvested_area_stack_TA.tif
+erosion,erosion_bandmap_csv_path,global_invest/erosion/spam2020_bandmap.csv
+erosion,erosion_elasticity_csv_path,global_invest/erosion/elasticity_crops_fao_revised.csv
+erosion,erosion_country_boundary_path,cartographic/ee/ee_r264_correspondence.gpkg
+erosion,erosion_fao_gpv_iso3_csv_path,global_invest/erosion/faostat_gpv_2019_iso3.csv
+erosion,erosion_fao_gpv_iso3_source_note,"the author's processed FAOSTAT table, from the drive's erosion folder"
+erosion,erosion_fao_prices_csv_path,global_invest/erosion/faostat_prices_2019_completed_revised.csv
+erosion,erosion_gdp_csv_path,global_invest/erosion/worldbank_gdp_2019.csv
+erosion,region_boundary_path,gtap_invest/region_boundaries/ee_r50_aez18_correspondence.gpkg
+erosion,erosion_shock_acts,"[""PDR"", ""WHT"", ""GRO"", ""V_F"", ""OSD"", ""C_B"", ""PFB"", ""OCR""]"
+erosion,erosion_crop_to_sector,"{""rice"": ""PDR"", ""whea"": ""WHT"", ""maiz"": ""GRO"", ""barl"": ""GRO"", ""sorg"": ""GRO"", ""mill"": ""GRO"", ""pmil"": ""GRO"", ""ocer"": ""GRO"", ""bana"": ""V_F"", ""plnt"": ""V_F"", ""citr"": ""V_F"", ""temf"": ""V_F"", ""trof"": ""V_F"", ""vege"": ""V_F"", ""toma"": ""V_F"", ""onio"": ""V_F"", ""pota"": ""V_F"", ""swpo"": ""V_F"", ""yams"": ""V_F"", ""cass"": ""V_F"", ""orts"": ""V_F"", ""soyb"": ""OSD"", ""grou"": ""OSD"", ""sunf"": ""OSD"", ""rape"": ""OSD"", ""sesa"": ""OSD"", ""oilp"": ""OSD"", ""cnut"": ""OSD"", ""ooil"": ""OSD"", ""sugc"": ""C_B"", ""sugb"": ""C_B"", ""cott"": ""PFB"", ""ofib"": ""PFB"", ""coff"": ""OCR"", ""rcof"": ""OCR"", ""coco"": ""OCR"", ""teas"": ""OCR"", ""toba"": ""OCR"", ""rubb"": ""OCR"", ""bean"": ""OCR"", ""lent"": ""OCR"", ""cowp"": ""OCR"", ""pige"": ""OCR"", ""chic"": ""OCR"", ""opul"": ""OCR"", ""rest"": ""OCR""}"
+erosion,erosion_method,service_threshold
+erosion,erosion_native_resolution,false
+recreation,recreation_lulc_share_path_template,global_invest/recreation/lulc/lulc_esa_seals7_2010_1km_{lulc_class}_share.tif
+recreation,recreation_pa_share_path,global_invest/recreation/pa/wdpa_accessible_1km_share.tif
+recreation,recreation_road_distance_path,global_invest/recreation/distance_to_roads/distance_to_road_1km_corrected.tif
+recreation,recreation_road_length_path,global_invest/recreation/grip4_road_length/grip4_road_length_1km.tif
+recreation,recreation_population_path,global_invest/recreation/worldpop/ppp_2010_1km_aligned.tif
+recreation,recreation_fuel_cost_path,global_invest/recreation/feul_cost_per_km_2019_2datasources_iso3.csv
+recreation,recreation_unwto_path,global_invest/recreation/unwto-all-data-download_2022.xlsx
+recreation,recreation_hotels_path,global_invest/recreation/Export_GEO-data_4-University-of-Minnesota.gpkg
+fire_protection,fire_regression_results_path,global_invest/fire_protection/all_countries_regression_results_lag1.csv
+fire_protection,fire_emdat_path,global_invest/fire_protection/public_emdat_custom_request_2025-05-27_a2d5069d-3f33-409b-84f2-38036aeab273.xlsx
+fire_protection,fire_panel_path,global_invest/fire_protection/gadm_adm2_panel_complete_2010_2023.csv
+fire_protection,fire_panel_source_note,"the district panel, from the drive Wildfires folder"
+water_supply,water_supply_cwon_hydro_wealth_path,global_invest/water_supply/hydropower/cwon/hydro_wealth_cd.dta
+water_supply,water_supply_cwon_hydro_wealth_source_url,https://reproducibility.worldbank.org/catalog/194/download/549
+water_supply,water_supply_cwon_hydro_wealth_source_archive_member,FR_WLD_2024_195/Reproducibility package/Output/Latest/hydro_wealth_cd.dta
+water_supply,water_use_agriculture_path,global_invest/water_supply/water_use/wateruse_ag_gep.csv
+water_supply,water_use_all_sector_path,global_invest/water_supply/water_use/final/wateruse_gep.csv
+water_supply,water_use_efficiency_input_path,global_invest/water_supply/water_use/data/Raw/aquastat/aquastat_water_efficiency.csv
+water_supply,water_use_efficiency_input_source_url,https://data.apps.fao.org/aquastat/api/v1/data?variables=SDG%206.4.1&format=csv
+water_supply,water_use_withdrawal_path,global_invest/water_supply/water_use/data/water_withdraw.csv
+air_filtration,air_filtration_workbook_path,global_invest/air_filtration/air_filtration_gep.xlsx
+air_filtration,air_filtration_workbook_source_note,"the committed workbook, from the drive air filtration folder"
+water_quality,water_quality_retention_path,global_invest/water_quality/Results/EstimationOutput/retention_estimates.csv
+water_quality,water_quality_international_path,global_invest/water_quality/water_quality_gep.csv
+flood_control,flood_control_avoided_damage_path,global_invest/flood_regulation/country_avoided_damage_usd2019.csv
+flood_control,flood_control_country_vector_path,global_invest/flood_regulation/input/pipeline_inputs/country_vector/country_boundary_r250_with_iso3.gpkg
+flood_control,flood_control_sda_raster_path,global_invest/flood_regulation/input/pipeline_inputs/sda/sda_esa300m_artif_crop_pasture.tif
+flood_control,flood_control_depth_path_template,global_invest/flood_regulation/input/pipeline_inputs/floodplain_depth/aligned_to_lulc/JRC_flood_depth_rp{rp}y__matchLULC.tif
+flood_control,flood_control_damage_wide_path,global_invest/flood_regulation/input/pipeline_inputs/flood_damage/damage_functions_sda_depth_USD2019_wide.csv
+local_climate_regulation,local_climate_regulation_final_path,global_invest/local_climate_regulation/local_climate_regulation_gep.csv
+local_climate_regulation,local_climate_regulation_city_savings_path,global_invest/local_climate_regulation/merged
+local_climate_regulation,local_climate_regulation_city_savings_source_note,"the chain's own per-country city-month valuations, one file per country: avoided kilowatt-hours, national price and their product"
+extractive_energy,extractive_energy_gas_path,global_invest/extractive_energy/gep-gas.csv
+extractive_energy,extractive_energy_coal_path,global_invest/extractive_energy/gep-coal.csv
+extractive_energy,extractive_energy_oil_path,global_invest/extractive_energy/gep-petrolium.csv
+extractive_energy,extractive_energy_cwon_gas_path,global_invest/extractive_energy/cwon/gas_rent_cd.dta
+extractive_energy,extractive_energy_cwon_gas_source_url,https://reproducibility.worldbank.org/catalog/194/download/549
+extractive_energy,extractive_energy_cwon_gas_source_archive_member,FR_WLD_2024_195/Reproducibility package/Output/Latest/gas_rent_cd.dta
+extractive_energy,extractive_energy_cwon_coal_path,global_invest/extractive_energy/cwon/coal_rent_cd.dta
+extractive_energy,extractive_energy_cwon_coal_source_url,https://reproducibility.worldbank.org/catalog/194/download/549
+extractive_energy,extractive_energy_cwon_coal_source_archive_member,FR_WLD_2024_195/Reproducibility package/Output/Latest/coal_rent_cd.dta
+extractive_energy,extractive_energy_cwon_oil_path,global_invest/extractive_energy/cwon/oil_rent_cd.dta
+extractive_energy,extractive_energy_cwon_oil_source_url,https://reproducibility.worldbank.org/catalog/194/download/549
+extractive_energy,extractive_energy_cwon_oil_source_archive_member,FR_WLD_2024_195/Reproducibility package/Output/Latest/oil_rent_cd.dta
+timber_provision,timber_provision_gep_path,global_invest/timber_provision/timber_provision_gep.csv
+timber_provision,timber_provision_value_raster_path,global_invest/timber_provision/input/current_forest_value.tif
+timber_provision,timber_provision_zone_raster_path,cartographic/ee/ee_r250_id_10sec.tif
+stormwater,stormwater_retention_by_country_path,global_invest/stormwater/retention_m3_by_country.csv
+ntfp,ntfp_roads_region1_path,global_invest/ntfp/input/roads/GRIP4_Region1_vector_fgdb.zip
+ntfp,ntfp_roads_region1_source_url,https://dataportaal.pbl.nl/downloads/GRIP4/GRIP4_Region1_vector_fgdb.zip
+ntfp,ntfp_roads_length_path,global_invest/recreation/grip4_road_length/grip4_road_length_1km.tif
+ntfp,ntfp_roads_length_source_note,"metres of road per cell from GRIP4, already staged for recreation and shared rather than rebuilt"
+ntfp,ntfp_rivers_path,global_invest/ntfp/input/rivers/ne_10m_rivers_lake_centerlines.shp
+ntfp,ntfp_rivers_source_url,https://naciscdn.org/naturalearth/10m/physical/ne_10m_rivers_lake_centerlines.zip
+ntfp,ntfp_country_id_raster_path,cartographic/ee/ee_r250_id_10sec.tif
+ntfp,ntfp_value_per_ha_path,global_invest/ntfp/cwon_nwfp_value_per_ha.csv
+ntfp,ntfp_value_per_ha_source_url,https://reproducibility.worldbank.org/catalog/194/download/549
+ntfp,ntfp_value_per_ha_source_note,"derived from the public CWoN 2024 reproducibility package: the non-wood forest product annual value (forest_nontimber_annual_nwfp.dta) over the matching forest area (forest_nontimber_total_area.dta), per country and year. Note the areas differ in definition: CWoN prices over ITS forest area while the quantity we multiply is accessible forest from the ESA land cover, which is the source method's own construction"
 landslide_mitigation,force_run,false
 landslide_mitigation,run_in_parallel,true
 landslide_mitigation,num_workers,8
 landslide_mitigation,processing_resolution,2000
-landslide_mitigation,data_processing_range,"[2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019]"
-landslide_mitigation,modeling_range,"[2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017, 2018]"
-landslide_mitigation,prediction_years,"[2019]"
-landslide_mitigation,max_location_accuracy_m,1000
-landslide_mitigation,control_ratio,25
-landslide_mitigation,c_root_scenarios,"{""observed"": ""observed"", ""full_impacts"": 0}"
+landslide_mitigation,landslide_zonal_statistics_path,global_invest/landslide_mitigation/cluster_run_2019/zonal_statistics_2019.csv
+crop_provision,fao_input_path,global_invest/crop_provision/Value_of_Production_E_All_Data.csv
+crop_provision,fao_input_source_url,https://bulks-faostat.fao.org/production/Value_of_Production_E_All_Data.zip
+crop_provision,fao_input_source_archive_member,Value_of_Production_E_All_Data.csv
+crop_provision,cwon_crop_coefficients_path,global_invest/crop_provision/CWON2024_crop_coef.csv
+crop_provision,cwon_crop_coefficients_source_note,"the CWoN land rental-rate coefficients, from the drive"
+livestock_provision,fao_input_path,global_invest/livestock_provision/Value_of_Production_E_All_Data.csv
+livestock_provision,fao_input_source_url,https://bulks-faostat.fao.org/production/Value_of_Production_E_All_Data.zip
+livestock_provision,fao_input_source_archive_member,Value_of_Production_E_All_Data.csv
+livestock_provision,cwon_crop_coefficients_path,global_invest/livestock_provision/CWON2024_crop_coef.csv
+livestock_provision,cwon_crop_coefficients_source_note,"the CWoN land rental-rate coefficients, from the drive"
+livestock_provision,gleam_dmi_path,global_invest/livestock_provision/gleam3_dmi_dashboard.psv
+livestock_provision,gleam_dmi_source_note,"GLEAM 3 dry-matter intake per country, harvested from FAO's public dashboard by the recipe in howto_harvest_gleam_intake.md. Carries all eight feed categories: the four the ruminant tables omit are served on the chicken and pig tables instead."
+erosion,erosion_use_upslope_lulc_diagnostics,false

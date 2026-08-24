@@ -1,0 +1,139 @@
+---
+title: "Overview of Ecosystem Service: Recreation and Tourism"
+format:
+  html:
+    embed-resources: true
+    standalone: true
+---
+
+Recreation and tourism are valued at travel cost. The calculation scores every 1 km cell for how good a
+recreation site it would be, generates visits into the best sites with a gravity model, and prices
+those visits at what the trip costs in fuel. Residents supply daily recreation and allocated UNWTO
+overnights supply tourism, through the same engine. The base year is 2019, which is also the UNWTO
+overnight target year and the fuel-cost price year. The price convention recorded in
+`es_config.csv` is `travel cost`.
+
+The method constants below are the published science, so they live in code. Changing one is a
+reviewed commit rather than an edit to a project's `input/` copy.
+
+## Site quality
+
+`environment_class_array` takes the six SEALS7 land-cover class shares, weights them by their
+recreation scores, adds the protected-area share, and bins the result into an environment class 0
+to 3.
+
+`accessibility_class_array` bins the urban share into a class 0 to 4 and the distance to road into
+a class 0 to 4, then reads an accessibility class 1 to 5 out of `RECREATION_URBAN_ROAD_MATRIX`.
+
+`site_rank_array` crosses the two through `RECREATION_SITE_MATRIX` into a site rank 1 to 9.
+`extract_high_quality_sites` keeps rank 9, and every visit and every dollar is masked to those
+cells at the end of the calculation.
+
+## Quantity
+
+Annual visits. For each Chebyshev ring at 1, 2, 3 and 4 grid cells, `visit_potential_array` turns a
+population cell into weekly visits through the gravity form
+
+$$
+v = \frac{1 + k}{k + e^{-\alpha P}}
+$$
+
+with a $k$ and an $\alpha$ per ring, and multiplies by 52 weeks. `create_distance_kernel` builds
+the ring, the full 3 by 3 block for ring 1 and the cells exactly $n$ steps away for larger rings,
+and `pygeoprocessing.convolve_2d` spreads each cell's potential over its ring. The rings accumulate
+into one visit total per cell.
+
+The population raster is residents for daily recreation. For tourism it is
+`allocate_overnights_raster`, which spreads each country's UNWTO overnight total proportionally
+over that country's hotel pixels. `read_unwto_sheets` in the task module locates each sheet's data
+by its AFGHANISTAN header row, and `clean_unwto_data` builds the overnight panel from the domestic
+and inbound accommodation sheets, preferring the Total row over Hotels-and-similar where Total
+exists.
+`build_country_overnights_map` sums domestic and international overnights per country at the
+target year.
+
+## Price
+
+The national fuel cost per kilometre, column `gasoline_cost_usd_per_km_2019_gppdata`, multiplied by
+the ring distance. `value_potential_array` computes the ring distance as
+`buffer_zone * pixel_size` and charges `ring_distance - 0.5 * pixel_size`.
+
+## Valuation
+
+`value_potential_array` multiplies annual visits by that travel cost, ring by ring, and the rings
+accumulate the same way the visits do. `sum_rasters_by_country_id` then sums the four result
+rasters over the country-id raster, and `gep_calculation` sets
+
+$$
+\text{recreation GEP} = \text{daily value} + \text{tourist value}
+$$
+
+Aggregation happens directly on r250, because the source pipeline's own country-id raster is
+`iso3_r250_id`. The aggregation surface and the one-row-per-country collapse coincide, so no r264
+sum can double-count here.
+
+## Inputs
+
+From `es_config.csv`, `gep_regions_input_path` is `cartographic/ee/ee_r250.gpkg` and
+`gep_regions_id_col` is `iso3_r250_id`.
+
+From `es_parameters.csv`, scoped to the `recreation` service:
+
+- `recreation_lulc_share_path_template`, the per-class 1 km share rasters, formatted with each
+  land-cover class.
+- `recreation_pa_share_path`, the accessible protected-area share.
+- `recreation_road_distance_path`, the distance-to-road raster.
+- `recreation_road_length_path`, used only as the 1 km reference grid for rasterisation.
+- `recreation_population_path`, the WorldPop residents raster.
+- `recreation_fuel_cost_path`, the per-country fuel cost table.
+- `recreation_unwto_path`, the UNWTO all-data workbook.
+- `recreation_hotels_path`, the hotel point layer.
+
+File names are kept exactly as the drive ships them, including the fuel-cost CSV's spelling, so
+staging is a copy rather than a rename layer.
+
+## Outputs
+
+Each task writes into its own directory: `env_index_1km.tif`, `accessibility_index_1km.tif`,
+`rec_sites_ranked_1km.tif` and `high_quality_sites_1km.tif`, then `iso3_r250_ids_1km.tif`,
+`hotels_1km.tif`, `unwto_panel.csv` and `overnights_1km.tif`, then `site_visits_1km.tif` and
+`site_value_1km.tif` for the daily and tourist channels.
+
+`gep_calculation` writes `gep_by_country_base_year.csv`, holding the r250 identifiers and
+attributes, `year`, `daily_visits`, `daily_value`, `tourist_visits`, `tourist_value` and
+`recreation_gep`. A companion `.gpkg` expands the same values across r264 sub-regions for mapping
+only, never summed.
+
+## Method constants
+
+| Constant | Value |
+|---|---|
+| `RECREATION_LULC_SCORES` | cropland 0.4, forest 1.0, grassland 0.7, othernat 0.85, urban 0.05, water 1.0 |
+| `RECREATION_PA_SCORE` | 1.0 |
+| `RECREATION_ENV_BINS` | 1.5, 1.0, 0.5, 0.0 giving classes 3, 2, 1, 0 |
+| `RECREATION_URBAN_BINS` | 0.9, 0.5, 0.1, 0.001, 0.0 giving classes 4, 3, 2, 1, 0 |
+| `RECREATION_ROAD_BINS` | 50.0, 20.0, 5.0, 2.0, 0.0 giving classes 0, 1, 2, 3, 4 |
+| `RECREATION_HQ_SITE_CLASS` | 9 |
+| `RECREATION_DIST_BUFFERS` | 1, 2, 3, 4 grid cells |
+| `RECREATION_GRAVITY_K` | 0.0132, 0.0267, 0.0518, 0.1067 |
+| `RECREATION_GRAVITY_ALPHA` | 0.00155, 0.00115, 0.00098, 0.00067 |
+| `RECREATION_WEEKS_PER_YEAR` | 52 |
+| `INT_NDV`, `FLOAT_NDV` | -1 and -9999.0 |
+
+`RECREATION_URBAN_ROAD_MATRIX` and `RECREATION_SITE_MATRIX` hold the two crossing tables in full.
+Nodata semantics are kept exactly as in the source repository so the port stays comparable against
+its reference output.
+
+## Compute
+
+`sum_rasters_by_country_id` aggregates whole arrays, which is the source repository's approach and
+is kept for anchor fidelity. At 1 km global that holds several arrays of roughly 4 GB at once, so
+run it on a machine with headroom.
+
+## What is open
+
+A units question is flagged and deliberately not fixed. The travel-cost distance is
+`buffer_zone * pixel_size` with `pixel_size` read from the raster, which is degrees on a 4326 grid,
+while the fuel-cost column is USD per kilometre. The port is faithful to the source. Resolve it
+against the reference `results_by_country.csv` once the data and the anchor are staged, then fix
+the code and this document together.

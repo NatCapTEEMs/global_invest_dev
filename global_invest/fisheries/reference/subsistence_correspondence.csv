@@ -1,0 +1,251 @@
+brk_name,ee_r264_id,iso3_r250_id,iso3_r250_label,ee_r264_description
+Italy,112.0,380.0,ITA,Italy
+Netherlands,167.0,528.0,NLD,Netherlands
+Morocco,69.0,732.0,ESH,Western Sahara
+Cuba,54.0,192.0,CUB,Cuba
+Morocco,138.0,504.0,MAR,Morocco
+Israel,111.0,376.0,ISR,Israel
+Zimbabwe,264.0,716.0,ZWE,Zimbabwe
+New Caledonia,161.0,540.0,NCL,New Caledonia
+Saint-Martin,137.0,663.0,MAF,Saint-Martin
+Iceland,110.0,352.0,ISL,Iceland
+Macao,136.0,446.0,MAC,"China, Macao Special Administrative Region"
+Qatar,187.0,634.0,QAT,Qatar
+Slovakia,209.0,703.0,SVK,Slovakia
+Republic of Korea,123.0,410.0,KOR,South Korea
+Kuwait,124.0,414.0,KWT,Kuwait
+Slovenia,210.0,705.0,SVN,Slovenia
+Thailand,219.0,764.0,THA,Thailand
+Vietnam,242.0,704.0,VNM,Vietnam
+Oman,172.0,512.0,OMN,Oman
+France,159.0,175.0,MYT,Mayotte
+Malaysia,158.0,458.0,MYS,Malaysia
+Brunei,35.0,96.0,BRN,Brunei
+San Marino,202.0,674.0,SMR,San Marino
+Eq. Guinea,89.0,226.0,GNQ,Equatorial Guinea
+Senegal,194.0,686.0,SEN,Senegal
+Venezuela,239.0,862.0,VEN,Venezuela
+Barbados,34.0,52.0,BRB,Barbados
+Brazil,33.0,76.0,BRA,Brazil
+Togo,218.0,768.0,TGO,Togo
+Poland,180.0,616.0,POL,Poland
+Suriname,208.0,740.0,SUR,Suriname
+Falkland Is.,75.0,238.0,FLK,Falkland Islands
+Angola,3.0,24.0,AGO,Angola
+Tanzania,230.0,834.0,TZA,Tanzania
+Iraq,109.0,368.0,IRQ,Iraq
+Ukraine,232.0,804.0,UKR,Ukraine
+Marshall Is.,144.0,584.0,MHL,Marshall Islands
+Eritrea,68.0,232.0,ERI,Eritrea
+Tonga,224.0,776.0,TON,Tonga
+Iran,108.0,364.0,IRN,Iran
+Australia,41.0,166.0,CCK,Cocos Islands
+Nauru,170.0,520.0,NRU,Nauru
+Vanuatu,243.0,548.0,VUT,Vanuatu
+Bosnia and Herz.,27.0,70.0,BIH,Bosnia and Herzegovina
+Guinea-Bissau,88.0,624.0,GNB,Guinea-Bissau
+Ireland,107.0,372.0,IRL,Ireland
+Taiwan,229.0,158.0,TWN,Taiwan
+Georgia,81.0,268.0,GEO,Georgia
+Dominican Rep.,64.0,214.0,DOM,Dominican Republic
+Sudan,193.0,729.0,SDN,Sudan
+Zambia,262.0,894.0,ZMB,Zambia
+Papua New Guinea,179.0,598.0,PNG,Papua New Guinea
+El Salvador,201.0,222.0,SLV,El Salvador
+United States,235.0,840.0,USA,United States
+Saint Kitts and Nevis,122.0,659.0,KNA,Saint Kitts and Nevis
+New Zealand,171.0,554.0,NZL,New Zealand
+Latvia,135.0,428.0,LVA,Latvia
+Micronesia,78.0,583.0,FSM,Micronesia
+Sao Tome and Principe,207.0,678.0,STP,São Tomé and Príncipe
+Guyana,96.0,328.0,GUY,Guyana
+Niue,166.0,570.0,NIU,Niue
+Mozambique,152.0,508.0,MOZ,Mozambique
+Namibia,160.0,516.0,NAM,Namibia
+Uruguay,234.0,858.0,URY,Uruguay
+Kenya,118.0,404.0,KEN,Kenya
+Guam,95.0,316.0,GUM,Guam
+Luxembourg,134.0,442.0,LUX,Luxembourg
+Solomon Is.,199.0,90.0,SLB,Solomon Islands
+Afghanistan,2.0,4.0,AFG,Afghanistan
+Bahamas,26.0,44.0,BHS,Bahamas
+Bahrain,25.0,48.0,BHR,Bahrain
+France,94.0,254.0,GUF,French Guiana
+Sierra Leone,200.0,694.0,SLE,Sierra Leone
+Gambia,87.0,270.0,GMB,Gambia
+Peru,176.0,604.0,PER,Peru
+St. Vin. and Gren.,238.0,670.0,VCT,Saint Vincent and the Grenadines
+Andorra,7.0,20.0,AND,Andorra
+Nicaragua,165.0,558.0,NIC,Nicaragua
+Denmark,63.0,208.0,DNK,Denmark
+Costa Rica,53.0,188.0,CRI,Costa Rica
+Malawi,157.0,454.0,MWI,Malawi
+France,86.0,312.0,GLP,Guadeloupe
+Canada,40.0,124.0,CAN,Canada
+Fiji,74.0,242.0,FJI,Fiji
+Egypt,67.0,818.0,EGY,Egypt
+Turkey,227.0,792.0,TUR,Turkey
+Uzbekistan,236.0,860.0,UZB,Uzbekistan
+CÃ´te d'Ivoire,45.0,384.0,CIV,Côte d'lvoire
+Guatemala,93.0,320.0,GTM,Guatemala
+Faeroe Islands,77.0,234.0,FRO,Faroe Islands
+Tuvalu,228.0,798.0,TUV,Tuvalu
+Central African Rep.,39.0,140.0,CAF,Central African Republic
+Germany,60.0,276.0,DEU,Germany
+Bulgaria,24.0,100.0,BGR,Bulgaria
+N. Mariana Is.,151.0,580.0,MNP,Northern Mariana Islands
+Austria,16.0,40.0,AUT,Austria
+Australia,15.0,36.0,AUS,Australia
+Tunisia,226.0,788.0,TUN,Tunisia
+Honduras,99.0,340.0,HND,Honduras
+Bolivia,32.0,68.0,BOL,Bolivia
+Bangladesh,23.0,50.0,BGD,Bangladesh
+Lithuania,133.0,440.0,LTU,Lithuania
+Palau,178.0,585.0,PLW,Palau
+France,76.0,250.0,FRA,France
+S. Sudan,206.0,728.0,SSD,South Sudan
+Nepal,169.0,524.0,NPL,Nepal
+Mexico,143.0,484.0,MEX,Mexico
+Finland,73.0,246.0,FIN,Finland
+Mongolia,150.0,496.0,MNG,Mongolia
+Jamaica,113.0,388.0,JAM,Jamaica
+Montenegro,149.0,499.0,MNE,Montenegro
+Dominica,62.0,212.0,DMA,Dominica
+Timor-Leste,223.0,626.0,TLS,Timor-Leste
+Norway,198.0,744.0,SJM,Svalbard and Jan Mayen
+Br. Indian Ocean Ter.,106.0,86.0,IOT,British Indian Ocean Territory
+Trinidad and Tobago,225.0,780.0,TTO,Trinidad and Tobago
+Heard I. and McDonald Is.,98.0,334.0,HMD,Heard Island and McDonald Island
+Saudi Arabia,192.0,682.0,SAU,Saudi Arabia
+Hungary,102.0,348.0,HUN,Hungary
+Myanmar,148.0,104.0,MMR,Myanmar
+Cabo Verde,52.0,132.0,CPV,Cabo Verde
+China,44.0,156.0,CHN,China
+United Kingdom,80.0,826.0,GBR,United Kingdom
+Chile,43.0,152.0,CHL,Chile
+Wallis and Futuna Islands,244.0,876.0,WLF,Wallis and Futuna
+Botswana,38.0,72.0,BWA,Botswana
+Lesotho,132.0,426.0,LSO,Lesotho
+Norway,168.0,578.0,NOR,Norway
+Norway,37.0,74.0,BVT,Bouvet Island
+Pitcairn Is.,175.0,612.0,PCN,Pitcairn Islands
+Vatican,237.0,336.0,VAT,Vatican City
+Switzerland,42.0,756.0,CHE,Switzerland
+Albania,6.0,8.0,ALB,Albania
+Nigeria,164.0,566.0,NGA,Nigeria
+Romania,189.0,642.0,ROU,Romania
+Sri Lanka,131.0,144.0,LKA,Sri Lanka
+Serbia,205.0,688.0,SRB,Serbia
+Mauritius,156.0,480.0,MUS,Mauritius
+Maldives,142.0,462.0,MDV,Maldives
+Burkina Faso,22.0,854.0,BFA,Burkina Faso
+U.S. Virgin Is.,241.0,850.0,VIR,"Virgin Islands, U.S."
+Finland,5.0,248.0,ALA,Åland
+"Bonaire, Sint Eustatius and Saba",21.0,535.0,BES,"Bonaire, Sint Eustatius and Saba"
+Turks and Caicos Is.,216.0,796.0,TCA,Turks and Caicos Islands
+Antigua and Barb.,14.0,28.0,ATG,Antigua and Barbuda
+Fr. S. and Antarctic Lands,13.0,260.0,ATF,French Southern Territories
+Greenland,92.0,304.0,GRL,Greenland
+Bermuda,31.0,60.0,BMU,Bermuda
+Israel,185.0,275.0,PSE,Palestine
+Chad,217.0,148.0,TCD,Chad
+Japan,116.0,392.0,JPN,Japan
+Belgium,19.0,56.0,BEL,Belgium
+Turkmenistan,222.0,795.0,TKM,Turkmenistan
+Uganda,231.0,800.0,UGA,Uganda
+Antarctica,12.0,10.0,ATA,Antarctica
+Madagascar,141.0,450.0,MDG,Madagascar
+New Zealand,221.0,772.0,TKL,Tokelau
+South Africa,261.0,710.0,ZAF,South Africa
+India,105.0,356.0,IND,India
+Grenada,91.0,308.0,GRD,Grenada
+Benin,20.0,204.0,BEN,Benin
+Greece,90.0,300.0,GRC,Greece
+Moldova,140.0,498.0,MDA,Moldova
+Malta,147.0,470.0,MLT,Malta
+Syria,215.0,760.0,SYR,Syria
+France,155.0,474.0,MTQ,Martinique
+Paraguay,184.0,600.0,PRY,Paraguay
+Samoa,245.0,882.0,WSM,Samoa
+Czechia,59.0,203.0,CZE,Czechia
+Mali,146.0,466.0,MLI,Mali
+Norfolk Island,163.0,574.0,NFK,Norfolk Island
+Comoros,51.0,174.0,COM,Comoros
+Colombia,50.0,170.0,COL,Colombia
+Kazakhstan,117.0,398.0,KAZ,Kazakhstan
+Cook Is.,49.0,184.0,COK,Cook Islands
+Haiti,101.0,332.0,HTI,Haiti
+Portugal,183.0,620.0,PRT,Portugal
+Saint Helena,197.0,654.0,SHN,"Saint Helena, Ascension and Tris"
+American Samoa,11.0,16.0,ASM,American Samoa
+Democratic Republic of the Congo,47.0,180.0,COD,Democratic Republic of the Congo
+Gabon,79.0,266.0,GAB,Gabon
+Rwanda,191.0,646.0,RWA,Rwanda
+Cyprus,58.0,196.0,CYP,Cyprus
+Aruba,1.0,533.0,ABW,Aruba
+Guinea,85.0,324.0,GIN,Guinea
+Dem. Rep. Korea,182.0,408.0,PRK,North Korea
+Seychelles,214.0,690.0,SYC,Seychelles
+Belize,30.0,84.0,BLZ,Belize
+Monaco,139.0,492.0,MCO,Monaco
+Isle of Man,104.0,833.0,IMN,Isle of Man
+Cayman Is.,57.0,136.0,CYM,Cayman Islands
+Republic of the Congo,48.0,178.0,COG,Republic of the Congo
+Puerto Rico,181.0,630.0,PRI,Puerto Rico
+St. Pierre and Miquelon,204.0,666.0,SPM,Saint Pierre and Miquelon
+Gibraltar,84.0,292.0,GIB,Gibraltar
+Belarus,29.0,112.0,BLR,Belarus
+Kiribati,121.0,296.0,KIR,Kiribati
+Tajikistan,220.0,762.0,TJK,Tajikistan
+Jordan,115.0,400.0,JOR,Jordan
+Burundi,18.0,108.0,BDI,Burundi
+Niger,162.0,562.0,NER,Niger
+Saint Lucia,129.0,662.0,LCA,Saint Lucia
+Hong Kong,97.0,344.0,HKG,"China, Hong Kong Special Administrative Region"
+Pakistan,173.0,586.0,PAK,Pakistan
+France,188.0,638.0,REU,Réunion
+Sint Maarten,213.0,534.0,SXM,Sint Maarten
+Liechtenstein,130.0,438.0,LIE,Liechtenstein
+Panama,174.0,591.0,PAN,Panama
+S. Geo. and the Is.,196.0,239.0,SGS,South Georgia and the South Sand
+St-BarthÃ©lemy,28.0,652.0,BLM,Saint Barthélemy
+Montserrat,154.0,500.0,MSR,Montserrat
+Armenia,10.0,51.0,ARM,Armenia
+Libya,128.0,434.0,LBY,Libya
+Bhutan,36.0,64.0,BTN,Bhutan
+Lebanon,126.0,422.0,LBN,Lebanon
+Macedonia,145.0,807.0,MKD,North Macedonia
+Singapore,195.0,702.0,SGP,Singapore
+Argentina,9.0,32.0,ARG,Argentina
+Djibouti,61.0,262.0,DJI,Djibouti
+Russia,190.0,643.0,RUS,Russia
+Somalia,203.0,706.0,SOM,Somalia
+Indonesia,103.0,360.0,IDN,Indonesia
+United Arab Emirates,8.0,784.0,ARE,United Arab Emirates
+Liberia,127.0,430.0,LBR,Liberia
+Australia,56.0,162.0,CXR,Christmas Island
+Ghana,83.0,288.0,GHA,Ghana
+Cambodia,120.0,116.0,KHM,Cambodia
+Ecuador,66.0,218.0,ECU,Ecuador
+Ethiopia,72.0,231.0,ETH,Ethiopia
+Croatia,100.0,191.0,HRV,Croatia
+eSwatini,212.0,748.0,SWZ,Swaziland
+Serbia,248.0,383.0,XKX,Kosovo
+Yemen,251.0,887.0,YEM,Yemen
+U.S. Minor Outlying Is.,233.0,581.0,UMI,United States Minor Outlying Isl
+Guernsey,82.0,831.0,GGY,Guernsey
+British Virgin Is.,240.0,92.0,VGB,British Virgin Islands
+Azerbaijan,17.0,31.0,AZE,Azerbaijan
+Mauritania,153.0,478.0,MRT,Mauritania
+Cameroon,46.0,120.0,CMR,Cameroon
+Fr. Polynesia,186.0,258.0,PYF,French Polynesia
+Sweden,211.0,752.0,SWE,Sweden
+Anguilla,4.0,660.0,AIA,Anguilla
+CuraÃ§ao,55.0,531.0,CUW,Curaçao
+Algeria,65.0,12.0,DZA,Algeria
+Philippines,177.0,608.0,PHL,Philippines
+Jersey,114.0,832.0,JEY,Jersey
+Laos,125.0,418.0,LAO,Laos
+Spain,70.0,724.0,ESP,Spain
+Kyrgyzstan,119.0,417.0,KGZ,Kyrgyzstan
+Estonia,71.0,233.0,EST,Estonia

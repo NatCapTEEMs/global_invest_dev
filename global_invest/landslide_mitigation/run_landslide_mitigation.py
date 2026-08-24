@@ -1,5 +1,5 @@
-"""Full landslide-mitigation GEP run. Thin runner: one tree, executed; inputs resolve via
-initialize_paths reference paths. Folded from m-braaksma/landslide_mitigation v0.2.0."""
+"""Full landslide-mitigation GEP run. Thin runner: one tree, executed. Folded from
+m-braaksma/landslide_mitigation v0.2.0."""
 import hazelbean as hb
 
 from global_invest.landslide_mitigation import landslide_mitigation_initialize
@@ -11,9 +11,7 @@ def build_task_tree(p):
 
 def run_project(p):
 
-    # The tree builder's iterators read run configuration, so initialize before building the tree.
-    p.results = {}
-    landslide_mitigation_initialize.initialize_paths(p)
+    # Every task publishes its own inputs (publish_inputs in the tasks module): no setup call.
     build_task_tree(p)
 
     hb.log('Created ProjectFlow object at ' + p.project_dir + '\n    from script ' + p.calling_script)

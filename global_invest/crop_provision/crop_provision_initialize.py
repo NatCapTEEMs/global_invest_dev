@@ -1,22 +1,9 @@
-import pandas as pd
-import hazelbean as hb
 
-from global_invest import utilities
 from global_invest.crop_provision import crop_provision_tasks
 
-def initialize_paths(p):
-    """One source of truth for the country references (shared block, get_path reference paths).
-    Previously this READ p.* attributes that each run file had to set first -- the main runner
-    duplicated the block and the calc runner missed it, so the calc entry crashed on an
-    AttributeError. Resolution now lives here; the 30sec simplified layer matches what the main
-    runner always used."""
-    utilities.initialize_country_paths(p, simplified='30sec')
-
 def build_gep_service_calculation_task_tree(p, parent=None):
-    """Build the default task tree for commercial agriculture."""
-    
-    p.crop_provision_task = p.add_task(crop_provision_tasks.crop_provision, parent=parent)
-    p.crop_provision_gep_calculation_task = p.add_task(crop_provision_tasks.gep_calculation, parent=p.crop_provision_task)  
+    """Build the default GEP task tree."""
+    p.crop_provision_gep_calculation_task = p.add_task(crop_provision_tasks.gep_calculation)  
     return p
 
 def build_gep_service_task_tree(p, parent=None):
@@ -31,19 +18,18 @@ def build_gep_service_task_tree(p, parent=None):
     # Actually, maybe it's just that load_results is more useful for notebooks?
     
     p = build_gep_service_calculation_task_tree(p, parent=parent)
-    p.crop_provision_gep_result_task = p.add_task(crop_provision_tasks.gep_result, parent=p.crop_provision_task) 
+    p.crop_provision_gep_result_task = p.add_task(crop_provision_tasks.gep_result) 
     return p
 
     
 def build_gep_task_tree(p):
     """
-    Build the default task tree forthe GEP application of commercial agriculture. In this case, it's very similar to the standard task tree
+    Build the results-oriented task tree (very similar to the standard tree
     but i've included it here for consistency with other models.
     """
-    p.crop_provision_task = p.add_task(crop_provision_tasks.crop_provision)
-    p.crop_provision_gep_preprocess_task = p.add_task(crop_provision_tasks.gep_preprocess, parent=p.crop_provision_task)  
-    p.crop_provision_gep_calculation_task = p.add_task(crop_provision_tasks.gep_calculation, parent=p.crop_provision_task)  
-    p.crop_provision_gep_result_task = p.add_task(crop_provision_tasks.gep_result, parent=p.crop_provision_task)   
-    p.crop_provision_gep_results_distribution_task = p.add_task(crop_provision_tasks.gep_results_distribution, parent=p.crop_provision_task)      
+    p.crop_provision_gep_preprocess_task = p.add_task(crop_provision_tasks.gep_preprocess)  
+    p.crop_provision_gep_calculation_task = p.add_task(crop_provision_tasks.gep_calculation)  
+    p.crop_provision_gep_result_task = p.add_task(crop_provision_tasks.gep_result)   
+    p.crop_provision_gep_results_distribution_task = p.add_task(crop_provision_tasks.gep_results_distribution)      
     return p
     

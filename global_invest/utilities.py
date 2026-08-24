@@ -12,16 +12,14 @@ and the four 2-way splits. A gap of any other shape is a legitimate sum, not thi
 reached terrestrial_carbon + coastal_carbon and not the other five GEP services.
 """
 
-# The scenario-name mapping that used to live here (our label -> a service's frozen-table label) was
-# NGFS-specific and has moved to the consumer: each service's static shock task now defaults to identity
-# and warns loudly if a scenario is absent from its table, and ngfs_pnas sets p.<service>_scenario_map
-# with its two non-identity entries. A general library should not hardcode one project's scenario names.
+# A general library does not hardcode one project's scenario names: each service's static shock
+# task defaults to identity (plus the nature-off spelling alias below) and warns loudly when a
+# scenario is absent from its table; a consumer supplies p.<service>_scenario_map for its own naming.
 
 def initialize_country_paths(p, simplified='300sec'):
     """Shared country-boundary references every GEP service needs: the r264 correspondence
     (csv + gpkg + simplified gpkg, all as get_path reference paths) and the loaded df_countries.
-    Called from each service's publish_inputs (or its initialize_paths, until its per-ES pass
-    step); the service then adds only its service-specific inputs
+    Called from each service's publish_inputs; the service then adds only its service-specific inputs
     (this block used to be pasted into every module).
     """
     import pandas as pd
@@ -41,7 +39,7 @@ def initialize_country_paths(p, simplified='300sec'):
     p.df_countries_csv_path = ref.replace('.gpkg', '.csv')
     simplified_ref = ref.replace('_correspondence.gpkg', f'_simplified{simplified}.gpkg')
     p.gdf_countries_vector_simplified_path = simplified_ref if hb.path_exists(simplified_ref) else ref
-    p.df_countries = pd.read_csv(p.df_countries_csv_path)
+    p.df_countries = hb.df_read(p.df_countries_csv_path)
     # The GDFs stay as path strings; hb.read_vector converts on demand.
     p.gdf_countries = p.gdf_countries_vector_path
     p.gdf_countries_simplified = p.gdf_countries_vector_simplified_path
@@ -52,7 +50,7 @@ def summarize_raster_by_region(value_raster_path, region_boundary_path, out_path
     """Per-polygon total / mean / pixel count of a value raster, via hb.zonal_statistics_flex.
 
     Shared by every GEP service that aggregates a value raster to regions (terrestrial_carbon's
-    stock chain and shock zones; pollination's USD value raster). Promoted here on its second
+    stock calculation and shock zones; pollination's USD value raster). Promoted here on its second
     caller. Heavy imports stay inside so importing utilities stays light.
 
     id_column: the vector column holding a unique integer id per polygon ('ee_r264_id' for the
@@ -66,7 +64,7 @@ def summarize_raster_by_region(value_raster_path, region_boundary_path, out_path
 
     regions = gpd.read_file(region_boundary_path)
     # zones_raster_data_type=5 (Int32) so ids past 255 don't saturate (r264 runs to 264, r50xAEZ
-    # higher); all_touched=True matches the old per-polygon masking. Returns a frame indexed by
+    # higher); all_touched=True. Returns a frame indexed by
     # zone id, with a zone 0 = everything outside every polygon.
     zone_ids_raster = os.path.splitext(out_path)[0] + '_zone_ids.tif'
     stats = hb.zonal_statistics_flex(
@@ -131,8 +129,17 @@ def render_service_results(p):
         existing_pythonpath = env.get('PYTHONPATH')
         env['PYTHONPATH'] = (repo_root if not existing_pythonpath
                              else repo_root + os.pathsep + existing_pythonpath)
+        # Name the project being reported on. Without this every results page falls back to a
+        # hardcoded home-directory path, so a report rendered from a test project or another
+        # machine would show the stable project's numbers instead of this run's.
+        env['PROJECTFLOW_ROOT'] = p.project_dir
 
-        cmd = ['quarto', 'render', results_qmd_project_path, '--verbose']
+        # --to html is explicit because quarto renders EVERY format a qmd declares when it is
+        # omitted. Coastal carbon declares pdf and docx alongside html, so an unqualified render
+        # pulled in lualatex and died on a TeX Live too old to reach the current repository.
+        # The results report is the HTML page in every service; the other formats stay available
+        # to anyone who asks quarto for them directly.
+        cmd = ['quarto', 'render', results_qmd_project_path, '--to', 'html', '--verbose']
         hb.log('Running quarto command: %s' % ' '.join(cmd))
         process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                    env=env, text=True, bufsize=1, universal_newlines=True)
@@ -218,14 +225,6 @@ def resolve_base_scenario(scenario_labels, scenario_map, base_scn, service, log=
     return raw
 
 
-# example utility function
-
-def convert_currency(value, from_currency, to_currency, exchange_rate):
-    """
-    Convert a value from one currency to another using the provided exchange rate.
-    """
-
-    pass
 
 
 # ---------------------------------------------------------------------------------------------
@@ -307,7 +306,7 @@ def assert_shock_table_sound(df, requested_scenarios, label, abs_max=SHOCK_ABS_M
 def seed_input_template(p, file_name, log=print, required=True):
     """Return the project's input/ copy of a tracked input_template file, seeding it on first use.
 
-    The house input chain (same as ngfs/seals): the tracked template under
+    The house input calculation (same as ngfs/seals): the tracked template under
     global_invest/input_template/ is copied into the project's input/ if absent, and the run
     always reads the input/ copy -- edit that copy to configure a single project. file_name may
     be a relative path (e.g. the lulc test fixtures); the nesting is recreated under input/.
@@ -341,14 +340,15 @@ def hydrate_es_config(p, service, log=print):
     _path resolve through p.get_path (base_data-relative references); values that parse as
     integers become ints; everything else stays a string.
 
-    The csv follows the house input chain (same as ngfs/seals): the tracked template at
+    The csv follows the house input calculation (same as ngfs/seals): the tracked template at
     global_invest/input_template/es_config.csv is SEEDED into the project's input/ on first
     use, and the run always reads the project's own input/ copy -- edit that copy to configure
     a single project. Note the standard caveat: a stale input/ copy shadows an updated
     template; delete it (or use a fresh project) to pick up template changes.
     """
     import pandas as pd
-    df = pd.read_csv(seed_input_template(p, 'es_config.csv', log))
+    import hazelbean as hb
+    df = hb.df_read(seed_input_template(p, 'es_config.csv', log))
     rows = df[df['service'] == service]
     if rows.empty:
         log(f"es_config.csv has no row for service '{service}' -- nothing hydrated.")
@@ -367,7 +367,12 @@ def hydrate_es_config(p, service, log=print):
             # input/ first (required=False: absent template -> get_path stays the loud gate),
             # so a cell can point at data the library carries -- example_service does.
             seed_input_template(p, str(value), log, required=False)
-            value = p.get_path(str(value))
+            # leave_ref_path_if_fail: hydration publishes paths for later tasks rather than
+            # consuming them, so a config path this machine does not hold should fail in the task
+            # that reads it, naming that file, rather than here, naming the service. Landslide is
+            # the case: its raw input directory is a cluster asset, so hydrating its config raised
+            # even for the results-only run, which reads a staged table and never touches it.
+            value = p.get_path(str(value), leave_ref_path_if_fail=True)
         else:
             try:
                 value = int(float(value))
@@ -392,7 +397,8 @@ def hydrate_es_parameters(p, service, log=print):
     """
     import json
     import pandas as pd
-    df = pd.read_csv(seed_input_template(p, 'es_parameters.csv', log))
+    import hazelbean as hb
+    df = hb.df_read(seed_input_template(p, 'es_parameters.csv', log))
     for _, row in df[df['service'] == service].iterrows():
         attribute, value = str(row['parameter']), row['value']
         if pd.isna(value) or str(value) == '':
@@ -445,14 +451,15 @@ def hydrate_es_scenarios(p, log=print):
 
     DEFAULTS layer, never an override: an attribute the caller already set on p wins, which is
     the same seam contract consumers rely on (they set these from their own scenarios CSV and
-    never read this one). The CSV follows the same input chain as es_config.csv (tracked
+    never read this one). The CSV follows the same input calculation as es_config.csv (tracked
     template seeded into the project's input/; the run reads the input/ copy). Set
     p.es_scenario_definitions_filename to run a different scenarios file.
     """
     import os
     import pandas as pd
+    import hazelbean as hb
     file_name = getattr(p, 'es_scenario_definitions_filename', None) or 'es_scenarios_test.csv'
-    df = pd.read_csv(seed_input_template(p, file_name, log))
+    df = hb.df_read(seed_input_template(p, file_name, log))
 
     def unset(attribute):
         # The defaults-layer contract in one predicate: hydrate only what the caller
@@ -501,3 +508,445 @@ def hydrate_es_scenarios(p, log=print):
             str(row['scenario_label']): str(row['climate_label'])
             for _, row in non_baseline.iterrows() if pd.notna(row.get('climate_label'))}
     return p
+
+
+def raster_sum(raster_path, block_rows=2048):
+    """Nodata-safe sum of a raster's first band, read blockwise so global rasters fit in
+    memory. Promotion candidate to hazelbean (no equivalent found there on 2026-08-21)."""
+    import numpy as np
+    from osgeo import gdal
+    gdal.UseExceptions()
+    ds = gdal.Open(raster_path)
+    band = ds.GetRasterBand(1)
+    ndv = band.GetNoDataValue()
+    total = 0.0
+    for y in range(0, band.YSize, block_rows):
+        rows = min(block_rows, band.YSize - y)
+        array = band.ReadAsArray(0, y, band.XSize, rows).astype('float64')
+        if ndv is not None:
+            array[array == ndv] = 0.0
+        array[~np.isfinite(array)] = 0.0
+        total += array.sum()
+    return total
+
+
+def assert_zonal_conservation(country_totals_sum, raster_path, service, lower=0.95, upper=1.001):
+    """The conservation invariant for a value-raster country aggregation: the country sums must
+    add up to the raster's own total. A shortfall beyond `lower` means value fell outside every
+    polygon (or zones were dropped). An excess beyond `upper` means DOUBLE-COUNTING -- the exact
+    failure the split-country guard exists for. Verified at 100.0000% on pollination's real
+    raster before being encoded here."""
+    import hazelbean as hb
+    total = raster_sum(raster_path)
+    if total == 0:
+        raise ValueError(f'{service}: conservation check impossible, the raster sums to zero.')
+    coverage = country_totals_sum / total
+    hb.log(f'{service}: zonal conservation {coverage:.4%} of the raster total.')
+    if not (lower <= coverage <= upper):
+        raise ValueError(
+            f'{service}: country sums are {coverage:.4%} of the raster total '
+            f'(allowed {lower:.0%} to {upper:.1%}). Above 100% means double-counting; '
+            f'far below means dropped value.')
+    return coverage
+
+
+def download_missing_inputs(p, service, log=print):
+    """Fetch any of a service's inputs that are missing and have a recorded source.
+
+    es_parameters carries one row per input path (`<name>_path`). An input that can be
+    fetched carries companion rows:
+
+      `<name>_source_url`             the public URL it comes from
+      `<name>_source_archive_member`  the member to extract, when the URL is an archive
+      `<name>_source_note`            the human instruction, when no URL can exist
+                                      (an interactive export, or a file only a
+                                      collaborator has)
+
+    Only missing files are fetched, so a rerun downloads nothing. Inputs with a note, or
+    with no source at all, are returned by name rather than silently skipped: that list is
+    what a collaborator has to send.
+
+    This is a deliberate step, not part of publish_inputs. A task that quietly refetches
+    could swap a file's vintage mid-analysis, and checking every path on every task would
+    cost a run more than it saves.
+
+    Returns:
+        (downloaded, needs_a_person): the paths written, and {input name: reason} for the
+        inputs a person has to supply.
+    """
+    import os
+    import shutil
+    import urllib.request
+    import zipfile
+    import pandas as pd
+    import hazelbean as hb
+
+    df = hb.df_read(seed_input_template(p, 'es_parameters.csv', log))
+    rows = df[df['service'] == service]
+
+    def companions(suffix):
+        return {str(r['parameter'])[:-len(suffix)]: str(r['value'])
+                for _, r in rows.iterrows()
+                if str(r['parameter']).endswith(suffix) and not pd.isna(r['value'])}
+
+    urls, members, notes = companions('_source_url'), companions('_source_archive_member'), companions('_source_note')
+
+    downloaded, needs_a_person = [], {}
+    for _, row in rows.iterrows():
+        attribute = str(row['parameter'])
+        if not attribute.endswith('_path'):
+            continue
+        path = getattr(p, attribute, None)
+        if path is None or hb.path_exists(path):
+            continue
+        name = attribute[:-len('_path')]
+        if name not in urls:
+            needs_a_person[attribute] = notes.get(name, 'no recorded source')
+            continue
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        log(f'{service}: downloading {attribute} from {urls[name]}')
+        if name in members:
+            archive = path + '.download'
+            urllib.request.urlretrieve(urls[name], archive)
+            with zipfile.ZipFile(archive) as zf, open(path, 'wb') as out:
+                shutil.copyfileobj(zf.open(members[name]), out)
+            os.remove(archive)
+        else:
+            urllib.request.urlretrieve(urls[name], path)
+        downloaded.append(path)
+
+    for attribute, reason in needs_a_person.items():
+        log(f'{service}: {attribute} needs a person ({reason})')
+    return downloaded, needs_a_person
+
+
+def download_inputs_task(service):
+    """Build a ProjectFlow task that fetches a service's missing inputs.
+
+    Deliberately opt-in: add it to a tree when a machine needs its inputs, and leave it out
+    of routine runs, so no run silently refetches a file mid-analysis.
+
+        p.add_task(utilities.download_inputs_task('extractive_energy'))
+    """
+    import hazelbean as hb
+
+    def download_inputs(p):
+        if not p.run_this:
+            return
+        downloaded, needs_a_person = download_missing_inputs(p, service, log=hb.log)
+        hb.log(f'{service}: {len(downloaded)} inputs downloaded, '
+               f'{len(needs_a_person)} still need a person')
+        return True
+
+    download_inputs.__name__ = f'download_{service}_inputs'
+    return download_inputs
+
+
+def collapse_countries_to_r250(df_countries, keep_columns=()):
+    """The r264 correspondence reduced to one canonical row per country.
+
+    r264 splits large countries into sub-regions, so joining a per-country value against it
+    repeats that country once per sub-region. Filtering to the rows whose r264 label equals
+    the r250 label leaves exactly one row per country, which is what a country join needs.
+
+    Args:
+        df_countries (pd.DataFrame): the r264 correspondence (p.df_countries).
+        keep_columns (iterable): extra columns to carry through, beyond the identifiers and
+            the standard country attributes.
+
+    Returns:
+        pd.DataFrame: one row per country, holding the identifiers, the attributes, and
+        whatever `keep_columns` names.
+    """
+    identifiers = ['ee_r264_id', 'iso3_r250_id', 'ee_r264_label', 'iso3_r250_label',
+                   'ee_r264_name', 'iso3_r250_name']
+    attributes = ['continent', 'region_un', 'region_wb', 'income_grp', 'subregion']
+    wanted = identifiers + attributes + list(keep_columns)
+    one_row_per_country = df_countries[df_countries['ee_r264_label'] == df_countries['iso3_r250_label']]
+    return one_row_per_country[[c for c in wanted if c in one_row_per_country.columns]].copy()
+
+
+def assert_join_coverage(joined_df, value_column, expected_rows, service, log=print):
+    """Every source row must survive a country join, or the loss is named.
+
+    A join on country labels drops any row whose label the correspondence does not carry,
+    and the result still looks like a valid table. This compares the surviving valued rows
+    against what went in and raises with the count when they disagree.
+    """
+    survived = int(joined_df[value_column].notna().sum())
+    if survived < expected_rows:
+        raise ValueError(
+            f'{service}: {expected_rows - survived} of {expected_rows} valued rows did not '
+            f'match a country in the correspondence. A label that does not match is dropped '
+            f'silently, so the join key needs checking before this total is used.')
+    log(f'{service}: all {expected_rows} valued rows matched a country.')
+
+
+# The choropleth every service's report closes with. It is here rather than pasted into each
+# results page because only seven of the twenty pages had it, each with its own copy, and a
+# service should not need its own geopackage to draw one: the shared country geometry plus the
+# per-country table this service already writes is enough.
+CHOROPLETH_COLORMAP = 'OrRd'
+CHOROPLETH_FIGSIZE = (15, 10)
+CHOROPLETH_DPI = 300
+
+
+def plot_gep_choropleth(df_by_country, value_column, countries_vector_path, out_png_path,
+                        title='GEP by Country in Base Year', label=None):
+    """Draw one service's per-country values on the shared country geometry.
+
+    Values are shaded on a log scale, because a handful of countries carry most of every
+    service's total and a linear ramp renders the rest indistinguishable. A country the table
+    does not value is left unshaded rather than shaded as zero.
+
+    Args:
+        df_by_country (pd.DataFrame): one row per country, carrying iso3_r250_id and value_column.
+        value_column (str): the column to map.
+        countries_vector_path (str): the shared country geometry (any r250 or r264 gpkg).
+        out_png_path (str): where the figure is written.
+        title (str): the figure title.
+        label (str): the colour-bar label; defaults to the value column.
+
+    Returns:
+        str: out_png_path, or None if the table had no positive value to scale a log ramp on.
+    """
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib as mpl
+    import matplotlib.pyplot as plt
+    import geopandas as gpd
+    import pandas as pd
+
+    gdf = gpd.read_file(countries_vector_path)
+    join_column = 'iso3_r250_id' if 'iso3_r250_id' in gdf.columns else 'ee_r264_id'
+    values = df_by_country[['iso3_r250_id', value_column]].dropna(subset=['iso3_r250_id'])
+    values = values.groupby('iso3_r250_id', as_index=False)[value_column].sum(min_count=1)
+    gdf = gdf.merge(values, how='left', left_on=join_column, right_on='iso3_r250_id')
+
+    positive = gdf[value_column][gdf[value_column] > 0]
+    if not len(positive):
+        return None
+
+    norm = mpl.colors.LogNorm(vmin=positive.min(), vmax=gdf[value_column].max())
+    figure, axes = plt.subplots(figsize=CHOROPLETH_FIGSIZE)
+    gdf.plot(column=value_column, cmap=CHOROPLETH_COLORMAP, legend=False, norm=norm, ax=axes)
+    gdf.boundary.plot(ax=axes, color='black', linewidth=0.5)
+
+    scalar_map = plt.cm.ScalarMappable(cmap=CHOROPLETH_COLORMAP, norm=norm)
+    scalar_map._A = []
+    colour_bar = figure.colorbar(scalar_map, ax=axes, orientation='vertical',
+                                 fraction=0.03, pad=0.02)
+    colour_bar.set_label(label or value_column)
+    colour_bar.ax.yaxis.set_major_formatter(
+        mpl.ticker.FuncFormatter(lambda x, _: f'{int(x):,}'))
+    axes.set_title(title)
+    axes.set_axis_off()
+    hb_create_directories(out_png_path)
+    plt.savefig(out_png_path, bbox_inches='tight', dpi=CHOROPLETH_DPI)
+    plt.close(figure)
+    return out_png_path
+
+
+def hb_create_directories(path):
+    """The output directory for a file path, created if it is missing."""
+    import os
+    directory = os.path.dirname(path)
+    if directory and not os.path.exists(directory):
+        os.makedirs(directory, exist_ok=True)
+
+
+import numpy as np
+
+
+def sum_by_zone(value, zone_ids, n_zones):
+    """Per-zone pixel sums of a value block, indexed by zone id.
+
+    Shared because more than one service sums a raster inside country polygons block by
+    block: timber over its value raster, stormwater over its retention volume.
+
+    Args:
+        value (np.ndarray): Value raster block (per-pixel value: dollars, cubic metres, whatever the raster holds).
+        zone_ids (np.ndarray): Integer zone-id block, same shape; 0 = background.
+        n_zones (int): Highest zone id; the output has n_zones + 1 entries.
+
+    Returns:
+        np.ndarray: float64 sums, index i = total for zone id i. Blockwise callers
+        accumulate by adding successive blocks' arrays.
+    """
+    return np.bincount(zone_ids.ravel(), weights=value.astype(np.float64).ravel(),
+                       minlength=n_zones + 1)
+
+
+# ---------------------------------------------------------------------------------------------
+# The two steps every service's gep_calculation shares.
+#
+# Measured across the 22 valuations before these were written: all 22 register a results dict,
+# name gep_by_country_base_year, and skip when it exists; 22 write the table; 20 log the total;
+# 18 set the year; 16 collapse to r250. The variation in the last two is not a choice anyone
+# made, it is what happens when the same twelve lines are retyped twenty-two times.
+#
+# What is NOT here, deliberately: the merge that joins a service's values to the country list.
+# ntfp joins on iso3_r250_label with how='left', stormwater on iso3_r250_id with how='right',
+# and fisheries passes the country frame into its science function instead. That is real
+# variation, so folding it in would mean a parameter per caller and a helper nobody can read.
+# ---------------------------------------------------------------------------------------------
+
+# The attributes every per-country table carries. One list, so a service cannot quietly ship a
+# table with a column its siblings have.
+GEP_COUNTRY_ATTRIBUTE_COLUMNS = ['iso3_r250_id', 'iso3_r250_label', 'iso3_r250_name',
+                                 'continent', 'region_un', 'region_wb', 'income_grp', 'subregion']
+
+# Columns that reach a country table from an upstream source and say nothing the table does not
+# already say, each mapped to the column it repeats. A column is dropped only when the one it
+# duplicates is actually there: renewable_energy_provision carries `Year` and no lowercase `year`,
+# so dropping it unconditionally would take the year out of the table and nothing would report an
+# error. `Value` is a byte-for-byte copy of the service's own `_gep` column.
+REDUNDANT_COUNTRY_COLUMNS = {'Value': '_gep', 'Year': 'year', 'Country': 'iso3_r250_name',
+                             'Country_Name': 'iso3_r250_name', 'Country Code': 'iso3_r250_id',
+                             'area_code_M49': 'iso3_r250_id'}
+
+
+def is_redundant(column, df):
+    """Whether a column repeats one the frame already has."""
+    duplicates = REDUNDANT_COUNTRY_COLUMNS.get(column)
+    if duplicates is None:
+        return False
+    if duplicates == '_gep':
+        return any('_gep' in c for c in df.columns)
+    return duplicates in df.columns
+
+
+# The aggregations every results page reports beside the country table. A GEP account is read by
+# region and by income group at least as often as by country, so a page that shows only the country
+# table is missing the view most people open it for.
+GEP_SUMMARY_GROUPINGS = ('income_grp', 'region_un', 'continent', 'subregion')
+
+
+def report_dir():
+    """The directory a results page is rendered into, and where its tables and figures belong.
+
+    Quarto runs a qmd with the working directory set to the qmd's own location, which is the
+    report task's directory. `p.cur_dir` is not that. A results page builds the calculation tree
+    and executes it, so by the time the display code runs `p.cur_dir` is whichever task happened
+    to run last, which differs from service to service: it is gep_calculation for most and
+    fisheries_subsistence_gep for fisheries. Writing report artifacts there scatters them across
+    task folders while the page itself is written somewhere else, and the page then reads a
+    figure back from a path nothing wrote to.
+
+    Returns:
+        str: the report's own directory.
+    """
+    import os
+
+    return os.getcwd()
+
+
+def gep_summary_tables(df, value_column, out_dir, log=None):
+    """The country table and the four grouped tables a results page displays.
+
+    Writes each one beside the report as `gep_by_<grouping>_base_year_table.csv`, which is the
+    filename eight services already produced by hand before this was shared, so the outputs are
+    unchanged and only the duplication goes away. A grouping whose column the frame does not carry
+    is skipped rather than raising: fire_protection covers 161 countries and does not reach every
+    income group.
+
+    Args:
+        df (pd.DataFrame): the service's country table.
+        value_column (str): the column to sum, normally `<service>_gep`.
+        out_dir (str): where the CSVs go, normally the report task's own directory.
+        log (callable): optional logger.
+
+    Returns:
+        dict: 'country' plus one key per grouping present, each a DataFrame.
+    """
+    import os
+    import hazelbean as hb
+
+    tables = {'country': df[['iso3_r250_name', value_column]]}
+    hb.df_write(tables['country'], os.path.join(out_dir, 'gep_by_country_base_year_table.csv'))
+    for grouping in GEP_SUMMARY_GROUPINGS:
+        if grouping not in df.columns:
+            if log:
+                log('No %s column, so that summary table is not written.' % grouping)
+            continue
+        grouped = df.groupby(grouping, as_index=False)[value_column].sum()
+        tables[grouping] = grouped[[grouping, value_column]]
+        hb.df_write(tables[grouping],
+                    os.path.join(out_dir, 'gep_by_%s_base_year_table.csv' % grouping))
+    return tables
+
+
+def published_country_columns(df, service):
+    """The columns a published country table carries, in the order every service uses.
+
+    Attributes first, then the year, then the account's own value columns, then whatever
+    supporting quantities the service reports. Three kinds of column are left out: the
+    `ee_r264_*` correspondence columns, which several services keep on the frame because the map
+    merge joins on them but which are the source side of a collapse the table has already made;
+    the redundant columns above; and nothing else, so a new value column a service adds still
+    appears without anyone editing this list.
+
+    Args:
+        df (pd.DataFrame): the frame about to be written.
+        service (str): the service label, used only to order its own columns first.
+
+    Returns:
+        list: the column names to write, in order.
+    """
+    attributes = [c for c in GEP_COUNTRY_ATTRIBUTE_COLUMNS if c in df.columns]
+    rest = [c for c in df.columns
+            if c not in attributes and c != 'year'
+            and not c.startswith('ee_r264') and not is_redundant(c, df)]
+    value_columns = [c for c in rest if '_gep' in c]
+    value_columns.sort(key=lambda c: (not c.startswith(service), len(c)))
+    supporting = [c for c in rest if '_gep' not in c]
+    return attributes + (['year'] if 'year' in df.columns else []) + value_columns + supporting
+
+
+def begin_gep_calculation(p, service, extra_results=None, log=None):
+    """Register a service's results and say whether the work is already done.
+
+    Args:
+        p (ProjectFlow): the project, inside gep_calculation.
+        service (str): the service's key in p.results.
+        extra_results (dict): any further outputs this service registers, name to path.
+        log (callable): where to log; hazelbean's log by default.
+
+    Returns:
+        tuple: (service_results, already_done). When already_done is True the caller returns
+        without doing anything, which is what makes a rerun cheap.
+    """
+    import os
+    import hazelbean as hb
+    log = log or hb.log
+    service_results = p.results.setdefault(service, {})
+    service_results['gep_by_country_base_year'] = os.path.join(
+        p.cur_dir, 'gep_by_country_base_year.csv')
+    for name, path in (extra_results or {}).items():
+        service_results[name] = path
+    if hb.path_all_exist(list(service_results.values())):
+        log('All results already exist. Skipping GEP calculation for %s.' % service)
+        return service_results, True
+    log('Starting GEP calculation for %s.' % service)
+    return service_results, False
+
+
+def country_attributes(p, columns=None):
+    """One row per country, with the shared attribute columns.
+
+    The r264 correspondence splits large countries into territories, so joining a per-country
+    value against it repeats that country once per sub-region. Going through
+    collapse_countries_to_r250 is what stops that, and putting it here means every service does
+    it rather than the sixteen that remembered.
+
+    Args:
+        p (ProjectFlow): the project, after publish_inputs.
+        columns (list): the attribute columns wanted; the shared set by default.
+
+    Returns:
+        pd.DataFrame: one row per country.
+    """
+    wanted = list(columns) if columns else list(GEP_COUNTRY_ATTRIBUTE_COLUMNS)
+    return collapse_countries_to_r250(p.df_countries)[wanted]
+
+

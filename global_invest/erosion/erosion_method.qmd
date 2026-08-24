@@ -26,7 +26,7 @@ this, so it is the key calibration for erosion regardless of which variant is us
 We report **two** formulations side by side, because they answer different questions and neither is
 strictly better.
 
-### A — "damage" (the conservative reading)
+### A, "damage" (the conservative reading)
 
 Only *severe* erosion is assumed to harm yield. A pixel is severe where USLE exceeds a per-country
 soil-loss tolerance: 2 t/ha/yr for small or low-lying countries, 11 otherwise. Cropland is SEALS7
@@ -35,10 +35,10 @@ class 2. For each zone,
 $$\text{level}_A = -100 \, \alpha \, p_{crop}, \qquad p_{crop} = \frac{\text{severe cropland area}}{\text{total cropland area}}$$
 
 with a single flat $\alpha$. This is thresholded, binary, on-farm only, and weighted by cropland
-*area*. Because land cover carries no crop detail, method A is necessarily **uniform across sectors** —
+*area*. Because land cover carries no crop detail, method A is necessarily **uniform across sectors** , 
 it cannot tell wheat land from vegetable land.
 
-### B — "service" (the comprehensive reading)
+### B, "service" (the comprehensive reading)
 
 All erosion prevention counts, everywhere on cropland, and off-site protection is included. The
 prevention share combines the on-farm fraction $1 - \text{USLE}/\text{RKLS}$ with an upstream term
@@ -65,7 +65,7 @@ subtracted.
 ## From level to shock
 
 Each level is already a percentage of crop productivity, so the shock is the **absolute** difference
-against the contemporaneous baseline — the nature-off counterfactual in the same year — not a relative
+against the contemporaneous baseline (the nature-off counterfactual in the same year) not a relative
 change. That difference is zero at the base year and interpolated linearly between the 5-year anchors,
 then applied as a factor-productivity term (`afeall`).
 
@@ -86,11 +86,11 @@ SPAM aggregates have no FAO counterpart and inherit their sector's mean; for oth
 
 When a service is not listed in `dynamic_es`, the same seam grafts a static task that reads the frozen
 per-scenario dependency table instead. That table carries a single 2050 endpoint computed on older land
-cover, so intermediate years are a synthetic ramp rather than real per-year values — which is why the
+cover, so intermediate years are a synthetic ramp rather than real per-year values, which is why the
 dynamic path exists.
 
 ## Compute
 
 The SDR model is multi-hour and memory-heavy per global map, so resolution follows the run modality:
-a 6.45 km analysis grid locally, native SEALS resolution on a cluster. `run_erosion.py` runs the chain
+a 6.45 km analysis grid locally, native SEALS resolution on a cluster. `run_erosion.py` runs the calculation
 standalone, which is the practical way to iterate on it without invoking the economic model.

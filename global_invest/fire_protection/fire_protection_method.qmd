@@ -1,0 +1,133 @@
+---
+title: "Overview of Ecosystem Service: Fire Protection"
+format:
+  html:
+    embed-resources: true
+    standalone: true
+---
+
+Fire protection asks how much wildfire damage is avoided because fires do not persist as strongly
+where nature dominates. The calculation is ported function by function from the GEP wildfire
+repository's R pipeline, `gep_wildfire_2019.R`. The base year is 2019 and the price convention
+recorded in `es_config.csv` is `avoided damage`.
+
+## Quantity
+
+Burned acres avoided or added in 2019.
+
+The persistence side comes from per-country AR(1) regressions, burned area on its own
+one-year lag, of burned area on its own one-year
+lag, run upstream with the results committed as a CSV. `build_regression_type_ids` filters the
+regressions the GEP does not read and assigns each remaining one a type id.
+`compute_beta_differences` then reads three quantities off the wide table:
+
+- the baseline persistence effect, total burned area on its own lag over the full sample,
+- the nature-versus-human cause difference, nature-caused fires' persistence minus human-caused
+  fires',
+- the nature-versus-human area difference, persistence in nature-dominated minus human-dominated
+  districts.
+
+The two differences use `difference_stats`, which takes the difference of two independent
+estimates, combines their standard errors in quadrature, and reports the two-sided normal
+approximation p-value. A difference is computed only where all four inputs are present.
+
+`compute_avoided_acres` converts each beta to marginal additional acres by multiplying by
+`HA_TO_ACRES`, then to 2019 additional acres by multiplying by the country's 2018 burned hectares.
+
+## Price
+
+EM-DAT wildfire damages per burned acre, by country. `read_emdat_wildfire_damages` sums the total
+adjusted damage column, which the source workbook stores in thousands of USD with comma
+separators, over wildfire events per ISO3. `compute_damage_per_acre` divides that by the country's
+burned acres across all panel years and fills any country whose rate is zero or missing with the
+global average over countries with positive rates.
+
+## Valuation
+
+`compute_gep` multiplies the two together and flips the sign, because additional acres carry the
+persistence sign and the value of avoiding them is the negative product:
+
+$$
+\text{GEP}_{\text{variant}} = -\,\text{additional acres 2019}_{\text{variant}} \times \text{damages per acre}
+$$
+
+Countries absent from the damage-rate merge take the global average, as in the source.
+
+## Inputs
+
+From `es_parameters.csv`, scoped to the `fire_protection` service:
+
+- `fire_regression_results_path`, the committed per-country AR(1) regression results.
+- `fire_emdat_path`, the EM-DAT custom request workbook.
+- `fire_panel_path`, the burned-area panel at GADM's second administrative level, one row
+  per district per year, with a `_source_note` row recording that it comes
+  from the drive's Wildfires folder.
+
+`reference/GEP_wildfire_2019_results.csv` ships inside the module as the frozen replication
+anchor.
+
+## Outputs
+
+`beta_differences.csv`, `avoided_acres.csv` and `damage_per_acre.csv`, each from its own task,
+then two files from `gep_calculation`. `fire_protection_2019_results.csv` keeps the source repo's
+column shape so it can be diffed against the committed output. `gep_by_country_base_year.csv`
+holds the r250 identifiers and attributes, `year`, the three variant columns
+`GEP_wildfire_2019_baseline`, `GEP_wildfire_2019_nn_hh` and `GEP_wildfire_2019_ttn_tth`, and
+`fire_protection_gep`. All three variant totals are logged.
+
+`GID_0` is already an iso3 country label, so the r250 attributes join by label and nothing is
+summed in the collapse.
+
+## Method constants
+
+- `HA_TO_ACRES = 2.47105`.
+- `FIRE_BASELINE_ID = 3`, `FIRE_NN_ID = 2` and `FIRE_HH_ID = 1`, `FIRE_TTN_ID = 6` and
+  `FIRE_TTH_ID = 7`, which select the betas for the three variants.
+- `FIRE_DROP_Y_VARS`, the fifteen days, counts and average variants the source drops before ids
+  are assigned.
+- `FIRE_GEP_PROVISIONAL_VARIANT = 'nn_hh'` in the tasks module, the variant
+  `fire_protection_gep` currently carries.
+- `significance_level` thresholds, 3 stars below p 0.01, 2 below 0.05, 1 below 0.10, otherwise 0.
+
+`FIRE_REG_TYPES` records the five regression-type ids the GEP reads together with the
+`(Y_var, Key_X_var, sample)` triple each id must carry.
+
+| id | Y_var | Key_X_var | sample |
+|---|---|---|---|
+| 1 | `total_ba_ha_human` | `L1_total_ba_ha_human` | full |
+| 2 | `total_ba_ha_nature` | `L1_total_ba_ha_nature` | full |
+| 3 | `total_burned_areas_ha` | `L1_total_burned_areas_ha` | full |
+| 6 | `total_burned_areas_ha` | `L1_total_burned_areas_ha` | nature_subsample |
+| 7 | `total_burned_areas_ha` | `L1_total_burned_areas_ha` | human_subsample |
+
+## Faithful-port notes
+
+Two behaviours are reproduced rather than corrected, so the port stays comparable against the
+anchor.
+
+The source pivots the regression table with a mean aggregator over every value column, including
+the character significance stars. R's `mean()` on character returns NA, so every wide significance
+column, and therefore every `*_signif_level` in the output, is 0 by construction. The p-value
+columns beside them are real.
+
+Beta selection is by regression-type id, which in the source is `data.table`'s `.GRP`, the
+first-appearance order of the triple in the input CSV. A reordered input would silently reassign
+the betas, so `build_regression_type_ids` asserts the expected triples and raises before any beta
+is read.
+
+## Taken as given
+
+The AR(1) regressions themselves, which are run upstream and consumed here as a committed results
+table. The committed per-country output reproduces to the float, which the test suite pins.
+
+## What is open
+
+Which of the three variants is the account's fire protection value. Baseline and
+nature-versus-human cause both total negative globally, so the choice sets both the number and its
+interpretation. `fire_protection_gep` defaults to the nature-versus-human cause difference
+provisionally.
+
+The ADM2 burned-area panel is not staged, and its own README says it lives on the drive. Until it
+arrives, the 2018 burned areas and the damage rates are read from the frozen reference output,
+with a loud log line each time, so the beta science and everything downstream still run and verify
+on any machine.

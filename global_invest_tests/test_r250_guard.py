@@ -8,14 +8,20 @@ import pathlib
 
 SERVICES = ['crop_provision', 'livestock_provision', 'extractive_materials_provision',
             'renewable_energy_provision', 'coastal_protection']
-GUARD = "ee_r264_label'] == "
+# Either spelling counts: the inline filter, or the shared collapse that applies it
+# (utilities.collapse_countries_to_r250, itself covered in test_es_utilities).
+GUARDS = ("ee_r264_label'] == ", 'collapse_countries_to_r250')
 
 
 def test_all_five_services_keep_the_canonical_row_guard():
     root = pathlib.Path(__file__).resolve().parents[1] / 'global_invest'
     missing = []
     for s in SERVICES:
-        src = (root / s / f'{s}_tasks.py').read_text()
-        if GUARD not in src:
+        # The collapse may sit in either file: the task that joins, or the science function
+        # the task calls to do it.
+        src = ''.join((root / s / f'{s}_{part}.py').read_text()
+                      for part in ('tasks', 'functions')
+                      if (root / s / f'{s}_{part}.py').exists())
+        if not any(guard in src for guard in GUARDS):
             missing.append(s)
     assert not missing, f"r250 canonical guard missing from: {missing} -- split-country double-count risk"

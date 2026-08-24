@@ -34,29 +34,28 @@ def test_generate_density_maps_pairs_and_leaves_missing_as_nan(tmp_path):
     lulc, cz, out = tmp_path / 'lulc.tif', tmp_path / 'cz.tif', tmp_path / 'dens.tif'
     _write_tif(lulc, [[10, 10], [20, 99]], gdal.GDT_Byte)          # (99, 101) has no lookup row
     _write_tif(cz, [[101, 101], [101, 101]], gdal.GDT_UInt32)
-    pd.DataFrame({'lulc_id': [10, 20], 'carbon_zone_id': [101, 101],
-                  'carbon_density_mean': [5.0, 7.0]}).to_csv(tmp_path / 'lut.csv', index=False)
+    lookup = tcf.carbon_density_lookup(pd.DataFrame({
+        'lulc_id': [10, 20], 'carbon_zone_id': [101, 101], 'carbon_density_mean': [5.0, 7.0]}))
 
-    tcf.generate_carbon_density_raster(str(lulc), str(cz), str(tmp_path / 'lut.csv'), str(out))
+    tcf.generate_carbon_density_raster(str(lulc), str(cz), lookup, str(out))
 
     a = gdal.Open(str(out)).ReadAsArray()
     assert a[0, 0] == 5.0 and a[0, 1] == 5.0 and a[1, 0] == 7.0
     assert np.isnan(a[1, 1])                  # (lulc 99, zone 101) absent -> NaN, not a silent 0
 
 
-# --- stack_layers_to_csv (group a value raster by two category rasters) ---------------------------
+# --- stack_layers_summary (group a value raster by two category rasters) --------------------------
 
 def test_stack_groups_by_two_rasters_with_mean_and_count(tmp_path):
     from osgeo import gdal
-    lulc, cz, val, out = tmp_path / 'lulc.tif', tmp_path / 'cz.tif', tmp_path / 'val.tif', tmp_path / 'lut.csv'
+    lulc, cz, val = tmp_path / 'lulc.tif', tmp_path / 'cz.tif', tmp_path / 'val.tif'
     _write_tif(lulc, [[10, 10], [20, 20]], gdal.GDT_Byte)
     _write_tif(cz, [[101, 101], [101, 101]], gdal.GDT_UInt32)
     _write_tif(val, [[4.0, 6.0], [8.0, 10.0]], gdal.GDT_Float32, nodata=np.nan)
 
-    tcf.stack_layers_to_csv(str(lulc), str(cz), str(val), str(out),
-                            group1_name='lulc_id', group2_name='carbon_zone_id', value_name='carbon_density')
-
-    df = pd.read_csv(out).set_index(['lulc_id', 'carbon_zone_id'])
+    df = tct.stack_layers_summary(str(lulc), str(cz), str(val),
+                                  group1_name='lulc_id', group2_name='carbon_zone_id',
+                                  value_name='carbon_density').set_index(['lulc_id', 'carbon_zone_id'])
     assert df.loc[(10, 101), 'carbon_density_mean'] == 5.0     # mean of [4, 6]
     assert df.loc[(10, 101), 'carbon_density_count'] == 2
     assert df.loc[(20, 101), 'carbon_density_mean'] == 9.0     # mean of [8, 10]
@@ -167,11 +166,12 @@ def test_generate_density_raises_when_lookup_matches_nothing(tmp_path):
     lulc, cz, out = tmp_path / 'lulc.tif', tmp_path / 'cz.tif', tmp_path / 'dens.tif'
     _write_tif(lulc, [[10, 30], [190, 210]], gdal.GDT_Byte)        # ESA class ids
     _write_tif(cz, [[101, 101], [101, 101]], gdal.GDT_UInt32)
-    pd.DataFrame({'lulc_id': [1, 2, 3], 'carbon_zone_id': [101, 101, 101],   # SEALS7-keyed lookup
-                  'carbon_density_mean': [100.0, 10.0, 20.0]}).to_csv(tmp_path / 'lut.csv', index=False)
+    lookup = tcf.carbon_density_lookup(pd.DataFrame({                        # SEALS7-keyed lookup
+        'lulc_id': [1, 2, 3], 'carbon_zone_id': [101, 101, 101],
+        'carbon_density_mean': [100.0, 10.0, 20.0]}))
 
     with pytest.raises(ValueError, match='matched ZERO'):
-        tcf.generate_carbon_density_raster(str(lulc), str(cz), str(tmp_path / 'lut.csv'), str(out))
+        tcf.generate_carbon_density_raster(str(lulc), str(cz), lookup, str(out))
 
 
 def test_dynamic_shock_esa_base_map_raises_not_silent_zero(tmp_path):
@@ -281,3 +281,39 @@ def test_static_shock_missing_scenario_is_fatal_at_the_write(tmp_path):
 
     with pytest.raises(ValueError, match='scn_b'):
         tct.terrestrial_carbon_shock_static(p)
+
+
+def test_shock_percent_is_the_departure_from_baseline():
+    """A zone whose scenario carbon is a tenth below its baseline shocks at -10 percent, and
+    a zone with no baseline carbon gives NaN instead of an infinite shock."""
+    import numpy as np
+    import pandas as pd
+    from global_invest.terrestrial_carbon import terrestrial_carbon_functions as tcf
+
+    scenario = pd.Series([90.0, 110.0, 5.0], index=[1, 2, 3])
+    baseline = pd.Series([100.0, 100.0, 0.0], index=[1, 2, 3])
+    out = tcf.shock_percent(scenario, baseline)
+    assert out[1] == -10.0
+    assert out[2] == 10.0
+    assert np.isnan(out[3])
+
+
+def test_interpolate_annual_shock_starts_at_zero_and_passes_through_the_anchors():
+    """The base year carries no shock, the anchor years carry theirs, and the years between
+    are straight lines."""
+    from global_invest.terrestrial_carbon import terrestrial_carbon_functions as tcf
+
+    years = [2020, 2021, 2022, 2023, 2024]
+    annual = tcf.interpolate_annual_shock(years, [2022, 2024], [-4.0, -8.0], base_year=2020)
+    assert list(annual) == [0.0, -2.0, -4.0, -6.0, -8.0]
+
+
+def test_shock_percent_keeps_one_numerator_across_both_denominators():
+    """The fixed-base measure changes only the denominator: a zone at 10 against a drifted
+    baseline of 80 is -87.5 percent contemporaneously and -70 percent against a base of 100."""
+    import pandas as pd
+    from global_invest.terrestrial_carbon import terrestrial_carbon_functions as tcf
+
+    scenario, baseline_now, baseline_base = pd.Series([10.0]), pd.Series([80.0]), pd.Series([100.0])
+    assert tcf.shock_percent(scenario, baseline_now)[0] == -87.5
+    assert tcf.shock_percent(scenario, baseline_now, baseline_base)[0] == -70.0

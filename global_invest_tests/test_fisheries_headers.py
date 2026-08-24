@@ -5,7 +5,7 @@ through es_shock_climate_labels (the post-deletion path), and the HAR header-rea
 depend on header_map alone — an empty map would read no headers and silently drop every
 scenario, whatever the RCP derivation resolved.
 """
-from global_invest.fisheries.fisheries_tasks import (
+from global_invest.fisheries.fisheries_functions import (
     FISH_HEADER_MAP, RCP_FI_MAP, fisheries_headers_to_read, resolve_fisheries_header)
 
 
