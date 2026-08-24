@@ -137,7 +137,7 @@ format:
 
 ## The state in numbers
 
-- The {{< meta n_services >}} modules produce {{< meta n_accounts >}} accounts, because three of them each value two services. We compute the value for {{< meta n_ours >}} of those accounts. {{< meta n_partly >}} build one part of the value ourselves and take the other part from a published source. {{< meta n_reads_a_value >}} read a published per-country value and rescale it if necessary. {{< meta n_not_wired >}} are waiting on a model run, named on their own slides.
+- The {{< meta n_services >}} modules produce {{< meta n_accounts >}} accounts, because three of them each value two services. We compute the value for {{< meta n_ours >}} of those accounts. {{< meta n_partly >}} build one part of the value ourselves and take the other part from a published source. {{< meta n_reads_a_value >}} read a published per-country value and rescale it if necessary. {{< meta n_not_wired >}} are waiting on a model run.
 - Every available input is in the shared base data.
 - {{< meta n_replicating >}} of our runs land on a committed reference or the manuscript. For the rest we could not find a reference to check against.
 - {{< meta n_reports >}} of the {{< meta n_with_a_run >}} services with a run have rendered their report.

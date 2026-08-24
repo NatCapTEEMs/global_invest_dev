@@ -292,19 +292,6 @@ def gep_result(p):
     publish_inputs(p)
     utilities.render_service_results(p)
 
-
-def gep_load_results(p):
-    publish_inputs(p)
-    
-    # Learn the paths by creating a temp task treep
-    p_temp = hb.ProjectFlow()
-    crop_provision_initialize.build_gep_service_calculation_task_tree(p_temp)
-    p_temp.set_all_tasks_to_skip_if_dir_exists()
-    p_temp.execute()
-    
-    print(p_temp.results)
-    pass
-        
 def gep_results_distribution(p):
     """Distribute the results of the GEP calculation."""
     publish_inputs(p)
