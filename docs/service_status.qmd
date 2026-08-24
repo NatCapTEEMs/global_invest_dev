@@ -56,6 +56,17 @@ twice for every pixel, and *recreation* runs a gravity model allocating visits i
 ours, because the coefficients or the physical quantity come from elsewhere. Wildfires is the
 clearest case: the valuation runs here, and the regression coefficients underneath it do not.
 
+**The ladder measures work, not confidence.** Read as a quality ranking it gets things backwards.
+The two accounts without a usable number sit at the top of it: stormwater reports retained volume
+and no dollar total because its price is a placeholder of 1, and erosion has no number until its
+run finishes. Crop production, down at table arithmetic, reproduces its reference table exactly.
+
+**One label per service hides a split.** Several services compute part of the value and read the
+rest, and the category can only name the heaviest thing the code does. Water quality computes its
+dollar figure and reads the international-dollar one it reports; coastal protection computes the
+mangrove half and reads the coral half; ntfp computes the accessible area and reads the value per
+hectare. `ours` is where that lives.
+
 
 ## Terrestrial Carbon
 

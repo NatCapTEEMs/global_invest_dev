@@ -173,6 +173,8 @@ format:
 - Crop production is table arithmetic, FAOSTAT gross production times the CWoN land rental rate.
 - Pollination is raster arithmetic, 158 production grids times price times each crop's pollinator dependence, cell by cell.
 - The three process models have dynamics of their own. Erosion runs InVEST SDR with sediment routing, landslides computes slope stability twice for every pixel, and recreation runs a gravity model allocating visits into scored sites.
+- The ladder measures work, not confidence, and reading it as a quality ranking gets it backwards. The two accounts without a usable number sit at the top: stormwater has no dollar total because its price is a placeholder, and erosion has no number until its run finishes. Crop production, down at table arithmetic, reproduces its reference exactly.
+- One label per service also hides a split. Water quality computes its dollar figure and reads the one it reports, coastal protection computes mangroves and reads corals, and wildfires computes the valuation on coefficients it did not fit. The ours column carries that, the category cannot.
 
 ## Can the services be added into one total?
 
