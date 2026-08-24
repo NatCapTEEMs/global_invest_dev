@@ -94,10 +94,6 @@ timber_provision,timber_provision_gep_path,global_invest/timber_provision/timber
 timber_provision,timber_provision_value_raster_path,global_invest/timber_provision/input/current_forest_value.tif
 timber_provision,timber_provision_zone_raster_path,cartographic/ee/ee_r250_id_10sec.tif
 stormwater,stormwater_retention_by_country_path,global_invest/stormwater/retention_m3_by_country.csv
-ntfp,ntfp_roads_region1_path,global_invest/ntfp/input/roads/GRIP4_Region1_vector_fgdb.zip
-ntfp,ntfp_roads_region1_source_url,https://dataportaal.pbl.nl/downloads/GRIP4/GRIP4_Region1_vector_fgdb.zip
-ntfp,ntfp_roads_length_path,global_invest/recreation/grip4_road_length/grip4_road_length_1km.tif
-ntfp,ntfp_roads_length_source_note,"metres of road per cell from GRIP4, already staged for recreation and shared rather than rebuilt"
 ntfp,ntfp_rivers_path,global_invest/ntfp/input/rivers/ne_10m_rivers_lake_centerlines.shp
 ntfp,ntfp_roads_vector_path,global_invest/ntfp/input/global_roads/globalroads.shp
 ntfp,ntfp_roads_vector_source_note,"the global roads layer the source module buffers, staged from its submission folder. The accessibility polygon is built from these geometries rather than from a rasterised road length, which is what the source does."
