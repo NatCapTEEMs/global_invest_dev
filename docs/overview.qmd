@@ -12,19 +12,25 @@ extractive_alt: "$203bn"
 extractive_factor: "0.49"
 renewable_total: "$170.83bn"
 renewable_ref: "$134.6bn"
-poll_raster: "$18.28bn"
+poll_raster: "$388.90bn"
 poll_fao: "$515bn"
 livestock_ind: "$136bn"
 livestock_world: "$1.37T"
-n_services: "23"
+n_services: "22"
+n_accounts: "25"
 n_replicating: "9"
-n_awaiting_file: "5"
-fisheries_total: "$29bn"
+n_ours: "12"
+n_partly: "4"
+n_not_wired: "4"
+n_reads_a_value: "5"
+n_reports: "21"
+n_with_a_run: "21"
+fisheries_total: "$29.00bn"
 fisheries_subsistence_total: "$7.92bn"
-water_supply_total: "$146.08bn"
+water_supply_total: "$146.57bn"
 water_supply_anchor: "$144.68bn"
 water_use_ag_total: "$1.07T"
-water_use_all_total: "$36.61T"
+water_use_all_total: "$36.58T"
 air_filtration_total: "$17.81bn"
 sandstorm_total: "$595.36bn"
 wq_usd: "$638.34bn"
@@ -44,7 +50,6 @@ renewable_wind: "$110.31bn"
 renewable_solar: "$53.95bn"
 renewable_geothermal: "$6.56bn"
 stormwater_volume: "185.85bn m3"
-stormwater_value: "$185.85bn"
 hydro_manuscript: "$287.7bn"
 cp_total: "$36.72bn"
 lcr_ours: "$175.56bn"
@@ -84,44 +89,44 @@ format:
 
 - The library holds one folder per ecosystem service, all on the same file convention.
 - {{< meta n_services >}} services carry their GEP method in the library, with their input data in the shared base data.
-- Some services also produce a scenario shock for the macroeconomic pipeline. A shock exists where the scenarios' physical changes (the land-use maps or the climate pathway) reach the service's science.
+- Some services also produce a scenario shock for the macroeconomic pipeline. A shock exists where the scenarios' physical changes (the land-use maps or the climate pathway) reach the service's model.
 - The library is scenario agnostic. A caller supplies its own scenarios (the maps, the years and the naming) through configuration.
 
 ## How every GEP number is built
 
-- Every service's number is the same construction. It multiplies a quantity of service delivered by a price and by nature's share of it, summed to one row per country.
-- The three parts differ per service (recreation's quantity is visits and its price is travel cost, livestock's nature share is the ecosystem-provided part of feed), but the construction never changes, which is why one configuration table can describe every service.
+- Every service's number is obtained by multiplying a quantity of service delivered by a price and by nature's share of it, summed to one row per country.
+- The three parts differ per service (recreation's quantity is visits and its price is travel cost, livestock's nature share is the ecosystem-provided part of feed), but the construction never changes.
 
 ## The code structure {.smaller}
 
-| File | In paper terms |
+| File | Content |
 |---|---|
 | functions.py | The equations, pure science. |
-| tasks.py | The estimation steps. Each writes one output. |
+| tasks.py | The estimation steps. Each task writes one output. |
 | initialize.py | The table of contents (the list of steps, and the entry point other pipelines call). |
-| run_\<service\>.py | The main script. Opens a workspace and runs the steps. |
+| run_\<service\>.py | The main script per sevice. Runs the steps. |
 | method.qmd | The written explanation of the method. |
 | results.qmd | The report of the results, rendered at the end of every run. |
 
+- Those six files sit in every service's folder. One more file sits outside them: utilities.py, which holds what all the services do the same way. The country list they all join to, the collapse from 264 regions to 250 countries, the report rendering, and the reading of the shared CSVs.
 - run_\<service\>.py asks initialize.py for the list of steps, each step in tasks.py calls the equations in functions.py and writes its output.
 - A run ends by rendering results.qmd into a standalone HTML report for that service, carrying its total and the per-country table.
 - A service with a shock has a second runner for it, run_\<service\>_shock.py.
+- The methods are work in progress.
 - Three shared CSVs carry the configuration (next slide).
 
-## The template every service follows
+## The template for each service
 
 - Every run file lists the steps of its pipeline in one build_task_tree function.
 - A service reads its settings from rows in three shared CSVs.
-- es_config.csv: one row per service, with the GEP formula (quantity, price, attribution) plus the land base, the base year, the price convention and the crosswalk to the status sheet.
+- es_config.csv: one row per service, with the GEP formula (quantity, price, attribution) plus the land-cover map it reads, the base year and the price convention.
 - es_scenarios_test.csv: the standard SEALS scenarios, with matching test maps shipped, so a standalone shock run works on any machine.
 - es_parameters.csv: the run parameters and the references to each service's data.
-- Every service reports one row per country (r250). The r264 table is the same 250 countries with fourteen disputed and overseas territories split out (India into six, China into four, and so on); it carries the map geometry and is what crosses with the AEZ zones the economic model needs. No account value is computed on it, and collapsing it back to r250 is a shared, tested step, because counting a split country once per sub-region is exactly how terrestrial carbon overstated its total by 23.5 percent.
+- Every service reports one row per country (r250). 
 
 ## Automatic report by service {.smaller}
 
 ![Terrestrial carbon's report: its total, the same figures by income group, region and continent, the per-country table, and this map.](images/terrestrial_carbon_report_map.png)
-
-- Seventeen of the twenty services with a run have rendered their report.
 
 ## The library's two callers
 
@@ -132,11 +137,11 @@ format:
 
 ## The state in numbers
 
-- The test of whether a service is ours is whether we can run it: our own code, read, rewritten and tested here. 22 of the {{< meta n_services >}} produce their number that way today, and the 23rd, erosion, is running.
-- No service is waiting on a file from anyone. Erosion was the last one we called blocked, on four upstream layers at a cluster path we cannot reach. Those four are diagnostics the run does not need, and the one layer it does need we now build ourselves from the elevation model. Every erosion input is in the shared base data, and the run is going.
-- Two run but carry one borrowed component each: coastal protection computes its mangrove half and reads its coral half, and water quality computes its dollar figures and reads its international-dollar headline. Those two components are the only numbers left with no code here to run.
-- Running our code is one thing, checking it against someone else's is another. {{< meta n_replicating >}} of our runs land on a committed reference or the manuscript. {{< meta n_awaiting_file >}} have nothing to check against, because no reference output exists: recreation, commercial fisheries, landslide, non-timber forest products and stormwater. Erosion's run is ongoing.
-- Livestock now computes both attributions and they are far apart. The same $2.29T of gross production gives $519bn through the CWoN land rental rate and {{< meta livestock_world >}} through the GLEAM feed share, a factor of 2.6. Which factor the account uses is a decision, not a gap.
+- The {{< meta n_services >}} modules produce {{< meta n_accounts >}} accounts, because three of them each value two services. We compute the value for {{< meta n_ours >}} of those accounts. {{< meta n_partly >}} build one part of the value ourselves and take the other part from a published source. {{< meta n_reads_a_value >}} read a published per-country value and rescale it if necessary. {{< meta n_not_wired >}} are waiting on a model run, named on their own slides.
+- Every available input is in the shared base data.
+- {{< meta n_replicating >}} of our runs land on a committed reference or the manuscript. For the rest we could not find a reference to check against.
+- {{< meta n_reports >}} of the {{< meta n_with_a_run >}} services with a run have rendered their report.
+
 
 ## What each service is {.smaller}
 
@@ -147,7 +152,7 @@ format:
 | pollination | crop production attributable to wild pollinators |
 | erosion | soil the land cover keeps in place, valued through crop productivity |
 | landslide_mitigation | landslide deaths avoided by forest cover, valued at a value of a statistical life |
-| fisheries | commercial capture-fisheries rent. Subsistence catch value |
+| fisheries | commercial capture-fisheries rent and subsistence catch value |
 | crop_provision | the value of crop production |
 
 : {tbl-colwidths="[30,70]"}
@@ -160,11 +165,11 @@ format:
 | coastal_protection | storm damage avoided by mangroves |
 | extractive_materials | mineral resource rents |
 | renewable_energy | wind, solar and geothermal production value |
-| recreation | visits to natural recreation sites, valued at travel cost |
+| recreation | expenditure on visits to natural recreation sites, valued at travel cost |
 | fire_protection | wildfire damage avoided by nature's fire regulation |
 | water_supply | hydropower rent, and water withdrawal priced by sector |
 | ntfp | non-timber forest products from forest within reach of a road or river |
-| stormwater | stormwater retained by urban vegetation and soils |
+| stormwater | stormwater retained by vegetation and soils, not yet masked to urban areas |
 
 : {tbl-colwidths="[30,70]"}
 
@@ -178,38 +183,36 @@ format:
 | flood_control | flood damage avoided by ecosystems |
 | local_climate_regulation | cooling-energy costs avoided by urban vegetation |
 | extractive_energy | fossil-fuel resource rents (gas, coal, petroleum) |
-| timber_provision | the net value of timber harvests, after harvest and transport costs |
+| timber_provision | the net value of timber harvests, net of harvest and transport costs |
 
 : {tbl-colwidths="[30,70]"}
 
-## What the status sheet's columns mean {.smaller}
+## The status sheet {.smaller}
 
-- Every service is built the same way, in two files. One holds the maths and never opens or saves anything, so any step in it can be called with a few made-up numbers and checked against an answer worked out by hand, which is what the tests do. The other does the reading and writing: it loads the input data, calls the maths, and writes the results.
-- Keeping them apart is what lets a service be tested without a global dataset, and it is why a run and a test can only ever disagree about the data.
-- The sheet's columns follow from that. A dash means the field does not apply.
-- The methods are not settled. Every service has a method page in its own folder, and those pages are work in progress: some describe a calculation we have since changed, two of them described a different service entirely until today, and several leave the attribution factor open. Read the method column for what the code does now, and the page for the reasoning, but do not treat either as decided.
+- Full per-service status, updated as work lands: [the library status sheet](https://docs.google.com/spreadsheets/d/1sQOUT7TRKVLxc-TSfPWeuCFm0vwk-6iLk-AnA6jyEiY).
 
 | column | what it holds |
 |---|---|
-| method | how the number is computed, in one line |
+| method | how the number is computed |
+| ours | whether we can ewcompute the number ourselves |
+| total | the figure the account takes |
 | code | the engineering work we did |
 | number | what the figure is, and what it was checked against |
-| need | what we are waiting on from someone else |
+| need | what we are missing |
 
 : {tbl-colwidths="[18,82]"}
 
 ## Services and totals (base year 2019) {.smaller}
 
-Full per-service status, one row per sheet service, updated as work lands: [the library status sheet](https://docs.google.com/spreadsheets/d/1sQOUT7TRKVLxc-TSfPWeuCFm0vwk-6iLk-AnA6jyEiY).
 
 | Service | Total | Verified |
 |---|---|---|
-| terrestrial_carbon | {{< meta terrestrial_total >}} | yes. Reproduces the manuscript's total |
-| coastal_carbon | {{< meta coastal_eez >}} EEZ-only, {{< meta coastal_all >}} all rows | yes. Reproduces the author's reported numbers |
-| crop_provision | {{< meta crop_total >}} | yes. Reproduces the reference table |
+| terrestrial_carbon | {{< meta terrestrial_total >}} | yes. |
+| coastal_carbon | {{< meta coastal_eez >}} EEZ-only, {{< meta coastal_all >}} all rows | yes. |
+| crop_provision | {{< meta crop_total >}} | yes. |
 | livestock_provision | $519bn rental rate, {{< meta livestock_world >}} feed share | no. Both attributions run; which one the account uses is the open decision, and there is no reference output |
-| coastal_protection | {{< meta cp_total >}} | partially. Mangroves are ours, $30.40bn against their $30.40bn; the coral half, $6.32bn deflated, is read through |
-| extractive_materials | {{< meta extractive_total >}} | yes. Reproduces the author's reference table |
+| coastal_protection | {{< meta cp_total >}} | partially. Mangroves are replicated, $30.40bn against their $30.40bn; the coral half, $6.32bn deflated, is read through |
+| extractive_materials | {{< meta extractive_total >}} | yes. |
 | renewable_energy | {{< meta renewable_total >}} | partially. The code and the drive's reference CSVs give different values, and which one is current is the open question |
 
 : {tbl-colwidths="[22,32,46]"}
@@ -218,13 +221,14 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 
 | Service | Total | Verified |
 |---|---|---|
-| pollination | {{< meta poll_raster >}} raster side (2023). {{< meta poll_fao >}} FAO side | partially. Two definitions of the same service, and the decision between them is open |
-| erosion | not reported | no. The run is going. The four upstream layers we called the blocker are diagnostics it does not need |
+| pollination | {{< meta poll_raster >}} at 2019, our own raster. {{< meta poll_fao >}} FAO side | yes. |
+| erosion | not reported | no. The run is ongoing. |
 | landslide_mitigation | {{< meta landslide_total >}} ({{< meta landslide_deaths >}} avoided deaths) | no. No reference output exists |
 | fisheries | shock + commercial GEP {{< meta fisheries_total >}} provisional + subsistence {{< meta fisheries_subsistence_total >}} | partially. Subsistence reproduces its committed output, and the commercial run has no reference output yet |
 | recreation | {{< meta recreation_total >}} provisional | no. The author's output table is not reachable |
 | fire_protection | {{< meta fire_cause_total >}} provisional, one of three coefficients | partially. Reproduces the committed output, but reads the committed regression coefficients rather than refitting them. Kosovo and two Indian sub-regions now reach a country instead of no country |
-| water_supply | hydropower component {{< meta water_supply_total >}} | yes. Reproduces the committed output exactly on the 95 countries it covers, and reports the 112 the source table values |
+| water_supply | hydropower component {{< meta water_supply_total >}} | yes. |
+| water_use | {{< meta water_use_ag_total >}} agriculture, {{< meta water_use_all_total >}} all sectors | no. The drive's two committed figures were produced separately, so neither is a reference |
 
 : {tbl-colwidths="[22,32,46]"}
 
@@ -232,15 +236,15 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 
 | Service | Total | Verified |
 |---|---|---|
-| air_filtration | {{< meta air_filtration_total >}} | yes. Reproduces the drive's committed workbook and the manuscript's total |
-| sandstorm_prevention | {{< meta sandstorm_total >}} | yes. Reproduces the same workbook's dust channel |
+| air_filtration | {{< meta air_filtration_total >}} | yes.  |
+| sandstorm_prevention | {{< meta sandstorm_total >}} | yes.  |
 | water_quality | {{< meta wq_usd >}} USD and {{< meta wq_intl >}} intl$ | partially. We recompute the nutrient valuations and reproduce the committed intermediates; the headline international-dollar column is read through |
 | flood_control | {{< meta flood_total >}} | partially. Our recompute matches the pipeline's table, Morocco excepted |
 | local_climate_regulation | {{< meta lcr_ours >}} ours | no. We compute it from our own city valuations; the committed table's {{< meta lcr_committed >}} differs by a country-varying factor |
-| extractive_energy | {{< meta xe_total >}} (gas + coal + petroleum) | yes. Computed from the public CWoN rent tables, and the committed tables double-count eight rows |
-| timber_provision | {{< meta timber_total >}} | yes. All 166 countries match the committed output |
-| ntfp | $19.86bn | no. Ours end to end, on the public roads and rivers and a price we derived, with no reference output |
-| stormwater | {{< meta stormwater_volume >}} retained ({{< meta stormwater_value >}} at the placeholder price) | no. The retention run is ours, and no author run exists to compare against |
+| extractive_energy | {{< meta xe_total >}} (gas + coal + petroleum) | yes.  |
+| timber_provision | {{< meta timber_total >}} | yes. |
+| ntfp | $28.87bn | no. No reference output |
+| stormwater | {{< meta stormwater_volume >}} retained. No dollar total: the price is a placeholder of 1 | no. The retention run is ours, and no author run exists to compare against |
 
 : {tbl-colwidths="[22,32,46]"}
 
@@ -249,8 +253,8 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 ## terrestrial_carbon
 
 - [Values carbon stored by land ecosystems: a zone-by-class density table on the land-cover map, priced at the rental social cost of carbon. Our run reproduces the manuscript's total, once a double-count that entered split countries once per sub-region (China six times, overstating the total by 23.5 percent) was fixed.]{.state}
-- **Q1:** do carbon prices grow, and at what rate? The rental is P(1 - e^-r) where r is the net rate, the discount rate minus the growth rate of carbon prices, so our 2 percent column assumes prices do not grow. The table already holds the alternative: 3 percent discounting minus 2.2 percent growth, so 0.8 percent net, giving $2.29 a tonne against our $13.19. That choice moves the account by more than the gap between 2 and 3 percent.
-- **Q2:** is the 1 percent sensitivity wanted? The 3 percent one is a run of its own and gives {{< meta terrestrial_total_r3 >}} against {{< meta terrestrial_total >}}, but 1 percent cannot be produced from what we hold. The table holds two prices, $181.60 per tonne of CO2 at 2 percent and $78.53 at 3 percent, typed in rather than computed, with no record of where they came from. Every other cell follows from those two by arithmetic. Nor can it be reasoned to: two present values do not determine the damage path behind them, and three paths that fit both anchors exactly give 16 times the base price at 1 percent, 29 times, or no finite value.
+- **Q1:** do carbon prices grow, and at what rate? The rental is P(1 - e^-r) where r is the net rate, the discount rate minus the growth rate of carbon prices, so our 2 percent column assumes prices do not grow. The table already holds the alternative: 3 percent discounting minus 2.2 percent growth, so 0.8 percent net, giving $2.29 a tonne against our $13.19. 
+- **Q2:** is the 1 percent sensitivity wanted? The 3 percent one is a run of its own and gives {{< meta terrestrial_total_r3 >}} against {{< meta terrestrial_total >}}, but 1 percent cannot be produced from what we hold. The table holds two prices, $181.60 per tonne of CO2 at 2 percent and $78.53 at 3 percent, and we could not figure out where they came from. 
 
 ## coastal_carbon
 
@@ -269,13 +273,13 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 
 ## pollination
 
-- [Values crop production attributable to wild pollinators, from a sufficiency-weighted value raster built from pollinator habitat around cropland. We aggregate that raster to countries ourselves. It is a 2023 raster, and we regenerate it at 2019 once the definition is decided.]{.state}
-- **Q1:** is pollination's value the service nature currently delivers ({{< meta poll_raster >}}, the sufficiency-weighted raster) or the production value at stake ({{< meta poll_fao >}}, dependence-weighted FAO value)? The country ranking is identical.
+- [Values the crop output that animal pollinators are responsible for. We build the value raster ourselves now. The old figure was 26 times too small, because the raster holds a value per km2 and the step that summed it treated it as a value per cell.]{.state}
+- **Q1:** which definition does the account want? The crop output at stake if pollinators vanished, {{< meta poll_raster >}}, or the service habitat currently delivers. We are producing both so you can choose against two numbers.
 - **Q2:** does the account add pollination on top of crop_provision? Crop multiplies production value by the land rental rate, so both attribute part of the same output to nature.
 
 ## erosion
 
-- [Values soil the land cover keeps in place: prevented erosion mapped by running the sediment-delivery model ourselves, valued through crop productivity. It is running for the first time, and we report no number until it lands.]{.state}
+- [Values soil the land cover keeps in place: prevented erosion mapped by running the sediment-delivery model, valued through crop productivity. It is running for the first time, and we report no number until it lands.]{.state}
 - **Q1:** which of the three shock methods is the account's? We compute damage (thresholded area share), service (threshold-free and magnitude-weighted per crop) and service-threshold (service restricted to a fixed severe-pixel set) side by side.
 
 ## landslide_mitigation
@@ -283,6 +287,7 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 - [Values landslide deaths avoided by forest cover: slope stability modelled with and without forest root cohesion, the difference turned into avoided deaths and priced at a value of a statistical life. Computed end to end in the library.]{.state}
 - **Q1:** do you have a per-country output from a v0.2.0 run?
 - **Q2:** which input versions did the run behind the v0.2.0 release use?
+- [This is the only service that builds its own value of a statistical life, from the OECD country table. To price a death the same way across the account it should move onto the air quality group's shared table, and that will change this number, since the two sources differ.]{.state}
 
 ## fisheries
 
@@ -301,7 +306,7 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 ## crop_provision
 
 - [Values crop production from FAOSTAT production values, quantity times producer price per country, times the land rental rate. We run it ourselves and it replicates, validated against the reference table.]{.state}
-- **Q1:** does the account add crop_provision and pollination? Both attribute part of the same output to nature.
+- **Q1:** does the account add crop_provision and pollination? The reasoning is on the pollination slide.
 - **Q2:** is subsistence in scope as a separate crop subgroup? Adding it would double-count, because FAOSTAT's production values already include part of what households grow and eat themselves.
 
 ## livestock_provision
@@ -312,17 +317,17 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 - **Q3:** can you share the GLEAM 3 intake extract (gleam3_dmi.xlsx) to check ours against, and a per-country output? We have harvested the intake from FAO's public dashboard for 231 countries, 205 matching a country in the account, and it does carry all eight feed categories, shown a different subset per species. So we compute the feed share; what we lack is anything to validate it against.
 ## coastal_protection
 
-- [Values storm damage that mangroves and coral reefs prevent along coastlines. The {{< meta cp_total >}} is the sum of two halves that stand differently. Mangroves are ours: hectares times value per hectare gives $30,400,076,961 against the table's $30,400,082,253, a difference of $5,291 that is its own per-row rounding. Corals are not: that file carries a finished benefit per country with nothing underneath it, $5.17bn at 2011, and we only carry it to the base year with a deflator, making it $6.32bn.]{.state}
+- [Values storm damage that mangroves and coral reefs prevent along coastlines. The {{< meta cp_total >}} is the sum of two halves that stand differently. Mangroves are ours: hectares times value per hectare reproduces the published table to within $5,291 on $30.4bn, which is its own per-row rounding. Corals are not: that file carries a finished benefit per country with nothing underneath it, $5.17bn at 2011, and we only carry it to the base year with a deflator, making it $6.32bn.]{.state}
 - **Q1:** is there code behind the coral-reef benefit table that we should be running? That half is still someone else's number, so a disagreement with it could not surface.
 - **Q2:** should the 9 countries missing from the deflator table be left unvalued rather than zero? They are currently zeroed by the join, which reads as no damage prevented.
 
-## extractive_materials
+## extractive_materials_provision
 
 - [Values mineral extraction as the resource-rent share of mining output. Computed in the library from the World Bank rent and GDP tables, and our run reproduces the reference per country.]{.state}
 - **Q1:** what is the source of the {{< meta extractive_factor >}} factor? The valuation multiplies mineral rents times GDP by it, and without it the total would be {{< meta extractive_alt >}} instead of {{< meta extractive_total >}}.
 - **Q2:** should the 9 countries with no World Bank rent data stay unvalued rather than zero? We leave them empty today, which is the convention the group's guidance asks us to confirm.
 
-## renewable_energy
+## renewable_energy_provision
 
 - [Values wind, solar and geothermal electricity as generation times price times a resource-rent share. Our run gives {{< meta renewable_wind >}} wind, {{< meta renewable_solar >}} solar and {{< meta renewable_geothermal >}} geothermal, and a fresh run reproduces each to the cent.]{.state}
 - **Q1:** which is current, the code's {{< meta renewable_total >}} or the drive CSVs' {{< meta renewable_ref >}}?
@@ -336,7 +341,7 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 
 ## water_supply
 
-- [Values hydropower rent and priced water withdrawal. Hydropower is computed from the CWoN wealth table for every country it values, {{< meta water_supply_total >}} across 112 countries, and reproduces the drive's committed output exactly on the 95 countries that output covers. Water use is computed in the library, agriculture {{< meta water_use_ag_total >}} across 126 countries and all-sector {{< meta water_use_all_total >}} across 154.]{.state}
+- [Values hydropower rent and priced water withdrawal. Hydropower is computed from the CWoN wealth table for every country it values, {{< meta water_supply_total >}} across 97 countries, and reproduces the drive's committed output exactly on the 95 countries that output covers. Water use is computed in the library, agriculture {{< meta water_use_ag_total >}} across 126 countries and all-sector {{< meta water_use_all_total >}} across 154.]{.state}
 - **Q1:** which hydropower total is the account's, the manuscript's {{< meta hydro_manuscript >}} or our rent-based {{< meta water_supply_total >}}? The first follows a direct-use method, price times generation, the second the resource-rent method.
 - **Q2:** why does the reference leave 17 countries empty although the CWoN table values them? We now report all 112, and carry the 95-country variant beside it as the comparison, so the {{< meta water_supply_anchor >}} anchor still checks out.
 - **Q3:** what attribution step turns water use into a nature share? The all-sector total is the gross economic value of water use, close to global GDP.
@@ -345,8 +350,11 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 ## air_filtration
 
 - [Values deaths avoided by vegetation capturing air pollution, priced at a GDP-adjusted value of a statistical life (the monetary value assigned to one avoided death). We recompute the valuation and reproduce the committed totals. The avoided-death counts come from the group's emissions-to-health model, which turns fire emissions into excess deaths; we do not rebuild it and take its counts as given.]{.state}
-- **Q1:** which VSL build produced the committed value column? The method is documented (US-anchored, adjusted for GDP and life-years) but the raw data shipped beside it is a different vintage and does not reproduce the column.
-- **Q2:** which vintage are the avoided-death counts?
+- [The valuation reads the group's country table directly, sourcing the value of life for 218 of 250 countries, and the totals are unchanged.]{.state}
+- [Serbia and Kosovo are swapped in the workbook, which labels both rows Serbia: the row that is Serbia carries Kosovo's value of life and the row that is Kosovo carries Serbia's. We read them the right way round from the table.]{.state}
+- **Q1:** Macao and Palestine are priced per country in the workbook but appear nowhere in the table. What is their source?
+- **Q2:** which currency year is the table in, and could it carry an ISO3 column rather than a slugged country name?
+- **Q3:** which vintage are the avoided-death counts?
 
 ## sandstorm_prevention
 
@@ -382,43 +390,15 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 
 ## ntfp
 
-- [Values non-timber forest products as accessible forest area (near roads and rivers) times the CWoN value per hectare. Ours end to end: $19.86bn over 142 countries, from 2,590 million accessible hectares, which is 64 percent of the world's forest lying within 10 km of a road or river. No reference output exists to check it against.]{.state}
-- **Q1:** should the price be rescaled to the accessible area, or should accessibility not restrict the quantity? CWoN spreads its annual value over its own forest area and we multiply it by the smaller accessible area, so the same forest is being valued at two different extents.
+- [Values non-timber forest products over the forest within 10 km of a road or river. $28.87bn across 142 countries. The CWoN value is now spread over the forest people can reach rather than over all of it, which raises the rate and leaves the country total at CWoN's own.]{.state}
+- **Q1:** is there a model behind CWoN's non-wood forest product value, or is it a published table? Since the reachable hectares cancel, that is all that stands between this service and a number we compute.
 ## stormwater
 
 - [Values stormwater retained by urban vegetation and soils. Our own retention run on the drive's configuration retains {{< meta stormwater_volume >}} per year across 104 countries, wall to wall rather than urban-masked, and the module prices that volume. The run and the country step sit beside the task tree rather than inside it.]{.state}
 - **Q1:** what is the intended price per cubic metre retained? The configuration carries a placeholder of 1, so today's value is the volume.
 - **Q2:** should the run be masked to urban areas? It currently covers the whole land surface.
 
-# Questions that cross services
 
-## Conventions to settle
-
-- **Base year:** every service with a number values at 2019, except pollination's 2023 raster, which we regenerate once its definition is settled.
-- **Subsistence:** crop, livestock and fisheries carry subsistence subgroups in the sheet. In scope? Double counting?
-- **Case studies:** the sheet marks five services computable only as worked examples rather than all-country accounts (water quality, pest control, health, peak flow, moisture recycling), though water quality now runs globally in the library. Should we include case-studies in the account?
-
-# What we need
-
-## What we need, by service
-
-- **coastal_carbon:** the shoreline rationale, and the seagrass and marsh input versions behind {{< meta coastal_report >}}.
-- **coastal_protection:** whether code sits behind the two committed value tables that we should run instead.
-- **landslide_mitigation:** one machine-readable v0.2.0 output, its input versions, and which value of a statistical life it uses.
-- **fisheries:** confirm the RCP substitution, name the shock file's CWoN vintage, and confirm or replace the rent-based value now running in the library.
-- **livestock_provision:** the GLEAM 3 intake extract, the item-grouping confirmation, and a reference output.
-- **extractive_materials:** the source of the {{< meta extractive_factor >}} factor.
-- **renewable_energy:** whether the code or the drive CSVs are current.
-- **extractive_energy:** whether the eight duplicated rows are a join error, and which total the account keeps.
-- **recreation:** one reference results_by_country.csv.
-- **water_quality:** the conversion to international dollars, and the currency decision.
-- **flood_control:** whether the service-flow fraction enters the valuation, and whether the FINAL_GEP_FLOOD outputs are current.
-- **water_supply:** which hydropower total is the account's ({{< meta hydro_manuscript >}} direct-use against our {{< meta water_supply_total >}} rent), why the reference leaves 17 countries empty, and the attribution step the water-use components need.
-- **fire_protection:** the choice among the three coefficients.
-- **air_filtration:** the VSL build behind the committed column, and the vintage of the avoided-death counts.
-- **local_climate_regulation:** whether the account takes the plain city sum or the cooling-degree-day correction.
-- **stormwater:** the price per cubic metre, and whether to mask to urban areas.
-- **Decisions for the meeting:** pollination's definition, the shoreline convention, the map dissolve, base year 2019, subsistence scope, and marine carbon's fate.
 
 # Appendix
 
@@ -439,7 +419,7 @@ Full per-service status, one row per sheet service, updated as work lands: [the 
 |---|---|---|---|---|---|---|
 | terrestrial_carbon | 2019 | rental scc r2% | carbon zones raster | prices xlsx | | esa 2019 |
 | coastal_carbon | 2019 | rental scc r2% | | prices xlsx | | |
-| pollination | 2023 | | value raster | | | |
+| pollination | 2019 | | value raster (ours) | | | |
 | renewable_energy | 2019 | | IRENA production | WB prices | CWON rents | |
 | extractive_materials | 2019 | | WB GDP | | WB rents share | |
 | coastal_protection | 2019 | | CWoN mangroves | | | |

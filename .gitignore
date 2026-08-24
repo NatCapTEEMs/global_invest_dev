@@ -203,3 +203,9 @@ global_invest/coastal_carbon/developing.py
 # Quarto render artifacts (any dir)
 *_files/
 .claude/
+
+# Local quality gates: run them, do not ship them. They encode this stack's conventions
+# rather than the science, and a collaborator should not inherit our style rules.
+docs/check_deck.py
+docs/check_harmonization.py
+docs/check_consistency.py
