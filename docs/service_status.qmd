@@ -255,7 +255,7 @@ engineering work we did. **number** is what the figure is and what it was checke
 - **module:** water_quality
 - **in the library:** yes
 - **run:** yes
-- **ours:** not yet. InVEST NDR is installed and we take an NDR-style retention estimate as given anyway.
+- **ours:** the dollar figure yes, the reported one no. We recompute nitrogen and phosphorus retention priced at treatment cost from the retention estimates, which gives `water_quality_gep_usd` at $638.34bn. The column the account reports, `water_quality_gep` at $655.91bn, is the committed international-dollar value merged in from their file, and the conversion between the two is the step we could not identify. The retention estimates underneath are an NDR-style model output we take as given, though InVEST NDR is installed.
 - **method:** Nitrogen and phosphorus the landscape retains, restricted to the share of water reaching domestic use, times the per-kg cost of removing them at a treatment plant.
 - **total:** $638bn USD. $655.91bn international dollars.
 - **code:** Refactored onto the library template and hazelbean conventions. We could not find the original pipeline's code, but its committed intermediates carry the retained nitrogen and phosphorus in kilograms, the treatment price per kg and the domestic-water-use fraction beside the values, so the calculation could be rebuilt in Python from the inputs rather than reverse-engineered from the answer.
