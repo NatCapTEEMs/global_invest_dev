@@ -16,8 +16,6 @@ Components sum by the same commodity convention extractive_materials uses. Count
 from a fuel's table stay NaN in that component; the service total sums the components that
 exist (a country with only coal is a coal country, not a missing one).
 """
-import numpy as np
-import pandas as pd
 
 EXTRACTIVE_ENERGY_FUELS = ('gas', 'coal', 'oil')
 

@@ -13,20 +13,11 @@ import os
 from pathlib import Path
 
 import logging
-from typing import Optional, Set, Tuple
 import numpy as np
-import gc
 import logging
-import math
 from dataclasses import dataclass
-from typing import Any, Dict, List, Set, Tuple
+from typing import Any, Dict
 import rasterio
-from joblib import Parallel, delayed
-from rasterio.enums import Resampling
-from rasterio.warp import reproject
-from rasterio.windows import Window
-from scipy.ndimage import convolve
-from tqdm import tqdm
 
 import pandas as pd
 
@@ -934,3 +925,199 @@ def pixel_area_km2(lat_deg: np.ndarray, res_deg: float = PIXEL_RES_DEG) -> np.nd
     return (R ** 2) * dlon * (
         np.sin(lat_rad + dlat / 2.0) - np.sin(lat_rad - dlat / 2.0)
     )
+
+
+# =============================================================================
+# The pollination value raster: production x price x pollination dependence.
+#
+# This is the arithmetic behind poll_value_global_<year>usd.tif, which the GEP
+# valuation used to take as a finished input. Everything here is array and scalar
+# maths so the task layer can open the per-crop rasters and these functions stay
+# testable without one.
+# =============================================================================
+
+# US CPI-U annual averages (BLS, all urban consumers). Prices are nominal in the year
+# FAOSTAT reports them, so a target year needs a deflator, and a deflator needs an index.
+CPI_BY_YEAR = {
+    1993: 144.5,
+    1994: 148.2,
+    1995: 152.4,
+    1996: 156.9,
+    1997: 160.5,
+    1998: 163.0,
+    1999: 166.6,
+    2000: 172.2,
+    2001: 177.1,
+    2002: 179.9,
+    2003: 184.0,
+    2004: 188.9,
+    2005: 195.3,
+    2006: 201.6,
+    2007: 207.3,
+    2008: 215.3,
+    2009: 214.5,
+    2010: 218.1,
+    2011: 224.9,
+    2012: 229.6,
+    2013: 232.9,
+    2014: 236.7,
+    2015: 237.0,
+    2016: 240.0,
+    2017: 245.1,
+    2018: 251.1,
+    2019: 255.7,
+    2020: 258.8,
+    2021: 270.9,
+    2022: 292.7,
+    2023: 305.1,
+    2024: 314.9,
+    2025: 321.9,
+}
+
+# The production rasters are dated 2020, so a price expressed in any other year's dollars
+# has to be brought to 2020 before it multiplies them, or the year of the money and the
+# year of the harvest disagree.
+PRODUCTION_RASTER_YEAR = 2020
+
+
+def usd_deflator(from_year, to_year):
+    """CPI ratio converting dollars of one year into dollars of another.
+
+    Args:
+        from_year (int): the year the value is currently denominated in.
+        to_year (int): the year wanted.
+
+    Returns:
+        float: multiply a `from_year` dollar amount by this to get `to_year` dollars.
+
+    Raises:
+        KeyError: if either year is outside the CPI table, which is deliberate. Silently
+            returning 1.0 for an unknown year would leave the value undeflated and
+            indistinguishable from a correct one.
+    """
+    return CPI_BY_YEAR[int(to_year)] / CPI_BY_YEAR[int(from_year)]
+
+
+def crop_pollination_value_density(production_density, price_usd_per_tonne, dependence_ratio):
+    """Per-crop pollination value, as a density, from a production density.
+
+    The production rasters carry tonnes per square kilometre, not tonnes per pixel, so what
+    comes out here is USD per square kilometre and must be multiplied by cell area before it
+    can be added up. That distinction is the whole reason this function returns a name
+    ending in `_density`: summing the result directly gives a number with no meaning, and
+    it is a plausible-looking number, which is worse.
+
+    Args:
+        production_density (np.ndarray): tonnes per square kilometre.
+        price_usd_per_tonne (float): producer price, already in the target year's dollars.
+        dependence_ratio (float or np.ndarray): the share of this crop's output attributable
+            to animal pollination, 0 for a wind-pollinated crop and up to 1 for one that sets
+            no fruit without pollinators. An array when the ratio varies over space, which is
+            coffee, where one FAO item covers arabica and robusta.
+
+    Returns:
+        tuple: (pollination value density, total crop value density), both USD per square
+        kilometre. The second is returned because the share of crop value that pollination
+        accounts for is a headline check on the first.
+    """
+    import numpy as np
+    production = np.where(production_density < 0, np.nan, production_density)
+    crop_value_density = production * float(price_usd_per_tonne)
+    return crop_value_density * np.asarray(dependence_ratio, dtype='float64'), crop_value_density
+
+
+def value_density_to_per_cell(value_density, area_km2):
+    """USD per square kilometre to USD per cell, which is what a zonal sum can add.
+
+    A cell near the pole covers a fraction of the area of one at the equator, so a density
+    raster summed over a country weights every cell alike and answers a question nobody
+    asked. Multiplying by the cell's own area is what turns it into money.
+
+    Args:
+        value_density (np.ndarray): USD per square kilometre.
+        area_km2 (np.ndarray): the area each cell covers, same shape.
+
+    Returns:
+        np.ndarray: USD in the cell, with cells of no area left missing rather than zero.
+    """
+    import numpy as np
+    out = np.full(np.shape(value_density), np.nan, dtype='float64')
+    valid = np.isfinite(value_density) & (area_km2 > 0)
+    out[valid] = value_density[valid] * area_km2[valid]
+    return out
+
+
+def local_pollination_share(pollination_value, crop_value):
+    """The fraction of crop value that pollination accounts for, cell by cell.
+
+    Undefined where there is no crop value: a cell growing nothing has no share, which is
+    not the same as a share of zero, and zero would pull a mean down as though the cell
+    were farmland that pollinators do nothing for.
+
+    Args:
+        pollination_value (np.ndarray): the pollination-attributable part.
+        crop_value (np.ndarray): total crop value, same units and shape.
+
+    Returns:
+        np.ndarray: the ratio, missing where crop value is missing or not positive.
+    """
+    import numpy as np
+    with np.errstate(invalid='ignore', divide='ignore'):
+        return np.where(np.isfinite(crop_value) & (crop_value > 0),
+                        pollination_value / crop_value, np.nan)
+
+
+# FAO gives coffee one item code but two dependence ratios, because arabica and robusta are
+# different plants: arabica largely self-pollinates and robusta largely does not.
+COFFEE_ITEM_CODE_FAO = 656
+COFFEE_DEPENDENCE = {'arabica': 0.25, 'robusta': 0.65}
+
+
+def coffee_dependence_by_country(df_arabica_robusta):
+    """Each country's coffee pollination dependence, from what it actually grows.
+
+    Arabica depends on pollinators for a quarter of its yield and robusta for near two
+    thirds, and FAO files both under item 656. A lookup keyed on the item code therefore has
+    two values for coffee, and the source pipeline's `drop_duplicates` kept whichever came
+    first, which was arabica: every coffee-growing country was valued as though it grew no
+    robusta. Globally that puts coffee's pollination value at $5.55bn where the crops
+    actually grown put it at $9.39bn.
+
+    Blending by country rather than globally matters because the mix is not a detail of the
+    average: Colombia is all arabica and Vietnam is 97 percent robusta, so one global ratio
+    would be wrong in opposite directions for the two largest producers.
+
+    Args:
+        df_arabica_robusta (pd.DataFrame): area_code_m49 and prop_arabica, prop_robusta.
+
+    Returns:
+        dict: M49 country code (int) to the blended dependence ratio.
+    """
+    import pandas as pd
+    df = df_arabica_robusta.dropna(subset=['area_code_m49']).copy()
+    blended = (df['prop_arabica'].astype(float) * COFFEE_DEPENDENCE['arabica']
+               + df['prop_robusta'].astype(float) * COFFEE_DEPENDENCE['robusta'])
+    codes = pd.to_numeric(df['area_code_m49'], errors='coerce').astype('Int64')
+    return dict(zip(codes, blended))
+
+
+def dependence_raster_from_country_lookup(country_id_array, dependence_by_country, default):
+    """A per-pixel dependence ratio, looked up by which country the pixel is in.
+
+    Args:
+        country_id_array (np.ndarray): the country code in each cell.
+        dependence_by_country (dict): country code to ratio.
+        default (float): the ratio for a country the lookup does not cover, which is a
+            coffee grower we have no arabica-robusta split for rather than one that grows
+            none: the production raster is what decides whether a pixel carries coffee.
+
+    Returns:
+        np.ndarray: the ratio in each cell, float64.
+    """
+    import numpy as np
+    out = np.full(country_id_array.shape, float(default), dtype='float64')
+    for code, ratio in dependence_by_country.items():
+        if code is None or ratio is None or not np.isfinite(ratio):
+            continue
+        out[country_id_array == int(code)] = float(ratio)
+    return out

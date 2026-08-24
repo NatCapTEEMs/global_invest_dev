@@ -35,10 +35,7 @@ holds only functions over arrays and frames.
 """
 import numpy as np
 import pandas as pd
-import os
-import rasterio
-from osgeo import gdal, osr
-import pygeoprocessing as pygeo
+from osgeo import osr
 
 
 # Every derived raster in this chain carries the same nodata value.

@@ -24,27 +24,19 @@ routing and the figure driver, are in the task module.
 from __future__ import annotations
 import numpy as np
 import pandas as pd
-import hazelbean as hb
 import requests
-import matplotlib.pyplot as plt
-import matplotlib as mpl
-from matplotlib.patches import Patch
 import os
 import sys
 import time
-import json
 import logging
 import warnings
 from pathlib import Path
-from datetime import datetime
 import geopandas as gpd
 import rasterio
 import rasterio.features
-import rioxarray as rxr
 import xarray as xr
 from rasterio.enums import Resampling
 from rasterio.crs import CRS as rioCRS
-from osgeo import gdal
 
 
 # Shocks below this are numerical residue rather than economics, but a country with a genuinely
@@ -241,6 +233,58 @@ def upstream_prevention_share(accumulated_avoided, accumulated_potential, ndv=-9
                         ndv).astype('float32')
 
 
+
+def _required_path(p, attribute, constant_name):
+    """The project's value for a path, or a failure that names what is missing.
+
+    These used to read `getattr(p, attribute, SOME_CONSTANT)`, where the constant was an absolute
+    path on the machine the source scripts were written on. A project that did not set the
+    attribute therefore fell back to a directory that does not exist here, and the run failed
+    later with a missing-file error naming somebody else's home directory. Failing here instead
+    names the parameter to add to es_parameters.csv.
+
+    Args:
+        p (ProjectFlow): the project.
+        attribute (str): the attribute the project should carry.
+        constant_name (str): what this path is, for the error message.
+
+    Returns:
+        Path: the resolved path.
+
+    Raises:
+        NameError: when the project does not carry the attribute.
+    """
+    value = getattr(p, attribute, None)
+    if value is None:
+        raise NameError('erosion needs %s (%s). Add a row for it to es_parameters.csv; it used to '
+                        'default to a path on the machine the source scripts came from.'
+                        % (attribute, constant_name))
+    return Path(value)
+
+def _output_path(p, attribute, default_name):
+    """Where the run writes something, from the project or under the task's own directory.
+
+    An output is not an input: the project need not be told where to put it, only where to find
+    what it reads. So this defaults into the task directory rather than raising the way
+    _required_path does, and a project that wants the file somewhere else still sets the
+    attribute. Before this, the defaults were absolute paths on the machines the source scripts
+    came from, so outputs of a run here were addressed to a cluster.
+
+    Args:
+        p (ProjectFlow): the project.
+        attribute (str): the attribute a project may set to override the default.
+        default_name (str): the file or directory name under the task directory.
+
+    Returns:
+        Path: where to write.
+    """
+    value = getattr(p, attribute, None)
+    if value is not None:
+        return Path(value)
+    directory = getattr(p, 'cur_dir', None) or getattr(p, 'project_dir', None) or '.'
+    return Path(directory) / default_name
+
+
 def configure_sdr(p):
     """
     Override the Section-A (InVEST SDR) module-level path constants from the
@@ -250,18 +294,18 @@ def configure_sdr(p):
     global ROOT, BASE_IN, BASE_OUT, BIOPHYS_CSV, DEM_TIF, LULC_TIF, K_TIF, R_TIF
     global WATERSHEDS_RAW, WATERSHEDS_SANITIZED, WATERSHEDS_SAN_LAYER, DRAINAGE_PATH
 
-    ROOT = Path(getattr(p, 'erosion_sdr_root', ROOT))
-    BASE_IN = Path(getattr(p, 'erosion_sdr_input_dir', BASE_IN))
-    BASE_OUT = Path(getattr(p, 'erosion_sdr_output_dir', BASE_OUT))
+    ROOT = _output_path(p, 'erosion_sdr_root', 'sdr')
+    BASE_IN = _output_path(p, 'erosion_sdr_input_dir', 'sdr_input')
+    BASE_OUT = _output_path(p, 'erosion_sdr_output_dir', 'sdr_output')
     BASE_OUT.mkdir(parents=True, exist_ok=True)
 
-    BIOPHYS_CSV = Path(getattr(p, 'erosion_biophysical_table_path', BIOPHYS_CSV))
-    DEM_TIF = Path(getattr(p, 'erosion_dem_path', DEM_TIF))
-    LULC_TIF = Path(getattr(p, 'erosion_lulc_path', LULC_TIF))
-    K_TIF = Path(getattr(p, 'erosion_erodibility_path', K_TIF))
-    R_TIF = Path(getattr(p, 'erosion_erosivity_path', R_TIF))
-    WATERSHEDS_RAW = Path(getattr(p, 'erosion_watersheds_path', WATERSHEDS_RAW))
-    WATERSHEDS_SANITIZED = Path(getattr(p, 'erosion_watersheds_sanitized_path', WATERSHEDS_SANITIZED))
+    BIOPHYS_CSV = _required_path(p, 'erosion_biophysical_table_path', 'BIOPHYS_CSV')
+    DEM_TIF = _required_path(p, 'erosion_dem_path', 'DEM_TIF')
+    LULC_TIF = _required_path(p, 'erosion_lulc_path', 'LULC_TIF')
+    K_TIF = _required_path(p, 'erosion_erodibility_path', 'K_TIF')
+    R_TIF = _required_path(p, 'erosion_erosivity_path', 'R_TIF')
+    WATERSHEDS_RAW = _required_path(p, 'erosion_watersheds_path', 'WATERSHEDS_RAW')
+    WATERSHEDS_SANITIZED = _output_path(p, 'erosion_watersheds_sanitized_path', 'watersheds_sanitized.gpkg')
     WATERSHEDS_SAN_LAYER = getattr(p, 'erosion_watersheds_sanitized_layer', WATERSHEDS_SAN_LAYER)
     DRAINAGE_PATH = getattr(p, 'erosion_drainage_path', DRAINAGE_PATH)
 
@@ -271,22 +315,26 @@ def configure_sdr(p):
 # =============================================================================
 # 0) PATH CONFIG (CANONICAL)
 # =============================================================================
-ROOT = Path("/users/3/damph002/GEP/sediment")
+# Set by configure_sdr / configure_prevention_shares / configure_maps from the project's
+# es_parameters rows. None until then: these used to hold absolute paths on the machines the
+# source scripts were written on, so a project that forgot a row ran against a directory that
+# does not exist here. _required_path now names the missing row instead.
+ROOT = None
 
-BASE_IN  = ROOT / "inputs_v2" / "sdr"
-BASE_OUT = ROOT / "outputs_v2" / "sdr" / "invest_sdr_2019"
+BASE_IN = None
+BASE_OUT = None
 
-BIOPHYS_CSV = BASE_IN / "biophysical_esa_sdr_InVEST_Global_GEP_Oct_27_25_nkd.csv"
-DEM_TIF     = BASE_IN / "global_dem_reproj.tif"
-LULC_TIF    = BASE_IN / "lulc_esa_2019_int_reproj.tif"
-K_TIF       = BASE_IN / "erodibility_30s_reproj.tif"
-R_TIF       = BASE_IN / "erosivity_30s_reproj.tif"
+BIOPHYS_CSV = None
+DEM_TIF = None
+LULC_TIF = None
+K_TIF = None
+R_TIF = None
 
 # ✅ Use MERGED watershed ONLY
-WATERSHEDS_RAW = BASE_IN / "wshed_global_reproj_CLEAN_MERGED.gpkg"
+WATERSHEDS_RAW = None
 
 # Sanitized watersheds used to prevent overflow + CRS parse failures in report
-WATERSHEDS_SANITIZED = BASE_IN / "wshed_for_sdr_report_sanitized.gpkg"
+WATERSHEDS_SANITIZED = None
 WATERSHEDS_SAN_LAYER = "watersheds"
 
 # Optional drainage raster (leave empty to disable)
@@ -389,48 +437,48 @@ RUN_TAG = "ses11_onfarm_upstream_combined_20260305"
 # SECTION B -- On-farm + upstream erosion prevention-share GEP valuation
 #              (from Combine_PS_SES11_3_3_2026.ipynb)
 # =============================================================================
-ROOT = Path("/projects/standard/jajohns/shared/sediment_gep/sediment_feb_2026")
+ROOT = None
 
 # Primary erosion inputs (SDR-derived)
-IN_DIR = ROOT / "inputs_v2" / "erosion_gep"
-USLE_PATH  = IN_DIR / "usle_2019_revised_feb_13.tif"              # actual erosion rate (t/ha/yr)
-AVOID_PATH = IN_DIR / "avoided_erosion_2019_revised_feb_13.tif"   # avoided erosion rate (t/ha/yr)
+IN_DIR = None
+USLE_PATH = None
+AVOID_PATH = None
 
 # Precomputed upstream prevention share raster (from your DEM+D8 workflow)
-UPS_DIR   = ROOT / "upstream_prevention_attribution_v3"
-UPS_PATH  = UPS_DIR / "upstream_prevention_share.tif"
+UPS_DIR = None
+UPS_PATH = None
 
 # Optional upstream LULC attribution shares (diagnostics only)
-UPS_FOREST_SHARE = UPS_DIR / "upslope_forest_share.tif"
-UPS_GRASS_SHARE  = UPS_DIR / "upslope_grass_share.tif"
-UPS_CROP_SHARE   = UPS_DIR / "upslope_cropland_share.tif"
-UPS_BARE_SHARE   = UPS_DIR / "upslope_bare_share.tif"
+UPS_FOREST_SHARE = None
+UPS_GRASS_SHARE = None
+UPS_CROP_SHARE = None
+UPS_BARE_SHARE = None
 USE_UPSLOPE_LULC_ATTRIBUTION_DIAGNOSTICS = True
 
 # Boundary with ISO3 column
-BOUNDARY_GPKG = IN_DIR / "country_boundary_r250_with_iso3.gpkg"
+BOUNDARY_GPKG = None
 BOUNDARY_SOURCE_EPSG = None  # set to 4326 if you know it is WGS84
 
 # Optional DEM used ONLY for threshold policy (low-elevation rule). If not present, rule is skipped.
-ELEVATION_PATH = ROOT / "inputs_v2" / "sdr" / "global_dem_reproj.tif"
+ELEVATION_PATH = None
 
 # Crops: SPAM2020 stacks
-CROP_DIR   = IN_DIR / "crops"
-YIELD_STACK = CROP_DIR / "spam2020_yield_stack_TA.tif"             # t/ha
-AREA_STACK  = CROP_DIR / "spam2020_harvested_area_stack_TA.tif"    # ha per pixel (EXTENSIVE)
-BANDMAP_CSV = CROP_DIR / "spam2020_bandmap.csv"                    # band,crop
+CROP_DIR = None
+YIELD_STACK = None
+AREA_STACK = None
+BANDMAP_CSV = None
 AREA_STACK_IS_HA_PER_PIXEL = True
 
 # Elasticity table (used only in valuation Option A)
-ELASTICITY_CSV = IN_DIR / "elasticity_crops_fao_revised.csv"
+ELASTICITY_CSV = None
 
 # Valuation inputs
-FAO_GPV_ISO3_CSV     = IN_DIR / "faostat_gpv_2019_iso3.csv"
-FAO_PRICES_FULL_CSV  = IN_DIR / "faostat_prices_2019_completed_revised.csv"
-GDP_CURRENT_2019_CSV = IN_DIR / "worldbank_gdp_2019.csv"
+FAO_GPV_ISO3_CSV = None
+FAO_PRICES_FULL_CSV = None
+GDP_CURRENT_2019_CSV = None
 
 # Output directory
-OUT_DIR = ROOT / f"output_{RUN_TAG}"
+OUT_DIR = None
 
 # -------- Scientific knobs --------
 THRESH_LOW  = 2.0
@@ -568,36 +616,36 @@ def configure_prevention_shares(p):
 
     SCENARIO_NAME = getattr(p, 'erosion_scenario_name', SCENARIO_NAME)
     RUN_TAG = getattr(p, 'erosion_run_tag', RUN_TAG)
-    ROOT = Path(getattr(p, 'erosion_gep_root', ROOT))
+    ROOT = _output_path(p, 'erosion_gep_root', 'gep')
 
-    IN_DIR = Path(getattr(p, 'erosion_gep_input_dir', ROOT / "inputs_v2" / "erosion_gep"))
-    USLE_PATH = Path(getattr(p, 'erosion_usle_path', IN_DIR / "usle_2019_revised_feb_13.tif"))
-    AVOID_PATH = Path(getattr(p, 'erosion_avoided_erosion_path', IN_DIR / "avoided_erosion_2019_revised_feb_13.tif"))
+    IN_DIR = _output_path(p, 'erosion_gep_input_dir', 'gep_input')
+    USLE_PATH = _required_path(p, 'erosion_usle_path', 'IN_DIR / "usle_2019_revised_feb_13.tif"')
+    AVOID_PATH = _required_path(p, 'erosion_avoided_erosion_path', 'IN_DIR / "avoided_erosion_2019_revised_feb_13.tif"')
 
-    UPS_DIR = Path(getattr(p, 'erosion_upstream_dir', ROOT / "upstream_prevention_attribution_v3"))
-    UPS_PATH = Path(getattr(p, 'erosion_upstream_prevention_share_path', UPS_DIR / "upstream_prevention_share.tif"))
-    UPS_FOREST_SHARE = Path(getattr(p, 'erosion_upslope_forest_share_path', UPS_DIR / "upslope_forest_share.tif"))
-    UPS_GRASS_SHARE = Path(getattr(p, 'erosion_upslope_grass_share_path', UPS_DIR / "upslope_grass_share.tif"))
-    UPS_CROP_SHARE = Path(getattr(p, 'erosion_upslope_cropland_share_path', UPS_DIR / "upslope_cropland_share.tif"))
-    UPS_BARE_SHARE = Path(getattr(p, 'erosion_upslope_bare_share_path', UPS_DIR / "upslope_bare_share.tif"))
+    UPS_DIR = _output_path(p, 'erosion_upstream_dir', 'upstream')
+    UPS_PATH = _output_path(p, 'erosion_upstream_prevention_share_path', 'upstream_prevention_share.tif')
+    UPS_FOREST_SHARE = _output_path(p, 'erosion_upslope_forest_share_path', 'upslope_forest_share.tif')
+    UPS_GRASS_SHARE = _output_path(p, 'erosion_upslope_grass_share_path', 'upslope_grass_share.tif')
+    UPS_CROP_SHARE = _output_path(p, 'erosion_upslope_cropland_share_path', 'upslope_cropland_share.tif')
+    UPS_BARE_SHARE = _output_path(p, 'erosion_upslope_bare_share_path', 'upslope_bare_share.tif')
     USE_UPSLOPE_LULC_ATTRIBUTION_DIAGNOSTICS = getattr(p, 'erosion_use_upslope_lulc_diagnostics', True)
 
-    BOUNDARY_GPKG = Path(getattr(p, 'erosion_country_boundary_path', IN_DIR / "country_boundary_r250_with_iso3.gpkg"))
+    BOUNDARY_GPKG = _required_path(p, 'erosion_country_boundary_path', 'IN_DIR / "country_boundary_r250_with_iso3.gpkg"')
     BOUNDARY_SOURCE_EPSG = getattr(p, 'erosion_boundary_source_epsg', None)
-    ELEVATION_PATH = Path(getattr(p, 'erosion_elevation_path', ROOT / "inputs_v2" / "sdr" / "global_dem_reproj.tif"))
+    ELEVATION_PATH = _required_path(p, 'erosion_dem_path', 'the elevation model')
 
-    CROP_DIR = Path(getattr(p, 'erosion_crop_dir', IN_DIR / "crops"))
-    YIELD_STACK = Path(getattr(p, 'erosion_yield_stack_path', CROP_DIR / "spam2020_yield_stack_TA.tif"))
-    AREA_STACK = Path(getattr(p, 'erosion_area_stack_path', CROP_DIR / "spam2020_harvested_area_stack_TA.tif"))
-    BANDMAP_CSV = Path(getattr(p, 'erosion_bandmap_csv_path', CROP_DIR / "spam2020_bandmap.csv"))
+    CROP_DIR = _output_path(p, 'erosion_crop_dir', 'crops')
+    YIELD_STACK = _required_path(p, 'erosion_yield_stack_path', 'CROP_DIR / "spam2020_yield_stack_TA.tif"')
+    AREA_STACK = _required_path(p, 'erosion_area_stack_path', 'CROP_DIR / "spam2020_harvested_area_stack_TA.tif"')
+    BANDMAP_CSV = _required_path(p, 'erosion_bandmap_csv_path', 'CROP_DIR / "spam2020_bandmap.csv"')
     AREA_STACK_IS_HA_PER_PIXEL = getattr(p, 'erosion_area_stack_is_ha_per_pixel', True)
 
-    ELASTICITY_CSV = Path(getattr(p, 'erosion_elasticity_csv_path', IN_DIR / "elasticity_crops_fao_revised.csv"))
-    FAO_GPV_ISO3_CSV = Path(getattr(p, 'erosion_fao_gpv_iso3_csv_path', IN_DIR / "faostat_gpv_2019_iso3.csv"))
-    FAO_PRICES_FULL_CSV = Path(getattr(p, 'erosion_fao_prices_csv_path', IN_DIR / "faostat_prices_2019_completed_revised.csv"))
-    GDP_CURRENT_2019_CSV = Path(getattr(p, 'erosion_gdp_csv_path', IN_DIR / "worldbank_gdp_2019.csv"))
+    ELASTICITY_CSV = _required_path(p, 'erosion_elasticity_csv_path', 'IN_DIR / "elasticity_crops_fao_revised.csv"')
+    FAO_GPV_ISO3_CSV = _required_path(p, 'erosion_fao_gpv_iso3_csv_path', 'IN_DIR / "faostat_gpv_2019_iso3.csv"')
+    FAO_PRICES_FULL_CSV = _required_path(p, 'erosion_fao_prices_csv_path', 'IN_DIR / "faostat_prices_2019_completed_revised.csv"')
+    GDP_CURRENT_2019_CSV = _required_path(p, 'erosion_gdp_csv_path', 'IN_DIR / "worldbank_gdp_2019.csv"')
 
-    OUT_DIR = Path(getattr(p, 'erosion_gep_output_dir', ROOT / f"output_{RUN_TAG}"))
+    OUT_DIR = _output_path(p, 'erosion_gep_output_dir', 'gep_output')
     OUT_DIR.mkdir(parents=True, exist_ok=True)
 
     THRESH_LOW = getattr(p, 'erosion_threshold_low_t_ha_yr', 2.0)
@@ -624,20 +672,20 @@ def configure_prevention_shares(p):
 # =============================================================================
 # 0) CONFIG
 # =============================================================================
-ROOT = Path("/projects/standard/jajohns/shared/sediment_gep/sediment_feb_2026")
-RUN_DIR = ROOT / "output_eps5_onfarm_upstream_combined_20260305"
+ROOT = None
+RUN_DIR = None
 
-FIG_DIR = RUN_DIR / "figures_20260306_extended"
+FIG_DIR = None
 # (no mkdir at import -- configure_maps re-resolves FIG_DIR from p and creates it at run time)
 
-INTEGRATED_CSV = RUN_DIR / "integrated_country_gep.csv"
-COUNTRY_CROP_LONG_CSV = RUN_DIR / "country_crop_protected_production_long.csv"
+INTEGRATED_CSV = None
+COUNTRY_CROP_LONG_CSV = None
 
-PS_ONFARM_TIF   = RUN_DIR / "ps_onfarm_cropland_severe.tif"
-PS_UPSTREAM_TIF = RUN_DIR / "ps_upstream_cropland_severe.tif"
-PS_COMBINED_TIF = RUN_DIR / "ps_combined_union_cropland_severe.tif"
+PS_ONFARM_TIF = None
+PS_UPSTREAM_TIF = None
+PS_COMBINED_TIF = None
 
-RUN_BOUNDARY_GPKG = ROOT / "inputs_v2" / "erosion_gep" / "country_boundary_r250_with_iso3.gpkg"
+RUN_BOUNDARY_GPKG = None
 
 TOP_N = 20
 TOP_N_LABELS = 25
@@ -673,21 +721,21 @@ def configure_maps(p):
     global PS_ONFARM_TIF, PS_UPSTREAM_TIF, PS_COMBINED_TIF, RUN_BOUNDARY_GPKG
     global TOP_N_LABELS, RASTER_DOWNSAMPLE_FACTOR, MAP_K_CLASSES, MONEY_UNIT_LABEL
 
-    ROOT = Path(getattr(p, 'erosion_gep_root', ROOT))
+    ROOT = _output_path(p, 'erosion_gep_root', 'gep')
     run_tag = getattr(p, 'erosion_run_tag', 'ses11_onfarm_upstream_combined_20260305')
-    RUN_DIR = Path(getattr(p, 'erosion_gep_output_dir', ROOT / f"output_{run_tag}"))
+    RUN_DIR = _output_path(p, 'erosion_gep_output_dir', 'gep_output')
 
-    FIG_DIR = Path(getattr(p, 'erosion_figures_dir', RUN_DIR / "figures"))
+    FIG_DIR = _output_path(p, 'erosion_figures_dir', 'figures')
     FIG_DIR.mkdir(parents=True, exist_ok=True)
 
-    INTEGRATED_CSV = Path(getattr(p, 'erosion_integrated_country_gep_csv', RUN_DIR / "integrated_country_gep.csv"))
-    COUNTRY_CROP_LONG_CSV = Path(getattr(p, 'erosion_country_crop_long_csv', RUN_DIR / "country_crop_protected_production_long.csv"))
+    INTEGRATED_CSV = _output_path(p, 'erosion_integrated_country_gep_csv', 'integrated_country_gep.csv')
+    COUNTRY_CROP_LONG_CSV = _output_path(p, 'erosion_country_crop_long_csv', 'country_crop_protected_production_long.csv')
 
-    PS_ONFARM_TIF = Path(getattr(p, 'erosion_ps_onfarm_tif', RUN_DIR / "ps_onfarm_cropland_severe.tif"))
-    PS_UPSTREAM_TIF = Path(getattr(p, 'erosion_ps_upstream_tif', RUN_DIR / "ps_upstream_cropland_severe.tif"))
-    PS_COMBINED_TIF = Path(getattr(p, 'erosion_ps_combined_tif', RUN_DIR / "ps_combined_union_cropland_severe.tif"))
+    PS_ONFARM_TIF = _output_path(p, 'erosion_ps_onfarm_tif', 'ps_onfarm_cropland_severe.tif')
+    PS_UPSTREAM_TIF = _output_path(p, 'erosion_ps_upstream_tif', 'ps_upstream_cropland_severe.tif')
+    PS_COMBINED_TIF = _output_path(p, 'erosion_ps_combined_tif', 'ps_combined_union_cropland_severe.tif')
 
-    RUN_BOUNDARY_GPKG = Path(getattr(p, 'erosion_country_boundary_path', ROOT / "inputs_v2" / "erosion_gep" / "country_boundary_r250_with_iso3.gpkg"))
+    RUN_BOUNDARY_GPKG = _required_path(p, 'erosion_country_boundary_path', 'ROOT / "inputs_v2" / "erosion_gep" / "country_boundary_r250_with_iso3.gpkg"')
 
     TOP_N_LABELS = getattr(p, 'erosion_top_n_labels', 25)
     RASTER_DOWNSAMPLE_FACTOR = getattr(p, 'erosion_raster_downsample_factor', 6)

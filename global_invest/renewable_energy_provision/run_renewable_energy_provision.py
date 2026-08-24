@@ -1,7 +1,5 @@
-import pandas as pd
 import hazelbean as hb
 
-from global_invest.renewable_energy_provision import renewable_energy_provision_tasks
 from global_invest.renewable_energy_provision import renewable_energy_provision_initialize
 
 def build_task_tree(p):

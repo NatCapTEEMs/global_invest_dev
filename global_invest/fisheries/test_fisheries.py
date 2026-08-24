@@ -25,9 +25,13 @@ def test_cpi_imputation_fills_missing_with_that_years_cross_country_mean():
 
 
 def test_rent_cleaning_applies_the_source_exclusions():
+    # The rent now arrives as its parts, so the fixture supplies those rather than a finished
+    # column: landed value, the two costs, and subsidy.
     rent = pd.DataFrame({'Year': [2010, 2010, 2009, 2011, 2010],
                          'wb_code': ['CYP', 'AAA', 'CUW', 'CUW', 'BBB'],
-                         'FAOEconRent': [1.0, 2.0, 3.0, 4.0, 5.0]})
+                         'FAO_landval2018': [10.0, 20.0, 30.0, 40.0, 50.0],
+                         'FAOVarCost': [5.0] * 5, 'FAOFixCost': [2.0] * 5,
+                         'SubsidyUSD2018': [1.0] * 5})
     out = ff.clean_cwon_econ_rent(rent)
     assert 'CYP' not in set(out['wb_code'])                       # excluded country
     cuw_years = set(out[out['wb_code'] == 'CUW']['year'])
@@ -35,7 +39,7 @@ def test_rent_cleaning_applies_the_source_exclusions():
 
 
 def test_deflation_is_nominal_over_cpi_times_100():
-    rent = pd.DataFrame({'year': [2010], 'wb_code': ['AAA'], 'FAOEconRent': [50.0]})
+    rent = pd.DataFrame({'year': [2010], 'wb_code': ['AAA'], 'econ_rent': [50.0]})
     cpi = pd.DataFrame({'wb_code': ['AAA'], 'year': [2010], 'cpi2019': [80.0]})
     out = ff.deflate_rent_to_2019usd(rent, cpi)
     assert np.isclose(out['resrent_2019usd'].iloc[0], 62.5)
@@ -210,3 +214,37 @@ def test_static_shock_rows_repeat_each_value_over_every_sector():
         base_year=2020, end_year=2020, time_varying=True, constant_year=2020,
         ramp_to_end=True, ramp_end_year=2030)
     assert [row['ACTS'] for row in rows] == ['FSH', 'WTR']
+
+
+def test_econ_rent_is_computed_from_its_parts_not_read_from_their_column():
+    # Landed value less the cost of catching it, less subsidy. Written out so the rent is an
+    # equation we own rather than a column we adopt, and checked against the arithmetic directly.
+    raw = pd.DataFrame({
+        'Year': [2015, 2016, 2017],
+        'wb_code': ['AAA', 'AAA', 'BBB'],
+        'FAO_landval2018': [1000.0, 900.0, 500.0],
+        'FAOVarCost':      [ 300.0, 250.0, 100.0],
+        'FAOFixCost':      [ 200.0, 150.0,  50.0],
+        'SubsidyUSD2018':  [  50.0,   np.nan, 25.0],
+        'FAOEconRent':     [ 450.0, 500.0, 325.0],
+    })
+    out = ff.compute_econ_rent(raw)
+    # 1000 - (300 + 200) - 50 = 450
+    assert out['econ_rent'].iloc[0] == pytest.approx(450.0)
+    # A country-year with no recorded subsidy received none, so the rent is 900 - 400 - 0 = 500,
+    # not missing. Treating a blank subsidy as unknown would delete an otherwise complete country.
+    assert out['econ_rent'].iloc[1] == pytest.approx(500.0)
+    assert out['econ_rent'].iloc[2] == pytest.approx(325.0)
+    # It reproduces their published column, which is the point of computing it rather than reading it.
+    assert out['econ_rent'].tolist() == pytest.approx(raw['FAOEconRent'].tolist())
+
+
+def test_a_missing_catch_or_cost_leaves_the_rent_undefined_rather_than_zero():
+    # Zero rent is a finding: it says this fishery earns nothing above cost. Missing says we could
+    # not compute it. Only subsidy is filled, because absent there really does mean none.
+    raw = pd.DataFrame({
+        'Year': [2015, 2015], 'wb_code': ['NOVAL', 'NOCOST'],
+        'FAO_landval2018': [np.nan, 500.0], 'FAOVarCost': [100.0, np.nan],
+        'FAOFixCost': [50.0, 50.0], 'SubsidyUSD2018': [0.0, 0.0]})
+    out = ff.compute_econ_rent(raw)
+    assert out['econ_rent'].isna().all()

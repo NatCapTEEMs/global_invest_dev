@@ -10,6 +10,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from global_invest.pollination import pollination_functions as pf
 from global_invest.pollination import pollination_tasks as pt
@@ -235,6 +236,8 @@ def test_pollination_gep_sums_split_country_once(tmp_path):
                         input_dir=str(tmp_path / 'input'),
                         get_path=lambda *a, **k: '/resolved/' + '/'.join(a),
                         df_countries=pd.DataFrame({'placeholder': [1]}),   # trips the caller-wins guard
+                        # our own raster now, in USD per cell rather than a density from elsewhere
+                        pollination_value_raster_path=str(tmp_path / 'poll_value.tif'),
                         gep_quantity_input_path=str(tmp_path / 'poll_value.tif'),
                         gep_regions_input_path=str(tmp_path / 'regions.gpkg'),
                         gep_regions_id_col='ee_r264_id',
@@ -298,3 +301,67 @@ def test_the_settings_object_replaces_the_config_that_was_loaded_from_a_gitignor
     assert settings.lulc_path is None and settings.pa_raster_300m_path is None
     # The compression profiles came off that Config too, and are now named constants.
     assert set(pf.COMPRESSION_PROFILES) == {'continuous', 'categorical', 'defaults'}
+
+
+# ---------------------------------------------------------------------------
+# The pollination value raster: production x price x dependence, and its units.
+# ---------------------------------------------------------------------------
+
+def test_the_value_is_a_density_and_only_becomes_money_after_cell_area():
+    # This is the arithmetic behind the defect the account carried: the production rasters hold
+    # tonnes per square kilometre, so the value they generate is USD per square kilometre, and a
+    # raster like that summed straight over a country adds densities. It gives a plausible number
+    # 26 times too small, which is why nothing caught it. A cell's own area is what makes it money.
+    production_density = np.array([[10.0, 20.0]])           # tonnes/km2
+    poll, crop = pf.crop_pollination_value_density(production_density, 100.0, 0.5)
+    assert crop.tolist() == [[1000.0, 2000.0]]              # USD/km2
+    assert poll.tolist() == [[500.0, 1000.0]]
+
+    # Two cells of the same density but different size hold different amounts of money.
+    area_km2 = np.array([[1.0, 4.0]])
+    assert pf.value_density_to_per_cell(poll, area_km2).tolist() == [[500.0, 4000.0]]
+
+
+def test_a_negative_production_is_missing_rather_than_a_negative_value():
+    # The source rasters carry sentinels below zero for pixels outside a crop's extent. Left as
+    # numbers they would subtract value from the country total.
+    poll, _ = pf.crop_pollination_value_density(np.array([[-9999.0, 5.0]]), 10.0, 1.0)
+    assert np.isnan(poll[0, 0]) and poll[0, 1] == 50.0
+
+
+def test_a_cell_with_no_crop_value_has_no_pollination_share_rather_than_zero():
+    # Zero would say pollinators contribute nothing to this farmland; missing says there is no
+    # farmland. Only the second is true of open ocean, and a mean must not average the first in.
+    share = pf.local_pollination_share(np.array([[5.0, 0.0]]), np.array([[20.0, 0.0]]))
+    assert share[0, 0] == pytest.approx(0.25)
+    assert np.isnan(share[0, 1])
+
+
+def test_coffee_dependence_follows_what_each_country_actually_grows():
+    # FAO files arabica and robusta under one item code with different dependence ratios, 0.25
+    # and 0.65. Collapsing on the item code keeps whichever row came first, which valued every
+    # coffee country as pure arabica. Colombia really is pure arabica; Vietnam is nearly all
+    # robusta, so one global ratio is wrong in opposite directions for two big producers.
+    splits = pd.DataFrame({'area_code_m49': [170, 704, 76],
+                           'prop_arabica': [1.0, 0.034832, 0.626506],
+                           'prop_robusta': [0.0, 0.965168, 0.373494]})
+    by_country = pf.coffee_dependence_by_country(splits)
+    assert by_country[170] == pytest.approx(0.25)                      # Colombia, all arabica
+    assert by_country[704] == pytest.approx(0.6361, abs=1e-3)          # Vietnam, mostly robusta
+    assert by_country[76] == pytest.approx(0.3994, abs=1e-3)           # Brazil, a real mix
+
+    # And the ratio reaches the pixels through the country raster, with a country we have no
+    # split for falling back rather than dropping out.
+    country_ids = np.array([[170, 704], [76, 999]])
+    ratios = pf.dependence_raster_from_country_lookup(country_ids, by_country, default=0.25)
+    assert ratios[0, 0] == pytest.approx(0.25)
+    assert ratios[0, 1] == pytest.approx(0.6361, abs=1e-3)
+    assert ratios[1, 1] == pytest.approx(0.25)                          # unknown -> the default
+
+
+def test_the_deflator_refuses_a_year_it_has_no_index_for():
+    # Returning 1.0 for an unknown year would leave the value undeflated and looking correct.
+    assert pf.usd_deflator(2020, 2020) == 1.0
+    assert pf.usd_deflator(2020, 2019) == pytest.approx(0.98802, abs=1e-5)
+    with pytest.raises(KeyError):
+        pf.usd_deflator(2020, 1850)

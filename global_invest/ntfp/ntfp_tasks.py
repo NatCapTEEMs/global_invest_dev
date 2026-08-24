@@ -8,7 +8,6 @@ import os
 from osgeo import gdal, ogr
 import numpy as np
 
-import pandas as pd
 import hazelbean as hb
 from global_invest import utilities
 
@@ -170,28 +169,22 @@ def accessible_forest(p):
 def gep_calculation(p):
     """GEP valuation for NTFP: accessible forest hectares times the CWoN NWFP value per hectare."""
     publish_inputs(p)
-    service_results = {}
-    p.results['ntfp'] = service_results
-    service_results['gep_by_country_base_year'] = os.path.join(p.cur_dir, 'gep_by_country_base_year.csv')
-
-    if hb.path_all_exist(list(service_results.values())):
-        hb.log('All results already exist. Skipping GEP calculation for ntfp.')
+    service_results, already_done = utilities.begin_gep_calculation(p, 'ntfp')
+    if already_done:
         return
-    hb.log('Starting GEP calculation for ntfp.')
 
     accessible = hb.df_read(p.ntfp_accessible_forest_path)
     value_per_ha = hb.df_read(p.ntfp_value_per_ha_path)
     df_gep = nf.ntfp_gep_by_country(accessible, value_per_ha, int(p.gep_base_year))
 
-    attribute_columns = ['iso3_r250_id', 'iso3_r250_label', 'iso3_r250_name',
-                         'continent', 'region_un', 'region_wb', 'income_grp', 'subregion']
-    countries = p.df_countries[attribute_columns].drop_duplicates('iso3_r250_id')
+    countries = utilities.country_attributes(p)
     df_gep = countries.merge(df_gep.drop(columns=['iso3_r250_id'], errors='ignore'),
                              on='iso3_r250_label', how='left')
     df_gep['year'] = int(p.gep_base_year)
     hb.df_write(df_gep, service_results['gep_by_country_base_year'])
-    hb.log(f'Total ntfp GEP for base year {int(p.gep_base_year)}: '
-           f'{df_gep["ntfp_gep"].sum():,.2f}')
+    hb.log('Total ntfp GEP for base year %d: %s over %d countries'
+           % (int(p.gep_base_year), format(df_gep['ntfp_gep'].sum(), ',.2f'),
+              int(df_gep['ntfp_gep'].notna().sum())))
     return True
 
 

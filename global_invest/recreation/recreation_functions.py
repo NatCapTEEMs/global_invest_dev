@@ -19,12 +19,9 @@ with pixel_size read from the raster (degrees on a 4326 grid), while the fuel-co
 per KM. Port is faithful; resolve against the reference results_by_country.csv when the data and
 anchor are staged, then fix here and in the method qmd together if confirmed.
 """
-import os
 
 import numpy as np
 import pandas as pd
-import pygeoprocessing
-from osgeo import gdal
 
 # --- Method constants (published science; see module docstring) ---
 RECREATION_LULC_CLASSES = ('cropland', 'forest', 'grassland', 'othernat', 'urban', 'water')

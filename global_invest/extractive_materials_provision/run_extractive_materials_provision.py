@@ -1,4 +1,3 @@
-import pandas as pd
 import hazelbean as hb
 
 from global_invest.extractive_materials_provision import extractive_materials_provision_initialize

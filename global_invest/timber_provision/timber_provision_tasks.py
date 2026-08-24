@@ -4,10 +4,8 @@ The reported number is OUR run: the pipeline's value raster (verified equal to t
 net-return layer masked and floored, see timber_provision_functions) summed per country on
 the 10-arcsecond country-id raster. The committed Forestry CSV stays as the test anchor
 the run is compared against, never as the output."""
-import os
 
 import numpy as np
-import pandas as pd
 import rasterio
 import hazelbean as hb
 from global_invest import utilities
@@ -29,14 +27,9 @@ def publish_inputs(p):
 def gep_calculation(p):
     """GEP valuation for timber provision: the value raster summed per country."""
     publish_inputs(p)
-    service_results = {}
-    p.results['timber_provision'] = service_results
-    service_results['gep_by_country_base_year'] = os.path.join(p.cur_dir, 'gep_by_country_base_year.csv')
-
-    if hb.path_all_exist(list(service_results.values())):
-        hb.log('All results already exist. Skipping GEP calculation for timber_provision.')
+    service_results, already_done = utilities.begin_gep_calculation(p, 'timber_provision')
+    if already_done:
         return
-    hb.log('Starting GEP calculation for timber_provision.')
 
     value_src = rasterio.open(p.timber_provision_value_raster_path)
     zone_src = rasterio.open(p.timber_provision_zone_raster_path)
@@ -50,7 +43,7 @@ def gep_calculation(p):
 
     attr_cols = ['iso3_r250_id', 'iso3_r250_label', 'iso3_r250_name',
                  'continent', 'region_un', 'region_wb', 'income_grp', 'subregion']
-    countries = p.df_countries[attr_cols].drop_duplicates('iso3_r250_id')
+    countries = utilities.collapse_countries_to_r250(p.df_countries)[attr_cols]
     df_gep = tp.timber_gep_from_zone_sums(zone_sums, countries)
     df_gep['year'] = int(p.gep_base_year)
     hb.df_write(df_gep[attr_cols + ['year', 'timber_provision_gep']],

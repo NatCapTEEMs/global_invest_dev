@@ -14,7 +14,30 @@ author. Numbers provisional.
 from global_invest.landslide_mitigation import landslide_mitigation_tasks
 
 
+def build_gep_service_calculation_task_tree(p):
+    """The account's per-country table, from the zonal statistics a prediction run produced.
+
+    The same name and the same job as every other service's calculation tree: the steps that
+    produce the country table, without the report, so the results page can build this tree and
+    then render itself. What differs is where the quantity comes from. Predicting landslides is
+    tile-by-tile over a global 1 km grid and belongs on a cluster, so the zonal statistics it
+    produces are staged in base data and gep_calculation reads whichever exists, a local run's or
+    the staged one. build_gep_service_prediction_task_tree is the pipeline that makes them.
+    """
+    landslide_mitigation_tasks.publish_inputs(p)
+    p.tables_figures_task = p.add_task(landslide_mitigation_tasks.tables_figures, creates_dir=True)
+    p.gep_calculation = p.add_task(landslide_mitigation_tasks.gep_calculation, creates_dir=True)
+    return p
+
+
 def build_gep_service_task_tree(p):
+    """The calculation plus the results report, as every service's full tree is."""
+    p = build_gep_service_calculation_task_tree(p)
+    p.landslide_mitigation_gep_result_task = p.add_task(landslide_mitigation_tasks.gep_result)
+    return p
+
+
+def build_gep_service_prediction_task_tree(p):
     """Full landslide calculation (source: the v0.2.0 run script tree, verbatim): input data ->
     preprocessing -> stability model -> valuation -> tables/figures."""
     # Tasks publish their own inputs; the builder calls the same (idempotent) publish_inputs
@@ -87,8 +110,9 @@ def build_gep_service_task_tree(p):
     p.export_pi_audit_table_task = p.add_task(landslide_mitigation_tasks.export_pi_audit_table, creates_dir=False)
 
     # ---------------------------------------------------------------- #
-    # Results report (shared render in utilities)
+    # The account's per-country table, then the results report
     # ---------------------------------------------------------------- #
+    p.gep_calculation = p.add_task(landslide_mitigation_tasks.gep_calculation, creates_dir=True)
     p.landslide_mitigation_gep_result_task = p.add_task(landslide_mitigation_tasks.gep_result)
 
     return p

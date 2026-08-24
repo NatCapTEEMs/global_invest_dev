@@ -1,8 +1,10 @@
 """Pollination wiring: GEP task trees + the ES-shock seam (global_invest module layout).
 
-GEP side: the valuation consumes the pollination value raster
-(poll_value_global_<gep_base_year>usd.tif -- USD per cell, crop prices and pollination dependence
-embedded upstream, so lambda = 1) and aggregates it to one row per country on r250.
+GEP side: the valuation builds the pollination value raster here (pollination_value_raster:
+production times world producer price times each crop's dependence on animal pollination, written
+as USD in the cell) and aggregates it to one row per country on r250. It used to consume a raster
+made elsewhere, which carried USD per square kilometre while this docstring said USD per cell, and
+the zonal sum added the densities: that is where the old $18.28bn came from.
 Shock side: consumers (ngfs_pnas, nff_global) call add_pollination_tasks(p) after their SEALS
 stitch task; it dispatches static vs dynamic on p.dynamic_es (mirrors add_terrestrial_carbon_tasks).
 """
@@ -16,6 +18,8 @@ def build_gep_service_calculation_task_tree(p):
     taking it as given. It downloads FAOSTAT production and producer prices and writes the
     per-crop median price the raster is priced at. skip_existing=1 because it is a download."""
     p.fao_median_prices = p.add_task(pollination_tasks.fao_median_prices, skip_existing=1)
+    p.pollination_value_raster = p.add_task(
+        pollination_tasks.pollination_value_raster, skip_existing=1)
     p.pollination_value_by_region = p.add_task(
         pollination_tasks.pollination_value_by_region, skip_existing=1)
     p.gep_calculation = p.add_task(pollination_tasks.gep_calculation)

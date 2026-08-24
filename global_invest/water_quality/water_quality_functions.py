@@ -17,7 +17,6 @@ This also raises a cross-cutting question flagged on the deck: every other servi
 2019 market USD.
 """
 import numpy as np
-import pandas as pd
 
 WATER_QUALITY_NUTRIENTS = ('n', 'p')   # nitrogen, phosphorus
 

@@ -42,21 +42,16 @@ def gep_calculation(p):
     something sits between these city values and that table which is not in anything we hold.
     """
     publish_inputs(p)
-    service_results = {}
-    p.results['local_climate_regulation'] = service_results
-    service_results['gep_by_country_base_year'] = os.path.join(p.cur_dir, 'gep_by_country_base_year.csv')
-
-    if hb.path_all_exist(list(service_results.values())):
-        hb.log('All results already exist. Skipping GEP calculation for local_climate_regulation.')
+    service_results, already_done = utilities.begin_gep_calculation(p, 'local_climate_regulation')
+    if already_done:
         return
-    hb.log('Starting GEP calculation for local_climate_regulation.')
 
     city = read_city_savings(p.local_climate_regulation_city_savings_path)
     ours = lc.city_savings_by_country(city)
 
     attr_cols = ['iso3_r250_id', 'iso3_r250_label', 'iso3_r250_name',
                  'continent', 'region_un', 'region_wb', 'income_grp', 'subregion']
-    countries = p.df_countries[attr_cols].drop_duplicates('iso3_r250_id')
+    countries = utilities.collapse_countries_to_r250(p.df_countries)[attr_cols]
     df_gep = countries.merge(ours, on='iso3_r250_id', how='left')
 
     anchor = lc.local_climate_gep_by_country(

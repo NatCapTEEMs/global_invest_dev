@@ -10,7 +10,6 @@ The committed roads file is unusable (only sidecar files were committed, the .sh
 was), so the accessibility stage runs on a public global roads dataset; the original
 roads file remains a replication ask.
 """
-import pandas as pd
 
 # From the source scripts: accessibility is a 10 km buffer around roads and rivers, and
 # forest is the ESA CCI class range 50-90 inclusive.
@@ -20,21 +19,40 @@ ESA_FOREST_CLASS_MAX = 90
 
 
 def ntfp_gep_by_country(accessible_forest_ha_df, value_per_ha_df, year):
-    """One row per country: accessible forest hectares times the NWFP value per hectare.
+    """One row per country: the CWoN non-wood forest product value, spread over reachable forest.
+
+    CWoN publishes an annual value per country and the forest area it attributes that value to.
+    Dividing gives a rate per hectare, and the obvious thing is to multiply that rate by the
+    forest people can actually reach. That understates it: CWoN's value was observed, and the
+    part of it earned on forest nobody can reach is not zero, it is unallocated.
+
+    So the rate is rescaled to the accessible area before it is applied. The country total then
+    equals CWoN's own, and what accessibility changes is the rate rather than the sum: the same
+    value concentrated on 63 percent of the forest, a median of $13.67 a hectare instead of
+    $10.00.
+
+    The consequence, stated because it is not obvious: since the accessible hectares appear in
+    the denominator and again in the product, they cancel, and this country total is CWoN's
+    number. Accessibility earns its place in where the value sits, not in how much there is.
 
     Args:
         accessible_forest_ha_df (pd.DataFrame): iso3_r250_label, accessible_forest_ha.
-        value_per_ha_df (pd.DataFrame): iso3_r250_label, year, nwfp_value_per_ha
-            (the CWoN NWFP series, current USD per hectare).
+        value_per_ha_df (pd.DataFrame): iso3_r250_label, year, nwfp_value_usd and forest_ha
+            (the CWoN NWFP series, current USD), plus nwfp_value_per_ha as CWoN priced it.
         year (int): the GEP base year to value at.
 
     Returns:
-        pd.DataFrame: iso3_r250_label, accessible_forest_ha, nwfp_value_per_ha, ntfp_gep.
+        pd.DataFrame: iso3_r250_label, accessible_forest_ha, nwfp_value_per_ha as CWoN priced it,
+        nwfp_value_per_accessible_ha as rescaled, and ntfp_gep. A country with no accessible
+        forest keeps a missing rate rather than an infinite one.
     """
     values = value_per_ha_df[value_per_ha_df['year'] == int(year)]
     df = accessible_forest_ha_df.merge(
-        values[['iso3_r250_label', 'nwfp_value_per_ha']], on='iso3_r250_label', how='left')
-    df['ntfp_gep'] = df['accessible_forest_ha'] * df['nwfp_value_per_ha']
+        values[['iso3_r250_label', 'nwfp_value_usd', 'nwfp_value_per_ha']],
+        on='iso3_r250_label', how='left')
+    reachable = df['accessible_forest_ha'].where(df['accessible_forest_ha'] > 0)
+    df['nwfp_value_per_accessible_ha'] = df['nwfp_value_usd'] / reachable
+    df['ntfp_gep'] = df['accessible_forest_ha'] * df['nwfp_value_per_accessible_ha']
     return df
 
 

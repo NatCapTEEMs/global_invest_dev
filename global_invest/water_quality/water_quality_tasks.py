@@ -1,8 +1,6 @@
 """Water-quality GEP tasks: the verified USD calculation plus the committed international-dollar
 accounting value (conversion stage unidentified -- see the functions module)."""
-import os
 
-import pandas as pd
 import hazelbean as hb
 from global_invest import utilities
 from global_invest.water_quality import water_quality_functions as wq
@@ -24,20 +22,15 @@ def gep_calculation(p):
     """GEP valuation for water quality: recompute the USD calculation from the retention estimates
     and attach the committed international-dollar value, one row per country."""
     publish_inputs(p)
-    service_results = {}
-    p.results['water_quality'] = service_results
-    service_results['gep_by_country_base_year'] = os.path.join(p.cur_dir, 'gep_by_country_base_year.csv')
-
-    if hb.path_all_exist(list(service_results.values())):
-        hb.log('All results already exist. Skipping GEP calculation for water_quality.')
+    service_results, already_done = utilities.begin_gep_calculation(p, 'water_quality')
+    if already_done:
         return
-    hb.log('Starting GEP calculation for water_quality.')
 
     retention = hb.df_read(p.water_quality_retention_path)
     international = hb.df_read(p.water_quality_international_path)
     attr_cols = ['iso3_r250_id', 'iso3_r250_label', 'iso3_r250_name',
                  'continent', 'region_un', 'region_wb', 'income_grp', 'subregion']
-    countries = p.df_countries[attr_cols].drop_duplicates('iso3_r250_id')
+    countries = utilities.collapse_countries_to_r250(p.df_countries)[attr_cols]
     df_gep = wq.water_quality_gep_by_country(retention, international, countries)
     df_gep['year'] = int(p.gep_base_year)
     hb.df_write(df_gep[attr_cols + ['year', 'nitrogen_gep_usd', 'phosphorus_gep_usd',

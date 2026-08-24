@@ -1,4 +1,3 @@
-from global_invest import utilities
 from global_invest.terrestrial_carbon import terrestrial_carbon_tasks
 
 def build_gep_service_preprocess_task_tree(p):

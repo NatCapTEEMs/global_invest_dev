@@ -66,53 +66,53 @@ def gep_calculation(p):
     """ GEP calculation task for coastal protection."""
     publish_inputs(p)
     # Define at least the primary output for the service, which for this project is gep_by_country_base_year.   
-    service_results = {}
-    p.results['coastal_protection'] = service_results
-    p.results['coastal_protection']['gep_by_country_base_year'] = os.path.join(p.cur_dir, 'gep_by_country_base_year.csv')
-            
-    # Check if all results exist
-    if hb.path_all_exist(list(service_results.values())):
-        hb.log("All results already exist. Skipping GEP calculation for coastal protection.")
-    else:
-        hb.log("Starting GEP calculation for coastal protection.")
+    service_results, already_done = utilities.begin_gep_calculation(p, 'coastal_protection')
+    if already_done:
+        return
 
-        base_year = coastal_protection_functions.COASTAL_PROTECTION_BASE_YEAR
-        p.gdf_countries = hb.read_vector(p.gdf_countries_vector_path)
+    base_year = coastal_protection_functions.COASTAL_PROTECTION_BASE_YEAR
+    p.gdf_countries = hb.read_vector(p.gdf_countries_vector_path)
 
-        df_mangrove_value = read_mangrove_values(p.gep_quantity_input_path)
-        # The coral table already carries ee_r264_name, coral_reef_value and year, so nothing is
-        # renamed or rescaled on the way in.
-        df_coral_reef_value = pd.read_excel(p.coral_reef_ref_path, sheet_name=SOURCE_SHEET_NAME,
-                                            engine='openpyxl')
-        # The coral table is in CORAL_REEF_VALUE_YEAR currency, so inflation is applied from the
-        # year after that through the base year.
-        df_gdp_inflation_deflator = read_deflator_multiplier(
-            p.df_gdp_inflation_deflator_path,
-            coastal_protection_functions.CORAL_REEF_VALUE_YEAR + 1, base_year)
+    df_mangrove_value = read_mangrove_values(p.gep_quantity_input_path)
+    # The coral table already carries ee_r264_name, coral_reef_value and year, so nothing is
+    # renamed or rescaled on the way in.
+    df_coral_reef_value = pd.read_excel(p.coral_reef_ref_path, sheet_name=SOURCE_SHEET_NAME,
+                                        engine='openpyxl')
+    # The coral table is in CORAL_REEF_VALUE_YEAR currency, so inflation is applied from the
+    # year after that through the base year.
+    df_gdp_inflation_deflator = read_deflator_multiplier(
+        p.df_gdp_inflation_deflator_path,
+        coastal_protection_functions.CORAL_REEF_VALUE_YEAR + 1, base_year)
 
-        df_mangrove = coastal_protection_functions.mangrove_gep_by_country(
-            p.gdf_countries, df_mangrove_value)
-        df_coral_reef = coastal_protection_functions.coral_reef_gep_by_country(
-            p.gdf_countries, df_coral_reef_value, df_gdp_inflation_deflator, base_year)
+    df_mangrove = coastal_protection_functions.mangrove_gep_by_country(
+        p.gdf_countries, df_mangrove_value)
+    df_coral_reef = coastal_protection_functions.coral_reef_gep_by_country(
+        p.gdf_countries, df_coral_reef_value, df_gdp_inflation_deflator, base_year)
 
-        df_gep_by_country_year = coastal_protection_functions.combine_coastal_components(
-            df_mangrove, df_coral_reef)
-        df_gep_by_country_year = coastal_protection_functions.attach_country_attributes(
-            df_gep_by_country_year, p.gdf_countries)
+    df_gep_by_country_year = coastal_protection_functions.combine_coastal_components(
+        df_mangrove, df_coral_reef)
+    df_gep_by_country_year = coastal_protection_functions.attach_country_attributes(
+        df_gep_by_country_year, p.gdf_countries)
 
-        df_gep_by_country_base_year = df_gep_by_country_year.loc[
-            df_gep_by_country_year['year'] == base_year].copy()
+    df_gep_by_country_base_year = df_gep_by_country_year.loc[
+        df_gep_by_country_year['year'] == base_year].copy()
+    # `Value` arrives from the source table as an exact copy of coastal_protection_gep. Dropping it
+    # here rather than at the write means the map file below carries the account's name as well.
+    df_gep_by_country_base_year = df_gep_by_country_base_year.drop(columns=['Value'], errors='ignore')
 
-        hb.df_write(df_gep_by_country_base_year, p.results['coastal_protection']['gep_by_country_base_year'])
+    # The frame keeps its r264 columns for the map merge below; the published table does not.
+    hb.df_write(df_gep_by_country_base_year[utilities.published_country_columns(
+        df_gep_by_country_base_year, 'coastal_protection')],
+        p.results['coastal_protection']['gep_by_country_base_year'])
 
-        # Map only: the r264-expanded boundaries, each sub-region carrying its country's value.
-        gdf_gep_by_country_base_year = hb.df_merge(p.gdf_countries_vector_simplified_path, df_gep_by_country_base_year, how='outer', on='ee_r264_id')
-        gdf_gep_by_country_base_year.to_file(p.results['coastal_protection']['gep_by_country_base_year'].replace('.csv', '.gpkg'), driver='GPKG')
+    # Map only: the r264-expanded boundaries, each sub-region carrying its country's value.
+    gdf_gep_by_country_base_year = hb.df_merge(p.gdf_countries_vector_simplified_path, df_gep_by_country_base_year, how='outer', on='ee_r264_id')
+    gdf_gep_by_country_base_year.to_file(p.results['coastal_protection']['gep_by_country_base_year'].replace('.csv', '.gpkg'), driver='GPKG')
 
-        value_gep_base_year = df_gep_by_country_base_year['coastal_protection_gep'].sum()
+    value_gep_base_year = df_gep_by_country_base_year['coastal_protection_gep'].sum()
 
-        hb.log(f"Total GEP value for base year {base_year}: {value_gep_base_year}")
-        return value_gep_base_year
+    hb.log(f"Total GEP value for base year {base_year}: {value_gep_base_year}")
+    return value_gep_base_year
 
 def gep_result(p):
     """Render the results report(s). Shared implementation in utilities."""

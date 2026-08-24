@@ -1,5 +1,4 @@
 import os
-import hazelbean as hb
 
 from global_invest.example_service import example_service_functions
 

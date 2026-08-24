@@ -112,15 +112,9 @@ def gep_calculation(p):
     CSV (diffable against the source repo's committed output) and the house per-country GEP
     table; fire_protection_gep carries the PROVISIONAL variant until the account blesses one."""
     publish_inputs(p)
-    service_results = {}
-    p.results['fire_protection'] = service_results
-    service_results['gep_by_country_base_year'] = os.path.join(p.cur_dir, 'gep_by_country_base_year.csv')
-    p.fire_results_reference_shape_path = os.path.join(p.cur_dir, 'fire_protection_2019_results.csv')
-
-    if hb.path_all_exist(list(service_results.values())):
-        hb.log('All results already exist. Skipping GEP calculation for fire_protection.')
+    service_results, already_done = utilities.begin_gep_calculation(p, 'fire_protection')
+    if already_done:
         return
-    hb.log('Starting GEP calculation for fire_protection.')
 
     avoided = hb.df_read(p.fire_avoided_acres_path)
     rates = hb.df_read(p.fire_damage_per_acre_path)
@@ -133,7 +127,7 @@ def gep_calculation(p):
     # correspondence, so the values are summed per country there rather than joined here.
     attr_cols = ['iso3_r250_id', 'iso3_r250_label', 'iso3_r250_name',
                  'continent', 'region_un', 'region_wb', 'income_grp', 'subregion']
-    attrs = p.df_countries[attr_cols].drop_duplicates('iso3_r250_id')
+    attrs = utilities.collapse_countries_to_r250(p.df_countries)[attr_cols]
     by_country = ffn.attach_countries(out, p.df_countries)
     df_gep = by_country.merge(attrs, how='left', on='iso3_r250_label')
     df_gep['year'] = int(p.gep_base_year)

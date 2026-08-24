@@ -248,6 +248,9 @@ def publish_inputs(p):
     the iterator knobs at build time."""
     utilities.hydrate_es_config(p, 'landslide_mitigation', log=hb.log)
     utilities.hydrate_es_parameters(p, 'landslide_mitigation', log=hb.log)
+    # The shared country list, which gep_calculation joins its per-country table to. Every other
+    # service does this here; landslide did not, because until now it had no gep_calculation.
+    utilities.initialize_country_paths(p)
     if getattr(p, 'landslide_input_data_dir', None) is None:
         p.landslide_input_data_dir = p.gep_quantity_input_path   # the module's descriptive alias
     for attribute, value in (('data_processing_range', chain.DATA_PROCESSING_YEARS),
@@ -1755,6 +1758,8 @@ def predict_landslides_scenarios(p):
                                         coef['beta_si'], coef['beta_rain'])
 
         out_path = os.path.join(p.cur_dir, f'hazard_prob_{scenario_name}_{prediction_year}.tif')
+        if os.path.exists(out_path) and not p.force_run:
+            continue
         write_raster_from_array(
             np.where(valid, prob, chain.NODATA).astype(np.float32),
             tile_gt, proj, out_path, chain.NODATA, gdal.GDT_Float32,
@@ -1831,6 +1836,8 @@ def predict_mortality_scenarios(p):
             valid_hazard &= (hazard != hazard_nodata)
 
         out_path = os.path.join(p.cur_dir, f'expected_deaths_{scenario_name}_{prediction_year}.tif')
+        if os.path.exists(out_path) and not p.force_run:
+            continue
         write_raster_from_array(
             np.where(valid_hazard, hazard * severity_expectation, chain.NODATA).astype(np.float32),
             tile_gt, proj, out_path, chain.NODATA, gdal.GDT_Float32,
@@ -2755,3 +2762,51 @@ def gep_result(p):
     """Render the results report(s). Shared implementation in utilities."""
     publish_inputs(p)
     utilities.render_service_results(p)
+
+
+def gep_calculation(p):
+    """One row per country, under the key every other service writes.
+
+    compute_zonal_statistics writes a table per prediction year on the r264 boundary, where a
+    country split into territories appears once per territory. The account reads
+    gep_by_country_base_year.csv with one row per country and a single <service>_gep column, so
+    the sub-region rows are summed rather than any one of them taken: taking one is how
+    terrestrial carbon once overstated its total by 23.5 percent.
+
+    Without this the service's value sat in a zonal-statistics file that nothing downstream
+    reads, which is why landslide was the one service with a run and no report.
+    """
+    publish_inputs(p)
+    service_results, already_done = utilities.begin_gep_calculation(
+        p, 'landslide_mitigation', log=p.L.info)
+    # Published before the guards, so a skipped rerun still tells the report where to look. The
+    # zonal table is a local run's if this machine has done one, otherwise the staged cluster
+    # run's: predicting landslides is tiled over a global 1 km grid and is not something to redo
+    # for a country table. The report reads it for avoided deaths, which the country table does
+    # not carry.
+    year = int(p.gep_base_year)
+    zonal_path = os.path.join(p.tables_figures_dir, f'zonal_statistics_{year}.csv')
+    if not os.path.exists(zonal_path):
+        zonal_path = p.get_path(p.landslide_zonal_statistics_path, raise_error_if_fail=False)
+    service_results[f'zonal_statistics_{year}'] = zonal_path
+
+    if not p.run_this or (already_done and not p.force_run):
+        return p
+    if not zonal_path or not os.path.exists(zonal_path):
+        raise FileNotFoundError(
+            f'no zonal statistics for the GEP base year {year}. compute_zonal_statistics writes '
+            f'one per prediction year into {p.tables_figures_dir}, and es_parameters names a '
+            f'staged one at landslide_zonal_statistics_path; neither is present.')
+
+    zonal = pd.read_csv(zonal_path)
+    per_country = (zonal.groupby('iso3_r250_label', as_index=False)['avoided_value_sum_usd']
+                   .sum(min_count=1)
+                   .rename(columns={'avoided_value_sum_usd': 'landslide_mitigation_gep'}))
+
+    df_gep = utilities.country_attributes(p).merge(per_country, on='iso3_r250_label', how='left')
+    df_gep['year'] = year
+    df_gep.to_csv(service_results['gep_by_country_base_year'], index=False)
+    p.L.info('Total landslide_mitigation GEP for base year %d: %s over %d countries'
+             % (year, format(df_gep['landslide_mitigation_gep'].sum(), ',.2f'),
+                int(df_gep['landslide_mitigation_gep'].notna().sum())))
+    return p

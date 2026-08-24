@@ -11,7 +11,6 @@ prices it.
 The run's replacement cost is 1 USD/m3, a placeholder rather than a valuation. The intended
 price per cubic metre is the open ask, held in one named constant until the author answers.
 """
-import pandas as pd
 
 # The committed InVEST configuration prices retention at 1 USD/m3. That is a placeholder
 # (the ask on the status sheet); every output built on it is provisional by construction.

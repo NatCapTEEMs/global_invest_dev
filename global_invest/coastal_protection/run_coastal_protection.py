@@ -1,4 +1,3 @@
-import pandas as pd
 import hazelbean as hb
 
 from global_invest.coastal_protection import coastal_protection_initialize

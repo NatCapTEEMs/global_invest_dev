@@ -287,11 +287,19 @@ def test_the_two_species_layouts_together_cover_all_eight_categories():
 def test_the_harvested_dashboard_table_gives_an_estimate_not_a_bound():
     """The file harvested from the dashboard carries all eight categories, so the share it
     yields is flagged as an estimate."""
+    # Located the way a run locates it, from the base-data root rather than from one machine's
+    # layout. A literal path passes here and silently skips everywhere else, which reads as a
+    # green test on a machine where nothing was checked.
     import os
-    path = '/Users/ccs/Files/base_data/global_invest/livestock_provision/gleam3_dmi_dashboard.psv'
-    if not os.path.exists(path):
+    import hazelbean as hb
+    roots = [getattr(hb.config, 'BASE_DATA_DIR', None),
+             os.path.join(os.path.expanduser('~'), 'Files', 'base_data')]
+    reference = os.path.join('global_invest', 'livestock_provision', 'gleam3_dmi_dashboard.psv')
+    path = next((os.path.join(r, reference) for r in roots
+                 if r and os.path.exists(os.path.join(r, reference))), None)
+    if path is None:
         import pytest
-        pytest.skip('the harvested dashboard table is not staged on this machine')
+        pytest.skip('the harvested dashboard table is not in this machine\'s base data')
     raw = pd.read_csv(path, sep='|')
     assert set(lp.GLEAM_TOTAL_FEED_COLS) <= set(raw.columns)
     countries = pd.DataFrame({'iso3_r250_label': ['FRA'], 'iso3_r250_id': [250]})

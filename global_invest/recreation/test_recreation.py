@@ -6,12 +6,10 @@ allocation, and the per-country aggregation (born-r250 -- the id raster IS iso3_
 The reference-output comparison (results_by_country.csv from the source pipeline) is the
 LIVE-run gate once the drive data is staged; these tests cover the math, not the data.
 """
-import os
 from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
-import pytest
 
 from global_invest.recreation import recreation_functions as rf
 from global_invest.recreation import recreation_tasks as rt

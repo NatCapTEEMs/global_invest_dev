@@ -1,13 +1,9 @@
-import pandas as pd
-import hazelbean as hb
 
-from global_invest import utilities
 from global_invest.extractive_materials_provision import extractive_materials_provision_tasks
 
 def build_gep_service_calculation_task_tree(p):
     """Build the default GEP task tree."""
-    p.extractive_materials_provision_task = p.add_task(extractive_materials_provision_tasks.extractive_materials_provision)
-    p.extractive_materials_provision_gep_calculation_task = p.add_task(extractive_materials_provision_tasks.gep_calculation, parent=p.extractive_materials_provision_task)  
+    p.extractive_materials_provision_gep_calculation_task = p.add_task(extractive_materials_provision_tasks.gep_calculation)  
     return p
 
 def build_gep_service_task_tree(p):
@@ -22,7 +18,7 @@ def build_gep_service_task_tree(p):
     # Actually, maybe it's just that load_results is more useful for notebooks?
     
     p = build_gep_service_calculation_task_tree(p)
-    p.extractive_materials_provision_gep_result_task = p.add_task(extractive_materials_provision_tasks.gep_result, parent=p.extractive_materials_provision_task)   
+    p.extractive_materials_provision_gep_result_task = p.add_task(extractive_materials_provision_tasks.gep_result)   
 
     
 def build_gep_task_tree(p):
@@ -30,10 +26,9 @@ def build_gep_task_tree(p):
     Build the results-oriented task tree (very similar to the standard tree
     but i've included it here for consistency with other models.
     """
-    p.extractive_materials_provision_task = p.add_task(extractive_materials_provision_tasks.extractive_materials_provision)
-    p.extractive_materials_provision_gep_preprocess_task = p.add_task(extractive_materials_provision_tasks.gep_preprocess, parent=p.extractive_materials_provision_task)  
-    p.extractive_materials_provision_gep_calculation_task = p.add_task(extractive_materials_provision_tasks.gep_calculation, parent=p.extractive_materials_provision_task)  
-    p.extractive_materials_provision_gep_result_task = p.add_task(extractive_materials_provision_tasks.gep_result, parent=p.extractive_materials_provision_task)   
-    p.extractive_materials_provision_gep_results_distribution_task = p.add_task(extractive_materials_provision_tasks.gep_results_distribution, parent=p.extractive_materials_provision_task)      
+    p.extractive_materials_provision_gep_preprocess_task = p.add_task(extractive_materials_provision_tasks.gep_preprocess)  
+    p.extractive_materials_provision_gep_calculation_task = p.add_task(extractive_materials_provision_tasks.gep_calculation)  
+    p.extractive_materials_provision_gep_result_task = p.add_task(extractive_materials_provision_tasks.gep_result)   
+    p.extractive_materials_provision_gep_results_distribution_task = p.add_task(extractive_materials_provision_tasks.gep_results_distribution)      
     return p
     

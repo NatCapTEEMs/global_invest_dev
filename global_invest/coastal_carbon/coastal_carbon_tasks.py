@@ -19,7 +19,6 @@ import rasterio.features
 import rasterio.warp
 import rasterio.windows
 from rasterio.enums import Resampling
-from rasterstats import zonal_stats
 from tqdm import tqdm
 
 from global_invest import utilities
@@ -624,12 +623,19 @@ def gep_calculation(p):
     # Stage 2: the iso3_r250 final.
     df_r250_final = ccf.collapse_to_iso3_r250(
         ccf.eez_storage_value_by_iso3(df_gep), hb.df_read(p.df_countries_csv_path))
-    df_r250_final.to_csv(final_csv, index=False)
-    hb.log(f"Final iso3_r250 GEP saved: {final_csv}  "
-           f"({len(df_r250_final)} iso3 countries, "
-           f"total ${df_r250_final['value'].sum():,.2f})")
+    # The same shape as every other service's country table: the shared attributes, the year, and
+    # a column named for the service. This used to write a column called `value` alongside all 38
+    # columns of the correspondence, so the account could not read it the way it reads the rest.
+    df_r250_final = df_r250_final.rename(columns={'value': 'coastal_carbon_gep'})
+    df_r250_final['year'] = int(p.gep_base_year)
+    attributes = [c for c in utilities.GEP_COUNTRY_ATTRIBUTE_COLUMNS if c in df_r250_final.columns]
+    df_r250_final = df_r250_final[attributes + ['year', 'coastal_carbon_gep']]
+    hb.df_write(df_r250_final, final_csv)
+    hb.log('Total coastal_carbon GEP for base year %d: %s over %d countries'
+           % (int(p.gep_base_year), format(df_r250_final['coastal_carbon_gep'].sum(), ',.2f'),
+              int(df_r250_final['coastal_carbon_gep'].notna().sum())))
 
-    return df_r250_final['value'].sum()
+    return df_r250_final['coastal_carbon_gep'].sum()
 
 
 def gep_result(p):

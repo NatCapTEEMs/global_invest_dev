@@ -41,6 +41,10 @@ def test_publish_inputs_applies_the_method_constants_but_a_caller_wins(tmp_path)
     p.input_dir = str(tmp_path / 'input')
     p.get_path = lambda *a, **k: '/resolved/' + '/'.join(a)
     p.control_ratio = 3          # a caller-set value must survive the defaults layer
+    # publish_inputs also loads the shared country list, which needs the real correspondence file.
+    # This test is about the method constants, so a caller-set df_countries makes that step a
+    # no-op, which is the same escape hatch a notebook uses.
+    p.df_countries = pd.DataFrame({'iso3_r250_label': ['FRA'], 'iso3_r250_id': [250]})
 
     tasks.publish_inputs(p)
 

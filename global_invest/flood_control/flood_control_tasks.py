@@ -1,5 +1,4 @@
 """Flood-control GEP tasks: the committed avoided-damage valuation on the r250 rows."""
-import os
 
 import pandas as pd
 import hazelbean as hb
@@ -24,15 +23,9 @@ def gep_calculation(p):
     the pipeline's four return periods). The committed pipeline table is the comparison
     anchor, logged and pinned in the test suite, never the reported value."""
     publish_inputs(p)
-    service_results = {}
-    p.results['flood_control'] = service_results
-    service_results['gep_by_country_base_year'] = os.path.join(p.cur_dir, 'gep_by_country_base_year.csv')
-    p.flood_control_chain_ead_path = os.path.join(p.cur_dir, 'chain_country_ead.csv')
-
-    if hb.path_all_exist(list(service_results.values())):
-        hb.log('All results already exist. Skipping GEP calculation for flood_control.')
+    service_results, already_done = utilities.begin_gep_calculation(p, 'flood_control')
+    if already_done:
         return
-    hb.log('Starting GEP calculation for flood_control.')
 
     if not hb.path_exists(p.flood_control_chain_ead_path):
         import geopandas as gpd
@@ -75,7 +68,7 @@ def gep_calculation(p):
     chain = hb.df_read(p.flood_control_chain_ead_path).rename(columns={'iso3': 'iso3_r250_label'})
     attr_cols = ['iso3_r250_id', 'iso3_r250_label', 'iso3_r250_name',
                  'continent', 'region_un', 'region_wb', 'income_grp', 'subregion']
-    countries = p.df_countries[attr_cols].drop_duplicates('iso3_r250_id')
+    countries = utilities.collapse_countries_to_r250(p.df_countries)[attr_cols]
     df_gep = countries.merge(chain, on='iso3_r250_label', how='left')
     df_gep['year'] = int(p.gep_base_year)
     hb.df_write(df_gep[attr_cols + ['year', 'flood_control_gep']],

@@ -159,16 +159,10 @@ def gep_calculation(p):
     The volumes are read from the table retention_by_country writes, named in es_parameters
     as stormwater_retention_by_country_path."""
     publish_inputs(p)
-    service_results = {}
-    p.results['stormwater'] = service_results
-    service_results['gep_by_country_base_year'] = os.path.join(p.cur_dir, 'gep_by_country_base_year.csv')
-
-    if hb.path_all_exist(list(service_results.values())):
-        hb.log('All results already exist. Skipping GEP calculation for stormwater.')
+    service_results, already_done = utilities.begin_gep_calculation(p, 'stormwater')
+    if already_done:
         return
-    hb.log('Starting GEP calculation for stormwater.')
 
-    import pandas as pd
     from global_invest.stormwater import stormwater_functions as sf
     retention = hb.df_read(p.stormwater_retention_by_country_path)
     df_gep = sf.stormwater_gep_by_country(retention, sf.STORMWATER_PRICE_PER_M3_PLACEHOLDER)
@@ -177,7 +171,7 @@ def gep_calculation(p):
     # read, grouped and reported the same way. Without them the report cannot even name a country.
     attribute_columns = ['iso3_r250_id', 'iso3_r250_name', 'continent', 'region_un',
                          'region_wb', 'income_grp', 'subregion']
-    countries = p.df_countries[attribute_columns].drop_duplicates('iso3_r250_id')
+    countries = utilities.collapse_countries_to_r250(p.df_countries)[attribute_columns]
     df_gep = countries.merge(df_gep, on='iso3_r250_id', how='right')
     hb.df_write(df_gep, service_results['gep_by_country_base_year'])
     hb.log('Total stormwater retention: %.4g m3/yr over %d countries; GEP %.4g USD at the '

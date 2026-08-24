@@ -357,14 +357,9 @@ def gep_calculation(p):
     the id raster is iso3_r250_id, so no crosswalk collapse is needed) and write ONE row per
     country. recreation_gep = daily value + tourist value; visit columns are the quantities."""
     publish_inputs(p)
-    service_results = {}
-    p.results['recreation'] = service_results
-    service_results['gep_by_country_base_year'] = os.path.join(p.cur_dir, 'gep_by_country_base_year.csv')
-
-    if hb.path_all_exist(list(service_results.values())):
-        hb.log('All results already exist. Skipping GEP calculation for recreation.')
+    service_results, already_done = utilities.begin_gep_calculation(p, 'recreation')
+    if already_done:
         return
-    hb.log('Starting GEP calculation for recreation.')
 
     # 1. Per-country sums of the four value/visit rasters, keyed on the r250 id raster.
     df = sum_rasters_by_country_id(
@@ -380,7 +375,7 @@ def gep_calculation(p):
     #    write the per-country CSV (source of truth for every sum).
     attr_cols = ['iso3_r250_id', 'iso3_r250_label', 'iso3_r250_name',
                  'continent', 'region_un', 'region_wb', 'income_grp', 'subregion']
-    attrs = p.df_countries[attr_cols].drop_duplicates('iso3_r250_id')
+    attrs = utilities.collapse_countries_to_r250(p.df_countries)[attr_cols]
     keep_cols = attr_cols + ['year', 'daily_visits', 'daily_value',
                              'tourist_visits', 'tourist_value', 'recreation_gep']
     df_gep = df.merge(attrs, how='left', on='iso3_r250_id')[keep_cols]

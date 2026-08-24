@@ -11,7 +11,6 @@ the base-year rental social cost of carbon = GEP ($).
 """
 import numpy as np
 import pandas as pd
-from tqdm import tqdm
 import hazelbean as hb
 
 # The raw-Spawn density build (uint -> float32 scaling, aboveground+belowground add) is a one-off
@@ -101,8 +100,9 @@ def generate_carbon_density_raster(lulc_path, cz_path, density_lookup, out_path)
     print(f"Saved: {out_path}")
 
 # Promoted to global_invest.utilities on its second caller (pollination GEP); re-exported here
-# so existing imports keep working.
-from global_invest.utilities import summarize_raster_by_region  # noqa: F401
+# so existing imports keep working. It reads as unused in this file because the caller is the
+# tasks module, which reaches it as tcf.summarize_raster_by_region.
+from global_invest.utilities import summarize_raster_by_region  # noqa: F401  (re-export)
 
 
 # =============================================================================

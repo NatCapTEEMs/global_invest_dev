@@ -154,20 +154,49 @@ def clean_cwon_cpi(cpi_df):
     return df[['wb_code', 'year', 'cpi2019']]
 
 
+def compute_econ_rent(rent_df):
+    """Economic rent from its parts: landed value less the cost of catching it, less subsidy.
+
+    CWoN's table carries a finished `FAOEconRent` column, and reading it would be shorter. It
+    also carries every part that column is made of, and the parts rebuild it: on the 4,732-row
+    table, rent equals profit minus subsidy on all 4,200 rows where both are present, and profit
+    equals landed value minus total cost on all 4,648. Substituting variable plus fixed cost for
+    their total-cost column moves the result by at most $67 on figures of order $10^9, which is
+    float32 storage precision rather than a disagreement, and leaves the 2019 country totals at
+    $29.0051bn either way. Computing it is therefore the same number and a step we own, so a
+    reviewer asking where the rent comes from gets an equation rather than a column name.
+
+    Subsidy is treated as absent-means-none, because a country-year with no recorded subsidy is
+    one that received none, not one whose rent is unknown. Landed value and the costs are not
+    filled: a missing catch or cost genuinely leaves the rent undefined.
+
+    Args:
+        rent_df (pd.DataFrame): CWoN EconRent_Analysis_AllYears, with FAO_landval2018,
+            FAOVarCost, FAOFixCost and SubsidyUSD2018.
+
+    Returns:
+        pd.DataFrame: year, wb_code, econ_rent.
+    """
+    df = rent_df.copy()
+    total_cost = df['FAOVarCost'] + df['FAOFixCost']
+    df['econ_rent'] = df['FAO_landval2018'] - total_cost - df['SubsidyUSD2018'].fillna(0.0)
+    return df
+
+
 def clean_cwon_econ_rent(rent_df):
     """CWoN economic-rent table filtered to the window with the source's exclusions."""
-    df = rent_df.rename(columns={'Year': 'year'})
+    df = compute_econ_rent(rent_df).rename(columns={'Year': 'year'})
     df = df[(df['year'] >= FISHERIES_CPI_YEARS[0]) & (df['year'] <= FISHERIES_CPI_YEARS[1])]
     df = df[~df['wb_code'].isin(FISHERIES_RENT_EXCLUDED)]
     for wb_code, year in FISHERIES_RENT_EXCLUDED_COUNTRY_YEARS:
         df = df[~((df['wb_code'] == wb_code) & (df['year'] == year))]
-    return df[['year', 'wb_code', 'FAOEconRent']].copy()
+    return df[['year', 'wb_code', 'econ_rent']].copy()
 
 
 def deflate_rent_to_2019usd(rent_df, cpi_df):
     """Real 2019-USD economic rent: nominal rent / cpi2019 x 100."""
     df = rent_df.merge(cpi_df, on=['wb_code', 'year'], how='left')
-    df['resrent_2019usd'] = df['FAOEconRent'] / df['cpi2019'] * 100
+    df['resrent_2019usd'] = df['econ_rent'] / df['cpi2019'] * 100
     return df
 
 

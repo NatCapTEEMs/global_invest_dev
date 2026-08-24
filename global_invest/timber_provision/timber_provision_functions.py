@@ -30,7 +30,6 @@ Verified against the staged rasters (base_data/global_invest/timber_provision/in
     country polygon (ratio 1.0000 on all countries tested): the raster is per-pixel USD.
 """
 import numpy as np
-import pandas as pd
 
 
 def timber_gep_by_country(timber_df, countries_df):

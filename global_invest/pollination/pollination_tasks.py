@@ -8,16 +8,14 @@ directory (p.es_shock_dir). Grafted by consumers via add_pollination_tasks (disp
 from __future__ import annotations
 import os
 import wbgapi as wb
-import faostat
 import requests
 import zipfile
 import io
 import gc
 import logging
 import math
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Set, Tuple
+from typing import Any, Dict, Set, Tuple
 import rasterio
 from joblib import Parallel, delayed
 from rasterio.enums import Resampling
@@ -1743,7 +1741,6 @@ def _zonal_context(denominator_path, correspondence_gpkg):
     """
     import geopandas as gpd
     from rasterio.features import rasterize
-    from global_invest.pollination.pollination_sufficiency import build_area_km2_raster
 
     gdf = gpd.read_file(correspondence_gpkg, engine='pyogrio')
     if gdf.crs is None or gdf.crs.to_epsg() != pf.LATLON_EPSG:
@@ -1918,8 +1915,10 @@ def pollination_value_by_region(p):
     p.pollination_value_by_region_path = os.path.join(p.cur_dir, "pollination_value_by_region.csv")
     if not p.run_this:
         return
+    # Our own raster, in USD per cell, so this sum is a sum of money. It used to be
+    # p.gep_quantity_input_path, a density from elsewhere, which made the total 26x too small.
     utilities.summarize_raster_by_region(
-        value_raster_path=p.gep_quantity_input_path,
+        value_raster_path=p.pollination_value_raster_path,
         region_boundary_path=p.gep_regions_input_path,
         out_path=p.pollination_value_by_region_path,
         year=p.gep_base_year, id_column=p.gep_regions_id_col)
@@ -1927,22 +1926,16 @@ def pollination_value_by_region(p):
     # (verified at 100.0000% on the real raster when this check was added).
     df_regions = hb.df_read(p.pollination_value_by_region_path)
     utilities.assert_zonal_conservation(df_regions['total'].sum(),
-                                        p.gep_quantity_input_path, 'pollination')
+                                        p.pollination_value_raster_path, 'pollination')
     return True
 
 
 def gep_calculation(p):
     """GEP valuation for pollination: r264 region values -> ONE row per country (r250)."""
     publish_inputs(p)
-    service_results = {}
-    p.results['pollination'] = service_results
-    p.results['pollination']['gep_by_country_base_year'] = os.path.join(p.cur_dir, "gep_by_country_base_year.csv")
-    # Only register results this task actually writes (per-year results belong to a multi-year run).
-
-    if hb.path_all_exist(list(service_results.values())):
-        hb.log("All results already exist. Skipping GEP calculation for pollination.")
+    service_results, already_done = utilities.begin_gep_calculation(p, 'pollination')
+    if already_done:
         return
-    hb.log("Starting GEP calculation for pollination.")
 
     # 1. Per-region (r264) USD value -> one row per COUNTRY (r250), written as the per-country CSV
     #    that is the source of truth for every sum. Summing the r264-expanded table instead would
@@ -1981,3 +1974,234 @@ def gep_result(p):
     """Render the results report(s). Shared implementation in utilities."""
     publish_inputs(p)
     utilities.render_service_results(p)
+
+
+# =============================================================================
+# The pollination value raster, built here rather than taken as given.
+# =============================================================================
+
+# The nodata value the source pipeline writes into its production and value rasters. Kept
+# identical so a raster of ours and one of theirs can be compared without a conversion step.
+NODATA_OUT = -9999.0
+
+
+def write_raster(path, data, meta, nodata=None):
+    """Write a single-band float32 GeoTIFF, creating the parent directory if needed.
+
+    Args:
+        path (Path): where to write.
+        data (np.ndarray): the 2-D array.
+        meta (dict): a rasterio profile, normally the one read_raster returned.
+        nodata (float): overrides the profile's nodata when given.
+
+    Returns:
+        Path: the path written.
+    """
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    profile = dict(meta)
+    profile.update(driver='GTiff', dtype='float32', count=1,
+                   compress='deflate', predictor=2, tiled=True, zlevel=6)
+    if nodata is not None:
+        profile['nodata'] = nodata
+    with rasterio.open(path, 'w', **profile) as dst:
+        dst.write(data.astype(np.float32), 1)
+    return path
+
+
+CROP_PRODUCTION_RASTER_REF_PATH = os.path.join('crops', 'cropgrids', 'production_2020')
+# The files, not their directories: get_path searches the task's own directory first, so a
+# directory reference resolved into intermediate/pollination/ rather than into base data.
+POLLINATION_DEPENDENCE_REF_PATH = os.path.join('fao', 'pollination',
+                                               'pollination_1993_2024.parquet')
+FAO_MEDIAN_PRICES_FILE_REF_PATH = os.path.join('fao', 'median_prices',
+                                               'price_median_usd_tonne_2018_2022.parquet')
+CROPGRIDS_COUNTRY_RASTER_REF_PATH = os.path.join('crops', 'cropgrids', 'country_m49_cropgrids_grid.tif')
+COFFEE_ARABICA_ROBUSTA_REF_PATH = os.path.join('pollination', 'coffee_types_distribution', 'prop_arabica_robusta.csv')
+CROPGRIDS_CROSSWALK_REF_PATH = os.path.join('fao', 'crosswalks', 'crosswalk_fao_cropgrids.csv')
+
+
+def world_prices_by_item(df_prices):
+    """One producer price per FAO item, taken from the world rows explicitly.
+
+    The source loader built this dictionary from every row of the price table and let
+    duplicate keys overwrite each other, so the price each crop ended up with was whichever
+    row came last. It happened to be a world row, because the file is written in that order,
+    so the numbers were right; they were right by row order rather than by construction, and
+    the EE spec's rule against relying on position is exactly this case. Our regenerated
+    table has 11,601 rows where theirs had 11,534, so the ordering is not something to
+    inherit on trust.
+
+    Args:
+        df_prices (pd.DataFrame): the median price table, with agg_level, item_code_fao and
+            price_median_usd_tonne.
+
+    Returns:
+        dict: FAO item code (int) to price in USD per tonne.
+    """
+    world = df_prices[df_prices['agg_level'] == 'world']
+    if world.empty:
+        raise ValueError('The price table carries no world rows, so there is no single price '
+                         'per crop to value a global raster at.')
+    codes = pd.to_numeric(world['item_code_fao'], errors='coerce')
+    return dict(zip(codes.astype('Int64'), world['price_median_usd_tonne'].astype(float)))
+
+
+def pollination_dependence_by_item(df_dependence):
+    """One pollination dependence ratio per FAO item.
+
+    The ratio is a crop property, not a country one, so the table's country-year rows all
+    carry the same value for a given crop and collapsing them is safe. It is checked rather
+    than assumed: a crop whose rows disagree would mean the ratio is not what we think.
+
+    Args:
+        df_dependence (pd.DataFrame): the FAO pollination table, with item_code_fao and poll_dep.
+
+    Returns:
+        dict: FAO item code (int) to dependence ratio.
+    """
+    df = df_dependence[['item_code_fao', 'poll_dep']].dropna(subset=['item_code_fao'])
+    spread = df.groupby('item_code_fao')['poll_dep'].nunique(dropna=True)
+    unexpected = [c for c in spread[spread > 1].index if int(c) != pf.COFFEE_ITEM_CODE_FAO]
+    if unexpected:
+        raise ValueError('Pollination dependence varies within FAO items %s. Coffee is the one '
+                         'known case, where item 656 covers arabica and robusta and the task '
+                         'blends them by country; another split means a crop we have not '
+                         'looked at, so it is not collapsed silently.' % unexpected[:5])
+    # Coffee keeps arabica's ratio here and is overridden per country in the task, so a caller
+    # that forgets the override gets the source pipeline's number rather than a wrong new one.
+    df = df.sort_values('poll_dep')
+    collapsed = df.drop_duplicates('item_code_fao')
+    codes = pd.to_numeric(collapsed['item_code_fao'], errors='coerce')
+    return dict(zip(codes.astype('Int64'), collapsed['poll_dep'].fillna(0.0).astype(float)))
+
+
+def pollination_value_raster(p):
+    """Build the pollination value raster: production times price times dependence, per crop.
+
+    The GEP valuation used to sum a raster somebody else produced. This makes it, from the
+    CropGrids production rasters, the FAO world producer price we now build ourselves, and
+    each crop's dependence on animal pollination.
+
+    It writes USD in the cell, not USD per square kilometre. The source pipeline wrote a
+    density and its own summary CSV multiplied by cell area before totalling, but the GEP
+    path summed the file directly, so the published figure was a sum of densities: $18.28bn
+    where the same raster carries $476bn. Writing per-cell values here means the zonal sum
+    downstream is a sum of money, and the two conventions can no longer be confused, because
+    the units are in the file name.
+
+    Registered with skip_existing=1: it reads 158 crop rasters and is deterministic.
+    """
+    publish_inputs(p)
+    year = int(p.gep_base_year)
+    p.pollination_value_raster_path = os.path.join(
+        p.cur_dir, 'poll_value_per_cell_%dusd.tif' % year)
+    p.pollination_value_summary_path = os.path.join(
+        p.cur_dir, 'poll_value_summary_%dusd.csv' % year)
+    if not p.run_this:
+        return
+
+    if hb.path_all_exist([p.pollination_value_raster_path, p.pollination_value_summary_path]):
+        hb.log('Pollination value raster already built. Skipping.')
+        return True
+
+    production_dir = p.get_path(CROP_PRODUCTION_RASTER_REF_PATH)
+    crosswalk = hb.df_read(p.get_path(CROPGRIDS_CROSSWALK_REF_PATH))
+    # pd.read_parquet, not hb.df_read: df_read is a CSV reader and reports a parquet as an
+    # encoding failure, naming every text encoding it tried.
+    prices = world_prices_by_item(pd.read_parquet(
+        p.get_path(FAO_MEDIAN_PRICES_FILE_REF_PATH)))
+    dependence = pollination_dependence_by_item(pd.read_parquet(
+        p.get_path(POLLINATION_DEPENDENCE_REF_PATH)))
+
+    # The prices are medians over 2018-2022 in the dollars of their own years and the
+    # production rasters are dated 2020, so both are brought to the GEP base year.
+    deflator = pf.usd_deflator(pf.PRODUCTION_RASTER_YEAR, year)
+    hb.log('Pricing at %d USD: deflator from %d is %.4f'
+           % (year, pf.PRODUCTION_RASTER_YEAR, deflator))
+
+    country_ids, _ = read_raster(Path(p.get_path(CROPGRIDS_COUNTRY_RASTER_REF_PATH)))
+    country_ids = country_ids.astype('int32')
+    coffee_by_country = pf.coffee_dependence_by_country(
+        hb.df_read(p.get_path(COFFEE_ARABICA_ROBUSTA_REF_PATH)))
+    hb.log('Coffee: blending arabica and robusta dependence over %d countries.'
+           % len(coffee_by_country))
+
+    total_pollination_density = None
+    total_crop_density = None
+    reference_meta = None
+    summary_rows = []
+    skipped = {'no_item_code': [], 'no_raster': [], 'no_price': []}
+
+    for crop_name in sorted(crosswalk['cropgrids_2024'].dropna().unique()):
+        row = crosswalk[crosswalk['cropgrids_2024'] == crop_name].iloc[0]
+        item_code = pd.to_numeric(row['item_code_fao'], errors='coerce')
+        if pd.isna(item_code):
+            skipped['no_item_code'].append(crop_name)
+            continue
+        item_code = int(item_code)
+        raster_path = os.path.join(production_dir, 'production_%s_2020.tif' % crop_name)
+        if not hb.path_exists(raster_path):
+            skipped['no_raster'].append(crop_name)
+            continue
+        price = prices.get(item_code)
+        if price is None or not np.isfinite(price):
+            skipped['no_price'].append(crop_name)
+            continue
+
+        production_density, meta = read_raster(Path(raster_path))
+        ratio = float(dependence.get(item_code, 0.0))
+        if item_code == pf.COFFEE_ITEM_CODE_FAO:
+            # One item code, two plants: the ratio has to vary by what each country grows.
+            ratio = pf.dependence_raster_from_country_lookup(
+                country_ids, coffee_by_country, pf.COFFEE_DEPENDENCE['arabica'])
+        pollination_density, crop_density = pf.crop_pollination_value_density(
+            production_density, float(price) * deflator, ratio)
+
+        if reference_meta is None:
+            reference_meta = meta
+            area_km2 = pf.build_area_km2_raster(meta)
+            total_pollination_density = np.zeros(pollination_density.shape, dtype='float64')
+            total_crop_density = np.zeros(crop_density.shape, dtype='float64')
+            covered = np.zeros(pollination_density.shape, dtype=bool)
+
+        valid = np.isfinite(pollination_density)
+        total_pollination_density[valid] += pollination_density[valid]
+        total_crop_density[valid] += crop_density[valid]
+        covered |= valid
+
+        summary_rows.append({
+            'cropgrids_crop': crop_name, 'item_code_fao': item_code,
+            'item_fao': row.get('item_fao'),
+            'price_usd_per_tonne': float(price) * deflator,
+            'pollination_dependence': ratio,
+            'crop_value_usd': float(np.nansum(
+                pf.value_density_to_per_cell(crop_density, area_km2))),
+            'pollination_value_usd': float(np.nansum(
+                pf.value_density_to_per_cell(pollination_density, area_km2))),
+        })
+
+    if reference_meta is None:
+        raise RuntimeError('No crop produced a value raster, so there is nothing to write. '
+                           'Production rasters were looked for in %s' % production_dir)
+
+    # A cell no crop covers is not a cell worth zero, so it stays nodata.
+    total_pollination_density[~covered] = np.nan
+    value_per_cell = pf.value_density_to_per_cell(total_pollination_density, area_km2)
+
+    out_meta = dict(reference_meta)
+    out_meta.update(dtype='float32', nodata=NODATA_OUT, count=1)
+    write_raster(Path(p.pollination_value_raster_path),
+                 np.where(np.isfinite(value_per_cell), value_per_cell, NODATA_OUT).astype('float32'),
+                 out_meta, nodata=NODATA_OUT)
+
+    df_summary = pd.DataFrame(summary_rows)
+    hb.df_write(df_summary, p.pollination_value_summary_path)
+
+    total = float(np.nansum(value_per_cell))
+    hb.log('Pollination value raster: %d crops valued, %.2f bn USD at %d prices.'
+           % (len(summary_rows), total / 1e9, year))
+    for reason, crops in skipped.items():
+        if crops:
+            hb.log('  skipped (%s), %d: %s' % (reason, len(crops), ', '.join(crops[:8])))
+    return True

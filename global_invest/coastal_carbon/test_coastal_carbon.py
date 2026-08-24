@@ -459,10 +459,13 @@ def test_gep_calculation_eez_only_and_one_row_per_country(tmp_path):
     # CHN EEZ = (50+30+20)*2 = 200, NLD EEZ = (5+3+2)*2 = 20. Land row excluded, split country
     # counted once -> 220 (not 400 via the duplicate r264 join, not 420 via the land leak).
     assert total == 220.0
+    # The written table carries the service-named column every other service writes, so the
+    # account reads coastal carbon the same way it reads the rest.
     out = pd.read_csv(tmp_path / 'gep_by_country_base_year.csv').set_index('iso3_r250_label')
-    assert out.loc['CHN', 'value'] == 200.0
-    assert out.loc['NLD', 'value'] == 20.0
-    assert (out['value'].index.value_counts() == 1).all()      # one row per iso3 country
+    assert out.loc['CHN', 'coastal_carbon_gep'] == 200.0
+    assert out.loc['NLD', 'coastal_carbon_gep'] == 20.0
+    assert (out['coastal_carbon_gep'].index.value_counts() == 1).all()   # one row per iso3 country
+    assert list(out.reset_index().columns[-2:]) == ['year', 'coastal_carbon_gep']
 
     # Stage-1 r566 detail written for csv + map gpkg (per-region values, never summed downstream).
     r566 = pd.read_csv(tmp_path / 'gep_by_country_base_year_r566.csv')

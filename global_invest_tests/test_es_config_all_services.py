@@ -49,8 +49,17 @@ def test_both_carbon_services_share_the_sheet_group_but_not_the_subgroup():
     assert sorted(carbon['sheet_subgroup']) == ['coastal', 'terrestrial']
 
 
-def test_pollination_base_year_and_raster_cells_agree():
-    # The two cells name the year twice by design (the old f-string coupling, made explicit);
-    # this is the gate that keeps them a PAIR when one is edited.
+def test_pollination_takes_no_ready_made_value_raster():
+    # This used to check that the base year and the raster filename named the same year, because
+    # the config pointed at poll_value_global_<year>usd.tif and the two could drift apart. The
+    # service now builds its own raster in pollination_value_raster, so the cell is empty and the
+    # pairing it guarded no longer exists. What matters instead is that nothing reintroduces a
+    # ready-made raster without also deciding which year it is denominated in.
     row = TEMPLATE[TEMPLATE['service'] == 'pollination'].iloc[0]
-    assert f"{int(row['gep_base_year'])}usd" in row['gep_quantity_input_path']
+    quantity = row['gep_quantity_input_path']
+    assert pd.isna(quantity) or str(quantity).strip() == '', (
+        'pollination points at a value raster again (%s). It builds its own; if that changed, '
+        'check the raster year against gep_base_year.' % quantity)
+    assert int(row['gep_base_year']) == 2019, (
+        'pollination values at %s, where the rest of the account values at 2019.'
+        % row['gep_base_year'])

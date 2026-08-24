@@ -23,6 +23,7 @@ def build_gep_service_calculation_task_tree(p):
     p.invest_sdr = p.add_task(erosion_tasks.invest_sdr, skip_existing=1)
     p.upstream_prevention_share = p.add_task(erosion_tasks.upstream_prevention_share, skip_existing=1)
     p.prevention_shares = p.add_task(erosion_tasks.prevention_shares)
+    p.gep_calculation = p.add_task(erosion_tasks.gep_calculation)
     return p
 
 

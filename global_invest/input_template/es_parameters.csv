@@ -1,4 +1,4 @@
-service,parameter,value
+﻿service,parameter,value
 erosion,erosion_gep_root,
 terrestrial_carbon,region_boundary_path,gtap_invest/region_boundaries/ee_r50_aez18_correspondence.gpkg
 terrestrial_carbon,terrestrial_carbon_shock_endw_col,aez18_id
@@ -29,6 +29,8 @@ erosion,erosion_biophysical_table_path,global_invest/erosion/expanded_biophysica
 erosion,erosion_erodibility_path,soil/erodibility_30s.tif
 erosion,erosion_erosivity_path,soil/erosivity_30s.tif
 erosion,erosion_watersheds_path,global_invest/erosion/hybas_global_lev06_v1c.gpkg
+erosion,erosion_usle_path,global_invest/erosion/usle_2019_revised_feb_13.tif
+erosion,erosion_avoided_erosion_path,global_invest/erosion/avoided_erosion_2019_revised_feb_13.tif
 erosion,erosion_analysis_grid_path,global_invest/erosion/erosion_analysis_grid_6p45km.tif
 erosion,erosion_yield_stack_path,global_invest/erosion/spam2020_yield_stack_TA.tif
 erosion,erosion_area_stack_path,global_invest/erosion/spam2020_harvested_area_stack_TA.tif
@@ -106,6 +108,7 @@ landslide_mitigation,force_run,false
 landslide_mitigation,run_in_parallel,true
 landslide_mitigation,num_workers,8
 landslide_mitigation,processing_resolution,2000
+landslide_mitigation,landslide_zonal_statistics_path,global_invest/landslide_mitigation/cluster_run_2019/zonal_statistics_2019.csv
 crop_provision,fao_input_path,global_invest/crop_provision/Value_of_Production_E_All_Data.csv
 crop_provision,fao_input_source_url,https://bulks-faostat.fao.org/production/Value_of_Production_E_All_Data.zip
 crop_provision,fao_input_source_archive_member,Value_of_Production_E_All_Data.csv

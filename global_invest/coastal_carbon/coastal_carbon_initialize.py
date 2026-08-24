@@ -2,7 +2,6 @@
 composed into the GEP calculation tree. gep_calculation enforces the r250-only rule via the
 canonical `ee_r264_label == iso3_r250_label` filter (see global_invest/utilities.py).
 """
-from global_invest import utilities
 
 from global_invest.coastal_carbon import coastal_carbon_tasks
 

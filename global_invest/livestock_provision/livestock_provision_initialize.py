@@ -1,13 +1,9 @@
-import pandas as pd
-import hazelbean as hb
 
-from global_invest import utilities
 from global_invest.livestock_provision import livestock_provision_tasks
 
 def build_gep_service_calculation_task_tree(p, parent=None):
     """Build the default GEP task tree."""
-    p.livestock_provision_task = p.add_task(livestock_provision_tasks.livestock_provision, parent=parent)
-    p.livestock_provision_gep_calculation_task = p.add_task(livestock_provision_tasks.gep_calculation, parent=p.livestock_provision_task)  
+    p.livestock_provision_gep_calculation_task = p.add_task(livestock_provision_tasks.gep_calculation)  
     return p
 
 def build_gep_service_task_tree(p, parent=None):
@@ -22,7 +18,7 @@ def build_gep_service_task_tree(p, parent=None):
     # Actually, maybe it's just that load_results is more useful for notebooks?
     
     p = build_gep_service_calculation_task_tree(p, parent=parent)
-    p.livestock_provision_gep_result_task = p.add_task(livestock_provision_tasks.gep_result, parent=p.livestock_provision_task)   
+    p.livestock_provision_gep_result_task = p.add_task(livestock_provision_tasks.gep_result)   
     return p
     
 def build_gep_task_tree(p):
@@ -30,10 +26,9 @@ def build_gep_task_tree(p):
     Build the results-oriented task tree (very similar to the standard tree
     but i've included it here for consistency with other models.
     """
-    p.livestock_provision_task = p.add_task(livestock_provision_tasks.livestock_provision)
-    p.livestock_provision_gep_preprocess_task = p.add_task(livestock_provision_tasks.gep_preprocess, parent=p.livestock_provision_task)  
-    p.livestock_provision_gep_calculation_task = p.add_task(livestock_provision_tasks.gep_calculation, parent=p.livestock_provision_task)  
-    p.livestock_provision_gep_result_task = p.add_task(livestock_provision_tasks.gep_result, parent=p.livestock_provision_task)   
-    p.livestock_provision_gep_results_distribution_task = p.add_task(livestock_provision_tasks.gep_results_distribution, parent=p.livestock_provision_task)      
+    p.livestock_provision_gep_preprocess_task = p.add_task(livestock_provision_tasks.gep_preprocess)  
+    p.livestock_provision_gep_calculation_task = p.add_task(livestock_provision_tasks.gep_calculation)  
+    p.livestock_provision_gep_result_task = p.add_task(livestock_provision_tasks.gep_result)   
+    p.livestock_provision_gep_results_distribution_task = p.add_task(livestock_provision_tasks.gep_results_distribution)      
     return p
     

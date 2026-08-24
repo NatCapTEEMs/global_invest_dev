@@ -31,7 +31,6 @@ def stack_layers_summary(group_layer1_path, group_layer2_path, value_layer_path,
         pd.DataFrame: one row per (group1, group2) pair, carrying the mean, min, max and count
         of the value raster over the cells where all three rasters are valid.
     """
-    from osgeo import gdal
     # hb.iterblocks streams the value raster block by block; the two category rasters share its grid, so
     # read them at the same window (raw gdal -- hb has no aligned multi-raster block reader). A cell is
     # kept only where all three are valid. Groupby per block, then
@@ -202,14 +201,9 @@ def gep_calculation(p):
     publish_inputs(p)
     # Register what this task writes; the report renders from p.results. Only results this task
     # actually writes: per-year results belong to a multi-year run and are registered there.
-    service_results = {}
-    p.results['terrestrial_carbon'] = service_results
-    service_results['gep_by_country_base_year'] = os.path.join(p.cur_dir, "gep_by_country_base_year.csv")
-
-    if hb.path_all_exist(list(service_results.values())):
-        hb.log("All results already exist. Skipping GEP calculation for terrestrial carbon.")
+    service_results, already_done = utilities.begin_gep_calculation(p, 'terrestrial_carbon')
+    if already_done:
         return
-    hb.log("Starting GEP calculation for terrestrial carbon.")
 
     df_regions = hb.df_read(p.carbon_by_region_base_year_path)
     df_price = pd.read_excel(p.gep_price_input_path)[[p.gep_price_convention, 'year']]
@@ -228,7 +222,8 @@ def gep_calculation(p):
 
 
 def gep_result(p):
-    """Render the results report(s) via utilities.render_service_results."""
+    """Render the results report(s). Shared implementation in utilities."""
+    publish_inputs(p)
     utilities.render_service_results(p)
 
 def gep_load_results(p):

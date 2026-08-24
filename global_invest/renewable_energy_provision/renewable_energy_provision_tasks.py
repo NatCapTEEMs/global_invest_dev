@@ -1,6 +1,5 @@
 import os
 
-import pandas as pd
 import hazelbean as hb
 from global_invest import utilities
 
@@ -68,11 +67,19 @@ def gep_calculation(p):
     utilities.assert_join_coverage(df_gep, 'renewable_energy_provision_gep',
                                    valued_rows_before_join, 'renewable_energy_provision', log=hb.log)
 
-    hb.df_write(df_gep, service_results['gep_by_country_base_year'], index=False)
+    # Renaming on the way out only: the frame keeps the source's `Year` because the split and the
+    # map merge below read it, while the published table uses the lowercase `year` every other
+    # service writes.
+    def write_published(df, path):
+        published = df.rename(columns={'Year': 'year'})
+        hb.df_write(published[utilities.published_country_columns(
+            published, 'renewable_energy_provision')], path, index=False)
+
+    write_published(df_gep, service_results['gep_by_country_base_year'])
     by_resource = rf.split_by_resource(df_gep)
     for subservice, technology in rf.SUBSERVICE_TECHNOLOGIES.items():
-        hb.df_write(by_resource[technology], subservices[subservice]['gep_by_country_base_year'],
-                    index=False)
+        write_published(by_resource[technology],
+                        subservices[subservice]['gep_by_country_base_year'])
 
     # Map only: the r264-expanded boundaries, each sub-region carrying its country's value.
     gdf = hb.df_merge(p.gdf_countries_simplified, df_gep, how='outer',

@@ -130,19 +130,14 @@ def gep_calculation(p):
     """GEP valuation for fisheries: the 2019 rent estimate joined onto the r250 country list
     (by iso3 label -- CWoN's wb_code is the same vocabulary), one row per country."""
     publish_inputs(p)
-    service_results = {}
-    p.results['fisheries'] = service_results
-    service_results['gep_by_country_base_year'] = os.path.join(p.cur_dir, 'gep_by_country_base_year.csv')
-
-    if hb.path_all_exist(list(service_results.values())):
-        hb.log('All results already exist. Skipping GEP calculation for fisheries.')
+    service_results, already_done = utilities.begin_gep_calculation(p, 'fisheries')
+    if already_done:
         return
-    hb.log('Starting GEP calculation for fisheries.')
 
     trends = hb.df_read(p.fisheries_rent_trends_path)
     attr_cols = ['iso3_r250_id', 'iso3_r250_label', 'iso3_r250_name',
                  'continent', 'region_un', 'region_wb', 'income_grp', 'subregion']
-    countries = p.df_countries[attr_cols].drop_duplicates('iso3_r250_id')
+    countries = utilities.collapse_countries_to_r250(p.df_countries)[attr_cols]
     df_gep = ff.commfish_gep_by_country(trends, countries)
     df_gep['year'] = int(p.gep_base_year)
     df_gep = df_gep.rename(columns={'commfish_provision': 'fisheries_gep'})

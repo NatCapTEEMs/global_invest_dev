@@ -41,19 +41,14 @@ def gep_calculation(p):
     one row per country. water_supply_gep currently equals the hydropower component; the
     agriculture and household components add columns here when they arrive."""
     publish_inputs(p)
-    service_results = {}
-    p.results['water_supply'] = service_results
-    service_results['gep_by_country_base_year'] = os.path.join(p.cur_dir, 'gep_by_country_base_year.csv')
-
-    if hb.path_all_exist(list(service_results.values())):
-        hb.log('All results already exist. Skipping GEP calculation for water_supply.')
+    service_results, already_done = utilities.begin_gep_calculation(p, 'water_supply')
+    if already_done:
         return
-    hb.log('Starting GEP calculation for water_supply.')
 
     hydropower = hb.df_read(p.hydropower_rent_path)
     attr_cols = ['iso3_r250_id', 'iso3_r250_label', 'iso3_r250_name',
                  'continent', 'region_un', 'region_wb', 'income_grp', 'subregion']
-    countries = p.df_countries[attr_cols].drop_duplicates('iso3_r250_id')
+    countries = utilities.collapse_countries_to_r250(p.df_countries)[attr_cols]
     df_gep = wf.water_supply_gep_by_country(hydropower, countries)
     if hb.path_exists(getattr(p, 'water_use_components_path', None)):
         components = hb.df_read(p.water_use_components_path)

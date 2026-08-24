@@ -1,4 +1,3 @@
-import pandas as pd
 import hazelbean as hb
 
 from global_invest.crop_provision import crop_provision_initialize

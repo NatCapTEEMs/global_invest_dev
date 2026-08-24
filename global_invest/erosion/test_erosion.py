@@ -10,7 +10,6 @@ the task module buys.
 The InVEST SDR run that produces the erosion rasters is not covered here; it is verified against
 staged data.
 """
-from pathlib import Path
 
 import pandas as pd
 import pytest
