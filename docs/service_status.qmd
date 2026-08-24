@@ -26,25 +26,42 @@ reading a published value to running a model here. **method** is how the number 
 the engineering work we did. **number** is what the figure is and what it was checked against.
 **need** is what we are waiting on from someone else.
 
-The five categories, in ascending order of what the code does:
+The five categories, in ascending order of what the code does.
 
-| category | what the code does | accounts |
-|---|---|---|
-| reads a published value | opens a file, reshapes a per-country figure to the house table | 1 |
-| rescales a published rate | arithmetic on a published rate or share, such as a rent share times GDP | 2 |
-| tabular valuation | a quantity, a price and an attribution multiplied over tables | 12 |
-| spatial computation | rasters processed here to reach the value | 7 |
-| model run here | a process model runs inside the pipeline | 3 |
+**1. Reads a published value — 1 account.** The per-country figure already exists in a file. We
+open it and reshape it to the house table, and no valuation happens. *Urban cooling* is the one:
+the city-month valuations are ours, but the reported figure is parsed from a dollar column in a
+committed file.
+
+**2. Rescales a published rate — 2 accounts.** Someone published a rate rather than a value, and
+one or two operations turn it into dollars. *Mining production* is a rent share times GDP times
+0.49; *extractive energy* is the sum of three published per-fuel rent columns. Real arithmetic,
+but the economics is entirely theirs.
+
+**3. Table arithmetic — 12 accounts.** A quantity, a price and an attribution multiplied over
+tables, with no grids involved. This is the bulk of the library: crop production, livestock, both
+fisheries rows, energy production, hydropower, water use, air filtration, sandstorm prevention,
+wildfires, water quality and coastal protection.
+
+**4. Raster arithmetic — 7 accounts.** The value cannot be reached without processing grids, cell
+by cell, multiplied and summed into countries. *Pollination* multiplies 158 production grids by
+price and by each crop's pollinator dependence per cell; *terrestrial carbon* builds density
+rasters. Also coastal carbon, ntfp, timber, floods and stormwater.
+
+**5. Process model run here — 3 accounts.** A model with dynamics of its own runs inside the
+pipeline. *Erosion* runs InVEST SDR with sediment routing, *landslides* computes slope stability
+twice for every pixel, and *recreation* runs a gravity model allocating visits into scored sites.
 
 `category` and `ours` answer different questions. A service can run a model here and still not be
-ours, because the coefficients or the physical quantity come from elsewhere.
+ours, because the coefficients or the physical quantity come from elsewhere. Wildfires is the
+clearest case: the valuation runs here, and the regression coefficients underneath it do not.
 
 
 ## Terrestrial Carbon
 
 - **subgroup:** terrestrial
 - **module:** terrestrial_carbon
-- **category:** spatial computation
+- **category:** raster arithmetic
 - **in the library:** yes
 - **run:** yes
 - **ours:** yes
@@ -58,7 +75,7 @@ ours, because the coefficients or the physical quantity come from elsewhere.
 
 - **subgroup:** coastal
 - **module:** coastal_carbon
-- **category:** spatial computation
+- **category:** raster arithmetic
 - **in the library:** yes
 - **run:** yes
 - **ours:** yes
@@ -88,7 +105,7 @@ ours, because the coefficients or the physical quantity come from elsewhere.
 
 - **subgroup:** -
 - **module:** pollination
-- **category:** spatial computation
+- **category:** raster arithmetic
 - **in the library:** yes
 - **run:** yes
 - **ours:** yes for the value raster, which the account's number comes from. We built production times the world producer price we build ourselves times each crop's dependence on animal pollination, over 153 crops. The sufficiency side weights that value by how much habitat sits near each field, and it belongs to the other caller rather than to this one: `configure_sufficiency` runs inside `pollination_shock`, which is a registered task with its own runner. A base-year account has no scenario for the weighting to vary against, so the GEP number is the value raster and the habitat weighting enters the scenario shock.
@@ -103,7 +120,7 @@ ours, because the coefficients or the physical quantity come from elsewhere.
 
 - **subgroup:** -
 - **module:** erosion
-- **category:** model run here
+- **category:** process model run here
 - **in the library:** yes
 - **run:** in progress
 - **ours:** yes
@@ -118,7 +135,7 @@ ours, because the coefficients or the physical quantity come from elsewhere.
 
 - **subgroup:** -
 - **module:** landslide_mitigation
-- **category:** model run here
+- **category:** process model run here
 - **in the library:** yes
 - **run:** yes
 - **ours:** yes
@@ -133,7 +150,7 @@ ours, because the coefficients or the physical quantity come from elsewhere.
 
 - **subgroup:** commercial
 - **module:** fisheries
-- **category:** tabular valuation
+- **category:** table arithmetic
 - **in the library:** yes
 - **run:** yes
 - **ours:** yes
@@ -148,7 +165,7 @@ ours, because the coefficients or the physical quantity come from elsewhere.
 
 - **subgroup:** subsistence
 - **module:** fisheries
-- **category:** tabular valuation
+- **category:** table arithmetic
 - **in the library:** yes
 - **run:** yes
 - **ours:** yes
@@ -163,7 +180,7 @@ ours, because the coefficients or the physical quantity come from elsewhere.
 
 - **subgroup:** commercial
 - **module:** crop_provision
-- **category:** tabular valuation
+- **category:** table arithmetic
 - **in the library:** yes
 - **run:** yes
 - **ours:** yes, on the same footing as energy production rather than mining. FAOSTAT publishes the market value of the crop, not the part of it that belongs to nature, so no published figure is being relabelled. What is adopted is the CWoN land rental rate, and it is the entire attribution.
@@ -178,7 +195,7 @@ ours, because the coefficients or the physical quantity come from elsewhere.
 
 - **subgroup:** commercial
 - **module:** livestock_provision
-- **category:** tabular valuation
+- **category:** table arithmetic
 - **in the library:** yes
 - **run:** yes
 - **ours:** yes, and more so on one of the two value columns than the other. The service writes two, because two attributions of the same FAOSTAT gross production are on the table and the account has not chosen between them. `livestock_provision_gep` applies the CWoN land rental rate and gives $519bn; `livestock_provision_gep_feed_share` applies the share of animal intake that ecosystems grew and gives $1.37T. Neither FAOSTAT figure is a published ecosystem value, so nothing is relabelled. The rental-rate column adopts CWoN's attribution whole, while the feed-share column derives its own, computing each country's intake share from the GLEAM 3 dashboard rather than taking a published share.
@@ -193,7 +210,7 @@ ours, because the coefficients or the physical quantity come from elsewhere.
 
 - **subgroup:** -
 - **module:** coastal_protection
-- **category:** tabular valuation
+- **category:** table arithmetic
 - **in the library:** yes
 - **run:** yes
 - **ours:** the mangrove half yes, the coral half no. That file holds a value per country and nothing underneath it.
@@ -223,7 +240,7 @@ ours, because the coefficients or the physical quantity come from elsewhere.
 
 - **subgroup:** -
 - **module:** renewable_energy_provision
-- **category:** tabular valuation
+- **category:** table arithmetic
 - **in the library:** yes
 - **run:** yes
 - **ours:** yes: the value is built from a physical quantity and a market price rather than converted out of a published rent (mining). What is adopted is the CWoN share of the rent attributable to nature, a per-country-year parameter we take as given.
@@ -238,7 +255,7 @@ ours, because the coefficients or the physical quantity come from elsewhere.
 
 - **subgroup:** -
 - **module:** recreation
-- **category:** model run here
+- **category:** process model run here
 - **in the library:** yes
 - **run:** yes
 - **ours:** yes
@@ -253,7 +270,7 @@ ours, because the coefficients or the physical quantity come from elsewhere.
 
 - **subgroup:** -
 - **module:** fire_protection
-- **category:** tabular valuation
+- **category:** table arithmetic
 - **in the library:** yes
 - **run:** yes
 - **ours:** the valuation yes, the coefficients no. The district-year panel is staged, 494 MB over 2010 to 2023, and the run reads it rather than any committed output: avoided burned area, damage per acre and the three GEP variants are all computed here. What is not ours is the regressions those coefficients come from, which are read from the source repo's committed results. The panel carries burned area split by human and natural cause and the human-modification index the third regression splits on, so refitting is work nobody has done rather than data we lack.
@@ -283,7 +300,7 @@ ours, because the coefficients or the physical quantity come from elsewhere.
 
 - **subgroup:** -
 - **module:** water_quality
-- **category:** tabular valuation
+- **category:** table arithmetic
 - **in the library:** yes
 - **run:** yes
 - **ours:** the dollar figure yes, the reported one no. We recompute nitrogen and phosphorus retention priced at treatment cost from the retention estimates, which gives `water_quality_gep_usd` at $638.34bn. The column the account reports, `water_quality_gep` at $655.91bn, is the committed international-dollar value merged in from their file, and the conversion between the two is the step we could not identify. The retention estimates underneath are an NDR-style model output we take as given, though InVEST NDR is installed.
@@ -298,7 +315,7 @@ ours, because the coefficients or the physical quantity come from elsewhere.
 
 - **subgroup:** -
 - **module:** air_filtration
-- **category:** tabular valuation
+- **category:** table arithmetic
 - **in the library:** yes
 - **run:** yes
 - **ours:** not yet. The workbook gives us the deaths and the answer, and we multiply the deaths by a value of a statistical life read from its own source, then check we recover the workbook's answer. That value is ours to the extent the source allows: the valuation reads the air quality group's country table directly and sources 218 of the 250 countries from it, with only Macao and Palestine left on the workbook's own figure. The deaths we could not until now: they come from process-based emissions, then InMAP, then health impact functions. InMAP is open source and on PyPI at 1.2.7, failing to install here only because its source distribution has no README, which is a packaging bug rather than a wall. So the workbook can be reduced to a deaths table, and eventually replaced.
@@ -313,7 +330,7 @@ ours, because the coefficients or the physical quantity come from elsewhere.
 
 - **subgroup:** -
 - **module:** air_filtration (dust channel)
-- **category:** tabular valuation
+- **category:** table arithmetic
 - **in the library:** yes
 - **run:** yes
 - **ours:** not yet, the same three models as air filtration produce the dust deaths, and the same answer applies.
@@ -328,7 +345,7 @@ ours, because the coefficients or the physical quantity come from elsewhere.
 
 - **subgroup:** hydropower
 - **module:** water_supply
-- **category:** tabular valuation
+- **category:** table arithmetic
 - **in the library:** yes
 - **run:** yes
 - **ours:** yes
@@ -343,7 +360,7 @@ ours, because the coefficients or the physical quantity come from elsewhere.
 
 - **subgroup:** water use
 - **module:** water_supply
-- **category:** tabular valuation
+- **category:** table arithmetic
 - **in the library:** yes
 - **run:** yes
 - **ours:** yes. The valuation is ported and runs here: `water_use_gep_by_country_year` multiplies AQUASTAT water-use efficiency in dollars per cubic metre by the withdrawal volume, for agriculture, industry and municipal alike, and the module cleans the AQUASTAT export itself on the way in. Their script (gep_wateruse_02_calc_gep_wateruse.R) sits in base data beside the inputs as the reference the port was written against. What is not settled is the attribution: the result is the gross economic value of water used, with no step turning it into nature's share.
@@ -373,7 +390,7 @@ ours, because the coefficients or the physical quantity come from elsewhere.
 
 - **subgroup:** -
 - **module:** timber_provision
-- **category:** spatial computation
+- **category:** raster arithmetic
 - **in the library:** yes
 - **run:** yes
 - **ours:** partly. The three rasters the value is built from, biomass, log prices and transport cost, are all staged, so the value could be rebuilt. What is missing is the forest-management mask that decides which pixels count as harvestable.
@@ -387,7 +404,7 @@ ours, because the coefficients or the physical quantity come from elsewhere.
 
 - **subgroup:** -
 - **module:** flood_control
-- **category:** spatial computation
+- **category:** raster arithmetic
 - **in the library:** yes
 - **run:** yes
 - **ours:** the damage yes. The ecosystem share needs a service-flow raster, and the drive's copy is a binary mask rather than a ratio.
@@ -402,7 +419,7 @@ ours, because the coefficients or the physical quantity come from elsewhere.
 
 - **subgroup:** -
 - **module:** ntfp
-- **category:** spatial computation
+- **category:** raster arithmetic
 - **in the library:** yes
 - **run:** yes
 - **ours:** the accessible area yes, the value no. The rate is now rescaled to the reachable forest, which makes the hectares cancel and the country total equal CWoN's published value. So accessibility is ours and decides where the value sits, and the amount is CWoN's.
@@ -417,7 +434,7 @@ ours, because the coefficients or the physical quantity come from elsewhere.
 
 - **subgroup:** -
 - **module:** stormwater
-- **category:** spatial computation
+- **category:** raster arithmetic
 - **in the library:** yes
 - **run:** yes
 - **ours:** not yet. InVEST stormwater is installed and its run sits outside the task tree.

@@ -19,6 +19,11 @@ livestock_world: "$1.37T"
 n_services: "22"
 n_accounts: "25"
 n_replicating: "9"
+cat_reads: "1"
+cat_rescales: "2"
+cat_table: "12"
+cat_raster: "7"
+cat_model: "3"
 gep_naive_sum: "$11.2T"
 gep_naive_sum_all: "$46.7T"
 world_gdp_2019: "$87T"
@@ -150,6 +155,20 @@ format:
 - {{< meta n_replicating >}} of our runs land on a committed reference or the manuscript. For the rest we could not find a reference to check against.
 - Every module whose run has finished has rendered its report. Erosion is the one still running.
 
+
+## What the code does, service by service {.smaller}
+
+- The services differ in how much work stands between the input and the number. That is a separate question from whether the number is ours: a service can run a model here and still take its coefficients from someone else.
+
+| What the code does | Accounts | Which |
+|---|---|---|
+| Reads a published value | {{< meta cat_reads >}} | urban cooling |
+| Rescales a published rate | {{< meta cat_rescales >}} | mining production, extractive energy |
+| Table arithmetic | {{< meta cat_table >}} | crop, livestock, both fisheries, energy, hydropower, water use, air filtration, sandstorm, wildfires, water quality, coastal protection |
+| Raster arithmetic | {{< meta cat_raster >}} | terrestrial carbon, coastal carbon, pollination, ntfp, timber, floods, stormwater |
+| Process model run here | {{< meta cat_model >}} | erosion, landslides, recreation |
+
+- Reading a published value opens a file and reshapes it. Rescaling turns a published rate into dollars. Table arithmetic multiplies a quantity, a price and an attribution. Raster arithmetic reaches the value by processing grids. A process model has dynamics of its own, sediment routing for erosion, slope stability for landslides, a gravity model for recreation.
 
 ## Can the services be added into one total?
 
