@@ -42,6 +42,7 @@ SHEET_TITLE = 'library status'
 FIELD_COLUMNS = [
     ('subgroup', 'subgroup'),
     ('module', 'module'),
+    ('category', 'what the code does'),
     ('in the library', 'in the library'),
     ('run', 'run'),
     ('ours', 'can we run it ourselves'),
@@ -51,7 +52,7 @@ FIELD_COLUMNS = [
     ('number', 'what the number is, and what it is checked against'),
     ('need', 'what we need'),
 ]
-COLUMN_WIDTHS = (22, 16, 22, 11, 8, 30, 52, 64, 16, 64, 40)
+COLUMN_WIDTHS = (22, 16, 22, 26, 11, 8, 30, 52, 64, 16, 64, 40)
 LINE_HEIGHT_POINTS = 13.5
 MAX_LINES = 14
 
@@ -112,6 +113,9 @@ def build_workbook(df):
         sheet.column_dimensions[sheet.cell(1, index).column_letter].width = width
     for cell in sheet[1]:
         cell.font = Font(bold=True)
+    # The header scrolls out of view within three services otherwise, and the columns are long
+    # enough that nobody can tell which one they are reading without it.
+    sheet.freeze_panes = 'B2'
 
     for row_index in range(1, sheet.max_row + 1):
         lines = 1
