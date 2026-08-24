@@ -53,6 +53,8 @@ p.execute()
 ```{python}
 #| output: false
 
+from global_invest import utilities
+
 ### DISPLAY SETUP CODE: Based on the results in the prior cells, make the objectgs that will actually get displayed, like smol csvs or gpkg-as-pngs
 
 import matplotlib.pyplot as plt
@@ -99,11 +101,11 @@ for k, v in p.results[service_label].items():
             # p.gep_by_subregion_base_year_table = p.gep_by_country_base_year_table[['subregion', 'livestock_provision_gep']]
         
         # Save each plot table as a CSV in the current directory
-        hb.df_write(p.gep_by_country_base_year_table, os.path.join(p.intermediate_dir, service_label, 'gep_result', 'gep_by_country_base_year_table.csv'))
-        hb.df_write(p.gep_by_income_grp_base_year_table, os.path.join(p.intermediate_dir, service_label, 'gep_result', 'gep_by_income_grp_base_year_table.csv'))
-        hb.df_write(p.gep_by_region_un_base_year_table, os.path.join(p.intermediate_dir, service_label, 'gep_result', 'gep_by_region_un_base_year_table.csv'))
-        hb.df_write(p.gep_by_continent_base_year_table, os.path.join(p.intermediate_dir, service_label, 'gep_result', 'gep_by_continent_base_year_table.csv'))
-        hb.df_write(p.gep_by_subregion_base_year_table, os.path.join(p.intermediate_dir, service_label, 'gep_result', 'gep_by_subregion_base_year_table.csv'))
+        hb.df_write(p.gep_by_country_base_year_table, os.path.join(utilities.report_dir(), 'gep_by_country_base_year_table.csv'))
+        hb.df_write(p.gep_by_income_grp_base_year_table, os.path.join(utilities.report_dir(), 'gep_by_income_grp_base_year_table.csv'))
+        hb.df_write(p.gep_by_region_un_base_year_table, os.path.join(utilities.report_dir(), 'gep_by_region_un_base_year_table.csv'))
+        hb.df_write(p.gep_by_continent_base_year_table, os.path.join(utilities.report_dir(), 'gep_by_continent_base_year_table.csv'))
+        hb.df_write(p.gep_by_subregion_base_year_table, os.path.join(utilities.report_dir(), 'gep_by_subregion_base_year_table.csv'))
 
         # Using the gpkg in gep_calculation, plot the GEP by country on a map
 
@@ -134,7 +136,7 @@ for k, v in p.results[service_label].items():
 
         ax.set_title('GEP by Country in Base Year')
         ax.set_axis_off()  # Hide the axis
-        plt.savefig(os.path.join(p.intermediate_dir, service_label, 'gep_result', 'gep_by_country_base_year_map.png'), bbox_inches='tight', dpi=300)
+        plt.savefig(os.path.join(utilities.report_dir(), 'gep_by_country_base_year_map.png'), bbox_inches='tight', dpi=300)
         plt.close()
 
     
@@ -143,7 +145,7 @@ for k, v in p.results[service_label].items():
         p.gep_by_year_table = df[['year', 'livestock_provision_gep']]
         # Drop livestock_provision_geps that are zero
         p.gep_by_year_table = p.gep_by_year_table[p.gep_by_year_table['livestock_provision_gep'] > 0]
-        hb.df_write(p.gep_by_year_table, os.path.join(p.intermediate_dir, service_label, 'gep_result', 'gep_by_year_table.csv'))
+        hb.df_write(p.gep_by_year_table, os.path.join(utilities.report_dir(), 'gep_by_year_table.csv'))
 
         # Also make a basic line graph as a png
         plt.figure(figsize=(10, 6))
@@ -152,16 +154,17 @@ for k, v in p.results[service_label].items():
         plt.xlabel('Year')
         plt.ylabel('Gross Economic Product (GEP)')
         plt.grid(True)
-        plt.savefig(os.path.join(p.intermediate_dir, service_label, 'gep_result', 'gep_by_year_plot.png'), dpi=300)
+        plt.savefig(os.path.join(utilities.report_dir(), 'gep_by_year_plot.png'), dpi=300)
         plt.close()
 
 ```
 
 Livestock production attributable to ecosystem-provided feed is valued at $`{python} f"{total_agricultural_value:,.2f}"` in the base year. The attribution currently uses a land rental rate standing in for the feed share, so the number is provisional. The tables below aggregate it by income group, region and continent.
 
+## GEP by Country in Base Year, mapped
+
 ```{python}
-# Display the GEP by income group table   
-display(Image(os.path.join(p.intermediate_dir, service_label, 'gep_result', 'gep_by_country_base_year_map.png')))
+display(Image(os.path.join(utilities.report_dir(), 'gep_by_country_base_year_map.png')))
 ```
 
 ## GEP by Income Group in Base Year
@@ -187,7 +190,7 @@ display(p.gep_by_subregion_base_year_table)
 ## GEP  Over Time
 ```{python}
 
-display(Image(os.path.join(p.intermediate_dir, service_label, 'gep_result', 'gep_by_year_plot.png')))
+display(Image(os.path.join(utilities.report_dir(), 'gep_by_year_plot.png')))
 
 # Display the GEP by income group table   
 display(p.gep_by_year_table)

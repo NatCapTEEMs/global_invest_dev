@@ -55,7 +55,10 @@ total_erosion_value = totals['Combined']
 n_valued = int((df['gep_const2019_usd_combined'] > 0).sum())
 soil_retained = df['soil_retained_cropland_tons'].sum()
 
-out_dir = os.path.join(project_dir, 'intermediate', service_label, 'gep_result')
+from global_invest import utilities
+
+# The report task's own directory, which is where the page reads its figures back from.
+out_dir = utilities.report_dir()
 hb.create_directories(out_dir)
 
 df_decomposition = pd.DataFrame({

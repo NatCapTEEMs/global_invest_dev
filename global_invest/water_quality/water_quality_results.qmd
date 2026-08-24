@@ -61,11 +61,6 @@ p.gep_by_country_base_year_table = df[['iso3_r250_name', 'nitrogen_gep_usd', 'ph
 
 The analysis values water purification as nutrient retention priced at treatment cost: nitrogen and phosphorus retention per country, scaled by the AQUASTAT domestic-water-use fraction and priced per kg, totalling $`{python} f"{total_usd:,.0f}"` in 2019 USD across 209 countries. The committed accounting output expresses the service in 2019 INTERNATIONAL dollars ($`{python} f"{total_intl:,.0f}"` across 178 countries) and that conversion stage is not yet identified from the available material; the USD calculation replicates the committed intermediates exactly.
 
-## GEP by Country in Base Year
-```{python}
-p.gep_by_country_base_year_table
-```
-
 ## GEP by Country in Base Year, mapped
 
 ```{python}
@@ -77,15 +72,42 @@ from global_invest import utilities
 # writes several and the wrong one would map a component as though it were the total.
 map_value_column = (f'{service_label}_gep' if f'{service_label}_gep' in df.columns
                     else [c for c in df.columns if c.endswith('_gep')][0])
-map_png_path = os.path.join(
-    os.path.dirname(p.results[service_label]['gep_by_country_base_year']),
-    f'{service_label}_gep_by_country_base_year_map.png')
+map_png_path = os.path.join(utilities.report_dir(),
+                            f'{service_label}_gep_by_country_base_year_map.png')
 map_png_path = utilities.plot_gep_choropleth(
     df, map_value_column, p.gdf_countries_vector_simplified_path, map_png_path,
     title=f'{service_label} GEP by country', label=map_value_column)
+
+# The account read by region and by income group, which a country table cannot show.
+summary_tables = utilities.gep_summary_tables(df, map_value_column, utilities.report_dir(), log=hb.log)
 ```
 
 ```{python}
 from IPython.display import Image
 Image(map_png_path) if map_png_path else 'No positive value to map.'
+```
+
+## GEP by Income Group in Base Year
+```{python}
+summary_tables.get('income_grp', 'No income group column in this table.')
+```
+
+## GEP by Region in Base Year
+```{python}
+summary_tables.get('region_un', 'No UN region column in this table.')
+```
+
+## GEP by Continent in Base Year
+```{python}
+summary_tables.get('continent', 'No continent column in this table.')
+```
+
+## GEP by Subregion in Base Year
+```{python}
+summary_tables.get('subregion', 'No subregion column in this table.')
+```
+
+## GEP by Country in Base Year
+```{python}
+p.gep_by_country_base_year_table
 ```

@@ -31,7 +31,7 @@ if __name__ == '__main__':
         os.path.expanduser('~'), 'Files', 'global_invest', 'projects', p.project_name))
     p.set_project_dir(p.project_dir)
 
-    landslide_mitigation_initialize.build_gep_service_task_tree(p)
+    landslide_mitigation_initialize.build_gep_service_calculation_task_tree(p)
 
     p.results = {}
 
@@ -54,25 +54,25 @@ pd.set_option('display.max_rows', 1000)
 service_label = 'landslide_mitigation'
 prediction_year = p.prediction_years[-1]
 
-df = hb.df_read(p.results[service_label][f'zonal_statistics_{prediction_year}'])
-total_deaths = df['avoided_deaths_sum'].sum()
-total_value = df['avoided_value_sum_usd'].sum()
+# The country table, as every service's report reads. gep_calculation has already collapsed the
+# r264 sub-regions into one row per country.
+df = hb.df_read(p.results[service_label]['gep_by_country_base_year'])
+total_value = df[f'{service_label}_gep'].sum()
 
-# One row per country: the r264 correspondence splits large countries, so the sub-regions are
-# summed back together before the table is shown.
+# The zonal table beside it, for avoided deaths: the country table carries the value, and the
+# deaths are what the service is about.
+df_zonal = hb.df_read(p.results[service_label][f'zonal_statistics_{prediction_year}'])
+total_deaths = df_zonal['avoided_deaths_sum'].sum()
+
 p.gep_by_country_base_year_table = (
-    df.groupby('iso3_r250_label', as_index=False)
-      .agg(avoided_deaths_sum=('avoided_deaths_sum', 'sum'),
-           avoided_value_sum_usd=('avoided_value_sum_usd', 'sum'))
-      .sort_values('avoided_value_sum_usd', ascending=False))
+    df_zonal.groupby('iso3_r250_label', as_index=False)
+            .agg(avoided_deaths_sum=('avoided_deaths_sum', 'sum'),
+                 avoided_value_sum_usd=('avoided_value_sum_usd', 'sum'))
+            .sort_values('avoided_value_sum_usd', ascending=False))
 ```
 
 The analysis values landslide mitigation as the deaths that forest root cohesion averts. The stability of every 1km slope is computed twice for `{python} prediction_year` -- once with the mapped forest cover holding the soil, once with root cohesion removed -- and each stability index is turned into a landslide probability and then into expected deaths through a two-part fatality model. The difference between the two runs is `{python} f"{total_deaths:,.2f}"` avoided deaths, valued at each country's value of a statistical life at $`{python} f"{total_value:,.0f}"` in 2019 constant USD.
 
-## Avoided Mortality and Value by Country
-```{python}
-p.gep_by_country_base_year_table
-```
 
 ## GEP by Country in Base Year, mapped
 
@@ -85,15 +85,46 @@ from global_invest import utilities
 # writes several and the wrong one would map a component as though it were the total.
 map_value_column = (f'{service_label}_gep' if f'{service_label}_gep' in df.columns
                     else [c for c in df.columns if c.endswith('_gep')][0])
-map_png_path = os.path.join(
-    os.path.dirname(p.results[service_label]['gep_by_country_base_year']),
-    f'{service_label}_gep_by_country_base_year_map.png')
+map_png_path = os.path.join(utilities.report_dir(),
+                            f'{service_label}_gep_by_country_base_year_map.png')
 map_png_path = utilities.plot_gep_choropleth(
     df, map_value_column, p.gdf_countries_vector_simplified_path, map_png_path,
     title=f'{service_label} GEP by country', label=map_value_column)
+
+# The account read by region and by income group, which a country table cannot show.
+summary_tables = utilities.gep_summary_tables(df, map_value_column, utilities.report_dir(), log=hb.log)
 ```
 
 ```{python}
 from IPython.display import Image
 Image(map_png_path) if map_png_path else 'No positive value to map.'
+```
+
+## GEP by Income Group in Base Year
+```{python}
+summary_tables.get('income_grp', 'No income group column in this table.')
+```
+
+## GEP by Region in Base Year
+```{python}
+summary_tables.get('region_un', 'No UN region column in this table.')
+```
+
+## GEP by Continent in Base Year
+```{python}
+summary_tables.get('continent', 'No continent column in this table.')
+```
+
+## GEP by Subregion in Base Year
+```{python}
+summary_tables.get('subregion', 'No subregion column in this table.')
+```
+
+## GEP by Country in Base Year
+
+The country table carries the avoided deaths beside the value, because the deaths are what the
+service is about and the value follows from them.
+
+```{python}
+p.gep_by_country_base_year_table
 ```

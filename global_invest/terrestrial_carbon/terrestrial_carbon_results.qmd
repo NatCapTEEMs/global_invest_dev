@@ -72,6 +72,8 @@ if __name__ == '__main__':
 ```{python}
 #| output: false
 
+from global_invest import utilities
+
 ### DISPLAY SETUP CODE: Based on the results in the prior cells, make the objectgs that will actually get displayed, like smol csvs or gpkg-as-pngs
 
 import matplotlib.pyplot as plt
@@ -117,13 +119,12 @@ for k, v in p.results[service_label].items():
 
             # p.gep_by_subregion_base_year_table = p.gep_by_country_base_year_table[['subregion', 'terrestrial_carbon_gep']]
 
-        # Save each plot table as a CSV in the current directory
-        hb.create_directories(os.path.join(p.intermediate_dir, service_label, 'gep_result'))
-        p.gep_by_country_base_year_table.to_csv(os.path.join(p.intermediate_dir, service_label, 'gep_result', 'gep_by_country_base_year_table.csv'), index=False)
-        hb.df_write(p.gep_by_income_grp_base_year_table, os.path.join(p.intermediate_dir, service_label, 'gep_result', 'gep_by_income_grp_base_year_table.csv'))
-        hb.df_write(p.gep_by_region_un_base_year_table, os.path.join(p.intermediate_dir, service_label, 'gep_result', 'gep_by_region_un_base_year_table.csv'))
-        hb.df_write(p.gep_by_continent_base_year_table, os.path.join(p.intermediate_dir, service_label, 'gep_result', 'gep_by_continent_base_year_table.csv'))
-        hb.df_write(p.gep_by_subregion_base_year_table, os.path.join(p.intermediate_dir, service_label, 'gep_result', 'gep_by_subregion_base_year_table.csv'))
+        # Save each plot table as a CSV in the report task's own directory.
+        p.gep_by_country_base_year_table.to_csv(os.path.join(utilities.report_dir(), 'gep_by_country_base_year_table.csv'), index=False)
+        hb.df_write(p.gep_by_income_grp_base_year_table, os.path.join(utilities.report_dir(), 'gep_by_income_grp_base_year_table.csv'))
+        hb.df_write(p.gep_by_region_un_base_year_table, os.path.join(utilities.report_dir(), 'gep_by_region_un_base_year_table.csv'))
+        hb.df_write(p.gep_by_continent_base_year_table, os.path.join(utilities.report_dir(), 'gep_by_continent_base_year_table.csv'))
+        hb.df_write(p.gep_by_subregion_base_year_table, os.path.join(utilities.report_dir(), 'gep_by_subregion_base_year_table.csv'))
 
         # Using the gpkg in gep_calculation, plot the GEP by country on a map
 
@@ -154,7 +155,7 @@ for k, v in p.results[service_label].items():
 
         ax.set_title('GEP by Country in Base Year')
         ax.set_axis_off()  # Hide the axis
-        plt.savefig(os.path.join(p.intermediate_dir, service_label, 'gep_result', 'gep_by_country_base_year_map.png'), bbox_inches='tight', dpi=300)
+        plt.savefig(os.path.join(utilities.report_dir(), 'gep_by_country_base_year_map.png'), bbox_inches='tight', dpi=300)
         plt.close()
 
 
@@ -164,9 +165,10 @@ for k, v in p.results[service_label].items():
 
 Carbon stored by land ecosystems is valued at the rental social cost of carbon, giving $`{python} f"{total_terrestrial_carbon_value:,.2f}"` in the base year. The tables below aggregate that by income group, region and continent, and end with the per-country table the account reads.
 
+## GEP by Country in Base Year, mapped
+
 ```{python}
-# Display the GEP by country map
-display(Image(os.path.join(p.intermediate_dir, service_label, 'gep_result', 'gep_by_country_base_year_map.png')))
+display(Image(os.path.join(utilities.report_dir(), 'gep_by_country_base_year_map.png')))
 ```
 
 ## GEP by Income Group in Base Year

@@ -56,6 +56,8 @@ p.execute()
 ```{python}
 #| output: false
 
+from global_invest import utilities
+
 ### DISPLAY SETUP CODE: Based on the results in the prior cells, make the objectgs that will actually get displayed, like smol csvs or gpkg-as-pngs
 
 import matplotlib.pyplot as plt
@@ -83,30 +85,29 @@ for k, v in p.results[service_label].items():
     # SERVICE-SPECIFIC CODE CUSTOMIZATION GOES HERE: Put whatever you think should be displayed
     # E.g., generate manuscript-ready tables, calculate total values for inline text, make plot pngs, etc
     if k == 'gep_by_country_base_year':
-        total_value = df['Value'].sum()
-        p.gep_by_country_base_year_table = df[['iso3_r250_name', 'Value']]
+        value_column = 'coastal_protection_gep'
+        total_value = df[value_column].sum()
+        p.gep_by_country_base_year_table = df[['iso3_r250_name', value_column]]
 
         # Group by useful aggregation columns explicitly and assign each as an attribute to p
         if 'income_grp' in df.columns:
-            p.gep_by_income_grp_base_year_table = df.groupby('income_grp', as_index=False)['Value'].sum()
-            p.gep_by_income_grp_base_year_table = p.gep_by_income_grp_base_year_table[['income_grp', 'Value']]
+            p.gep_by_income_grp_base_year_table = df.groupby('income_grp', as_index=False)[value_column].sum()
+            p.gep_by_income_grp_base_year_table = p.gep_by_income_grp_base_year_table[['income_grp', value_column]]
         if 'region_un' in df.columns:
-            p.gep_by_region_un_base_year_table = df.groupby('region_un', as_index=False)['Value'].sum()
-            p.gep_by_region_un_base_year_table = p.gep_by_region_un_base_year_table[['region_un', 'Value']]
+            p.gep_by_region_un_base_year_table = df.groupby('region_un', as_index=False)[value_column].sum()
+            p.gep_by_region_un_base_year_table = p.gep_by_region_un_base_year_table[['region_un', value_column]]
         if 'continent' in df.columns:
-            p.gep_by_continent_base_year_table = df.groupby('continent', as_index=False)['Value'].sum()
-            p.gep_by_continent_base_year_table = p.gep_by_continent_base_year_table[['continent', 'Value']]
+            p.gep_by_continent_base_year_table = df.groupby('continent', as_index=False)[value_column].sum()
+            p.gep_by_continent_base_year_table = p.gep_by_continent_base_year_table[['continent', value_column]]
         if 'subregion' in df.columns:
-            p.gep_by_subregion_base_year_table = df.groupby('subregion', as_index=False)['Value'].sum()
-
-            # p.gep_by_subregion_base_year_table = p.gep_by_country_base_year_table[['subregion', 'Value']]
+            p.gep_by_subregion_base_year_table = df.groupby('subregion', as_index=False)[value_column].sum()
 
         # Save each plot table as a CSV in the current directory
-        p.gep_by_country_base_year_table.to_csv(os.path.join(p.intermediate_dir, service_label, 'gep_result', 'gep_by_country_base_year_table.csv'), index=False)
-        hb.df_write(p.gep_by_income_grp_base_year_table, os.path.join(p.intermediate_dir, service_label, 'gep_result', 'gep_by_income_grp_base_year_table.csv'))
-        hb.df_write(p.gep_by_region_un_base_year_table, os.path.join(p.intermediate_dir, service_label, 'gep_result', 'gep_by_region_un_base_year_table.csv'))
-        hb.df_write(p.gep_by_continent_base_year_table, os.path.join(p.intermediate_dir, service_label, 'gep_result', 'gep_by_continent_base_year_table.csv'))
-        hb.df_write(p.gep_by_subregion_base_year_table, os.path.join(p.intermediate_dir, service_label, 'gep_result', 'gep_by_subregion_base_year_table.csv'))
+        p.gep_by_country_base_year_table.to_csv(os.path.join(utilities.report_dir(), 'gep_by_country_base_year_table.csv'), index=False)
+        hb.df_write(p.gep_by_income_grp_base_year_table, os.path.join(utilities.report_dir(), 'gep_by_income_grp_base_year_table.csv'))
+        hb.df_write(p.gep_by_region_un_base_year_table, os.path.join(utilities.report_dir(), 'gep_by_region_un_base_year_table.csv'))
+        hb.df_write(p.gep_by_continent_base_year_table, os.path.join(utilities.report_dir(), 'gep_by_continent_base_year_table.csv'))
+        hb.df_write(p.gep_by_subregion_base_year_table, os.path.join(utilities.report_dir(), 'gep_by_subregion_base_year_table.csv'))
 
         # Using the gpkg in gep_calculation, plot the GEP by country on a map
 
@@ -115,17 +116,18 @@ for k, v in p.results[service_label].items():
 
         gpkg_path = p.results[service_label]['gep_by_country_base_year'].replace('.csv', '.gpkg')
         gdf = hb.read_vector(gpkg_path)
-        gdf = gdf[['iso3_r250_id', 'iso3_r250_name', 'Value', 'geometry']]  # Keep only relevant columns
+        gdf = gdf[['iso3_r250_id', 'iso3_r250_name', value_column, 'geometry']]  # Keep only relevant columns
 
         # Add country borders for clarity
         borders = gdf.copy()
         borders['geometry'] = borders['geometry'].boundary
 
         # Set up log normalization for color mapping
-        norm = mpl.colors.LogNorm(vmin=gdf['Value'][gdf['Value'] > 0].min(), vmax=gdf['Value'].max())
+        norm = mpl.colors.LogNorm(vmin=gdf[value_column][gdf[value_column] > 0].min(),
+                                  vmax=gdf[value_column].max())
 
         fig, ax = plt.subplots(figsize=(15, 10))
-        gdf.plot(column='Value', cmap='OrRd', legend=False, norm=norm, ax=ax)
+        gdf.plot(column=value_column, cmap='OrRd', legend=False, norm=norm, ax=ax)
         borders.plot(ax=ax, color='black', linewidth=0.5)
 
         # Add colorbar with actual values
@@ -137,7 +139,7 @@ for k, v in p.results[service_label].items():
 
         ax.set_title('GEP by Country in Base Year')
         ax.set_axis_off()  # Hide the axis
-        plt.savefig(os.path.join(p.intermediate_dir, service_label, 'gep_result', 'gep_by_country_base_year_map.png'), bbox_inches='tight', dpi=300)
+        plt.savefig(os.path.join(utilities.report_dir(), 'gep_by_country_base_year_map.png'), bbox_inches='tight', dpi=300)
         plt.close()
 
 
@@ -146,7 +148,7 @@ for k, v in p.results[service_label].items():
         p.gep_by_year_table = df[['year', 'Value']]
         # Drop values that are zero
         p.gep_by_year_table = p.gep_by_year_table[p.gep_by_year_table['Value'] > 0]
-        hb.df_write(p.gep_by_year_table, os.path.join(p.intermediate_dir, service_label, 'gep_result', 'gep_by_year_table.csv'))
+        hb.df_write(p.gep_by_year_table, os.path.join(utilities.report_dir(), 'gep_by_year_table.csv'))
 
         # Also make a basic line graph as a png
         plt.figure(figsize=(10, 6))
@@ -155,16 +157,17 @@ for k, v in p.results[service_label].items():
         plt.xlabel('Year')
         plt.ylabel('Gross Economic Product (GEP)')
         plt.grid(True)
-        plt.savefig(os.path.join(p.intermediate_dir, service_label, 'gep_result', 'gep_by_year_plot.png'), dpi=300)
+        plt.savefig(os.path.join(utilities.report_dir(), 'gep_by_year_plot.png'), dpi=300)
         plt.close()
 
 ```
 
 Storm damage avoided by mangroves and coral reefs is valued at $`{python} f"{total_value:,.2f}"` in the base year. Both source tables already carry a final per-country value, so this page reports them rather than a calculation we ran. The tables below aggregate by income group, region and continent.
 
+## GEP by Country in Base Year, mapped
+
 ```{python}
-# Display the GEP by income group table
-display(Image(os.path.join(p.intermediate_dir, service_label, 'gep_result', 'gep_by_country_base_year_map.png')))
+display(Image(os.path.join(utilities.report_dir(), 'gep_by_country_base_year_map.png')))
 ```
 
 ## GEP by Income Group in Base Year
@@ -190,7 +193,7 @@ display(p.gep_by_subregion_base_year_table)
 ## GEP  Over Time
 <!-- ```{python}
 
-# display(Image(os.path.join(p.intermediate_dir, service_label, 'gep_result', 'gep_by_year_plot.png')))
+# display(Image(os.path.join(utilities.report_dir(), 'gep_by_year_plot.png')))
 
 # Display the GEP by income group table
 # display(p.gep_by_year_table)

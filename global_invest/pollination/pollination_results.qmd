@@ -42,6 +42,8 @@ if __name__ == '__main__':
 ```{python}
 #| output: false
 
+from global_invest import utilities
+
 ### DISPLAY SETUP CODE
 
 import matplotlib.pyplot as plt
@@ -72,7 +74,8 @@ for k, v in p.results[service_label].items():
         if 'subregion' in df.columns:
             p.gep_by_subregion_base_year_table = df.groupby('subregion', as_index=False)['pollination_gep'].sum()
 
-        out_dir = os.path.join(p.intermediate_dir, service_label, 'gep_result')
+        # The report task's own directory, which is where the page reads its figures back from.
+        out_dir = utilities.report_dir()
         hb.create_directories(out_dir)
         p.gep_by_country_base_year_table.to_csv(os.path.join(out_dir, 'gep_by_country_base_year_table.csv'), index=False)
         hb.df_write(p.gep_by_income_grp_base_year_table, os.path.join(out_dir, 'gep_by_income_grp_base_year_table.csv'))
@@ -110,8 +113,10 @@ for k, v in p.results[service_label].items():
 
 The analysis finds that insect pollination generates a total gross ecosystem product of $`{python} f"{total_pollination_value:,.2f}"` in the base year (`{python} f"{int(p.gep_base_year)}"`). The value raster carries crop prices and per-crop pollination dependence already, so the per-country value is a direct spatial sum. Below we present the results in various aggregations, ending with the GEP by country in the base year.
 
+## GEP by Country in Base Year, mapped
+
 ```{python}
-display(Image(os.path.join(p.intermediate_dir, service_label, 'gep_result', 'gep_by_country_base_year_map.png')))
+display(Image(os.path.join(utilities.report_dir(), 'gep_by_country_base_year_map.png')))
 ```
 
 ## GEP by Income Group in Base Year

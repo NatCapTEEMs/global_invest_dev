@@ -225,14 +225,6 @@ def resolve_base_scenario(scenario_labels, scenario_map, base_scn, service, log=
     return raw
 
 
-# example utility function
-
-def convert_currency(value, from_currency, to_currency, exchange_rate):
-    """
-    Convert a value from one currency to another using the provided exchange rate.
-    """
-
-    pass
 
 
 # ---------------------------------------------------------------------------------------------
@@ -375,7 +367,12 @@ def hydrate_es_config(p, service, log=print):
             # input/ first (required=False: absent template -> get_path stays the loud gate),
             # so a cell can point at data the library carries -- example_service does.
             seed_input_template(p, str(value), log, required=False)
-            value = p.get_path(str(value))
+            # leave_ref_path_if_fail: hydration publishes paths for later tasks rather than
+            # consuming them, so a config path this machine does not hold should fail in the task
+            # that reads it, naming that file, rather than here, naming the service. Landslide is
+            # the case: its raw input directory is a cluster asset, so hydrating its config raised
+            # even for the results-only run, which reads a staged table and never touches it.
+            value = p.get_path(str(value), leave_ref_path_if_fail=True)
         else:
             try:
                 value = int(float(value))
@@ -778,3 +775,178 @@ def sum_by_zone(value, zone_ids, n_zones):
     """
     return np.bincount(zone_ids.ravel(), weights=value.astype(np.float64).ravel(),
                        minlength=n_zones + 1)
+
+
+# ---------------------------------------------------------------------------------------------
+# The two steps every service's gep_calculation shares.
+#
+# Measured across the 22 valuations before these were written: all 22 register a results dict,
+# name gep_by_country_base_year, and skip when it exists; 22 write the table; 20 log the total;
+# 18 set the year; 16 collapse to r250. The variation in the last two is not a choice anyone
+# made, it is what happens when the same twelve lines are retyped twenty-two times.
+#
+# What is NOT here, deliberately: the merge that joins a service's values to the country list.
+# ntfp joins on iso3_r250_label with how='left', stormwater on iso3_r250_id with how='right',
+# and fisheries passes the country frame into its science function instead. That is real
+# variation, so folding it in would mean a parameter per caller and a helper nobody can read.
+# ---------------------------------------------------------------------------------------------
+
+# The attributes every per-country table carries. One list, so a service cannot quietly ship a
+# table with a column its siblings have.
+GEP_COUNTRY_ATTRIBUTE_COLUMNS = ['iso3_r250_id', 'iso3_r250_label', 'iso3_r250_name',
+                                 'continent', 'region_un', 'region_wb', 'income_grp', 'subregion']
+
+# Columns that reach a country table from an upstream source and say nothing the table does not
+# already say, each mapped to the column it repeats. A column is dropped only when the one it
+# duplicates is actually there: renewable_energy_provision carries `Year` and no lowercase `year`,
+# so dropping it unconditionally would take the year out of the table and nothing would report an
+# error. `Value` is a byte-for-byte copy of the service's own `_gep` column.
+REDUNDANT_COUNTRY_COLUMNS = {'Value': '_gep', 'Year': 'year', 'Country': 'iso3_r250_name',
+                             'Country_Name': 'iso3_r250_name', 'Country Code': 'iso3_r250_id',
+                             'area_code_M49': 'iso3_r250_id'}
+
+
+def is_redundant(column, df):
+    """Whether a column repeats one the frame already has."""
+    duplicates = REDUNDANT_COUNTRY_COLUMNS.get(column)
+    if duplicates is None:
+        return False
+    if duplicates == '_gep':
+        return any('_gep' in c for c in df.columns)
+    return duplicates in df.columns
+
+
+# The aggregations every results page reports beside the country table. A GEP account is read by
+# region and by income group at least as often as by country, so a page that shows only the country
+# table is missing the view most people open it for.
+GEP_SUMMARY_GROUPINGS = ('income_grp', 'region_un', 'continent', 'subregion')
+
+
+def report_dir():
+    """The directory a results page is rendered into, and where its tables and figures belong.
+
+    Quarto runs a qmd with the working directory set to the qmd's own location, which is the
+    report task's directory. `p.cur_dir` is not that. A results page builds the calculation tree
+    and executes it, so by the time the display code runs `p.cur_dir` is whichever task happened
+    to run last, which differs from service to service: it is gep_calculation for most and
+    fisheries_subsistence_gep for fisheries. Writing report artifacts there scatters them across
+    task folders while the page itself is written somewhere else, and the page then reads a
+    figure back from a path nothing wrote to.
+
+    Returns:
+        str: the report's own directory.
+    """
+    import os
+
+    return os.getcwd()
+
+
+def gep_summary_tables(df, value_column, out_dir, log=None):
+    """The country table and the four grouped tables a results page displays.
+
+    Writes each one beside the report as `gep_by_<grouping>_base_year_table.csv`, which is the
+    filename eight services already produced by hand before this was shared, so the outputs are
+    unchanged and only the duplication goes away. A grouping whose column the frame does not carry
+    is skipped rather than raising: fire_protection covers 161 countries and does not reach every
+    income group.
+
+    Args:
+        df (pd.DataFrame): the service's country table.
+        value_column (str): the column to sum, normally `<service>_gep`.
+        out_dir (str): where the CSVs go, normally the report task's own directory.
+        log (callable): optional logger.
+
+    Returns:
+        dict: 'country' plus one key per grouping present, each a DataFrame.
+    """
+    import os
+    import hazelbean as hb
+
+    tables = {'country': df[['iso3_r250_name', value_column]]}
+    hb.df_write(tables['country'], os.path.join(out_dir, 'gep_by_country_base_year_table.csv'))
+    for grouping in GEP_SUMMARY_GROUPINGS:
+        if grouping not in df.columns:
+            if log:
+                log('No %s column, so that summary table is not written.' % grouping)
+            continue
+        grouped = df.groupby(grouping, as_index=False)[value_column].sum()
+        tables[grouping] = grouped[[grouping, value_column]]
+        hb.df_write(tables[grouping],
+                    os.path.join(out_dir, 'gep_by_%s_base_year_table.csv' % grouping))
+    return tables
+
+
+def published_country_columns(df, service):
+    """The columns a published country table carries, in the order every service uses.
+
+    Attributes first, then the year, then the account's own value columns, then whatever
+    supporting quantities the service reports. Three kinds of column are left out: the
+    `ee_r264_*` correspondence columns, which several services keep on the frame because the map
+    merge joins on them but which are the source side of a collapse the table has already made;
+    the redundant columns above; and nothing else, so a new value column a service adds still
+    appears without anyone editing this list.
+
+    Args:
+        df (pd.DataFrame): the frame about to be written.
+        service (str): the service label, used only to order its own columns first.
+
+    Returns:
+        list: the column names to write, in order.
+    """
+    attributes = [c for c in GEP_COUNTRY_ATTRIBUTE_COLUMNS if c in df.columns]
+    rest = [c for c in df.columns
+            if c not in attributes and c != 'year'
+            and not c.startswith('ee_r264') and not is_redundant(c, df)]
+    value_columns = [c for c in rest if '_gep' in c]
+    value_columns.sort(key=lambda c: (not c.startswith(service), len(c)))
+    supporting = [c for c in rest if '_gep' not in c]
+    return attributes + (['year'] if 'year' in df.columns else []) + value_columns + supporting
+
+
+def begin_gep_calculation(p, service, extra_results=None, log=None):
+    """Register a service's results and say whether the work is already done.
+
+    Args:
+        p (ProjectFlow): the project, inside gep_calculation.
+        service (str): the service's key in p.results.
+        extra_results (dict): any further outputs this service registers, name to path.
+        log (callable): where to log; hazelbean's log by default.
+
+    Returns:
+        tuple: (service_results, already_done). When already_done is True the caller returns
+        without doing anything, which is what makes a rerun cheap.
+    """
+    import os
+    import hazelbean as hb
+    log = log or hb.log
+    service_results = p.results.setdefault(service, {})
+    service_results['gep_by_country_base_year'] = os.path.join(
+        p.cur_dir, 'gep_by_country_base_year.csv')
+    for name, path in (extra_results or {}).items():
+        service_results[name] = path
+    if hb.path_all_exist(list(service_results.values())):
+        log('All results already exist. Skipping GEP calculation for %s.' % service)
+        return service_results, True
+    log('Starting GEP calculation for %s.' % service)
+    return service_results, False
+
+
+def country_attributes(p, columns=None):
+    """One row per country, with the shared attribute columns.
+
+    The r264 correspondence splits large countries into territories, so joining a per-country
+    value against it repeats that country once per sub-region. Going through
+    collapse_countries_to_r250 is what stops that, and putting it here means every service does
+    it rather than the sixteen that remembered.
+
+    Args:
+        p (ProjectFlow): the project, after publish_inputs.
+        columns (list): the attribute columns wanted; the shared set by default.
+
+    Returns:
+        pd.DataFrame: one row per country.
+    """
+    wanted = list(columns) if columns else list(GEP_COUNTRY_ATTRIBUTE_COLUMNS)
+    return collapse_countries_to_r250(p.df_countries)[wanted]
+
+
