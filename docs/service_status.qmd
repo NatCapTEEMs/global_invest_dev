@@ -157,7 +157,7 @@ engineering work we did. **number** is what the figure is and what it was checke
 - **module:** livestock_provision
 - **in the library:** yes
 - **run:** yes
-- **ours:** yes, and more so on one of the two columns than the other. Neither FAOSTAT figure is a published ecosystem value, so nothing is relabelled. The CWoN rental-rate column adopts its attribution whole; the feed-share column derives it, computing each country's share of intake that ecosystems grew from the GLEAM 3 dashboard rather than taking a published share.
+- **ours:** yes, and more so on one of the two value columns than the other. The service writes two, because two attributions of the same FAOSTAT gross production are on the table and the account has not chosen between them. `livestock_provision_gep` applies the CWoN land rental rate and gives $519bn; `livestock_provision_gep_feed_share` applies the share of animal intake that ecosystems grew and gives $1.37T. Neither FAOSTAT figure is a published ecosystem value, so nothing is relabelled. The rental-rate column adopts CWoN's attribution whole, while the feed-share column derives its own, computing each country's intake share from the GLEAM 3 dashboard rather than taking a published share.
 - **method:** FAOSTAT gross production value (element 57, current USD) over 65 livestock products, times an attribution factor: either the CWoN land rental rate or the GLEAM share of feed intake that ecosystems provided.
 - **total:** $519bn on the rental rate. $1.37T on the feed share.
 - **code:** Refactored onto the library template and hazelbean conventions. Plus a units fix. The feed share is now wired through the task layer, so a run writes the feed-share value beside the rental-rate one. Its method page was a copy of the crop provision text, describing crop items throughout; it has been rewritten for this service.
@@ -185,7 +185,7 @@ engineering work we did. **number** is what the figure is and what it was checke
 - **module:** extractive_materials_provision
 - **in the library:** yes
 - **run:** yes
-- **ours:** no (similar to extractive energy). The WB computes the mineral rent and publishes it as a share of GDP, so multiplying by GDP recovers their figure in dollars. What the module adds to that is one multiplication and the 0.49. The script does only the reshaping, the join and the country handling.
+- **ours:** no. The World Bank computes the mineral rent and publishes it as a share of GDP, so multiplying by GDP recovers their figure in dollars. What the module adds to that is one multiplication and the 0.49. The script does only the reshaping, the join and the country handling.
 - **method:** WB mineral rents as a share of GDP, times GDP, times a 0.49 factor whose source is unknown. The multiplication converts the World Bank's published rent into dollars rather than deriving it.
 - **total:** $99.54bn
 - **code:** Refactored onto the library template and hazelbean conventions. A test checks our rewrite of the WB table. Also guarded against the invisible character Excel writes at the start of a file, which had broken a column name.
