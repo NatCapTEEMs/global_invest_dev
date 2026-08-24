@@ -199,7 +199,7 @@ format:
 | column | what it holds |
 |---|---|
 | method | how the number is computed |
-| ours | whether we can ewcompute the number ourselves |
+| ours | whether we can recompute the number ourselves |
 | total | the figure the account takes |
 | code | the engineering work we did |
 | number | what the figure is, and what it was checked against |
