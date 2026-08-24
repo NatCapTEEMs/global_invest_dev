@@ -192,6 +192,7 @@ def compute_country_mean_elevation(
 # 8) Valuation: elasticity-weighted shock + GEP (Option A)
 # ==========================================================
 def compute_country_gep_from_country_crop(
+    paths,
     df_country_crop_component: pd.DataFrame,
     fao_iso3_csv: Path,
     prices_full_csv: Path,
@@ -206,7 +207,7 @@ def compute_country_gep_from_country_crop(
     """
     df_shock = erosion_functions.country_erosion_shock(df_country_crop_component, ef.MIN_SHOCK_FLOOR)
     df_crop_gpv = load_fao_gpv_iso3_const2019_with_fallback(
-        fao_iso3_csv, prices_full_csv, base_year=base_year)
+        paths, fao_iso3_csv, prices_full_csv, base_year=base_year)
     df_gdp = load_wb_gdp_current_2019(gdp_current_2019_csv)
     return erosion_functions.country_gep(df_shock, df_crop_gpv, df_gdp, component)
 
@@ -1165,13 +1166,13 @@ def integrate_and_write(paths):
 
     # ---- Compute valuation per component
     df_gep_onfarm = compute_country_gep_from_country_crop(
-        dcc["onfarm"], paths.input.fao_gpv, paths.input.fao_prices, ef.BASE_YEAR_FOR_CONSTANT, paths.input.gdp, "onfarm"
+        paths, dcc["onfarm"], paths.input.fao_gpv, paths.input.fao_prices, ef.BASE_YEAR_FOR_CONSTANT, paths.input.gdp, "onfarm"
     )
     df_gep_upstream = compute_country_gep_from_country_crop(
-        dcc["upstream"], paths.input.fao_gpv, paths.input.fao_prices, ef.BASE_YEAR_FOR_CONSTANT, paths.input.gdp, "upstream"
+        paths, dcc["upstream"], paths.input.fao_gpv, paths.input.fao_prices, ef.BASE_YEAR_FOR_CONSTANT, paths.input.gdp, "upstream"
     )
     df_gep_combined = compute_country_gep_from_country_crop(
-        dcc["combined"], paths.input.fao_gpv, paths.input.fao_prices, ef.BASE_YEAR_FOR_CONSTANT, paths.input.gdp, "combined"
+        paths, dcc["combined"], paths.input.fao_gpv, paths.input.fao_prices, ef.BASE_YEAR_FOR_CONSTANT, paths.input.gdp, "combined"
     )
 
     # ---- Pivot to wide (one row per country) for integrated_country_gep.csv
