@@ -172,7 +172,7 @@ format:
 - Mining production rescales a published rate, a World Bank rent share times GDP times {{< meta extractive_factor >}}.
 - Crop production is table arithmetic, FAOSTAT gross production times the CWoN land rental rate.
 - Pollination is raster arithmetic, 158 production grids times price times each crop's pollinator dependence, cell by cell.
-- Erosion runs a process model, InVEST SDR with sediment routing.
+- The three process models have dynamics of their own. Erosion runs InVEST SDR with sediment routing, landslides computes slope stability twice for every pixel, and recreation runs a gravity model allocating visits into scored sites.
 
 ## Can the services be added into one total?
 
