@@ -99,9 +99,13 @@ ntfp,ntfp_roads_region1_source_url,https://dataportaal.pbl.nl/downloads/GRIP4/GR
 ntfp,ntfp_roads_length_path,global_invest/recreation/grip4_road_length/grip4_road_length_1km.tif
 ntfp,ntfp_roads_length_source_note,"metres of road per cell from GRIP4, already staged for recreation and shared rather than rebuilt"
 ntfp,ntfp_rivers_path,global_invest/ntfp/input/rivers/ne_10m_rivers_lake_centerlines.shp
+ntfp,ntfp_roads_vector_path,global_invest/ntfp/input/global_roads/globalroads.shp
+ntfp,ntfp_roads_vector_source_note,"the global roads layer the source module buffers, staged from its submission folder. The accessibility polygon is built from these geometries rather than from a rasterised road length, which is what the source does."
 ntfp,ntfp_rivers_source_url,https://naciscdn.org/naturalearth/10m/physical/ne_10m_rivers_lake_centerlines.zip
 ntfp,ntfp_country_id_raster_path,cartographic/ee/ee_r250_id_10sec.tif
-ntfp,ntfp_value_per_ha_path,global_invest/ntfp/cwon_nwfp_value_per_ha.csv
+ntfp,ntfp_ndvi_mean_path,global_invest/ntfp/input/mean_ndvi_2015_2019.tif
+ntfp,ntfp_ndvi_mean_source_note,"five-year mean NDVI from MODIS MOD13Q1 Collection 6.1 at 250 m over 2015 to 2019, quality masked and exported from Google Earth Engine. int16 storing NDVI times 10000, nodata -9999. Screens bare and sparse cells out of the land-cover forest mask."
+ntfp,ntfp_value_per_ha_path,global_invest/ntfp/nontimber_price_iucn_edited.csv
 ntfp,ntfp_value_per_ha_source_url,https://reproducibility.worldbank.org/catalog/194/download/549
 ntfp,ntfp_value_per_ha_source_note,"derived from the public CWoN 2024 reproducibility package: the non-wood forest product annual value (forest_nontimber_annual_nwfp.dta) over the matching forest area (forest_nontimber_total_area.dta), per country and year. Note the areas differ in definition: CWoN prices over ITS forest area while the quantity we multiply is accessible forest from the ESA land cover, which is the source method's own construction"
 landslide_mitigation,force_run,false
