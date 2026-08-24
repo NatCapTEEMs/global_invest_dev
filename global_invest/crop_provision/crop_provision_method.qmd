@@ -1,4 +1,5 @@
 ---
+title: "Crop Provision"
 format:
   html:
     embed-resources: true
@@ -10,8 +11,6 @@ format:
   docx:
     echo: false              # Hide code by default in Word
 ---
-
-# Crop Provision
 
 *Main contributors: Marta Sylla, Lijing Wang, Ryan McWay*
 
