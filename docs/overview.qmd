@@ -19,6 +19,9 @@ livestock_world: "$1.37T"
 n_services: "22"
 n_accounts: "25"
 n_replicating: "9"
+gep_naive_sum: "$11.2T"
+gep_naive_sum_all: "$46.7T"
+world_gdp_2019: "$87T"
 n_ours: "12"
 n_partly: "4"
 n_not_wired: "4"
@@ -147,6 +150,14 @@ format:
 - {{< meta n_replicating >}} of our runs land on a committed reference or the manuscript. For the rest we could not find a reference to check against.
 - Every module whose run has finished has rendered its report. Erosion is the one still running.
 
+
+## Can the services be added into one total?
+
+- [Adding every headline figure gives about {{< meta gep_naive_sum >}}, using the agricultural water-use variant. Using the all-sector one instead makes the same sum about {{< meta gep_naive_sum_all >}}. World GDP in 2019 was about {{< meta world_gdp_2019 >}}.]{.state}
+- [The account reports no total, because that sum swings four-fold on one unresolved choice inside one service.]{.state}
+- **Q1:** what attribution step turns water use into a nature share? The all-sector figure is the gross economic value of water used, close to half of world GDP.
+- **Q2:** which overlaps should be netted out before anything is added? Pollination values part of what crop production already counts, livestock's feed share overlaps crop production, and coastal carbon overlaps terrestrial carbon on the landward side.
+- **Q3:** does the account want one headline figure at all, or the services reported separately?
 
 ## What each service is {.smaller}
 
