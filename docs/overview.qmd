@@ -169,7 +169,7 @@ format:
 | Process model run here | {{< meta cat_model >}} | erosion, landslides, recreation |
 
 - Urban cooling reads a dollar column out of a committed file. The city-month valuations behind it are ours, but they are not what the sheet reports.
-- Mining production rescales a published rate, a World Bank rent share times GDP times 0.49.
+- Mining production rescales a published rate, a World Bank rent share times GDP times {{< meta extractive_factor >}}.
 - Crop production is table arithmetic, FAOSTAT gross production times the CWoN land rental rate.
 - Pollination is raster arithmetic, 158 production grids times price times each crop's pollinator dependence, cell by cell.
 - Erosion runs a process model, InVEST SDR with sediment routing.
