@@ -23,8 +23,29 @@ def test_the_published_rate_is_applied_to_the_reachable_area():
 
 
 def test_source_script_constants_are_pinned():
+    """Every value the source module chose, pinned so a claim of following it cannot go stale.
+
+    The docs say this service reproduces the source module's method step for step. That claim is
+    only worth as much as the values behind it, so each one is asserted here against the number
+    in the source scripts rather than left to be re-read by hand.
+    """
+    from global_invest.ntfp import ntfp_tasks
+
+    # run_ntfp.py: the buffer distance, and the ESA class range create_forest_mask keeps.
     assert ntfp_functions.NTFP_ACCESS_BUFFER_M == 10_000
     assert (ntfp_functions.ESA_FOREST_CLASS_MIN, ntfp_functions.ESA_FOREST_CLASS_MAX) == (50, 90)
+
+    # run_ntfp.py: the NDVI screen, on the MOD13Q1 convention of NDVI times 10,000.
+    assert ntfp_functions.NDVI_MIN_THRESHOLD == 0.20
+    assert ntfp_functions.NDVI_SCALE_FACTOR == 0.0001
+    assert ntfp_functions.NDVI_NODATA == -9999
+
+    # ntfp_tasks.py: the analysis grid, which fixes the cell size and the world extent so every
+    # raster comes out the same shape rather than each deriving its own bounds.
+    assert ntfp_tasks.ACCESSIBILITY_CELL_SIZE_M == 300.0
+    assert ntfp_tasks.MOLLWEIDE_BBOX == (-17_900_000.0, -8_900_000.0, 17_900_000.0, 8_900_000.0)
+    assert ntfp_tasks.HECTARES_PER_CELL == 9.0
+    assert 'Mollweide' in ntfp_tasks.MOLLWEIDE_WKT
 
 
 def test_es_config_row_hydrates_ntfp(tmp_path):
