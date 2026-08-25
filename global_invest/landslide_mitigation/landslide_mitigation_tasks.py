@@ -28,7 +28,6 @@ from rasterio.enums import Resampling
 
 import hazelbean as hb
 from global_invest import utilities
-from global_invest.landslide_mitigation import landslide_mitigation_functions as chain
 from global_invest.landslide_mitigation import landslide_mitigation_functions as lmf
 
 
@@ -134,7 +133,7 @@ def create_reference_raster(out_path, geotransform, n_cols, n_rows, srs_wkt):
     """An empty single-band Byte raster on the given grid, used as a warp target."""
     driver = gdal.GetDriverByName('GTiff')
     ds = driver.Create(out_path, n_cols, n_rows, 1, gdal.GDT_Byte,
-                       options=list(chain.GTIFF_CREATION_OPTIONS))
+                       options=list(lmf.GTIFF_CREATION_OPTIONS))
     ds.SetGeoTransform(geotransform)
     ds.SetProjection(srs_wkt)
     ds.GetRasterBand(1).SetNoDataValue(0)
@@ -147,7 +146,7 @@ def warp_to_reference(
     resample_method='bilinear',
     src_nodata=None, dst_nodata=None, output_type=None,
     n_threads=4,
-    creation_options=chain.GTIFF_CREATION_OPTIONS,
+    creation_options=lmf.GTIFF_CREATION_OPTIONS,
     show_progress=True,
 ):
     """Warp src_path onto the exact grid of reference_raster_path.
@@ -227,7 +226,7 @@ def sample_raster_at_points(raster_path, x_coords, y_coords, band=1):
 
 
 def write_raster_from_array(arr, gt, proj_wkt, out_path, nodata, dtype,
-                            creation_options=chain.GTIFF_CREATION_OPTIONS):
+                            creation_options=lmf.GTIFF_CREATION_OPTIONS):
     driver = gdal.GetDriverByName('GTiff')
     ds = driver.Create(out_path, arr.shape[1], arr.shape[0], 1, dtype,
                        options=list(creation_options))
@@ -252,12 +251,12 @@ def publish_inputs(p):
     utilities.initialize_country_paths(p)
     if getattr(p, 'landslide_input_data_dir', None) is None:
         p.landslide_input_data_dir = p.gep_quantity_input_path   # the module's descriptive alias
-    for attribute, value in (('data_processing_range', chain.DATA_PROCESSING_YEARS),
-                             ('modeling_range', chain.MODELING_YEARS),
-                             ('prediction_years', chain.PREDICTION_YEARS),
-                             ('max_location_accuracy_m', chain.MAX_LOCATION_ACCURACY_M),
-                             ('control_ratio', chain.CONTROL_RATIO),
-                             ('c_root_scenarios', chain.C_ROOT_SCENARIOS)):
+    for attribute, value in (('data_processing_range', lmf.DATA_PROCESSING_YEARS),
+                             ('modeling_range', lmf.MODELING_YEARS),
+                             ('prediction_years', lmf.PREDICTION_YEARS),
+                             ('max_location_accuracy_m', lmf.MAX_LOCATION_ACCURACY_M),
+                             ('control_ratio', lmf.CONTROL_RATIO),
+                             ('c_root_scenarios', lmf.C_ROOT_SCENARIOS)):
         if getattr(p, attribute, None) is None:
             setattr(p, attribute, value)
     if getattr(p, 'L', None) is None:
@@ -330,8 +329,8 @@ def reproject_dem(p):
         warp_to_reference(
             src_path, out_path, p.ease_grid_reference_path,
             resample_method='average',
-            src_nodata=chain.DEM_SOURCE_NODATA,
-            dst_nodata=chain.NODATA,
+            src_nodata=lmf.DEM_SOURCE_NODATA,
+            dst_nodata=lmf.NODATA,
             output_type=gdal.GDT_Float32,
         )
         p.L.info(f'DEM reprojected to EASE-Grid 1km: {out_path}')
@@ -375,7 +374,7 @@ def reproject_esacci_forest_share(p):
     if p.run_this:
         work_dir = os.path.join(p.input_data_dir, 'esacci_work')
         os.makedirs(work_dir, exist_ok=True)
-        lut = chain.forest_weight_lut()
+        lut = lmf.forest_weight_lut()
 
         for year in p.data_processing_range:
             src_path = p.get_path(p.landslide_lulc_path_template.format(year=year),
@@ -401,17 +400,17 @@ def reproject_esacci_forest_share(p):
             driver = gdal.GetDriverByName('GTiff')
             ds_out = driver.Create(
                 native_path, x_size, y_size, 1, gdal.GDT_Float32,
-                options=list(chain.GTIFF_CREATION_OPTIONS),
+                options=list(lmf.GTIFF_CREATION_OPTIONS),
             )
             ds_out.SetGeoTransform(src_ds.GetGeoTransform())
             ds_out.SetProjection(src_ds.GetProjection())
             band_out = ds_out.GetRasterBand(1)
-            band_out.SetNoDataValue(chain.NODATA)
+            band_out.SetNoDataValue(lmf.NODATA)
 
             for row_start in range(0, y_size, ESACCI_BLOCK_ROWS):
                 rows_here = min(ESACCI_BLOCK_ROWS, y_size - row_start)
                 chunk = src_band.ReadAsArray(0, row_start, x_size, rows_here)
-                band_out.WriteArray(chain.forest_weight_from_lulc(chunk, lut, src_nodata),
+                band_out.WriteArray(lmf.forest_weight_from_lulc(chunk, lut, src_nodata),
                                     0, row_start)
 
             src_ds = None
@@ -421,7 +420,7 @@ def reproject_esacci_forest_share(p):
             warp_to_reference(
                 native_path, out_path, p.ease_grid_reference_path,
                 resample_method='average',  # 0-1 weight field -> fractional share
-                src_nodata=chain.NODATA, dst_nodata=chain.NODATA,
+                src_nodata=lmf.NODATA, dst_nodata=lmf.NODATA,
                 output_type=gdal.GDT_Float32,
             )
             p.L.info(f'ESA-CCI forest_share {year} reprojected: {out_path}')
@@ -487,7 +486,7 @@ def reproject_uglc_events(p):
         gdf['accuracy_m'] = pd.to_numeric(gdf['accuracy_m'], errors='coerce')
         gdf = gdf[gdf['accuracy_m'].notna()]
         before = len(gdf)
-        gdf = gdf[~gdf['accuracy_m'].isin(chain.UGLC_ACCURACY_NDV_CODES)].copy()
+        gdf = gdf[~gdf['accuracy_m'].isin(lmf.UGLC_ACCURACY_NDV_CODES)].copy()
         gdf = gdf[gdf['accuracy_m'] > 0].copy()
         gdf = gdf[gdf['accuracy_m'] <= p.max_location_accuracy_m].copy()
         p.L.info(f'UGLC: {before} -> {len(gdf)} events after accuracy filter '
@@ -542,8 +541,8 @@ def reproject_landscan_population(p):
             warp_to_reference(
                 src_path, out_path, p.ease_grid_reference_path,
                 resample_method='sum',        # conserve total population
-                src_nodata=chain.LANDSCAN_SOURCE_NODATA,
-                dst_nodata=chain.NODATA,
+                src_nodata=lmf.LANDSCAN_SOURCE_NODATA,
+                dst_nodata=lmf.NODATA,
                 output_type=gdal.GDT_Float32,
             )
             p.L.info(f'LandScan {year} reprojected (sum-conserving): {out_path}')
@@ -562,7 +561,7 @@ def reproject_soilgrids_properties(p):
         os.makedirs(work_dir, exist_ok=True)
         p.soilgrids_paths = {}
 
-        for out_name, (prop_code, conv_factor) in chain.SOILGRIDS_PROPERTIES.items():
+        for out_name, (prop_code, conv_factor) in lmf.SOILGRIDS_PROPERTIES.items():
             out_path = os.path.join(p.input_data_dir, f'soilgrids_{out_name}_1km.tif')
             if os.path.exists(out_path) and not p.force_run:
                 p.soilgrids_paths[out_name] = out_path
@@ -572,7 +571,7 @@ def reproject_soilgrids_properties(p):
                 depth: os.path.join(
                     p.landslide_input_data_dir, 'soilgrids', f'{prop_code}_{depth}_mean.tif'
                 )
-                for depth in chain.DEPTH_WEIGHTS_0_30CM
+                for depth in lmf.DEPTH_WEIGHTS_0_30CM
             }
             for depth, path in depth_paths_local.items():
                 if not os.path.exists(path):
@@ -587,7 +586,7 @@ def reproject_soilgrids_properties(p):
             warp_to_reference(
                 native_combined_path, out_path, p.ease_grid_reference_path,
                 resample_method='average',
-                src_nodata=chain.NODATA, dst_nodata=chain.NODATA,
+                src_nodata=lmf.NODATA, dst_nodata=lmf.NODATA,
                 output_type=gdal.GDT_Float32,
             )
             p.soilgrids_paths[out_name] = out_path
@@ -615,7 +614,7 @@ def reproject_worldclim_bio12(p):
         temp_path = out_path.replace('.tif', '_temp_cleaned.tif')
 
         def replace_negatives(data):
-            data[data < 0] = chain.NODATA
+            data[data < 0] = lmf.NODATA
             return data
 
         pygeo.raster_calculator(
@@ -623,16 +622,16 @@ def reproject_worldclim_bio12(p):
             local_op=replace_negatives,
             target_raster_path=temp_path,
             datatype_target=gdal.GDT_Float32,
-            nodata_target=chain.NODATA,
+            nodata_target=lmf.NODATA,
             calc_raster_stats=True,
-            raster_driver_creation_tuple=('GTIFF', chain.GTIFF_CREATION_OPTIONS),
+            raster_driver_creation_tuple=('GTIFF', lmf.GTIFF_CREATION_OPTIONS),
         )
 
         warp_to_reference(
             temp_path, out_path, p.ease_grid_reference_path,
             resample_method='average',
-            src_nodata=chain.NODATA,
-            dst_nodata=chain.NODATA,
+            src_nodata=lmf.NODATA,
+            dst_nodata=lmf.NODATA,
             output_type=gdal.GDT_Float32,
         )
         if os.path.exists(temp_path):
@@ -662,7 +661,7 @@ def reproject_hihydrosoil_ksat(p):
 
         depth_paths_local = {
             depth: os.path.join(p.landslide_input_data_dir, 'hihydrosoil', f'Ksat_{depth}_M_250m.tif')
-            for depth in chain.DEPTH_WEIGHTS_0_30CM
+            for depth in lmf.DEPTH_WEIGHTS_0_30CM
         }
         for depth, path in depth_paths_local.items():
             if not os.path.exists(path):
@@ -675,7 +674,7 @@ def reproject_hihydrosoil_ksat(p):
         warp_to_reference(
             native_combined_path, out_path, p.ease_grid_reference_path,
             resample_method='average',
-            src_nodata=chain.NODATA, dst_nodata=chain.NODATA,
+            src_nodata=lmf.NODATA, dst_nodata=lmf.NODATA,
             output_type=gdal.GDT_Float32,
         )
         p.L.info(f'K_sat warped to EASE-Grid: {out_path}')
@@ -703,7 +702,7 @@ def reproject_soil_depth(p):
         warp_to_reference(
             src_path, out_path, p.ease_grid_reference_path,
             resample_method='average',
-            src_nodata=chain.SOIL_DEPTH_SOURCE_NODATA, dst_nodata=chain.NODATA,
+            src_nodata=lmf.SOIL_DEPTH_SOURCE_NODATA, dst_nodata=lmf.NODATA,
             output_type=gdal.GDT_Float32,
         )
         p.L.info(f'Soil depth (Pelletier/ORNL) reprojected: {out_path}')
@@ -752,8 +751,8 @@ def reproject_grip_roads(p):
         warp_to_reference(
             src_path_for_warp, out_path, p.ease_grid_reference_path,
             resample_method='bilinear',  # UPSAMPLING ~9km -> 1km, not downsampling
-            src_nodata=chain.GRIP_SOURCE_NODATA,
-            dst_nodata=chain.NODATA,
+            src_nodata=lmf.GRIP_SOURCE_NODATA,
+            dst_nodata=lmf.NODATA,
             output_type=gdal.GDT_Float32,
         )
         p.L.info(f'GRIP4 road density reprojected: {out_path}')
@@ -792,7 +791,7 @@ def reproject_rain_daily(p):
             warp_to_reference(
                 src_path, out_path, p.ease_grid_reference_path,
                 resample_method='bilinear',  # UPSAMPLING ~11km -> 1km
-                src_nodata=chain.NODATA, dst_nodata=chain.NODATA,
+                src_nodata=lmf.NODATA, dst_nodata=lmf.NODATA,
                 output_type=gdal.GDT_Float32,
             )
             p.L.info(f'ERA5 max daily rain {year} reprojected: {out_path}')
@@ -881,12 +880,12 @@ def preprocessing(p):
 # 1. Build UGLC annual panels
 # ==================================================================== #
 
-UGLC_BINARY_NODATA = 255  # the binary panel is uint8, so it cannot carry chain.NODATA
+UGLC_BINARY_NODATA = 255  # the binary panel is uint8, so it cannot carry lmf.NODATA
 
 
 def build_uglc_annual_panels(p):
     """For each year in p.data_processing_range, writes uglc_binary_{year}.tif and
-    uglc_mortality_{year}.tif from that year's UGLC points (chain.uglc_year_panels)."""
+    uglc_mortality_{year}.tif from that year's UGLC points (lmf.uglc_year_panels)."""
     publish_inputs(p)
     if p.run_this:
         out_dir = os.path.join(p.preprocessing_dir, 'uglc_annual_panels')
@@ -919,13 +918,13 @@ def build_uglc_annual_panels(p):
             yearly_gdf = gdf[gdf['event_year'] == year]
             if yearly_gdf.empty:
                 p.L.warning(f'No UGLC events for {year}, writing empty panels.')
-            binary_arr, mortality_arr = chain.uglc_year_panels(yearly_gdf, gt, x_size, y_size)
+            binary_arr, mortality_arr = lmf.uglc_year_panels(yearly_gdf, gt, x_size, y_size)
 
             write_raster_from_array(binary_arr, gt, ref_info['projection_wkt'],
                                         binary_out_path, nodata=UGLC_BINARY_NODATA,
                                         dtype=gdal.GDT_Byte)
             write_raster_from_array(mortality_arr, gt, ref_info['projection_wkt'],
-                                        mortality_out_path, nodata=chain.NODATA,
+                                        mortality_out_path, nodata=lmf.NODATA,
                                         dtype=gdal.GDT_Float32)
 
             n_events = len(yearly_gdf)
@@ -1017,7 +1016,7 @@ def compute_upslope_area(p):
 
 
 def compute_slope(p):
-    """gdal.DEMProcessing computes slope in degrees from the RAW DEM at chain.SLOPE_FINE_FACTOR
+    """gdal.DEMProcessing computes slope in degrees from the RAW DEM at lmf.SLOPE_FINE_FACTOR
     times the target resolution (Horn 1981), then averages down to 1km -- computing slope at
     1km directly would flatten exactly the terrain the model is about. EASE-Grid is already in
     meters, so no lat/lon degree-to-meter scale factor is needed.
@@ -1037,14 +1036,14 @@ def compute_slope(p):
         ref_gt = ref_info['geotransform']
         ref_cols, ref_rows = ref_info['raster_size']
 
-        fine_pixel_size = ref_gt[1] / chain.SLOPE_FINE_FACTOR
+        fine_pixel_size = ref_gt[1] / lmf.SLOPE_FINE_FACTOR
         fine_gt = (ref_gt[0], fine_pixel_size, 0, ref_gt[3], 0, -fine_pixel_size)
 
         fine_ref_path = os.path.join(work_dir, 'ease_grid_reference_fine.tif')
         if not os.path.exists(fine_ref_path) or p.force_run:
             create_reference_raster(
                 fine_ref_path, fine_gt,
-                ref_cols * chain.SLOPE_FINE_FACTOR, ref_rows * chain.SLOPE_FINE_FACTOR,
+                ref_cols * lmf.SLOPE_FINE_FACTOR, ref_rows * lmf.SLOPE_FINE_FACTOR,
                 ref_info['projection_wkt'])
 
         # ---- 2. Warp RAW (unfilled) elevation to the fine grid ----
@@ -1054,7 +1053,7 @@ def compute_slope(p):
             warp_to_reference(
                 raw_dem_src, dem_fine_path, fine_ref_path,
                 resample_method='average',  # ~300m native -> ~250m, still continuous
-                src_nodata=chain.DEM_SOURCE_NODATA, dst_nodata=chain.NODATA,
+                src_nodata=lmf.DEM_SOURCE_NODATA, dst_nodata=lmf.NODATA,
                 output_type=gdal.GDT_Float32,
             )
 
@@ -1064,7 +1063,7 @@ def compute_slope(p):
         if not os.path.exists(slope_fine_path) or p.force_run:
             dem_options = gdal.DEMProcessingOptions(
                 slopeFormat='degree',
-                creationOptions=list(chain.GTIFF_CREATION_OPTIONS),
+                creationOptions=list(lmf.GTIFF_CREATION_OPTIONS),
             )
             result_ds = gdal.DEMProcessing(
                 slope_fine_path, dem_fine_path, 'slope', options=dem_options,
@@ -1082,7 +1081,7 @@ def compute_slope(p):
             warp_to_reference(
                 slope_fine_path, out_path, p.ease_grid_reference_path,
                 resample_method='average',
-                src_nodata=chain.NODATA, dst_nodata=chain.NODATA,
+                src_nodata=lmf.NODATA, dst_nodata=lmf.NODATA,
                 output_type=gdal.GDT_Float32,
             )
         p.L.info(f'Slope (fine-computed, aggregated to 1km): {out_path}')
@@ -1104,7 +1103,7 @@ def _nodata_masked_op(formula, nodatas):
         for array, nodata in zip(arrays, nodatas):
             if nodata is not None:
                 valid &= (array != nodata)
-        return np.where(valid, formula(*arrays), chain.NODATA).astype(np.float32)
+        return np.where(valid, formula(*arrays), lmf.NODATA).astype(np.float32)
     return op
 
 
@@ -1125,18 +1124,18 @@ def compute_soil_hydraulic_properties(p):
             return p
 
         recipes = [
-            (chain.friction_angle_from_texture,
+            (lmf.friction_angle_from_texture,
              [p.soilgrids_paths['sand_pct'], p.soilgrids_paths['clay_pct']],
              p.friction_angle_path, 'Friction angle'),
-            (chain.soil_cohesion_from_texture,
+            (lmf.soil_cohesion_from_texture,
              [p.soilgrids_paths['clay_pct'], p.soilgrids_paths['org_carbon_pct']],
              p.cohesion_soil_path, 'Soil cohesion'),
             # SoilGrids ships bulk density in kg/dm3 = Mg/m3.
-            (chain.unit_weight_from_bulk_density,
+            (lmf.unit_weight_from_bulk_density,
              [p.soilgrids_paths['bulk_density']],
              p.unit_weight_path, 'Unit weight (derived from bulk density)'),
             # Transmissivity = K_sat x soil_depth.
-            (chain.transmissivity_from_ksat,
+            (lmf.transmissivity_from_ksat,
              [p.ksat_path, p.soil_depth_path],
              p.transmissivity_path, 'Transmissivity (UNITS UNVERIFIED, see note)'),
         ]
@@ -1144,7 +1143,7 @@ def compute_soil_hydraulic_properties(p):
             nodatas = [pygeo.get_raster_info(path)['nodata'][0] for path in in_paths]
             pygeo.raster_calculator(
                 [(path, 1) for path in in_paths], _nodata_masked_op(formula, nodatas),
-                out_path, gdal.GDT_Float32, chain.NODATA,
+                out_path, gdal.GDT_Float32, lmf.NODATA,
                 calc_raster_stats=True,
             )
             p.L.info(f'{label}: {out_path}')
@@ -1177,12 +1176,12 @@ def compute_static_q(p):
                 valid &= (rain_mm_yr != rain_nodata)
             if upslope_nodata is not None:
                 valid &= (upslope_area_m2 != upslope_nodata)
-            q = chain.specific_discharge(rain_mm_yr, upslope_area_m2, cell_width_m)
-            return np.where(valid, q, chain.NODATA).astype(np.float32)
+            q = lmf.specific_discharge(rain_mm_yr, upslope_area_m2, cell_width_m)
+            return np.where(valid, q, lmf.NODATA).astype(np.float32)
 
         pygeo.raster_calculator(
             [(rain_path, 1), (upslope_path, 1)], static_q_op,
-            out_path, gdal.GDT_Float32, chain.NODATA,
+            out_path, gdal.GDT_Float32, lmf.NODATA,
             calc_raster_stats=True,
         )
         p.L.info(f'Static q: {out_path}')
@@ -1228,7 +1227,7 @@ def compute_si_scenarios(p):
                     friction_angle_path=p.friction_angle_path,
                     cohesion_soil_path=p.cohesion_soil_path,
                     forest_share_path=forest_share_path,
-                    c_root_max=chain.c_root_max_for_scenario(p.c_root_scenarios[scenario_name]),
+                    c_root_max=lmf.c_root_max_for_scenario(p.c_root_scenarios[scenario_name]),
                     unit_weight_path=p.unit_weight_path,
                     transmissivity_path=p.transmissivity_path,
                     static_q_path=p.static_q_path,
@@ -1251,9 +1250,9 @@ def _draw_land_controls(p, gaez_band, gaez_nodata, ref_gt, x_size, y_size, rng, 
     (per GAEZ nodata)."""
     accepted_x, accepted_y = [], []
     attempts = 0
-    max_attempts = n_needed * chain.CONTROL_DRAW_MAX_ATTEMPTS_FACTOR
+    max_attempts = n_needed * lmf.CONTROL_DRAW_MAX_ATTEMPTS_FACTOR
     while len(accepted_x) < n_needed and attempts < max_attempts:
-        batch_size = min(n_needed * 2, chain.CONTROL_DRAW_BATCH_CAP)
+        batch_size = min(n_needed * 2, lmf.CONTROL_DRAW_BATCH_CAP)
         cols = rng.integers(0, x_size, size=batch_size)
         rows = rng.integers(0, y_size, size=batch_size)
         attempts += batch_size
@@ -1262,7 +1261,7 @@ def _draw_land_controls(p, gaez_band, gaez_nodata, ref_gt, x_size, y_size, rng, 
         for r, c in zip(rows, cols):
             val = gaez_band.ReadAsArray(int(c), int(r), 1, 1)[0, 0]
             if gaez_nodata is None or val != gaez_nodata:
-                x, y = chain.pixel_center_coords(r, c, ref_gt)
+                x, y = lmf.pixel_center_coords(r, c, ref_gt)
                 accepted_x.append(x)
                 accepted_y.append(y)
                 if len(accepted_x) >= n_needed:
@@ -1350,13 +1349,13 @@ def build_estimation_table(p):
         gaez_nodata = gaez_band.GetNoDataValue()
 
         # One rng across every year's draw, so the control sequence is a single seeded stream.
-        rng = np.random.default_rng(seed=chain.CONTROL_DRAW_SEED)
+        rng = np.random.default_rng(seed=lmf.CONTROL_DRAW_SEED)
 
         # ---- Build per-year case + control rows ----
         all_rows = []
         for year in observed_years:
             cases_year_raw = gdf[gdf['event_year'] == year].copy()
-            cases_year = chain.deduplicate_cases_to_pixels(cases_year_raw, ref_gt)
+            cases_year = lmf.deduplicate_cases_to_pixels(cases_year_raw, ref_gt)
             if len(cases_year_raw) != len(cases_year):
                 p.L.info(f'{year}: deduplicated {len(cases_year_raw)} case points -> '
                          f'{len(cases_year)} unique pixels.')
@@ -1369,7 +1368,7 @@ def build_estimation_table(p):
             control_x, control_y = _draw_land_controls(
                 p, gaez_band, gaez_nodata, ref_gt, x_size, y_size, rng,
                 int(round(p.control_ratio * n_cases)))
-            all_rows.append(chain.case_control_rows(cases_year, control_x, control_y, year))
+            all_rows.append(lmf.case_control_rows(cases_year, control_x, control_y, year))
             p.L.info(f'{year}: {n_cases} cases + {len(control_x)} controls')
 
         panel = _sample_panel_covariates(p, pd.concat(all_rows, ignore_index=True), observed_years)
@@ -1431,11 +1430,11 @@ def calibrate_si_to_probability(p):
             total_event_pixels += event_pixels
             total_land_pixels += land_pixels
 
-        pi = chain.prevalence(total_event_pixels, total_land_pixels, fallback=tau)
+        pi = lmf.prevalence(total_event_pixels, total_land_pixels, fallback=tau)
         p.L.info(f'Sample case fraction (tau) = {tau:.6f}, '
                  f'estimated population prevalence (pi) = {pi:.8f}')
 
-        alpha_corrected = chain.corrected_intercept(raw_model.params['const'], tau, pi)
+        alpha_corrected = lmf.corrected_intercept(raw_model.params['const'], tau, pi)
 
         coefficients = {
             'alpha_raw': float(raw_model.params['const']),
@@ -1497,7 +1496,7 @@ def _uglc_and_si_pixel_counts(p, year):
     si_nodata = si_band.GetNoDataValue()
     si_ds = None
 
-    return chain.event_and_land_pixel_counts(binary_arr, binary_nodata, si_arr, si_nodata)
+    return lmf.event_and_land_pixel_counts(binary_arr, binary_nodata, si_arr, si_nodata)
 
 
 SEVERITY_BASE_FORMULA = 'population_log1p + rain_max_daily + slope_degrees + road_density'
@@ -1540,13 +1539,13 @@ def estimate_severity_model(p):
                 'fallback, not full inference.'
             )
             part_a_model = smf.logit(logit_formula, data=train).fit_regularized(
-                alpha=chain.SEVERITY_REGULARIZATION_ALPHA, disp=False
+                alpha=lmf.SEVERITY_REGULARIZATION_ALPHA, disp=False
             )
         p.L.info(f'Severity part A (fatality occurrence | landslide):\n{part_a_model.summary()}')
 
         # ---- Part B: E[log(fatalities) | fatality > 0] ----
         positive = train[train['fatality_count'] > 0].copy()
-        if len(positive) < chain.MIN_FATAL_ROWS_FOR_SEVERITY:
+        if len(positive) < lmf.MIN_FATAL_ROWS_FOR_SEVERITY:
             p.L.warning(
                 f'Only {len(positive)} fatal-landslide rows available for '
                 f'part B -- coefficients will be unstable. Consider a '
@@ -1556,7 +1555,7 @@ def estimate_severity_model(p):
         part_b_model = smf.ols(f'log_fatalities ~ {SEVERITY_BASE_FORMULA}', data=positive).fit()
         p.L.info(f'Severity part B (log fatalities | fatal):\n{part_b_model.summary()}')
 
-        smearing_factor = chain.duan_smearing_factor(part_b_model.resid)
+        smearing_factor = lmf.duan_smearing_factor(part_b_model.resid)
         p.L.info(f"Duan's smearing factor: {smearing_factor:.4f}")
 
         coefficients = {
@@ -1617,7 +1616,7 @@ def estimate_severity_model_si_sensitivity(p):
             'part_b_r_squared': float(part_b_model.rsquared),
             'part_b_params': {k: float(v) for k, v in part_b_model.params.items()},
             'part_b_p_value': {k: float(v) for k, v in part_b_model.pvalues.items()},
-            'smearing_factor': chain.duan_smearing_factor(part_b_model.resid),
+            'smearing_factor': lmf.duan_smearing_factor(part_b_model.resid),
             'n_train_landslides': int(len(train)),
             'n_train_fatal': int(len(positive)),
         }
@@ -1672,10 +1671,10 @@ def tile_zones(p):
         band = ds.GetRasterBand(1)
         nodata = band.GetNoDataValue()
 
-        p.tile_size = getattr(p, 'processing_resolution', chain.DEFAULT_TILE_SIZE)
+        p.tile_size = getattr(p, 'processing_resolution', lmf.DEFAULT_TILE_SIZE)
 
         blocks_list = []
-        for block in chain.tile_offsets(ds.RasterXSize, ds.RasterYSize, p.tile_size):
+        for block in lmf.tile_offsets(ds.RasterXSize, ds.RasterYSize, p.tile_size):
             col_offset, row_offset, actual_n_cols, actual_n_rows = block
             tile = band.ReadAsArray(col_offset, row_offset, actual_n_cols, actual_n_rows)
             land_mask = np.isfinite(tile)
@@ -1722,7 +1721,7 @@ def predict_landslides_scenarios(p):
 
     col_off, row_off = p.tile_col_offset, p.tile_row_offset
     n_cols, n_rows = p.tile_n_cols, p.tile_n_rows
-    tile_gt = chain.tile_geotransform(ref_info['geotransform'], col_off, row_off)
+    tile_gt = lmf.tile_geotransform(ref_info['geotransform'], col_off, row_off)
 
     # Rain: NOT scenario-varying, same prediction-year raster for both.
     prediction_year = p.prediction_years[0]  # NOTE: assumes single prediction year
@@ -1753,16 +1752,16 @@ def predict_landslides_scenarios(p):
         if rain_nodata is not None:
             valid &= (rain_tile != rain_nodata)
 
-        prob = chain.hazard_probability(si_tile, rain_tile, coef['alpha_corrected'],
+        prob = lmf.hazard_probability(si_tile, rain_tile, coef['alpha_corrected'],
                                         coef['beta_si'], coef['beta_rain'])
 
         out_path = os.path.join(p.cur_dir, f'hazard_prob_{scenario_name}_{prediction_year}.tif')
         if os.path.exists(out_path) and not p.force_run:
             continue
         write_raster_from_array(
-            np.where(valid, prob, chain.NODATA).astype(np.float32),
-            tile_gt, proj, out_path, chain.NODATA, gdal.GDT_Float32,
-            creation_options=chain.TILE_CREATION_OPTIONS)
+            np.where(valid, prob, lmf.NODATA).astype(np.float32),
+            tile_gt, proj, out_path, lmf.NODATA, gdal.GDT_Float32,
+            creation_options=lmf.TILE_CREATION_OPTIONS)
 
         p.L.info(f'Tile ({row_off},{col_off}) {scenario_name}: {out_path}')
 
@@ -1771,7 +1770,7 @@ def predict_landslides_scenarios(p):
 
 def predict_mortality_scenarios(p):
     """Per tile, per scenario: expected deaths per pixel-year, the hazard probability times
-    the severity expectation (chain.expected_deaths_given_landslide). The severity covariates
+    the severity expectation (lmf.expected_deaths_given_landslide). The severity covariates
     do not vary by scenario, so the expectation is computed once and reused.
     """
     publish_inputs(p)
@@ -1786,7 +1785,7 @@ def predict_mortality_scenarios(p):
 
     col_off, row_off = p.tile_col_offset, p.tile_row_offset
     n_cols, n_rows = p.tile_n_cols, p.tile_n_rows
-    tile_gt = chain.tile_geotransform(ref_info['geotransform'], col_off, row_off)
+    tile_gt = lmf.tile_geotransform(ref_info['geotransform'], col_off, row_off)
 
     def read_tile(path, already_tiled=False):
         ds = gdal.Open(path)
@@ -1816,7 +1815,7 @@ def predict_mortality_scenarios(p):
         if nodata is not None:
             valid &= (array != nodata)
 
-    severity_expectation = chain.expected_deaths_given_landslide(
+    severity_expectation = lmf.expected_deaths_given_landslide(
         severity['part_a_params'], severity['part_b_params'], severity['smearing_factor'],
         population, rain, slope, road)
 
@@ -1838,9 +1837,9 @@ def predict_mortality_scenarios(p):
         if os.path.exists(out_path) and not p.force_run:
             continue
         write_raster_from_array(
-            np.where(valid_hazard, hazard * severity_expectation, chain.NODATA).astype(np.float32),
-            tile_gt, proj, out_path, chain.NODATA, gdal.GDT_Float32,
-            creation_options=chain.TILE_CREATION_OPTIONS)
+            np.where(valid_hazard, hazard * severity_expectation, lmf.NODATA).astype(np.float32),
+            tile_gt, proj, out_path, lmf.NODATA, gdal.GDT_Float32,
+            creation_options=lmf.TILE_CREATION_OPTIONS)
 
         p.L.info(f'Tile ({row_off},{col_off}) {scenario_name}: {out_path}')
 
@@ -1862,13 +1861,13 @@ def _stitch_one_global_raster(p, blocks_list, grid, spec, year):
 
     ds_out = gdal.GetDriverByName('GTiff').Create(
         out_path, grid['n_cols'], grid['n_rows'], 1, gdal.GDT_Float32,
-        options=list(chain.STITCH_CREATION_OPTIONS),
+        options=list(lmf.STITCH_CREATION_OPTIONS),
     )
     ds_out.SetGeoTransform(grid['geotransform'])
     ds_out.SetProjection(grid['projection'])
     band_out = ds_out.GetRasterBand(1)
-    band_out.SetNoDataValue(chain.NODATA)
-    band_out.Fill(chain.NODATA)
+    band_out.SetNoDataValue(lmf.NODATA)
+    band_out.Fill(lmf.NODATA)
 
     written, missing = 0, 0
     for block in blocks_list:
@@ -1886,7 +1885,7 @@ def _stitch_one_global_raster(p, blocks_list, grid, spec, year):
         arr = ds_tile.GetRasterBand(1).ReadAsArray().astype(np.float32)
         ds_tile = None
 
-        band_out.WriteArray(np.where(np.isnan(arr), chain.NODATA, arr), col_off, row_off)
+        band_out.WriteArray(np.where(np.isnan(arr), lmf.NODATA, arr), col_off, row_off)
         written += 1
 
     band_out.FlushCache()
@@ -1960,9 +1959,9 @@ def build_vsl_raster(p):
         if not oecd_candidates:
             raise FileNotFoundError(f'No CSV found in {p.landslide_input_data_dir}/oecd_vsl/')
 
-        vsl_by_iso3 = chain.vsl_usd_2019_by_iso3(hb.df_read(oecd_candidates[0]))
+        vsl_by_iso3 = lmf.vsl_usd_2019_by_iso3(hb.df_read(oecd_candidates[0]))
         p.L.info(f'OECD VSL: {len(vsl_by_iso3)} countries with direct estimates (deflated to '
-                 f'2019 constant USD, factor={chain.DEFLATOR_2022_TO_2019:.4f}).')
+                 f'2019 constant USD, factor={lmf.DEFLATOR_2022_TO_2019:.4f}).')
 
         # ---- 2. Join to correspondence GPKG ----
         # publish_inputs already resolved this through initialize_country_paths, which every
@@ -1979,7 +1978,7 @@ def build_vsl_raster(p):
                 f'actual column names: {list(corr.columns)}'
             )
 
-        corr, n_direct, n_group_fallback = chain.assign_vsl(corr, vsl_by_iso3, iso3_field)
+        corr, n_direct, n_group_fallback = lmf.assign_vsl(corr, vsl_by_iso3, iso3_field)
         p.L.info(f'VSL coverage: {n_direct} direct OECD estimates, '
                  f'{n_group_fallback} via income-group fallback (Table 6.1), '
                  f'{corr["vsl_usd"].isna().sum()} still unmatched.')
@@ -1996,13 +1995,13 @@ def build_vsl_raster(p):
         driver = gdal.GetDriverByName('GTiff')
         ds_out = driver.Create(
             out_path, n_cols, n_rows, 1, gdal.GDT_Float32,
-            options=list(chain.GTIFF_CREATION_OPTIONS),
+            options=list(lmf.GTIFF_CREATION_OPTIONS),
         )
         ds_out.SetGeoTransform(ref_info['geotransform'])
         ds_out.SetProjection(ref_info['projection_wkt'])
         band_out = ds_out.GetRasterBand(1)
-        band_out.SetNoDataValue(chain.NODATA)
-        band_out.Fill(chain.NODATA)
+        band_out.SetNoDataValue(lmf.NODATA)
+        band_out.Fill(lmf.NODATA)
         ds_out = None
 
         pygeo.rasterize(temp_gpkg, out_path, option_list=['ATTRIBUTE=vsl_usd'])
@@ -2055,11 +2054,11 @@ def _avoided_mortality_for_year(p, year):
 
         avoided = deaths_fi - deaths_obs
         negative_count[0] += int(((avoided < 0) & valid).sum())
-        return np.where(valid, avoided, chain.NODATA).astype(np.float32)
+        return np.where(valid, avoided, lmf.NODATA).astype(np.float32)
 
     pygeo.raster_calculator(
         [(deaths_observed_path, 1), (deaths_full_impacts_path, 1)],
-        avoided_op, avoided_mortality_path, gdal.GDT_Float32, chain.NODATA,
+        avoided_op, avoided_mortality_path, gdal.GDT_Float32, lmf.NODATA,
         calc_raster_stats=True,
     )
 
@@ -2078,14 +2077,14 @@ def _avoided_mortality_for_year(p, year):
     vsl_nodata = pygeo.get_raster_info(vsl_path)['nodata'][0]
 
     def value_op(avoided, vsl):
-        valid = (avoided != chain.NODATA)
+        valid = (avoided != lmf.NODATA)
         if vsl_nodata is not None:
             valid &= (vsl != vsl_nodata)
-        return np.where(valid, avoided * vsl, chain.NODATA).astype(np.float32)
+        return np.where(valid, avoided * vsl, lmf.NODATA).astype(np.float32)
 
     pygeo.raster_calculator(
         [(avoided_mortality_path, 1), (vsl_path, 1)],
-        value_op, avoided_mortality_value_path, gdal.GDT_Float32, chain.NODATA,
+        value_op, avoided_mortality_value_path, gdal.GDT_Float32, lmf.NODATA,
         calc_raster_stats=True,
     )
     p.L.info(f'Avoided mortality value {year}: {avoided_mortality_value_path}')
@@ -2263,7 +2262,7 @@ def _export_hazard_table(p, out_dir):
         f"Extreme Precipitation = {VARIABLE_NOTES['rain_max_daily']}."
     )
     _save_table(
-        chain.publication_table(hazard_coef_rows, hazard_bottom_rows, 'Pr(Landslide)'),
+        lmf.publication_table(hazard_coef_rows, hazard_bottom_rows, 'Pr(Landslide)'),
         os.path.join(out_dir, 'hazard_model_table'),
         'Hazard Model of Landslide Occurrence', hazard_notes,
     )
@@ -2274,13 +2273,13 @@ def _export_severity_table(p, out_dir):
     with open(os.path.join(p.modeling_dir, 'severity_model_coefficients.json')) as f:
         severity = json.load(f)
 
-    part_a = chain.coefficients_by_term(severity['part_a_params'], severity['part_a_std_err'],
+    part_a = lmf.coefficients_by_term(severity['part_a_params'], severity['part_a_std_err'],
                                         severity['part_a_p_value'])
-    part_b = chain.coefficients_by_term(severity['part_b_params'], severity['part_b_std_err'],
+    part_b = lmf.coefficients_by_term(severity['part_b_params'], severity['part_b_std_err'],
                                         severity['part_b_p_value'])
     column_a, column_b = SEVERITY_COLUMN_LABELS
 
-    rows = chain.hurdle_table_rows(part_a, part_b, TERM_LABELS, SEVERITY_COLUMN_LABELS)
+    rows = lmf.hurdle_table_rows(part_a, part_b, TERM_LABELS, SEVERITY_COLUMN_LABELS)
     rows.extend([
         {' ': 'Observations',
          column_a: f"{severity.get('n_train_landslides'):,}",
@@ -2343,7 +2342,7 @@ def export_results_tables(p):
             # ---- Global summary ----
             global_df = pd.DataFrame([{
                 'Avoided mortality': df['avoided_deaths_sum'].sum(),
-                'Value (US$ millions)': df['avoided_value_sum_usd'].sum() / chain.USD_PER_MILLION,
+                'Value (US$ millions)': df['avoided_value_sum_usd'].sum() / lmf.USD_PER_MILLION,
             }])
             global_df['Avoided mortality'] = as_deaths(global_df['Avoided mortality'])
             global_df['Value (US$ millions)'] = as_usd_millions(global_df['Value (US$ millions)'])
@@ -2363,7 +2362,7 @@ def export_results_tables(p):
                     )
                     .sort_values('value_sum', ascending=False)
                 )
-                region_df['value_sum'] = region_df['value_sum'] / chain.USD_PER_MILLION
+                region_df['value_sum'] = region_df['value_sum'] / lmf.USD_PER_MILLION
                 region_out = region_df.rename(columns={
                     'region_wb': 'Geography',
                     'avoided_mortality_sum': 'Avoided mortality',
@@ -2377,8 +2376,8 @@ def export_results_tables(p):
                 )
 
             # ---- Top countries ----
-            top = df.sort_values('avoided_deaths_sum', ascending=False).head(chain.TOP_COUNTRY_COUNT).copy()
-            top['avoided_value_sum_usd'] = top['avoided_value_sum_usd'] / chain.USD_PER_MILLION
+            top = df.sort_values('avoided_deaths_sum', ascending=False).head(lmf.TOP_COUNTRY_COUNT).copy()
+            top['avoided_value_sum_usd'] = top['avoided_value_sum_usd'] / lmf.USD_PER_MILLION
             keep_cols = [c for c in ['name_long', 'region_wb', 'avoided_deaths_sum', 'avoided_value_sum_usd']
                          if c in top.columns]
             top_out = top[keep_cols].rename(columns={
@@ -2391,7 +2390,7 @@ def export_results_tables(p):
             top_out['Value (US$ millions)'] = as_usd_millions(top_out['Value (US$ millions)'])
             _save_table(
                 top_out, os.path.join(p.tables_figures_dir, f'top_countries_mortality_full_impacts_{year}'),
-                f'Top {chain.TOP_COUNTRY_COUNT} Countries by Avoided Landslide Mortality, {year}',
+                f'Top {lmf.TOP_COUNTRY_COUNT} Countries by Avoided Landslide Mortality, {year}',
             )
 
             p.L.info(f'{year}: results tables (csv/tex/md) exported to {p.tables_figures_dir}')
@@ -2474,7 +2473,7 @@ def export_pi_audit_table(p):
                     'Year': year,
                     'Event pixels': f'{event_pixels:,}',
                     'Land pixels (SI-eligible)': f'{land_pixels:,}',
-                    'Prevalence': f'{chain.prevalence(event_pixels, land_pixels):.8f}',
+                    'Prevalence': f'{lmf.prevalence(event_pixels, land_pixels):.8f}',
                 })
                 total_event_pixels += event_pixels
                 total_land_pixels += land_pixels
@@ -2483,7 +2482,7 @@ def export_pi_audit_table(p):
                 'Year': 'Total',
                 'Event pixels': f'{total_event_pixels:,}',
                 'Land pixels (SI-eligible)': f'{total_land_pixels:,}',
-                'Prevalence': f'{chain.prevalence(total_event_pixels, total_land_pixels):.8f}',
+                'Prevalence': f'{lmf.prevalence(total_event_pixels, total_land_pixels):.8f}',
             })
 
             _save_table(pd.DataFrame(rows), out_path, 'Population Prevalence Audit')
@@ -2506,7 +2505,7 @@ def _plot_raster(p, failures, raster_path, out_png, title, cmap, cbar_format):
 
     try:
         with rasterio.open(raster_path) as src:
-            max_dim = int(getattr(p, 'plot_raster_max_dim', chain.PLOT_RASTER_MAX_DIM))
+            max_dim = int(getattr(p, 'plot_raster_max_dim', lmf.PLOT_RASTER_MAX_DIM))
             scale = max(src.height / max_dim, src.width / max_dim, 1.0)
             arr = src.read(
                 1,
@@ -2526,7 +2525,7 @@ def _plot_raster(p, failures, raster_path, out_png, title, cmap, cbar_format):
             failures.append(msg)
             return False
 
-        vmin, vmax = np.nanpercentile(finite, list(chain.PLOT_PERCENTILES))
+        vmin, vmax = np.nanpercentile(finite, list(lmf.PLOT_PERCENTILES))
         if not np.isfinite(vmin) or not np.isfinite(vmax):
             msg = f'Invalid plotting range: {raster_path}'
             p.L.info(f'WARNING: {msg}')
@@ -2638,7 +2637,7 @@ def plot_country_choropleth_maps(p):
             specs = [
                 ('avoided_deaths_sum', None, 'Purples', 'Avoided deaths',
                  '{:.2f}', f'avoided_mortality_choropleth_{year}.png'),
-                ('avoided_value_sum_usd', chain.USD_PER_MILLION, 'Greens', 'Value (US$ millions)',
+                ('avoided_value_sum_usd', lmf.USD_PER_MILLION, 'Greens', 'Value (US$ millions)',
                  '${:,.2f}M', f'avoided_mortality_value_choropleth_{year}.png'),
             ]
 
@@ -2648,7 +2647,7 @@ def plot_country_choropleth_maps(p):
                     p.L.info(f'Choropleth already exists: {out_path}')
                     continue
 
-                bucket_edges = chain.CHOROPLETH_BUCKET_EDGES
+                bucket_edges = lmf.CHOROPLETH_BUCKET_EDGES
                 num_buckets = len(bucket_edges) - 1
 
                 gdf_plot = gdf[gdf[column].notna()].copy()
@@ -2673,7 +2672,7 @@ def plot_country_choropleth_maps(p):
 
                 legend_elements = [
                     mpatches.Patch(color=colors[i], label=label)
-                    for i, label in enumerate(chain.bucket_legend_labels(bucket_edges, tick_fmt))
+                    for i, label in enumerate(lmf.bucket_legend_labels(bucket_edges, tick_fmt))
                 ]
                 ax.legend(handles=legend_elements, loc='lower left', frameon=False,
                           fontsize=8, title=legend_label, title_fontsize=9)
@@ -2712,7 +2711,7 @@ def plot_uglc_from_vector(p):
 
     fatalities = points['fatality_count'].fillna(0).clip(lower=0)
     nonfatal = fatalities <= 0
-    bins = chain.fatality_bin_masks(fatalities)
+    bins = lmf.fatality_bin_masks(fatalities)
 
     fig, ax = plt.subplots(figsize=(8, 4.8), dpi=220)
     if nonfatal.any():
