@@ -184,7 +184,7 @@ format:
 
 - [Adding every headline figure gives about {{< meta gep_naive_sum >}}, using the agricultural water-use variant. Using the all-sector one instead makes the same sum about {{< meta gep_naive_sum_all >}}. World GDP in 2019 was about {{< meta world_gdp_2019 >}}.]{.state}
 - [The account reports no total, because that sum swings four-fold on one unresolved choice inside one service.]{.state}
-- **Q1:** what attribution step turns water use into a nature share? The all-sector figure is the gross economic value of water used, close to half of world GDP.
+- **Q1:** what attribution step turns water use into a nature share? The all-sector figure, {{< meta water_use_all_total >}}, is the gross economic value of water used, which is more than a third of the {{< meta world_gdp_2019 >}} world economy.
 - **Q2:** which overlaps should be netted out before anything is added? Pollination values part of what crop production already counts, livestock's feed share overlaps crop production, and coastal carbon overlaps terrestrial carbon on the landward side.
 - **Q3:** does the account want one headline figure at all, or the services reported separately?
 
@@ -393,7 +393,7 @@ format:
 - [Values hydropower rent and priced water withdrawal. Hydropower is computed from the CWoN wealth table for every country it values, {{< meta water_supply_total >}} across 97 countries, and reproduces the drive's committed output exactly on the 95 countries that output covers. Water use is computed in the library, agriculture {{< meta water_use_ag_total >}} across 123 countries and all-sector {{< meta water_use_all_total >}} across 149.]{.state}
 - **Q1:** which hydropower total is the account's, the manuscript's {{< meta hydro_manuscript >}} or our rent-based {{< meta water_supply_total >}}? The first follows a direct-use method, price times generation, the second the resource-rent method.
 - **Q2:** why does the reference leave 17 countries empty although the CWoN table values them? We now report all 112, and carry the 95-country variant beside it as the comparison, so the {{< meta water_supply_anchor >}} anchor still checks out.
-- **Q3:** what attribution step turns water use into a nature share? The all-sector total is the gross economic value of water use, close to global GDP.
+- **Q3:** what attribution step turns water use into a nature share? The all-sector total, {{< meta water_use_all_total >}}, is the gross economic value of water use, which is more than a third of the {{< meta world_gdp_2019 >}} world economy.
 - **Q4:** how do hydropower and the two water-use components combine into one water_supply value?
 
 ## air_filtration
