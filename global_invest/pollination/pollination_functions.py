@@ -1,12 +1,16 @@
 """Pollination science: the sufficiency and value calculation, plus the
 frame and array arithmetic the two shock tasks and the GEP valuation share.
 
-The raster science (300 m sufficiency, 5 km valuation, PNAS diff) is imported unchanged from
-crop_benefits; the driver functions at the bottom only run it per scenario on our SEALS maps,
-and the task layer reads the rasters it leaves behind. Nothing here opens a file: the zonal step
-takes the arrays in and hands per-zone series back, which is what the tests exercise. The
-The vendored steps live in pollination_sufficiency, imported at the top like any other module (or
-running the static shock task, which needs none of it) does not require the package installed.
+The raster science (300 m sufficiency, 5 km valuation, PNAS diff) is vendored here from
+crop_benefits rather than imported from it, so the module needs no package outside this repo; a
+test blocks the import and asserts the module still loads. The driver functions at the bottom run
+that science per scenario on our SEALS maps, and the task layer reads the rasters it leaves
+behind. Nothing here opens a file: the zonal step takes arrays in and hands per-zone series back,
+which is what the tests exercise.
+
+What crop_benefits still supplies is data, not code. The shock path resamples a precomputed
+baseline value raster from base_data/crop_benefits/, declared in es_parameters like any other
+input.
 """
 from __future__ import annotations
 import os
@@ -382,15 +386,22 @@ def get_compression_profile(
 class FaoPriceSettings:
     """What the FAO price steps need, in place of the crop_benefits Config they used to read.
 
-    The prices are a base-data input rather than a per-run result: the pipeline downloads FAOSTAT
-    production and producer prices, reconstructs local currency where FAOSTAT reports only the old
-    series, converts to USD against World Bank exchange rates, and writes a median price per crop
-    over `price_years`. The pollination value raster is built against that table.
+    The prices are a base-data input rather than a per-run result: the pipeline reads the FAOSTAT
+    production and producer-price bulks, reconstructs local currency where FAOSTAT reports only the
+    old series, converts to USD against World Bank exchange rates, and writes a median price per
+    crop over `price_years`. The pollination value raster is built against that table.
+
+    The two FAOSTAT bulks are staged into base data rather than pulled on each run. FAOSTAT
+    revises them, so a fresh pull would make the price table depend on the day it was built, and
+    a compute node without outbound network could not run the stage at all. es_parameters carries
+    a url and an archive member for each, so the shared download task can fetch them once.
 
     Attributes:
         crosswalk_m49_iso3_path (str): FAO M49 area codes to ISO3.
         fao_classification_path (str): the FAO item classification.
         crosswalk_fao_cropgrids_path (str): FAO items to CropGrids crop names.
+        fao_production_bulk_path (str): the staged FAOSTAT production and yield bulk CSV.
+        fao_prices_bulk_path (str): the staged FAOSTAT producer-price bulk CSV.
         output_dir (str): where the production, price, value and median-price tables are written.
         fao_start_year (int): first year of FAOSTAT data to keep.
         fao_end_year (int): last year.
@@ -399,6 +410,8 @@ class FaoPriceSettings:
     crosswalk_m49_iso3_path: str
     fao_classification_path: str
     crosswalk_fao_cropgrids_path: str
+    fao_production_bulk_path: str
+    fao_prices_bulk_path: str
     output_dir: str
     fao_start_year: int = 1991
     fao_end_year: int = 2023
@@ -451,13 +464,6 @@ class FaoPriceSettings:
 # These build the per-crop median producer prices the pollination value raster is priced at.
 # ---------------------------------------------------------------------------------------------
 
-_URL = (
-    "https://fenixservices.fao.org/faostat/static/bulkdownloads/"
-    "Production_Crops_Livestock_E_All_Data_(Normalized).zip"
-)
-
-_CSV_NAME = "Production_Crops_Livestock_E_All_Data_(Normalized).csv"
-
 _ELEMENTS_KEEP = {"Yield", "Production"}
 
 _EXCLUDE_ITEM_CODES = {
@@ -474,11 +480,6 @@ _EXCLUDE_ITEM_CODES = {
     1841,   # Oilcrops, Cake Equivalent (derived equivalent)
     17530,  # Fibre Crops, Fibre Equivalent (derived equivalent)
 }
-
-_FAO_BULK_URL = (
-    "https://bulks-faostat.fao.org/production/"
-    "Prices_E_All_Data_(Normalized).zip"
-)
 
 _ELEMENTS_KEEP = [
     "Producer Price (USD/tonne)",

@@ -8,8 +8,6 @@ directory (p.es_shock_dir). Grafted by consumers via add_pollination_tasks (disp
 from __future__ import annotations
 import os
 import requests
-import zipfile
-import io
 import gc
 import logging
 import math
@@ -205,7 +203,7 @@ def run_fao_production(cfg: Config) -> str:
     """
     logger.info("=== FAO Production Pipeline ===")
 
-    df, classif = _download_and_filter_fao_production(cfg)
+    df, classif = _read_and_filter_fao_production(cfg)
     df = pf._convert_yield_units(df)
     df = _add_geographic_and_classification_data(df, classif, cfg)
 
@@ -227,7 +225,7 @@ def run_fao_prices(cfg: Config) -> str:
     years = list(range(cfg.run.fao_start_year, cfg.run.fao_end_year + 1))
 
     # Steps 1-3
-    pp_raw = _download_fao_prices(years)
+    pp_raw = _read_fao_prices(cfg, years)
     pp_wide = pf._reshape_prices(pp_raw)
 
     # Steps 4-7
@@ -247,10 +245,10 @@ def run_fao_prices(cfg: Config) -> str:
     return pq_path
 
 
-def _download_and_filter_fao_production(
+def _read_and_filter_fao_production(
     cfg: Config,
 ) -> pd.DataFrame:
-    """Download FAOSTAT QCL bulk data, filter years / elements / items."""
+    """Read the staged FAOSTAT production bulk, filter years / elements / items."""
 
     # Load classification to get valid item codes for items to keep
     classif = load_fao_classification(cfg)
@@ -266,13 +264,14 @@ def _download_and_filter_fao_production(
     # Year range from config
     years = set(range(cfg.run.fao_start_year, cfg.run.fao_end_year + 1))
 
-    # Download bulk ZIP
-    logger.info("Downloading FAOSTAT QCL bulk data …")
-    resp = requests.get(pf._URL, timeout=300)
-    resp.raise_for_status()
-
-    with zipfile.ZipFile(io.BytesIO(resp.content)) as zf:
-        with zf.open(pf._CSV_NAME) as f:
+    # The staged bulk, put in base data by the shared download task rather than pulled here.
+    logger.info("Reading staged FAOSTAT production bulk from %s", cfg.paths.fao_production_bulk_path)
+    if not os.path.exists(cfg.paths.fao_production_bulk_path):
+        raise NameError(
+            'pollination has no FAOSTAT production bulk at %s. es_parameters carries its url and '
+            'archive member, so the shared download task stages it.'
+            % cfg.paths.fao_production_bulk_path)
+    with open(cfg.paths.fao_production_bulk_path, 'rb') as f:
             df = pd.read_csv(
                 f,
                 usecols=[
@@ -324,18 +323,17 @@ def _save_production_outputs(
     return pq_out
 
 
-def _download_fao_prices(years: list[int]) -> pd.DataFrame:
-    """Download bulk FAOSTAT producer prices and return annual rows."""
-    logger.info("=== 1) DOWNLOADING FAOSTAT BULK PRODUCER PRICES ===")
+def _read_fao_prices(cfg: Config, years: list[int]) -> pd.DataFrame:
+    """Read the staged FAOSTAT producer-price bulk and return annual rows."""
+    logger.info("=== 1) READING STAGED FAOSTAT PRODUCER PRICES ===")
 
-    resp = requests.get(pf._FAO_BULK_URL, timeout=120)
-    resp.raise_for_status()
-
-    with zipfile.ZipFile(io.BytesIO(resp.content)) as z:
-        csv_name = z.namelist()[0]
-        logger.info("Reading bulk file: %s", csv_name)
-        with z.open(csv_name) as f:
-            pp_raw = pd.read_csv(f, encoding="latin1", low_memory=False)
+    if not os.path.exists(cfg.paths.fao_prices_bulk_path):
+        raise NameError(
+            'pollination has no FAOSTAT producer-price bulk at %s. es_parameters carries its url '
+            'and archive member, so the shared download task stages it.'
+            % cfg.paths.fao_prices_bulk_path)
+    logger.info("Reading bulk file: %s", cfg.paths.fao_prices_bulk_path)
+    pp_raw = pd.read_csv(cfg.paths.fao_prices_bulk_path, encoding="latin1", low_memory=False)
 
     # Standardize column names
     pp_raw.columns = [c.replace(" ", "_").lower() for c in pp_raw.columns]
@@ -893,6 +891,8 @@ def fao_median_prices(p):
                                                             'fao_classification.csv'))),
         crosswalk_fao_cropgrids_path=str(p.get_path(os.path.join('fao', 'crosswalks',
                                                                  'crosswalk_fao_cropgrids.csv'))),
+        fao_production_bulk_path=str(p.pollination_fao_production_path),
+        fao_prices_bulk_path=str(p.pollination_fao_prices_path),
         output_dir=str(os.path.dirname(p.fao_median_prices_dir)))
     run_fao_production(settings)
     run_fao_prices(settings)
