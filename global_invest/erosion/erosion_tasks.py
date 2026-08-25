@@ -2003,6 +2003,10 @@ def publish_inputs(p):
     Defaults layer throughout: anything the caller set wins."""
     utilities.hydrate_es_config(p, 'erosion', log=hb.log)
     utilities.hydrate_es_parameters(p, 'erosion', log=hb.log)
+    # The country table every service collapses onto at the end. gep_calculation reads it through
+    # utilities.country_attributes, which expects p.df_countries, so it is published here with the
+    # rest of the inputs exactly as the other twenty services do.
+    utilities.initialize_country_paths(p)
     # Derived from the DEM row (caller wins): configure_* in erosion_functions reads these, and
     # their own fallbacks point at the author's cluster layout -- without these lines a local
     # Section-A run would silently reach for MSI paths.
