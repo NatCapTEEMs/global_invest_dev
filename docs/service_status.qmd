@@ -57,9 +57,9 @@ ours, because the coefficients or the physical quantity come from elsewhere. Wil
 clearest case: the valuation runs here, and the regression coefficients underneath it do not.
 
 **The ladder measures work, not confidence.** Read as a quality ranking it gets things backwards.
-The two accounts without a usable number sit at the top of it: stormwater reports retained volume
-and no dollar total because its price is a placeholder of 1, and erosion has no number until its
-run finishes. Crop production, down at table arithmetic, reproduces its reference table exactly.
+The account without a usable number sits at the top of it: stormwater reports retained volume and
+no dollar total because its price is a placeholder of 1. Crop production, down at table
+arithmetic, reproduces its reference table exactly.
 
 **One label per service hides a split.** Several services compute part of the value and read the
 rest, and the category can only name the heaviest thing the code does. Water quality computes its
@@ -133,12 +133,12 @@ hectare. `ours` is where that lives.
 - **module:** erosion
 - **category:** process model run here
 - **in the library:** yes
-- **run:** in progress
+- **run:** yes
 - **ours:** yes
 - **method:** Soil loss prevented on cropland, on-farm and upslope combined as a union rather than a sum, turned into a crop production shock weighted by each crop's production and its yield elasticity to erosion, times the country's crop gross production value. The quantity comes from the InVEST SDR model, run here.
-- **total:** - (the run is still going)
+- **total:** $13.96bn
 - **code:** Folded in from the author's repo, then refactored onto the library template and hazelbean conventions. The prevention shares, the severity threshold and the valuation are in the science module, tested. Added the step that builds the upstream prevention share by routing the erosion rasters down the DEM. Three fixes. The severity threshold is lower for small countries, and because the boundary file splits 13 countries into territories, China and India were qualifying as small; areas are now summed per country, which changed AUS, CHN, FRA, IND, NOR, NZL and SRB. The 40 paths that pointed at two specific machines now come from es_parameters, and a missing row raises an error naming it rather than falling back to a directory that does not exist. And the SPAM reprojection uses hazelbean rather than rioxarray, byte-identical and about 11 times faster per band. Added the `gep_calculation` the service had never had: it wrote its country totals into integrated_country_gep.csv, which is wide and carries the on-farm, upstream and combined components side by side, so nothing downstream could read it. It now writes the same per-country table as every other service, on the combined component.
-- **number:** Values the crop production that soil retention protects: the share of soil loss prevented by a field's own cover and by everything upslope of it, turned into a production shock and priced against the country's crop output. Running. 
+- **number:** Values the crop production that soil retention protects: the share of soil loss prevented by a field's own cover and by everything upslope of it, turned into a production shock and priced against the country's crop output. $13.96bn across 185 countries, of which 26 compute an exact zero. No reference output exists to check it against. South Sudan is dropped because the source table spells it SDS where the country table uses the ISO SSD; its value is zero, so no dollars are lost by it today. 
 - **need:** -
 
 

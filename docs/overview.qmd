@@ -20,6 +20,7 @@ n_services: "22"
 n_accounts: "25"
 n_replicating: "9"
 ntfp_total: "$14.07bn"
+erosion_total: "$13.96bn"
 cat_reads: "1"
 cat_rescales: "2"
 cat_table: "12"
@@ -148,7 +149,7 @@ format:
 
 | Accounts | Where the number comes from |
 |---|---|
-| {{< meta n_ours >}} | We compute it. The quantity, the price and nature's share are all built in the repo. Twelve of the thirteen report a total; erosion's run is still going, so it has none yet. |
+| {{< meta n_ours >}} | We compute it. The quantity, the price and nature's share are all built in the repo, and all thirteen now report a total. |
 | {{< meta n_partly >}} | We compute part of it. One component is ours and the other is read from a published source. |
 | {{< meta n_reads_a_value >}} | We take the economics from a published table. Two turn a published rent share into dollars; one reports a finished per-country figure. |
 | {{< meta n_not_wired >}} | We value the output of a model we do not yet run ourselves. Air filtration and sandstorm prevention report totals; stormwater reports retained volume only, because its price is a placeholder of 1. |
@@ -174,7 +175,7 @@ format:
 - Crop production is table arithmetic, FAOSTAT gross production times the CWoN land rental rate.
 - Pollination is raster arithmetic, 158 production grids times price times each crop's pollinator dependence, cell by cell.
 - The three process models have dynamics of their own. Erosion runs InVEST SDR with sediment routing, landslides computes slope stability twice for every pixel, and recreation runs a gravity model allocating visits into scored sites.
-- The ladder measures work, not confidence, and reading it as a quality ranking gets it backwards. The two accounts without a usable number sit at the top: stormwater has no dollar total because its price is a placeholder, and erosion has no number until its run finishes. Crop production, down at table arithmetic, reproduces its reference exactly.
+- The ladder measures work, not confidence, and reading it as a quality ranking gets it backwards. The account without a usable number sits at the top: stormwater has no dollar total because its price is a placeholder. Crop production, down at table arithmetic, reproduces its reference exactly.
 - One label per service also hides a split. Water quality computes its dollar figure and reads the one it reports, coastal protection computes mangroves and reads corals, and wildfires computes the valuation on coefficients it did not fit. The ours column carries that, the category cannot.
 
 ## Can the services be added into one total?
@@ -321,7 +322,7 @@ format:
 
 ## erosion
 
-- [Values soil the land cover keeps in place: prevented erosion mapped by running the sediment-delivery model, valued through crop productivity. It is running for the first time, and we report no number until it lands.]{.state}
+- [Values soil the land cover keeps in place: prevented erosion mapped by running the sediment-delivery model, valued through crop productivity. {{< meta erosion_total >}} across 185 countries, of which 26 compute an exact zero. No reference output exists to check it against.]{.state}
 - **Q1:** which of the three shock methods is the account's? We compute damage (thresholded area share), service (threshold-free and magnitude-weighted per crop) and service-threshold (service restricted to a fixed severe-pixel set) side by side.
 
 ## landslide_mitigation
