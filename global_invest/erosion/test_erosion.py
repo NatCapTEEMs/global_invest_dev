@@ -196,3 +196,32 @@ def test_a_country_is_not_small_because_one_of_its_territories_is():
     # One row per country, because the threshold raster is filled from this table by country and
     # would otherwise depend on which row happened to come last.
     assert not out.index.duplicated().any()
+
+def test_static_shock_raises_when_the_dependency_table_is_absent(tmp_path):
+    """A missing dependency table stops the run instead of leaving the consumer without a shock.
+
+    This printed a line and returned, so GTAP received no erosion shock and nothing in the run
+    failed -- the same silent-zero the scenario loop below it explicitly refuses to do. The static
+    path is the default one consumers take, so the quiet version of this was the likely one.
+    """
+    import os
+
+    import hazelbean as hb
+    from global_invest.erosion import erosion_tasks
+
+    p = hb.ProjectFlow(project_dir=str(tmp_path / 'erosion_shock_probe'))
+    p.run_this = 1
+    p.cur_dir = p.project_dir
+    p.results = {}
+    p.erosion_dependency_path = str(tmp_path / 'not_staged.csv')
+    p.erosion_shock_output_path = str(tmp_path / 'shock.csv')
+    p.es_shock_scenarios = ['net_zero']
+    p.es_shock_base_year = 2023
+    p.es_shock_end_year = 2050
+    p.erosion_shock_acts = ('wht',)
+    p.es_shock_base_scenario = 'baseline_ignore_damages'
+
+    with pytest.raises(NameError, match='no dependency table'):
+        erosion_tasks.erosion_shock_static(p)
+    assert not os.path.exists(p.erosion_shock_output_path)
+

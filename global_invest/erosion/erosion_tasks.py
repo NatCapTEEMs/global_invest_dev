@@ -2743,8 +2743,12 @@ def erosion_shock_static(p):
     ero_path = getattr(p, 'erosion_dependency_path', None) or os.path.join(
         p.input_dir, 'raw_dependencies', 'erosion_prevention_dependency.csv')
     if not os.path.exists(ero_path):
-        print('  erosion shock: dependency csv not found (%s) -- skipping' % ero_path)
-        return
+        raise NameError(
+            'erosion shock: no dependency table at %s. This used to print and return, which left '
+            'the consumer with no erosion shock and nothing in the run that failed -- the same '
+            'shape as a scenario silently zeroed, which the loop below refuses to do. Set '
+            'p.erosion_dependency_path, or stage the file under input_dir/raw_dependencies/.'
+            % ero_path)
 
     df = read_erosion_dependency(ero_path)
     # Resolve the configured base through the candidate mechanism (fatal if absent) -- the erosion
