@@ -7,7 +7,6 @@ directory (p.es_shock_dir). Grafted by consumers via add_pollination_tasks (disp
 """
 from __future__ import annotations
 import os
-import wbgapi as wb
 import requests
 import zipfile
 import io
@@ -374,12 +373,66 @@ def _download_fao_prices(years: list[int]) -> pd.DataFrame:
     return pp_raw
 
 
+WORLD_BANK_FX_INDICATOR = 'PA.NUS.FCRF'          # official exchange rate, local currency per USD
+WORLD_BANK_API = 'https://api.worldbank.org/v2/country/all/indicator/%s'
+
+
+def world_bank_fx(cache_path, years):
+    """Local currency per USD per country and year, from a staged file or the World Bank once.
+
+    The fetch happens once and is written beside the other currency inputs; every later run, on
+    any machine, reads the file. That is what pins the vintage: the World Bank revises this
+    series, so a rate pulled fresh on each machine would make the pollination number depend on
+    the day the price stage first ran, with nothing recording which rates were used. It also
+    keeps the stage runnable on a compute node with no outbound network.
+
+    The request goes through the REST API with requests, which this module already imports.
+    Erosion's World Bank GDP fetch is the same shape.
+
+    Args:
+        cache_path (str): where the staged rates live, and where a first fetch writes them.
+        years (list[int]): the years to fetch when there is no file yet.
+
+    Returns:
+        pd.DataFrame: iso3, year, lcu_per_usd, fx_source.
+
+    Raises:
+        RuntimeError: if the World Bank returns no usable rows. An empty answer used to pass
+            silently, leaving the run to fall through to IMF-only rates with no warning and a
+            different number.
+    """
+    if os.path.exists(cache_path):
+        staged = pd.read_csv(cache_path, encoding='utf-8-sig')
+        return staged[['iso3', 'year', 'lcu_per_usd']].assign(fx_source='wb')
+
+    logger.info('No staged World Bank FX at %s, so fetching it once.', cache_path)
+    response = requests.get(WORLD_BANK_API % WORLD_BANK_FX_INDICATOR,
+                            params={'format': 'json', 'per_page': 20000,
+                                    'date': '%d:%d' % (min(years), max(years))}, timeout=120)
+    response.raise_for_status()
+    payload = response.json()
+    rows = payload[1] if isinstance(payload, list) and len(payload) > 1 else []
+    records = [(r['countryiso3code'], int(r['date']), float(r['value'])) for r in rows
+               if r.get('countryiso3code') and r.get('date') and r.get('value') is not None]
+    if not records:
+        raise RuntimeError(
+            'the World Bank returned no %s rows for %d-%d. Falling through to IMF-only rates '
+            'would change every price without saying so, which is why this raises instead.'
+            % (WORLD_BANK_FX_INDICATOR, min(years), max(years)))
+
+    fx = pd.DataFrame(records, columns=['iso3', 'year', 'lcu_per_usd'])
+    os.makedirs(os.path.dirname(cache_path), exist_ok=True)
+    fx.to_csv(cache_path, index=False, encoding='utf-8-sig')
+    logger.info('Staged %d World Bank FX rows to %s', len(fx), cache_path)
+    return fx.assign(fx_source='wb')
+
+
 def _add_iso3_and_fx(
     pp3: pd.DataFrame,
     cfg: Config,
     years: list[int],
 ) -> pd.DataFrame:
-    """Add ISO3, fetch WB + IMF FX, combine with inheritance."""
+    """Add ISO3, read WB and IMF FX, combine with inheritance."""
 
     # 9) ISO3 via crosswalk
     logger.info("=== 9) ADDING ISO3 ===")
@@ -394,21 +447,12 @@ def _add_iso3_and_fx(
 
     logger.info("Unique ISO3: %d", pp3["iso3"].nunique())
 
-    # 10) World Bank FX
-    logger.info("=== 10) FETCHING WORLD BANK FX ===")
-    wb_records = []
-    years_str = [str(y) for y in years]
-    for rec in wb.data.fetch("PA.NUS.FCRF", time=years_str):
-        iso3 = rec.get("economy")
-        year_raw = rec.get("time")
-        val = rec.get("value")
-        if iso3 is None or year_raw is None or val is None:
-            continue
-        year = int(str(year_raw).replace("YR", ""))
-        wb_records.append((iso3, year, float(val)))
-
-    wb_fx = pd.DataFrame(wb_records, columns=["iso3", "year", "lcu_per_usd"])
-    wb_fx["fx_source"] = "wb"
+    # 10) World Bank FX, from the staged file beside the IMF one
+    logger.info("=== 10) READING WORLD BANK FX ===")
+    wb_fx_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(cfg.paths.crosswalk_m49_iso3))),
+        "currencies", "worldbank", "fx_lcu_per_usd.csv")
+    wb_fx = world_bank_fx(wb_fx_path, years)
     wb_fx = wb_fx.dropna(subset=["iso3", "lcu_per_usd"]).copy()
     pf._log_df("wb_fx", wb_fx)
 
