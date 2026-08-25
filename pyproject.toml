@@ -31,7 +31,6 @@ dependencies = [
         "rasterio",
         "requests",
         "rioxarray",
-        "scikit-learn",
         "scipy",
         "shapely",
         "statsmodels",

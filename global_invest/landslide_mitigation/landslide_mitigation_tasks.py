@@ -25,7 +25,6 @@ import statsmodels.formula.api as smf
 from matplotlib.lines import Line2D
 from osgeo import gdal, osr
 from rasterio.enums import Resampling
-from sklearn.metrics import roc_auc_score
 
 import hazelbean as hb
 from global_invest import utilities
@@ -1453,7 +1452,7 @@ def calibrate_si_to_probability(p):
         }
 
         # ---- Training-set AUC, for comparison against the held-out AUC.
-        train_auc = roc_auc_score(y_train, raw_model.predict(X_train))
+        train_auc = lmf.roc_auc(y_train, raw_model.predict(X_train))
         coefficients['train_auc'] = float(train_auc)
         p.L.info(f'Training AUC: {train_auc:.4f}')
 
@@ -1462,7 +1461,7 @@ def calibrate_si_to_probability(p):
             X_holdout = sm.add_constant(
                 holdout[['si_observed', 'rain_max_daily']], has_constant='add'
             )
-            auc = roc_auc_score(holdout['case'], raw_model.predict(X_holdout))
+            auc = lmf.roc_auc(holdout['case'], raw_model.predict(X_holdout))
             coefficients['holdout_auc'] = float(auc)
             p.L.info(f'Held-out ({sorted(set(p.prediction_years))}) AUC: {auc:.4f}')
 

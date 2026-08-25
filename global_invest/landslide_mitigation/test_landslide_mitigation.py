@@ -491,3 +491,44 @@ def test_fatality_bin_masks_are_disjoint_and_start_at_one_death():
 def test_bucket_legend_labels_are_open_ended_at_the_top():
     labels = chain.bucket_legend_labels([0, 1, 5, float('inf')], '{:.2f}')
     assert labels == ['0.00 – 1.00', '1.00 – 5.00', '5.00+']
+
+def test_roc_auc_matches_the_reference_implementation_including_ties():
+    """The area agrees with scikit-learn's, which is what it replaced.
+
+    scikit-learn is not imported by the library any more, so this test imports it only if the
+    environment happens to carry it and otherwise checks the properties that make the statistic
+    what it is. Ties are the case worth pinning: without averaging the ranks they span, a model
+    that assigns many identical scores reads better than it is.
+    """
+    import numpy as np
+    from global_invest.landslide_mitigation import landslide_mitigation_functions as lmf
+
+    rng = np.random.default_rng(0)
+    cases = []
+    for _ in range(200):
+        n = int(rng.integers(10, 200))
+        truth = rng.integers(0, 2, n)
+        if truth.sum() in (0, n):
+            continue
+        # rounding makes ties common on purpose
+        scores = np.round(rng.normal(size=n), int(rng.integers(0, 3)))
+        cases.append((truth, scores))
+
+    try:
+        from sklearn.metrics import roc_auc_score
+    except ImportError:
+        roc_auc_score = None
+
+    for truth, scores in cases:
+        area = lmf.roc_auc(truth, scores)
+        assert 0.0 <= area <= 1.0
+        # a perfectly separating score is 1, its negation is 0
+        assert lmf.roc_auc(truth, truth.astype(float)) == 1.0
+        assert lmf.roc_auc(truth, -truth.astype(float)) == 0.0
+        if roc_auc_score is not None:
+            assert abs(area - roc_auc_score(truth, scores)) < 1e-12
+
+    # one class present means the area is undefined rather than zero
+    assert np.isnan(lmf.roc_auc(np.zeros(5), np.arange(5.0)))
+    assert np.isnan(lmf.roc_auc(np.ones(5), np.arange(5.0)))
+
