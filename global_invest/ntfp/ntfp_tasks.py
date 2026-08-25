@@ -82,16 +82,33 @@ def buffer_and_union_access(source_vector_paths, out_path, buffer_distance_m):
     return out_path
 
 
-def rasterize_polygon_to_grid(vector_path, reference_raster_path, out_path):
-    """Burn a polygon layer onto the reference grid as a 0/1 mask."""
+def rasterize_polygon_to_grid(vector_path, reference_raster_path, out_path,
+                              attribute=None, output_type=gdal.GDT_Byte, all_touched=False):
+    """Burn a polygon layer onto the reference grid, as a 0/1 mask or as one attribute's value.
+
+    Args:
+        vector_path (str): the polygons, already in the grid's projection.
+        reference_raster_path (str): a raster on the analysis grid, for shape and geotransform.
+        out_path (str): where the burned raster is written.
+        attribute (str): the field whose value is burned. None burns 1 everywhere a polygon covers.
+        output_type: the GDAL type, wide enough to hold the attribute.
+        all_touched (bool): whether a cell any part of the polygon touches is burned, or only one
+            whose centre the polygon covers. Passed explicitly at every call rather than left to
+            the GDAL default, because it is the rule that decides what a boundary cell counts as.
+    """
     reference = gdal.Open(reference_raster_path)
     target = gdal.GetDriverByName('GTiff').Create(
-        out_path, reference.RasterXSize, reference.RasterYSize, 1, gdal.GDT_Byte,
+        out_path, reference.RasterXSize, reference.RasterYSize, 1, output_type,
         options=list(GTIFF_CREATION_OPTIONS))
     target.SetGeoTransform(reference.GetGeoTransform())
     target.SetProjection(reference.GetProjection())
     source = ogr.Open(vector_path)
-    gdal.RasterizeLayer(target, [1], source.GetLayer(0), burn_values=[1])
+    options = ['ALL_TOUCHED=%s' % ('TRUE' if all_touched else 'FALSE')]
+    if attribute is None:
+        gdal.RasterizeLayer(target, [1], source.GetLayer(0), burn_values=[1], options=options)
+    else:
+        gdal.RasterizeLayer(target, [1], source.GetLayer(0),
+                            options=options + ['ATTRIBUTE=%s' % attribute])
     target = None
     return out_path
 
@@ -205,11 +222,25 @@ def accessible_forest(p):
         warp_to_analysis_grid(p.gep_lulc_input_path, lulc_path, 'near',
                               output_type=gdal.GDT_Int16)
 
+    # Countries come from the boundary polygons, reprojected and then burned onto the analysis
+    # grid, which is the order the source module uses: it reprojects the same vector and takes
+    # zonal statistics over it. Burning the id is that zonal step done once for every country at
+    # once, and it assigns a cell on the same rule, by which polygon covers the cell centre.
+    # Reprojecting a ready-made id raster instead would assign border and coastal cells by
+    # nearest neighbour from a 10 arcsec grid, which is a different rule.
     countries_path = os.path.join(p.cur_dir, 'countries_mollweide_300m.tif')
     if not hb.path_exists(countries_path):
-        hb.log('ntfp: putting the country ids on the same grid')
-        warp_to_analysis_grid(p.ntfp_country_id_raster_path, countries_path, 'near',
-                              output_type=gdal.GDT_Int32)
+        countries_vector = os.path.join(p.cur_dir, 'countries_mollweide.gpkg')
+        if not hb.path_exists(countries_vector):
+            hb.log('ntfp: reprojecting the country boundaries to Mollweide')
+            reproject_vector(p.ntfp_countries_vector_path, countries_vector)
+        hb.log('ntfp: burning the country ids onto the same grid')
+        # Centre rule, so a cell belongs to exactly one country. Burning every country a cell
+        # touches would give a border cell to whichever country happens to be drawn last.
+        # coastal_carbon builds its country id raster on the same rule.
+        rasterize_polygon_to_grid(countries_vector, lulc_path, countries_path,
+                                  attribute='iso3_r250_id', output_type=gdal.GDT_Int32,
+                                  all_touched=False)
 
     # Bilinear because NDVI is continuous, and the integer type is kept so the threshold is
     # compared in the raster's own units rather than on scaled floats.
@@ -241,7 +272,11 @@ def accessible_forest(p):
     access_path = os.path.join(p.cur_dir, 'reachable_mollweide_300m.tif')
     if not hb.path_exists(access_path):
         hb.log('ntfp: burning the reachable polygon onto the grid')
-        rasterize_polygon_to_grid(union_path, lulc_path, access_path)
+        # Centre rule again, matching the source module. An extent mask elsewhere in the library
+        # burns every cell it touches, because a habitat sliver narrower than a cell would
+        # otherwise vanish; a dissolved 10 km buffer is nowhere near that, so the choice only
+        # moves single cells along its perimeter.
+        rasterize_polygon_to_grid(union_path, lulc_path, access_path, all_touched=False)
 
     hectares = accessible_forest_hectares_by_country(
         lulc_path, access_path, countries_path, COUNTRY_ID_MAX, ndvi_path=ndvi_path)

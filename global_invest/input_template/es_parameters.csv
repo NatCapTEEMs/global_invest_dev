@@ -98,7 +98,8 @@ ntfp,ntfp_rivers_path,global_invest/ntfp/input/rivers/ne_10m_rivers_lake_centerl
 ntfp,ntfp_roads_vector_path,global_invest/ntfp/input/global_roads/globalroads.shp
 ntfp,ntfp_roads_vector_source_note,"the global roads layer the source module buffers, staged from its submission folder. The accessibility polygon is built from these geometries rather than from a rasterised road length, which is what the source does."
 ntfp,ntfp_rivers_source_url,https://naciscdn.org/naturalearth/10m/physical/ne_10m_rivers_lake_centerlines.zip
-ntfp,ntfp_country_id_raster_path,cartographic/ee/ee_r250_id_10sec.tif
+ntfp,ntfp_countries_vector_path,cartographic/ee/ee_r264_correspondence.gpkg
+ntfp,ntfp_countries_vector_source_note,"the boundary polygons the source module takes its zonal statistics over. Burned onto the analysis grid rather than reprojected from an id raster, so a cell is assigned to the country whose polygon covers its centre."
 ntfp,ntfp_ndvi_mean_path,global_invest/ntfp/input/mean_ndvi_2015_2019.tif
 ntfp,ntfp_ndvi_mean_source_note,"five-year mean NDVI from MODIS MOD13Q1 Collection 6.1 at 250 m over 2015 to 2019, quality masked and exported from Google Earth Engine. int16 storing NDVI times 10000, nodata -9999. Screens bare and sparse cells out of the land-cover forest mask."
 ntfp,ntfp_value_per_ha_path,global_invest/ntfp/nontimber_price_iucn_edited.csv

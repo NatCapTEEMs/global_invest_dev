@@ -113,3 +113,53 @@ def test_ndvi_floor_is_inclusive_at_the_threshold():
     forest = np.array([True, True])
     ndvi = np.array([2000, 1999], dtype=np.int16)
     assert list(nf.vegetated_forest_mask(forest, ndvi)) == [True, False]
+
+
+def test_burning_the_country_id_matches_zonal_statistics_over_the_same_polygons(tmp_path):
+    """The country stage agrees with the source module's own aggregation, cell for cell.
+
+    The source module takes zonal statistics over the reprojected boundary polygons. The library
+    burns the country id onto the analysis grid instead and sums by id in blocks, because reading
+    a per-country window out of a seven-billion-cell raster is what the block pass exists to
+    avoid. Both assign a cell by which polygon covers its centre, so the totals must agree
+    exactly rather than approximately.
+    """
+    gpd = pytest.importorskip('geopandas')
+    zonal_stats = pytest.importorskip('rasterstats').zonal_stats
+    from osgeo import gdal
+    from shapely.geometry import box
+
+    from global_invest.ntfp import ntfp_tasks
+
+    # Three countries side by side on a 30-cell strip, with deliberately ragged edges so a
+    # boundary that falls inside a cell is exercised rather than landing on a cell edge.
+    polygons = gpd.GeoDataFrame(
+        {'iso3_r250_id': [4, 7, 11]},
+        geometry=[box(0.0, 0.0, 9.4, 10.0), box(9.4, 0.0, 20.6, 10.0), box(20.6, 0.0, 30.0, 10.0)],
+        crs='EPSG:3857')
+    vector_path = str(tmp_path / 'countries.gpkg')
+    polygons.to_file(vector_path, driver='GPKG')
+
+    # A one-cell grid over the strip carrying the per-cell hectares the country stage sums.
+    values = np.arange(1, 31, dtype='float32').reshape(3, 10) * 1.5
+    reference_path = str(tmp_path / 'values.tif')
+    raster = gdal.GetDriverByName('GTiff').Create(reference_path, 10, 3, 1, gdal.GDT_Float32)
+    raster.SetGeoTransform((0.0, 3.0, 0.0, 10.0, 0.0, -10.0 / 3.0))
+    raster.SetProjection(polygons.crs.to_wkt())
+    raster.GetRasterBand(1).WriteArray(values)
+    raster = None
+
+    burned_path = str(tmp_path / 'country_ids.tif')
+    ntfp_tasks.rasterize_polygon_to_grid(vector_path, reference_path, burned_path,
+                                         attribute='iso3_r250_id', output_type=gdal.GDT_Int32)
+    # The dataset is held while the band is read: chaining the two lets it be collected first.
+    burned = gdal.Open(burned_path)
+    ids = burned.GetRasterBand(1).ReadAsArray()
+    ours = nf.hectares_by_zone(values, ids, 11)
+
+    theirs = zonal_stats(polygons, reference_path, stats=['sum'], nodata=-9999)
+    for polygon_id, statistics in zip(polygons['iso3_r250_id'], theirs):
+        assert ours[polygon_id] == pytest.approx(statistics['sum'], rel=1e-12)
+
+    # And nothing is lost or double counted between them.
+    assert ours.sum() == pytest.approx(values.sum(), rel=1e-12)
