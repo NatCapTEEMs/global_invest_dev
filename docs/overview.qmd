@@ -327,7 +327,7 @@ format:
 
 - [Values soil the land cover keeps in place: prevented erosion mapped by running the sediment-delivery model, valued through crop productivity. {{< meta erosion_total >}} across 185 countries, of which 26 compute an exact zero. No reference output exists to check it against.]{.state}
 - **Q1:** which of the three shock methods is the account's? We compute damage (thresholded area share), service (threshold-free and magnitude-weighted per crop) and service-threshold (service restricted to a fixed severe-pixel set) side by side.
-- **Q2:** which erosion shock did the NGFS runs actually use? The tracked scenario templates all name erosion as dynamic, so it should be recomputed per scenario. Four derived input copies disagree with them and with each other, and one carries no dynamic_es column at all, in which case the run silently reads the frozen dependency table instead.
+- **Q2:** should the production run recompute the erosion shock, as the test runs already do? The scenarios file production reads names carbon and pollination as dynamic but not erosion, so erosion alone falls back to the frozen dependency table. The tracked template added erosion in August; the derived copies the runs read date from July and shadow it, because a file already present is never re-seeded.
 - **Q3:** is there a reference we can check {{< meta erosion_total >}} against? Nothing in the source repo carries a committed output, so the figure currently rests on our run alone.
 - **Q4:** can the dependency table use the ISO code for South Sudan? It spells it SDS where the country table uses SSD, so the country drops out of the join. Its value is zero today, so nothing is lost yet.
 
