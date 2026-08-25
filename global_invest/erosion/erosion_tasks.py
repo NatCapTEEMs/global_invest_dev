@@ -2960,7 +2960,7 @@ def gep_calculation(p):
     # The total is unchanged either way, because every territory still contributes exactly once.
     values = (df[['iso3', column]]
               .rename(columns={'iso3': 'iso3_r250_label', column: 'erosion_gep'})
-              .groupby('iso3_r250_label', as_index=False)['erosion_gep'].sum())
+              .groupby('iso3_r250_label', as_index=False)['erosion_gep'].sum(min_count=1))
     df_gep = utilities.country_attributes(p).merge(values, on='iso3_r250_label', how='left')
     df_gep['year'] = int(p.gep_base_year)
     hb.df_write(df_gep, service_results['gep_by_country_base_year'])
