@@ -7,7 +7,6 @@ directory (p.es_shock_dir). Grafted by consumers via add_pollination_tasks (disp
 """
 from __future__ import annotations
 import os
-import requests
 import gc
 import logging
 import math
@@ -371,58 +370,32 @@ def _read_fao_prices(cfg: Config, years: list[int]) -> pd.DataFrame:
     return pp_raw
 
 
-WORLD_BANK_FX_INDICATOR = 'PA.NUS.FCRF'          # official exchange rate, local currency per USD
-WORLD_BANK_API = 'https://api.worldbank.org/v2/country/all/indicator/%s'
+def world_bank_fx(fx_path):
+    """Local currency per USD per country and year, from the staged World Bank file.
 
-
-def world_bank_fx(cache_path, years):
-    """Local currency per USD per country and year, from a staged file or the World Bank once.
-
-    The fetch happens once and is written beside the other currency inputs; every later run, on
-    any machine, reads the file. That is what pins the vintage: the World Bank revises this
-    series, so a rate pulled fresh on each machine would make the pollination number depend on
-    the day the price stage first ran, with nothing recording which rates were used. It also
-    keeps the stage runnable on a compute node with no outbound network.
-
-    The request goes through the REST API with requests, which this module already imports.
-    Erosion's World Bank GDP fetch is the same shape.
+    Read rather than fetched, for the same reason the FAOSTAT bulks are. The World Bank revises
+    PA.NUS.FCRF, so pulling it per run would make the pollination total depend on the day the
+    price stage ran with nothing recording which rates were used, and a compute node without
+    outbound network could not run the stage at all. es_parameters carries the indicator url, so
+    the shared download task stages the file; nothing here opens a socket.
 
     Args:
-        cache_path (str): where the staged rates live, and where a first fetch writes them.
-        years (list[int]): the years to fetch when there is no file yet.
+        fx_path (str): the staged rates, iso3 and year and lcu_per_usd.
 
     Returns:
         pd.DataFrame: iso3, year, lcu_per_usd, fx_source.
 
     Raises:
-        RuntimeError: if the World Bank returns no usable rows. An empty answer used to pass
-            silently, leaving the run to fall through to IMF-only rates with no warning and a
-            different number.
+        NameError: when the file is absent. Falling through to IMF-only rates would change every
+            price without saying so, which is what happened when an empty fetch was not an error.
     """
-    if os.path.exists(cache_path):
-        staged = pd.read_csv(cache_path, encoding='utf-8-sig')
-        return staged[['iso3', 'year', 'lcu_per_usd']].assign(fx_source='wb')
-
-    logger.info('No staged World Bank FX at %s, so fetching it once.', cache_path)
-    response = requests.get(WORLD_BANK_API % WORLD_BANK_FX_INDICATOR,
-                            params={'format': 'json', 'per_page': 20000,
-                                    'date': '%d:%d' % (min(years), max(years))}, timeout=120)
-    response.raise_for_status()
-    payload = response.json()
-    rows = payload[1] if isinstance(payload, list) and len(payload) > 1 else []
-    records = [(r['countryiso3code'], int(r['date']), float(r['value'])) for r in rows
-               if r.get('countryiso3code') and r.get('date') and r.get('value') is not None]
-    if not records:
-        raise RuntimeError(
-            'the World Bank returned no %s rows for %d-%d. Falling through to IMF-only rates '
-            'would change every price without saying so, which is why this raises instead.'
-            % (WORLD_BANK_FX_INDICATOR, min(years), max(years)))
-
-    fx = pd.DataFrame(records, columns=['iso3', 'year', 'lcu_per_usd'])
-    os.makedirs(os.path.dirname(cache_path), exist_ok=True)
-    fx.to_csv(cache_path, index=False, encoding='utf-8-sig')
-    logger.info('Staged %d World Bank FX rows to %s', len(fx), cache_path)
-    return fx.assign(fx_source='wb')
+    if not os.path.exists(fx_path):
+        raise NameError(
+            'pollination has no World Bank exchange rates at %s. es_parameters carries the '
+            'indicator and its url, so the shared download task stages it. Continuing without '
+            'them would silently price everything off IMF rates instead.' % fx_path)
+    staged = pd.read_csv(fx_path, encoding='utf-8-sig')
+    return staged[['iso3', 'year', 'lcu_per_usd']].assign(fx_source='wb')
 
 
 def _add_iso3_and_fx(
@@ -447,10 +420,7 @@ def _add_iso3_and_fx(
 
     # 10) World Bank FX, from the staged file beside the IMF one
     logger.info("=== 10) READING WORLD BANK FX ===")
-    wb_fx_path = os.path.join(
-        os.path.dirname(os.path.dirname(os.path.dirname(cfg.paths.crosswalk_m49_iso3))),
-        "currencies", "worldbank", "fx_lcu_per_usd.csv")
-    wb_fx = world_bank_fx(wb_fx_path, years)
+    wb_fx = world_bank_fx(cfg.paths.fx_lcu_per_usd_path)
     wb_fx = wb_fx.dropna(subset=["iso3", "lcu_per_usd"]).copy()
     pf._log_df("wb_fx", wb_fx)
 
@@ -893,6 +863,7 @@ def fao_median_prices(p):
                                                                  'crosswalk_fao_cropgrids.csv'))),
         fao_production_bulk_path=str(p.pollination_fao_production_path),
         fao_prices_bulk_path=str(p.pollination_fao_prices_path),
+        fx_lcu_per_usd_path=str(p.pollination_fx_path),
         output_dir=str(os.path.dirname(p.fao_median_prices_dir)))
     run_fao_production(settings)
     run_fao_prices(settings)

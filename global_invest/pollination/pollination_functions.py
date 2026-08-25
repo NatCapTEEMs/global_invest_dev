@@ -402,6 +402,7 @@ class FaoPriceSettings:
         crosswalk_fao_cropgrids_path (str): FAO items to CropGrids crop names.
         fao_production_bulk_path (str): the staged FAOSTAT production and yield bulk CSV.
         fao_prices_bulk_path (str): the staged FAOSTAT producer-price bulk CSV.
+        fx_lcu_per_usd_path (str): the staged World Bank exchange rates.
         output_dir (str): where the production, price, value and median-price tables are written.
         fao_start_year (int): first year of FAOSTAT data to keep.
         fao_end_year (int): last year.
@@ -412,6 +413,7 @@ class FaoPriceSettings:
     crosswalk_fao_cropgrids_path: str
     fao_production_bulk_path: str
     fao_prices_bulk_path: str
+    fx_lcu_per_usd_path: str
     output_dir: str
     fao_start_year: int = 1991
     fao_end_year: int = 2023
