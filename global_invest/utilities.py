@@ -356,6 +356,20 @@ def seed_input_template(p, file_name, log=print, required=True):
     return local_path
 
 
+# What a definitions cell can say instead of a value. Blank already means "this attribute does
+# not apply to this service", but blank cannot distinguish that from "nobody has filled this in
+# yet", and the two read identically to anyone scanning the table. These words mean the same as
+# blank to the code and something specific to the reader.
+NOT_A_VALUE = ('computed', 'skip', 'n/a')
+
+
+def is_not_a_value(value):
+    """Whether a definitions cell is blank or says, in words, that it holds no value."""
+    import pandas as pd
+
+    return pd.isna(value) or str(value).strip().lower() in ('',) + NOT_A_VALUE
+
+
 def hydrate_es_config(p, service, log=print):
     """Fill a service's per-ES configuration onto p from es_config.csv (wide format:
     one row per service, one column per attribute -- one shared table for the whole library;
@@ -384,7 +398,7 @@ def hydrate_es_config(p, service, log=print):
         if attribute == 'service':
             continue
         value = row[attribute]
-        if pd.isna(value):
+        if is_not_a_value(value):
             continue
         if getattr(p, attribute, None) is not None:
             continue
