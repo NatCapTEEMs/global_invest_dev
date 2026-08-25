@@ -24,7 +24,6 @@ routing and the figure driver, are in the task module.
 from __future__ import annotations
 import numpy as np
 import pandas as pd
-import requests
 import os
 import sys
 import time
@@ -802,21 +801,6 @@ def _normcols(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
     df.columns = [c.strip().lower() for c in df.columns]
     return df
-
-
-def _http_get(url, params=None, headers=None, stream=False):
-    last_err = None
-    for attempt in range(_RETRY):
-        try:
-            r = requests.get(url, params=params, headers=headers,
-                             timeout=_HTTP_TIMEOUT, stream=stream)
-            if r.status_code == 200:
-                return r
-            last_err = RuntimeError(f"HTTP {r.status_code}: {r.text[:200]}")
-        except Exception as e:
-            last_err = e
-        time.sleep(1 + attempt)
-    raise last_err
 
 
 def _ensure_crs(da: xr.DataArray, name: str) -> xr.DataArray:

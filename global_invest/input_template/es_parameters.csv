@@ -150,3 +150,5 @@ pollination,pollination_fao_classification_path,fao/crosswalks/fao_classificatio
 pollination,pollination_fao_classification_source_note,"the FAO item classification."
 pollination,pollination_crosswalk_fao_cropgrids_path,fao/crosswalks/crosswalk_fao_cropgrids.csv
 pollination,pollination_crosswalk_fao_cropgrids_source_note,"FAO items to CropGrids crop names."
+erosion,erosion_gdp_csv_source_url,https://api.worldbank.org/v2/country/all/indicator/NY.GDP.MKTP.CD?format=json&per_page=20000
+erosion,erosion_gdp_csv_source_note,"World Bank NY.GDP.MKTP.CD, GDP in current US dollars, filtered to 2019. Staged rather than fetched per run because the World Bank revises it, which would move the erosion valuation without recording why."

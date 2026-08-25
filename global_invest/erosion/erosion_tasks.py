@@ -809,36 +809,14 @@ def _write_csv(df: pd.DataFrame, path: str):
     df.to_csv(path, index=False)
 
 
-def fetch_worldbank_gdp_2019_current(cache_path: str, force: bool=False) -> pd.DataFrame:
-    if os.path.exists(cache_path) and not force:
-        df = pd.read_csv(cache_path, encoding="utf-8-sig")
-        df = ef._normcols(df)
-        if {"iso3","gdp_current_2019"}.issubset(df.columns):
-            df["iso3"] = df["iso3"].astype(str).str.upper()
-            return df[["iso3","gdp_current_2019"]]
-    url = "https://api.worldbank.org/v2/country/all/indicator/NY.GDP.MKTP.CD"
-    params = {"format":"json","per_page":20000}
-    r = ef._http_get(url, params=params)
-    payload = r.json()
-    if not isinstance(payload, list) or len(payload) < 2:
-        raise RuntimeError("Unexpected World Bank response for GDP.")
-    df = pd.DataFrame(payload[1])[["countryiso3code","date","value"]]
-    df = df[(df["date"]=="2019") & df["countryiso3code"].notna()]
-    df = df[df["countryiso3code"].str.len()==3].rename(columns={"countryiso3code":"iso3","value":"gdp_current_2019"})
-    df["iso3"] = df["iso3"].astype(str).str.upper()
-    df["gdp_current_2019"] = pd.to_numeric(df["gdp_current_2019"], errors="coerce")
-    _write_csv(df[["iso3","gdp_current_2019"]], cache_path)
-    return df[["iso3","gdp_current_2019"]]
-
-
 def load_wb_gdp_current_2019(gdp_csv: str) -> pd.DataFrame:
-    if os.path.exists(gdp_csv):
-        df = pd.read_csv(gdp_csv, encoding="utf-8-sig")
-        df = ef._normcols(df)
-    else:
-        if not ef.AUTO_DOWNLOAD_WB:
-            raise FileNotFoundError(f"Missing {gdp_csv} and ef.AUTO_DOWNLOAD_WB=False.")
-        df = fetch_worldbank_gdp_2019_current(gdp_csv, force=ef.FORCE_REFRESH_WB)
+    if not os.path.exists(gdp_csv):
+        raise NameError(
+            'erosion has no World Bank GDP table at %s. es_parameters carries the path and its '
+            'source url, so the shared download task stages it into base data. Fetching it here '
+            'per run would make the valuation depend on the day it ran, since the World Bank '
+            'revises NY.GDP.MKTP.CD.' % gdp_csv)
+    df = ef._normcols(pd.read_csv(gdp_csv, encoding="utf-8-sig"))
     if "iso3" not in df.columns:
         raise ValueError("GDP CSV must contain column 'iso3'.")
     df["iso3"] = df["iso3"].astype(str).str.upper()
@@ -851,9 +829,10 @@ def load_wb_gdp_current_2019(gdp_csv: str) -> pd.DataFrame:
         out = df[["iso3", col]].copy()
         out[col] = pd.to_numeric(out[col], errors="coerce")
         return out
-    dld = fetch_worldbank_gdp_2019_current(gdp_csv, force=True)
-    dld = dld.rename(columns={"gdp_current_2019": col})
-    return dld[["iso3", col]]
+    raise NameError(
+        'the GDP table at %s carries neither gdp_current_2019 nor %s, only %s. Re-downloading it '
+        'here would replace a staged input with whatever the World Bank serves today, so this '
+        'stops instead.' % (gdp_csv, col, sorted(df.columns)[:6]))
 
 
 # ==========================================================
