@@ -233,7 +233,9 @@ def accessible_forest(p):
         countries_vector = os.path.join(p.cur_dir, 'countries_mollweide.gpkg')
         if not hb.path_exists(countries_vector):
             hb.log('ntfp: reprojecting the country boundaries to Mollweide')
-            reproject_vector(p.ntfp_countries_vector_path, countries_vector)
+            # initialize_country_paths publishes this in publish_inputs, so the file is named once
+            # for the whole library rather than again per service.
+            reproject_vector(p.gdf_countries_vector_path, countries_vector)
         hb.log('ntfp: burning the country ids onto the same grid')
         # Centre rule, so a cell belongs to exactly one country. Burning every country a cell
         # touches would give a border cell to whichever country happens to be drawn last.
