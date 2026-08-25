@@ -2281,7 +2281,13 @@ def erosion_paths(p):
         value is a `Path`, because the call sites build filenames with `/`.
     """
     from types import SimpleNamespace
-    out_dir = Path(p.cur_dir)
+    # Every path below names something prevention_shares produces, so the directory is that
+    # task's, not the caller's. prevention_shares publishes it as erosion_gep_output_dir before
+    # its own run_this check, so a later task sees it whether that task ran or skipped. Reading
+    # p.cur_dir here instead sends a consumer looking in its own directory, where a producer
+    # never wrote: gep_calculation raised on a missing integrated_country_gep.csv that had been
+    # written seven hours earlier, one directory across.
+    out_dir = Path(getattr(p, 'erosion_gep_output_dir', None) or p.cur_dir)
     hb.create_directories([str(out_dir)])
     figure_dir = out_dir / 'figures'
     hb.create_directories([str(figure_dir)])
