@@ -1,6 +1,6 @@
 [project]
 name = "global_invest"
-description = "Land-use change model and downscaler"
+description = "Global ecosystem service models for the Gross Ecosystem Product account"
 readme = "README.md"
 requires-python = ">=3.6"
 license = { file = "LICENSE" }
@@ -14,13 +14,46 @@ classifiers = [
         "Programming Language :: Cython",
         "Programming Language :: Python :: 3",
 ]
-# Make sure 'dependencies' are correctly handled. If they aren't defined
-# elsewhere (like setup.cfg or setup.py dynamically), list them here:
-# dependencies = [ "numpy>1.0", "some_other_package" ]
-dynamic = ["version", "dependencies"] # Keeping this assumes you handle deps elsewhere
+dynamic = ["version"]
+
+# Every package a service imports at module level, so a fresh environment built from this file
+# can import the library. Taken from the imports themselves rather than typed from memory: an
+# AST sweep over global_invest/ splits module-level imports, which fail at import time when
+# absent, from imports inside functions, which are optional and live under [optional-dependencies].
+dependencies = [
+        "geopandas",
+        "hazelbean",
+        "joblib",
+        "matplotlib",
+        "numpy",
+        "pandas",
+        "pygeoprocessing",
+        "rasterio",
+        "requests",
+        "rioxarray",
+        "scikit-learn",
+        "scipy",
+        "shapely",
+        "statsmodels",
+        "tqdm",
+        "xarray",
+]
+
+[project.optional-dependencies]
+# Imported inside the functions that need them, so the library imports without these and only the
+# step that uses one fails. GDAL is here because it is installed through conda in this stack
+# rather than resolved by pip, and pinning it as a hard requirement breaks that install.
+gdal = ["GDAL"]
+# natcap.invest runs erosion's SDR model; mapclassify classifies erosion's map breaks and has a
+# quantile fallback; contextily draws landslide basemaps and fetches its tiles over the network.
+models = ["natcap.invest", "mapclassify", "contextily"]
+# fisheries reads a HAR file through gtappy, a sibling repo in this stack rather than a PyPI
+# package, so it is installed from source alongside this one.
+gtap = ["gtappy"]
+test = ["pytest"]
 
 [project.urls]
-repository = "https://github.com/jandrewjohnson/global_invest_dev"
+repository = "https://github.com/NatCapTEEMs/global_invest_dev"
 
 [build-system]
 requires = [
@@ -40,4 +73,4 @@ local_scheme = "node-and-date"
 # Added section to control package discovery for flat layout
 [tool.setuptools.packages.find]
 where = ["."]
-exclude = ["seals_tests*"]
+exclude = ["docs*"]
