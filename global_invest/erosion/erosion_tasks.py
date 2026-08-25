@@ -347,8 +347,15 @@ def _write_csv(df: pd.DataFrame, path: Path):
 
 
 def savefig(path: Path, dpi: int = 300):
+    """Write the current figure, tightly cropped, and close it.
+
+    The call below is plt.savefig, not this function. Without the prefix it recurses, and the
+    recursion is invisible because the inner call passes bbox_inches, which this signature does
+    not take: the TypeError arrives before the RecursionError, and reads like a matplotlib
+    version problem rather than a name that resolves to the wrong thing.
+    """
     plt.tight_layout()
-    savefig(path, dpi=dpi, bbox_inches="tight")
+    plt.savefig(path, dpi=dpi, bbox_inches="tight")
     plt.close()
 
 
@@ -2946,8 +2953,14 @@ def gep_calculation(p):
         raise NameError('integrated_country_gep.csv carries no %s column, only %s'
                         % (column, sorted(df.columns)[:8]))
 
-    values = df[['iso3', column]].rename(
-        columns={'iso3': 'iso3_r250_label', column: 'erosion_gep'})
+    # The integrated table is one row per territory, not per country: France carries seven rows,
+    # Australia three, and eleven codes repeat in all. Summing to the code first is what makes the
+    # join one-to-one; without it the merge widens the 250-country table to 268 rows, reports a
+    # country count that counts territories, and hands any downstream join France seven times.
+    # The total is unchanged either way, because every territory still contributes exactly once.
+    values = (df[['iso3', column]]
+              .rename(columns={'iso3': 'iso3_r250_label', column: 'erosion_gep'})
+              .groupby('iso3_r250_label', as_index=False)['erosion_gep'].sum())
     df_gep = utilities.country_attributes(p).merge(values, on='iso3_r250_label', how='left')
     df_gep['year'] = int(p.gep_base_year)
     hb.df_write(df_gep, service_results['gep_by_country_base_year'])
