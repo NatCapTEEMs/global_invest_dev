@@ -346,16 +346,19 @@ def _write_csv(df: pd.DataFrame, path: str):
     df.to_csv(path, index=False)
 
 
-def savefig(path: str, dpi: int = 300):
+def savefig(path: str, dpi: int = 300, **kwargs):
     """Write the current figure, tightly cropped, and close it.
 
     The call below is plt.savefig, not this function. Without the prefix it recurses, and the
-    recursion is invisible because the inner call passes bbox_inches, which this signature does
-    not take: the TypeError arrives before the RecursionError, and reads like a matplotlib
-    version problem rather than a name that resolves to the wrong thing.
+    recursion is invisible because the inner call passes bbox_inches, which a two-argument
+    signature does not take: the TypeError arrives before the RecursionError, and reads like a
+    matplotlib version problem rather than a name that resolves to the wrong thing.
+
+    Two of the twenty call sites pass bbox_inches themselves, so anything extra is forwarded and
+    the caller's value wins over the default.
     """
     plt.tight_layout()
-    plt.savefig(path, dpi=dpi, bbox_inches="tight")
+    plt.savefig(path, dpi=dpi, **{'bbox_inches': 'tight', **kwargs})
     plt.close()
 
 
