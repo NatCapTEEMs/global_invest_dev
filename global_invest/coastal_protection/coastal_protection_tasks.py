@@ -37,8 +37,8 @@ def publish_inputs(p):
     # Auxiliary science inputs beside the quantity row: the coral-reef workbook (really a second
     # sheet subgroup) and the GDP deflator (the drive folder spells it 'gdp_inflation_delator',
     # sic; staged locally under the corrected name, exact case for case-sensitive filesystems).
-    p.coral_reef_ref_path = p.get_path('global_invest', 'coastal_protection', 'coral_reefs_annual_expected_benefit_nfamara.xlsx')
-    p.df_gdp_inflation_deflator_path = p.get_path('global_invest', 'coastal_protection', 'gdp_inflation_deflator', 'GDP_Inflation_deflator.xlsx')
+    p.coral_reef_ref_path = p.get_path(p.coastal_protection_coral_reef_path)
+    p.df_gdp_inflation_deflator_path = p.get_path(p.coastal_protection_gdp_deflator_path)
     if not hasattr(p, 'results'):
         p.results = {}
     return p

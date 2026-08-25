@@ -134,3 +134,19 @@ pollination,pollination_fao_prices_source_url,https://bulks-faostat.fao.org/prod
 pollination,pollination_fao_prices_source_archive_member,Prices_E_All_Data_(Normalized).csv
 pollination,pollination_value_raster_dir,crop_benefits
 pollination,pollination_value_raster_dir_source_note,"the precomputed baseline pollination-value raster the shock path resamples, poll_value_global_<year>usd.tif. Output of the source pipeline run once over Monfreda yields, CropGrids area, FAO producer prices and pollination-dependence ratios. Reused rather than rebuilt, so it has no URL and a person stages it."
+air_filtration,air_filtration_vsl_path,global_invest/air_filtration/data/clean/vsl.csv
+air_filtration,air_filtration_vsl_source_note,"value of a statistical life per country, the price half of the air-quality valuation. Rebuilt from the workbook the group circulated; sandstorm prevention reads the same column."
+coastal_protection,coastal_protection_coral_reef_path,global_invest/coastal_protection/coral_reefs_annual_expected_benefit_nfamara.xlsx
+coastal_protection,coastal_protection_coral_reef_source_note,"annual expected coastal-protection benefit of coral reefs, per country. Supplied by the author rather than computed here, which is why coastal protection is only half ours."
+coastal_protection,coastal_protection_gdp_deflator_path,global_invest/coastal_protection/gdp_inflation_deflator/GDP_Inflation_deflator.xlsx
+coastal_protection,coastal_protection_gdp_deflator_source_note,"GDP inflation deflator, for putting the mangrove and coral figures in one price year. The drive folder spells it gdp_inflation_delator, sic; staged under the corrected name."
+landslide_mitigation,landslide_elevation_path,seals/static_regressors/alt_m.tif
+landslide_mitigation,landslide_elevation_source_note,"elevation in metres, the slope input to the stability model. Read from the shared SEALS static regressors rather than a landslide copy, so the two models see one terrain."
+landslide_mitigation,landslide_lulc_path_template,lulc/esa/lulc_esa_{year}.tif
+landslide_mitigation,landslide_lulc_path_template_source_note,"the ESA land cover per year, formatted with the year. A template rather than a path because the task iterates data_processing_range."
+pollination,pollination_crosswalk_m49_iso3_path,fao/crosswalks/crosswalk_m49_iso3.csv
+pollination,pollination_crosswalk_m49_iso3_source_note,"FAO M49 area codes to ISO3."
+pollination,pollination_fao_classification_path,fao/crosswalks/fao_classification.csv
+pollination,pollination_fao_classification_source_note,"the FAO item classification."
+pollination,pollination_crosswalk_fao_cropgrids_path,fao/crosswalks/crosswalk_fao_cropgrids.csv
+pollination,pollination_crosswalk_fao_cropgrids_source_note,"FAO items to CropGrids crop names."

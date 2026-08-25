@@ -855,12 +855,9 @@ def fao_median_prices(p):
         return True
     hb.create_directories(p.fao_median_prices_dir)
     settings = pf.FaoPriceSettings(
-        crosswalk_m49_iso3_path=str(p.get_path(os.path.join('fao', 'crosswalks',
-                                                            'crosswalk_m49_iso3.csv'))),
-        fao_classification_path=str(p.get_path(os.path.join('fao', 'crosswalks',
-                                                            'fao_classification.csv'))),
-        crosswalk_fao_cropgrids_path=str(p.get_path(os.path.join('fao', 'crosswalks',
-                                                                 'crosswalk_fao_cropgrids.csv'))),
+        crosswalk_m49_iso3_path=str(p.get_path(p.pollination_crosswalk_m49_iso3_path)),
+        fao_classification_path=str(p.get_path(p.pollination_fao_classification_path)),
+        crosswalk_fao_cropgrids_path=str(p.get_path(p.pollination_crosswalk_fao_cropgrids_path)),
         fao_production_bulk_path=str(p.pollination_fao_production_path),
         fao_prices_bulk_path=str(p.pollination_fao_prices_path),
         fx_lcu_per_usd_path=str(p.pollination_fx_path),

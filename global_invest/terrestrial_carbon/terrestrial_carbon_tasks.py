@@ -139,11 +139,11 @@ def carbon_density_raster_base_year(p):
 
 def carbon_density_raster_per_cell_base_year(p):
     publish_inputs(p)
-    p.ha_per_cell_10sec_ref_path = p.get_path('pyramids', 'ha_per_cell_10sec.tif')
+    utilities.initialize_pyramid_paths(p)
     p.carbon_density_per_cell_base_year_path = os.path.join(p.cur_dir, f'projected_carbon_density_{p.gep_base_year}_per_cell.tif')
     if not p.run_this:
         return True
-    hb.multiply(p.carbon_density_raster_base_year_path, p.ha_per_cell_10sec_ref_path, p.carbon_density_per_cell_base_year_path)
+    hb.multiply(p.carbon_density_raster_base_year_path, p.ha_per_cell_10sec_path, p.carbon_density_per_cell_base_year_path)
     return True
 
 

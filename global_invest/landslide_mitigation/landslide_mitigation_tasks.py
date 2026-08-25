@@ -322,7 +322,7 @@ def build_ease_grid_reference(p):
 def reproject_dem(p):
     publish_inputs(p)
     if p.run_this:
-        src_path = p.get_path('seals', 'static_regressors', 'alt_m.tif')
+        src_path = p.get_path(p.landslide_elevation_path)
         out_path = os.path.join(p.input_data_dir, 'dem_1km.tif')
         if os.path.exists(out_path) and not p.force_run:
             p.dem_path = out_path
@@ -379,7 +379,7 @@ def reproject_esacci_forest_share(p):
         lut = chain.forest_weight_lut()
 
         for year in p.data_processing_range:
-            src_path = p.get_path('lulc', 'esa', f'lulc_esa_{year}.tif',
+            src_path = p.get_path(p.landslide_lulc_path_template.format(year=year),
                                   raise_error_if_fail=False)
             if not os.path.exists(src_path):
                 p.L.warning(f'ESA-CCI {year} not found, skipping year.')
@@ -1049,7 +1049,7 @@ def compute_slope(p):
                 ref_info['projection_wkt'])
 
         # ---- 2. Warp RAW (unfilled) elevation to the fine grid ----
-        raw_dem_src = p.get_path('seals', 'static_regressors', 'alt_m.tif')
+        raw_dem_src = p.get_path(p.landslide_elevation_path)
         dem_fine_path = os.path.join(work_dir, 'dem_fine.tif')
         if not os.path.exists(dem_fine_path) or p.force_run:
             warp_to_reference(
@@ -1966,8 +1966,10 @@ def build_vsl_raster(p):
                  f'2019 constant USD, factor={chain.DEFLATOR_2022_TO_2019:.4f}).')
 
         # ---- 2. Join to correspondence GPKG ----
-        correspondence_path = p.get_path('cartographic', 'ee', 'ee_r264_correspondence.gpkg')
-        corr = gpd.read_file(correspondence_path)
+        # publish_inputs already resolved this through initialize_country_paths, which every
+        # service calls, so reaching for the file again here would let one service drift onto a
+        # different correspondence than the rest of the library collapses on.
+        corr = gpd.read_file(p.gdf_countries_vector_path)
         # The EE correspondence names its ISO3 column iso3_r250_label (the source repo's own
         # gpkg called it iso3). It is also the right join key: every r264 sub-region carries
         # its country's iso3 there, so split countries take their national VSL on every row.
