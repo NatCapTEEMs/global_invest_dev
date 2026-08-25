@@ -448,8 +448,8 @@ format:
 ## Turning outlines into cells {.smaller}
 
 - Every service that totals a raster inside a country has to decide what a cell the border passes through counts as. Two rules are in the library today, and the choice is not currently made on purpose.
-- For a country id the rule is settled. A cell goes to whichever country covers its exact centre, so it has exactly one owner. The alternative, all-touched, hands a border cell to every country whose outline touches it, and that cell's forest is then added to two national totals, so the world sums to more than it holds.
-- **Q1:** do we adopt the centre rule for pollination and terrestrial_carbon? Both aggregate through the shared helper, which is all-touched, so they double-count their border cells today, and adopting it moves two published totals.
+- Under the centre rule a cell goes to whichever country covers its exact centre. Under all-touched every country whose outline touches the cell claims it, and because the claims are burned into one id raster, the country rasterised last takes it. The world total survives either way; what moves is the split between neighbours, and it moves according to the order countries sit in a file rather than according to geography.
+- **Q1:** do we adopt the centre rule for pollination and terrestrial_carbon? Both aggregate through the shared helper, which is all-touched, so a border cell goes to whichever neighbour was drawn last, and adopting the centre rule moves two published totals. Terrestrial carbon currently reproduces its manuscript figure, so the question is partly whether we are willing to lose that match.
 - **Q2:** should a habitat extent carry the fraction of the cell it covers, instead of either whole-cell rule? The centre rule loses a mangrove strip narrower than a cell, and all-touched books that same 50 m strip as a full 300 m cell.
 
 
