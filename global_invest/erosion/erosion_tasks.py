@@ -2302,7 +2302,11 @@ def erosion_paths(p):
     # written seven hours earlier, one directory across.
     out_dir = str(getattr(p, 'erosion_gep_output_dir', None) or p.cur_dir)
     hb.create_directories([str(out_dir)])
-    figure_dir = os.path.join(out_dir, 'figures')
+    # The figures are the other way round. Every one of them is written by
+    # generate_all_maps_and_figures and read by nothing, so they belong to the task that draws
+    # them rather than to the task whose numbers they draw. Hanging them off out_dir put
+    # maps_and_figures' output inside prevention_shares' directory.
+    figure_dir = os.path.join(str(p.cur_dir), 'figures')
     hb.create_directories([str(figure_dir)])
 
     def published(attribute, default_name):
