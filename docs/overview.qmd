@@ -432,7 +432,7 @@ format:
 
 ## ntfp
 
-- [Values non-timber forest products over the forest that is within 10 km of a road or river and green enough to yield one. {{< meta ntfp_total >}} over 1.48 billion reachable hectares. Every choice is the source module's: the land cover at its native 300 m in Mollweide, a five-year mean NDVI screen at 0.2, accessibility as the dissolved 10 km buffer of the road and river geometries rather than a raster dilation, and countries taken from the boundary polygons a cell's centre falls in.]{.state}
+- [Values non-timber forest products over the forest that is within 10 km of a road or river and green enough to yield one. {{< meta ntfp_total >}} across 195 countries, over 1.48 billion reachable hectares. Every choice is the source module's: the land cover at its native 300 m in Mollweide, a five-year mean NDVI screen at 0.2, accessibility as the dissolved 10 km buffer of the road and river geometries rather than a raster dilation, and countries taken from the boundary polygons a cell's centre falls in.]{.state}
 - **Q1:** is there a model behind CWoN's non-wood forest product value, or is it a published table? That is what stands between this service and a number we compute.
 - **Q2:** the rate table we now read carries an edit we cannot account for. The non-wood forest product value per hectare is multiplied by exactly 5.0 for the Central African Republic, DR Congo and Mozambique, in every year from 2000 to 2020, and for no other country of the 232. What is that adjustment based on?
 - **Q3:** should a cell sitting exactly on the NDVI floor of 0.2 be kept or dropped? We keep it and the source module drops it, because scaling 2000 by 0.0001 gives 0.19999999 in float32, and that is 202,930 cells or 0.0099% of the valid grid.
