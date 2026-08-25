@@ -30,7 +30,6 @@ import sys
 import time
 import logging
 import warnings
-from pathlib import Path
 import geopandas as gpd
 import rasterio
 import rasterio.features
@@ -249,7 +248,7 @@ def _required_path(p, attribute, constant_name):
         constant_name (str): what this path is, for the error message.
 
     Returns:
-        Path: the resolved path.
+        str: the resolved path.
 
     Raises:
         NameError: when the project does not carry the attribute.
@@ -259,7 +258,7 @@ def _required_path(p, attribute, constant_name):
         raise NameError('erosion needs %s (%s). Add a row for it to es_parameters.csv; it used to '
                         'default to a path on the machine the source scripts came from.'
                         % (attribute, constant_name))
-    return Path(value)
+    return str(value)
 
 def _output_path(p, attribute, default_name):
     """Where the run writes something, from the project or under the task's own directory.
@@ -276,13 +275,13 @@ def _output_path(p, attribute, default_name):
         default_name (str): the file or directory name under the task directory.
 
     Returns:
-        Path: where to write.
+        str: where to write.
     """
     value = getattr(p, attribute, None)
     if value is not None:
-        return Path(value)
+        return str(value)
     directory = getattr(p, 'cur_dir', None) or getattr(p, 'project_dir', None) or '.'
-    return Path(directory) / default_name
+    return os.path.join(str(directory), default_name)
 
 
 def configure_sdr(p):
@@ -297,7 +296,7 @@ def configure_sdr(p):
     ROOT = _output_path(p, 'erosion_sdr_root', 'sdr')
     BASE_IN = _output_path(p, 'erosion_sdr_input_dir', 'sdr_input')
     BASE_OUT = _output_path(p, 'erosion_sdr_output_dir', 'sdr_output')
-    BASE_OUT.mkdir(parents=True, exist_ok=True)
+    os.makedirs(BASE_OUT, exist_ok=True)
 
     BIOPHYS_CSV = _required_path(p, 'erosion_biophysical_table_path', 'BIOPHYS_CSV')
     DEM_TIF = _required_path(p, 'erosion_dem_path', 'DEM_TIF')
@@ -352,13 +351,13 @@ def _set_proj_gdal_env():
 
     by ensuring PROJ_LIB and GDAL_DATA point to the *active* conda env.
     """
-    prefix = Path(sys.prefix)
-    proj_lib = prefix / "share" / "proj"
-    gdal_data = prefix / "share" / "gdal"
+    prefix = sys.prefix
+    proj_lib = os.path.join(prefix, "share", "proj")
+    gdal_data = os.path.join(prefix, "share", "gdal")
 
-    if proj_lib.exists():
+    if os.path.exists(proj_lib):
         os.environ["PROJ_LIB"] = str(proj_lib)
-    if gdal_data.exists():
+    if os.path.exists(gdal_data):
         os.environ["GDAL_DATA"] = str(gdal_data)
 
     # Prefer official EPSG parameters vs GeoTIFF geokeys when there is mismatch
@@ -393,15 +392,15 @@ LOGGER = logging.getLogger(__name__)
 # =============================================================================
 # 3) HELPERS
 # =============================================================================
-def _assert_exists(path: Path, label: str):
-    if not path.exists():
+def _assert_exists(path, label: str):
+    if not os.path.exists(path):
         raise FileNotFoundError(f"[missing] {label}: {path}")
 
 
 # =============================================================================
 # 4) SDR ARGS (INVEST 3.17.x TEMPLATE)
 # =============================================================================
-def build_args(watersheds_path: Path) -> dict:
+def build_args(watersheds_path) -> dict:
     return {
         "workspace_dir": str(BASE_OUT),
         "results_suffix": "2019_revised_dec_14",
@@ -646,7 +645,7 @@ def configure_prevention_shares(p):
     GDP_CURRENT_2019_CSV = _required_path(p, 'erosion_gdp_csv_path', 'IN_DIR / "worldbank_gdp_2019.csv"')
 
     OUT_DIR = _output_path(p, 'erosion_gep_output_dir', 'gep_output')
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    os.makedirs(OUT_DIR, exist_ok=True)
 
     THRESH_LOW = getattr(p, 'erosion_threshold_low_t_ha_yr', 2.0)
     THRESH_HIGH = getattr(p, 'erosion_threshold_high_t_ha_yr', 11.0)
@@ -726,7 +725,7 @@ def configure_maps(p):
     RUN_DIR = _output_path(p, 'erosion_gep_output_dir', 'gep_output')
 
     FIG_DIR = _output_path(p, 'erosion_figures_dir', 'figures')
-    FIG_DIR.mkdir(parents=True, exist_ok=True)
+    os.makedirs(FIG_DIR, exist_ok=True)
 
     INTEGRATED_CSV = _output_path(p, 'erosion_integrated_country_gep_csv', 'integrated_country_gep.csv')
     COUNTRY_CROP_LONG_CSV = _output_path(p, 'erosion_country_crop_long_csv', 'country_crop_protected_production_long.csv')
@@ -794,8 +793,8 @@ def get_erosion_yield_coefficient(crop_key, coef_map, fallback=0.08):
     return float(np.clip(fallback, 0.0, 1.0))
 
 
-def assert_exists(p: Path, hint: str = ""):
-    if not p.exists():
+def assert_exists(p, hint: str = ""):
+    if not os.path.exists(p):
         raise FileNotFoundError(f"Missing: {p}\n{hint}")
 
 
@@ -857,7 +856,7 @@ def _clip01_arr(arr: np.ndarray) -> np.ndarray:
     return out
 
 
-def _write_share(path: Path, template: xr.DataArray, arr01: np.ndarray):
+def _write_share(path, template: xr.DataArray, arr01: np.ndarray):
     """Write a float32 share raster (0–1) aligned to template."""
     da = xr.DataArray(arr01.astype("float32"), coords=template.coords, dims=template.dims)
     da = da.rio.write_crs(template.rio.crs, inplace=False)
