@@ -339,7 +339,14 @@ def build_area_km2_raster(meta: dict) -> np.ndarray:
     # Note: 'e' is usually negative (pixel height) in north-up images
     latitudes = transform.f + transform.e * (np.arange(nrows) + 0.5)
     
-    area_per_row = pixel_area_km2(latitudes)
+    # hazelbean returns m2 per cell on the WGS84 ellipsoid, which is the convention the
+    # rest of the account uses through the ha_per_cell pyramid.
+    import hazelbean as hb
+
+    # resolution from the transform, not the module constant: the constant is the grid this
+    # normally runs on, but the meta is the grid it was actually handed.
+    area_per_row = np.asarray(hb.get_area_of_pixel_column_from_center_lats(
+        abs(transform.a), np.asarray(latitudes, dtype='float64'))) / 1e6
     # Broadcast row areas across all columns
     return np.repeat(area_per_row[:, None], ncols, axis=1).astype(np.float32)
 
@@ -896,54 +903,11 @@ def _compute_annual_prices(prices: pd.DataFrame, cw: pd.DataFrame) -> tuple[pd.D
 PIXEL_RES_DEG = 0.05
 
 
-def pixel_area_km2(lat_deg: np.ndarray, res_deg: float = PIXEL_RES_DEG) -> np.ndarray:
-    """
-    Pixel area in km² for each row of a lat/lon grid (spherical Earth).
-
-    Parameters
-    ----------
-    lat_deg : 1-D array
-        Latitude of each pixel-row centre (degrees, north-positive).
-    res_deg : float
-        Angular resolution in degrees (default 0.05° ≈ 5 km).
-
-    Returns
-    -------
-    1-D array of areas in km², one per row.
-
-    See Also
-    --------
-    crop_benefits.raster.grid.pixel_area_km2 :
-        Complementary function that accepts a rasterio Affine transform and
-        grid dimensions instead of a raw latitude array.  Use *that* function
-        when you only have a rasterio metadata dict; use *this* function when
-        you already have an explicit latitude array (e.g. inside
-        ``build_area_km2_raster``).
-    """
-    # WGS84, from hazelbean, because that is what the rest of the account measures area with:
-    # base_data/pyramids/ha_per_cell_10sec.tif, which terrestrial and coastal carbon aggregate
-    # through, matches this function to 0.000% and the 6371 km sphere to between -0.223% and
-    # +0.557% depending on latitude. Pollination was the only service on a sphere, so the GEP
-    # total was summing services whose cell areas disagreed by up to half a percent.
-    #
-    # The sphere is what the source pipeline uses (crop_benefits raster/grid.py, raster/spatial.py)
-    # and is kept below as pixel_area_km2_spherical so the replication check still has it. Choosing
-    # the ellipsoid here costs 0.1086 percent on the pollination total and buys one convention
-    # across every service.
-    #
-    # NOTE hazelbean's docstring says it returns ha per cell; it returns m2, hence the 1e6.
-    import hazelbean as hb
-
-    return np.asarray(
-        hb.get_area_of_pixel_column_from_center_lats(res_deg, np.asarray(lat_deg, dtype='float64'))
-    ) / 1e6
-
-
 def pixel_area_km2_spherical(lat_deg: np.ndarray, res_deg: float = PIXEL_RES_DEG) -> np.ndarray:
     """Pixel area in km2 on a 6371 km sphere, the convention the source pipeline uses.
 
     Kept so the replication check against crop_benefits can be run on its own terms. Production
-    uses pixel_area_km2, which is WGS84 and agrees with the rest of the account.
+    calls hazelbean directly, which is WGS84 and agrees with the rest of the account.
     """
     R = 6371.0  # Earth radius, km
     lat_rad = np.deg2rad(lat_deg)

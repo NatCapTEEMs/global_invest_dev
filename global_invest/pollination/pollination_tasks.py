@@ -1523,7 +1523,8 @@ def mask_protected_areas_300m(cfg: pf.SufficiencySettings, scenario: str = "2020
                 row_off = window.row_off
                 tile_h = window.height
                 row_lats = bounds_top - (np.arange(row_off, row_off + tile_h) + 0.5) * pixel_lat_deg
-                area_km2 = pf.pixel_area_km2(row_lats, pixel_lat_deg)[:, None]
+                area_km2 = np.asarray(hb.get_area_of_pixel_column_from_center_lats(
+                    pixel_lat_deg, row_lats.astype('float64')))[:, None] / 1e6
 
                 # Sum before (USD/km² * km² = USD, ignoring NaNs)
                 total_before += float(np.nansum(value * area_km2))
