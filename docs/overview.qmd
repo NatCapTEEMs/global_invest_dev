@@ -305,6 +305,7 @@ format:
 - **Q1:** was EEZ-only chosen to avoid double-counting the landward pixels with terrestrial carbon? Most of the mapped habitat sits landward of the shoreline (97.5 percent of mangrove area, 84 percent of salt marsh), so including it multiplies the total by 4.5.
 - **Q2:** which exact seagrass and salt marsh input versions produced the report's {{< meta coastal_report >}}? Our replication gives {{< meta coastal_eez >}} with the mangrove component matching, and the report's own seagrass area (62.21 Mha) exceeds the published range it cites (16 to 26.7 Mha).
 - **Q3:** if both sides count, a landward mask must prevent double-counting with terrestrial carbon. Does one exist?
+- **Q4:** should a habitat be credited with a cell its mapped extent only clips? Crediting every touched cell whole put the mangrove extent at roughly twice the area of the polygons themselves, and salt marsh near three times, because both are ribbons about as wide as a cell. Measuring the covered fraction instead brings mangrove back to the mapped extent, which independently matches Global Mangrove Watch's published figure. Both the EEZ-only and all-rows totals in Q1 sit on top of the inflated extent.
 
 ## marine_carbon
 
@@ -419,6 +420,7 @@ format:
 - [Values flood damage avoided by ecosystems: flood depth by return period, depth-damage functions and the asset map give each country's expected annual damage. Our recompute reproduces the pipeline's table for 146 of 148 non-zero countries.]{.state}
 - **Q1:** should the service-flow fraction multiply into the valuation? The pipeline computes one but never applies it, so today's number is expected flood damage rather than damage ecosystems avoid.
 - **Q2:** are the FINAL_GEP_FLOOD outputs the current ones?
+- **Q3:** are the JRC depth-damage curves meant to be applied over true ground area? They are a damage per square metre of asset, and the damage pass gives every cell the same area, taken from a projection whose cells shrink away from the equator. Weighting each country's damage by its latitude moves the global total by about a third, and the countries carrying most of the value sit far from the equator. The treatment is the pipeline's rather than ours, which is why our recompute reproduces its table.
 
 ## local_climate_regulation
 
@@ -452,7 +454,21 @@ format:
 ## Turning outlines into cells {.smaller}
 
 - Every service that totals a raster inside a country has to decide what a cell the border passes through counts as. Under the centre rule the cell goes to whichever country covers its exact centre. Under all-touched every country whose outline touches it claims it, and since the claims are burned into one id raster, the country rasterised last takes it. Nothing is counted twice either way; what moves is the split between neighbours.
-- **Q:** should a habitat extent carry the fraction of the cell it covers, instead of either whole-cell rule? The centre rule loses a mangrove strip narrower than a cell, and all-touched books that same 50 m strip as a full 300 m cell.
+- **Q:** should a habitat extent carry the fraction of the cell it covers, instead of either whole-cell rule? The centre rule loses a mangrove strip narrower than a cell, and all-touched books that same 50 m strip as a full 300 m cell. Coastal carbon now measures the fraction, which brings its mangrove extent back to the mapped one and roughly halves it. The question left for the room is whether every service that maps a thing narrower than its cells should do the same.
+
+## What a reference check can establish {.smaller}
+
+- Eleven service entries rest on reproducing an author's committed output. Where that output came from the code we ported, the two sides share every assumption, so agreement establishes that the port is faithful and cannot establish that the number is right.
+- Both services anyone has examined this way turned out to carry an assumption inherited from the source rather than introduced by us. Pollination summed a raster its own author documents as a density. Flood control measures every cell as the same size on a projection whose cells shrink away from the equator.
+- **Q:** what should a service show beyond agreement with its author, before the account treats its number as verified?
+- **Q:** when a check finds something, it is a correction to the author's published number rather than to our port. Who takes it to them, and does the account wait for their answer?
+
+## How a service measures a cell {.smaller}
+
+- A service that turns a density into a total multiplies by cell area, so the cell area silently scales every number it produces. The right answer differs by grid, and there is no single convention that fits all of them.
+- Two strategies are already in use and both are correct. Erosion and ntfp work in equal-area projections, where a constant is exact and a latitude formula would be wrong. Pollination and the carbon services work in geographic coordinates and carry a per-latitude area from the shared pyramid.
+- The two fail differently. A constant cannot be applied wrongly per cell. An area raster is more precise and every consumer has to remember it, which is how pollination's earlier figure went wrong.
+- **Q:** should each service state which grid it is on and what its cell area rests on, the way the erosion code refuses to run on an unprojected input?
 
 
 # Appendix
