@@ -213,3 +213,6 @@ docs/check_consistency.py
 # The private ecosystem-service reference: our working notes, published to a private sheet.
 docs/publish_es_reference.py
 docs/es_reference_private.md
+
+# Working notes on what is still open. Ours, not the org repo.
+docs/OPEN_TODOS.md
