@@ -465,10 +465,12 @@ format:
 
 ## How a service measures a cell {.smaller}
 
-- A service that turns a density into a total multiplies by cell area, so the cell area silently scales every number it produces. The right answer differs by grid, and there is no single convention that fits all of them.
-- Two strategies are already in use and both are correct. Erosion and ntfp work in equal-area projections, where a constant is exact and a latitude formula would be wrong. Pollination and the carbon services work in geographic coordinates and carry a per-latitude area from the shared pyramid.
-- The two fail differently. A constant cannot be applied wrongly per cell. An area raster is more precise and every consumer has to remember it, which is how pollination's earlier figure went wrong.
-- **Q:** should each service state which grid it is on and what its cell area rests on, the way the erosion code refuses to run on an unprojected input?
+- A service that turns a density into a total multiplies by cell area, so the cell area silently scales every number it produces.
+- There is a default and there are justified departures from it. The carbon services and pollination sit on the shared pyramid in geographic coordinates and carry a per-latitude area. Erosion and ntfp work in equal-area projections because their science needs true distances and areas, and there a constant cell area is exact where a latitude formula would be wrong.
+- The two fail differently. A constant cannot be applied wrongly per cell. A per-latitude area is more precise and every consumer has to remember it, which is how pollination's earlier figure went wrong.
+- Flood control sits on a projection that is neither, so its constant cell area is exact only at the equator. That is the absence of a convention rather than a third one.
+- Services on different grids cannot be compared cell to cell without a reprojection, which the landward mask coastal carbon needs would require.
+- **Q:** should a service be required to sit on the shared pyramid unless an equal-area grid is needed, and to state what its cell area rests on, the way the erosion code refuses to run on an unprojected input?
 
 
 # Appendix
