@@ -90,12 +90,29 @@ def summarize_raster_by_region(value_raster_path, region_boundary_path, out_path
 
     regions = gpd.read_file(region_boundary_path)
     # zones_raster_data_type=5 (Int32) so ids past 255 don't saturate (r264 runs to 264, r50xAEZ
-    # higher); all_touched=True. Returns a frame indexed by
-    # zone id, with a zone 0 = everything outside every polygon.
+    # higher). Returns a frame indexed by zone id, with a zone 0 = everything outside every polygon.
+    #
+    # all_touched=False is the centre rule: a cell goes to whichever zone covers its centre point,
+    # so it has exactly one owner and the answer does not depend on anything but geography. Under
+    # all_touched=True every zone whose outline touches a cell claims it, and because the claims
+    # are burned into one id raster the zone rasterised LAST keeps it -- which means a country's
+    # number moved with its row order in the boundary file. Nothing was double counted either way;
+    # what was arbitrary was the split between neighbours.
+    #
+    # What this costs, measured rather than assumed. Both boundaries have 100% of their vertices on
+    # the 10 arc-second grid, because that is what they were built from, so a value raster on that
+    # grid has no partly covered cells and the two rules agree exactly. terrestrial_carbon is on it
+    # for both its call sites: 0 of 8,398,080,000 cells change zone, on the r264 country boundary
+    # and on the r50xAEZ18 shock boundary alike. pollination is on a 0.05 degree grid and does
+    # move: the world total falls 0.1211%, from 388.90bn to 388.43bn, while 92 of the 204 countries
+    # present in both runs move more than 5% and Iraq loses 65.63% of its value.
+    #
+    # NOTE the flag alone changes nothing where a run already exists: hazelbean reuses a zone ids
+    # raster it finds on disk, so the cached one keeps the old rule until it is deleted.
     zone_ids_raster = os.path.splitext(out_path)[0] + '_zone_ids.tif'
     stats = hb.zonal_statistics_flex(
         value_raster_path, region_boundary_path, zone_ids_raster_path=zone_ids_raster,
-        id_column_label=id_column, zones_raster_data_type=5, all_touched=True,
+        id_column_label=id_column, zones_raster_data_type=5, all_touched=False,
         stats_to_retrieve='sums_counts', assert_projections_same=False, verbose=False)
     stats = stats[(stats.index != 0) & (stats['counts'] > 0)]   # drop background + empty zones
 
