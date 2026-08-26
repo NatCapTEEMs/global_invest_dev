@@ -51,10 +51,12 @@ FIELD_COLUMNS = [
     ('method', 'how it is computed'),
     ('code', 'what we did to the code'),
     ('total', 'total (2019 USD)'),
+    ('grid', 'which grid, and what the cell area rests on'),
+    ('reference', 'what the reference shares with us'),
     ('number', 'what the number is, and what it is checked against'),
     ('need', 'what we need'),
 ]
-COLUMN_WIDTHS = (22, 16, 22, 26, 11, 8, 30, 52, 64, 16, 64, 40)
+COLUMN_WIDTHS = (22, 16, 22, 26, 11, 8, 30, 52, 64, 56, 56, 16, 64, 40)
 LINE_HEIGHT_POINTS = 13.5
 MAX_LINES = 14
 
