@@ -112,6 +112,10 @@ def gep_calculation(p):
     CSV (diffable against the source repo's committed output) and the house per-country GEP
     table; fire_protection_gep carries the PROVISIONAL variant until the account blesses one."""
     publish_inputs(p)
+    # The reference-shaped CSV sits beside the house table, named for what it is: the same
+    # columns the source repo's committed output carries, so the two diff directly.
+    p.fire_results_reference_shape_path = os.path.join(
+        p.cur_dir, 'GEP_wildfire_2019_results.csv')
     service_results, already_done = utilities.begin_gep_calculation(p, 'fire_protection')
     if already_done:
         return

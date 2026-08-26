@@ -1,16 +1,19 @@
 """Pollination science: the sufficiency and value calculation, plus the
 frame and array arithmetic the two shock tasks and the GEP valuation share.
 
-The raster science (300 m sufficiency, 5 km valuation, PNAS diff) is imported unchanged from
-crop_benefits; the driver functions at the bottom only run it per scenario on our SEALS maps,
-and the task layer reads the rasters it leaves behind. Nothing here opens a file: the zonal step
-takes the arrays in and hands per-zone series back, which is what the tests exercise. The
-The vendored steps live in pollination_sufficiency, imported at the top like any other module (or
-running the static shock task, which needs none of it) does not require the package installed.
+The raster science (300 m sufficiency, 5 km valuation, PNAS diff) is vendored here from
+crop_benefits rather than imported from it, so the module needs no package outside this repo; a
+test blocks the import and asserts the module still loads. The driver functions at the bottom run
+that science per scenario on our SEALS maps, and the task layer reads the rasters it leaves
+behind. Nothing here opens a file: the zonal step takes arrays in and hands per-zone series back,
+which is what the tests exercise.
+
+What crop_benefits still supplies is data, not code. The shock path resamples a precomputed
+baseline value raster from base_data/crop_benefits/, declared in es_parameters like any other
+input.
 """
 from __future__ import annotations
 import os
-from pathlib import Path
 
 import logging
 import numpy as np
@@ -273,10 +276,10 @@ def configure_sufficiency(p, target_year):
     """
     crop_benefits_dir = p.get_path('crop_benefits')
     return SufficiencySettings(
-        output_dir=Path(p.cur_dir),
-        value_raster_dir=Path(crop_benefits_dir),
-        country_raster_path=Path(os.path.join(
-            crop_benefits_dir, 'poll_value_global_%dusd.tif' % int(target_year))))
+        output_dir=str(p.cur_dir),
+        value_raster_dir=str(crop_benefits_dir),
+        country_raster_path=os.path.join(
+            crop_benefits_dir, 'poll_value_global_%dusd.tif' % int(target_year)))
 
 
 # ---------------------------------------------------------------------------------------------
@@ -294,20 +297,20 @@ class SufficiencySettings:
     ProjectFlow object.
 
     Attributes:
-        output_dir (Path): where the sufficiency and value rasters are written, the task's own dir.
-        value_raster_dir (Path): where the precomputed baseline pollination-value raster lives.
-        country_raster_path (Path): the raster defining the 5 km target grid. The valuation needs
+        output_dir (str): where the sufficiency and value rasters are written, the task's own dir.
+        value_raster_dir (str): where the precomputed baseline pollination-value raster lives.
+        country_raster_path (str): the raster defining the 5 km target grid. The valuation needs
             sufficiency and value on one grid, so this points at the value raster itself.
-        lulc_path (Path): the land-cover map the sufficiency is computed from.
-        pa_raster_300m_path (Path): the protected-area raster, for the protected-area summary.
+        lulc_path (str): the land-cover map the sufficiency is computed from.
+        pa_raster_300m_path (str): the protected-area raster, for the protected-area summary.
         tile_size (int): rows per block when streaming a raster.
         n_workers (int): parallel workers for the tiled sufficiency pass.
     """
-    output_dir: Path
-    value_raster_dir: Path
-    country_raster_path: Path
-    lulc_path: Path = None
-    pa_raster_300m_path: Path = None
+    output_dir: str
+    value_raster_dir: str
+    country_raster_path: str
+    lulc_path: str = None
+    pa_raster_300m_path: str = None
     tile_size: int = 2048
     n_workers: int = 4
 
@@ -383,24 +386,35 @@ def get_compression_profile(
 class FaoPriceSettings:
     """What the FAO price steps need, in place of the crop_benefits Config they used to read.
 
-    The prices are a base-data input rather than a per-run result: the pipeline downloads FAOSTAT
-    production and producer prices, reconstructs local currency where FAOSTAT reports only the old
-    series, converts to USD against World Bank exchange rates, and writes a median price per crop
-    over `price_years`. The pollination value raster is built against that table.
+    The prices are a base-data input rather than a per-run result: the pipeline reads the FAOSTAT
+    production and producer-price bulks, reconstructs local currency where FAOSTAT reports only the
+    old series, converts to USD against World Bank exchange rates, and writes a median price per
+    crop over `price_years`. The pollination value raster is built against that table.
+
+    The two FAOSTAT bulks are staged into base data rather than pulled on each run. FAOSTAT
+    revises them, so a fresh pull would make the price table depend on the day it was built, and
+    a compute node without outbound network could not run the stage at all. es_parameters carries
+    a url and an archive member for each, so the shared download task can fetch them once.
 
     Attributes:
-        crosswalk_m49_iso3_path (Path): FAO M49 area codes to ISO3.
-        fao_classification_path (Path): the FAO item classification.
-        crosswalk_fao_cropgrids_path (Path): FAO items to CropGrids crop names.
-        output_dir (Path): where the production, price, value and median-price tables are written.
+        crosswalk_m49_iso3_path (str): FAO M49 area codes to ISO3.
+        fao_classification_path (str): the FAO item classification.
+        crosswalk_fao_cropgrids_path (str): FAO items to CropGrids crop names.
+        fao_production_bulk_path (str): the staged FAOSTAT production and yield bulk CSV.
+        fao_prices_bulk_path (str): the staged FAOSTAT producer-price bulk CSV.
+        fx_lcu_per_usd_path (str): the staged World Bank exchange rates.
+        output_dir (str): where the production, price, value and median-price tables are written.
         fao_start_year (int): first year of FAOSTAT data to keep.
         fao_end_year (int): last year.
         price_years (tuple): the years the median price is taken over.
     """
-    crosswalk_m49_iso3_path: Path
-    fao_classification_path: Path
-    crosswalk_fao_cropgrids_path: Path
-    output_dir: Path
+    crosswalk_m49_iso3_path: str
+    fao_classification_path: str
+    crosswalk_fao_cropgrids_path: str
+    fao_production_bulk_path: str
+    fao_prices_bulk_path: str
+    fx_lcu_per_usd_path: str
+    output_dir: str
     fao_start_year: int = 1991
     fao_end_year: int = 2023
     price_years: tuple = (2018, 2019, 2020, 2021, 2022)
@@ -444,20 +458,13 @@ class FaoPriceSettings:
 
     @property
     def fao_median_prices(self):
-        return self.output_dir / 'median_prices'
+        return os.path.join(self.output_dir, 'median_prices')
 
 
 # ---------------------------------------------------------------------------------------------
 # Vendored from crop_benefits: the FAO price path, the parts that hold no file handling.
 # These build the per-crop median producer prices the pollination value raster is priced at.
 # ---------------------------------------------------------------------------------------------
-
-_URL = (
-    "https://fenixservices.fao.org/faostat/static/bulkdownloads/"
-    "Production_Crops_Livestock_E_All_Data_(Normalized).zip"
-)
-
-_CSV_NAME = "Production_Crops_Livestock_E_All_Data_(Normalized).csv"
 
 _ELEMENTS_KEEP = {"Yield", "Production"}
 
@@ -475,11 +482,6 @@ _EXCLUDE_ITEM_CODES = {
     1841,   # Oilcrops, Cake Equivalent (derived equivalent)
     17530,  # Fibre Crops, Fibre Equivalent (derived equivalent)
 }
-
-_FAO_BULK_URL = (
-    "https://bulks-faostat.fao.org/production/"
-    "Prices_E_All_Data_(Normalized).zip"
-)
 
 _ELEMENTS_KEEP = [
     "Producer Price (USD/tonne)",

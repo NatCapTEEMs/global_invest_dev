@@ -290,13 +290,12 @@ def test_the_settings_object_replaces_the_config_that_was_loaded_from_a_gitignor
     # Seven fields are everything the vendored steps ever read off the crop_benefits Config, and
     # three of them our own driver already overrode. They are plain arguments now, so a missing
     # config file cannot silently produce a run against the wrong paths.
-    from pathlib import Path
 
     from global_invest.pollination import pollination_functions as pf
 
     settings = pf.SufficiencySettings(
-        output_dir=Path('/tmp/out'), value_raster_dir=Path('/tmp/base'),
-        country_raster_path=Path('/tmp/base/poll_value_global_2023usd.tif'))
+        output_dir='/tmp/out', value_raster_dir='/tmp/base',
+        country_raster_path='/tmp/base/poll_value_global_2023usd.tif')
     assert settings.tile_size == 2048 and settings.n_workers == 4
     assert settings.lulc_path is None and settings.pa_raster_300m_path is None
     # The compression profiles came off that Config too, and are now named constants.

@@ -13,19 +13,28 @@ extractive_factor: "0.49"
 renewable_total: "$170.83bn"
 renewable_ref: "$134.6bn"
 poll_raster: "$388.90bn"
+poll_centre_delta: "-0.12%"
+poll_centre: "$388.43bn"
 poll_fao: "$515bn"
 livestock_ind: "$136bn"
 livestock_world: "$1.37T"
 n_services: "22"
 n_accounts: "25"
 n_replicating: "9"
+ntfp_total: "$14.07bn"
+erosion_total: "$13.96bn"
+cat_reads: "1"
+cat_rescales: "2"
+cat_table: "12"
+cat_raster: "7"
+cat_model: "3"
 gep_naive_sum: "$11.2T"
 gep_naive_sum_all: "$46.7T"
 world_gdp_2019: "$87T"
-n_ours: "12"
-n_partly: "4"
-n_not_wired: "4"
-n_reads_a_value: "5"
+n_ours: "13"
+n_partly: "6"
+n_not_wired: "3"
+n_reads_a_value: "3"
 fisheries_total: "$29.00bn"
 fisheries_subsistence_total: "$7.92bn"
 water_supply_total: "$146.57bn"
@@ -142,20 +151,40 @@ format:
 
 | Accounts | Where the number comes from |
 |---|---|
-| {{< meta n_ours >}} | We compute it. The quantity, the price and nature's share are all built in the repo. Eleven of the twelve report a total; erosion's run is still going, so it has none yet. |
+| {{< meta n_ours >}} | We compute it. The quantity, the price and nature's share are all built in the repo, and all thirteen now report a total. |
 | {{< meta n_partly >}} | We compute part of it. One component is ours and the other is read from a published source. |
-| {{< meta n_reads_a_value >}} | We take the economics from a published table. Two of them turn a published rent share into dollars; three report a finished per-country figure. |
-| {{< meta n_not_wired >}} | We value the output of a model we do not yet run ourselves. Three report a total; stormwater reports retained volume only, because its price is a placeholder of 1. |
+| {{< meta n_reads_a_value >}} | We take the economics from a published table. Two turn a published rent share into dollars; one reports a finished per-country figure. |
+| {{< meta n_not_wired >}} | We value the output of a model we do not yet run ourselves. Air filtration and sandstorm prevention report totals; stormwater reports retained volume only, because its price is a placeholder of 1. |
 - Every available input is in the shared base data.
 - {{< meta n_replicating >}} of our runs land on a committed reference or the manuscript. For the rest we could not find a reference to check against.
 - Every module whose run has finished has rendered its report. Erosion is the one still running.
 
 
+## What the code does, service by service {.smaller}
+
+- The services differ in how much work stands between the input and the number. That is a separate question from whether the number is ours: a service can run a model here and still take its coefficients from someone else.
+
+| What the code does | Accounts | Which |
+|---|---|---|
+| Reads a published value | {{< meta cat_reads >}} | urban cooling |
+| Rescales a published rate | {{< meta cat_rescales >}} | mining production, extractive energy |
+| Table arithmetic | {{< meta cat_table >}} | crop, livestock, both fisheries, energy, hydropower, water use, air filtration, sandstorm, wildfires, water quality, coastal protection |
+| Raster arithmetic | {{< meta cat_raster >}} | terrestrial carbon, coastal carbon, pollination, ntfp, timber, floods, stormwater |
+| Process model run here | {{< meta cat_model >}} | erosion, landslides, recreation |
+
+- Urban cooling reads a dollar column out of a committed file. The city-month valuations behind it are ours, but they are not what the sheet reports.
+- Mining production rescales a published rate, a World Bank rent share times GDP times {{< meta extractive_factor >}}.
+- Crop production is table arithmetic, FAOSTAT gross production times the CWoN land rental rate.
+- Pollination is raster arithmetic, 158 production grids times price times each crop's pollinator dependence, cell by cell.
+- The three process models have dynamics of their own. Erosion runs InVEST SDR with sediment routing, landslides computes slope stability twice for every pixel, and recreation runs a gravity model allocating visits into scored sites.
+- The ladder measures work, not confidence, and reading it as a quality ranking gets it backwards. The account without a usable number sits at the top: stormwater has no dollar total because its price is a placeholder. Crop production, down at table arithmetic, reproduces its reference exactly.
+- One label per service also hides a split. Water quality computes its dollar figure and reads the one it reports, coastal protection computes mangroves and reads corals, and wildfires computes the valuation on coefficients it did not fit. The ours column carries that, the category cannot.
+
 ## Can the services be added into one total?
 
 - [Adding every headline figure gives about {{< meta gep_naive_sum >}}, using the agricultural water-use variant. Using the all-sector one instead makes the same sum about {{< meta gep_naive_sum_all >}}. World GDP in 2019 was about {{< meta world_gdp_2019 >}}.]{.state}
 - [The account reports no total, because that sum swings four-fold on one unresolved choice inside one service.]{.state}
-- **Q1:** what attribution step turns water use into a nature share? The all-sector figure is the gross economic value of water used, close to half of world GDP.
+- **Q1:** what attribution step turns water use into a nature share? The all-sector figure, {{< meta water_use_all_total >}}, is the gross economic value of water used, which is more than a third of the {{< meta world_gdp_2019 >}} world economy.
 - **Q2:** which overlaps should be netted out before anything is added? Pollination values part of what crop production already counts, livestock's feed share overlaps crop production, and coastal carbon overlaps terrestrial carbon on the landward side.
 - **Q3:** does the account want one headline figure at all, or the services reported separately?
 
@@ -292,11 +321,15 @@ format:
 - [Values the crop output that animal pollinators are responsible for. We build the value raster ourselves now. The old figure was 26 times too small, because the raster holds a value per km2 and the step that summed it treated it as a value per cell.]{.state}
 - **Q1:** which definition does the account want? The crop output at stake if pollinators vanished, {{< meta poll_raster >}}, or the service habitat currently delivers. We are producing both so you can choose against two numbers.
 - **Q2:** does the account add pollination on top of crop_provision? Crop multiplies production value by the land rental rate, so both attribute part of the same output to nature.
+- **Q3:** do we move pollination to the centre rule for country totals? Measured on our own raster, the world total moves {{< meta poll_centre_delta >}}, from {{< meta poll_raster >}} to {{< meta poll_centre >}}, but 96 of 208 countries move by more than 5 percent and Iraq by 66, losing two thirds of its value. Pollination is on a 5.5 km grid while the country boundaries are drawn on a 10 arc-second one, so a cell claimed by touch reaches a long way across a border.
 
 ## erosion
 
-- [Values soil the land cover keeps in place: prevented erosion mapped by running the sediment-delivery model, valued through crop productivity. It is running for the first time, and we report no number until it lands.]{.state}
+- [Values soil the land cover keeps in place: prevented erosion mapped by running the sediment-delivery model, valued through crop productivity. {{< meta erosion_total >}} across 185 countries, of which 26 compute an exact zero. No reference output exists to check it against.]{.state}
 - **Q1:** which of the three shock methods is the account's? We compute damage (thresholded area share), service (threshold-free and magnitude-weighted per crop) and service-threshold (service restricted to a fixed severe-pixel set) side by side.
+- **Q2:** should the production run recompute the erosion shock, as the test runs already do? The scenarios file production reads names carbon and pollination as dynamic but not erosion, so erosion alone falls back to the frozen dependency table. The tracked template added erosion in August; the derived copies the runs read date from July and shadow it, because a file already present is never re-seeded.
+- **Q3:** is there a reference we can check {{< meta erosion_total >}} against? Nothing in the source repo carries a committed output, so the figure currently rests on our run alone.
+- **Q4:** can the dependency table use the ISO code for South Sudan? It spells it SDS where the country table uses SSD, so the country drops out of the join. Its value is zero today, so nothing is lost yet.
 
 ## landslide_mitigation
 
@@ -357,10 +390,10 @@ format:
 
 ## water_supply
 
-- [Values hydropower rent and priced water withdrawal. Hydropower is computed from the CWoN wealth table for every country it values, {{< meta water_supply_total >}} across 97 countries, and reproduces the drive's committed output exactly on the 95 countries that output covers. Water use is computed in the library, agriculture {{< meta water_use_ag_total >}} across 126 countries and all-sector {{< meta water_use_all_total >}} across 154.]{.state}
+- [Values hydropower rent and priced water withdrawal. Hydropower is computed from the CWoN wealth table for every country it values, {{< meta water_supply_total >}} across 97 countries, and reproduces the drive's committed output exactly on the 95 countries that output covers. Water use is computed in the library, agriculture {{< meta water_use_ag_total >}} across 123 countries and all-sector {{< meta water_use_all_total >}} across 149.]{.state}
 - **Q1:** which hydropower total is the account's, the manuscript's {{< meta hydro_manuscript >}} or our rent-based {{< meta water_supply_total >}}? The first follows a direct-use method, price times generation, the second the resource-rent method.
 - **Q2:** why does the reference leave 17 countries empty although the CWoN table values them? We now report all 112, and carry the 95-country variant beside it as the comparison, so the {{< meta water_supply_anchor >}} anchor still checks out.
-- **Q3:** what attribution step turns water use into a nature share? The all-sector total is the gross economic value of water use, close to global GDP.
+- **Q3:** what attribution step turns water use into a nature share? The all-sector total, {{< meta water_use_all_total >}}, is the gross economic value of water use, which is more than a third of the {{< meta world_gdp_2019 >}} world economy.
 - **Q4:** how do hydropower and the two water-use components combine into one water_supply value?
 
 ## air_filtration
@@ -406,14 +439,22 @@ format:
 
 ## ntfp
 
-- [Values non-timber forest products over the forest within 10 km of a road or river. $28.87bn across 142 countries. The CWoN value is now spread over the forest people can reach rather than over all of it, which raises the rate and leaves the country total at CWoN's own.]{.state}
-- **Q1:** is there a model behind CWoN's non-wood forest product value, or is it a published table? Since the reachable hectares cancel, that is all that stands between this service and a number we compute.
+- [Values non-timber forest products over the forest that is within 10 km of a road or river and green enough to yield one. {{< meta ntfp_total >}} across 195 countries, over 1.48 billion reachable hectares. Every choice is the source module's: the land cover at its native 300 m in Mollweide, a five-year mean NDVI screen at 0.2, accessibility as the dissolved 10 km buffer of the road and river geometries rather than a raster dilation, and countries taken from the boundary polygons a cell's centre falls in.]{.state}
+- **Q1:** is there a model behind CWoN's non-wood forest product value, or is it a published table? That is what stands between this service and a number we compute.
+- **Q2:** the rate table we now read carries an edit we cannot account for. The non-wood forest product value per hectare is multiplied by exactly 5.0 for the Central African Republic, DR Congo and Mozambique, in every year from 2000 to 2020, and for no other country of the 232. What is that adjustment based on?
+- **Q3:** should a cell sitting exactly on the NDVI floor of 0.2 be kept or dropped? We keep it and the source module drops it, because scaling 2000 by 0.0001 gives 0.19999999 in float32, and that is 202,930 cells or 0.0099% of the valid grid.
 ## stormwater
 
 - [Values stormwater retained by urban vegetation and soils. Our own retention run on the drive's configuration retains {{< meta stormwater_volume >}} per year across 104 countries, wall to wall rather than urban-masked, and the module prices that volume. The run and the country step sit beside the task tree rather than inside it.]{.state}
 - **Q1:** what is the intended price per cubic metre retained? The configuration carries a placeholder of 1, so today's value is the volume.
 - **Q2:** should the run be masked to urban areas? It currently covers the whole land surface.
 
+# Cross-cutting questions
+
+## Turning outlines into cells {.smaller}
+
+- Every service that totals a raster inside a country has to decide what a cell the border passes through counts as. Under the centre rule the cell goes to whichever country covers its exact centre. Under all-touched every country whose outline touches it claims it, and since the claims are burned into one id raster, the country rasterised last takes it. Nothing is counted twice either way; what moves is the split between neighbours.
+- **Q:** should a habitat extent carry the fraction of the cell it covers, instead of either whole-cell rule? The centre rule loses a mangrove strip narrower than a cell, and all-touched books that same 50 m strip as a full 300 m cell.
 
 
 # Appendix
@@ -443,4 +484,5 @@ format:
 : {tbl-colwidths="[24,12,20,16,12,10,6]"}
 
 - The remaining services' rows follow the same columns. Blank price-convention cells fill as each module's convention is named. Every row is under test the moment it is edited.
+
 

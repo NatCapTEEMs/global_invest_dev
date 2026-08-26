@@ -209,3 +209,7 @@ global_invest/coastal_carbon/developing.py
 docs/check_deck.py
 docs/check_harmonization.py
 docs/check_consistency.py
+
+# The private ecosystem-service reference: our working notes, published to a private sheet.
+docs/publish_es_reference.py
+docs/es_reference_private.md

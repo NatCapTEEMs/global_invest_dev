@@ -24,9 +24,8 @@ def publish_inputs(p):
     utilities.initialize_country_paths(p)
     # The air quality group's country-level value-of-life table, which is the source behind the
     # workbook's VSL column and the one the valuation reads.
-    if not hasattr(p, 'air_filtration_vsl_path'):
-        p.air_filtration_vsl_path = p.get_path(
-            os.path.join('global_invest', 'air_filtration', 'data', 'clean', 'vsl.csv'))
+    # hydrate_es_parameters already set this from es_parameters; resolve it against base data.
+    p.air_filtration_vsl_path = p.get_path(p.air_filtration_vsl_path)
     if not hasattr(p, 'results'):
         p.results = {}
     return p

@@ -94,14 +94,14 @@ timber_provision,timber_provision_gep_path,global_invest/timber_provision/timber
 timber_provision,timber_provision_value_raster_path,global_invest/timber_provision/input/current_forest_value.tif
 timber_provision,timber_provision_zone_raster_path,cartographic/ee/ee_r250_id_10sec.tif
 stormwater,stormwater_retention_by_country_path,global_invest/stormwater/retention_m3_by_country.csv
-ntfp,ntfp_roads_region1_path,global_invest/ntfp/input/roads/GRIP4_Region1_vector_fgdb.zip
-ntfp,ntfp_roads_region1_source_url,https://dataportaal.pbl.nl/downloads/GRIP4/GRIP4_Region1_vector_fgdb.zip
-ntfp,ntfp_roads_length_path,global_invest/recreation/grip4_road_length/grip4_road_length_1km.tif
-ntfp,ntfp_roads_length_source_note,"metres of road per cell from GRIP4, already staged for recreation and shared rather than rebuilt"
 ntfp,ntfp_rivers_path,global_invest/ntfp/input/rivers/ne_10m_rivers_lake_centerlines.shp
+ntfp,ntfp_roads_vector_path,global_invest/ntfp/input/global_roads/globalroads.shp
+ntfp,ntfp_roads_vector_source_note,"the global roads layer the source module buffers, staged from its submission folder. The accessibility polygon is built from these geometries rather than from a rasterised road length, which is what the source does."
 ntfp,ntfp_rivers_source_url,https://naciscdn.org/naturalearth/10m/physical/ne_10m_rivers_lake_centerlines.zip
-ntfp,ntfp_country_id_raster_path,cartographic/ee/ee_r250_id_10sec.tif
-ntfp,ntfp_value_per_ha_path,global_invest/ntfp/cwon_nwfp_value_per_ha.csv
+ntfp,ntfp_countries_vector_source_note,"the boundary polygons the source module takes its zonal statistics over. Burned onto the analysis grid rather than reprojected from an id raster, so a cell is assigned to the country whose polygon covers its centre."
+ntfp,ntfp_ndvi_mean_path,global_invest/ntfp/input/mean_ndvi_2015_2019.tif
+ntfp,ntfp_ndvi_mean_source_note,"five-year mean NDVI from MODIS MOD13Q1 Collection 6.1 at 250 m over 2015 to 2019, quality masked and exported from Google Earth Engine. int16 storing NDVI times 10000, nodata -9999. Screens bare and sparse cells out of the land-cover forest mask."
+ntfp,ntfp_value_per_ha_path,global_invest/ntfp/nontimber_price_iucn_edited.csv
 ntfp,ntfp_value_per_ha_source_url,https://reproducibility.worldbank.org/catalog/194/download/549
 ntfp,ntfp_value_per_ha_source_note,"derived from the public CWoN 2024 reproducibility package: the non-wood forest product annual value (forest_nontimber_annual_nwfp.dta) over the matching forest area (forest_nontimber_total_area.dta), per country and year. Note the areas differ in definition: CWoN prices over ITS forest area while the quantity we multiply is accessible forest from the ESA land cover, which is the source method's own construction"
 landslide_mitigation,force_run,false
@@ -122,3 +122,32 @@ livestock_provision,cwon_crop_coefficients_source_note,"the CWoN land rental-rat
 livestock_provision,gleam_dmi_path,global_invest/livestock_provision/gleam3_dmi_dashboard.psv
 livestock_provision,gleam_dmi_source_note,"GLEAM 3 dry-matter intake per country, harvested from FAO's public dashboard by the recipe in howto_harvest_gleam_intake.md. Carries all eight feed categories: the four the ruminant tables omit are served on the chicken and pig tables instead."
 erosion,erosion_use_upslope_lulc_diagnostics,false
+pollination,pollination_fx_path,fao/currencies/worldbank/fx_lcu_per_usd.csv
+pollination,pollination_fx_source_url,https://api.worldbank.org/v2/country/all/indicator/PA.NUS.FCRF
+pollination,pollination_fx_source_note,"World Bank PA.NUS.FCRF, official exchange rate in local currency per US dollar, period average, fetched 2026-08-25. 7,149 rows over 214 countries and 1990 to 2024. Pinned rather than fetched per run because the World Bank revises the series, which would move the pollination total by whatever had changed since."
+pollination,pollination_fao_production_path,fao/bulk/Production_Crops_Livestock_E_All_Data_(Normalized).csv
+pollination,pollination_fao_production_source_url,https://fenixservices.fao.org/faostat/static/bulkdownloads/Production_Crops_Livestock_E_All_Data_(Normalized).zip
+pollination,pollination_fao_production_source_archive_member,Production_Crops_Livestock_E_All_Data_(Normalized).csv
+pollination,pollination_fao_prices_path,fao/bulk/Prices_E_All_Data_(Normalized).csv
+pollination,pollination_fao_prices_source_url,https://bulks-faostat.fao.org/production/Prices_E_All_Data_(Normalized).zip
+pollination,pollination_fao_prices_source_archive_member,Prices_E_All_Data_(Normalized).csv
+pollination,pollination_value_raster_dir,crop_benefits
+pollination,pollination_value_raster_dir_source_note,"the precomputed baseline pollination-value raster the shock path resamples, poll_value_global_<year>usd.tif. Output of the source pipeline run once over Monfreda yields, CropGrids area, FAO producer prices and pollination-dependence ratios. Reused rather than rebuilt, so it has no URL and a person stages it."
+air_filtration,air_filtration_vsl_path,global_invest/air_filtration/data/clean/vsl.csv
+air_filtration,air_filtration_vsl_source_note,"value of a statistical life per country, the price half of the air-quality valuation. Rebuilt from the workbook the group circulated; sandstorm prevention reads the same column."
+coastal_protection,coastal_protection_coral_reef_path,global_invest/coastal_protection/coral_reefs_annual_expected_benefit_nfamara.xlsx
+coastal_protection,coastal_protection_coral_reef_source_note,"annual expected coastal-protection benefit of coral reefs, per country. Supplied by the author rather than computed here, which is why coastal protection is only half ours."
+coastal_protection,coastal_protection_gdp_deflator_path,global_invest/coastal_protection/gdp_inflation_deflator/GDP_Inflation_deflator.xlsx
+coastal_protection,coastal_protection_gdp_deflator_source_note,"GDP inflation deflator, for putting the mangrove and coral figures in one price year. The drive folder spells it gdp_inflation_delator, sic; staged under the corrected name."
+landslide_mitigation,landslide_elevation_path,seals/static_regressors/alt_m.tif
+landslide_mitigation,landslide_elevation_source_note,"elevation in metres, the slope input to the stability model. Read from the shared SEALS static regressors rather than a landslide copy, so the two models see one terrain."
+landslide_mitigation,landslide_lulc_path_template,lulc/esa/lulc_esa_{year}.tif
+landslide_mitigation,landslide_lulc_path_template_source_note,"the ESA land cover per year, formatted with the year. A template rather than a path because the task iterates data_processing_range."
+pollination,pollination_crosswalk_m49_iso3_path,fao/crosswalks/crosswalk_m49_iso3.csv
+pollination,pollination_crosswalk_m49_iso3_source_note,"FAO M49 area codes to ISO3."
+pollination,pollination_fao_classification_path,fao/crosswalks/fao_classification.csv
+pollination,pollination_fao_classification_source_note,"the FAO item classification."
+pollination,pollination_crosswalk_fao_cropgrids_path,fao/crosswalks/crosswalk_fao_cropgrids.csv
+pollination,pollination_crosswalk_fao_cropgrids_source_note,"FAO items to CropGrids crop names."
+erosion,erosion_gdp_csv_source_url,https://api.worldbank.org/v2/country/all/indicator/NY.GDP.MKTP.CD?format=json&per_page=20000
+erosion,erosion_gdp_csv_source_note,"World Bank NY.GDP.MKTP.CD, GDP in current US dollars, filtered to 2019. Staged rather than fetched per run because the World Bank revises it, which would move the erosion valuation without recording why."

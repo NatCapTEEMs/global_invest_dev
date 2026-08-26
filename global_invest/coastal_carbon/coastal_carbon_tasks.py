@@ -46,7 +46,7 @@ def publish_inputs(p):
     utilities.hydrate_es_config(p, 'coastal_carbon', log=hb.log)
     utilities.hydrate_es_parameters(p, 'coastal_carbon', log=hb.log)
     utilities.initialize_country_paths(p, simplified='30sec')
-    p.ha_per_cell_10sec_path = p.get_path('pyramids', 'ha_per_cell_10sec.tif')
+    utilities.initialize_pyramid_paths(p)
     if not hasattr(p, 'results'):
         p.results = {}
     return p

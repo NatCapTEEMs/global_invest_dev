@@ -7,14 +7,9 @@ directory (p.es_shock_dir). Grafted by consumers via add_pollination_tasks (disp
 """
 from __future__ import annotations
 import os
-import wbgapi as wb
-import requests
-import zipfile
-import io
 import gc
 import logging
 import math
-from pathlib import Path
 from typing import Any, Dict, Set, Tuple
 import rasterio
 from joblib import Parallel, delayed
@@ -108,10 +103,10 @@ def _compute_radii_pixels(lat_deg: float, pixel_lat_deg: float, pixel_lon_deg: f
     return ry, rx
 
 
-def save_parquet(df: pd.DataFrame, path: Path | str) -> Path:
+def save_parquet(df: pd.DataFrame, path: str | str) -> str:
     """Save DataFrame as parquet and log the result."""
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
+    path = str(path)
+    os.path.dirname(path).mkdir(parents=True, exist_ok=True)
     df.to_parquet(path, index=False)
     logger.info("Saved %d rows -> %s", len(df), path)
     return path
@@ -199,7 +194,7 @@ def _add_geographic_and_classification_data(
     return df
 
 
-def run_fao_production(cfg: Config) -> Path:
+def run_fao_production(cfg: Config) -> str:
     """
     Execute the full FAO production pipeline.
 
@@ -207,7 +202,7 @@ def run_fao_production(cfg: Config) -> Path:
     """
     logger.info("=== FAO Production Pipeline ===")
 
-    df, classif = _download_and_filter_fao_production(cfg)
+    df, classif = _read_and_filter_fao_production(cfg)
     df = pf._convert_yield_units(df)
     df = _add_geographic_and_classification_data(df, classif, cfg)
 
@@ -218,7 +213,7 @@ def run_fao_production(cfg: Config) -> Path:
     return pq_path
 
 
-def run_fao_prices(cfg: Config) -> Path:
+def run_fao_prices(cfg: Config) -> str:
     """
     Execute the full FAO producer-price pipeline.
 
@@ -229,7 +224,7 @@ def run_fao_prices(cfg: Config) -> Path:
     years = list(range(cfg.run.fao_start_year, cfg.run.fao_end_year + 1))
 
     # Steps 1-3
-    pp_raw = _download_fao_prices(years)
+    pp_raw = _read_fao_prices(cfg, years)
     pp_wide = pf._reshape_prices(pp_raw)
 
     # Steps 4-7
@@ -249,10 +244,10 @@ def run_fao_prices(cfg: Config) -> Path:
     return pq_path
 
 
-def _download_and_filter_fao_production(
+def _read_and_filter_fao_production(
     cfg: Config,
 ) -> pd.DataFrame:
-    """Download FAOSTAT QCL bulk data, filter years / elements / items."""
+    """Read the staged FAOSTAT production bulk, filter years / elements / items."""
 
     # Load classification to get valid item codes for items to keep
     classif = load_fao_classification(cfg)
@@ -268,13 +263,14 @@ def _download_and_filter_fao_production(
     # Year range from config
     years = set(range(cfg.run.fao_start_year, cfg.run.fao_end_year + 1))
 
-    # Download bulk ZIP
-    logger.info("Downloading FAOSTAT QCL bulk data …")
-    resp = requests.get(pf._URL, timeout=300)
-    resp.raise_for_status()
-
-    with zipfile.ZipFile(io.BytesIO(resp.content)) as zf:
-        with zf.open(pf._CSV_NAME) as f:
+    # The staged bulk, put in base data by the shared download task rather than pulled here.
+    logger.info("Reading staged FAOSTAT production bulk from %s", cfg.paths.fao_production_bulk_path)
+    if not os.path.exists(cfg.paths.fao_production_bulk_path):
+        raise NameError(
+            'pollination has no FAOSTAT production bulk at %s. es_parameters carries its url and '
+            'archive member, so the shared download task stages it.'
+            % cfg.paths.fao_production_bulk_path)
+    with open(cfg.paths.fao_production_bulk_path, 'rb') as f:
             df = pd.read_csv(
                 f,
                 usecols=[
@@ -304,10 +300,10 @@ def _download_and_filter_fao_production(
 
 def _save_production_outputs(
     df: pd.DataFrame,
-    outdir: Path,
-) -> Path:
+    outdir: str,
+) -> str:
     """Save final production dataset in standard column order."""
-    outdir.mkdir(parents=True, exist_ok=True)
+    os.makedirs(outdir, exist_ok=True)
 
     col_order = [
         "area_code_m49", "iso3", "region_fao", "subregion_fao",
@@ -316,8 +312,8 @@ def _save_production_outputs(
     ]
     df = df[col_order]
 
-    csv_out = outdir / "fao_production_1993_2024.csv"
-    pq_out = outdir / "fao_production_1993_2024.parquet"
+    csv_out = os.path.join(outdir, "fao_production_1993_2024.csv")
+    pq_out = os.path.join(outdir, "fao_production_1993_2024.parquet")
 
     save_csv(df, csv_out)
     save_parquet(df, pq_out)
@@ -326,18 +322,17 @@ def _save_production_outputs(
     return pq_out
 
 
-def _download_fao_prices(years: list[int]) -> pd.DataFrame:
-    """Download bulk FAOSTAT producer prices and return annual rows."""
-    logger.info("=== 1) DOWNLOADING FAOSTAT BULK PRODUCER PRICES ===")
+def _read_fao_prices(cfg: Config, years: list[int]) -> pd.DataFrame:
+    """Read the staged FAOSTAT producer-price bulk and return annual rows."""
+    logger.info("=== 1) READING STAGED FAOSTAT PRODUCER PRICES ===")
 
-    resp = requests.get(pf._FAO_BULK_URL, timeout=120)
-    resp.raise_for_status()
-
-    with zipfile.ZipFile(io.BytesIO(resp.content)) as z:
-        csv_name = z.namelist()[0]
-        logger.info("Reading bulk file: %s", csv_name)
-        with z.open(csv_name) as f:
-            pp_raw = pd.read_csv(f, encoding="latin1", low_memory=False)
+    if not os.path.exists(cfg.paths.fao_prices_bulk_path):
+        raise NameError(
+            'pollination has no FAOSTAT producer-price bulk at %s. es_parameters carries its url '
+            'and archive member, so the shared download task stages it.'
+            % cfg.paths.fao_prices_bulk_path)
+    logger.info("Reading bulk file: %s", cfg.paths.fao_prices_bulk_path)
+    pp_raw = pd.read_csv(cfg.paths.fao_prices_bulk_path, encoding="latin1", low_memory=False)
 
     # Standardize column names
     pp_raw.columns = [c.replace(" ", "_").lower() for c in pp_raw.columns]
@@ -375,12 +370,40 @@ def _download_fao_prices(years: list[int]) -> pd.DataFrame:
     return pp_raw
 
 
+def world_bank_fx(fx_path):
+    """Local currency per USD per country and year, from the staged World Bank file.
+
+    Read rather than fetched, for the same reason the FAOSTAT bulks are. The World Bank revises
+    PA.NUS.FCRF, so pulling it per run would make the pollination total depend on the day the
+    price stage ran with nothing recording which rates were used, and a compute node without
+    outbound network could not run the stage at all. es_parameters carries the indicator url, so
+    the shared download task stages the file; nothing here opens a socket.
+
+    Args:
+        fx_path (str): the staged rates, iso3 and year and lcu_per_usd.
+
+    Returns:
+        pd.DataFrame: iso3, year, lcu_per_usd, fx_source.
+
+    Raises:
+        NameError: when the file is absent. Falling through to IMF-only rates would change every
+            price without saying so, which is what happened when an empty fetch was not an error.
+    """
+    if not os.path.exists(fx_path):
+        raise NameError(
+            'pollination has no World Bank exchange rates at %s. es_parameters carries the '
+            'indicator and its url, so the shared download task stages it. Continuing without '
+            'them would silently price everything off IMF rates instead.' % fx_path)
+    staged = pd.read_csv(fx_path, encoding='utf-8-sig')
+    return staged[['iso3', 'year', 'lcu_per_usd']].assign(fx_source='wb')
+
+
 def _add_iso3_and_fx(
     pp3: pd.DataFrame,
     cfg: Config,
     years: list[int],
 ) -> pd.DataFrame:
-    """Add ISO3, fetch WB + IMF FX, combine with inheritance."""
+    """Add ISO3, read WB and IMF FX, combine with inheritance."""
 
     # 9) ISO3 via crosswalk
     logger.info("=== 9) ADDING ISO3 ===")
@@ -395,28 +418,19 @@ def _add_iso3_and_fx(
 
     logger.info("Unique ISO3: %d", pp3["iso3"].nunique())
 
-    # 10) World Bank FX
-    logger.info("=== 10) FETCHING WORLD BANK FX ===")
-    wb_records = []
-    years_str = [str(y) for y in years]
-    for rec in wb.data.fetch("PA.NUS.FCRF", time=years_str):
-        iso3 = rec.get("economy")
-        year_raw = rec.get("time")
-        val = rec.get("value")
-        if iso3 is None or year_raw is None or val is None:
-            continue
-        year = int(str(year_raw).replace("YR", ""))
-        wb_records.append((iso3, year, float(val)))
-
-    wb_fx = pd.DataFrame(wb_records, columns=["iso3", "year", "lcu_per_usd"])
-    wb_fx["fx_source"] = "wb"
+    # 10) World Bank FX, from the staged file beside the IMF one
+    logger.info("=== 10) READING WORLD BANK FX ===")
+    wb_fx = world_bank_fx(cfg.paths.fx_lcu_per_usd_path)
     wb_fx = wb_fx.dropna(subset=["iso3", "lcu_per_usd"]).copy()
     pf._log_df("wb_fx", wb_fx)
 
     # 11) IMF FX (local file)
     logger.info("=== 11) LOADING IMF FX ===")
-    imf_fx_path = cfg.paths.crosswalk_m49_iso3.parent.parent.parent / "currencies" / "imf"
-    imf_files = sorted(imf_fx_path.glob("dataset_*.csv"))
+    # three levels up from the crosswalk file, then the currencies tree beside it
+    imf_fx_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(cfg.paths.crosswalk_m49_iso3))),
+        "currencies", "imf")
+    imf_files = sorted(glob.glob(os.path.join(imf_fx_path, "dataset_*.csv")))
     if not imf_files:
         logger.warning("No IMF FX file found in %s; skipping IMF FX", imf_fx_path)
         imf_fx = pd.DataFrame(columns=["iso3", "year", "lcu_per_usd", "fx_source"])
@@ -488,10 +502,10 @@ def _add_iso3_and_fx(
 
 def _save_price_outputs(
     pp_usd: pd.DataFrame,
-    outdir: Path,
-) -> Path:
+    outdir: str,
+) -> str:
     """Rename columns and save final price panel."""
-    outdir.mkdir(parents=True, exist_ok=True)
+    os.makedirs(outdir, exist_ok=True)
 
     pp_usd = pp_usd.rename(columns={
         "country": "area_fao",
@@ -512,8 +526,8 @@ def _save_price_outputs(
 
     pp_final = pp_usd[final_cols].copy()
 
-    csv_out = outdir / "fao_prices_1993_2024.csv"
-    pq_out = outdir / "fao_prices_1993_2024.parquet"
+    csv_out = os.path.join(outdir, "fao_prices_1993_2024.csv")
+    pq_out = os.path.join(outdir, "fao_prices_1993_2024.parquet")
 
     save_csv(pp_final, csv_out)
     save_parquet(pp_final, pq_out)
@@ -525,12 +539,12 @@ def _save_price_outputs(
 def _load_production_and_prices(cfg: Config) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Load the production and price parquets from earlier pipeline steps."""
     prod_dir = cfg.outputs.fao_production
-    prod_pq = prod_dir / "fao_production_1993_2024.parquet"
+    prod_pq = os.path.join(prod_dir, "fao_production_1993_2024.parquet")
     logger.info("Loading production: %s", prod_pq)
     prod = pd.read_parquet(prod_pq)
 
     price_dir = cfg.outputs.fao_prices
-    price_pq = price_dir / "fao_prices_1993_2024.parquet"
+    price_pq = os.path.join(price_dir, "fao_prices_1993_2024.parquet")
     logger.info("Loading prices: %s", price_pq)
     prices = pd.read_parquet(price_pq)
 
@@ -540,7 +554,7 @@ def _load_production_and_prices(cfg: Config) -> tuple[pd.DataFrame, pd.DataFrame
 def _compute_median_prices(
     prices: pd.DataFrame,
     price_years: list[int],
-    outdir: Path,
+    outdir: str,
     cw: pd.DataFrame,
 ) -> pd.DataFrame:
     """Compute median price per hierarchical level over the price window."""
@@ -604,7 +618,7 @@ def _compute_median_prices(
 
     median_prices = pd.concat([price_country, price_subregion, price_region, price_world], ignore_index=True)
 
-    outdir.mkdir(parents=True, exist_ok=True)
+    os.makedirs(outdir, exist_ok=True)
     yr_start, yr_end = min(price_years), max(price_years)
     pq_out = outdir / f"price_median_usd_tonne_{yr_start}_{yr_end}.parquet"
     save_parquet(median_prices, pq_out)
@@ -619,8 +633,8 @@ def _merge_production_value(
     price_subregion: pd.DataFrame,
     price_region: pd.DataFrame,
     price_world: pd.DataFrame,
-    outdir: Path,
-) -> Path:
+    outdir: str,
+) -> str:
     """Merge production with annual prices (country -> subregion -> region -> world fallback)."""
     logger.info("Merging production × annual prices (Hierarchical)")
 
@@ -694,14 +708,14 @@ def _merge_production_value(
     )
     logger.info("Rows with value_usd: %d", merged["value_usd"].notna().sum())
 
-    outdir.mkdir(parents=True, exist_ok=True)
+    os.makedirs(outdir, exist_ok=True)
     
     # Drop element column if present (it's always 'Production')
     if "element" in merged.columns:
         merged = merged.drop(columns=["element"])
 
-    csv_out = outdir / "fao_values_1993_2024.csv"
-    pq_out = outdir / "fao_values_1993_2024.parquet"
+    csv_out = os.path.join(outdir, "fao_values_1993_2024.csv")
+    pq_out = os.path.join(outdir, "fao_values_1993_2024.parquet")
 
     save_csv(merged, csv_out)
     save_parquet(merged, pq_out)
@@ -710,7 +724,7 @@ def _merge_production_value(
     return pq_out
 
 
-def run_fao_values(cfg: Config) -> Path:
+def run_fao_values(cfg: Config) -> str:
     """
     Compute total production value by merging prices and production.
 
@@ -841,13 +855,13 @@ def fao_median_prices(p):
         return True
     hb.create_directories(p.fao_median_prices_dir)
     settings = pf.FaoPriceSettings(
-        crosswalk_m49_iso3_path=Path(p.get_path(os.path.join('fao', 'crosswalks',
-                                                             'crosswalk_m49_iso3.csv'))),
-        fao_classification_path=Path(p.get_path(os.path.join('fao', 'crosswalks',
-                                                             'fao_classification.csv'))),
-        crosswalk_fao_cropgrids_path=Path(p.get_path(os.path.join('fao', 'crosswalks',
-                                                                  'crosswalk_fao_cropgrids.csv'))),
-        output_dir=Path(os.path.dirname(p.fao_median_prices_dir)))
+        crosswalk_m49_iso3_path=str(p.get_path(p.pollination_crosswalk_m49_iso3_path)),
+        fao_classification_path=str(p.get_path(p.pollination_fao_classification_path)),
+        crosswalk_fao_cropgrids_path=str(p.get_path(p.pollination_crosswalk_fao_cropgrids_path)),
+        fao_production_bulk_path=str(p.pollination_fao_production_path),
+        fao_prices_bulk_path=str(p.pollination_fao_prices_path),
+        fx_lcu_per_usd_path=str(p.pollination_fx_path),
+        output_dir=str(os.path.dirname(p.fao_median_prices_dir)))
     run_fao_production(settings)
     run_fao_prices(settings)
     run_fao_values(settings)
@@ -855,7 +869,7 @@ def fao_median_prices(p):
     return True
 
 
-def read_raster(path: Path) -> Tuple[np.ndarray, Dict[str, Any]]:
+def read_raster(path: str) -> Tuple[np.ndarray, Dict[str, Any]]:
     """
     Read a single-band GeoTIFF.
 
@@ -866,7 +880,7 @@ def read_raster(path: Path) -> Tuple[np.ndarray, Dict[str, Any]]:
     meta : dict
         Rasterio profile (used to write matching outputs).
     """
-    path = Path(path)
+    path = str(path)
     logger.debug("Reading raster: %s", path)
 
     with rasterio.open(path) as src:
@@ -876,17 +890,17 @@ def read_raster(path: Path) -> Tuple[np.ndarray, Dict[str, Any]]:
     return data, meta
 
 
-def save_csv(df: pd.DataFrame, path: Path | str) -> Path:
+def save_csv(df: pd.DataFrame, path: str | str) -> str:
     """Save DataFrame as CSV and log the result."""
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
+    path = str(path)
+    os.path.dirname(path).mkdir(parents=True, exist_ok=True)
     df.to_csv(path, index=False)
     logger.info("Saved %d rows -> %s", len(df), path)
     return path
 
 
 def _process_tile(
-    lulc_path: Path | str,
+    lulc_path: str | str,
     window: Window,
     height: int,
     width: int,
@@ -1004,11 +1018,11 @@ def _process_tile(
 
 def run_pollination_sufficiency_300m(
     cfg: pf.SufficiencySettings,
-    lulc_path: Path | None = None,
+    lulc_path: str | None = None,
     scenario: str = "2020",
     fill_non_ag: float | None = None,
-    stable_ag_lulc_path: Path | None = None,
-) -> Path:
+    stable_ag_lulc_path: str | None = None,
+) -> str:
     """Compute 300 m pollination sufficiency from ESA-CCI LULC or custom LULC map.
 
     For every agricultural pixel, counts natural-habitat neighbours within
@@ -1029,7 +1043,7 @@ def run_pollination_sufficiency_300m(
         raise ValueError("lulc_esa path not defined in config (and no override provided)")
         
     out_dir = cfg.output_dir
-    out_dir.mkdir(parents=True, exist_ok=True)
+    os.makedirs(out_dir, exist_ok=True)
     out_path = out_dir / f"pollination_sufficiency_{scenario}_300m.tif"
     
     logger.info("Computing 300m Pollination Sufficiency...")
@@ -1050,7 +1064,7 @@ def run_pollination_sufficiency_300m(
         nat_classes = _SEALS_NAT_CLASSES
         logger.info("Using SEALS LULC classes.")
     
-    if out_path.exists():
+    if os.path.exists(out_path):
         logger.info("Output already exists, skipping computation.")
         return out_path
 
@@ -1134,7 +1148,7 @@ def run_pollination_sufficiency_300m(
     return out_path
 
 
-def run_pollination_sufficiency_5km(cfg: pf.SufficiencySettings, input_300m: Path | None = None, scenario: str = "2020") -> Path:
+def run_pollination_sufficiency_5km(cfg: pf.SufficiencySettings, input_300m: str | None = None, scenario: str = "2020") -> str:
     """Resample 300 m sufficiency to 5 km using average resampling.
 
     Matches the grid of "country_raster" (5 km template).
@@ -1155,11 +1169,11 @@ def run_pollination_sufficiency_5km(cfg: pf.SufficiencySettings, input_300m: Pat
     logger.info("Template: %s", template_path)
     logger.info("Output: %s", out_path)
     
-    if out_path.exists():
+    if os.path.exists(out_path):
         logger.info("Output already exists, skipping resampling.")
         return out_path
 
-    if not input_300m.exists():
+    if not os.path.exists(input_300m):
         raise FileNotFoundError(f"300m sufficiency raster not found at {input_300m}")
         
     with rasterio.open(template_path) as tgt:
@@ -1206,10 +1220,10 @@ def run_pollination_sufficiency_5km(cfg: pf.SufficiencySettings, input_300m: Pat
 
 def run_pollination_sufficiency_300m_stable_ag(
     cfg: pf.SufficiencySettings,
-    lulc_path: Path,
-    other_lulc_path: Path,
+    lulc_path: str,
+    other_lulc_path: str,
     scenario: str,
-) -> Path:
+) -> str:
     """Compute 300 m sufficiency restricted to pixels agricultural in both periods.
 
     A thin wrapper around :func:`run_pollination_sufficiency_300m` that
@@ -1253,7 +1267,7 @@ def run_pollination_sufficiency_300m_stable_ag(
     )
 
 
-def run_pollination_valuation_5km(cfg: pf.SufficiencySettings, scenario: str = "2020", target_year: int = 2024) -> Path:
+def run_pollination_valuation_5km(cfg: pf.SufficiencySettings, scenario: str = "2020", target_year: int = 2024) -> str:
     """Compute 5 km pollination-value rasters (Value × Sufficiency).
 
     Uses the pre-calculated global pollination value raster (from build_pollination_value.py)
@@ -1265,7 +1279,7 @@ def run_pollination_valuation_5km(cfg: pf.SufficiencySettings, scenario: str = "
     poll_value_path = cfg.value_raster_dir / f"poll_value_global_{target_year}usd.tif"
 
     out_dir = cfg.output_dir
-    out_dir.mkdir(parents=True, exist_ok=True)
+    os.makedirs(out_dir, exist_ok=True)
     
     out_total = out_dir / f"value_pollination_sufficiency_{scenario}_5km.tif"
 
@@ -1273,13 +1287,13 @@ def run_pollination_valuation_5km(cfg: pf.SufficiencySettings, scenario: str = "
     logger.info("  Pollination Value Input: %s", poll_value_path)
     logger.info("  Sufficiency Input      : %s", suff_path)
     
-    if out_total.exists():
+    if os.path.exists(out_total):
         logger.info("Output already exists, skipping valuation.")
         return out_total
 
-    if not poll_value_path.exists():
+    if not os.path.exists(poll_value_path):
         raise FileNotFoundError(f"Global pollination value raster missing: {poll_value_path}")
-    if not suff_path.exists():
+    if not os.path.exists(suff_path):
         raise FileNotFoundError(f"Sufficiency raster missing: {suff_path}")
 
     # Load both rasters
@@ -1319,7 +1333,7 @@ def run_pollination_valuation_5km(cfg: pf.SufficiencySettings, scenario: str = "
     return out_total
 
 
-def redistribution_value_to_300m(cfg: pf.SufficiencySettings, scenario: str = "2020") -> Path:
+def redistribution_value_to_300m(cfg: pf.SufficiencySettings, scenario: str = "2020") -> str:
     """Redistribute 5 km pollination value back to 300 m pixels.
 
     Each 300 m pixel receives a share of its parent 5 km cell's value
@@ -1331,11 +1345,11 @@ def redistribution_value_to_300m(cfg: pf.SufficiencySettings, scenario: str = "2
 
     logger.info("Redistributing value to 300m...")
 
-    if out_path.exists():
+    if os.path.exists(out_path):
         logger.info("Output already exists, skipping redistribution.")
         return out_path
 
-    if not large_path.exists():
+    if not os.path.exists(large_path):
         raise FileNotFoundError(f"5km value raster missing: {large_path}")
     
     with rasterio.open(large_path) as large, rasterio.open(fine_path) as fine:
@@ -1425,7 +1439,7 @@ def redistribution_value_to_300m(cfg: pf.SufficiencySettings, scenario: str = "2
     return out_path
 
 
-def mask_protected_areas_300m(cfg: pf.SufficiencySettings, scenario: str = "2020") -> Path:
+def mask_protected_areas_300m(cfg: pf.SufficiencySettings, scenario: str = "2020") -> str:
     """
     Mask pollination value inside protected areas (PA == 1 -> value = 0).
 
@@ -1456,13 +1470,13 @@ def mask_protected_areas_300m(cfg: pf.SufficiencySettings, scenario: str = "2020
     logger.info("Value input : %s", value_path)
     logger.info("PA raster   : %s", pa_path)
 
-    if out_raster.exists():
+    if os.path.exists(out_raster):
         logger.info("Output already exists, skipping PA masking.")
         return out_raster
 
-    if not value_path.exists():
+    if not os.path.exists(value_path):
         raise FileNotFoundError(f"300m value raster missing: {value_path}")
-    if not pa_path.exists():
+    if not os.path.exists(pa_path):
         raise FileNotFoundError(f"PA raster missing: {pa_path}")
 
     with rasterio.open(value_path) as val_src, rasterio.open(pa_path) as pa_src:
@@ -1566,7 +1580,7 @@ def summarize_run(cfg: pf.SufficiencySettings, scenario: str = "2020") -> None:
     
     for fname, desc in targets.items():
         path = out_dir / fname
-        if not path.exists():
+        if not os.path.exists(path):
             continue
             
         try:
@@ -1606,9 +1620,9 @@ def run_pollination_diff_5km_pnas(
     cfg: pf.SufficiencySettings,
     scenario: str,
     baseline_scenario: str = "2023_pnas",
-    scenario_value_path: Path | None = None,
-    baseline_value_path: Path | None = None,
-) -> Path:
+    scenario_value_path: str | None = None,
+    baseline_value_path: str | None = None,
+) -> str:
     """Compute a 5 km difference raster restricted to stable cropland.
 
     Replicates the behaviour of ``pollination_shock()`` in the original
@@ -1654,7 +1668,7 @@ def run_pollination_diff_5km_pnas(
         scenario, baseline_scenario,
     )
 
-    if out_path.exists():
+    if os.path.exists(out_path):
         logger.info("Output already exists, skipping: %s", out_path)
         return out_path
 
@@ -1669,7 +1683,7 @@ def run_pollination_diff_5km_pnas(
         required.append(mask_path)
 
     for p in required:
-        if not p.exists():
+        if not os.path.exists(p):
             raise FileNotFoundError(f"Required input missing: {p}")
 
     with rasterio.open(s_path) as src_s, rasterio.open(b_path) as src_b:
@@ -1700,7 +1714,7 @@ def run_pollination_diff_5km_pnas(
     profile.update(dtype="float32", nodata=-9999.0, compress="lzw")
     out_data = np.nan_to_num(diff, nan=-9999.0)
 
-    out_dir.mkdir(parents=True, exist_ok=True)
+    os.makedirs(out_dir, exist_ok=True)
     with rasterio.open(out_path, "w", **profile) as dst:
         dst.write(out_data, 1)
 
@@ -1997,8 +2011,8 @@ def write_raster(path, data, meta, nodata=None):
     Returns:
         Path: the path written.
     """
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
+    path = str(path)
+    os.path.dirname(path).mkdir(parents=True, exist_ok=True)
     profile = dict(meta)
     profile.update(driver='GTiff', dtype='float32', count=1,
                    compress='deflate', predictor=2, tiled=True, zlevel=6)
@@ -2120,7 +2134,7 @@ def pollination_value_raster(p):
     hb.log('Pricing at %d USD: deflator from %d is %.4f'
            % (year, pf.PRODUCTION_RASTER_YEAR, deflator))
 
-    country_ids, _ = read_raster(Path(p.get_path(CROPGRIDS_COUNTRY_RASTER_REF_PATH)))
+    country_ids, _ = read_raster(str(p.get_path(CROPGRIDS_COUNTRY_RASTER_REF_PATH)))
     country_ids = country_ids.astype('int32')
     coffee_by_country = pf.coffee_dependence_by_country(
         hb.df_read(p.get_path(COFFEE_ARABICA_ROBUSTA_REF_PATH)))
@@ -2149,7 +2163,7 @@ def pollination_value_raster(p):
             skipped['no_price'].append(crop_name)
             continue
 
-        production_density, meta = read_raster(Path(raster_path))
+        production_density, meta = read_raster(str(raster_path))
         ratio = float(dependence.get(item_code, 0.0))
         if item_code == pf.COFFEE_ITEM_CODE_FAO:
             # One item code, two plants: the ratio has to vary by what each country grows.
@@ -2191,7 +2205,7 @@ def pollination_value_raster(p):
 
     out_meta = dict(reference_meta)
     out_meta.update(dtype='float32', nodata=NODATA_OUT, count=1)
-    write_raster(Path(p.pollination_value_raster_path),
+    write_raster(str(p.pollination_value_raster_path),
                  np.where(np.isfinite(value_per_cell), value_per_cell, NODATA_OUT).astype('float32'),
                  out_meta, nodata=NODATA_OUT)
 

@@ -57,10 +57,10 @@ df = hb.df_read(p.results[service_label]['gep_by_country_base_year'])
 total_ntfp_value = df['ntfp_gep'].sum()
 valued_countries = int(pd.to_numeric(df['ntfp_gep'], errors='coerce').gt(0).sum())
 p.gep_by_country_base_year_table = df[['iso3_r250_name', 'accessible_forest_ha',
-                                       'nwfp_value_per_accessible_ha', 'ntfp_gep']]
+                                       'nwfp_value_per_ha', 'ntfp_gep']]
 ```
 
-The analysis estimates a non-timber forest product GEP of $`{python} f"{total_ntfp_value:,.0f}"` for the base year (`{python} f"{int(p.gep_base_year)}"`) across `{python} f"{valued_countries}"` countries. The method takes the CWoN non-wood forest product value per country and prices it over the forest within 10 km of a road or river rather than over all forest, on the reasoning that a product nobody can reach is not harvested. Because the rate is rescaled to the reachable area, the hectares cancel and the country total matches CWoN; what the accessibility stage changes is the per-hectare rate and the spatial distribution, not the national sum. Countries without CWoN data carry no value rather than zero.
+The analysis estimates a non-timber forest product GEP of $`{python} f"{total_ntfp_value:,.0f}"` for the base year (`{python} f"{int(p.gep_base_year)}"`) across `{python} f"{valued_countries}"` countries. The method takes the CWoN non-wood forest product value per hectare and applies it to the forest within 10 km of a road or a river that is also green enough to yield a product, on the reasoning that a product nobody can reach is not harvested and bare ground yields nothing. The country total therefore sits below CWoN's own published value, because the part notionally earned on forest nobody can reach is dropped rather than redistributed. Countries the rate table does not cover carry no value rather than zero.
 
 ## GEP by Country in Base Year, mapped
 

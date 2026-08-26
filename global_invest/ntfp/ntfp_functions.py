@@ -18,41 +18,48 @@ ESA_FOREST_CLASS_MIN = 50
 ESA_FOREST_CLASS_MAX = 90
 
 
+def nwfp_rate_long(price_wide_df):
+    """The published rate table reshaped from one column per year to one row per country-year.
+
+    The source ships the World Bank series as it comes, wide, with a year in every column
+    heading. Everything downstream keys on country and year, so it is melted once here rather
+    than indexed by a column name at each use.
+
+    Args:
+        price_wide_df (pd.DataFrame): iso3_r250_label plus one numeric column per year.
+
+    Returns:
+        pd.DataFrame: iso3_r250_label, year, nwfp_value_per_ha.
+    """
+    import pandas as pd
+
+    years = [c for c in price_wide_df.columns if str(c).isdigit()]
+    long = price_wide_df.melt(id_vars=['iso3_r250_label'], value_vars=years,
+                              var_name='year', value_name='nwfp_value_per_ha')
+    long['year'] = long['year'].astype(int)
+    long['nwfp_value_per_ha'] = pd.to_numeric(long['nwfp_value_per_ha'], errors='coerce')
+    return long.dropna(subset=['nwfp_value_per_ha'])
+
+
 def ntfp_gep_by_country(accessible_forest_ha_df, value_per_ha_df, year):
-    """One row per country: the CWoN non-wood forest product value, spread over reachable forest.
+    """One row per country: CWoN's non-wood forest product rate applied to reachable forest.
 
-    CWoN publishes an annual value per country and the forest area it attributes that value to.
-    Dividing gives a rate per hectare, and the obvious thing is to multiply that rate by the
-    forest people can actually reach. That understates it: CWoN's value was observed, and the
-    part of it earned on forest nobody can reach is not zero, it is unallocated.
-
-    So the rate is rescaled to the accessible area before it is applied. The country total then
-    equals CWoN's own, and what accessibility changes is the rate rather than the sum: the same
-    value concentrated on 63 percent of the forest, a median of $13.67 a hectare instead of
-    $10.00.
-
-    The consequence, stated because it is not obvious: since the accessible hectares appear in
-    the denominator and again in the product, they cancel, and this country total is CWoN's
-    number. Accessibility earns its place in where the value sits, not in how much there is.
+    CWoN publishes an annual value per hectare per country. That rate is applied to the forest
+    people can actually reach, which is the forest within 10 km of a road or a river and green
+    enough to yield a product.
 
     Args:
         accessible_forest_ha_df (pd.DataFrame): iso3_r250_label, accessible_forest_ha.
-        value_per_ha_df (pd.DataFrame): iso3_r250_label, year, nwfp_value_usd and forest_ha
-            (the CWoN NWFP series, current USD), plus nwfp_value_per_ha as CWoN priced it.
+        value_per_ha_df (pd.DataFrame): iso3_r250_label, year, nwfp_value_per_ha.
         year (int): the GEP base year to value at.
 
     Returns:
-        pd.DataFrame: iso3_r250_label, accessible_forest_ha, nwfp_value_per_ha as CWoN priced it,
-        nwfp_value_per_accessible_ha as rescaled, and ntfp_gep. A country with no accessible
-        forest keeps a missing rate rather than an infinite one.
+        pd.DataFrame: iso3_r250_label, accessible_forest_ha, nwfp_value_per_ha and ntfp_gep.
     """
     values = value_per_ha_df[value_per_ha_df['year'] == int(year)]
     df = accessible_forest_ha_df.merge(
-        values[['iso3_r250_label', 'nwfp_value_usd', 'nwfp_value_per_ha']],
-        on='iso3_r250_label', how='left')
-    reachable = df['accessible_forest_ha'].where(df['accessible_forest_ha'] > 0)
-    df['nwfp_value_per_accessible_ha'] = df['nwfp_value_usd'] / reachable
-    df['ntfp_gep'] = df['accessible_forest_ha'] * df['nwfp_value_per_accessible_ha']
+        values[['iso3_r250_label', 'nwfp_value_per_ha']], on='iso3_r250_label', how='left')
+    df['ntfp_gep'] = df['accessible_forest_ha'] * df['nwfp_value_per_ha']
     return df
 
 
@@ -69,6 +76,14 @@ import numpy as np
 ROAD_PRESENT_THRESHOLD_M = 0.0
 M_PER_KM = 1000.0
 
+# The land-cover map calls a cell forest from its class alone, which lets bare and sparse cells
+# into the mask. A five-year mean NDVI screens them out. The values are MODIS MOD13Q1 convention:
+# int16 storing NDVI times 10,000, with -9999 for no data, and 0.2 is the floor below which a
+# cell carries too little live vegetation to yield a harvestable product.
+NDVI_MIN_THRESHOLD = 0.20
+NDVI_SCALE_FACTOR = 0.0001
+NDVI_NODATA = -9999
+
 
 def forest_mask(lulc_block, ndv=None):
     """True where the land-cover block is forest, on the ESA CCI class range the source uses."""
@@ -76,6 +91,32 @@ def forest_mask(lulc_block, ndv=None):
     if ndv is not None:
         mask &= (lulc_block != ndv)
     return mask
+
+
+def vegetated_forest_mask(forest, ndvi_block, ndvi_ndv=NDVI_NODATA,
+                          scale=NDVI_SCALE_FACTOR, threshold=NDVI_MIN_THRESHOLD):
+    """The forest mask narrowed to cells carrying enough live vegetation to yield a product.
+
+    A cell whose NDVI is missing is dropped rather than kept. Absent evidence of vegetation is
+    not evidence of it, and keeping those cells would credit a country with reachable forest the
+    imagery cannot see.
+
+    Args:
+        forest (np.ndarray): boolean, the land-cover forest mask.
+        ndvi_block (np.ndarray): the raw integer NDVI block, on the same grid.
+        ndvi_ndv: the raw value standing for no data.
+        scale (float): what the raw integer is multiplied by to give NDVI.
+        threshold (float): the NDVI floor a cell must reach.
+
+    Returns:
+        np.ndarray: boolean, forest cells that also pass the NDVI floor.
+    """
+    # The comparison is made in the raster's own integer units rather than on scaled floats.
+    # In float32 a raw 2000 scales to 0.19999999, so a cell sitting exactly on a 0.2 floor is
+    # dropped by a rounding artifact rather than by its vegetation. Integers do not have that
+    # problem, and it avoids scaling a global array to compare it against one number.
+    raw_threshold = round(threshold / scale)
+    return forest & (ndvi_block != ndvi_ndv) & (ndvi_block >= raw_threshold)
 
 
 def access_source_mask(road_length_block, river_block, road_ndv=None, river_ndv=None):

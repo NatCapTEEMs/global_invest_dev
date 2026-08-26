@@ -766,3 +766,44 @@ def parse_gpd_grid_definition(gpd_text):
 # ==================================================================== #
 # Write a numpy array to GeoTIFF
 # ==================================================================== #
+
+def roc_auc(y_true, y_score):
+    """Area under the ROC curve, for scoring the landslide hazard model.
+
+    This is the one thing scikit-learn was imported for, and scikit-learn is a large compiled
+    install to carry for a diagnostic. The area under an ROC curve is the probability that a
+    randomly chosen positive scores above a randomly chosen negative, which is the Mann-Whitney U
+    statistic, so it is computed from ranks rather than by walking the curve.
+
+    Tied scores take the average of the ranks they span, which is what makes the result agree with
+    scikit-learn on real data; without it a model that assigns many identical scores reads better
+    than it is. A test checks the agreement over four hundred random cases with deliberate ties.
+
+    Args:
+        y_true (array-like): 1 for the positive class, 0 otherwise.
+        y_score (array-like): the model's score, higher meaning more likely positive.
+
+    Returns:
+        float: the area, or NaN when one class is absent and the area is undefined.
+    """
+    import numpy as np
+
+    y_true = np.asarray(y_true, dtype=bool).ravel()
+    y_score = np.asarray(y_score, dtype='float64').ravel()
+    n_positive, n_negative = int(y_true.sum()), int((~y_true).sum())
+    if not n_positive or not n_negative:
+        return float('nan')
+
+    order = np.argsort(y_score, kind='mergesort')
+    ranks = np.empty(len(y_score), dtype='float64')
+    ranks[order] = np.arange(1, len(y_score) + 1)
+    sorted_scores = y_score[order]
+    start = 0
+    while start < len(sorted_scores):
+        stop = start
+        while stop + 1 < len(sorted_scores) and sorted_scores[stop + 1] == sorted_scores[start]:
+            stop += 1
+        if stop > start:
+            ranks[order[start:stop + 1]] = (start + stop + 2) / 2.0
+        start = stop + 1
+    return (ranks[y_true].sum() - n_positive * (n_positive + 1) / 2.0) / (n_positive * n_negative)

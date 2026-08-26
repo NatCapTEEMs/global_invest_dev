@@ -9,24 +9,43 @@ from global_invest.ntfp import ntfp_functions
 from global_invest.ntfp import ntfp_functions as nf
 
 
-def test_the_rate_is_cwons_value_over_the_reachable_area_not_over_all_forest():
-    # The reachable area is smaller than the forest CWoN priced, so dividing by it raises the rate.
-    # AAA: $200 over 100 reachable hectares is $2/ha where CWoN spread the same $200 over 200.
+def test_the_published_rate_is_applied_to_the_reachable_area():
+    # The rate is CWoN's own, per hectare, and it is applied to the hectares people can reach.
+    # AAA: $1/ha over 100 reachable hectares is $100, not the $200 CWoN spread over all 200.
     area = pd.DataFrame({'iso3_r250_label': ['AAA', 'BBB'], 'accessible_forest_ha': [100.0, 50.0]})
     values = pd.DataFrame({'iso3_r250_label': ['AAA', 'AAA', 'BBB'],
                            'year': [2019, 2020, 2019],
-                           'nwfp_value_usd': [200.0, 900.0, 200.0],
                            'nwfp_value_per_ha': [1.0, 4.5, 2.0]})
     out = ntfp_functions.ntfp_gep_by_country(area, values, 2019).set_index('iso3_r250_label')
-    assert out['nwfp_value_per_accessible_ha'].to_dict() == {'AAA': 2.0, 'BBB': 4.0}
-    assert out['ntfp_gep'].to_dict() == {'AAA': 200.0, 'BBB': 200.0}
+    assert out['ntfp_gep'].to_dict() == {'AAA': 100.0, 'BBB': 100.0}
     # Only the requested year is used: AAA's 2020 row would have given a different rate.
     assert out.loc['AAA', 'nwfp_value_per_ha'] == 1.0
 
 
 def test_source_script_constants_are_pinned():
+    """Every value the source module chose, pinned so a claim of following it cannot go stale.
+
+    The docs say this service reproduces the source module's method step for step. That claim is
+    only worth as much as the values behind it, so each one is asserted here against the number
+    in the source scripts rather than left to be re-read by hand.
+    """
+    from global_invest.ntfp import ntfp_tasks
+
+    # run_ntfp.py: the buffer distance, and the ESA class range create_forest_mask keeps.
     assert ntfp_functions.NTFP_ACCESS_BUFFER_M == 10_000
     assert (ntfp_functions.ESA_FOREST_CLASS_MIN, ntfp_functions.ESA_FOREST_CLASS_MAX) == (50, 90)
+
+    # run_ntfp.py: the NDVI screen, on the MOD13Q1 convention of NDVI times 10,000.
+    assert ntfp_functions.NDVI_MIN_THRESHOLD == 0.20
+    assert ntfp_functions.NDVI_SCALE_FACTOR == 0.0001
+    assert ntfp_functions.NDVI_NODATA == -9999
+
+    # ntfp_tasks.py: the analysis grid, which fixes the cell size and the world extent so every
+    # raster comes out the same shape rather than each deriving its own bounds.
+    assert ntfp_tasks.ACCESSIBILITY_CELL_SIZE_M == 300.0
+    assert ntfp_tasks.MOLLWEIDE_BBOX == (-17_900_000.0, -8_900_000.0, 17_900_000.0, 8_900_000.0)
+    assert ntfp_tasks.HECTARES_PER_CELL == 9.0
+    assert 'Mollweide' in ntfp_tasks.MOLLWEIDE_WKT
 
 
 def test_es_config_row_hydrates_ntfp(tmp_path):
@@ -80,25 +99,88 @@ def test_hectares_by_zone_sums_into_the_zone_id_and_keeps_outside_at_index_zero(
     assert out[0] == 0.0        # outside every zone
 
 
-def test_the_price_is_rescaled_to_reachable_forest_so_the_country_total_is_cwons():
-    # CWoN publishes a value and the forest area it attributes it to. Applying that rate to only
-    # the reachable forest would drop the part earned on forest nobody can reach, which is not
-    # zero, it is unallocated. Rescaling to the reachable area keeps the total and raises the rate.
+def test_the_country_total_falls_below_cwons_because_unreachable_forest_is_dropped():
+    # CWoN's rate covers all forest. Applying it to only the reachable part drops the value
+    # notionally earned where nobody can go, which is the source module's choice and ours.
     accessible = pd.DataFrame({'iso3_r250_label': ['AAA', 'BBB', 'NOACCESS'],
                                'accessible_forest_ha': [600.0, 250.0, 0.0]})
-    cwon = pd.DataFrame({'iso3_r250_label': ['AAA', 'BBB', 'NOACCESS'], 'year': [2019] * 3,
-                         'nwfp_value_usd': [12000.0, 5000.0, 800.0],
-                         'forest_ha': [1000.0, 500.0, 400.0],
-                         'nwfp_value_per_ha': [12.0, 10.0, 2.0]})
+    rates = pd.DataFrame({'iso3_r250_label': ['AAA', 'BBB', 'NOACCESS'], 'year': [2019] * 3,
+                          'nwfp_value_per_ha': [12.0, 10.0, 2.0]})
 
-    out = nf.ntfp_gep_by_country(accessible, cwon, 2019).set_index('iso3_r250_label')
+    out = nf.ntfp_gep_by_country(accessible, rates, 2019).set_index('iso3_r250_label')
 
-    # AAA: $12,000 over 600 reachable hectares is $20/ha, against CWoN's $12 over 1,000.
-    assert out.loc['AAA', 'nwfp_value_per_accessible_ha'] == pytest.approx(20.0)
-    assert out.loc['AAA', 'ntfp_gep'] == pytest.approx(12000.0)
-    assert out.loc['BBB', 'ntfp_gep'] == pytest.approx(5000.0)
-    # The country total is CWoN's, because the reachable hectares divide out and multiply back in.
-    assert out['ntfp_gep'].sum() == pytest.approx(17000.0)
-    # A country with no reachable forest gets no rate rather than an infinite one.
-    assert pd.isna(out.loc['NOACCESS', 'nwfp_value_per_accessible_ha'])
-    assert pd.isna(out.loc['NOACCESS', 'ntfp_gep'])
+    assert out.loc['AAA', 'ntfp_gep'] == pytest.approx(7200.0)   # 600 ha at $12
+    assert out.loc['BBB', 'ntfp_gep'] == pytest.approx(2500.0)   # 250 ha at $10
+    # CWoN priced 1,000 and 500 hectares, so its own totals would be $12,000 and $5,000.
+    assert out['ntfp_gep'].sum() == pytest.approx(9700.0)
+    # A country with no reachable forest earns nothing rather than an undefined amount.
+    assert out.loc['NOACCESS', 'ntfp_gep'] == pytest.approx(0.0)
+
+
+def test_ndvi_floor_drops_bare_and_unseen_forest():
+    # Four forest cells and one non-forest. Raw NDVI is the value times 10,000, so 2500 is 0.25
+    # and passes, 1500 is 0.15 and fails, and -9999 is no data and fails with it. The non-forest
+    # cell stays out however green it is, because the floor narrows the mask and cannot widen it.
+    forest = np.array([True, True, True, True, False])
+    ndvi = np.array([2500, 1500, -9999, 2000, 9000], dtype=np.int16)
+
+    kept = nf.vegetated_forest_mask(forest, ndvi)
+
+    assert list(kept) == [True, False, False, True, False]
+
+
+def test_ndvi_floor_is_inclusive_at_the_threshold():
+    # 0.20 exactly is kept: the threshold is the floor a cell must reach, not clear.
+    forest = np.array([True, True])
+    ndvi = np.array([2000, 1999], dtype=np.int16)
+    assert list(nf.vegetated_forest_mask(forest, ndvi)) == [True, False]
+
+
+def test_burning_the_country_id_matches_zonal_statistics_over_the_same_polygons(tmp_path):
+    """The country stage agrees with the source module's own aggregation, cell for cell.
+
+    The source module takes zonal statistics over the reprojected boundary polygons. The library
+    burns the country id onto the analysis grid instead and sums by id in blocks, because reading
+    a per-country window out of a seven-billion-cell raster is what the block pass exists to
+    avoid. Both assign a cell by which polygon covers its centre, so the totals must agree
+    exactly rather than approximately.
+    """
+    gpd = pytest.importorskip('geopandas')
+    zonal_stats = pytest.importorskip('rasterstats').zonal_stats
+    from osgeo import gdal
+    from shapely.geometry import box
+
+    from global_invest.ntfp import ntfp_tasks
+
+    # Three countries side by side on a 30-cell strip, with deliberately ragged edges so a
+    # boundary that falls inside a cell is exercised rather than landing on a cell edge.
+    polygons = gpd.GeoDataFrame(
+        {'iso3_r250_id': [4, 7, 11]},
+        geometry=[box(0.0, 0.0, 9.4, 10.0), box(9.4, 0.0, 20.6, 10.0), box(20.6, 0.0, 30.0, 10.0)],
+        crs='EPSG:3857')
+    vector_path = str(tmp_path / 'countries.gpkg')
+    polygons.to_file(vector_path, driver='GPKG')
+
+    # A one-cell grid over the strip carrying the per-cell hectares the country stage sums.
+    values = np.arange(1, 31, dtype='float32').reshape(3, 10) * 1.5
+    reference_path = str(tmp_path / 'values.tif')
+    raster = gdal.GetDriverByName('GTiff').Create(reference_path, 10, 3, 1, gdal.GDT_Float32)
+    raster.SetGeoTransform((0.0, 3.0, 0.0, 10.0, 0.0, -10.0 / 3.0))
+    raster.SetProjection(polygons.crs.to_wkt())
+    raster.GetRasterBand(1).WriteArray(values)
+    raster = None
+
+    burned_path = str(tmp_path / 'country_ids.tif')
+    ntfp_tasks.rasterize_polygon_to_grid(vector_path, reference_path, burned_path,
+                                         attribute='iso3_r250_id', output_type=gdal.GDT_Int32)
+    # The dataset is held while the band is read: chaining the two lets it be collected first.
+    burned = gdal.Open(burned_path)
+    ids = burned.GetRasterBand(1).ReadAsArray()
+    ours = nf.hectares_by_zone(values, ids, 11)
+
+    theirs = zonal_stats(polygons, reference_path, stats=['sum'], nodata=-9999)
+    for polygon_id, statistics in zip(polygons['iso3_r250_id'], theirs):
+        assert ours[polygon_id] == pytest.approx(statistics['sum'], rel=1e-12)
+
+    # And nothing is lost or double counted between them.
+    assert ours.sum() == pytest.approx(values.sum(), rel=1e-12)

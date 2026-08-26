@@ -46,6 +46,32 @@ def initialize_country_paths(p, simplified='300sec'):
     return p
 
 
+# Kept as its parts rather than a joined constant, because os is imported inside the functions
+# here so that importing utilities stays light.
+HA_PER_CELL_10SEC_REF_PARTS = ('pyramids', 'ha_per_cell_10sec.tif')
+
+
+def initialize_pyramid_paths(p):
+    """The shared pyramid rasters, published under one name for every service that needs them.
+
+    Hectares per cell at 10 arc-seconds is fixed geometry, not a run choice, so like the country
+    correspondence it is code rather than a cell in a CSV. What it is not is something each
+    service should resolve for itself: two of them did, under two different attribute names, which
+    is how one drifts onto a different grid than the other without anyone noticing.
+
+    Args:
+        p (ProjectFlow): the project, which gains ha_per_cell_10sec_path.
+
+    Returns:
+        ProjectFlow: the same project.
+    """
+    import os
+
+    p.ha_per_cell_10sec_path = p.get_path(
+        os.path.join(*HA_PER_CELL_10SEC_REF_PARTS))
+    return p
+
+
 def summarize_raster_by_region(value_raster_path, region_boundary_path, out_path, year, id_column):
     """Per-polygon total / mean / pixel count of a value raster, via hb.zonal_statistics_flex.
 
@@ -330,6 +356,20 @@ def seed_input_template(p, file_name, log=print, required=True):
     return local_path
 
 
+# What a definitions cell can say instead of a value. Blank already means "this attribute does
+# not apply to this service", but blank cannot distinguish that from "nobody has filled this in
+# yet", and the two read identically to anyone scanning the table. These words mean the same as
+# blank to the code and something specific to the reader.
+NOT_A_VALUE = ('computed', 'skip', 'n/a')
+
+
+def is_not_a_value(value):
+    """Whether a definitions cell is blank or says, in words, that it holds no value."""
+    import pandas as pd
+
+    return pd.isna(value) or str(value).strip().lower() in ('',) + NOT_A_VALUE
+
+
 def hydrate_es_config(p, service, log=print):
     """Fill a service's per-ES configuration onto p from es_config.csv (wide format:
     one row per service, one column per attribute -- one shared table for the whole library;
@@ -358,7 +398,7 @@ def hydrate_es_config(p, service, log=print):
         if attribute == 'service':
             continue
         value = row[attribute]
-        if pd.isna(value):
+        if is_not_a_value(value):
             continue
         if getattr(p, attribute, None) is not None:
             continue
