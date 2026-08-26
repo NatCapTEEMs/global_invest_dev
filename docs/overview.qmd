@@ -436,6 +436,8 @@ format:
 
 - [Values timber harvests net of harvest and transport costs. Our reimplementation matches the committed output for all 166 countries.]{.state}
 - **Q1:** is there a forest-management mask behind the value raster, or code that builds one? We can sum that raster to countries and match it exactly, but we cannot make our own: the mask saying which forest is available for harvest is not derivable from the layers we hold.
+- **Q2:** where does the value raster stop being per hectare and become per cell? The appendix gives every input per hectare, yield in cubic metres per hectare times a price per cubic metre times a dimensionless land share, and the account sums the raster flat on a geographic grid. Summing a per-hectare quantity that way would be wrong, and the magnitudes say it is not happening: flat comes to about $42 per hectare per year of managed forest, an ordinary forest land rent, where treating it as a density gives $337 and a world total above the whole forest-products industry. So the conversion is there and undocumented, and we would like to point at it.
+- **Q3:** should timber take its ecosystem share from GTAP when the other services take one from CWoN? Following Damania et al. (2023) it multiplies gross returns by the GTAP 10 land factor share for each of the 18 agro-ecological zones, so the share does vary by zone rather than being one economy-wide number. CWoN publishes a forest rent that would answer the same question in the same currency as the rest of the account, so this is a consistency choice rather than a data gap.
 
 ## ntfp
 
