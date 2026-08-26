@@ -204,6 +204,35 @@ def test_pixel_damage_totals_hand_computed_3x3():
     assert raster[1, 0] == 0.0 and raster[2, 2] == 0.0
 
 
+def test_pixel_damage_totals_takes_a_per_pixel_area():
+    """A cell's own ground area, not one number for the whole grid.
+
+    The damage curves are a USD per square metre of real asset, so on a grid whose cells cover
+    different amounts of ground the area has to vary with them. Here the artif pixels all sit in
+    row 0 and the crop pixel in row 1, so giving row 0 twice the area of the scalar case doubles
+    artif and leaves crop alone. A scalar cannot express that, which is how a whole-grid constant
+    on a projection that is not equal-area overstates damage away from the equator.
+    """
+    depth = np.array([[0.25, 1.0, 7.0],
+                      [-5.0, 3.0, 0.0],
+                      [2.0, 0.5, np.nan]], dtype='float32')
+    sda = np.array([[1, 1, 1],
+                    [2, 2, 2],
+                    [3, 0, 1]])
+    curves = {}
+    for sda_type, slope in (('artif', 10.0), ('crop', 2.0)):
+        xs = np.array(fchain.DEPTH_BINS_M, dtype='float32')
+        curves[('AAA', sda_type)] = (xs, slope * xs)
+
+    area = np.array([[4.0, 4.0, 4.0],
+                     [2.0, 2.0, 2.0],
+                     [1.0, 1.0, 1.0]])
+    _, totals, total = fchain.pixel_damage_totals(depth, sda, curves, 'AAA', pixel_area_m2=area)
+    assert totals['artif'] == 290.0     # 72.5 per m2 in row 0, at area 4 rather than 2
+    assert totals['crop'] == 12.0       # 6 per m2 in row 1, still at area 2
+    assert total == 302.0
+
+
 def test_ead_from_rp_damages_hand_computed():
     # Points in p-space with anchor + flat tail: (0, 200) (0.01, 200) (0.1, 100) (1, 0).
     # Trapezoids: 0.01x200 + 0.09x150 + 0.9x50 = 2 + 13.5 + 45 = 60.5.

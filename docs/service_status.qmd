@@ -521,8 +521,8 @@ hectare. `ours` is where that lives.
 - **code:** -
 - **grid:** -
 - **reference:** -
-- **number:** No recharge module. The sheet's own note argues recharge is natural-capital value rather than an ecosystem service flow, and that its end products are already valued in water purification, irrigation and flood mitigation, so counting it again would double-count.
-- **need:** Whether the account excludes recharge on that reasoning.
+- **number:** No recharge module here, and the reason is scope rather than absence of code. A service owner has one: Shunkei Kakimoto's `Shunkei3/GEP_GWR` is public and was updated in October 2025. What kept it out is the sheet's own note, which argues recharge is natural-capital value rather than an ecosystem service flow, and that its end products are already valued in water purification, irrigation and flood mitigation, so counting it again would double-count.
+- **need:** Whether the account excludes recharge on that reasoning. If it does not, the code exists and the fold is a normal port rather than new science.
 
 
 ## Fuelwood
