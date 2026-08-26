@@ -920,13 +920,31 @@ def pixel_area_km2(lat_deg: np.ndarray, res_deg: float = PIXEL_RES_DEG) -> np.nd
         you already have an explicit latitude array (e.g. inside
         ``build_area_km2_raster``).
     """
-    # Spherical, and deliberately so: hazelbean carries an ellipsoidal WGS84 area in
-    # get_area_of_pixel_column_from_center_lats, but the source pipeline this raster
-    # replicates uses a 6371 km sphere (crop_benefits raster/grid.py and raster/spatial.py).
-    # Adopting the ellipsoid would move the total 0.1086 percent, from 388.90bn to 388.47bn,
-    # AWAY from the figure we reproduce to 1.8e-08 on matched inputs. Reuse the hazelbean
-    # function anywhere that is not replicating this pipeline; note its docstring says ha
-    # while it returns m2.
+    # WGS84, from hazelbean, because that is what the rest of the account measures area with:
+    # base_data/pyramids/ha_per_cell_10sec.tif, which terrestrial and coastal carbon aggregate
+    # through, matches this function to 0.000% and the 6371 km sphere to between -0.223% and
+    # +0.557% depending on latitude. Pollination was the only service on a sphere, so the GEP
+    # total was summing services whose cell areas disagreed by up to half a percent.
+    #
+    # The sphere is what the source pipeline uses (crop_benefits raster/grid.py, raster/spatial.py)
+    # and is kept below as pixel_area_km2_spherical so the replication check still has it. Choosing
+    # the ellipsoid here costs 0.1086 percent on the pollination total and buys one convention
+    # across every service.
+    #
+    # NOTE hazelbean's docstring says it returns ha per cell; it returns m2, hence the 1e6.
+    import hazelbean as hb
+
+    return np.asarray(
+        hb.get_area_of_pixel_column_from_center_lats(res_deg, np.asarray(lat_deg, dtype='float64'))
+    ) / 1e6
+
+
+def pixel_area_km2_spherical(lat_deg: np.ndarray, res_deg: float = PIXEL_RES_DEG) -> np.ndarray:
+    """Pixel area in km2 on a 6371 km sphere, the convention the source pipeline uses.
+
+    Kept so the replication check against crop_benefits can be run on its own terms. Production
+    uses pixel_area_km2, which is WGS84 and agrees with the rest of the account.
+    """
     R = 6371.0  # Earth radius, km
     lat_rad = np.deg2rad(lat_deg)
     dlat = np.deg2rad(res_deg)

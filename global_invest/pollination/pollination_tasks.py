@@ -106,7 +106,7 @@ def _compute_radii_pixels(lat_deg: float, pixel_lat_deg: float, pixel_lon_deg: f
 def save_parquet(df: pd.DataFrame, path: str | str) -> str:
     """Save DataFrame as parquet and log the result."""
     path = str(path)
-    os.path.dirname(path).mkdir(parents=True, exist_ok=True)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
     df.to_parquet(path, index=False)
     logger.info("Saved %d rows -> %s", len(df), path)
     return path
@@ -893,7 +893,7 @@ def read_raster(path: str) -> Tuple[np.ndarray, Dict[str, Any]]:
 def save_csv(df: pd.DataFrame, path: str | str) -> str:
     """Save DataFrame as CSV and log the result."""
     path = str(path)
-    os.path.dirname(path).mkdir(parents=True, exist_ok=True)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
     df.to_csv(path, index=False)
     logger.info("Saved %d rows -> %s", len(df), path)
     return path
@@ -2012,7 +2012,7 @@ def write_raster(path, data, meta, nodata=None):
         Path: the path written.
     """
     path = str(path)
-    os.path.dirname(path).mkdir(parents=True, exist_ok=True)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
     profile = dict(meta)
     profile.update(driver='GTiff', dtype='float32', count=1,
                    compress='deflate', predictor=2, tiled=True, zlevel=6)
