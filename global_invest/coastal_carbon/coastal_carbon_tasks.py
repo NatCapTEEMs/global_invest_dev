@@ -15,7 +15,6 @@ import hazelbean as hb
 import numpy as np
 import pandas as pd
 import rasterio
-import rasterio.features
 import rasterio.warp
 import rasterio.windows
 from rasterio.enums import Resampling
@@ -27,10 +26,11 @@ from global_invest.coastal_carbon import coastal_carbon_functions as ccf
 # The ha_per_cell pyramid every raster stage is gridded on carries this no-data value.
 HA_PER_CELL_NDV = -9999.0
 # Region-id raster: uint16 spans the eemarine_r566 ids, and 0 means "outside every region".
-REGION_ID_RASTER_DTYPE = 'uint16'
+# Types are GDAL codes because that is the currency hazelbean's raster writers take.
+REGION_ID_GDAL_TYPE = 2   # UInt16
 RASTER_NDV = 0
 # Habitat extent mask: 1 where the habitat polygon covers the cell.
-MASK_DTYPE = 'uint8'
+MASK_GDAL_TYPE = 1        # Byte
 MASK_VALUE = 1
 # Rows of the 10 arc-second grid read per iteration of the streaming stock pass.
 STOCK_CHUNK_ROWS = 2048
@@ -57,37 +57,33 @@ def publish_inputs(p):
 # ============================================================================
 
 def _rasterize_to_template(vector_path, template_raster_path, out_path, field=None,
-                           default_value=MASK_VALUE, dtype=MASK_DTYPE, nodata=RASTER_NDV,
-                           all_touched=True):
+                           gdal_type=MASK_GDAL_TYPE, nodata=RASTER_NDV, all_touched=True):
     """Burn polygons from `vector_path` onto the grid of `template_raster_path`.
 
     Defaults produce a binary mask. Pass `field` to burn a numeric attribute (e.g. a region id).
-    Vectors are reprojected into the template CRS as needed.
+
+    hazelbean owns the burn, so this module grids a vector the same way the rest of the stack
+    does. It burns in place rather than reprojecting, so a vector arriving in another CRS would
+    land silently in the wrong cells, which is why the CRS is checked rather than assumed.
     """
-    gdf = gpd.read_file(vector_path)
     with rasterio.open(template_raster_path) as src:
-        if gdf.crs != src.crs:
-            gdf = gdf.to_crs(src.crs)
-        meta = src.meta.copy()
-        meta.update({'count': 1, 'dtype': dtype, 'nodata': nodata, 'compress': 'lzw'})
-        if field is None:
-            shapes = ((geom, default_value) for geom in gdf.geometry if geom is not None)
-        else:
-            shapes = (
-                (geom, val)
-                for geom, val in zip(gdf.geometry, gdf[field])
-                if geom is not None and pd.notna(val)
-            )
-        arr = rasterio.features.rasterize(
-            shapes=shapes,
-            out_shape=(src.height, src.width),
-            fill=nodata,
-            transform=src.transform,
-            dtype=dtype,
-            all_touched=all_touched,
-        )
-        with rasterio.open(out_path, 'w', **meta) as dst:
-            dst.write(arr, 1)
+        template_crs = src.crs
+    vector_crs = gpd.read_file(vector_path, rows=1).crs
+    if vector_crs != template_crs:
+        raise ValueError(
+            f'{os.path.basename(vector_path)} is in {vector_crs} but {os.path.basename(template_raster_path)} '
+            f'is in {template_crs}. Reproject the vector before burning it.')
+
+    hb.rasterize_to_match(
+        input_vector_path=vector_path,
+        match_raster_path=template_raster_path,
+        output_raster_path=out_path,
+        burn_column_name=field,
+        burn_values=None if field else [MASK_VALUE],
+        datatype=gdal_type,
+        ndv=nodata,
+        all_touched=all_touched,
+    )
     return out_path
 
 
@@ -142,7 +138,7 @@ def _build_country_id_raster_if_needed(p):
             template_raster_path=p.ha_per_cell_10sec_path,
             out_path=p.country_id_raster_path,
             field=p.gep_regions_id_col,
-            dtype=REGION_ID_RASTER_DTYPE,
+            gdal_type=REGION_ID_GDAL_TYPE,
             nodata=RASTER_NDV,
             all_touched=False,
         )
