@@ -920,6 +920,13 @@ def pixel_area_km2(lat_deg: np.ndarray, res_deg: float = PIXEL_RES_DEG) -> np.nd
         you already have an explicit latitude array (e.g. inside
         ``build_area_km2_raster``).
     """
+    # Spherical, and deliberately so: hazelbean carries an ellipsoidal WGS84 area in
+    # get_area_of_pixel_column_from_center_lats, but the source pipeline this raster
+    # replicates uses a 6371 km sphere (crop_benefits raster/grid.py and raster/spatial.py).
+    # Adopting the ellipsoid would move the total 0.1086 percent, from 388.90bn to 388.47bn,
+    # AWAY from the figure we reproduce to 1.8e-08 on matched inputs. Reuse the hazelbean
+    # function anywhere that is not replicating this pipeline; note its docstring says ha
+    # while it returns m2.
     R = 6371.0  # Earth radius, km
     lat_rad = np.deg2rad(lat_deg)
     dlat = np.deg2rad(res_deg)
