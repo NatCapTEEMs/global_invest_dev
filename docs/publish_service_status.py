@@ -54,44 +54,12 @@ FIELD_COLUMNS = [
     ('number', 'what the number is, and what it is checked against'),
     ('need', 'what we need'),
 ]
-CHANGE_LOG_COLUMN = 'what changed, most recent first'
-COLUMN_WIDTHS = (22, 16, 22, 26, 11, 8, 30, 52, 64, 16, 64, 40, 72)
+COLUMN_WIDTHS = (22, 16, 22, 26, 11, 8, 30, 52, 64, 16, 64, 40)
 LINE_HEIGHT_POINTS = 13.5
 MAX_LINES = 14
 
-# How far back a service's change log runs. Enough to show the arc of the work without turning
-# the cell into the whole history of the repo.
-CHANGE_LOG_DEPTH = 12
-
 SECTION_PATTERN = re.compile(r'^## (.+?)\s*$', re.M)
 BULLET_PATTERN = re.compile(r'^- \*\*(.+?):\*\*\s*(.*)$', re.M)
-
-
-def change_log(module, depth=CHANGE_LOG_DEPTH):
-    """What has been done to a service's module, newest first, read out of git.
-
-    Taken from the history rather than kept by hand, so it records what actually happened to the
-    code rather than what somebody remembered to write down. A module with no folder of its own
-    yet has no history to show.
-
-    Args:
-        module (str): the module folder name, or '-' for a service with no module.
-        depth (int): how many commits back to carry.
-
-    Returns:
-        str: one 'date  subject' per line, or '' when there is nothing to report.
-    """
-    if not module or module == '-':
-        return ''
-    folder = os.path.join(REPO, 'global_invest', module)
-    if not os.path.isdir(folder):
-        return ''
-    result = subprocess.run(
-        ['git', 'log', '--format=%ad  %s', '--date=short', '-%d' % depth, '--', folder],
-        capture_output=True, text=True, cwd=REPO)
-    if result.returncode:
-        return ''
-    return result.stdout.strip()
 
 
 def parse_qmd(path):
@@ -124,7 +92,6 @@ def parse_qmd(path):
         row = {'service': name}
         for label, column in FIELD_COLUMNS:
             row[column] = fields.get(label, '')
-        row[CHANGE_LOG_COLUMN] = change_log(fields.get('module', '-').split('(')[0].strip())
         rows.append(row)
 
     if problems:
@@ -132,7 +99,7 @@ def parse_qmd(path):
                          + '\n  '.join(problems))
     if not rows:
         raise ValueError(f'no service sections found in {path}')
-    columns = ['service'] + [column for _, column in FIELD_COLUMNS] + [CHANGE_LOG_COLUMN]
+    columns = ['service'] + [column for _, column in FIELD_COLUMNS]
     return pd.DataFrame(rows)[columns]
 
 
