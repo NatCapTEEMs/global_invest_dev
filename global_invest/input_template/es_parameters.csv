@@ -121,7 +121,12 @@ livestock_provision,cwon_crop_coefficients_path,global_invest/livestock_provisio
 livestock_provision,cwon_crop_coefficients_source_note,"the CWoN land rental-rate coefficients, from the drive"
 livestock_provision,gleam_dmi_path,global_invest/livestock_provision/gleam3_dmi_dashboard.psv
 livestock_provision,gleam_dmi_source_note,"GLEAM 3 dry-matter intake per country, harvested from FAO's public dashboard by the recipe in howto_harvest_gleam_intake.md. Carries all eight feed categories: the four the ruminant tables omit are served on the chicken and pig tables instead."
-erosion,erosion_use_upslope_lulc_diagnostics,false
+erosion,erosion_use_upslope_lulc_diagnostics,true
+erosion,erosion_upstream_prevention_share_path,global_invest/erosion/author_drive/msi_upstream_attribution_v3/upstream_prevention_share.tif
+erosion,erosion_upslope_forest_share_path,global_invest/erosion/author_drive/msi_upstream_attribution_v3/upslope_forest_share.tif
+erosion,erosion_upslope_grass_share_path,global_invest/erosion/author_drive/msi_upstream_attribution_v3/upslope_grass_share.tif
+erosion,erosion_upslope_cropland_share_path,global_invest/erosion/author_drive/msi_upstream_attribution_v3/upslope_cropland_share.tif
+erosion,erosion_upslope_bare_share_path,global_invest/erosion/author_drive/msi_upstream_attribution_v3/upslope_bare_share.tif
 pollination,pollination_fx_path,fao/currencies/worldbank/fx_lcu_per_usd.csv
 pollination,pollination_fx_source_url,https://api.worldbank.org/v2/country/all/indicator/PA.NUS.FCRF
 pollination,pollination_fx_source_note,"World Bank PA.NUS.FCRF, official exchange rate in local currency per US dollar, period average, fetched 2026-08-25. 7,149 rows over 214 countries and 1990 to 2024. Pinned rather than fetched per run because the World Bank revises the series, which would move the pollination total by whatever had changed since."
