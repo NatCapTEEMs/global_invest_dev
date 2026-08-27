@@ -216,6 +216,9 @@ docs/check_consistency.py
 docs/sweep_services.py
 docs/service_facts.json
 
+# PR descriptions drafted here before being pasted into GitHub. Working text, not repo content.
+docs/pr_*.md
+
 # The private ecosystem-service reference: our working notes, published to a private sheet.
 docs/publish_es_reference.py
 docs/es_reference_private.md
