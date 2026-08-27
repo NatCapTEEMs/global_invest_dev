@@ -675,7 +675,13 @@ def load_countries_iso3_alpha(paths, in_crs: rioCRS):
                 )
 
     iso_col = None
-    for cand in ["iso3", "ISO3", "iso_a3", "adm0_a3", "ADM0_A3", "iso3_r250_label"]:
+    # The devstack's own label comes first. A boundary file may carry Natural Earth's columns
+    # beside it, and those disagree: in ee_r264_correspondence South Sudan is SSD under
+    # iso3_r250_label and SDS under adm0_a3, sov_a3 and su_a3. Preferring adm0_a3 gave the country
+    # a code the FAO tables do not use, so its crop GPV came back empty and its GEP was zero while
+    # the author's run values it at $3.7M. Only ee_r264_correspondence carries both, so ee_r250
+    # never showed it.
+    for cand in ["iso3_r250_label", "iso3", "ISO3", "iso_a3", "adm0_a3", "ADM0_A3"]:
         if cand in gdf.columns:
             iso_col = cand
             break
