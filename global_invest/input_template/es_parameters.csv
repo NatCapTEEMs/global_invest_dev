@@ -36,7 +36,7 @@ erosion,erosion_yield_stack_path,global_invest/erosion/spam2020_yield_stack_TA.t
 erosion,erosion_area_stack_path,global_invest/erosion/spam2020_harvested_area_stack_TA.tif
 erosion,erosion_bandmap_csv_path,global_invest/erosion/spam2020_bandmap.csv
 erosion,erosion_elasticity_csv_path,global_invest/erosion/elasticity_crops_fao_revised.csv
-erosion,erosion_country_boundary_path,cartographic/ee/ee_r264_correspondence.gpkg
+erosion,erosion_country_boundary_path,cartographic/ee/ee_r250.gpkg
 erosion,erosion_fao_gpv_iso3_csv_path,global_invest/erosion/faostat_gpv_2019_iso3.csv
 erosion,erosion_fao_gpv_iso3_source_note,"the author's processed FAOSTAT table, from the drive's erosion folder"
 erosion,erosion_fao_prices_csv_path,global_invest/erosion/faostat_prices_2019_completed_revised.csv
