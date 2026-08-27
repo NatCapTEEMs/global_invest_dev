@@ -21,11 +21,8 @@ Each habitat comes from its own published extent map, read as polygons:
 | Habitat | Extent |
 |---|---|
 | Mangrove | Global Mangrove Watch v3, 2019 [@bunting2018; @bunting2022] |
-| Salt marsh | `global_salt_marsh2019.gpkg` |
+| Salt marsh | GLC_FCS30D 2019, a 30 m land-cover product; the marsh class extracted to `global_salt_marsh2019.gpkg` [@zhang2024] |
 | Seagrass | UNEP-WCMC013-014 SeagrassPtPy v7.1 [@unepwcmc2021] |
-
-The salt marsh extent is the one input with no published source named in the module, neither the
-code nor the module bibliography identifies where `global_salt_marsh2019.gpkg` came from.
 
 Seagrass is optional at the tree level (`include_seagrass`). A tree built with seagrass but no
 extent file raises rather than running, so a data gap cannot quietly understate the coastal
