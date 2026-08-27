@@ -120,6 +120,25 @@ hectare. `ours` is where that lives.
 - **need:** Is marine carbon in the account's scope?
 
 
+## Marine Carbon
+
+- **subgroup:** -
+- **module:** -
+- **category:** -
+- **in the library:** no
+- **run:** -
+- **ours:** -
+- **method:** -
+- **total:** -
+- **code:** -
+- **grid:** -
+- **reference:** -
+- **replicated:** Not in the library yet, so there is nothing to match.
+- **decided:** -
+- **number:** No marine module found.
+- **need:** Is marine carbon in the account's scope?
+
+
 ## Pollination
 
 - **subgroup:** -
