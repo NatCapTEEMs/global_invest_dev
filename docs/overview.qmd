@@ -329,9 +329,7 @@ format:
 ## erosion
 
 - [Values soil the land cover keeps in place: prevented erosion mapped by running the sediment-delivery model, valued through crop productivity. {{< meta erosion_total >}} across 185 countries, of which 26 compute an exact zero. The author reports {{< meta erosion_author_ses11 >}} across 164 for the same baseline scenario.]{.state}
-- **Q1:** does the account want the baseline scenario or the expanded one? The methodology defines SES-11, severe erosion at 11 t/ha/yr and 2 for small-area or low-elevation countries, reported as {{< meta erosion_author_ses11 >}}, and EPS-5 relaxing that to 5, reported as {{< meta erosion_author_eps5 >}}. Our configuration is SES-11, so the run already matches the stated baseline, and the choice roughly doubles the number.
-- **Q1b:** which of the three shock methods is the account's? Separately from the scenario, we compute damage (thresholded area share), service (threshold-free and magnitude-weighted per crop) and service-threshold (service restricted to a fixed severe-pixel set) side by side.
-- **Q2:** should the production run recompute the erosion shock, as the test runs already do? The scenarios file production reads names carbon and pollination as dynamic but not erosion, so erosion alone falls back to the frozen dependency table. The tracked template added erosion in August; the derived copies the runs read date from July and shadow it, because a file already present is never re-seeded.
+- **Q1:** should the EPS-5 sensitivity be reported beside the baseline? Nothing to decide on the baseline itself: the manuscript says results correspond to SES-11 unless otherwise stated, and our thresholds are already 11 t/ha/yr with 2 for small-area and low-elevation countries, with nothing overriding them. EPS-5 relaxes the threshold to 5 as a sensitivity analysis rather than an alternative, and it takes the reported figure from {{< meta erosion_author_ses11 >}} to {{< meta erosion_author_eps5 >}}, so whether the account carries it is worth settling.
 - **Q3:** did the reported run give a border cell to the country covering its centre, or to whichever country was rasterised last? Ours did the latter until this week, and it would explain why the two totals agree within about four percent while the countries do not: against the six largest reported, ours puts China thirty percent higher, India nearly thirty percent lower and the Philippines forty percent higher, and reorders the ranking.
 - **Q4:** can the dependency table use the ISO code for South Sudan? It spells it SDS where the country table uses SSD, so the country drops out of the join. Its value is zero today, so nothing is lost yet.
 
@@ -346,9 +344,8 @@ format:
 
 - [Values commercial capture fisheries as the economic rent of the catch, and subsistence fisheries as the consumptive-use value of home catch. The commercial rent is computed in the library from the CWoN tables. The subsistence component reports the published per-country values, and reproduces them exactly.]{.state}
 - **Q1:** should the RCP8.5-for-RCP7.0 substitution stand?
-- **Q2:** which CWoN vintage produced the shock file (cwon_shocks.har)?
-- **Q3:** should the account's fisheries value come from the CWoN resource rents or from the FishStatJ catch pipeline? Is there a per-country CSV from the run of the CWoN script?
-- **Q4:** does the subsistence value add to the commercial number, or does that number already contain the subsistence catch? Where FAO catch statistics already include subsistence fishing, summing the two counts it twice.
+- **Q2:** should the account's fisheries value come from the CWoN resource rents or from the FishStatJ catch pipeline? Is there a per-country CSV from the run of the CWoN script?
+- **Q3:** does the subsistence value add to the commercial number, or does that number already contain the subsistence catch? Where FAO catch statistics already include subsistence fishing, summing the two counts it twice.
 
 ## recreation
 
@@ -458,6 +455,23 @@ format:
 - [Values stormwater retained by urban vegetation and soils. Our own retention run on the drive's configuration retains {{< meta stormwater_volume >}} per year across 104 countries, wall to wall rather than urban-masked, and the module prices that volume. The run and the country step sit beside the task tree rather than inside it.]{.state}
 - **Q1:** what is the intended price per cubic metre retained? The configuration carries a placeholder of 1, so today's value is the volume.
 - **Q2:** should the run be masked to urban areas? It currently covers the whole land surface.
+
+# Questions for the scenario shocks, not the GEP account
+
+## What this section is {.smaller}
+
+- Every service here serves two callers from the same science: the GEP account reads a valuation, one row per country, and the macroeconomic pipeline reads a scenario shock, a table of productivity deviations.
+- They are different products with different owners and different decisions, so their questions are kept apart. A question about which shock method to use does not belong beside a question about how a country's value was measured.
+
+## erosion, as a shock {.smaller}
+
+- **Q:** which of the three shock methods is the account's? We compute damage (thresholded area share), service (threshold-free and magnitude-weighted per crop) and service-threshold (service restricted to a fixed severe-pixel set) side by side.
+- **Q:** should the production run recompute the erosion shock, as the test runs already do? The scenarios file production reads names carbon and pollination as dynamic but not erosion, so erosion alone falls back to the frozen dependency table. The tracked template added erosion in August; the derived copies the runs read date from July and shadow it, because a file already present is never re-seeded.
+
+## fisheries, as a shock {.smaller}
+
+- **Q:** which CWoN vintage produced the shock file (cwon_shocks.har)?
+
 
 # Cross-cutting questions
 
