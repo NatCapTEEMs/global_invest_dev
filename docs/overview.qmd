@@ -13,6 +13,7 @@ extractive_factor: "0.49"
 renewable_total: "$170.83bn"
 renewable_ref: "$134.6bn"
 poll_raster: "$388.00bn"
+poll_with_sufficiency: "$163.46bn"
 poll_fao: "$515bn"
 livestock_ind: "$136bn"
 livestock_world: "$1.37T"
@@ -323,7 +324,7 @@ format:
 ## pollination
 
 - [Values the crop output that animal pollinators are responsible for. We build the value raster ourselves now. The old figure was 26 times too small, because the raster holds a value per km2 and the step that summed it treated it as a value per cell.]{.state}
-- **Q1:** which definition does the account want? The crop output at stake if pollinators vanished, {{< meta poll_raster >}}, or the service habitat currently delivers. We are producing both so you can choose against two numbers.
+- **Q1:** which definition does the account want? The crop output at stake if pollinators vanished, {{< meta poll_raster >}}, or the service habitat currently delivers, {{< meta poll_with_sufficiency >}}. Both are ours, on one grid at 2019 prices; the second multiplies by 300 m habitat sufficiency. Only the second responds to land-use change, which is what makes it a service rather than a property of the crop mix.
 - **Q2:** does the account add pollination on top of crop_provision? Crop multiplies production value by the land rental rate, so both attribute part of the same output to nature.
 
 ## erosion
