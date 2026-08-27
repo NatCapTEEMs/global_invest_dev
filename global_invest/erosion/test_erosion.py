@@ -172,11 +172,11 @@ def test_value_is_crop_output_times_the_shock_and_a_missing_price_is_not_a_zero_
 
 
 def test_a_country_is_not_small_because_one_of_its_territories_is():
-    # The boundary file is r264, which splits 13 countries into territories, so a country arrives
-    # as several rows. Summing them is what keeps China from qualifying as a small country on the
-    # strength of Macau. Deciding on a single sub-region's area put AUS, CHN, FRA, IND, NOR, NZL
-    # and SRB on the low soil-loss tolerance, which counts far more of their cropland as severely
-    # eroding and so raises what the account says erosion protection is worth there.
+    # r264 splits six countries into territories, so a country arrives as several rows. Summing
+    # them is what keeps China from qualifying as a small country on the strength of Macau.
+    # Deciding on a single sub-region's area instead can put a country on the low soil-loss
+    # tolerance, which enlarges the domain the severity threshold defines and so raises what the
+    # account says erosion protection is worth there.
     sub_regions = pd.DataFrame({
         'iso3': ['CHN', 'CHN', 'CHN', 'TUV'],
         'area_km2': [9_300_000.0, 1_100.0, 30.0, 26.0],       # mainland, Hong Kong, Macau, Tuvalu

@@ -964,11 +964,12 @@ def run_biophysical_decomposed(paths):
     )
 
     # A country's area is the sum of the sub-regions the boundary file splits it into, not any
-    # one of them. The boundary file is r264, which splits 13 countries out into territories, so
-    # taking a sub-region's area let China and India qualify as small on the strength of an
-    # island: they were being given the low soil-loss tolerance, which counts far more of their
-    # cropland as severely eroding. Seven countries changed on this: AUS, CHN, FRA, IND, NOR,
-    # NZL, SRB.
+    # one of them. r264 splits six countries out into territories -- CHN and IND into six rows
+    # each, FRA, GBR, PAK and TUR into two -- so deciding on a single sub-region's area could let
+    # a country qualify as small on the strength of an island and take the low soil-loss
+    # tolerance, which enlarges the domain the severity threshold defines. Measured on that file,
+    # the countries whose small/large status can turn on this are CHN, FRA, GBR, IND and TUR.
+    # r250, which the run now reads, carries one row per country, so it cannot arise there at all.
     df_country_area = (gdf_countries[["ISO3", "area_km2"]].rename(columns={"ISO3": "iso3"})
                        .groupby("iso3", as_index=False)["area_km2"].sum(min_count=1))
     df_threshold = erosion_functions.country_threshold_policy(
