@@ -210,6 +210,12 @@ docs/check_deck.py
 docs/check_harmonization.py
 docs/check_consistency.py
 
+# The service sweep and the facts it derives. It reads other people's staged data and reports
+# where our prose contradicts it, which is a working note about their work, not a verdict to hand
+# them.
+docs/sweep_services.py
+docs/service_facts.json
+
 # The private ecosystem-service reference: our working notes, published to a private sheet.
 docs/publish_es_reference.py
 docs/es_reference_private.md

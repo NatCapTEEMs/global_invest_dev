@@ -53,6 +53,8 @@ FIELD_COLUMNS = [
     ('total', 'total (2019 USD)'),
     ('grid', 'which grid, and what the cell area rests on'),
     ('reference', 'what the reference shares with us'),
+    ('replicated', 'have we reproduced their number'),
+    ('decided', 'what we decided and changed'),
     ('number', 'what the number is, and what it is checked against'),
     ('need', 'what we need'),
 ]
