@@ -20,7 +20,12 @@ n_services: "22"
 n_accounts: "25"
 n_replicating: "9"
 ntfp_total: "$14.07bn"
+ntfp_no_edit: "$12.98bn"
+ntfp_edit_three: "$1.37bn"
+ntfp_edit_cod: "$921M"
 erosion_total: "$13.96bn"
+erosion_author_ses11: "$14.59bn"
+erosion_author_eps5: "$29.1bn"
 cat_reads: "1"
 cat_rescales: "2"
 cat_table: "12"
@@ -323,10 +328,11 @@ format:
 
 ## erosion
 
-- [Values soil the land cover keeps in place: prevented erosion mapped by running the sediment-delivery model, valued through crop productivity. {{< meta erosion_total >}} across 185 countries, of which 26 compute an exact zero. No reference output exists to check it against.]{.state}
-- **Q1:** which of the three shock methods is the account's? We compute damage (thresholded area share), service (threshold-free and magnitude-weighted per crop) and service-threshold (service restricted to a fixed severe-pixel set) side by side.
+- [Values soil the land cover keeps in place: prevented erosion mapped by running the sediment-delivery model, valued through crop productivity. {{< meta erosion_total >}} across 185 countries, of which 26 compute an exact zero. The author reports {{< meta erosion_author_ses11 >}} across 164 for the same baseline scenario.]{.state}
+- **Q1:** does the account want the baseline scenario or the expanded one? The methodology defines SES-11, severe erosion at 11 t/ha/yr and 2 for small-area or low-elevation countries, reported as {{< meta erosion_author_ses11 >}}, and EPS-5 relaxing that to 5, reported as {{< meta erosion_author_eps5 >}}. Our configuration is SES-11, so the run already matches the stated baseline, and the choice roughly doubles the number.
+- **Q1b:** which of the three shock methods is the account's? Separately from the scenario, we compute damage (thresholded area share), service (threshold-free and magnitude-weighted per crop) and service-threshold (service restricted to a fixed severe-pixel set) side by side.
 - **Q2:** should the production run recompute the erosion shock, as the test runs already do? The scenarios file production reads names carbon and pollination as dynamic but not erosion, so erosion alone falls back to the frozen dependency table. The tracked template added erosion in August; the derived copies the runs read date from July and shadow it, because a file already present is never re-seeded.
-- **Q3:** is there a reference we can check {{< meta erosion_total >}} against? Nothing in the source repo carries a committed output, so the figure currently rests on our run alone.
+- **Q3:** did the reported run give a border cell to the country covering its centre, or to whichever country was rasterised last? Ours did the latter until this week, and it would explain why the two totals agree within about four percent while the countries do not: against the six largest reported, ours puts China thirty percent higher, India nearly thirty percent lower and the Philippines forty percent higher, and reorders the ranking.
 - **Q4:** can the dependency table use the ISO code for South Sudan? It spells it SDS where the country table uses SSD, so the country drops out of the join. Its value is zero today, so nothing is lost yet.
 
 ## landslide_mitigation
@@ -445,7 +451,7 @@ format:
 
 - [Values non-timber forest products over the forest that is within 10 km of a road or river and green enough to yield one. {{< meta ntfp_total >}} across 195 countries, over 1.48 billion reachable hectares. Every choice is the source module's: the land cover at its native 300 m in Mollweide, a five-year mean NDVI screen at 0.2, accessibility as the dissolved 10 km buffer of the road and river geometries rather than a raster dilation, and countries taken from the boundary polygons a cell's centre falls in.]{.state}
 - **Q1:** is there a model behind CWoN's non-wood forest product value, or is it a published table? That is what stands between this service and a number we compute.
-- **Q2:** the rate table we now read carries an edit we cannot account for. The non-wood forest product value per hectare is multiplied by exactly 5.0 for the Central African Republic, DR Congo and Mozambique, in every year from 2000 to 2020, and for no other country of the 232. What is that adjustment based on?
+- **Q2:** who multiplied three countries by five, and why? The rate file we read, `nontimber_price_iucn_edited.csv`, is identical to CWoN for 3,045 of its 3,108 country-year pairs and exactly five times CWoN for the other 63, which are Central African Republic, DR Congo and Mozambique in every one of 21 years. Surgical rather than corrupt, so somebody had a reason, and all three are Congo Basin or Miombo countries where most non-timber use never reaches a market, which would be one. Those three come to {{< meta ntfp_edit_three >}} of {{< meta ntfp_total >}}, DR Congo alone {{< meta ntfp_edit_cod >}}, and without the edit the service is {{< meta ntfp_no_edit >}}.
 - **Q3:** should a cell sitting exactly on the NDVI floor of 0.2 be kept or dropped? We keep it and the source module drops it, because scaling 2000 by 0.0001 gives 0.19999999 in float32, and that is 202,930 cells or 0.0099% of the valid grid.
 ## stormwater
 
