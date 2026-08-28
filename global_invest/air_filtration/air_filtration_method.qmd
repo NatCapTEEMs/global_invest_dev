@@ -6,12 +6,7 @@ format:
     standalone: true
 ---
 
-Air filtration is valued as avoided mortality. Vegetation captures dry pollutants, fewer people
-die, and those deaths are priced at a value of statistical life. One workbook on the consortium
-drive carries two channels, so this module writes two service columns. Deposition is the
-air filtration service. Dust, meaning windblown-dust suppression, is the sandstorm prevention
-service, which has its own row on the account sheet and no module of its own. The base year is
-2019 and the price convention recorded in `es_config.csv` is `VSL (avoided mortality)`.
+Air filtration is valued as avoided mortality. Vegetation captures dry pollutants, fewer people die, and those deaths are priced at a value of statistical life. One workbook on the consortium drive carries two channels, so this module writes two service columns. Deposition is the air filtration service. Dust, meaning windblown-dust suppression, is the sandstorm prevention service, which has its own row on the account sheet and no module of its own. The base year is 2019 and the price convention recorded in `es_config.csv` is `VSL (avoided mortality)`.
 
 ## Quantity
 
@@ -19,46 +14,32 @@ Avoided deaths per country per channel, the workbook's `Dep_Deaths` and `Dust_De
 
 ## Price
 
-The workbook's `VSL` column. Where a country has its own VSL the workbook marks `VSL_Source` as
-`country`. Where it does not, the row is marked `global_avg` and carries the mean of the
-country-source VSLs. `verify_global_average_fill` asserts that rule at rtol 1e-9 and raises if the
-workbook stops following it.
+The workbook's `VSL` column. Where a country has its own VSL the workbook marks `VSL_Source` as `country`. Where it does not, the row is marked `global_avg` and carries the mean of the country-source VSLs. `verify_global_average_fill` asserts that rule at rtol 1e-9 and raises if the workbook stops following it.
 
 ## Valuation
 
 `air_quality_benefits` recomputes both products from the workbook's own columns:
 
-$$
-\text{air filtration GEP} = \text{Dep\_Deaths} \times \text{VSL}, \qquad
-\text{sandstorm prevention GEP} = \text{Dust\_Deaths} \times \text{VSL}
-$$
+$$\text{air filtration GEP} = \text{Dep\_Deaths} \times \text{VSL}, \qquad
+\text{sandstorm prevention GEP} = \text{Dust\_Deaths} \times \text{VSL}$$
 
-The tests hold that recomputation to the workbook's own benefit columns. The deposition total,
-$17.81bn, is the manuscript's air-filtration number.
+The tests hold that recomputation to the workbook's own benefit columns. The deposition total, \$17.81bn, is the manuscript's air-filtration number.
 
 ## Joining to countries
 
-`air_quality_gep_by_country` joins the workbook onto the r250 ids by position, because both the
-workbook and the reference order are the r250 geopackage in row order and the workbook's FID is
-the geopackage feature id. The join refuses to proceed unless the row counts match and at least
-`AIR_FILTRATION_MIN_NAME_MATCHES` names are identical. 199 of 250 names are identical, and the
-rest differ only in sovereign versus territory naming of the same rows.
+`air_quality_gep_by_country` joins the workbook onto the r250 ids by position, because both the workbook and the reference order are the r250 geopackage in row order and the workbook's FID is the geopackage feature id. The join refuses to proceed unless the row counts match and at least `AIR_FILTRATION_MIN_NAME_MATCHES` names are identical. 199 of 250 names are identical, and the rest differ only in sovereign versus territory naming of the same rows.
 
 ## Inputs
 
 From `es_parameters.csv`, scoped to the `air_filtration` service:
 
-- `air_filtration_workbook_path`, the committed per-country workbook, with a `_source_note` row
-  recording that it comes from the drive's air filtration folder rather than a public URL.
+- `air_filtration_workbook_path`, the committed per-country workbook, with a `_source_note` row recording that it comes from the drive's air filtration folder rather than a public URL.
 
-`reference/r250_gpkg_order.csv` ships inside the module and supplies the row order the positional
-join checks against.
+`reference/r250_gpkg_order.csv` ships inside the module and supplies the row order the positional join checks against.
 
 ## Output
 
-`gep_calculation` writes `gep_by_country_base_year.csv` into its own task directory, holding the
-r250 identifiers and attributes, `year`, `air_filtration_gep` and `sandstorm_prevention_gep`. Both
-totals are logged.
+`gep_calculation` writes `gep_by_country_base_year.csv` into its own task directory, holding the r250 identifiers and attributes, `year`, `air_filtration_gep` and `sandstorm_prevention_gep`. Both totals are logged.
 
 ## Method constants
 
@@ -67,15 +48,8 @@ totals are logged.
 
 ## Taken as given
 
-The science behind the avoided-death columns, a coupled set of process-based emissions models,
-Global InMAP and health impacts as the appendix describes it, is not rebuildable here and is
-adopted as published. The valuation layer on top of it is rebuilt and verified against the
-workbook exactly.
+The science behind the avoided-death columns, a coupled set of process-based emissions models, Global InMAP and health impacts as the appendix describes it, is not rebuildable here and is adopted as published. The valuation layer on top of it is rebuilt and verified against the workbook exactly.
 
 ## What is open
 
-The VSL build behind the workbook. The folder's `vsl.R` and its raw CSVs document a US-anchored,
-GDP- and life-years-adjusted method, and `gdp_adjusted_vsl` ports that method for transparency,
-scaling the US VSL per life-year lost by GDP and applying it to each country's own life expectancy
-minus median age. Run against the committed raw data it does not reproduce the workbook's VSL
-column, which points to a different data vintage. That vintage gap is a named ask.
+The VSL build behind the workbook. The folder's `vsl.R` and its raw CSVs document a US-anchored, GDP- and life-years-adjusted method, and `gdp_adjusted_vsl` ports that method for transparency, scaling the US VSL per life-year lost by GDP and applying it to each country's own life expectancy minus median age. Run against the committed raw data it does not reproduce the workbook's VSL column, which points to a different data vintage. That vintage gap is a named ask.
