@@ -33,37 +33,24 @@ paths:
 That override matches the pattern in the `natcap.yaml` he ships, so it is his convention, not an
 invention of ours.
 
-## Step 0 — median prices for the target year's window
+## Step 0 — FAO prices
 
-His `--step prices` downloads the FAO bulk tables and fetches World Bank FX. We already hold the
-output of that step as `base_data/fao/fao_prices_1993_2024.parquet`, with the FX reconstruction done,
-so the download is unnecessary. What is missing is only the median over the target year's window,
-which for 2019 is **2017-2021** (his window is centred on the target year; ours elsewhere in the
-library is 2018-2022, which is a different thing and not interchangeable).
+Run his price step, which downloads the FAO bulk tables and fetches World Bank FX, then his values
+step, which computes the median over the target year's window (2017-2021 for 2019 — his window is
+centred on the target year, and is NOT the 2018-2022 window used elsewhere in this library):
 
-Build it by calling his own function, so the country to subregion to region to world fallback
-hierarchy is his:
-
-``` python
-import sys; sys.path.insert(0, 'src')
-import pandas as pd
-from pathlib import Path
-from crop_benefits.fao.values import _compute_median_prices
-
-prices = pd.read_parquet('/Users/ccs/Files/base_data/fao/fao_prices_1993_2024.parquet')
-cw = pd.read_csv('/Users/ccs/Files/base_data/fao/crosswalks/crosswalk_m49_iso3.csv',
-                 encoding='utf-8-sig')
-outdir = Path('/Users/ccs/Files/gep_repos/crop_benefits_outputs/fao/total/fao_prices/'
-              'median_prices_2017_2021')
-outdir.mkdir(parents=True, exist_ok=True)
-_compute_median_prices(prices, [2017, 2018, 2019, 2020, 2021], outdir, cw)
+``` bash
+python scripts/pipelines/run_fao_pipeline.py --step prices
+python scripts/pipelines/run_fao_pipeline.py --step values
 ```
 
-It writes `price_median_usd_tonne_2017_2021.csv`, 11,549 rows: 8,250 country, 2,172 subregion, 915
-region, 212 world.
+`prices` writes a 404,966-row panel; `values` writes
+`median_prices_2017_2021/price_median_usd_tonne_2017_2021.csv` with the country to subregion to
+region to world fallback hierarchy.
 
-⚠ This is the one substitution in the whole runbook. Running `--step prices` instead would download
-fresh data and is the more faithful route; it was avoided only to keep the run offline.
+⚠ Requires network access. A previous version of this runbook computed the medians from a cached
+copy of the price panel to stay offline; that produced a value raster 0.1 percent different, so
+prefer the download.
 
 ## Steps 1-4 — his raster chain
 
@@ -83,7 +70,7 @@ What each does, and what to check:
 | `yield_change` | `fao/total/fao_production/yield_change_2000_2019/yield_change_ratios.csv` | 11,168 rows; log should say late period `[2017, 2018, 2019, 2020, 2021]` |
 | `yield` | `rasters_2019/total/yield_2019/` | 158 files; this is the Monfreda step and the slow one, roughly 20 minutes |
 | `production` | `rasters_2019/total/production_2019/` | 158 files |
-| `poll_value` | `rasters_2019/pollination/value_2019/poll_value_global_2019usd.tif` | area-weighted total $383.68bn |
+| `poll_value` | `rasters_2019/pollination/value_2019/poll_value_global_2019usd.tif` | area-weighted total $384.56bn |
 
 ## Step 5 — stage it where the GEP pipeline looks
 
@@ -107,15 +94,21 @@ python scripts/pipelines/run_pollination_sufficiency.py --step sufficiency_5km
 python scripts/pipelines/run_pollination_sufficiency.py --step valuation_5km
 ```
 
-The last logs `value_pollination_sufficiency_2019_5km.tif = 189.732 B USD`.
+The last logs `value_pollination_sufficiency_2019_5km.tif = 190.119 B USD`.
+
+⚠⚠ That figure is NOT area-weighted correctly. His `_sum_raster_tiled` computes cell area once per
+4096-row tile from the tile midpoint; the raster is 3600 rows, so it is a single tile at the equator
+and every cell on Earth is given 30.980 km2. Weighting each row by its own latitude gives
+**$161.24bn**, 18 percent lower. His unweighted summary does area-weight correctly, so the two
+totals in his own pipeline are not computed the same way.
 
 ## What the numbers should come out as
 
 | quantity | value | his published figure |
 |---|---|---|
-| unweighted, area-weighted | $383.68bn | $385bn |
-| sufficiency-weighted | $189.732bn | $190bn |
-| ratio | 0.4945 | 0.4935 |
+| unweighted, area-weighted | $384.56bn | $385bn |
+| sufficiency-weighted, area-weighted correctly | $161.24bn | $190bn (see below) |
+| ratio | 0.4193 | 0.4935 (see below) |
 
 If the unweighted total lands near $388bn instead, the GEP path is reading our own rebuilt raster
 (`pollination_value_raster_rebuilt`) rather than his — that function is kept as a cross-check, not as
