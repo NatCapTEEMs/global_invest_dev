@@ -136,11 +136,16 @@ prints ALL MATCH or the quantity that differs.
 
 ### The account should compute this itself
 
-⚠ **Reading the author's per-country export is an interim, not the destination.** Every other
-service in this library derives its own number — erosion runs the sediment model here and reports
-$13.96bn against the author's $14.59bn, and erosion has no scenario shock either. Reading a finished
-table would make flood the only service that takes its headline from someone else's CSV, which is
-what "we compute it ourselves" is supposed to rule out.
+⚠ **Reading the author's per-country export is an interim, not the destination.**
+
+Not because every service computes its own — about a third do not, and for some that is right: the
+account does not recompute the World Bank's CWON resource rents for extractive materials or energy,
+because the published rent *is* the source. The distinction is whether we hold a model we could run.
+
+Flood's peers are stormwater and air filtration, both recorded as "not yet": a model that exists,
+that we have, and that has not been run here. Erosion is the case to follow — it has no scenario
+shock either, and it still runs the sediment model here and reports $13.96bn against the author's
+$14.59bn.
 
 The distinction worth keeping: **producing our own number** is what the library is for, and it is
 what makes the figure reproducible, auditable and rerunnable here. **Comparing it to the author's**
