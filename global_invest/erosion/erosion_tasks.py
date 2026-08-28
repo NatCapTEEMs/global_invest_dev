@@ -1273,7 +1273,7 @@ def integrate_and_write(paths):
     with open(os.path.join(paths.output.directory, "manifest.json"), "w", encoding="utf-8") as f:
         json.dump(manifest, f, indent=2)
 
-    (os.path.join(paths.output.directory, "run_metadata.txt")).write_text(f"""
+    run_metadata_text = f"""
 ============================================================
 Integrated GEP run — {ef.SCENARIO_NAME}
 Run tag: {ef.RUN_TAG}
@@ -1305,7 +1305,9 @@ Also written:
 
 Elapsed minutes: {manifest['elapsed_minutes']}
 ============================================================
-""", encoding="utf-8")
+"""
+    with open(os.path.join(paths.output.directory, "run_metadata.txt"), "w", encoding="utf-8") as f:
+        f.write(run_metadata_text)
 
     print(f"✅ Done → {os.path.join(paths.output.directory, 'integrated_country_gep.csv')}")
     print(f"Manifest → {os.path.join(paths.output.directory, 'manifest.json')}")
