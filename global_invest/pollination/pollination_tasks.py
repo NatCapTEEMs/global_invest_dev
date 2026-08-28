@@ -30,6 +30,10 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------------------------
+# VENDORED_FROM: wsidemoholm/crop_benefits @ 80a23b0 (2026-07-08). Upstream moved to
+# 51bcceb (2026-08-28); those commits refactor sufficiency_poll and sufficiency_value
+# without changing the arithmetic for an ESA call. Record the commit when re-vendoring:
+# without it nobody can answer "are we current?" without diffing the repo by hand.
 # Vendored from crop_benefits: the sufficiency and value raster steps. They stream global
 # rasters window by window, so they open and write files and belong here rather than beside
 # the arithmetic.

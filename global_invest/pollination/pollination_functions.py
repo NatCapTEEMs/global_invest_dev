@@ -283,6 +283,10 @@ def configure_sufficiency(p, target_year):
 
 
 # ---------------------------------------------------------------------------------------------
+# VENDORED_FROM: wsidemoholm/crop_benefits @ 80a23b0 (2026-07-08). Upstream moved to
+# 51bcceb (2026-08-28); those commits refactor sufficiency_poll and sufficiency_value
+# without changing the arithmetic for an ESA call. Record the commit when re-vendoring:
+# without it nobody can answer "are we current?" without diffing the repo by hand.
 # Vendored from crop_benefits: the pieces of its sufficiency and value calculation that hold
 # no file handling. The raster steps they belong to are in the task module.
 # ---------------------------------------------------------------------------------------------

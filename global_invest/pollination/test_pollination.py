@@ -364,3 +364,22 @@ def test_the_deflator_refuses_a_year_it_has_no_index_for():
     assert pf.usd_deflator(2020, 2019) == pytest.approx(0.98802, abs=1e-5)
     with pytest.raises(KeyError):
         pf.usd_deflator(2020, 1850)
+
+
+def test_the_vendored_source_commit_is_recorded():
+    """Vendoring freezes a copy at a moment; without the commit nobody can tell if it has drifted.
+
+    We vendored crop_benefits at 80a23b0 in July and the upstream moved in August. Nothing warned
+    us: the tests passed, the gates were clean, and the only way to answer "are we current?" was to
+    clone the repo and diff it by hand. That is the cost of vendoring, and a recorded commit is what
+    makes it payable. Re-vendoring must update the stamp.
+    """
+    import os
+    import re
+    here = os.path.dirname(os.path.abspath(__file__))
+    for name in ('pollination_tasks.py', 'pollination_functions.py'):
+        text = open(os.path.join(here, name), encoding='utf-8').read()
+        assert 'Vendored from crop_benefits' in text, name
+        match = re.search(r'VENDORED_FROM:\s*(\S+)\s*@\s*([0-9a-f]{7,40})', text)
+        assert match, '%s vendors code without recording the source commit' % name
+        assert match.group(1).endswith('crop_benefits'), match.group(1)
