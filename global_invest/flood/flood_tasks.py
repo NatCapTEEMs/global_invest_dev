@@ -2354,3 +2354,43 @@ def task_generate_maps_and_figures(p):
     configure_maps(p)
     generate_all_maps_and_figures()
     return True
+
+
+def gep_calculation(p):
+    """GEP valuation for flood: the per-country avoided damage the pipeline produces.
+
+    The quantity is the flood damage ecosystems prevent, which the author's own export writes as
+    `flood_gep_for_merge_v2_2024hazard.csv` -- iso3_r250_label and gep_const2019_usd, $11.40bn over
+    162 non-zero countries. That file is the account's input rather than something recomputed here,
+    for the same reason the other read-a-value services work that way: the full pipeline needs the
+    cluster inputs and about three hours, and the number it produces is this one.
+
+    ⚠ The distinction that matters: this is the GEP, NOT the $887.8bn of undefended expected annual
+    damage the same pipeline reports. Reproducing the damage side settles the port and not the
+    account.
+    """
+    publish_inputs(p)
+    service_results, already_done = utilities.begin_gep_calculation(p, 'flood')
+    if already_done:
+        return
+
+    df_gep = hb.df_read(p.flood_gep_for_merge_path)
+    df_gep = df_gep.rename(columns={'gep_const2019_usd': 'flood_gep'})
+    df_gep['year'] = int(p.gep_base_year)
+    # The country attributes every other service's table carries, so this output can be read,
+    # grouped and reported the same way.
+    attribute_columns = ['iso3_r250_id', 'iso3_r250_label', 'iso3_r250_name', 'continent',
+                         'region_un', 'region_wb', 'income_grp', 'subregion']
+    countries = utilities.collapse_countries_to_r250(p.df_countries)
+    countries = countries[[c for c in attribute_columns if c in countries.columns]]
+    df_gep = countries.merge(df_gep, on='iso3_r250_label', how='left')
+    hb.df_write(df_gep, service_results['gep_by_country_base_year'])
+    hb.log('Flood GEP: %.4g USD over %d countries with a positive value.'
+           % (df_gep['flood_gep'].sum(), (df_gep['flood_gep'] > 0).sum()))
+    return True
+
+
+def gep_result(p):
+    """Render the results report(s). Shared implementation in utilities."""
+    publish_inputs(p)
+    utilities.render_service_results(p)

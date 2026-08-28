@@ -1,88 +1,112 @@
 ---
-title: "Flood Control Results"
 format:
   html:
-    toc: true
-    df-print: paged
+    embed-resources: true
+    standalone: true
+execute:
+  echo: false          # results report shows tables/figures, not code
+  warning: false
 ---
 
-# Flood Control Results
+# Stormwater Results
 
 ```{python}
-#| echo: false
 #| output: false
-### SETUP CODE: loads the run's country table. Rendering is driven by the gep_result task,
-### which passes the project it is reporting on through PROJECTFLOW_ROOT.
+
+### SETUP CODE: Runs the whole model if it doesn't exist, else loads the results.
+
 import os
-from pathlib import Path
+import pandas as pd
+import hazelbean as hb
+
+from global_invest.flood import flood_initialize
+
+if __name__ == '__main__':
+
+    p = hb.ProjectFlow()
+    p.project_name = 'gep_flood'
+    # The rendering task passes the project it is reporting on; the home path is the
+    # fallback for someone opening this qmd directly.
+    p.project_dir = os.environ.get('PROJECTFLOW_ROOT', os.path.join(
+        os.path.expanduser('~'), 'Files', 'global_invest', 'projects', p.project_name))
+    p.set_project_dir(p.project_dir)
+
+    flood_initialize.build_gep_service_calculation_task_tree(p)
+
+    p.results = {}
+
+    hb.log('Created ProjectFlow object at ' + p.project_dir + '\n    from script ' + p.calling_script + '\n    with base_data set at ' + p.base_data_dir)
+    p.execute()
+```
+
+```{python}
+#| output: false
+
+### DISPLAY SETUP CODE
 
 import pandas as pd
+import os
+import hazelbean as hb
 
-ROOT = Path(os.environ.get("PROJECTFLOW_ROOT", "."))
-TABLE = ROOT / "outputs" / "_global" / "flood_gep_country_results.csv"
+pd.set_option('display.float_format', '{:,.2f}'.format)
+pd.set_option('display.max_rows', 1000)
 
-df = pd.read_csv(TABLE) if TABLE.exists() else pd.DataFrame()
-bare = df[df.component == "bare"] if "component" in df else df
+service_label = 'flood'
+
+df = hb.df_read(p.results[service_label]['gep_by_country_base_year'])
+total_flood = df['flood_gep'].sum()
+p.gep_by_country_base_year_table = df[['iso3_r250_name', 'flood_gep']]
 ```
 
-## The account
+The analysis values the riverine flood damage that ecosystems prevent: expected annual damage is computed under current land cover and under a degraded counterfactual, and the difference is the service. The quantity comes from the author's pipeline, whose per-country export this account reads. ⚠ The figure below is the GEP, not the far larger undefended expected annual damage the same pipeline reports; the two are different quantities and only the first belongs in the account.
+
+## GEP by Country in Base Year, mapped
 
 ```{python}
-#| echo: false
-if len(bare):
-    tot = pd.DataFrame({
-        "quantity": ["Expected annual damage, undefended",
-                     "GEP, bare-soil counterfactual",
-                     "Prevention share, bare soil",
-                     "Countries reporting a service"],
-        "value": [f"{bare.ead_current_const2019_usd.sum()/1e9:,.1f} bn USD/yr",
-                  f"{bare.gep_const2019_usd.sum()/1e6:,.0f} M USD/yr",
-                  f"{100*bare.gep_const2019_usd.sum()/bare.ead_degraded_const2019_usd.sum():.3f}%",
-                  f"{int((bare.gep_const2019_usd > 0).sum())} of 250"],
-    })
-    display(tot)
+#| output: false
+
+from global_invest import utilities
+
+# The service's own value column, not merely the first one ending in _gep: water_supply
+# writes several and the wrong one would map a component as though it were the total.
+map_value_column = (f'{service_label}_gep' if f'{service_label}_gep' in df.columns
+                    else [c for c in df.columns if c.endswith('_gep')][0])
+map_png_path = os.path.join(utilities.report_dir(),
+                            f'{service_label}_gep_by_country_base_year_map.png')
+map_png_path = utilities.plot_gep_choropleth(
+    df, map_value_column, p.gdf_countries_vector_simplified_path, map_png_path,
+    title=f'{service_label} GEP by country', label=map_value_column)
+
+# The account read by region and by income group, which a country table cannot show.
+summary_tables = utilities.gep_summary_tables(df, map_value_column, utilities.report_dir(), log=hb.log)
 ```
-
-Expected annual damage is exposure in the absence of flood defences, which the hazard maps do not
-carry. It is not comparable with published estimates of realised flood losses, which run around a
-twentieth of it: the gap reflects defences working, incomplete loss reporting, and any overestimate
-in the account, in unknown proportions.
-
-## The two counterfactuals
 
 ```{python}
-#| echo: false
-if "component" in df:
-    by = df.groupby("component").agg(
-        gep_m=("gep_const2019_usd", lambda s: s.sum()/1e6),
-        countries=("gep_const2019_usd", lambda s: int((s > 0).sum()))).reset_index()
-    display(by)
+from IPython.display import Image
+Image(map_png_path) if map_png_path else 'No positive value to map.'
 ```
 
-Bare soil removes land cover entirely; in-situ degradation compacts soils and thins canopy with the
-land still present. They answer different questions and are not summed.
-
-## GEP by country
-
+## GEP by Income Group in Base Year
 ```{python}
-#| echo: false
-if len(bare):
-    display(bare.nlargest(20, "gep_const2019_usd")[
-        ["iso3", "ead_current_const2019_usd", "gep_const2019_usd",
-         "flood_prevention_share", "gdp_loss_pct"]])
+summary_tables.get('income_grp', 'No income group column in this table.')
 ```
 
-## Where the service is proportionally largest
-
+## GEP by Region in Base Year
 ```{python}
-#| echo: false
-if len(bare):
-    sub = bare[bare.ead_current_const2019_usd > 3e8]
-    display(sub.nlargest(20, "flood_prevention_share")[
-        ["iso3", "flood_prevention_share", "gep_const2019_usd"]])
+summary_tables.get('region_un', 'No UN region column in this table.')
 ```
 
-The two tables barely overlap. Large service values come from large economies with large exposure;
-high prevention shares come from drylands and boreal Europe, where storm depth is small relative to
-soil retention capacity. Ranking countries on flood regulation therefore depends on which question
-is being asked.
+## GEP by Continent in Base Year
+```{python}
+summary_tables.get('continent', 'No continent column in this table.')
+```
+
+## GEP by Subregion in Base Year
+```{python}
+summary_tables.get('subregion', 'No subregion column in this table.')
+```
+
+## GEP by Country in Base Year
+```{python}
+p.gep_by_country_base_year_table
+```

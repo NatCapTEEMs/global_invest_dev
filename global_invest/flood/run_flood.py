@@ -199,3 +199,17 @@ if __name__ == '__main__':
     p.execute()
 
     result = 'Done!'
+
+
+def build_task_tree(p):
+    # This project's task tree: delegates unchanged to the shared library builder.
+    flood_initialize.build_gep_service_task_tree(p)
+
+
+def run_project(p):
+    # Every task publishes its own inputs (publish_inputs in the tasks module): no setup call.
+    build_task_tree(p)
+    p.skip_tasks(p.tasks_to_skip)
+    hb.log('Created ProjectFlow object at ' + p.project_dir)
+    p.execute()
+    return p
