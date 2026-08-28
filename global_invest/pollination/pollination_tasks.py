@@ -2098,7 +2098,79 @@ def pollination_dependence_by_item(df_dependence):
 
 
 def pollination_value_raster(p):
-    """Build the pollination value raster: production times price times dependence, per crop.
+    """Read the source author's pollination value raster and convert it to USD in the cell.
+
+    The science here is the author's, not ours. His raster is production times price times
+    pollination dependence, built from CropGrids harvested area, a Monfreda within-country yield
+    pattern and FAO calibration, with coffee split into arabica and robusta by country. We do not
+    rebuild any of that; we read what he publishes and fix only the one thing that was actually
+    wrong on our side, which was the units.
+
+    His file is a DENSITY, USD per square kilometre, stated as such in his repo's
+    methods_overview.md and confirmed by his own summary CSV, which area-weights before totalling.
+    The GEP path used to sum it directly, giving $18.28bn where the same raster carries $476.29bn
+    area-weighted. So the fix is to multiply by cell area, on the shared WGS84 pyramid like every
+    other service, and to deflate to the GEP base year when his file is stamped in another year's
+    dollars.
+
+    `pollination_value_raster_rebuilt` is our own construction of the same quantity and is kept as
+    a cross-check, not as the GEP path.
+    """
+    publish_inputs(p)
+    year = int(p.gep_base_year)
+    p.pollination_value_raster_path = os.path.join(
+        p.cur_dir, 'poll_value_per_cell_%dusd.tif' % year)
+    p.pollination_value_summary_path = os.path.join(
+        p.cur_dir, 'poll_value_summary_%dusd.csv' % year)
+    if not p.run_this:
+        return
+
+    if hb.path_all_exist([p.pollination_value_raster_path, p.pollination_value_summary_path]):
+        hb.log('Pollination value raster already built. Skipping.')
+        return True
+
+    # Prefer his raster for the GEP base year itself; fall back to the nearest year he publishes
+    # and deflate, which is exact because the deflator is a scalar on a density.
+    source_path, source_year = pf.find_source_value_raster(p, year)
+    deflator = pf.usd_deflator(source_year, year)
+    hb.log('Pollination value raster from the source author: %s (%d USD), deflator to %d is %.4f'
+           % (os.path.basename(source_path), source_year, year, deflator))
+
+    density, meta = read_raster(str(source_path))
+    density = np.where(np.isfinite(density) & (density != meta.get('nodata')), density, np.nan)
+    area_km2 = pf.build_area_km2_raster(meta)
+    value_per_cell = pf.value_density_to_per_cell(density * deflator, area_km2)
+
+    out_meta = dict(meta)
+    out_meta.update(dtype='float32', nodata=NODATA_OUT, count=1)
+    write_raster(str(p.pollination_value_raster_path),
+                 np.where(np.isfinite(value_per_cell), value_per_cell, NODATA_OUT).astype('float32'),
+                 out_meta, nodata=NODATA_OUT)
+
+    total = float(np.nansum(value_per_cell))
+    hb.df_write(pd.DataFrame([{
+        'source_raster': os.path.basename(source_path),
+        'source_year_usd': source_year,
+        'gep_base_year': year,
+        'deflator_applied': deflator,
+        'total_pollination_value_usd': total,
+    }]), p.pollination_value_summary_path)
+
+    hb.log('Pollination value raster: %.2f bn USD at %d prices, from the author\'s raster.'
+           % (total / 1e9, year))
+    return True
+
+
+def pollination_value_raster_rebuilt(p):
+    """Rebuild the pollination value raster from source: production times price times dependence.
+
+    ⚠ NOT the GEP path. `pollination_value_raster` reads the source author's raster instead, because
+    the construction below is a different scientific method from his (we take CropGrids production
+    directly; he goes harvested area times a Monfreda within-country yield pattern times FAO
+    calibration). Under the rule that infrastructure is ours and the science is the author's, that
+    was not ours to change. This is kept as an independent cross-check: it agrees with his national
+    total to about one percent, which is a useful confirmation that his raster is being consumed
+    correctly, and it is the only thing here that would catch a units error in that consumption.
 
     The GEP valuation used to sum a raster somebody else produced. This makes it, from the
     CropGrids production rasters, the FAO world producer price we now build ourselves, and

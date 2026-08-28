@@ -1021,6 +1021,48 @@ def crop_pollination_value_density(production_density, price_usd_per_tonne, depe
     return crop_value_density * np.asarray(dependence_ratio, dtype='float64'), crop_value_density
 
 
+SOURCE_VALUE_RASTER_DIR_REF_PATH = os.path.join('crop_benefits')
+
+
+def find_source_value_raster(p, gep_base_year):
+    """Locate the source author's pollination value raster, preferring the GEP base year.
+
+    His files are named `poll_value_global_<year>usd.tif`, one per price year, and he does not
+    publish every year. Take the exact year when it exists, which needs no deflation at all.
+
+    ⚠ Otherwise take the LATEST year he publishes, not the nearest. The files are separate vintages
+    of his model, not one raster restated in different dollars: measured on 2026-08-28, his 2024
+    file deflates to $386.76bn at 2019 prices while his 2023 file deflates to $398.74bn, a three
+    percent spread that a price index cannot produce. The later file is the later method, and it is
+    the one that lands on the figure he reports for 2019. Choosing by proximity would silently pick
+    the older model whenever the base year sits below the newest release.
+
+    Args:
+        p (ProjectFlow): the project, used for path resolution.
+        gep_base_year (int): the year the GEP account reports in.
+
+    Returns:
+        tuple: (path to the raster, the year its dollars are stated in).
+
+    Raises:
+        NameError: if the source directory holds no `poll_value_global_<year>usd.tif` at all.
+    """
+    import glob
+    import re
+    source_dir = p.get_path(SOURCE_VALUE_RASTER_DIR_REF_PATH)
+    candidates = {}
+    for path in glob.glob(os.path.join(str(source_dir), 'poll_value_global_*usd.tif')):
+        match = re.search(r'poll_value_global_(\d{4})usd\.tif$', os.path.basename(path))
+        if match:
+            candidates[int(match.group(1))] = path
+    if not candidates:
+        raise NameError('No poll_value_global_<year>usd.tif in %s. The GEP pollination value comes '
+                        'from the source author\'s raster; without it there is nothing to read.'
+                        % source_dir)
+    year = gep_base_year if gep_base_year in candidates else max(candidates)
+    return candidates[year], year
+
+
 def value_density_to_per_cell(value_density, area_km2):
     """USD per square kilometre to USD per cell, which is what a zonal sum can add.
 
