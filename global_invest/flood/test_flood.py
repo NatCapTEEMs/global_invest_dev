@@ -231,3 +231,29 @@ def test_the_flood_root_is_configuration_not_an_environment_variable():
     path = os.path.join(here, 'input_template', 'es_parameters.csv')
     keys = {row[1] for row in csv.reader(open(path, encoding='utf-8-sig')) if len(row) > 1}
     assert 'flood_root_dir' in keys
+
+
+def test_every_flood_module_imports():
+    """The fold-in deleted flood_paths.py but left run_flood.py importing it.
+
+    Nothing caught it: the tests here exercise flood_tasks and flood_functions, never the entry
+    point, and every real run so far has used the source repo's own copy on MSI, which still has
+    the deleted module. So our refactored flood raised ModuleNotFoundError on import for weeks
+    while appearing green. An import is the cheapest possible assertion and it is the one that
+    would have failed.
+    """
+    import importlib
+    for name in ('flood_functions', 'flood_initialize', 'flood_tasks', 'flood_utils', 'run_flood'):
+        importlib.import_module('global_invest.flood.%s' % name)
+
+
+def test_set_flood_paths_says_which_parameter_is_missing():
+    """Without a root every path silently becomes relative to the working directory."""
+    from global_invest.flood import run_flood
+
+    class BareProject:
+        pass
+
+    with pytest.raises(NameError) as raised:
+        run_flood.set_flood_paths(BareProject())
+    assert 'flood_root_dir' in str(raised.value)

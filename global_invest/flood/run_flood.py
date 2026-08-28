@@ -3,7 +3,6 @@ import os
 import hazelbean as hb
 
 from global_invest.flood import flood_initialize
-import flood_paths as FP
 
 
 def set_flood_paths(p):
@@ -11,18 +10,30 @@ def set_flood_paths(p):
     Set every p.flood_* attribute the flood module reads. Factored out of
     __main__ so the MSI array/stage runners (msi/run_flood_slice.py) share one
     definition of the project layout instead of duplicating it.
+
+    The root comes from `p.flood_root_dir`, which es_parameters supplies. This used to read a
+    module-level constant from flood_paths, which the fold-in deleted in favour of
+    flood_tasks.configure_paths -- leaving this file importing a module that no longer existed, so
+    the whole entry point raised ModuleNotFoundError. Nothing caught it because the tests do not
+    import the runner and every real run so far has used the source repo's own copy.
     """
     # -------------------------------------------------------------------
     # Project-wide paths
     # -------------------------------------------------------------------
-    p.flood_root = str(FP.ROOT)
+    root = getattr(p, 'flood_root_dir', None)
+    if not root:
+        raise NameError(
+            'flood_root_dir is not set. The flood module reads its inputs and writes its outputs '
+            'under that directory, and it is machine-specific, so it lives in the project input '
+            'es_parameters.csv rather than in code.')
+    p.flood_root = str(root)
     p.flood_input_dir = os.path.join(p.flood_root, "inputs")
     # The jajohns group storage quota has been full -- write model outputs to
     # scratch. Point this back at {flood_root}/outputs once quota is resolved.
     # Outputs live in the project directory, not scratch. /scratch.global is
     # purged on a schedule and took a full set of Step 4B/4C/4D results with it
     # during development. Home has ample space (745 TB free on the volume).
-    p.flood_output_dir = str(FP.ROOT) + "/outputs"
+    p.flood_output_dir = os.path.join(p.flood_root, "outputs")
 
     p.flood_country_boundary_path = os.path.join(
         p.flood_input_dir, "country_vector", "country_boundary_r250_with_iso3.gpkg")
@@ -53,7 +64,7 @@ def set_flood_paths(p):
         p.flood_input_dir, "sda", "sda_esa300m_artif_crop_pasture.tif")
     p.flood_spa_path = os.path.join(p.flood_input_dir, "global_spa_ben", "global_prr_spa.tif")
     p.flood_spa_ratio_path = os.path.join(
-        str(FP.INPUTS / "counterfactual_mosaic"),
+        os.path.join(p.flood_input_dir, "counterfactual_mosaic"),
         "global_upstream_spa_ratio.tif")
 
     # Depths at or below this (metres) contribute no damage.
@@ -135,7 +146,7 @@ def set_flood_paths(p):
     # Amplification rasters are built externally, one per scenario x RP, by
     # counterfactual/build_amplification_routed.py.
     p.flood_amplification_dir = os.path.join(
-        str(FP.INPUTS / "counterfactual_mosaic"))
+        os.path.join(p.flood_input_dir, "counterfactual_mosaic"))
     # The exponent is not in the pattern, so one run gives one exponent. For
     # the sweep, change this to "..._f0p3.tif" / "..._f0p5.tif" together with
     # flood_gep_csv, and run three times.
