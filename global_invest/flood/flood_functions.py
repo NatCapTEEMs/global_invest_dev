@@ -1,425 +1,319 @@
-"""Flood-control (river flood mitigation) science: expected avoided damage per country.
+# -*- coding: utf-8 -*-
+"""The flood-control account: the equations, over arrays and frames.
 
-The consortium drive's FINAL_GEP_FLOOD tree carries the full December 2025 pipeline (flood
-hazard x JRC depth-damage x protection levels -> expected annual damage with and without
-ecosystems) plus its committed global outputs and extensive method notes. The upstream
-geospatial pipeline is taken as given. This file holds the read of the committed per-country
-expected avoided damage (2019 USD), whose sum reproduces the pipeline's own global summary
-exactly ($110.59bn, 148 countries non-zero of 236 assessed). That is the anchor rather than the
-account's number: flood_functions recomputes the damage from the depth, damage-curve and
-asset inputs, and that recompute is what the account reports ($112.78bn, matching the committed
-table for 146 of the 148).
+Everything here takes arrays or frames and returns them. Nothing opens a file, reads a raster or
+consults a module global set somewhere else, which is what lets the account's science be tested on
+four countries and a handful of return periods rather than on a global grid. The file handling
+lives in `flood_tasks`, and that separation is the reason `test_flood` needs no monkeypatched
+readers: a test that has to replace a file reader is testing the wiring.
 
-The FINAL_GEP_FLOOD pipeline's per-step science, ported as pure functions.
-
-Source: base_data/global_invest/flood/input/code_dec_18_2025/ (the drive's
-December 2025 code tree). The calculation, in the order the orchestrating notebook
-(gep_running_file_dec_14_final.ipynb) runs it:
-
-  step 2A  sda_step_2A_make_lulc_to_sda_mapping_esa300.py
-           ESA-CCI 300m codes -> SDA mapping JSON (artif=190; crop=10/11/12/20/30/40;
-           pasture=130; everything else non-SDA).
-  step 2   sda_step2_build_sda_global.py / build_sda_from_esa300m.py
-           SDA class rasters: economic-asset LULC codes, per-country intersected with
-           the floodplain (depth > 0.1 m) per return period, or global without the
-           floodplain intersect. Here: build_sda_class, build_depthbin_index.
-  step 3   serviceflow_step3_spa_to_sda_ratio_global.py
-           service_flow_frac = upstream SPA ratio on the SDA grid, zero outside SDA.
-           Here: service_flow_from_spa. NOTE: the staged monetary pipeline (4B-4D) never
-           multiplies by this fraction; the drive's global_upstream_spa_ratio.tif is a
-           byte copy of the binary global_prr_spa.tif (notebook cell 6).
-  step 4A  build_damage_table_USD2019.py
-           JRC fractional depth-damage curves x per-country max damages x iso3->JRC-region
-           map -> EUR2010/m2 depth-damage table, x 1.538344 -> USD2019, aggregated to SDA
-           types. Here: build_canonical_damage_table, convert_damage_table_to_usd2019,
-           aggregate_damage_table_to_sda, pivot_damage_table_wide.
-  step 4B  flood_gep_step4b_pixel_damage_USD2019.py
-           Per ISO3 x RP: pixel damage = curve(iso3, sda_type) interpolated at pixel
-           depth x pixel area. Here: damage_curves_from_wide, interp_damage_per_m2,
-           pixel_damage_totals. The final run used RPs 10, 20, 50, 500.
-  step 4C  flood_gep_step4c_ead_USD2019_global.py
-           EAD = trapezoid integral of D(p) over p = 1/RP in [0, 1], anchor (p=1, D=0),
-           flat tail to p=0. Here: ead_from_rp_damages, ead_from_rp_stack.
-  step 4D  flood_gep_step4d_export_global_USD2019.py + post_processing_code/
-           Per-country EADs -> global country table (+ zero-fill and status), whose
-           values ARE the committed country_avoided_damage_usd2019.csv (verified equal
-           row-by-row; SDS remapped to the r250 label SSD). The "avoided damage" label
-           is the analysis notebook's interpretation of the step-4D EAD column.
-           Here: country_ead_table.
-
-Raster inputs the drive names but we have NOT staged (paths as the scripts spell them,
-on the author's MSI cluster under /users/3/damph002/GEP/flood/inputs/):
-  lulc/lulc_esa_2019_int_reproj.tif                              (ESA-CCI 300m, 2019)
-  floodplain_depth/aligned_to_lulc/JRC_flood_depth_rp{RP}y__matchLULC.tif
-  sda/sda_esa300m_artif_crop_pasture.tif                         (regenerable from LULC)
-  country_vector/country_boundary_r250_with_iso3.gpkg
-  global_spa_ben/global_prr_spa.tif
-  flood_damage/jrc_fractional_curves_long.csv
-  flood_damage/jrc_max_damage_values_long_with_iso3.csv
-  flood_damage/iso3_to_jrc_region.csv
-The functions below take arrays/DataFrames, so they run as soon as those are staged.
+What the account rests on is small. The depth-damage lookup, the expected-damage integral and its
+two boundary assumptions, the truncation that splits damage at a country's design standard, and
+the country valuation. The rest of the module -- fifteen hundred lines of it -- is preparing
+inputs, windowing rasters and writing results, and none of that changes an answer.
 """
+from __future__ import annotations
+
+import warnings
+from typing import List, Optional
+
 import numpy as np
 import pandas as pd
 
 
-def flood_gep_by_country(avoided_damage_df, countries_df):
-    """The committed avoided-damage table joined onto the r250 country list, one row per
-    country. Zeroes are the pipeline's own zeroes (assessed, no avoided damage); countries it
-    never assessed stay NaN."""
-    df = countries_df.merge(
-        avoided_damage_df[['iso3_r250_label', 'avoided_damage_usd2019']].rename(
-            columns={'avoided_damage_usd2019': 'flood_gep'}),
-        on='iso3_r250_label', how='left')
-    return df
+VAL_APPLY_SERVICE_FLOW = False
+INCA_DEPTH_BANDS = np.array([0.25, 0.5, 1.0, 1.5, 2.5, 3.5, 4.5, 5.5], dtype="float32")
+
+def to_float(x) -> float:
+    """Best-effort numeric coercion; anything unparseable becomes NaN rather than raising.
+
+    The damage and return-period columns arrive from CSVs written by several steps, and a single
+    unparseable cell should drop that point from the integral rather than stop a 250-country run.
+    """
+    try:
+        return float(x)
+    except Exception:
+        return np.nan
 
 
-# EUR2010 -> USD2019, the pipeline's committed factors (FRED DEXUSEU 2010 annual average;
-# FRED GDPDEF 2019/2010 ratio; currency_conversion_factors_EUR2010_to_USD2019.ipynb).
-FX_USD_PER_EUR_2010_AVG = 1.32609
-INFLATOR_US_2010_TO_2019 = 1.160061
-EUR2010_TO_USD2019 = FX_USD_PER_EUR_2010_AVG * INFLATOR_US_2010_TO_2019
-
-# ESA-CCI code -> SDA membership (step 2A's JRC-style mapping). Codes not listed are
-# non-SDA; the step-2A "ignore" list never overlaps the asset sets, so it is not needed
-# to reproduce the class raster.
-ESA_TO_SDA = {
-    'artif': [190],
-    'crop': [10, 11, 12, 20, 30, 40],
-    'pasture': [130],
-}
-
-SDA_CODE = {'none': 0, 'artif': 1, 'crop': 2, 'pasture': 3, 'roads': 4}
-SDA_CODE_TO_TYPE = {1: 'artif', 2: 'crop', 3: 'pasture'}
-
-# Depth bins (m) of the JRC curves; the wide damage tables carry them as 0m, 0.5m, ... 6m.
-DEPTH_BINS_M = [0, 0.5, 1, 1.5, 2, 3, 4, 5, 6]
-
-# JRC landtype -> SDA type: cropland assets to crop; built/asset surfaces to artif.
-LANDTYPE_TO_SDA = {
-    'Agriculture': 'crop',
-    'Residential buildings': 'artif',
-    'Commercial buildings': 'artif',
-    'Industrial buildings': 'artif',
-    'Transport': 'artif',
-    'Infrastructure - roads': 'artif',
-}
-
-_LANDTYPE_CANONICAL = {
-    'residential': 'Residential buildings',
-    'commercial': 'Commercial buildings',
-    'industrial': 'Industrial buildings',
-    'roads': 'Infrastructure - roads',
-    'road': 'Infrastructure - roads',
-    'infrastructure roads': 'Infrastructure - roads',
-    'infrastructure - road': 'Infrastructure - roads',
-    'transport': 'Transport',
-    'transportation': 'Transport',
-    'agriculture': 'Agriculture',
-}
+def integrate_trapezoid(y: np.ndarray, x: np.ndarray) -> float:
+    """
+    Trapezoidal integral, with the x axis sorted first.
+    np.trapezoid weights each segment by diff(x). Handing it a descending or
+    unordered x makes backwards segments contribute negatively, and the partial
+    cancellation returns a small number of the wrong sign rather than an error.
+    In this pipeline x is exceedance probability derived from return periods,
+    which arrive in descending-p order naturally, so the sort is not optional.
+    Both current call sites happen to sort beforehand -- one by argsort, one via
+    a pandas groupby whose sorted-key behaviour is a default rather than a
+    guarantee. Sorting here makes the property hold by construction. Sorting an
+    already-sorted array is a no-op, so this cannot change existing results.
+    """
+    x = np.asarray(x, dtype="float64")
+    y = np.asarray(y, dtype="float64")
+    if x.size != y.size:
+        raise ValueError(f"integrate_trapezoid: length mismatch {x.size} vs {y.size}")
+    o = np.argsort(x)
+    x, y = x[o], y[o]
+    if hasattr(np, "trapezoid"):
+        return float(np.trapezoid(y, x))
+    return float(np.trapz(y, x))
 
 
-def normalize_landtype_label(landtype):
-    """Map a short JRC landtype spelling ('Residential') to the fraction-curve label
-    ('Residential buildings'); already-canonical labels pass through unchanged."""
-    return _LANDTYPE_CANONICAL.get(str(landtype).strip().lower(), str(landtype).strip())
+def _fmt_depth_col(d: float) -> str:
+    return f"{int(d)}m" if abs(d - int(d)) < 1e-9 else f"{d}m"
 
 
-def fmt_depth_col(depth_m):
-    """Numeric depth -> the wide-table column label: 1 -> '1m', 0.5 -> '0.5m'."""
-    d = float(depth_m)
-    return f'{int(d)}m' if abs(d - int(d)) < 1e-9 else f'{d}m'
+def _band_depth_inca(depth_m: np.ndarray) -> np.ndarray:
+    """Round each depth up to the next INCA band boundary; above 5.5 m, hold at 5.5."""
+    idx = np.searchsorted(INCA_DEPTH_BANDS, depth_m, side="left")
+    return INCA_DEPTH_BANDS[np.minimum(idx, INCA_DEPTH_BANDS.size - 1)]
 
 
-def build_canonical_damage_table(fractional_df, max_damage_df, iso3_region_df):
-    """Step 4A: the canonical EUR2010/m2 depth-damage table, long form.
+def interp_damage_per_m2(depth_m: np.ndarray, xs: np.ndarray, ys: np.ndarray,
+                         mode: str = "interpolated") -> np.ndarray:
+    """
+    Damage per square metre at a given inundation depth.
 
     Args:
-        fractional_df: JRC fractional curves [JRC_Region, LandType, depth_m, fraction]
-            (jrc_fractional_curves_long.csv).
-        max_damage_df: per-country maxima [iso3, LandType, max_damage_eur_m2]
-            (jrc_max_damage_values_long_with_iso3.csv).
-        iso3_region_df: [iso3, JRC_Region] (iso3_to_jrc_region.csv).
+        depth_m: inundation depth, in metres.
+        xs, ys: the tabulated depth-damage curve for one country and land class.
+        mode: "interpolated" reads the curve as the continuous function its
+            publication intends. "banded" reproduces the reference
+            implementation, which rounds each depth up to the next of nine band
+            boundaries -- a cell under 0.7 m pays the 1.0 m rate. Reported as a
+            sensitivity only: rounding up raises the level of damage while
+            suppressing the difference between the two counterfactual worlds,
+            because amplification moves most cells by less than a band width.
 
-    Returns:
-        DataFrame [iso3, landtype, depth_m, damage_per_m2] with damage_per_m2 =
-        max_damage_eur_m2 x fraction. Countries without a JRC region and landtype/region
-        combinations without a fraction curve drop out, as in the source script.
+    The mode is a parameter rather than a module global so that this function
+    answers only to its arguments; the task layer passes whichever the run is
+    configured for.
     """
-    frac = fractional_df.copy()
-    frac['LandType'] = frac['LandType'].map(normalize_landtype_label)
-    maxd = max_damage_df.copy()
-    maxd['LandType'] = maxd['LandType'].map(normalize_landtype_label)
-
-    out = (maxd.merge(iso3_region_df, on='iso3', how='left')
-               .dropna(subset=['JRC_Region'])
-               .merge(frac, on=['JRC_Region', 'LandType'], how='left'))
-    out['damage_per_m2'] = out['max_damage_eur_m2'] * out['fraction']
-    out = out.rename(columns={'LandType': 'landtype'})
-    return out.dropna(subset=['depth_m', 'damage_per_m2'])[
-        ['iso3', 'landtype', 'depth_m', 'damage_per_m2']].reset_index(drop=True)
+    d = _band_depth_inca(depth_m) if mode == "banded" else depth_m
+    return np.interp(np.clip(d, xs.min(), xs.max()), xs, ys).astype("float32")
 
 
-def convert_damage_table_to_usd2019(eur_long, combined_multiplier=EUR2010_TO_USD2019):
-    """Step 4A: EUR2010/m2 -> USD2019/m2 (one multiplier for every row) + currency column."""
-    out = eur_long.copy()
-    out['damage_per_m2'] = out['damage_per_m2'] * float(combined_multiplier)
-    out['currency'] = 'USD2019'
-    return out
-
-
-def aggregate_damage_table_to_sda(sector_long, set_pasture_equal_crop=True):
-    """Step 4A: sector landtypes -> SDA types for the step-4B lookup.
-
-    Landtypes map through LANDTYPE_TO_SDA (unmapped ones drop out of the SDA table; they
-    stay in the sector outputs upstream). Because five landtypes map to artif, the wide
-    pivot's mean makes the artif curve the average of the built-asset curves. The
-    pipeline ran with pasture set equal to crop.
-
-    Returns:
-        DataFrame [iso3, sda_type, depth_m, damage_per_m2(, currency)].
+def _attach_service_flow(rec_df: pd.DataFrame, iso3: str,
+                         flow: Optional[pd.DataFrame] = None) -> pd.DataFrame:
     """
-    out = sector_long.copy()
-    out['sda_type'] = out['landtype'].map(lambda lt: LANDTYPE_TO_SDA.get(normalize_landtype_label(lt)))
-    out = out.dropna(subset=['sda_type']).drop(columns=['landtype'])
-    if set_pasture_equal_crop:
-        pasture = out[out['sda_type'] == 'crop'].copy()
-        pasture['sda_type'] = 'pasture'
-        out = pd.concat([out, pasture], ignore_index=True)
-    cols = ['iso3', 'sda_type', 'depth_m', 'damage_per_m2']
-    if 'currency' in out.columns:
-        cols.append('currency')
-    return out[cols].reset_index(drop=True)
-
-
-def pivot_damage_table_wide(long_df, group_cols):
-    """Step 4A: long depth-damage rows -> wide depth columns ('0m', '0.5m', ...).
-
-    Duplicate (group, depth) rows average (this is what folds the five built-asset
-    landtypes into one artif curve); missing depths fill with 0.
-    """
-    tmp = long_df.dropna(subset=['depth_m']).copy()
-    tmp['depth_col'] = tmp['depth_m'].map(fmt_depth_col)
-    wide = tmp.pivot_table(index=group_cols, columns='depth_col', values='damage_per_m2',
-                           aggfunc='mean', fill_value=0.0).reset_index()
-    wide.columns = [str(c) for c in wide.columns]
-    return wide
-
-
-def build_sda_class(lulc, mapping=None, floodplain=None, roads=None, nodata=None,
-                    include_pasture=True):
-    """Step 2: LULC codes -> SDA class array (uint8).
-
-    Codes: 0 none, 1 artif, 2 crop, 3 pasture, 4 roads. Written in priority order
-    pasture -> crop -> artif -> roads, so a code in several sets keeps the highest
-    priority and roads override everything (as in the source scripts).
+    Join the SPA service-flow fraction onto the per-RP damage table and carry
+    an attributed damage series alongside the gross one.
 
     Args:
-        lulc: 2D integer array of ESA-CCI codes. The drive's raster is
-            lulc/lulc_esa_2019_int_reproj.tif (not staged).
-        mapping: {'artif': [...], 'crop': [...], 'pasture': [...]}; default ESA_TO_SDA.
-        floodplain: optional boolean array (depth > threshold); None reproduces the
-            global SDA raster (no floodplain intersect), as build_sda_from_esa300m does.
-        roads: optional binary road-mask array; roads == 1 inside the floodplain
-            become class 4.
-        nodata: LULC nodata value (255 for the drive's raster).
-        include_pasture: the pipeline's step-2 run left pasture OFF (no
-            --include-pasture); the global step-4B raster has it ON.
+        rec_df: the per-return-period damage table for one country.
+        iso3: the country, used to select rows from `flow`.
+        flow: Section C's service-flow summary, keyed by (iso3, rp). Passed in
+            rather than read here, so this stays a join over frames: a function
+            that opens its own inputs can only be tested by replacing the file
+            reader, which tests the wiring rather than the join.
+
+    See the note on VAL_APPLY_SERVICE_FLOW above: this attributes residual
+    damage to naturally-served floodplains. It is not avoided damage.
     """
-    mapping = ESA_TO_SDA if mapping is None else mapping
-    valid = np.ones(lulc.shape, dtype=bool) if nodata is None else (lulc != nodata)
-    base = valid if floodplain is None else (valid & floodplain)
+    if flow is None:
+        return rec_df
 
-    sda = np.zeros(lulc.shape, dtype=np.uint8)
-    if include_pasture and mapping.get('pasture'):
-        sda[base & np.isin(lulc, mapping['pasture'])] = SDA_CODE['pasture']
-    if mapping.get('crop'):
-        sda[base & np.isin(lulc, mapping['crop'])] = SDA_CODE['crop']
-    if mapping.get('artif'):
-        sda[base & np.isin(lulc, mapping['artif'])] = SDA_CODE['artif']
-    if roads is not None:
-        road_base = (roads == 1) if floodplain is None else ((roads == 1) & floodplain)
-        sda[road_base] = SDA_CODE['roads']
-    return sda
-
-
-def build_depthbin_index(depth_m, nodata_mask, max_depth=6.0):
-    """Step 2: depth (m) -> 0.5 m bin index (int16) for later monetary joins.
-
-    Bin edges are 0, 0.5, ..., max_depth; negatives clamp to 0, values above max_depth
-    to the last bin, nodata pixels to -1.
-    """
-    edges = np.arange(0, max_depth + 0.5, 0.5)
-    d = depth_m.astype('float32').copy()
-    d[~np.isfinite(d)] = np.nan
-    d[(d < 0) & np.isfinite(d)] = 0.0
-    d[(d > max_depth) & np.isfinite(d)] = max_depth
-    idx = np.searchsorted(edges, d, side='left').astype(np.int16)
-    idx[nodata_mask] = -1
-    return idx
-
-
-def service_flow_from_spa(spa_ratio, sda_mask, nodata=None):
-    """Step 3: the service-flow fraction on the SDA grid.
-
-    The upstream SPA ratio (the drive's global_spa_ben/global_upstream_spa_ratio.tif,
-    reprojected onto the SDA grid with average resampling before this function) is
-    clipped to [0, 1] and zeroed outside the SDA mask -- zero, not NaN, so the monetary
-    step can multiply directly.
-    """
-    ratio = spa_ratio.astype(np.float32, copy=True)
-    if nodata is not None:
-        ratio = np.where(ratio == nodata, np.nan, ratio)
-    ratio = np.clip(ratio, 0.0, 1.0)
-    return np.where(sda_mask, ratio, np.float32(0.0))
-
-
-def damage_curves_from_wide(wide_df, depth_bins_m=DEPTH_BINS_M):
-    """Step 4B: the wide SDA damage table -> {(iso3, sda_type): (depths, damages)} arrays.
-
-    wide_df is damage_functions_sda_depth_USD2019_wide.csv: columns iso3, sda_type and
-    one column per depth bin ('0m', '0.5m', ..., '6m').
-    """
-    xs = np.array(depth_bins_m, dtype='float32')
-    depth_cols = [fmt_depth_col(d) for d in depth_bins_m]
-    curves = {}
-    for _, r in wide_df.iterrows():
-        ys = np.array([float(r[c]) for c in depth_cols], dtype='float32')
-        curves[(str(r['iso3']).strip(), str(r['sda_type']).strip())] = (xs, ys)
-    return curves
-
-
-def interp_damage_per_m2(depth_m, xs, ys):
-    """Step 4B: damage (USD2019/m2) at each depth by linear interpolation, depths
-    clamped to the curve's [min, max]."""
-    d = np.clip(depth_m, xs.min(), xs.max())
-    return np.interp(d, xs, ys).astype('float32')
-
-
-def pixel_damage_totals(depth, sda, curves, iso3, pixel_area_m2, depth_nodata=None):
-    """Step 4B: per-pixel damages for one country x return period.
-
-    Only pixels with finite depth > 0 count; each SDA type looks up its (iso3, sda_type)
-    curve; damage = interpolated USD2019/m2 x pixel area. An SDA type without a curve
-    contributes zero (the source script's behavior when 4A did not create it). The
-    depth and SDA arrays come from the drive's aligned rasters (JRC_flood_depth_rp{RP}y_
-    _matchLULC.tif and sda_esa300m_artif_crop_pasture.tif, not staged), clipped to the
-    country geometry.
-
-    `pixel_area_m2` may be a scalar or an array shaped like `depth`. The curves are a damage per
-    square metre of real asset, so the area they multiply has to be real ground area. On a grid
-    whose cells cover the same ground everywhere a scalar says that exactly; on one whose cells do
-    not, only an array does.
-
-    Returns:
-        (damage_raster, totals_by_sda_type, total): float32 USD2019-per-pixel array,
-        {sda_type: total}, and the all-type total.
-    """
-    depth = depth.astype('float32')
-    valid = np.isfinite(depth)
-    if depth_nodata is not None:
-        valid &= (depth != depth_nodata)
-    valid &= (depth > 0)
-
-    damage_raster = np.zeros_like(depth, dtype='float32')
-    totals = {t: 0.0 for t in set(SDA_CODE_TO_TYPE.values())}
-    for code, sda_type in SDA_CODE_TO_TYPE.items():
-        m = valid & (sda == code)
-        if not np.any(m) or (iso3, sda_type) not in curves:
-            continue
-        xs, ys = curves[(iso3, sda_type)]
-        area = pixel_area_m2[m] if np.ndim(pixel_area_m2) else pixel_area_m2
-        dmg = interp_damage_per_m2(depth[m], xs, ys) * area
-        totals[sda_type] += float(dmg.sum())
-        damage_raster[m] = dmg
-    return damage_raster, totals, float(sum(totals.values()))
-
-
-def ead_from_rp_damages(rp, damage, add_p1_zero=True, tail_mode='flat',
-                        enforce_monotone=False):
-    """Step 4C: expected annual damage from (return period, damage) points.
-
-    EAD = trapezoid integral of D(p) over p = 1/RP in [0, 1]. Duplicate RPs average;
-    duplicate p values keep the max damage. The pipeline's defaults: an anchor
-    (p=1, D=0) -- the depth threshold + SDA masking treat frequent shallow events as
-    zero damage -- and a flat tail holding D(RPmax) from p = 1/RPmax down to p = 0
-    ('zero' sets the tail to 0 instead).
-
-    Returns:
-        (ead, points_df): the EAD and the integration points [p, rp, damage].
-    """
-    if tail_mode not in {'flat', 'zero'}:
-        raise ValueError("tail_mode must be 'flat' or 'zero'")
-    df = pd.DataFrame({'rp': np.asarray(rp, dtype=float),
-                       'damage': np.asarray(damage, dtype=float)})
-    df = df.dropna()
-    df = df[(df['rp'] > 0) & (df['damage'] >= 0)]
-    if df.empty:
-        return 0.0, pd.DataFrame(columns=['p', 'rp', 'damage'])
-
-    df = df.groupby('rp', as_index=False)['damage'].mean().sort_values('rp')
-    if enforce_monotone:
-        df['damage'] = np.maximum.accumulate(df['damage'].to_numpy())
-    df['p'] = 1.0 / df['rp']
-
-    pts = df[['p', 'rp', 'damage']]
-    if add_p1_zero:
-        pts = pd.concat([pd.DataFrame({'p': [1.0], 'rp': [1.0], 'damage': [0.0]}), pts],
-                        ignore_index=True)
-    d_tail = float(df['damage'].iloc[-1]) if tail_mode == 'flat' else 0.0
-    pts = pd.concat([pts, pd.DataFrame({'p': [0.0], 'rp': [np.inf], 'damage': [d_tail]})],
-                    ignore_index=True)
-
-    grid = pts.groupby('p', as_index=False)['damage'].max().sort_values('p')
-    ead = float(np.trapezoid(grid['damage'].to_numpy(), grid['p'].to_numpy()))
-    return ead, pts.sort_values('p', ascending=False).reset_index(drop=True)
-
-
-def ead_from_rp_stack(damage_stack, rps, add_p1_zero=True, tail_mode='flat'):
-    """Step 4D (raster option): per-pixel EAD from a stack of per-RP damage arrays.
-
-    Same integral and boundary treatment as ead_from_rp_damages, vectorized over pixels.
-    damage_stack is (n_rp, ...) aligned arrays ordered like rps; nodata must already be
-    zeroed (the source treats nodata as zero damage, conservatively).
-    """
-    if tail_mode not in {'flat', 'zero'}:
-        raise ValueError("tail_mode must be 'flat' or 'zero'")
-    order = np.argsort(rps)
-    y = np.asarray(damage_stack, dtype='float64')[order]
-    p = 1.0 / np.asarray(rps, dtype='float64')[order]
-
-    if add_p1_zero:
-        p = np.concatenate([[1.0], p])
-        y = np.concatenate([np.zeros_like(y[:1]), y], axis=0)
-    p = np.concatenate([p, [0.0]])
-    tail = y[-1:] if tail_mode == 'flat' else np.zeros_like(y[-1:])
-    y = np.concatenate([y, tail], axis=0)
-
-    return np.trapezoid(y[::-1], p[::-1], axis=0).astype('float32')
-
-
-def country_ead_table(country_df, admin0_df, fill_missing_zero=True):
-    """Step 4D: per-country EADs -> the global country table.
-
-    Args:
-        country_df: [iso3, ead_usd2019], one row per assessed country (from the
-            per-country step-4C files).
-        admin0_df: the Admin0 attribute table [iso3, ...enrichment columns...]
-            (country_boundary_r250_with_iso3.gpkg, not staged).
-        fill_missing_zero: keep every Admin0 iso3; countries without a step-4C result
-            get ead_usd2019 = 0 and status 'missing_step4c' (assessed countries 'ok').
-            This status is what the committed table's zero/NaN distinction rests on.
-
-    Returns:
-        DataFrame [iso3, <admin0 columns>, ead_usd2019, status] sorted by iso3.
-    """
-    country = country_df.drop_duplicates(subset=['iso3'], keep='last').copy()
-    if fill_missing_zero:
-        out = admin0_df.merge(country, on='iso3', how='left')
-        out['status'] = np.where(out['ead_usd2019'].isna(), 'missing_step4c', 'ok')
-        out['ead_usd2019'] = out['ead_usd2019'].fillna(0.0)
+    sub = flow.loc[flow.iso3 == iso3, ["rp", "mean_spa_ratio_on_sda"]]
+    if sub.empty:
+        warnings.warn(f"[WARN] {iso3}: no service-flow rows; attributed damages set to NaN.")
+        rec_df["service_flow_frac"] = np.nan
     else:
-        out = country.merge(admin0_df, on='iso3', how='left')
-        out['status'] = 'ok'
-    cols = ['iso3'] + [c for c in admin0_df.columns if c != 'iso3'] + ['ead_usd2019', 'status']
-    return out[cols].sort_values('iso3').reset_index(drop=True)
+        rec_df = rec_df.merge(sub.rename(columns={"mean_spa_ratio_on_sda": "service_flow_frac"}),
+                              on="rp", how="left")
+
+    rec_df["damage_attributed_to_spa_usd2019"] = (
+        rec_df["damage_total_usd2019"] * rec_df["service_flow_frac"])
+    return rec_df
+
+
+def _integrate_truncated(x: np.ndarray, y: np.ndarray, p_max: float) -> float:
+    """
+    Trapezoid integral of D(p) over p in [0, p_max], interpolating D at p_max.
+
+    Used for the natural-capital-only (NC) share of EAD: defences prevent damage
+    from events more frequent than their design standard, so only p <= 1/RP_prot
+    is attributable to natural capital alone.
+    """
+    if not np.isfinite(p_max) or p_max <= 0:
+        return 0.0
+    order = np.argsort(x)
+    x, y = x[order], y[order]
+    if p_max >= x.max():
+        return integrate_trapezoid(y, x)
+    keep = x < p_max
+    xt = np.append(x[keep], p_max)
+    yt = np.append(y[keep], float(np.interp(p_max, x, y)))
+    return integrate_trapezoid(yt, xt)
+
+
+def compute_ead_from_points(rp: np.ndarray, dmg: np.ndarray, *,
+                            add_p1_zero: bool = False, tail_mode: str = "flat",
+                            enforce_monotone: bool = False,
+                            protection_rp: Optional[float] = None):
+    """
+    EAD = integral of D(p) dp over p in [0, 1], where p = 1/RP.
+
+    Boundary assumptions (conservative and documented):
+      A) Frequent-event anchor at p=1: add (p=1, D=0). Step 4B applies a depth
+         threshold and SDA masking, so frequent shallow inundation is treated
+         as zero-damage in this global setup.
+      B) Rare-event tail p -> 0: "flat" holds D constant from p=1/RPmax to 0;
+         "zero" sets D=0 there. Flat avoids forcing the extreme tail to zero;
+         its contribution is small because the tail width is 1/RPmax.
+      C) Monotonicity: damages should rise with RP. Default is warn-only.
+    """
+    msgs: List[str] = []
+    if tail_mode not in {"flat", "zero"}:
+        raise ValueError("tail_mode must be one of: flat, zero")
+
+    df = pd.DataFrame({"rp": rp, "damage": dmg})
+    df["rp"] = df["rp"].apply(to_float)
+    df["damage"] = df["damage"].apply(to_float)
+    df = df.dropna(subset=["rp", "damage"])
+    df = df[(df["rp"] > 0) & (df["damage"] >= 0)]
+
+    if df.empty:
+        return 0.0, pd.DataFrame(columns=["p", "rp", "damage", "note"]), ["no_valid_points"], np.nan
+
+    df = df.groupby("rp", as_index=False)["damage"].mean().sort_values("rp").reset_index(drop=True)
+
+    if enforce_monotone:
+        df["damage"] = np.maximum.accumulate(df["damage"].to_numpy())
+
+    df["p"] = 1.0 / df["rp"]
+    pts = df[["p", "rp", "damage"]].copy()
+    pts["note"] = ""
+
+    if add_p1_zero:
+        anchor = pd.DataFrame({"p": [1.0], "rp": [1.0], "damage": [0.0],
+                               "note": ["anchor_p1_zero"]})
+        pts = pd.concat([anchor, pts], ignore_index=True)
+
+    rp_max = float(df["rp"].max())
+    d_at_rpmax = float(df.loc[df["rp"] == rp_max, "damage"].iloc[0])
+    tail = pd.DataFrame({"p": [0.0], "rp": [np.inf],
+                         "damage": [d_at_rpmax if tail_mode == "flat" else 0.0],
+                         "note": [f"tail_{tail_mode}_to_p0"]})
+    pts = pd.concat([pts, tail], ignore_index=True)
+    pts = pts.sort_values("p", ascending=False).reset_index(drop=True)
+
+    p_series = pts["p"].to_numpy()
+    d_series = pts["damage"].to_numpy()
+    for i in range(len(pts) - 1):
+        if p_series[i + 1] < p_series[i] and d_series[i + 1] + 1e-9 < d_series[i]:
+            msgs.append("non_monotone_in_p_space")
+            break
+
+    tmp = (pd.DataFrame({"p": pts["p"].to_numpy()[::-1], "damage": pts["damage"].to_numpy()[::-1]})
+           .groupby("p", as_index=False)["damage"].max())
+    xs, ys = tmp["p"].to_numpy(), tmp["damage"].to_numpy()
+    ead = integrate_trapezoid(ys, xs)
+
+    # Natural-capital-only share: events rarer than the protection standard.
+    ead_nc = np.nan
+    if protection_rp is not None and np.isfinite(protection_rp):
+        if protection_rp <= 0:
+            # No defences: the entire EAD is attributable to natural capital
+            # alone. FLOPROS carries MerL_Riv = 0 for 1,154 of its 4,650
+            # polygons, so this is not an edge case -- treating it as NaN would
+            # silently drop every unprotected country from the NC column, which
+            # is exactly where the natural-capital share should be largest.
+            ead_nc = ead
+        else:
+            ead_nc = _integrate_truncated(xs, ys, 1.0 / float(protection_rp))
+
+    return ead, pts, msgs, ead_nc
+
+
+# ---------------------------------------------------------------------------------------------
+# Country valuation, in the column set every service publishes. Erosion multiplies a shock share
+# by crop output; flood subtracts one damage integral from another and derives the share from the
+# result. Opposite direction, same published columns -- which is what makes a combined table a
+# concatenation rather than a reconciliation.
+# ---------------------------------------------------------------------------------------------
+MIN_GEP_FLOOR = 1.0  # USD/yr
+
+
+def prevention_share(ead_current, ead_degraded):
+    """
+    The fraction of potential damage that ecosystems prevent.
+
+    Args:
+        ead_current: expected annual damage under current land cover.
+        ead_degraded: expected annual damage in the counterfactual world.
+
+    Returns:
+        The share on [0, 1]. A country whose degraded world holds no damage has
+        no share rather than a zero one: zero would say ecosystems prevent
+        nothing there, which is a finding, where missing says there is nothing to
+        take a share of, which is the truth, and it keeps the country out of a
+        mean.
+    """
+    cur = np.asarray(ead_current, dtype="float64")
+    deg = np.asarray(ead_degraded, dtype="float64")
+    with np.errstate(divide="ignore", invalid="ignore"):
+        share = np.where(deg > 0, (deg - cur) / deg, np.nan)
+    # Degradation cannot reduce damage. A negative share is a routing or
+    # alignment fault, not a result, and clipping silently would hide it -- so
+    # this floors at zero and leaves the diagnostic to the caller.
+    return np.clip(share, 0.0, 1.0)
+
+
+def country_gep(df_ead, df_gdp, component):
+    """
+    The value of the damage ecosystems prevent, and what it is as a share of GDP.
+
+    Args:
+        df_ead (pandas.DataFrame): `iso3`, `ead_current_const2019_usd` and
+            `ead_degraded_const2019_usd`, one row per country.
+        df_gdp (pandas.DataFrame): `iso3` and `gdp_const2019_2019`.
+        component (str): which counterfactual this is -- `bare` or `insitu` --
+            carried onto every row so the two runs can be concatenated and still
+            told apart, as erosion does for its three prevention channels.
+
+    Returns:
+        pandas.DataFrame with the flood quantity columns followed by the four
+        every service shares: `gdp_const2019_2019`, `gep_const2019_usd`,
+        `gdp_loss_pct`, and `component` at the front.
+
+    Note that GEP here is a difference rather than a product. Erosion multiplies
+    a shock share by crop output; flood subtracts one expected-damage integral
+    from another, and the share is derived from the result rather than producing
+    it. The published columns are the same either way, which is the point.
+    """
+    out = df_ead.merge(df_gdp, on="iso3", how="left").copy()
+
+    out["gep_const2019_usd"] = (out["ead_degraded_const2019_usd"].fillna(0.0)
+                                - out["ead_current_const2019_usd"].fillna(0.0))
+    out.loc[out["gep_const2019_usd"] < MIN_GEP_FLOOR, "gep_const2019_usd"] = 0.0
+
+    out["flood_prevention_share"] = prevention_share(
+        out["ead_current_const2019_usd"], out["ead_degraded_const2019_usd"])
+
+    # A country with no GDP figure gets no percentage rather than an infinite
+    # one, and its value stays visible so the gap reads as a missing denominator
+    # rather than as a country where flood regulation does not matter.
+    out["gdp_loss_pct"] = np.where(
+        out["gdp_const2019_2019"].notna() & (out["gdp_const2019_2019"] > 0),
+        100.0 * out["gep_const2019_usd"] / out["gdp_const2019_2019"],
+        np.nan)
+
+    out["component"] = component
+    return out[["component", "iso3",
+                "ead_current_const2019_usd", "ead_degraded_const2019_usd",
+                "flood_prevention_share",
+                "gdp_const2019_2019", "gep_const2019_usd", "gdp_loss_pct"]]
+
+
+def combine_components(*frames):
+    """
+    Stack the counterfactual runs into one table.
+
+    Concatenation rather than a merge, because the two are alternative answers to
+    different questions rather than components of one total. Summing bare-soil
+    and in-situ would double-count the same prevented damage under two
+    assumptions about how much land cover is lost.
+    """
+    return pd.concat(frames, ignore_index=True).sort_values(
+        ["component", "iso3"]).reset_index(drop=True)

@@ -1,117 +1,102 @@
 ---
-title: "Overview of Ecosystem Service: River Flood Mitigation"
-format:
-  html:
-    embed-resources: true
-    standalone: true
+title: "Riverine flood-control ecosystem service"
+format: html
 ---
 
-Flood control is valued as expected annual damage on flood-exposed assets, computed per country
-for the GEP base year of 2019 and reported in 2019 USD. The calculation is the consortium drive's
-FINAL_GEP_FLOOD pipeline of December 2025, ported step by step into
-`flood_chain.py` as pure functions that take arrays and DataFrames.
+## Purpose
 
-## Quantity
+Vegetated landscapes intercept rainfall, slow its passage into rivers and store part of it in
+the soil. Where they do so upstream of towns and farmland, floods downstream are shallower than
+they would otherwise be, and the damage those floods cause is smaller. That reduction in damage
+is what this account values.
 
-Flood depth at each return period, on a grid of service-demanding assets (SDA). `build_sda_class`
-turns ESA-CCI 300 m land-cover codes into SDA classes, writing in priority order pasture, crop,
-artificial, roads, so a code that appears in several sets keeps the highest priority and roads
-override everything. Depth comes from the JRC floodplain-depth rasters aligned to the land-cover
-grid, one per return period. `build_depthbin_index` bins depth in half-metre steps up to 6 m for
-the later monetary joins, clamping negatives to zero and nodata to -1.
+The scope is river flooding only. Coastal flooding, storm surge and pluvial flooding lie outside
+it, following the hazard product the account uses. Coverage is 250 countries at 537 m, reported
+in USD 2019.
 
-The final run used return periods 10, 20, 50 and 500.
+## Method
 
-## Price
+Valuing this service requires answering a question that cannot be observed: how much flood damage
+would occur if landscapes stopped absorbing rain. The account simulates a counterfactual world in
+which ecosystems no longer retain water, routes the same storms through it, and takes the
+difference.
 
-JRC fractional depth-damage curves multiplied by per-country maximum damages, joined through an
-iso3 to JRC-region map. `build_canonical_damage_table` produces the long EUR2010 per square metre
-table, `convert_damage_table_to_usd2019` applies one multiplier to every row, and
-`aggregate_damage_table_to_sda` maps sector land types onto SDA types. Five built-asset land types
-map to `artif`, so the wide pivot's mean makes the artificial curve the average of the built-asset
-curves. The pipeline ran with pasture set equal to crop.
+Everything turns on one number per location, the **depth amplification**: the ratio of flood depth
+in the degraded world to flood depth in the current one. Hydrology has no standard name for it,
+because it has not previously been needed -- it exists here only because there is a paired
+counterfactual world to run.
 
-## Valuation
+### Step 1, how absorbent each piece of land is
 
-`pixel_damage_totals` interpolates each pixel's damage per square metre off its `(iso3, sda_type)`
-curve at the pixel's depth and multiplies by pixel area, counting only pixels with finite depth
-above zero. An SDA type with no curve contributes zero, which is what the source script does when
-step 4A did not create one.
+A curve number between 30 and 100 is assigned to every cell by crossing land cover with soil
+hydrologic group, from USDA field measurements:
 
-`ead_from_rp_damages` integrates those per-return-period totals into an expected annual damage:
+$$S = 25400 / \text{CN} - 254$$
 
-$$
-\text{EAD} = \int_0^1 D(p)\,dp, \qquad p = 1/\text{RP}
-$$
+$S$ is the potential maximum retention in millimetres. Forest on loam holds 208 mm; the same soil
+stripped bare holds 41 mm. This is the only point in the account where vegetation enters the
+physics.
 
-evaluated as a trapezoid over the sampled points. Duplicate return periods average, duplicate
-probabilities keep the maximum damage. The pipeline's defaults add an anchor at $(p=1, D=0)$,
-because the depth threshold and the SDA masking treat frequent shallow events as zero damage, and
-hold a flat tail at $D(\text{RP}_{\max})$ from $p = 1/\text{RP}_{\max}$ down to $p = 0$.
-`ead_from_rp_stack` is the same integral vectorised over pixels.
+### Step 2, how much extra water runs off
 
-`country_ead_table` assembles the per-country results against the Admin0 attribute table, keeping
-every iso3 and marking countries without a step-4C result as `missing_step4c` with a zero value.
+$$I_a = 0.2S, \qquad Q = (P - I_a)^2 / (P - I_a + S) \text{ for } P > I_a$$
 
-## What the library reports
+The relation saturates. As $P$ grows large relative to $S$, runoff approaches total rainfall
+regardless of land cover, so the service is concentrated in frequent events and the largest
+proportional effects appear where storms are small relative to what the soil can hold.
 
-`gep_calculation` runs the ported calculation country by country, windowing the SDA and depth rasters to
-each country geometry, and writes its own `chain_country_ead.csv`. That is the reported value. The
-committed pipeline table is the comparison anchor, logged and pinned in the test suite. The known
-difference between the two is Morocco.
+### Step 3, following the water downhill
 
-The committed table's sum reproduces the pipeline's own global summary exactly, $110.59bn with 148
-of 236 assessed countries non-zero. The "avoided damage" label on that table is the analysis
-notebook's interpretation of the step-4D EAD column.
+$$\text{ratio}(i) = \text{accum}(Q_\text{degraded})(i) / \text{accum}(Q_\text{current})(i)$$
 
-## Inputs
+Routing uses MERIT Hydro. On the Upper Mississippi, seven per cent more runoff at the point of
+rainfall becomes twenty-two per cent more discharge in the river: routing roughly triples the
+local effect, and that is what makes flood regulation a landscape service rather than a local one.
 
-From `es_parameters.csv`, scoped to the `flood` service:
+### Step 4, turning more water into deeper water
 
-- `flood_country_vector_path`, the r250 country boundaries carrying iso3.
-- `flood_sda_raster_path`, the staged SDA class raster for artificial, crop and pasture.
-- `flood_depth_path_template`, the JRC depth rasters, formatted with each return period.
-- `flood_damage_wide_path`, the wide USD2019 depth-damage table the curves are read from.
-- `flood_avoided_damage_path`, the committed per-country table used as the anchor.
+$$A(i) = [\text{ratio}(i)]^{f}, \qquad f \approx 0.4$$
 
-## Output
+At-a-station hydraulic geometry gives the split between width, depth and velocity. So 21.5% more
+discharge produces 8% more depth. The exponent is the least constrained element of the chain and
+is swept over 0.3 to 0.5.
 
-`gep_calculation` writes `chain_country_ead.csv` and `gep_by_country_base_year.csv` into its own
-task directory. The second holds the r250 identifiers and attributes, `year`, and
-`flood_gep`. Zeroes are the pipeline's own zeroes, meaning assessed with no damage.
-Countries it never assessed stay NaN.
+## Two counterfactuals
 
-## Method constants
+**Bare soil** removes land cover entirely, setting curve numbers to the fallow values of the
+reference tables. This is the world a gross product asks about, and it is the reference the
+erosion account uses, so the two services are measured against one hypothetical landscape and can
+be summed.
 
-- `FX_USD_PER_EUR_2010_AVG = 1.32609` and `INFLATOR_US_2010_TO_2019 = 1.160061`, whose product
-  `EUR2010_TO_USD2019` is the single currency multiplier. Both come from the pipeline's own
-  conversion notebook, the FRED DEXUSEU 2010 annual average and the FRED GDPDEF 2019 over 2010
-  ratio.
-- `ESA_TO_SDA`, the step-2A membership map: artificial 190, crop 10, 11, 12, 20, 30 and 40,
-  pasture 130. Codes not listed are non-SDA. The step-2A ignore list never overlaps the asset
-  sets, so it is not needed to reproduce the class raster.
-- `SDA_CODE`, none 0, artificial 1, crop 2, pasture 3, roads 4, with `SDA_CODE_TO_TYPE` the
-  reverse map used at valuation.
-- `DEPTH_BINS_M`, the JRC curve depths 0, 0.5, 1, 1.5, 2, 3, 4, 5 and 6 metres.
-- `LANDTYPE_TO_SDA`, which sends Agriculture to crop and Residential, Commercial and Industrial
-  buildings, Transport and Infrastructure roads to artificial.
+**In-situ degradation** raises curve numbers less: soils compacted and canopy thinned, the land
+still present. Closer to what realistic degradation would produce, and reported alongside rather
+than as a sensitivity.
 
-## Taken as given
+Bare soil exceeds in-situ by about 2.5, and that ratio is stable to within four per cent across
+both hazard products and both treatments of permanent water.
 
-The upstream geospatial calculation, meaning the flood hazard rasters, the JRC curves and the protection
-levels behind them, is adopted as produced.
+## Lambda
 
-## What is open
+Lambda is 1 for this service. The counterfactual already isolates the ecosystem contribution: it
+is a difference between two worlds identical in every respect except the ecosystem, so whatever
+remains in the difference is the ecosystem's doing by construction.
 
-Several raster inputs the drive's scripts name are not staged here, including the 2019 ESA-CCI
-land cover, the JRC depth rasters at their original paths, the country vector, the upstream SPA
-raster, the JRC fractional curves and maximum damages, and the iso3 to JRC region map. They live
-on the author's cluster. The ported functions take arrays and DataFrames, so they run as soon as
-those are staged.
+The **prevention share** reported throughout is a different quantity and not an attribution
+coefficient:
 
-`service_flow_from_spa` implements step 3, which clips the upstream SPA ratio to [0, 1] and zeroes
-it outside the SDA mask. The staged monetary calculation never multiplies by that fraction, and the
-drive's `global_upstream_spa_ratio.tif` is a byte copy of the binary `global_prr_spa.tif`.
+$$\text{prevention share} = (\text{EAD}_\text{degraded} - \text{EAD}_\text{current}) / \text{EAD}_\text{degraded}$$
 
-`build_sda_class` carries an `include_pasture` flag because the two runs disagree. The pipeline's
-step-2 run left pasture off. The global step-4B raster has it on.
+An attribution share near 1 and a prevention share near 0.01 are not two estimates of one thing.
+
+## Sign conventions
+
+GEP is positive: it is damage that does not occur. Degradation raises expected annual damage, so
+the difference is non-negative by construction and a negative value indicates a routing or
+alignment fault rather than a result.
+
+## Compute
+
+The amplification field is built from rainfall and flow direction rather than from the hazard
+maps, so it survives a change of hazard product. Building it is two weeks of single-threaded flow
+accumulation over 75 billion cells; everything downstream of it is hours. `RUN.md` documents both
+paths.
