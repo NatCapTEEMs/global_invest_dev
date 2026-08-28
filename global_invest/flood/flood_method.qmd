@@ -100,3 +100,46 @@ The amplification field is built from rainfall and flow direction rather than fr
 maps, so it survives a change of hazard product. Building it is two weeks of single-threaded flow
 accumulation over 75 billion cells; everything downstream of it is hours. `RUN.md` documents both
 paths.
+
+
+## Before trusting any rerun of the pipeline
+
+The account as it stands does **not** rerun the pipeline: `gep_calculation` reads the author's own
+per-country export, so the number here is his verified one. This section matters only if that
+changes.
+
+### The failure that made this account wrong twice
+
+The author's `RUN.md` is explicit, and it is the most important thing in it:
+
+> Check flow-direction coverage. This is not optional, and it is the reason this account was wrong
+> twice.
+
+Seven MERIT flow-direction packages were missing at various points, and **every absence was
+silent**. Accumulation over a missing network writes nodata, the amplification clips to a minimum of
+1.0, and the valuation reads 1.0 as *no change here* rather than *no data here*. Japan, Korea,
+Portugal and Kazakhstan returned zero service against **49 bn USD of exposure**; Nigeria, Chad,
+Cameroon, Niger and the Central African Republic another **4 bn**. Nothing in any log recorded a
+problem. Both were found because a country looked implausible. Recovering them raised GEP by
+**18.5 per cent and then a further 16**.
+
+    python prep_merit_dir.py --check-tiles
+
+⚠ **The check has a limit the author states plainly.** Its reference list was generated from a tile
+set believed complete, so it detects regressions — a lost file, a partial copy, an interrupted
+extraction — **but not a package that was never downloaded**, which was the original failure.
+
+A missing amplification raster behaves the same way: the pipeline warns, falls back to current
+depths and returns a GEP of zero, so the job completes and the number is wrong. `RUN.md` carries a
+three-line check that the mosaic resolves, and `msi/final_run.sbatch` verifies the totals itself and
+prints ALL MATCH or the quantity that differs.
+
+### Running it, if we ever do
+
+The inputs are on MSI at `/projects/standard/jajohns/shared/flood_gep`, read-only, so a run needs a
+writable root with those inputs linked in and the Sections B and C rasters copied across — about
+1 GB, without which a run rebuilds them and takes eleven hours rather than three. In this library
+the root is `flood_root_dir` in `es_parameters.csv` rather than the source repo's `GEP_FLOOD_ROOT`
+environment variable, so only the linking and copying carry over.
+
+⚠ **Not done as of 2026-08-28.** Nothing here has been run; the account reads his export.
