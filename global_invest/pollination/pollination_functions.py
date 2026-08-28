@@ -1076,26 +1076,6 @@ def available_source_value_years(p):
     return sorted(years)
 
 
-def write_source_provenance(raster_path, out_path):
-    """Record which file the GEP value came from, so a stale copy is visible rather than silent."""
-    import hashlib
-    import pandas as pd
-    digest = hashlib.sha256()
-    with open(raster_path, 'rb') as raster_file:
-        for chunk in iter(lambda: raster_file.read(1 << 20), b''):
-            digest.update(chunk)
-    stats = os.stat(raster_path)
-    os.makedirs(os.path.dirname(out_path), exist_ok=True)
-    pd.DataFrame([{
-        'source_raster': os.path.basename(raster_path),
-        'source_raster_path': raster_path,
-        'bytes': stats.st_size,
-        'modified_utc': pd.Timestamp(stats.st_mtime, unit='s', tz='UTC').isoformat(),
-        'sha256': digest.hexdigest(),
-    }]).to_csv(out_path, index=False, encoding='utf-8-sig')
-    return out_path
-
-
 def value_density_to_per_cell(value_density, area_km2):
     """USD per square kilometre to USD per cell, which is what a zonal sum can add.
 

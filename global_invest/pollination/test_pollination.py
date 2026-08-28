@@ -393,14 +393,14 @@ def test_source_provenance_records_the_file_it_actually_read(tmp_path):
     """
     raster = tmp_path / 'poll_value_global_2019usd.tif'
     raster.write_bytes(b'not really a raster, but bytes are bytes')
-    out = pf.write_source_provenance(str(raster), str(tmp_path / 'prov' / 'provenance.csv'))
+    out = pt.write_source_provenance(str(raster), str(tmp_path / 'prov' / 'provenance.csv'))
     row = pd.read_csv(out, encoding='utf-8-sig').iloc[0]
     assert row['source_raster'] == 'poll_value_global_2019usd.tif'
     assert row['bytes'] == raster.stat().st_size
     assert len(row['sha256']) == 64
 
     raster.write_bytes(b'not really a raster, but bytes are different now')
-    changed = pd.read_csv(pf.write_source_provenance(str(raster), str(tmp_path / 'prov' / 'p2.csv')),
+    changed = pd.read_csv(pt.write_source_provenance(str(raster), str(tmp_path / 'prov' / 'p2.csv')),
                           encoding='utf-8-sig').iloc[0]
     assert changed['sha256'] != row['sha256'], 'a changed file must change the recorded hash'
 

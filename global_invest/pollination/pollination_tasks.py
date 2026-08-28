@@ -2097,6 +2097,26 @@ def pollination_dependence_by_item(df_dependence):
     return dict(zip(codes.astype('Int64'), collapsed['poll_dep'].fillna(0.0).astype(float)))
 
 
+def write_source_provenance(raster_path, out_path):
+    """Record which file the GEP value came from, so a stale copy is visible rather than silent."""
+    import hashlib
+    import pandas as pd
+    digest = hashlib.sha256()
+    with open(raster_path, 'rb') as raster_file:
+        for chunk in iter(lambda: raster_file.read(1 << 20), b''):
+            digest.update(chunk)
+    stats = os.stat(raster_path)
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    pd.DataFrame([{
+        'source_raster': os.path.basename(raster_path),
+        'source_raster_path': raster_path,
+        'bytes': stats.st_size,
+        'modified_utc': pd.Timestamp(stats.st_mtime, unit='s', tz='UTC').isoformat(),
+        'sha256': digest.hexdigest(),
+    }]).to_csv(out_path, index=False, encoding='utf-8-sig')
+    return out_path
+
+
 def pollination_source_value_raster(p):
     """Make sure the source author's value raster for the GEP base year is in base_data.
 
@@ -2128,7 +2148,7 @@ def pollination_source_value_raster(p):
 
     if hb.path_exists(p.pollination_source_value_raster_path):
         hb.log('Source value raster present: %s' % file_name)
-        pf.write_source_provenance(p.pollination_source_value_raster_path,
+        write_source_provenance(p.pollination_source_value_raster_path,
                                    p.pollination_source_provenance_path)
         return True
 
