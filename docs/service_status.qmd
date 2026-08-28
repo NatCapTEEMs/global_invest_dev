@@ -24,7 +24,41 @@ The fields mean: **category** is what the code does to produce the number, on a 
 reading a published value to running a model here. **method** is how the number is computed.
 **ours** is whether we can compute the number ourselves, or only read someone else's. **code** is
 the engineering work we did. **number** is what the figure is and what it was checked against.
-**need** is what we are waiting on from someone else.
+**need** is what we are waiting on from someone else. **signed off** is whether the service meets
+the seven conditions below.
+
+**What signed off means.**
+
+The standard the account is built to: **somebody who wants to reproduce a GEP number should be able
+to read this repository and follow every step, without opening anyone else's.** They will need the
+data — base_data holds inputs from many authors and always will — but not another codebase, and not
+a person to explain the missing part.
+
+That is what `signed off: green` asserts. Seven conditions, each of which has already failed
+somewhere and been caught:
+
+1. **Our code produces the number.** Not the author's code run by us. A service whose only working
+   pipeline is the author's own repository has not been ported, however faithful the output.
+2. **The repository is self-sufficient.** Every step from input to published figure is in this
+   library. An author's raster staged in base_data is an input like any other and is fine; a
+   procedure that says "clone their repo and run six commands" is not part of the pipeline and
+   cannot be a step in it.
+3. **The published outputs come from the current code.** Regenerated after the last change that
+   moves a number, not carried over from a run whose code no longer exists. `skip_existing` makes
+   this failure silent, so it has to be checked rather than assumed.
+4. **The grid and the cell area are stated** (H12), because that is where a density becomes a total.
+5. **What the reproduction cannot test is stated.** Matching an author's output tests our port; it
+   cannot see an error their code also makes. Where the reference shares our lineage, say so.
+6. **The three gates pass** — harmonization, consistency, deck.
+7. **No open question blocks the number.** A question for the account to decide is not a blocker; a
+   question whose answer would change the figure is.
+
+Green means all seven. **amber** means the number is usable and at least one condition is open, with
+the entry saying which. **red** means the number should not be quoted yet.
+
+⚠ A service can be green while its check is fidelity-only, provided condition 5 is met and the entry
+says so. Green is a statement about our engineering being complete and legible, not a claim that the
+science is right.
 
 The five categories, in ascending order of what the code does.
 
@@ -86,6 +120,7 @@ hectare. `ours` is where that lives.
 - **number:** Values the carbon stored in land ecosystems, priced at the rental social cost of carbon. Reproduces the manuscript total of $5.365T, after fixing a double-count that entered split countries once per sub-region (China six times, 23.5 percent overstatement). Priced at the rental social cost of carbon at 2 percent. The 3 percent sensitivity is a run of its own and gives $3.4627T. There is no 1 percent column. 
 - **need:** Two decisions on the discount rate. First, whether carbon prices are taken to grow. The r in the rental formula is the net rate, the discount rate minus the growth rate of carbon prices, so our 2 percent column assumes prices do not grow. The table already carries the alternative: a column at 3 percent discounting minus 2.2 percent growth, so 0.8 percent net, which gives $2.29 a tonne against our $13.19. Second, the 1 percent price. It cannot be derived from carbon_prices.xlsx, which holds only $181.60 per tonne of CO2 at 2 percent and $78.53 at 3 percent. Not clear where they came from. 
 
+- **signed off:** not assessed
 ## Coastal Carbon
 
 - **subgroup:** coastal
@@ -103,6 +138,7 @@ hectare. `ours` is where that lives.
 - **decided:** Mangrove and salt marsh now weight each cell by the share of it the habitat covers, rather than crediting a whole cell to any extent that clips it. Mangrove extent falls 29.08 Mha to 14.60, which is the polygons' own area, and the EEZ-only total moves $22.84bn to $17.72bn. ⚠ Yanxu has not been told. Seagrass is unchanged, because its density is a polygon attribute rather than a per-pixel value. ⚠⚠ Its overlap double-count is now measured: the 293,147 WCMC polygons sum to 54.46 Mha but dissolve to 30.02, so overlaps inflate the extent 1.8 times, and the dissolved figure lands inside the 16 to 27 Mha range the author's own appendix cites from McKenzie. Not yet fixed, and worth raising with Yanxu rather than changing under him while he revises.
 - **number:** Values the carbon held in mangroves, salt marshes and seagrass. Matches the author's reported numbers. EEZ-only gives $22.84bn while including the landward pixels gives $102.18bn.
 - **need:** Count only habitat pixels seaward of the shoreline, or the landward side too (4.5 times the total)? ⚠ **Settled with Yanxu Long, 2026-08-28.** He accepts the extent fix ("this makes sense to me, I'll double check"). Neither of the two rasters exists on his machine either, so the latitude step functions stay — and the appendix, `global_climate_regulation_coastal_carbon_appendix.docx`, documents them AS the method rather than as a fallback: salt marsh SOC is a four-bin latitude function based on Maxwell (36, 44, 50, 70 tC/ha), noting "a native raster from that source is not yet wired into the pipeline", and the mangrove BGB default is called out as overestimating "along dry-tropical coasts such as Arabia and northern Australia", which is the 42 percent of tropical mangrove measured here. ⚠ He is separately revising: reviewer comments, currency to 2019 international dollars, and disentangling zeros from missings. For their own paper he wants a newer base year and an annual time series with sea-level rise, so the GEP 2019 run and that paper will diverge.
+- **signed off:** not assessed
 - **subgroup:** -
 - **module:** -
 - **category:** -
@@ -120,6 +156,7 @@ hectare. `ours` is where that lives.
 - **need:** Is marine carbon in the account's scope?
 
 
+- **signed off:** not assessed
 ## Marine Carbon
 
 - **subgroup:** -
@@ -139,6 +176,7 @@ hectare. `ours` is where that lives.
 - **need:** Is marine carbon in the account's scope?
 
 
+- **signed off:** not assessed
 ## Pollination
 
 - **subgroup:** -
@@ -158,6 +196,7 @@ hectare. `ours` is where that lives.
 - **need:** Which definition the account wants: the crop output at stake if pollinators vanished, or the service habitat currently delivers. ⚠⚠ **Our $384.09bn is the first of those.** The value raster is production times price times dependence, with no habitat sufficiency term; `configure_sufficiency` is called only inside `pollination_shock`, never in the GEP chain. William Sidemo Holm ran three variants for 2019 on 2026-08-27 and ours lands on his second: FAO tabular without sufficiency $429bn, raster without sufficiency **$385bn**, raster with sufficiency **$190bn** (revised from $387bn and $191bn on 2026-08-28). Ours is $384.09bn, read from his own raster since 2026-08-28, so it IS his no-sufficiency figure rather than an independent match to it; applying sufficiency would roughly halve it. ⚠ We already build a sufficiency-weighted value raster, `value_pollination_sufficiency_<scenario>_5km.tif`, but only inside the shock path where it becomes a ratio — the second number is a zonal sum away, not a new model. And whether the GEP total adds pollination on top of crop production: at $384.09bn against crop provision's $678bn pollination is 57 percent of it, which is the ground of Ryan McWay's objection that half of production value is not pollinator dependent; with sufficiency it would be 28 percent.
 
 
+- **signed off:** not assessed
 ## Erosion Control
 
 - **subgroup:** -
@@ -177,6 +216,7 @@ hectare. `ours` is where that lives.
 - **need:** -
 
 
+- **signed off:** not assessed
 ## Landslides
 
 - **subgroup:** -
@@ -196,6 +236,7 @@ hectare. `ours` is where that lives.
 - **need:** One per-country output from a v0.2.0 run, and its input versions. This is also the one service that builds its own value of a statistical life, from the OECD country table deflated from 2022 to 2019 USD with an income-group fallback, so it is the row that has to move onto the air quality group's shared table for the account to price a death the same way everywhere. That move will change the number, because the two sources differ. The same three questions apply to that table as on the air filtration row: its currency year, an ISO3 column rather than a country name, and the countries it does not cover, which is what the income-group fallback is for.
 
 
+- **signed off:** not assessed
 ## Fisheries
 
 - **subgroup:** commercial
@@ -215,6 +256,7 @@ hectare. `ours` is where that lives.
 - **need:** The source pipeline's output table, and the source decision: the CWoN resource rents or FishStatJ, FAO's capture-production database
 
 
+- **signed off:** not assessed
 ## Fisheries
 
 - **subgroup:** subsistence
@@ -234,6 +276,7 @@ hectare. `ours` is where that lives.
 - **need:** What is the account's fisheries value? The commercial rent alone, the sum of both components, or something else. The commercial side values the rent of the reported catch, the subsistence side the use value of the home catch. The commercial series is built from FAO catch statistics, so where a country's reported catch already includes subsistence fishing, a sum counts that catch twice.
 
 
+- **signed off:** not assessed
 ## Crop Production
 
 - **subgroup:** commercial
@@ -253,6 +296,7 @@ hectare. `ours` is where that lives.
 - **need:** Does the GEP total add crop production and pollination? Crop multiplies production value by the CWoN land rental rate, and pollination values the crop production attributable to wild pollinators, so both attribute part of the same output to nature. And how the CWoN land rental rate was derived. It is the whole of the attribution and moves the total proportionally.
 
 
+- **signed off:** not assessed
 ## Livestock Production
 
 - **subgroup:** commercial
@@ -272,6 +316,7 @@ hectare. `ours` is where that lives.
 - **need:** Which factor the account attributes livestock value with. The code computes both, and they differ by 2.6 times, $519bn on the CWoN land rental rate against $1.37T on the GLEAM feed share. The rental rate is the crop method's factor. Also the compiled GLEAM extract (gleam3_dmi.xlsx) to validate our harvest against, the confirmation of which FAO products count as livestock, and one per-country output. And how the CWoN land rental rate was derived. It is the whole of the attribution and moves the total proportionally.
 
 
+- **signed off:** not assessed
 ## Coastal Protection
 
 - **subgroup:** -
@@ -291,6 +336,7 @@ hectare. `ours` is where that lives.
 - **need:** Whether code exists behind the coral-reef benefit table that we should be running.
 
 
+- **signed off:** not assessed
 ## Mining Production
 
 - **subgroup:** -
@@ -310,6 +356,7 @@ hectare. `ours` is where that lives.
 - **need:** The source of the 0.49 factor, which is the only judgement in the number and currently has no provenance in the code, the drive submission or its raw-data notes. And whether there is a model we should be running instead, the same question extractive energy carries: the World Bank's rent is a price-minus-cost calculation over extracted quantity, and if the account wants a mining figure it derives rather than adopts, that calculation is what it would have to redo.
 
 
+- **signed off:** not assessed
 ## Energy Production
 
 - **subgroup:** -
@@ -329,6 +376,7 @@ hectare. `ours` is where that lives.
 - **need:** The decision which source is current. And whether the account accepts an attribution it adopts rather than computes: the CWoN rent share is the whole of the ecosystem attribution here and moves the total proportionally. The same question applies to crop and livestock's rental rate. 
 
 
+- **signed off:** not assessed
 ## Recreation
 
 - **subgroup:** -
@@ -348,6 +396,7 @@ hectare. `ours` is where that lives.
 - **need:** One per-country results CSV from the author's own run, to verify the port by replication. And whether the travel-cost step intended kilometres. The code multiplies a fuel cost per kilometre by a distance measured in the raster's pixel units, which understates the value.
 
 
+- **signed off:** not assessed
 ## Wildfires
 
 - **subgroup:** -
@@ -367,6 +416,7 @@ hectare. `ours` is where that lives.
 - **need:** Which of the three is the account's. Baseline persistence should not be: it does not isolate nature's role, so it cannot answer what nature protects. Between the other two, the area difference matches how the service is described, fires persisting less where nature dominates, and is the only one that comes out positive. That is an argument, not a decision, and it is not ours to make. Also: 89 of the account's 250 countries carry no value, and whether they are unvalued or dropped somewhere in the join has not been checked.
 
 
+- **signed off:** not assessed
 ## Urban Cooling
 
 - **subgroup:** -
@@ -386,6 +436,7 @@ hectare. `ours` is where that lives.
 - **need:** What turns the city-month valuations into the committed accounting table. And confirmation of which figure the account takes.
 
 
+- **signed off:** not assessed
 ## Water Quality
 
 - **subgroup:** -
@@ -405,6 +456,7 @@ hectare. `ours` is where that lives.
 - **need:** The treatment-cost observations behind the international-dollar regression. We hold the fitted prices but not the data they were fitted to, which is the one thing stopping us implementing the method note ourselves. Also the account's currency decision between market dollars and international dollars, the purchasing-power unit in which one dollar buys in each country what it buys in the United States. And the four nitrogen coefficients for an InVEST NDR biophysical table: load_n, eff_n, crit_len_n and proportion_subsurface_n.
 
 
+- **signed off:** not assessed
 ## Air Filtration
 
 - **subgroup:** -
@@ -424,6 +476,7 @@ hectare. `ours` is where that lives.
 - **need:** Four things. **Serbia and Kosovo are swapped in the workbook**, which labels both rows Serbia: the row that is Serbia carries Kosovo's value of life, 2,288,310, and the row that is Kosovo carries Serbia's, 2,184,433. We read them the right way round from the table, so the account is correct and the workbook is not. Macao and Palestine are priced per country in the workbook, at 10,396,302 and 1,662,995, but appear nowhere in the table, so those two values have no source we hold. Which currency year the table is in, since our accounts are 2019 constant USD and a different base would rescale every mortality total. And an ISO3 column, because the table keys on a slugged country name and thirteen countries need a hand-written alias to match. Separately, what emissions inventory and meteorology a global InMAP run needs, which is what would let us produce the deaths rather than read them.
 
 
+- **signed off:** not assessed
 ## Sandstorm / Dust Storm Prevention
 
 - **subgroup:** -
@@ -443,6 +496,7 @@ hectare. `ours` is where that lives.
 - **need:** The same as air filtration. And whether this magnitude is expected. The dust value is 33 times the air-filtration value.
 
 
+- **signed off:** not assessed
 ## Hydropower
 
 - **subgroup:** hydropower
@@ -462,6 +516,7 @@ hectare. `ours` is where that lives.
 - **need:** The decision which hydropower total is the account's ($287.7bn direct use or $144.68bn rent), and the reason 17 countries are empty in the reference
 
 
+- **signed off:** not assessed
 ## Water Use
 
 - **subgroup:** water use
@@ -481,6 +536,7 @@ hectare. `ours` is where that lives.
 - **need:** An attribution factor, since these totals are the gross value of water use with no share credited to nature. Whether the factor of 1000 in the agriculture component is a units conversion. And the data vintage behind the all-sector component.
 
 
+- **signed off:** not assessed
 ## Extractive Energy
 
 - **subgroup:** -
@@ -500,6 +556,7 @@ hectare. `ours` is where that lives.
 - **need:** Confirmation that the eight duplicated rows are a join error, and which total the account keeps. Is there a model that we should use instead?
 
 
+- **signed off:** not assessed
 ## Forestry (Timber)
 
 - **subgroup:** -
@@ -518,6 +575,7 @@ hectare. `ours` is where that lives.
 - **number:** $88.74bn. Sums the value raster to countries and matches the committed output for all 166 countries, $88.74bn. What we cannot rebuild is the raster itself: making it needs a forest-management mask saying which forest is available for harvest, and that mask is not derivable from the layers we hold.
 - **need:** The forest-management mask behind the value raster, or the code that builds it. And a decision on the factor share. Timber is the one service whose ecosystem share does not come from CWoN. Following Damania et al. (2023) it multiplies gross returns by the GTAP 10 land factor share for each of the 18 agro-ecological zones, so it does vary by zone rather than being one economy-wide number, but it is a different source and a different construction from the CWoN rental rate every other service uses. That matters because the account adds the services together, so the share attributable to nature should mean the same thing across them. ⚠ Switching is not a configuration change: no CWoN timber rent is staged anywhere in base_data. The CWoN files we hold cover crop, livestock, fisheries, renewable energy, extractive energy and non-wood forest products, and `ntfp/cwon_nwfp_value_per_ha.csv` is non-wood, a different quantity. CWoN 2024 does carry timber, as a land asset category beside agricultural land, forest recreation, non-wood forest products and forest water services, so the rent exists and the gap is that we do not hold the file. The two approaches are also closer than the source difference suggests: SNA and SEEA-CF count forest timber as an asset only where it can be logged commercially at a profit, which is the same restriction as the missing forest-management mask.
 
+- **signed off:** not assessed
 ## Floods
 
 - **subgroup:** -
@@ -535,6 +593,7 @@ hectare. `ours` is where that lives.
 - **decided:** A cell now carries its own ground area rather than the equator's. The JRC curves are a USD per square metre of real asset and the pass gave every cell one constant 288,615 m2, which is right only at the equator on EPSG:3857. ⚠ Not yet rerun, and held: his $11.4bn GEP is a different quantity from what we compute.
 - **number:** Values the flood damage that occurs, recomputed from the depth, damage-curve and asset inputs, matching the pipeline's table for 146 of 148 non-zero countries, $112.78bn. Morocco's committed value is $53 thousand for the whole country where the recompute gives $43 million. South Sudan was dropped by the mapping layer, now fixed. The number is expected flood damage, not the damage ecosystems avoid, and the step that would turn one into the other is stuck. The pipeline has a service-flow fraction and we have implemented and tested it, but the raster it needs is not usable: the drive's upstream ratio file is a byte-for-byte copy of a binary mask, so multiplying by it would switch damages on and off rather than scale them by an ecosystem share.
 - **need:** ⚠ **Largely closed on 2026-08-28.** The repository is public, cloned, and folded into the library: the module is now his full pipeline rather than a reader, vendored so nothing imports the source repo, paths resolved from `flood_root_dir` in es_parameters, and the harmonization gate clean. `gep_calculation` reads his own per-country export, **$11.40bn over 162 countries**, into the shared table — so the account's number does not depend on us running anything. ⚠⚠ **If that ever changes, read the rerun warning in the method page first.** Seven MERIT flow-direction packages went missing at various points in his own work and every absence was silent: accumulation over a missing network writes nodata, amplification clips to 1.0, and the valuation reads 1.0 as *no change here* rather than *no data here*. Japan, Korea, Portugal and Kazakhstan returned zero service against $49bn of exposure, Nigeria, Chad, Cameroon, Niger and the CAR another $4bn, and nothing appeared in any log. Recovering them raised GEP 18.5 percent and then a further 16. His check catches regressions but not a package never downloaded, which was the original failure. ⚠ The writable-root setup on MSI has NOT been done. Still open on the science: the real upstream service-provision ratio raster, since the drive copy is byte-identical to the binary mask beside it.
+- **signed off:** not assessed
 ## NTFP (non-timber forest products)
 
 - **subgroup:** -
@@ -554,6 +613,7 @@ hectare. `ours` is where that lives.
 - **need:** Whether there is a model behind CWoN's non-wood forest product value, or whether it is a published table with no reproducible method, since the rate is the half of this service that is not ours. And what the rate table's edit for the Central African Republic, DR Congo and Mozambique is based on: each is multiplied by exactly 5.0 in every year from 2000 to 2020, and no other country of the 232 is touched. One deliberate departure to confirm: the NDVI floor is compared in the raster's own integer units rather than on scaled floats, so a cell sitting exactly on 0.2 is kept. Scaling first drops it, because 2000 times 0.0001 is 0.19999999 in float32. It affects 202,930 cells, 0.0099% of the valid NDVI grid.
 
 
+- **signed off:** not assessed
 ## Stormwater
 
 - **subgroup:** -
@@ -573,6 +633,7 @@ hectare. `ours` is where that lives.
 - **need:** A source for the price per cubic metre. ⚠ The method is no longer the open part: the authors' appendix, staged at `stormwater/input/peak_flow_mitigation_appendix.docx`, specifies the avoided cost of treating and pumping the water that would otherwise reach the works, framed around combined sewer overflows, and works an example at $2.75/m3. Our runs use a placeholder of 1.0, so what is missing is a defensible per-country rate rather than a decision about approach. ⚠ Also an urban mask, or the InVEST run restricted to urban extents. The service is defined on urban areas, the retention run we were given covers all land, and we hold no mask to restrict it, so the volume is larger than the service. ⚠ The same appendix confirms the quantity formula is `V_R = lambda x (1 - RC) x P x A` with **A the pixel area**, which is the term the 2026-08-27 ground-area fix corrects.
 
 
+- **signed off:** not assessed
 ## Groundwater Recharge
 
 - **subgroup:** -
@@ -592,6 +653,7 @@ hectare. `ours` is where that lives.
 - **need:** Whether the account excludes recharge on that reasoning. If it does not, the code exists and the fold is a normal port rather than new science.
 
 
+- **signed off:** not assessed
 ## Fuelwood
 
 - **subgroup:** -
@@ -610,6 +672,7 @@ hectare. `ours` is where that lives.
 - **number:** The drive folder is empty.
 - **need:** Should we include it?
 
+- **signed off:** not assessed
 ## Health
 
 - **subgroup:** -
@@ -629,6 +692,7 @@ hectare. `ours` is where that lives.
 - **need:** The method (the drive holds a literature review and a price table so far)
 
 
+- **signed off:** not assessed
 ## Pests
 
 - **subgroup:** -
@@ -648,6 +712,7 @@ hectare. `ours` is where that lives.
 - **need:** The method's completion (a processing script exists. No output yet).
 
 
+- **signed off:** not assessed
 ## Moisture Recycling (Regional Hydrology)
 
 - **subgroup:** -
@@ -666,3 +731,5 @@ hectare. `ours` is where that lives.
 - **number:** -
 - **need:** The valuation step (a country-to-country moisture matrix exists)
 
+
+- **signed off:** not assessed
