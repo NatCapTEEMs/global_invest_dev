@@ -33,7 +33,7 @@ def test_every_shipped_row_hydrates_its_nonempty_cells_and_only_those(tmp_path, 
     row = TEMPLATE[TEMPLATE['service'] == service].iloc[0]
     for column in GEP_COLUMNS:
         value = row[column]
-        if pd.isna(value):
+        if utilities.is_not_a_value(value):
             assert not hasattr(p, column), f'{service}: empty cell {column} must set nothing'
         elif column.endswith('_path'):
             assert getattr(p, column) == '/resolved/' + str(value)
@@ -57,7 +57,7 @@ def test_pollination_takes_no_ready_made_value_raster():
     # ready-made raster without also deciding which year it is denominated in.
     row = TEMPLATE[TEMPLATE['service'] == 'pollination'].iloc[0]
     quantity = row['gep_quantity_input_path']
-    assert pd.isna(quantity) or str(quantity).strip() == '', (
+    assert utilities.is_not_a_value(quantity), (
         'pollination points at a value raster again (%s). It builds its own; if that changed, '
         'check the raster year against gep_base_year.' % quantity)
     assert int(row['gep_base_year']) == 2019, (

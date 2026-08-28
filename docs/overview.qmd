@@ -12,9 +12,7 @@ extractive_alt: "$203bn"
 extractive_factor: "0.49"
 renewable_total: "$170.83bn"
 renewable_ref: "$134.6bn"
-poll_raster: "$388.90bn"
-poll_centre_delta: "-0.12%"
-poll_centre: "$388.43bn"
+poll_raster: "$388.00bn"
 poll_fao: "$515bn"
 livestock_ind: "$136bn"
 livestock_world: "$1.37T"
@@ -22,7 +20,12 @@ n_services: "22"
 n_accounts: "25"
 n_replicating: "9"
 ntfp_total: "$14.07bn"
+ntfp_no_edit: "$12.98bn"
+ntfp_edit_three: "$1.37bn"
+ntfp_edit_cod: "$921M"
 erosion_total: "$13.96bn"
+erosion_author_ses11: "$14.59bn"
+erosion_author_eps5: "$29.1bn"
 cat_reads: "1"
 cat_rescales: "2"
 cat_table: "12"
@@ -307,6 +310,7 @@ format:
 - **Q1:** was EEZ-only chosen to avoid double-counting the landward pixels with terrestrial carbon? Most of the mapped habitat sits landward of the shoreline (97.5 percent of mangrove area, 84 percent of salt marsh), so including it multiplies the total by 4.5.
 - **Q2:** which exact seagrass and salt marsh input versions produced the report's {{< meta coastal_report >}}? Our replication gives {{< meta coastal_eez >}} with the mangrove component matching, and the report's own seagrass area (62.21 Mha) exceeds the published range it cites (16 to 26.7 Mha).
 - **Q3:** if both sides count, a landward mask must prevent double-counting with terrestrial carbon. Does one exist?
+- **Q4:** should a habitat be credited with a cell its mapped extent only clips? Crediting every touched cell whole put the mangrove extent at roughly twice the area of the polygons themselves, and salt marsh near three times, because both are ribbons about as wide as a cell. Measuring the covered fraction instead brings mangrove back to the mapped extent, which independently matches Global Mangrove Watch's published figure. Both the EEZ-only and all-rows totals in Q1 sit on top of the inflated extent.
 
 ## marine_carbon
 
@@ -321,15 +325,14 @@ format:
 - [Values the crop output that animal pollinators are responsible for. We build the value raster ourselves now. The old figure was 26 times too small, because the raster holds a value per km2 and the step that summed it treated it as a value per cell.]{.state}
 - **Q1:** which definition does the account want? The crop output at stake if pollinators vanished, {{< meta poll_raster >}}, or the service habitat currently delivers. We are producing both so you can choose against two numbers.
 - **Q2:** does the account add pollination on top of crop_provision? Crop multiplies production value by the land rental rate, so both attribute part of the same output to nature.
-- **Q3:** do we move pollination to the centre rule for country totals? Measured on our own raster, the world total moves {{< meta poll_centre_delta >}}, from {{< meta poll_raster >}} to {{< meta poll_centre >}}, but 96 of 208 countries move by more than 5 percent and Iraq by 66, losing two thirds of its value. Pollination is on a 5.5 km grid while the country boundaries are drawn on a 10 arc-second one, so a cell claimed by touch reaches a long way across a border.
 
 ## erosion
 
-- [Values soil the land cover keeps in place: prevented erosion mapped by running the sediment-delivery model, valued through crop productivity. {{< meta erosion_total >}} across 185 countries, of which 26 compute an exact zero. No reference output exists to check it against.]{.state}
-- **Q1:** which of the three shock methods is the account's? We compute damage (thresholded area share), service (threshold-free and magnitude-weighted per crop) and service-threshold (service restricted to a fixed severe-pixel set) side by side.
-- **Q2:** should the production run recompute the erosion shock, as the test runs already do? The scenarios file production reads names carbon and pollination as dynamic but not erosion, so erosion alone falls back to the frozen dependency table. The tracked template added erosion in August; the derived copies the runs read date from July and shadow it, because a file already present is never re-seeded.
-- **Q3:** is there a reference we can check {{< meta erosion_total >}} against? Nothing in the source repo carries a committed output, so the figure currently rests on our run alone.
-- **Q4:** can the dependency table use the ISO code for South Sudan? It spells it SDS where the country table uses SSD, so the country drops out of the join. Its value is zero today, so nothing is lost yet.
+- [Values soil the land cover keeps in place: prevented erosion mapped by running the sediment-delivery model, valued through crop productivity. {{< meta erosion_total >}} across 185 countries, of which 26 compute an exact zero. The author reports {{< meta erosion_author_ses11 >}} across 164 for the same baseline scenario.]{.state}
+- **Q1:** should the EPS-5 sensitivity be reported beside the baseline? Nothing to decide on the baseline itself: the manuscript says results correspond to SES-11 unless otherwise stated, and our thresholds are already 11 t/ha/yr with 2 for small-area and low-elevation countries, with nothing overriding them. EPS-5 relaxes the threshold to 5 as a sensitivity analysis rather than an alternative, and it takes the reported figure from {{< meta erosion_author_ses11 >}} to {{< meta erosion_author_eps5 >}}, so whether the account carries it is worth settling.
+- [One change worth telling you about: a border cell now goes to the country covering its centre. Under all-touched, which your code sets and ours did too, every country whose outline touches a cell claims it and the one rasterised last keeps it, so a country's value moved with its row order in the boundary file. We also moved from ee_r264_correspondence to ee_r250, then measured it and it changes nothing, since r250 is exactly the dissolve of r264 and the rasteriser already keyed on ISO3.]{.state}
+- [Where that leaves the comparison: ours is {{< meta erosion_total >}} against your {{< meta erosion_author_ses11 >}}, within about four percent, while China sits thirty percent higher in ours, India nearly thirty lower and the Philippines forty higher. A country's area is now the sum of the territories the boundary file splits it into, rather than any one of them: taking a single territory's area let China and India qualify as small and draw the lower soil-loss tolerance, which counts far more of their cropland as severely eroding, and seven countries moved. The figures above come from a run that predates that change, and the rerun will restate them.]{.state}
+- [South Sudan drops out of the join and we think we know why: the dependency table spells it SDS where the country table uses the ISO code SSD. Its value is zero today, so nothing is lost yet.]{.state}
 
 ## landslide_mitigation
 
@@ -342,9 +345,8 @@ format:
 
 - [Values commercial capture fisheries as the economic rent of the catch, and subsistence fisheries as the consumptive-use value of home catch. The commercial rent is computed in the library from the CWoN tables. The subsistence component reports the published per-country values, and reproduces them exactly.]{.state}
 - **Q1:** should the RCP8.5-for-RCP7.0 substitution stand?
-- **Q2:** which CWoN vintage produced the shock file (cwon_shocks.har)?
-- **Q3:** should the account's fisheries value come from the CWoN resource rents or from the FishStatJ catch pipeline? Is there a per-country CSV from the run of the CWoN script?
-- **Q4:** does the subsistence value add to the commercial number, or does that number already contain the subsistence catch? Where FAO catch statistics already include subsistence fishing, summing the two counts it twice.
+- **Q2:** should the account's fisheries value come from the CWoN resource rents or from the FishStatJ catch pipeline? Is there a per-country CSV from the run of the CWoN script?
+- **Q3:** does the subsistence value add to the commercial number, or does that number already contain the subsistence catch? Where FAO catch statistics already include subsistence fishing, summing the two counts it twice.
 
 ## recreation
 
@@ -357,6 +359,7 @@ format:
 - [Values crop production from FAOSTAT production values, quantity times producer price per country, times the land rental rate. We run it ourselves and it replicates, validated against the reference table.]{.state}
 - **Q1:** does the account add crop_provision and pollination? The reasoning is on the pollination slide.
 - **Q2:** is subsistence in scope as a separate crop subgroup? Adding it would double-count, because FAOSTAT's production values already include part of what households grow and eat themselves.
+- **Q3:** should 32 countries with no FAOSTAT production value be reported as zero, as they are now, or left unvalued? Uganda, Uzbekistan and Guatemala have no gross production value in any year from 2014 to 2021, and Zimbabwe has 2018 and 2021 but not 2019, so a zero says they grew nothing. Whether the reference table we reproduce carries zeros there decides it.
 
 ## livestock_provision
 
@@ -393,7 +396,7 @@ format:
 - [Values hydropower rent and priced water withdrawal. Hydropower is computed from the CWoN wealth table for every country it values, {{< meta water_supply_total >}} across 97 countries, and reproduces the drive's committed output exactly on the 95 countries that output covers. Water use is computed in the library, agriculture {{< meta water_use_ag_total >}} across 123 countries and all-sector {{< meta water_use_all_total >}} across 149.]{.state}
 - **Q1:** which hydropower total is the account's, the manuscript's {{< meta hydro_manuscript >}} or our rent-based {{< meta water_supply_total >}}? The first follows a direct-use method, price times generation, the second the resource-rent method.
 - **Q2:** why does the reference leave 17 countries empty although the CWoN table values them? We now report all 112, and carry the 95-country variant beside it as the comparison, so the {{< meta water_supply_anchor >}} anchor still checks out.
-- **Q3:** what attribution step turns water use into a nature share? The all-sector total, {{< meta water_use_all_total >}}, is the gross economic value of water use, which is more than a third of the {{< meta world_gdp_2019 >}} world economy.
+- **Q3:** is the agriculture gap the missing water-stress attribution? Your Submission_WaterUse_Agriculture appendix defines a lambda per crop and country, the FAO yield response coefficients per growth stage weighted by the ratio of actual to maximum evapotranspiration, with production value split rainfed and irrigated by SPAM 2020. We do not implement it: our water use is withdrawal times AQUASTAT efficiency, which is the gross value of water used rather than the part attributable to ecosystems. That would explain why the agriculture pair is {{< meta water_use_ag_total >}} against your $554.5bn while the all-sector pair, which has no attribution on either side, agrees closely. Is that the whole of the difference, and should we implement the lambda?
 - **Q4:** how do hydropower and the two water-use components combine into one water_supply value?
 
 ## air_filtration
@@ -421,11 +424,12 @@ format:
 - [Values flood damage avoided by ecosystems: flood depth by return period, depth-damage functions and the asset map give each country's expected annual damage. Our recompute reproduces the pipeline's table for 146 of 148 non-zero countries.]{.state}
 - **Q1:** should the service-flow fraction multiply into the valuation? The pipeline computes one but never applies it, so today's number is expected flood damage rather than damage ecosystems avoid.
 - **Q2:** are the FINAL_GEP_FLOOD outputs the current ones?
+- **Q3:** are the JRC depth-damage curves meant to be applied over true ground area? They are a damage per square metre of asset, and the damage pass gives every cell the same area, taken from a projection whose cells shrink away from the equator. Weighting each country's damage by its latitude moves the global total by about a third, and the countries carrying most of the value sit far from the equator. The treatment is the pipeline's rather than ours, which is why our recompute reproduces its table.
 
 ## local_climate_regulation
 
 - [Values cooling energy avoided by urban vegetation: an urban cooling model gives each city-month a cooling effect, priced at national electricity prices. We now sum the city files ourselves, {{< meta lcr_ours >}} across 177 countries, instead of reading the committed table.]{.state}
-- **Q1:** what turns those city valuations into the committed accounting table's {{< meta lcr_committed >}}? The gap is not a constant factor, ranging from about 2.5 to 766 across countries, so it is not a units slip.
+- **Q1:** is the committed table the `with_country_mc` variant, and can we have `Data/consumption_per_cdd_by_country_iea.csv`? Your `gep_fixing_cooling_valuation_v04.py` computes both, differing by one line: `with_country_mc = without_mc * consumption_per_cdd`, an IEA consumption per cooling-degree-day factor that varies by country. That would explain why the gap between our {{< meta lcr_ours >}} and the committed {{< meta lcr_committed >}} is not a constant, ranging about 2.5 to 766. We cannot check it because the factor table sits in your input directory rather than the shared base data.
 
 ## extractive_energy
 
@@ -436,12 +440,16 @@ format:
 
 - [Values timber harvests net of harvest and transport costs. Our reimplementation matches the committed output for all 166 countries.]{.state}
 - **Q1:** is there a forest-management mask behind the value raster, or code that builds one? We can sum that raster to countries and match it exactly, but we cannot make our own: the mask saying which forest is available for harvest is not derivable from the layers we hold.
+- The method is written up in `timber_provision_appendix`, now staged at `base_data/global_invest/timber_provision/reference/` so the claims below can be checked without Drive. It is the only description of the value raster we have: the repo the account cites for timber holds carbon, crop, livestock, pollination and renewable energy, and no timber code.
+- **Q2:** where does the value raster stop being per hectare and become per cell? The appendix gives every input per hectare, yield in cubic metres per hectare times a price per cubic metre times a dimensionless land share, and the account sums the raster flat on a geographic grid. Summing a per-hectare quantity that way would be wrong, and the magnitudes say it is not happening: flat comes to about $42 per hectare per year of managed forest, an ordinary forest land rent, where treating it as a density gives $337 and a world total above the whole forest-products industry. So the conversion is there and undocumented, and we would like to point at it.
+- **Q3:** should timber take its ecosystem share from GTAP when every other service takes one from CWoN? Timber multiplies gross returns by the GTAP 10 land factor share for each of the 18 agro-ecological zones, following Damania et al. (2023), so the share does vary by zone. Every other service uses a CWoN rent. Both name the same thing, the part of gross output that accrues to land rather than to labour and capital, and they are built differently and come from different sources. The account adds the services together, so that share ought to mean one thing across them. Nobody chose this: it arrived with the study timber was ported from.
+- **Q4:** can we have the CWoN timber rent? It exists. CWoN 2024 carries timber as a land asset category beside agricultural land, forest recreation, non-wood forest products and forest water services, and its timber wealth per capita fell 28 percent between 1995 and 2020. We just do not hold the file: what is staged covers crop, livestock, fisheries, renewable energy, extractive energy and non-wood forest products, and non-wood is a different quantity. Worth knowing that the two approaches are closer than the source difference suggests, because the SNA and SEEA-CF count forest timber as an asset only where it can be logged commercially at a profit, which is the same restriction as the forest-management mask we are missing.
 
 ## ntfp
 
 - [Values non-timber forest products over the forest that is within 10 km of a road or river and green enough to yield one. {{< meta ntfp_total >}} across 195 countries, over 1.48 billion reachable hectares. Every choice is the source module's: the land cover at its native 300 m in Mollweide, a five-year mean NDVI screen at 0.2, accessibility as the dissolved 10 km buffer of the road and river geometries rather than a raster dilation, and countries taken from the boundary polygons a cell's centre falls in.]{.state}
 - **Q1:** is there a model behind CWoN's non-wood forest product value, or is it a published table? That is what stands between this service and a number we compute.
-- **Q2:** the rate table we now read carries an edit we cannot account for. The non-wood forest product value per hectare is multiplied by exactly 5.0 for the Central African Republic, DR Congo and Mozambique, in every year from 2000 to 2020, and for no other country of the 232. What is that adjustment based on?
+- **Q2:** who multiplied three countries by five, and why? The rate file we read, `nontimber_price_iucn_edited.csv`, is identical to CWoN for 3,045 of its 3,108 country-year pairs and exactly five times CWoN for the other 63, which are Central African Republic, DR Congo and Mozambique in every one of 21 years. Surgical rather than corrupt, so somebody had a reason, and all three are Congo Basin or Miombo countries where most non-timber use never reaches a market, which would be one. Those three come to {{< meta ntfp_edit_three >}} of {{< meta ntfp_total >}}, DR Congo alone {{< meta ntfp_edit_cod >}}, and without the edit the service is {{< meta ntfp_no_edit >}}.
 - **Q3:** should a cell sitting exactly on the NDVI floor of 0.2 be kept or dropped? We keep it and the source module drops it, because scaling 2000 by 0.0001 gives 0.19999999 in float32, and that is 202,930 cells or 0.0099% of the valid grid.
 ## stormwater
 
@@ -449,12 +457,45 @@ format:
 - **Q1:** what is the intended price per cubic metre retained? The configuration carries a placeholder of 1, so today's value is the volume.
 - **Q2:** should the run be masked to urban areas? It currently covers the whole land surface.
 
+# Questions for the scenario shocks, not the GEP account
+
+## What this section is {.smaller}
+
+- Every service here serves two callers from the same science: the GEP account reads a valuation, one row per country, and the macroeconomic pipeline reads a scenario shock, a table of productivity deviations.
+- They are different products with different owners and different decisions, so their questions are kept apart. A question about which shock method to use does not belong beside a question about how a country's value was measured.
+
+## erosion, as a shock {.smaller}
+
+- **Q:** which of the three shock methods is the account's? We compute damage (thresholded area share), service (threshold-free and magnitude-weighted per crop) and service-threshold (service restricted to a fixed severe-pixel set) side by side.
+- **Q:** should the production run recompute the erosion shock, as the test runs already do? The scenarios file production reads names carbon and pollination as dynamic but not erosion, so erosion alone falls back to the frozen dependency table. The tracked template added erosion in August; the derived copies the runs read date from July and shadow it, because a file already present is never re-seeded.
+
+## fisheries, as a shock {.smaller}
+
+- **Q:** which CWoN vintage produced the shock file (cwon_shocks.har)?
+
+
 # Cross-cutting questions
 
 ## Turning outlines into cells {.smaller}
 
 - Every service that totals a raster inside a country has to decide what a cell the border passes through counts as. Under the centre rule the cell goes to whichever country covers its exact centre. Under all-touched every country whose outline touches it claims it, and since the claims are burned into one id raster, the country rasterised last takes it. Nothing is counted twice either way; what moves is the split between neighbours.
-- **Q:** should a habitat extent carry the fraction of the cell it covers, instead of either whole-cell rule? The centre rule loses a mangrove strip narrower than a cell, and all-touched books that same 50 m strip as a full 300 m cell.
+- **Q:** should a habitat extent carry the fraction of the cell it covers, instead of either whole-cell rule? The centre rule loses a mangrove strip narrower than a cell, and all-touched books that same 50 m strip as a full 300 m cell. Coastal carbon now measures the fraction, which brings its mangrove extent back to the mapped one and roughly halves it. The question left for the room is whether every service that maps a thing narrower than its cells should do the same.
+
+## What a reference check can establish {.smaller}
+
+- Eleven service entries rest on reproducing an author's committed output. Where that output came from the code we ported, the two sides share every assumption, so agreement establishes that the port is faithful and cannot establish that the number is right.
+- Both services anyone has examined this way turned out to carry an assumption inherited from the source rather than introduced by us. Pollination summed a raster its own author documents as a density. Flood control measures every cell as the same size on a projection whose cells shrink away from the equator.
+- **Q:** what should a service show beyond agreement with its author, before the account treats its number as verified?
+- **Q:** when a check finds something, it is a correction to the author's published number rather than to our port. Who takes it to them, and does the account wait for their answer?
+
+## How a service measures a cell {.smaller}
+
+- A service that turns a density into a total multiplies by cell area, so the cell area silently scales every number it produces.
+- There is a default and there are justified departures from it. The carbon services and pollination sit on the shared pyramid in geographic coordinates and carry a per-latitude area. Erosion and ntfp work in equal-area projections because their science needs true distances and areas, and there a constant cell area is exact where a latitude formula would be wrong.
+- The two fail differently. A constant cannot be applied wrongly per cell. A per-latitude area is more precise and every consumer has to remember it, which is how pollination's earlier figure went wrong.
+- Flood control sits on a projection that is neither, so its constant cell area is exact only at the equator. That is the absence of a convention rather than a third one.
+- Services on different grids cannot be compared cell to cell without a reprojection, which the landward mask coastal carbon needs would require.
+- **Q:** should a service be required to sit on the shared pyramid unless an equal-area grid is needed, and to state what its cell area rests on, the way the erosion code refuses to run on an unprojected input?
 
 
 # Appendix

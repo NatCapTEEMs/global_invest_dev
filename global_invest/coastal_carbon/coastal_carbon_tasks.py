@@ -16,9 +16,11 @@ import numpy as np
 import pandas as pd
 import rasterio
 import rasterio.features
+import rasterio.transform
 import rasterio.warp
 import rasterio.windows
 from rasterio.enums import Resampling
+from shapely.geometry import box
 from tqdm import tqdm
 
 from global_invest import utilities
@@ -27,13 +29,20 @@ from global_invest.coastal_carbon import coastal_carbon_functions as ccf
 # The ha_per_cell pyramid every raster stage is gridded on carries this no-data value.
 HA_PER_CELL_NDV = -9999.0
 # Region-id raster: uint16 spans the eemarine_r566 ids, and 0 means "outside every region".
-REGION_ID_RASTER_DTYPE = 'uint16'
+# Types are GDAL codes because that is the currency hazelbean's raster writers take.
+REGION_ID_GDAL_TYPE = 2   # UInt16
 RASTER_NDV = 0
 # Habitat extent mask: 1 where the habitat polygon covers the cell.
-MASK_DTYPE = 'uint8'
+MASK_GDAL_TYPE = 1        # Byte
 MASK_VALUE = 1
 # Rows of the 10 arc-second grid read per iteration of the streaming stock pass.
 STOCK_CHUNK_ROWS = 2048
+# Habitat coverage is measured by burning the extent this many times finer in each direction, so
+# a cell's share is resolved to 1/100th of it.
+COVERAGE_SUPERSAMPLE = 10
+# Coarse cells per side of a coverage tile. At that sampling the fine tile is 2560x2560 int64,
+# about 52 MB, which is what keeps a global pass inside memory.
+COVERAGE_TILE_COARSE = 256
 
 
 def publish_inputs(p):
@@ -57,37 +66,33 @@ def publish_inputs(p):
 # ============================================================================
 
 def _rasterize_to_template(vector_path, template_raster_path, out_path, field=None,
-                           default_value=MASK_VALUE, dtype=MASK_DTYPE, nodata=RASTER_NDV,
-                           all_touched=True):
+                           gdal_type=MASK_GDAL_TYPE, nodata=RASTER_NDV, all_touched=True):
     """Burn polygons from `vector_path` onto the grid of `template_raster_path`.
 
     Defaults produce a binary mask. Pass `field` to burn a numeric attribute (e.g. a region id).
-    Vectors are reprojected into the template CRS as needed.
+
+    hazelbean owns the burn, so this module grids a vector the same way the rest of the stack
+    does. It burns in place rather than reprojecting, so a vector arriving in another CRS would
+    land silently in the wrong cells, which is why the CRS is checked rather than assumed.
     """
-    gdf = gpd.read_file(vector_path)
     with rasterio.open(template_raster_path) as src:
-        if gdf.crs != src.crs:
-            gdf = gdf.to_crs(src.crs)
-        meta = src.meta.copy()
-        meta.update({'count': 1, 'dtype': dtype, 'nodata': nodata, 'compress': 'lzw'})
-        if field is None:
-            shapes = ((geom, default_value) for geom in gdf.geometry if geom is not None)
-        else:
-            shapes = (
-                (geom, val)
-                for geom, val in zip(gdf.geometry, gdf[field])
-                if geom is not None and pd.notna(val)
-            )
-        arr = rasterio.features.rasterize(
-            shapes=shapes,
-            out_shape=(src.height, src.width),
-            fill=nodata,
-            transform=src.transform,
-            dtype=dtype,
-            all_touched=all_touched,
-        )
-        with rasterio.open(out_path, 'w', **meta) as dst:
-            dst.write(arr, 1)
+        template_crs = src.crs
+    vector_crs = gpd.read_file(vector_path, rows=1).crs
+    if vector_crs != template_crs:
+        raise ValueError(
+            f'{os.path.basename(vector_path)} is in {vector_crs} but {os.path.basename(template_raster_path)} '
+            f'is in {template_crs}. Reproject the vector before burning it.')
+
+    hb.rasterize_to_match(
+        input_vector_path=vector_path,
+        match_raster_path=template_raster_path,
+        output_raster_path=out_path,
+        burn_column_name=field,
+        burn_values=None if field else [MASK_VALUE],
+        datatype=gdal_type,
+        ndv=nodata,
+        all_touched=all_touched,
+    )
     return out_path
 
 
@@ -142,14 +147,18 @@ def _build_country_id_raster_if_needed(p):
             template_raster_path=p.ha_per_cell_10sec_path,
             out_path=p.country_id_raster_path,
             field=p.gep_regions_id_col,
-            dtype=REGION_ID_RASTER_DTYPE,
+            gdal_type=REGION_ID_GDAL_TYPE,
             nodata=RASTER_NDV,
             all_touched=False,
         )
 
 
 def _habitat_mask(p, vector_path, mask_file_name):
-    """The habitat extent burned onto the ha_per_cell grid as a 0/1 mask, built once."""
+    """The habitat extent burned onto the ha_per_cell grid as a 0/1 mask, built once.
+
+    all_touched, so this is every cell the extent reaches. That makes it a superset of the true
+    extent, which is what lets it pick the tiles _habitat_coverage_fraction has to visit.
+    """
     mask_path = os.path.join(p.cur_dir, mask_file_name)
     if not os.path.exists(mask_path):
         _rasterize_to_template(
@@ -159,6 +168,71 @@ def _habitat_mask(p, vector_path, mask_file_name):
             all_touched=True,
         )
     return mask_path
+
+
+def _habitat_coverage_fraction(p, vector_path, mask_path, fraction_file_name):
+    """The share of each cell the habitat actually covers, in [0, 1], built once.
+
+    A 0/1 mask hands a cell its whole area whenever a polygon clips any part of it. These
+    habitats are ribbons about one cell wide, so nearly every cell is a boundary cell and the
+    extent roughly doubles: mangrove measures 29.08 Mha that way against 14.69 Mha of polygon.
+    Burning the extent on a grid COVERAGE_SUPERSAMPLE times finer and taking the share that comes
+    back set gives each cell the area the habitat really occupies.
+
+    Tiled because that sampling over the whole 10 arc-second grid would be 840 billion cells.
+    Only tiles the all_touched mask reaches are burned, since it is a superset of the extent.
+    """
+    fraction_path = os.path.join(p.cur_dir, fraction_file_name)
+    if os.path.exists(fraction_path):
+        return fraction_path
+
+    gdf = gpd.read_file(vector_path)
+    with rasterio.open(p.ha_per_cell_10sec_path) as template:
+        if gdf.crs != template.crs:
+            raise ValueError(
+                f'{os.path.basename(vector_path)} is in {gdf.crs} but the template is in '
+                f'{template.crs}. Reproject the vector before measuring coverage.')
+        meta = template.meta.copy()
+        meta.update({'count': 1, 'dtype': 'float32', 'nodata': 0.0, 'compress': 'deflate',
+                     'tiled': True, 'blockxsize': 512, 'blockysize': 512, 'BIGTIFF': 'YES'})
+        sindex = gdf.sindex
+        step = COVERAGE_TILE_COARSE
+        factor = COVERAGE_SUPERSAMPLE
+        tiles_burned = 0
+
+        with rasterio.open(mask_path) as mask_src, \
+             rasterio.open(fraction_path, 'w', **meta) as dst:
+            for row_off in tqdm(range(0, template.height, step), desc='Coverage'):
+                for col_off in range(0, template.width, step):
+                    n_rows = min(step, template.height - row_off)
+                    n_cols = min(step, template.width - col_off)
+                    window = rasterio.windows.Window(col_off, row_off, n_cols, n_rows)
+                    if not mask_src.read(1, window=window).any():
+                        continue
+
+                    bounds = rasterio.windows.bounds(window, template.transform)
+                    candidates = gdf.iloc[sorted(sindex.query(box(*bounds)))]
+                    if candidates.empty:
+                        continue
+
+                    # rasterio rather than hazelbean here: the fine grid exists only for this
+                    # tile and never becomes a file, and hb.rasterize_to_match writes a whole
+                    # raster matching a template on disk.
+                    fine = rasterio.features.rasterize(
+                        shapes=((geom, 1) for geom in candidates.geometry if geom is not None),
+                        out_shape=(n_rows * factor, n_cols * factor),
+                        transform=rasterio.transform.from_bounds(
+                            *bounds, width=n_cols * factor, height=n_rows * factor),
+                        fill=0, dtype='int64', all_touched=False)
+
+                    fraction = hb.calc_proportion_of_coarse_res_with_valid_fine_res(
+                        np.zeros((n_rows, n_cols), dtype=np.float64), fine)
+                    dst.write(fraction.astype('float32'), 1, window=window)
+                    tiles_burned += 1
+
+    hb.log(f'{fraction_file_name}: coverage measured over {tiles_burned} tiles at '
+           f'1/{factor ** 2} of a cell')
+    return fraction_path
 
 
 def _aligned_density_input(p, src_path, aligned_file_name, label):
@@ -176,7 +250,7 @@ def _aligned_density_input(p, src_path, aligned_file_name, label):
                               resampling='average', dtype='float32')
 
 
-def _stock_by_region(p, ecosystem, mask_path, density_func, extra_raster_paths):
+def _stock_by_region(p, ecosystem, coverage_path, density_func, extra_raster_paths):
     """Stream the per-pixel stock pass over the 10 arc-second grid, region by region.
 
     This function owns the reads; the arithmetic on each block is ccf.pixel_stock_sums. A block
@@ -190,7 +264,7 @@ def _stock_by_region(p, ecosystem, mask_path, density_func, extra_raster_paths):
 
     with contextlib.ExitStack() as stack:
         src_ha = stack.enter_context(rasterio.open(p.ha_per_cell_10sec_path))
-        src_mask = stack.enter_context(rasterio.open(mask_path))
+        src_coverage = stack.enter_context(rasterio.open(coverage_path))
         src_region = stack.enter_context(rasterio.open(p.country_id_raster_path))
         extra_srcs = {name: stack.enter_context(rasterio.open(path))
                       for name, path in extra_raster_paths.items()}
@@ -203,8 +277,8 @@ def _stock_by_region(p, ecosystem, mask_path, density_func, extra_raster_paths):
         for row_off in tqdm(range(0, height, STOCK_CHUNK_ROWS), desc=f'Stock {ecosystem}'):
             rows = min(STOCK_CHUNK_ROWS, height - row_off)
             window = rasterio.windows.Window(0, row_off, width, rows)
-            mask_block = src_mask.read(1, window=window)
-            if mask_block.sum() == 0:
+            coverage_block = src_coverage.read(1, window=window).astype(np.float64)
+            if not coverage_block.any():
                 continue
 
             extras = {}
@@ -218,7 +292,7 @@ def _stock_by_region(p, ecosystem, mask_path, density_func, extra_raster_paths):
                 [rasterio.transform.xy(src_ha.transform, row, 0, offset='center')[1]
                  for row in range(row_off, row_off + rows)], dtype=np.float64)
             block_sums = ccf.pixel_stock_sums(
-                mask_block=mask_block,
+                coverage_block=coverage_block,
                 region_id_block=src_region.read(1, window=window),
                 ha_per_cell_block=src_ha.read(1, window=window).astype(np.float64),
                 latitude_block=np.broadcast_to(latitudes[:, None], (rows, width)),
@@ -315,6 +389,8 @@ def mangrove_carbon_stock(p):
 
     _build_country_id_raster_if_needed(p)
     mask_path = _habitat_mask(p, p.mangrove_vector_path, "mangrove_mask_10sec.tif")
+    coverage_path = _habitat_coverage_fraction(
+        p, p.mangrove_vector_path, mask_path, "mangrove_coverage_10sec.tif")
 
     extras = {}
     for kwarg, src_path, aligned_file_name, label in (
@@ -326,7 +402,7 @@ def mangrove_carbon_stock(p):
         if aligned_path:
             extras[kwarg] = aligned_path
 
-    df_stock = _stock_by_region(p, 'mangrove', mask_path,
+    df_stock = _stock_by_region(p, 'mangrove', coverage_path,
                                 ccf.calculate_mangrove_density_array, extras)
     df_stock.to_csv(p.mangrove_carbon_stock_path, index=False)
     hb.log(f'Saved mangrove carbon stock by countries: {p.mangrove_carbon_stock_path}')
@@ -397,6 +473,8 @@ def salt_marsh_carbon_stock(p):
 
     _build_country_id_raster_if_needed(p)
     mask_path = _habitat_mask(p, p.salt_marsh_vector_path, "salt_marsh_mask_10sec.tif")
+    coverage_path = _habitat_coverage_fraction(
+        p, p.salt_marsh_vector_path, mask_path, "salt_marsh_coverage_10sec.tif")
 
     extras = {}
     aligned_path = _aligned_density_input(
@@ -405,7 +483,7 @@ def salt_marsh_carbon_stock(p):
     if aligned_path:
         extras['soc_arr'] = aligned_path
 
-    df_stock = _stock_by_region(p, 'salt_marsh', mask_path,
+    df_stock = _stock_by_region(p, 'salt_marsh', coverage_path,
                                 ccf.calculate_salt_marsh_density_array, extras)
     df_stock.to_csv(p.salt_marsh_carbon_stock_path, index=False)
     hb.log(f'Saved salt marsh carbon stock by countries: {p.salt_marsh_carbon_stock_path}')

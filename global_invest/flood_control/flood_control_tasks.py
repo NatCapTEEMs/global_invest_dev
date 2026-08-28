@@ -30,7 +30,9 @@ def gep_calculation(p):
     if not hb.path_exists(p.flood_control_chain_ead_path):
         import geopandas as gpd
         import numpy as np
+        import pyproj
         import rasterio
+        import rasterio.transform
         from rasterio.features import geometry_mask
         from rasterio.windows import from_bounds
         from global_invest.flood_control import flood_control_functions as fchain
@@ -40,7 +42,14 @@ def gep_calculation(p):
         sda_src = rasterio.open(p.flood_control_sda_raster_path)
         depth_srcs = {rp: rasterio.open(p.get_path(p.flood_control_depth_path_template.format(rp=rp)))
                       for rp in rps}
-        pix_area = abs(sda_src.transform[0] * sda_src.transform[4])
+        # The damage curves are a USD2019 per square metre of real asset, so the area they
+        # multiply has to be real ground area. These rasters are EPSG:3857, where every cell is
+        # the same size in projected metres and not on the ground: true area falls as the square
+        # of the cosine of latitude, from 28.86 ha at the equator to 7.22 at 60 degrees and 1.93
+        # at 75. One constant taken from the transform is the equator value, so it overstates
+        # damage everywhere else, and flood exposure is concentrated well away from the equator.
+        pix_res = abs(sda_src.transform[0])
+        to_wgs84 = pyproj.Transformer.from_crs(sda_src.crs, 'EPSG:4326', always_xy=True)
         curves = fchain.damage_curves_from_wide(hb.df_read(p.flood_control_damage_wide_path))
 
         rows = []
@@ -52,6 +61,14 @@ def gep_calculation(p):
             sda = sda_src.read(1, window=win, boundless=True, fill_value=0)
             inside = ~geometry_mask([geom], out_shape=sda.shape,
                                     transform=sda_src.window_transform(win), invert=False)
+
+            # One latitude per row of this window, so each cell carries its own ground area.
+            win_transform = sda_src.window_transform(win)
+            row_y = [rasterio.transform.xy(win_transform, r, 0, offset='center')[1]
+                     for r in range(sda.shape[0])]
+            row_lat = to_wgs84.transform(np.zeros(len(row_y)), np.asarray(row_y))[1]
+            pix_area = np.broadcast_to(
+                ((pix_res * np.cos(np.radians(row_lat))) ** 2)[:, None], sda.shape)
             damages = []
             for rp in rps:
                 dsrc = depth_srcs[rp]

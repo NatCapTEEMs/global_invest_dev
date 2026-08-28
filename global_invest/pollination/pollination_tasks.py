@@ -106,7 +106,7 @@ def _compute_radii_pixels(lat_deg: float, pixel_lat_deg: float, pixel_lon_deg: f
 def save_parquet(df: pd.DataFrame, path: str | str) -> str:
     """Save DataFrame as parquet and log the result."""
     path = str(path)
-    os.path.dirname(path).mkdir(parents=True, exist_ok=True)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
     df.to_parquet(path, index=False)
     logger.info("Saved %d rows -> %s", len(df), path)
     return path
@@ -893,7 +893,7 @@ def read_raster(path: str) -> Tuple[np.ndarray, Dict[str, Any]]:
 def save_csv(df: pd.DataFrame, path: str | str) -> str:
     """Save DataFrame as CSV and log the result."""
     path = str(path)
-    os.path.dirname(path).mkdir(parents=True, exist_ok=True)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
     df.to_csv(path, index=False)
     logger.info("Saved %d rows -> %s", len(df), path)
     return path
@@ -1516,15 +1516,18 @@ def mask_protected_areas_300m(cfg: pf.SufficiencySettings, scenario: str = "2020
                 if val_src.nodata is not None:
                     value[value == val_src.nodata] = np.nan
 
-                # Area-weighted pixel area for this block (USD/km² * km² = USD)
+                # Cell area per ROW, WGS84, so this diagnostic measures a cell the way the
+                # value raster and the rest of the account do. The vendored version used a flat
+                # 111.32 km per degree AND one mid-tile latitude for the whole tile height, so a
+                # tall tile got a single area for rows hundreds of kilometres apart.
                 row_off = window.row_off
                 tile_h = window.height
-                mid_lat = bounds_top - (row_off + tile_h / 2.0 + 0.5) * pixel_lat_deg
-                cos_lat = max(abs(math.cos(math.radians(mid_lat))), 0.001)
-                pixel_area_km2 = (pixel_lat_deg * 111.32) * (pixel_lon_deg * 111.32 * cos_lat)
+                row_lats = bounds_top - (np.arange(row_off, row_off + tile_h) + 0.5) * pixel_lat_deg
+                area_km2 = np.asarray(hb.get_area_of_pixel_column_from_center_lats(
+                    pixel_lat_deg, row_lats.astype('float64')))[:, None] / 1e6
 
                 # Sum before (USD/km² * km² = USD, ignoring NaNs)
-                total_before += float(np.nansum(value * pixel_area_km2))
+                total_before += float(np.nansum(value * area_km2))
 
                 # Mask: PA == 1 -> 0
                 # Assuming PA=1 is protected
@@ -1534,7 +1537,7 @@ def mask_protected_areas_300m(cfg: pf.SufficiencySettings, scenario: str = "2020
                 value[pa == 1] = 0.0
 
                 # Sum after
-                total_after += float(np.nansum(value * pixel_area_km2))
+                total_after += float(np.nansum(value * area_km2))
 
                 # Write masked raster (NaN -> 0, nodata = 0)
                 out_data = np.nan_to_num(value, nan=0.0).astype(np.float32)
@@ -2012,7 +2015,7 @@ def write_raster(path, data, meta, nodata=None):
         Path: the path written.
     """
     path = str(path)
-    os.path.dirname(path).mkdir(parents=True, exist_ok=True)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
     profile = dict(meta)
     profile.update(driver='GTiff', dtype='float32', count=1,
                    compress='deflate', predictor=2, tiled=True, zlevel=6)

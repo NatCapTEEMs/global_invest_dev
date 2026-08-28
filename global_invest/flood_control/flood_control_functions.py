@@ -306,6 +306,11 @@ def pixel_damage_totals(depth, sda, curves, iso3, pixel_area_m2, depth_nodata=No
     _matchLULC.tif and sda_esa300m_artif_crop_pasture.tif, not staged), clipped to the
     country geometry.
 
+    `pixel_area_m2` may be a scalar or an array shaped like `depth`. The curves are a damage per
+    square metre of real asset, so the area they multiply has to be real ground area. On a grid
+    whose cells cover the same ground everywhere a scalar says that exactly; on one whose cells do
+    not, only an array does.
+
     Returns:
         (damage_raster, totals_by_sda_type, total): float32 USD2019-per-pixel array,
         {sda_type: total}, and the all-type total.
@@ -323,7 +328,8 @@ def pixel_damage_totals(depth, sda, curves, iso3, pixel_area_m2, depth_nodata=No
         if not np.any(m) or (iso3, sda_type) not in curves:
             continue
         xs, ys = curves[(iso3, sda_type)]
-        dmg = interp_damage_per_m2(depth[m], xs, ys) * pixel_area_m2
+        area = pixel_area_m2[m] if np.ndim(pixel_area_m2) else pixel_area_m2
+        dmg = interp_damage_per_m2(depth[m], xs, ys) * area
         totals[sda_type] += float(dmg.sum())
         damage_raster[m] = dmg
     return damage_raster, totals, float(sum(totals.values()))

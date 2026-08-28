@@ -260,23 +260,27 @@ def stock_to_value_columns(ecosystem):
 # Per-pixel stock, accumulated per region
 # ============================================================================
 
-def pixel_stock_sums(mask_block, region_id_block, ha_per_cell_block, latitude_block,
+def pixel_stock_sums(coverage_block, region_id_block, ha_per_cell_block, latitude_block,
                      density_func, n_region_ids, extras=None):
     """Per-region carbon stock (Mg C) contributed by one block of pixels.
 
     Density is evaluated at each pixel's latitude -- plus whatever extra per-pixel rasters the
-    ecosystem's density function takes -- multiplied by the pixel's hectares, and accumulated
-    into the region the pixel falls in. A pixel counts only where the habitat mask is set, a
-    region id is present, and the cell has area. A NaN soil density (a nodata pixel inside an
-    external SOC raster) contributes zero instead of poisoning its region's total.
+    ecosystem's density function takes -- multiplied by the hectares of habitat in the pixel, and
+    accumulated into the region the pixel falls in. A pixel counts only where the habitat covers
+    some of it, a region id is present, and the cell has area. A NaN soil density (a nodata pixel
+    inside an external SOC raster) contributes zero instead of poisoning its region's total.
+
+    coverage_block is the share of each cell the habitat covers, in [0, 1]. A 0/1 mask is the
+    special case where a cell the habitat merely touches counts whole, which for a habitat about
+    one cell wide roughly doubles its extent.
 
     Returns a dict keyed 'agb', 'bgb', 'soil', 'total', each a float array of length
     n_region_ids indexed by region id.
     """
-    valid = (mask_block > 0) & (region_id_block > 0) & (ha_per_cell_block > 0)
+    valid = (coverage_block > 0) & (region_id_block > 0) & (ha_per_cell_block > 0)
     densities = density_func(latitude_block, **(extras or {}))
 
-    ha_valid = ha_per_cell_block[valid]
+    ha_valid = ha_per_cell_block[valid] * coverage_block[valid]
     region_valid = region_id_block[valid].astype(np.int64)
     agb_pixels = ha_valid * densities['agb_c_mg_per_ha'][valid]
     bgb_pixels = ha_valid * densities['bgb_c_mg_per_ha'][valid]

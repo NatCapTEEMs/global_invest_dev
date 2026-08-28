@@ -500,8 +500,9 @@ FORCE_REFRESH_WB = False
 _HTTP_TIMEOUT = 60
 _RETRY = 4
 
-# Rasterization behavior
-RASTERIZE_ALL_TOUCHED = True
+# Rasterization behavior. False is the centre rule, and configure_prevention_shares defaults to
+# the same thing, so a task that reads this before the run is configured gets the same rule.
+RASTERIZE_ALL_TOUCHED = False
 
 # Crops-only filter for FAO GPV
 CROPS_ONLY = True
@@ -656,7 +657,12 @@ def configure_prevention_shares(p):
     BASE_YEAR_FOR_CONSTANT = getattr(p, 'erosion_base_year', 2019)
     AUTO_DOWNLOAD_WB = getattr(p, 'erosion_auto_download_wb', True)
     FORCE_REFRESH_WB = getattr(p, 'erosion_force_refresh_wb', False)
-    RASTERIZE_ALL_TOUCHED = getattr(p, 'erosion_rasterize_all_touched', True)
+    # False is the centre rule: a cell goes to the country covering its centre point, so it has
+    # exactly one owner and the answer depends on geography alone. Under True every country whose
+    # outline touches a cell claims it, and because the claims are burned into one id raster the
+    # country rasterised LAST keeps it, which puts a country's value at the mercy of its row order
+    # in the boundary file. This is the rule utilities.py already aggregates on.
+    RASTERIZE_ALL_TOUCHED = getattr(p, 'erosion_rasterize_all_touched', False)
     CROPS_ONLY = getattr(p, 'erosion_crops_only', True)
     DEM_MASK_BELOW_SEA_LEVEL = getattr(p, 'erosion_dem_mask_below_sea_level', True)
     DEM_MAX_VALID_ELEV_M = getattr(p, 'erosion_dem_max_valid_elev_m', 9000.0)
