@@ -134,7 +134,20 @@ depths and returns a GEP of zero, so the job completes and the number is wrong. 
 three-line check that the mosaic resolves, and `msi/final_run.sbatch` verifies the totals itself and
 prints ALL MATCH or the quantity that differs.
 
-### Running it, if we ever do
+### What a rerun would actually be for
+
+Not to re-derive the total. Running his code on his inputs would reproduce his number, which tests
+our port rather than the science — the same trap as matching an author's output anywhere else in
+this account. Two things do need it:
+
+- **A scenario shock.** Flood has none: `es_config` names no land-cover input for it and nothing
+  wires an ES-shock task, so unlike pollination, erosion and terrestrial carbon the flood figure
+  cannot respond to a land-use scenario. A static per-country export cannot be made to; only the
+  pipeline can, because the counterfactual is rebuilt from land cover.
+- **The service-provision ratio.** The one open science question, and it cannot be settled from a
+  finished table.
+
+### If it is run
 
 The inputs are on MSI at `/projects/standard/jajohns/shared/flood_gep`, read-only, so a run needs a
 writable root with those inputs linked in and the Sections B and C rasters copied across — about
