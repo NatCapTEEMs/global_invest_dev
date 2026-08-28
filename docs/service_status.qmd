@@ -25,7 +25,7 @@ reading a published value to running a model here. **method** is how the number 
 **ours** is whether we can compute the number ourselves, or only read someone else's. **code** is
 the engineering work we did. **number** is what the figure is and what it was checked against.
 **need** is what we are waiting on from someone else. **signed off** is whether the service meets
-the seven conditions below.
+the eight conditions below.
 
 **What signed off means.**
 
@@ -34,7 +34,7 @@ to read this repository and follow every step, without opening anyone else's.** 
 data — base_data holds inputs from many authors and always will — but not another codebase, and not
 a person to explain the missing part.
 
-That is what `signed off: green` asserts. Seven conditions, each of which has already failed
+That is what `signed off: green` asserts. Eight conditions, each of which has already failed
 somewhere and been caught:
 
 1. **Our code produces the number.** Not the author's code run by us. A service whose only working
@@ -52,8 +52,14 @@ somewhere and been caught:
 6. **The three gates pass** — harmonization, consistency, deck.
 7. **No open question blocks the number.** A question for the account to decide is not a blocker; a
    question whose answer would change the figure is.
+8. **No unanswered question with the author.** A thread we have opened and they have not closed
+   leaves the service provisional, even when our own number would not move. If we have written to
+   them saying we think something in their pipeline is wrong, we are waiting on the answer, and a
+   sign-off before it arrives claims a settlement we do not have. An unsent draft counts as open:
+   the question exists whether or not we have got round to asking it. Closed means answered, or
+   deliberately not asked and the entry says why.
 
-Green means all seven. **amber** means the number is usable and at least one condition is open, with
+Green means all eight. **amber** means the number is usable and at least one condition is open, with
 the entry saying which. **red** means the number should not be quoted yet.
 
 ⚠ A service can be green while its check is fidelity-only, provided condition 5 is met and the entry
