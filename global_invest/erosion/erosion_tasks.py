@@ -2841,8 +2841,20 @@ def upstream_prevention_share(p):
     publish_inputs(p)
     # Published before the run_this guard: Section B reads this path off p whether or not this
     # task ran, the same way it reads Section A's.
-    p.erosion_upstream_prevention_share_path = os.path.join(
-        p.cur_dir, 'upstream_prevention_share.tif')
+    #
+    # A path configured in es_parameters wins, so the account can read the author's own layer
+    # rather than our rebuild of it. Until 2026-08-27 this line overwrote the configured value
+    # unconditionally, which made that row inert: it could be set to anything and the task's own
+    # output was used regardless. Where nothing is configured, or the configured file is absent,
+    # the task owns the path -- that fallback is what lets the account run on a machine that
+    # cannot reach the cluster the layer came from.
+    built = os.path.join(p.cur_dir, 'upstream_prevention_share.tif')
+    configured = getattr(p, 'erosion_upstream_prevention_share_path', None)
+    if configured and os.path.abspath(str(configured)) != os.path.abspath(built) \
+            and hb.path_exists(configured):
+        hb.log('upstream_prevention_share: reading the configured layer at %s' % configured)
+    else:
+        p.erosion_upstream_prevention_share_path = built
     if not p.run_this:
         return
     if hb.path_exists(p.erosion_upstream_prevention_share_path):

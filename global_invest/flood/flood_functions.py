@@ -6,13 +6,13 @@ ecosystems) plus its committed global outputs and extensive method notes. The up
 geospatial pipeline is taken as given. This file holds the read of the committed per-country
 expected avoided damage (2019 USD), whose sum reproduces the pipeline's own global summary
 exactly ($110.59bn, 148 countries non-zero of 236 assessed). That is the anchor rather than the
-account's number: flood_control_functions recomputes the damage from the depth, damage-curve and
+account's number: flood_functions recomputes the damage from the depth, damage-curve and
 asset inputs, and that recompute is what the account reports ($112.78bn, matching the committed
 table for 146 of the 148).
 
 The FINAL_GEP_FLOOD pipeline's per-step science, ported as pure functions.
 
-Source: base_data/global_invest/flood_regulation/input/code_dec_18_2025/ (the drive's
+Source: base_data/global_invest/flood/input/code_dec_18_2025/ (the drive's
 December 2025 code tree). The calculation, in the order the orchestrating notebook
 (gep_running_file_dec_14_final.ipynb) runs it:
 
@@ -63,13 +63,13 @@ import numpy as np
 import pandas as pd
 
 
-def flood_control_gep_by_country(avoided_damage_df, countries_df):
+def flood_gep_by_country(avoided_damage_df, countries_df):
     """The committed avoided-damage table joined onto the r250 country list, one row per
     country. Zeroes are the pipeline's own zeroes (assessed, no avoided damage); countries it
     never assessed stay NaN."""
     df = countries_df.merge(
         avoided_damage_df[['iso3_r250_label', 'avoided_damage_usd2019']].rename(
-            columns={'avoided_damage_usd2019': 'flood_control_gep'}),
+            columns={'avoided_damage_usd2019': 'flood_gep'}),
         on='iso3_r250_label', how='left')
     return df
 

@@ -9,7 +9,7 @@ format:
 Flood control is valued as expected annual damage on flood-exposed assets, computed per country
 for the GEP base year of 2019 and reported in 2019 USD. The calculation is the consortium drive's
 FINAL_GEP_FLOOD pipeline of December 2025, ported step by step into
-`flood_control_chain.py` as pure functions that take arrays and DataFrames.
+`flood_chain.py` as pure functions that take arrays and DataFrames.
 
 ## Quantity
 
@@ -66,19 +66,19 @@ notebook's interpretation of the step-4D EAD column.
 
 ## Inputs
 
-From `es_parameters.csv`, scoped to the `flood_control` service:
+From `es_parameters.csv`, scoped to the `flood` service:
 
-- `flood_control_country_vector_path`, the r250 country boundaries carrying iso3.
-- `flood_control_sda_raster_path`, the staged SDA class raster for artificial, crop and pasture.
-- `flood_control_depth_path_template`, the JRC depth rasters, formatted with each return period.
-- `flood_control_damage_wide_path`, the wide USD2019 depth-damage table the curves are read from.
-- `flood_control_avoided_damage_path`, the committed per-country table used as the anchor.
+- `flood_country_vector_path`, the r250 country boundaries carrying iso3.
+- `flood_sda_raster_path`, the staged SDA class raster for artificial, crop and pasture.
+- `flood_depth_path_template`, the JRC depth rasters, formatted with each return period.
+- `flood_damage_wide_path`, the wide USD2019 depth-damage table the curves are read from.
+- `flood_avoided_damage_path`, the committed per-country table used as the anchor.
 
 ## Output
 
 `gep_calculation` writes `chain_country_ead.csv` and `gep_by_country_base_year.csv` into its own
 task directory. The second holds the r250 identifiers and attributes, `year`, and
-`flood_control_gep`. Zeroes are the pipeline's own zeroes, meaning assessed with no damage.
+`flood_gep`. Zeroes are the pipeline's own zeroes, meaning assessed with no damage.
 Countries it never assessed stay NaN.
 
 ## Method constants

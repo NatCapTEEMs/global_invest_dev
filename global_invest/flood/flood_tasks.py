@@ -6,11 +6,11 @@ from global_invest import utilities
 
 
 def publish_inputs(p):
-    """Every GEP task's first line: the flood_control es_config row and the data reference
+    """Every GEP task's first line: the flood es_config row and the data reference
     from es_parameters (defaults layer -- a caller-set value prevails), the shared country
     references and the results registry."""
-    utilities.hydrate_es_config(p, 'flood_control', log=hb.log)
-    utilities.hydrate_es_parameters(p, 'flood_control', log=hb.log)
+    utilities.hydrate_es_config(p, 'flood', log=hb.log)
+    utilities.hydrate_es_parameters(p, 'flood', log=hb.log)
     utilities.initialize_country_paths(p)
     if not hasattr(p, 'results'):
         p.results = {}
@@ -23,11 +23,11 @@ def gep_calculation(p):
     the pipeline's four return periods). The committed pipeline table is the comparison
     anchor, logged and pinned in the test suite, never the reported value."""
     publish_inputs(p)
-    service_results, already_done = utilities.begin_gep_calculation(p, 'flood_control')
+    service_results, already_done = utilities.begin_gep_calculation(p, 'flood')
     if already_done:
         return
 
-    if not hb.path_exists(p.flood_control_chain_ead_path):
+    if not hb.path_exists(p.flood_chain_ead_path):
         import geopandas as gpd
         import numpy as np
         import pyproj
@@ -35,12 +35,12 @@ def gep_calculation(p):
         import rasterio.transform
         from rasterio.features import geometry_mask
         from rasterio.windows import from_bounds
-        from global_invest.flood_control import flood_control_functions as fchain
+        from global_invest.flood import flood_functions as fchain
 
         rps = (10, 20, 50, 500)  # the pipeline's final run
-        gdf = gpd.read_file(p.flood_control_country_vector_path)
-        sda_src = rasterio.open(p.flood_control_sda_raster_path)
-        depth_srcs = {rp: rasterio.open(p.get_path(p.flood_control_depth_path_template.format(rp=rp)))
+        gdf = gpd.read_file(p.flood_country_vector_path)
+        sda_src = rasterio.open(p.flood_sda_raster_path)
+        depth_srcs = {rp: rasterio.open(p.get_path(p.flood_depth_path_template.format(rp=rp)))
                       for rp in rps}
         # The damage curves are a USD2019 per square metre of real asset, so the area they
         # multiply has to be real ground area. These rasters are EPSG:3857, where every cell is
@@ -50,7 +50,7 @@ def gep_calculation(p):
         # damage everywhere else, and flood exposure is concentrated well away from the equator.
         pix_res = abs(sda_src.transform[0])
         to_wgs84 = pyproj.Transformer.from_crs(sda_src.crs, 'EPSG:4326', always_xy=True)
-        curves = fchain.damage_curves_from_wide(hb.df_read(p.flood_control_damage_wide_path))
+        curves = fchain.damage_curves_from_wide(hb.df_read(p.flood_damage_wide_path))
 
         rows = []
         for _, crow in gdf.iterrows():
@@ -79,21 +79,21 @@ def gep_calculation(p):
                                                          iso, pix_area, depth_nodata=dsrc.nodata)
                 damages.append(total)
             ead, _ = fchain.ead_from_rp_damages(np.array(rps, float), np.array(damages, float))
-            rows.append({'iso3': iso, 'flood_control_gep': ead})
-        pd.DataFrame(rows).to_csv(p.flood_control_chain_ead_path, index=False)
+            rows.append({'iso3': iso, 'flood_gep': ead})
+        pd.DataFrame(rows).to_csv(p.flood_chain_ead_path, index=False)
 
-    chain = hb.df_read(p.flood_control_chain_ead_path).rename(columns={'iso3': 'iso3_r250_label'})
+    chain = hb.df_read(p.flood_chain_ead_path).rename(columns={'iso3': 'iso3_r250_label'})
     attr_cols = ['iso3_r250_id', 'iso3_r250_label', 'iso3_r250_name',
                  'continent', 'region_un', 'region_wb', 'income_grp', 'subregion']
     countries = utilities.collapse_countries_to_r250(p.df_countries)[attr_cols]
     df_gep = countries.merge(chain, on='iso3_r250_label', how='left')
     df_gep['year'] = int(p.gep_base_year)
-    hb.df_write(df_gep[attr_cols + ['year', 'flood_control_gep']],
+    hb.df_write(df_gep[attr_cols + ['year', 'flood_gep']],
                 service_results['gep_by_country_base_year'])
 
-    hb.log(f'Total flood_control GEP for base year {p.gep_base_year} (OUR chain): '
-           f'{df_gep["flood_control_gep"].sum():,.2f}')
-    committed = hb.df_read(p.flood_control_avoided_damage_path)
+    hb.log(f'Total flood GEP for base year {p.gep_base_year} (OUR chain): '
+           f'{df_gep["flood_gep"].sum():,.2f}')
+    committed = hb.df_read(p.flood_avoided_damage_path)
     hb.log(f'Committed pipeline table total: {committed.select_dtypes("number").iloc[:, -1].sum():,.2f} '
            f'(the test anchor; the known difference is Morocco).')
     return True

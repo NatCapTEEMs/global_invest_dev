@@ -229,7 +229,7 @@ format:
 | air_filtration | deaths avoided by vegetation removing air pollution |
 | sandstorm_prevention | deaths avoided by ecosystems suppressing windblown dust |
 | water_quality | water-treatment costs avoided by nutrient retention |
-| flood_control | flood damage avoided by ecosystems |
+| flood | flood damage avoided by ecosystems |
 | local_climate_regulation | cooling-energy costs avoided by urban vegetation |
 | extractive_energy | fossil-fuel resource rents (gas, coal, petroleum) |
 | timber_provision | the net value of timber harvests, net of harvest and transport costs |
@@ -288,7 +288,7 @@ format:
 | air_filtration | {{< meta air_filtration_total >}} | yes.  |
 | sandstorm_prevention | {{< meta sandstorm_total >}} | yes.  |
 | water_quality | {{< meta wq_usd >}} USD and {{< meta wq_intl >}} intl$ | partially. We recompute the nutrient valuations and reproduce the committed intermediates; the headline international-dollar column is read through |
-| flood_control | {{< meta flood_total >}} | partially. Our recompute matches the pipeline's table, Morocco excepted |
+| flood | {{< meta flood_total >}} | partially. Our recompute matches the pipeline's table, Morocco excepted |
 | local_climate_regulation | {{< meta lcr_ours >}} ours | no. We compute it from our own city valuations; the committed table's {{< meta lcr_committed >}} differs by a country-varying factor |
 | extractive_energy | {{< meta xe_total >}} (gas + coal + petroleum) | yes.  |
 | timber_provision | {{< meta timber_total >}} | yes. |
@@ -420,7 +420,7 @@ format:
 - **Q1:** where is the script that converts USD to international dollars? The factors implied by the two committed values sit far from the World Bank's published ones, so we could not identify the conversion, and the committed output is the only place it appears.
 - **Q2:** which currency does the account use? This service is in 2019 international dollars, every other service in 2019 market USD.
 
-## flood_control
+## flood
 
 - [Values flood damage avoided by ecosystems: flood depth by return period, depth-damage functions and the asset map give each country's expected annual damage. Our recompute reproduces the pipeline's table for 146 of 148 non-zero countries.]{.state}
 - **Q1:** should the service-flow fraction multiply into the valuation? The pipeline computes one but never applies it, so today's number is expected flood damage rather than damage ecosystems avoid.
