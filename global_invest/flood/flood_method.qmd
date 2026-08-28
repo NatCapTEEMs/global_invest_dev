@@ -134,20 +134,24 @@ depths and returns a GEP of zero, so the job completes and the number is wrong. 
 three-line check that the mosaic resolves, and `msi/final_run.sbatch` verifies the totals itself and
 prints ALL MATCH or the quantity that differs.
 
-### What a rerun would actually be for
+### The account should compute this itself
 
-Not to re-derive the total. Running his code on his inputs would reproduce his number, which tests
-our port rather than the science — the same trap as matching an author's output anywhere else in
-this account. Two things do need it:
+⚠ **Reading the author's per-country export is an interim, not the destination.** Every other
+service in this library derives its own number — erosion runs the sediment model here and reports
+$13.96bn against the author's $14.59bn, and erosion has no scenario shock either. Reading a finished
+table would make flood the only service that takes its headline from someone else's CSV, which is
+what "we compute it ourselves" is supposed to rule out.
 
-- **A scenario shock.** Flood has none: `es_config` names no land-cover input for it and nothing
-  wires an ES-shock task, so unlike pollination, erosion and terrestrial carbon the flood figure
-  cannot respond to a land-use scenario. A static per-country export cannot be made to; only the
-  pipeline can, because the counterfactual is rebuilt from land cover.
-- **The service-provision ratio.** The one open science question, and it cannot be settled from a
-  finished table.
+The distinction worth keeping: **producing our own number** is what the library is for, and it is
+what makes the figure reproducible, auditable and rerunnable here. **Comparing it to the author's**
+is a fidelity check and not a correctness one. The second does not argue against the first.
 
-### If it is run
+Until then, `gep_calculation` reads `flood_gep_for_merge_v2_2024hazard.csv` and the account carries
+his $11.40bn. That is honest and it is not finished.
+
+### What running it needs
+
+
 
 The inputs are on MSI at `/projects/standard/jajohns/shared/flood_gep`, read-only, so a run needs a
 writable root with those inputs linked in and the Sections B and C rasters copied across — about

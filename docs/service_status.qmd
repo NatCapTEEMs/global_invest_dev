@@ -522,10 +522,10 @@ hectare. `ours` is where that lives.
 
 - **subgroup:** -
 - **module:** flood
-- **category:** raster arithmetic
+- **category:** process model run here
 - **in the library:** yes
 - **run:** yes
-- **ours:** the damage yes. The ecosystem share needs a service-flow raster, and the drive's copy is a binary mask rather than a ratio.
+- **ours:** the damage yes, and now the ecosystem share too in principle: the author's full pipeline is folded in, including the counterfactual and amplification machinery the share needs. ⚠ **Not yet run here.** `gep_calculation` reads his per-country export as an interim, so the account carries his $11.40bn rather than one we derived. That makes flood the only service taking its headline from someone else's table, which is what "we compute it ourselves" is meant to rule out — erosion has no scenario shock either and still runs its model here. Running it needs the MSI writable-root setup, not done as of 2026-08-28.
 - **method:** Flood depth by return period, through JRC depth-damage curves, times asset value per pixel, integrated into expected annual damage. The quantity comes from flood depth rasters by return period, processed here into expected annual damage.
 - **total:** $112.78bn
 - **code:** Refactored onto the library template and hazelbean conventions. Every step of the flood calculation was rewritten as a function.
