@@ -149,10 +149,10 @@ from global_invest.flood import flood_utils
 # names where a fresh machine would look. Nothing here reads the environment.
 ROOT = Path(os.environ.get('GEP_FLOOD_ROOT') or
             os.path.join(os.path.expanduser('~'), 'flood_gep'))
-INPUTS = ROOT / "inputs"
-OUTPUTS = ROOT / "outputs"
+INPUTS = None
+OUTPUTS = None
 
-ADMIN0_PATH = INPUTS / "country_vector" / "country_boundary_r250_with_iso3.gpkg"
+ADMIN0_PATH = None
 
 # Return periods actually on disk for this project: RP10, RP20, RP50, RP500.
 #
@@ -175,6 +175,7 @@ RETURN_PERIODS = [10, 20, 50, 500]
 
 
 import hazelbean as hb
+from global_invest import utilities
 from global_invest.flood import flood_functions as ff
 
 
@@ -271,7 +272,7 @@ def _invoke_script(script_path: Path, argv: List[str], label: str = ""):
         sys.argv = old_argv
 
 
-LULC_PATH = INPUTS / "lulc" / "lulc_esa_2019_int_reproj.tif"
+LULC_PATH = None
 
 
 JRC_ZIP_URL_TEMPLATE = (
@@ -279,19 +280,19 @@ JRC_ZIP_URL_TEMPLATE = (
 )
 
 
-DEPTH_RAW_DIR = INPUTS / "floodplain_depth_raw"
+DEPTH_RAW_DIR = None
 
 
-DEPTH_EXTRACT_DIR = DEPTH_RAW_DIR / "extracted_tifs"
+DEPTH_EXTRACT_DIR = None
 
 
-DEPTH_ALIGNED_DIR = INPUTS / "floodplain_depth" / "aligned_to_lulc"
+DEPTH_ALIGNED_DIR = None
 
 
-DEPTH_MASK_DIR = INPUTS / "floodplain_depth" / "masks_aligned_to_lulc"
+DEPTH_MASK_DIR = None
 
 
-SDA_MAPPING_JSON = INPUTS / "lulc_to_sda_mapping" / "lulc_to_sda_mapping.json"
+SDA_MAPPING_JSON = None
 
 
 ESA_CODEBOOK = {
@@ -349,19 +350,19 @@ SDA_CODE = {"none": 0, "artif": 1, "crop": 2, "pasture": 3, "roads": 4}
 INCLUDE_PASTURE = True
 
 
-GLOBAL_SDA_TIF = INPUTS / "sda" / "sda_esa300m_artif_crop_pasture.tif"
+GLOBAL_SDA_TIF = None
 
 
-GLOBAL_SDA_LEGEND_CSV = INPUTS / "sda" / "sda_esa300m_legend.csv"
+GLOBAL_SDA_LEGEND_CSV = None
 
 
-SPA_PATH = INPUTS / "global_spa_ben" / "global_prr_spa.tif"
+SPA_PATH = None
 
 
-SPA_RATIO_PATH = INPUTS / "global_spa_ben" / "global_upstream_spa_ratio.tif"
+SPA_RATIO_PATH = None
 
 
-QA_DIR = OUTPUTS / "qa_maps"
+QA_DIR = None
 
 
 DEPTH_THRESHOLD_M = 0.1  # depths at/below this are treated as no damage
@@ -846,13 +847,13 @@ SDA_ALL_TOUCHED = False
 SDA_USE_ROADS = False
 
 
-SDA_ROADS_PATH = INPUTS / "roads" / "roads_mask_match_depth.tif"
+SDA_ROADS_PATH = None
 
 
 SDA_WITH_POP = False
 
 
-SDA_POP_PATH = INPUTS / "pop" / "GlobPOP_Count_30arc_2020_I32.tif"
+SDA_POP_PATH = None
 
 
 SDA_WRITE_DEPTHBIN = False
@@ -928,7 +929,7 @@ FLOW_WRITE_RASTERS = True
 FLOW_INCLUDE_EXISTING = True   # include already-computed outputs in the summary
 
 
-FLOW_SUMMARY_CSV = OUTPUTS / "global_service_flow_spa_to_sda.csv"
+FLOW_SUMMARY_CSV = None
 
 
 def configure_service_flow(p):
@@ -1096,25 +1097,25 @@ VAL_DAMAGE_TABLE_SCRIPT = Path(__file__).parent / "scripts" / "build_damage_tabl
 VAL_STEP4D_SCRIPT = Path(__file__).parent / "scripts" / "flood_gep_step4d_export_global_USD2019.py"
 
 
-VAL_DAMAGE_DIR = INPUTS / "flood_damage"
+VAL_DAMAGE_DIR = None
 
 
-VAL_CANONICAL_EUR_CSV = VAL_DAMAGE_DIR / "country_landtype_flood_damage_JRC_EUR_m2.csv"
+VAL_CANONICAL_EUR_CSV = None
 
 
-VAL_FACTORS_CSV = VAL_DAMAGE_DIR / "_currency_audit" / "currency_conversion_factors_EUR2010_to_USD2019.csv"
+VAL_FACTORS_CSV = None
 
 
-VAL_DAMAGE_LONG_CSV = VAL_DAMAGE_DIR / "damage_functions_depth_USD2019_long.csv"
+VAL_DAMAGE_LONG_CSV = None
 
 
-VAL_DAMAGE_WIDE_CSV = VAL_DAMAGE_DIR / "damage_functions_depth_USD2019_wide.csv"
+VAL_DAMAGE_WIDE_CSV = None
 
 
-VAL_SDA_DAMAGE_LONG_CSV = VAL_DAMAGE_DIR / "damage_functions_sda_depth_USD2019_long.csv"
+VAL_SDA_DAMAGE_LONG_CSV = None
 
 
-VAL_SDA_DAMAGE_WIDE_CSV = VAL_DAMAGE_DIR / "damage_functions_sda_depth_USD2019_wide.csv"
+VAL_SDA_DAMAGE_WIDE_CSV = None
 
 
 VAL_SET_PASTURE_EQUAL_CROP = True
@@ -1144,7 +1145,7 @@ VAL_ENFORCE_MONOTONE = False
 VAL_WRITE_INTEGRATION_POINTS = True
 
 
-VAL_EXPORT_DIR = OUTPUTS / "_global"
+VAL_EXPORT_DIR = None
 
 
 VAL_REGION_COL = "region_wb"
@@ -1162,7 +1163,7 @@ VAL_MOSAIC_GLOBAL_RASTER = False
 VAL_APPLY_SERVICE_FLOW = False
 
 
-VAL_SERVICE_FLOW_CSV = OUTPUTS / "global_service_flow_spa_to_sda.csv"
+VAL_SERVICE_FLOW_CSV = None
 
 
 SCENARIOS = ("current", "degraded_insitu", "degraded_bare")
@@ -1173,16 +1174,16 @@ SCENARIO_SUFFIX = {"current": "",
                    "degraded_bare": "__degraded_bare"}
 
 
-VAL_AMPLIFICATION_DIR = INPUTS / "counterfactual"
+VAL_AMPLIFICATION_DIR = None
 
 
 VAL_AMPLIFICATION_PATTERN = "amplification_{scenario}_rp{rp}.tif"
 
 
-VAL_CN_TABLE = INPUTS / "counterfactual" / "esa_cci_CN_three_scenarios.csv"
+VAL_CN_TABLE = None
 
 
-VAL_GEP_CSV = OUTPUTS / "_global" / "step4e_flood_gep_USD2019.csv"
+VAL_GEP_CSV = None
 
 
 VAL_PROTECTION_CSV = None          # CSV with iso3, protection_rp (from FLOPROS)
@@ -2009,16 +2010,88 @@ def run_valuation_chain(skip_damage_tables: bool = False) -> dict:
     return out
 
 
-MAP_FIG_DIR = OUTPUTS / "_global" / "figures"
+MAP_FIG_DIR = None
 
 
-MAP_COUNTRY_EAD_CSV = OUTPUTS / "_global" / "step4d_country_ead_USD2019.csv"
+MAP_COUNTRY_EAD_CSV = None
 
 
-MAP_GLOBAL_TOTALS_CSV = OUTPUTS / "_global" / "step4d_global_totals_USD2019.csv"
+MAP_GLOBAL_TOTALS_CSV = None
 
 
-MAP_SERVICE_FLOW_CSV = OUTPUTS / "global_service_flow_spa_to_sda.csv"
+MAP_SERVICE_FLOW_CSV = None
+
+
+
+def publish_inputs(p):
+    """Every task's first line: the flood es_config row, its es_parameters data references, the
+    shared country references, and the project paths resolved from configuration.
+
+    The house shape, so a task gets its settings whether it runs alone or inside a tree. It is also
+    where `configure_paths` runs, which is what turns the module's path constants from None into
+    real locations under `flood_root_dir`.
+    """
+    utilities.hydrate_es_config(p, 'flood', log=hb.log)
+    utilities.hydrate_es_parameters(p, 'flood', log=hb.log)
+    utilities.initialize_country_paths(p)
+    configure_paths(p)
+    if not hasattr(p, 'results'):
+        p.results = {}
+    return p
+
+def configure_paths(p):
+    """Resolve every project path from configuration, at task time rather than at import.
+
+    The source repo built these as module-level constants under an absolute root taken from a
+    GEP_FLOOD_ROOT environment variable, so importing the module on any other machine bound them to
+    a directory that did not exist. They are declared None above and set here from
+    `p.flood_root_dir`, which es_parameters supplies -- machine configuration lives in that CSV, not
+    in code. Every task calls this through publish_inputs, so a task gets real paths whether it runs
+    alone or in a tree.
+    """
+    global ROOT, INPUTS, OUTPUTS, ADMIN0_PATH, LULC_PATH, DEPTH_RAW_DIR, DEPTH_EXTRACT_DIR, DEPTH_ALIGNED_DIR, DEPTH_MASK_DIR, SDA_MAPPING_JSON, GLOBAL_SDA_TIF, GLOBAL_SDA_LEGEND_CSV, SPA_PATH, SPA_RATIO_PATH, QA_DIR, SDA_ROADS_PATH, SDA_POP_PATH, FLOW_SUMMARY_CSV, VAL_DAMAGE_DIR, VAL_CANONICAL_EUR_CSV, VAL_FACTORS_CSV, VAL_DAMAGE_LONG_CSV, VAL_DAMAGE_WIDE_CSV, VAL_SDA_DAMAGE_LONG_CSV, VAL_SDA_DAMAGE_WIDE_CSV, VAL_EXPORT_DIR, VAL_SERVICE_FLOW_CSV, VAL_AMPLIFICATION_DIR, VAL_CN_TABLE, VAL_GEP_CSV, MAP_FIG_DIR, MAP_COUNTRY_EAD_CSV, MAP_GLOBAL_TOTALS_CSV, MAP_SERVICE_FLOW_CSV
+    root = getattr(p, 'flood_root_dir', None)
+    if root:
+        ROOT = Path(str(root))
+    elif ROOT is None:
+        raise ValueError(
+            'flood_root_dir is not set. It is a machine-specific path, so it belongs in '
+            'es_parameters.csv rather than in code or an environment variable.')
+    INPUTS = ROOT / "inputs"
+    OUTPUTS = ROOT / "outputs"
+    ADMIN0_PATH = INPUTS / "country_vector" / "country_boundary_r250_with_iso3.gpkg"
+    LULC_PATH = INPUTS / "lulc" / "lulc_esa_2019_int_reproj.tif"
+    DEPTH_RAW_DIR = INPUTS / "floodplain_depth_raw"
+    DEPTH_EXTRACT_DIR = DEPTH_RAW_DIR / "extracted_tifs"
+    DEPTH_ALIGNED_DIR = INPUTS / "floodplain_depth" / "aligned_to_lulc"
+    DEPTH_MASK_DIR = INPUTS / "floodplain_depth" / "masks_aligned_to_lulc"
+    SDA_MAPPING_JSON = INPUTS / "lulc_to_sda_mapping" / "lulc_to_sda_mapping.json"
+    GLOBAL_SDA_TIF = INPUTS / "sda" / "sda_esa300m_artif_crop_pasture.tif"
+    GLOBAL_SDA_LEGEND_CSV = INPUTS / "sda" / "sda_esa300m_legend.csv"
+    SPA_PATH = INPUTS / "global_spa_ben" / "global_prr_spa.tif"
+    SPA_RATIO_PATH = INPUTS / "global_spa_ben" / "global_upstream_spa_ratio.tif"
+    QA_DIR = OUTPUTS / "qa_maps"
+    SDA_ROADS_PATH = INPUTS / "roads" / "roads_mask_match_depth.tif"
+    SDA_POP_PATH = INPUTS / "pop" / "GlobPOP_Count_30arc_2020_I32.tif"
+    FLOW_SUMMARY_CSV = OUTPUTS / "global_service_flow_spa_to_sda.csv"
+    VAL_DAMAGE_DIR = INPUTS / "flood_damage"
+    VAL_CANONICAL_EUR_CSV = VAL_DAMAGE_DIR / "country_landtype_flood_damage_JRC_EUR_m2.csv"
+    VAL_FACTORS_CSV = VAL_DAMAGE_DIR / "_currency_audit" / "currency_conversion_factors_EUR2010_to_USD2019.csv"
+    VAL_DAMAGE_LONG_CSV = VAL_DAMAGE_DIR / "damage_functions_depth_USD2019_long.csv"
+    VAL_DAMAGE_WIDE_CSV = VAL_DAMAGE_DIR / "damage_functions_depth_USD2019_wide.csv"
+    VAL_SDA_DAMAGE_LONG_CSV = VAL_DAMAGE_DIR / "damage_functions_sda_depth_USD2019_long.csv"
+    VAL_SDA_DAMAGE_WIDE_CSV = VAL_DAMAGE_DIR / "damage_functions_sda_depth_USD2019_wide.csv"
+    VAL_EXPORT_DIR = OUTPUTS / "_global"
+    VAL_SERVICE_FLOW_CSV = OUTPUTS / "global_service_flow_spa_to_sda.csv"
+    VAL_AMPLIFICATION_DIR = INPUTS / "counterfactual"
+    VAL_CN_TABLE = INPUTS / "counterfactual" / "esa_cci_CN_three_scenarios.csv"
+    VAL_GEP_CSV = OUTPUTS / "_global" / "step4e_flood_gep_USD2019.csv"
+    MAP_FIG_DIR = OUTPUTS / "_global" / "figures"
+    MAP_COUNTRY_EAD_CSV = OUTPUTS / "_global" / "step4d_country_ead_USD2019.csv"
+    MAP_GLOBAL_TOTALS_CSV = OUTPUTS / "_global" / "step4d_global_totals_USD2019.csv"
+    MAP_SERVICE_FLOW_CSV = OUTPUTS / "global_service_flow_spa_to_sda.csv"
+    return p
+
 
 
 MAP_K_CLASSES = 5
@@ -2170,6 +2243,7 @@ def task_prepare_flood_inputs(p):
     download_and_prep_jrc_flood_depth.ipynb, sda_step_2A_make_lulc_to_sda_
     mapping_esa300.py, build_sda_from_esa300m.py and qa_spa_global_step1.py.
     """
+    publish_inputs(p)
     configure_inputs(p)
 
     service_results = p.results.setdefault('flood', {})
@@ -2191,6 +2265,7 @@ def task_build_sda(p):
     + options), so re-running is cheap; the guard here only short-circuits when
     the caller has explicitly asked to skip.
     """
+    publish_inputs(p)
     configure_sda(p)
     build_sda_global()
     return True
@@ -2203,6 +2278,7 @@ def task_compute_service_flow(p):
     ISO3 x RP. Originally serviceflow_step3_spa_to_sda_ratio_global.py.
     Writes global_service_flow_spa_to_sda.csv, which Section E maps.
     """
+    publish_inputs(p)
     configure_service_flow(p)
 
     service_results = p.results.setdefault('flood', {})
@@ -2222,6 +2298,7 @@ def task_compute_flood_damages(p):
     flood_gep_step4c_ead_USD2019_global.py and
     flood_gep_step4d_export_global_USD2019.py.
     """
+    publish_inputs(p)
     configure_valuation(p)
 
     service_results = p.results.setdefault('flood', {})
@@ -2251,6 +2328,7 @@ def task_compute_flood_gep(p):
     doubles Section D's cost, so it is a separate task rather than part of
     task_compute_flood_damages().
     """
+    publish_inputs(p)
     configure_valuation(p)
 
     service_results = p.results.setdefault('flood', {})
@@ -2272,6 +2350,7 @@ def task_generate_maps_and_figures(p):
     from task_compute_flood_damages()'s and task_compute_service_flow()'s
     outputs. Originally analyze_step4d_global_results.py.
     """
+    publish_inputs(p)
     configure_maps(p)
     generate_all_maps_and_figures()
     return True
