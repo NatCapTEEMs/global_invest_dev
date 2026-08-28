@@ -18,6 +18,8 @@ def build_gep_service_calculation_task_tree(p):
     taking it as given. It downloads FAOSTAT production and producer prices and writes the
     per-crop median price the raster is priced at. skip_existing=1 because it is a download."""
     p.fao_median_prices = p.add_task(pollination_tasks.fao_median_prices, skip_existing=1)
+    p.pollination_source_value_raster = p.add_task(
+        pollination_tasks.pollination_source_value_raster, skip_existing=1)
     p.pollination_value_raster = p.add_task(
         pollination_tasks.pollination_value_raster, skip_existing=1)
     p.pollination_value_by_region = p.add_task(

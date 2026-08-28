@@ -383,3 +383,60 @@ def test_the_vendored_source_commit_is_recorded():
         match = re.search(r'VENDORED_FROM:\s*(\S+)\s*@\s*([0-9a-f]{7,40})', text)
         assert match, '%s vendors code without recording the source commit' % name
         assert match.group(1).endswith('crop_benefits'), match.group(1)
+
+
+def test_the_source_pipeline_refuses_to_build_the_wrong_year(tmp_path):
+    """His target year lives in his config, so running blind builds whatever that config says.
+
+    The GEP base year and his config are set independently, and a mismatch is invisible in the
+    output: the raster is named for the year it was built for, so it looks correct while carrying
+    another year's prices. On 2026-08-28 a raster built with a substituted price table sat staged
+    for 45 minutes and was only 0.1 percent out, which is exactly the size of error that survives
+    review. The guard turns that into a failure that names both years.
+    """
+    repo = tmp_path / 'crop_benefits'
+    (repo / 'config').mkdir(parents=True)
+    (repo / 'config' / 'default.yaml').write_text('run:\n  target_year: 2019\n', encoding='utf-8')
+    with pytest.raises(NameError) as raised:
+        pf.run_source_value_pipeline(str(repo), 2023)
+    assert '2019' in str(raised.value) and '2023' in str(raised.value)
+
+
+def test_source_provenance_records_the_file_it_actually_read(tmp_path):
+    """A stale staged raster is silent: same name, same shape, a slightly different number.
+
+    Recording the hash is what makes "which copy produced this total?" answerable after the fact,
+    rather than a question nobody can settle once the file has been overwritten.
+    """
+    raster = tmp_path / 'poll_value_global_2019usd.tif'
+    raster.write_bytes(b'not really a raster, but bytes are bytes')
+    out = pf.write_source_provenance(str(raster), str(tmp_path / 'prov' / 'provenance.csv'))
+    row = pd.read_csv(out, encoding='utf-8-sig').iloc[0]
+    assert row['source_raster'] == 'poll_value_global_2019usd.tif'
+    assert row['bytes'] == raster.stat().st_size
+    assert len(row['sha256']) == 64
+
+    raster.write_bytes(b'not really a raster, but bytes are different now')
+    changed = pd.read_csv(pf.write_source_provenance(str(raster), str(tmp_path / 'prov' / 'p2.csv')),
+                          encoding='utf-8-sig').iloc[0]
+    assert changed['sha256'] != row['sha256'], 'a changed file must change the recorded hash'
+
+
+def test_the_latest_vintage_wins_when_the_base_year_is_unpublished(tmp_path):
+    """His year files are separate model vintages, not one raster restated in other dollars.
+
+    Measured on 2026-08-28: his 2024 file deflates to $386.76bn at 2019 prices and his 2023 file to
+    $398.74bn, three percent apart, which no price index produces. Choosing by proximity would take
+    the older model whenever the base year sits below the newest release.
+    """
+    class FakeProject:
+        def get_path(self, ref_path, **kwargs):
+            return str(tmp_path)
+    for year in (2023, 2024):
+        (tmp_path / ('poll_value_global_%dusd.tif' % year)).write_bytes(b'x')
+    path, year = pf.find_source_value_raster(FakeProject(), 2019)
+    assert year == 2024, 'nearest-year selection would have taken 2023'
+
+    (tmp_path / 'poll_value_global_2019usd.tif').write_bytes(b'x')
+    path, year = pf.find_source_value_raster(FakeProject(), 2019)
+    assert year == 2019, 'the exact base year must win when it exists'
