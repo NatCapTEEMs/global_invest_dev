@@ -15,7 +15,6 @@ input.
 from __future__ import annotations
 import os
 import re
-import sys
 
 import logging
 import numpy as np
@@ -1065,64 +1064,16 @@ def find_source_value_raster(p, gep_base_year):
     return candidates[year], year
 
 
-SOURCE_VALUE_PIPELINE_STEPS = (
-    ('run_fao_pipeline.py', 'prices'),        # downloads FAOSTAT bulk + World Bank FX
-    ('run_fao_pipeline.py', 'values'),        # medians over the target year's window
-    ('run_fao_pipeline.py', 'yield_change'),
-    ('run_raster_pipeline.py', 'yield'),      # the Monfreda step, and the slow one
-    ('run_raster_pipeline.py', 'production'),
-    ('run_raster_pipeline.py', 'poll_value'),
-)
-
-
-def run_source_value_pipeline(repo_dir, target_year):
-    """Run the source author's chain in his repo to build the value raster for a year.
-
-    His `config/default.yaml` carries `target_year`, so the year is asserted rather than passed:
-    running with a config set to another year would silently build the wrong raster, and the
-    caller has already decided which year it wants.
-
-    Args:
-        repo_dir (str): a clone of the source pipeline.
-        target_year (int): the year his config must be set to.
-
-    Raises:
-        NameError: if his config is set to a different target year.
-        RuntimeError: if any step exits non-zero, naming the step and its tail.
-    """
-    import subprocess
-    config_path = os.path.join(repo_dir, 'config', 'default.yaml')
-    if os.path.exists(config_path):
-        text = open(config_path, encoding='utf-8').read()
-        match = re.search(r'^\s*target_year:\s*(\d{4})', text, re.MULTILINE)
-        if match and int(match.group(1)) != int(target_year):
-            raise NameError(
-                'The source pipeline config at %s is set to target_year %s, but the GEP base year '
-                'is %d. Building with it would produce a raster for the wrong year. Set both '
-                'target_year and deflation_base_year to %d before running.'
-                % (config_path, match.group(1), target_year, target_year))
-    for script, step in SOURCE_VALUE_PIPELINE_STEPS:
-        command = [sys.executable, os.path.join('scripts', 'pipelines', script), '--step', step]
-        logging.getLogger(__name__).info('source pipeline: %s --step %s', script, step)
-        finished = subprocess.run(command, cwd=repo_dir, capture_output=True, text=True)
-        if finished.returncode != 0:
-            tail = (finished.stderr or finished.stdout or '').strip().splitlines()[-12:]
-            raise RuntimeError('The source pipeline failed at %s --step %s:\n%s'
-                               % (script, step, '\n'.join(tail)))
-
-
-def locate_built_source_raster(repo_dir, target_year):
-    """Find the value raster the source pipeline just wrote, wherever his config put it."""
+def available_source_value_years(p):
+    """The price years the source author's directory actually holds, for a clear error message."""
     import glob
-    pattern = os.path.join(repo_dir, '..', '**', 'rasters_%d' % target_year, 'pollination',
-                           'value_%d' % target_year, 'poll_value_global_%dusd.tif' % target_year)
-    hits = glob.glob(pattern, recursive=True)
-    if not hits:
-        raise NameError(
-            'The source pipeline reported success but no poll_value_global_%dusd.tif was found '
-            'under rasters_%d/pollination/value_%d. Its output directory comes from base_dirs.outputs '
-            'in his config/local.yaml; check that it is set.' % (target_year, target_year, target_year))
-    return max(hits, key=os.path.getmtime)
+    source_dir = p.get_path(SOURCE_VALUE_RASTER_DIR_REF_PATH)
+    years = []
+    for path in glob.glob(os.path.join(str(source_dir), 'poll_value_global_*usd.tif')):
+        match = re.search(r'poll_value_global_(\d{4})usd\.tif$', os.path.basename(path))
+        if match:
+            years.append(int(match.group(1)))
+    return sorted(years)
 
 
 def write_source_provenance(raster_path, out_path):

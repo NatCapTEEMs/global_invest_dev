@@ -7,7 +7,6 @@ directory (p.es_shock_dir). Grafted by consumers via add_pollination_tasks (disp
 """
 from __future__ import annotations
 import os
-import shutil
 import gc
 import logging
 import math
@@ -2107,16 +2106,16 @@ def pollination_source_value_raster(p):
     45 minutes after the real one had been rebuilt, and nothing would have caught it because the
     total was only 0.1 percent out. So the staging is a task, and it records what it staged.
 
-    The task does nothing when the raster is already there, which is the normal case. When it is
-    missing it runs HIS chain -- prices, values, yield change, yield, production, poll_value -- in
-    his repo, then copies the result in. That needs `pollination_crop_benefits_repo_dir` set to a
-    local clone, and network access, because his price step downloads from FAOSTAT and the World
-    Bank. Both are blank in the template on purpose: a machine without them gets a clear error
-    naming the runbook rather than a silent fallback to some other year's file.
+    The task records what is staged and fails loudly when it is absent; it does NOT build anything.
+    Generating a year he has not released is a manual procedure, written down in
+    docs/runbook_pollination_value_raster.md, because it needs his repo, network access to FAOSTAT
+    and the World Bank, and about half an hour. Automating it would make this the only task in the
+    library that runs another repository's code, and the cost of that exception is larger than the
+    convenience: it would put the execution of his science inside our pipeline, for something that
+    changes about once a year.
 
-    ⚠ This runs another repository's code, which nothing else in this library does. It is
-    deliberate and narrow: the alternative is a manual procedure that rots, and we have already
-    been bitten by it once. Nothing here computes any science -- it only ensures his output exists.
+    What is worth automating is the part that actually failed, which is knowing WHICH copy is in
+    place. The provenance row is the whole point of the task.
     """
     publish_inputs(p)
     year = int(p.gep_base_year)
@@ -2133,25 +2132,15 @@ def pollination_source_value_raster(p):
                                    p.pollination_source_provenance_path)
         return True
 
-    repo_dir = getattr(p, 'pollination_crop_benefits_repo_dir', None)
-    if not repo_dir or not os.path.isdir(str(repo_dir)):
-        raise NameError(
-            'No %s in %s, and pollination_crop_benefits_repo_dir is not set to a clone of the '
-            'source pipeline, so it cannot be generated. Either stage the raster by hand following '
-            'docs/runbook_pollination_value_raster.md, or set that parameter in the project input '
-            'es_parameters.csv.' % (file_name, os.path.dirname(p.pollination_source_value_raster_path)))
-
-    hb.log('Source value raster for %d is absent. Running the author pipeline in %s. '
-           'His price step downloads from FAOSTAT and the World Bank, and the yield step is the '
-           'slow one, so this takes roughly half an hour.' % (year, repo_dir))
-    pf.run_source_value_pipeline(str(repo_dir), year)
-
-    built = pf.locate_built_source_raster(str(repo_dir), year)
-    shutil.copyfile(built, p.pollination_source_value_raster_path)
-    hb.log('Staged %s into %s' % (file_name, os.path.dirname(p.pollination_source_value_raster_path)))
-    pf.write_source_provenance(p.pollination_source_value_raster_path,
-                               p.pollination_source_provenance_path)
-    return True
+    available = pf.available_source_value_years(p)
+    raise NameError(
+        'No %s in %s. The GEP pollination value is the source author\'s raster, and he publishes '
+        'only some price years — this directory has %s. Generating %d means running his pipeline '
+        'at that year: see docs/runbook_pollination_value_raster.md, which is six commands and '
+        'about half an hour. It is deliberately not automated here, because doing so would put the '
+        'execution of his pipeline inside ours.'
+        % (file_name, os.path.dirname(p.pollination_source_value_raster_path),
+           ', '.join(str(y) for y in available) if available else 'none', year))
 
 
 def pollination_value_raster(p):

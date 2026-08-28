@@ -385,23 +385,6 @@ def test_the_vendored_source_commit_is_recorded():
         assert match.group(1).endswith('crop_benefits'), match.group(1)
 
 
-def test_the_source_pipeline_refuses_to_build_the_wrong_year(tmp_path):
-    """His target year lives in his config, so running blind builds whatever that config says.
-
-    The GEP base year and his config are set independently, and a mismatch is invisible in the
-    output: the raster is named for the year it was built for, so it looks correct while carrying
-    another year's prices. On 2026-08-28 a raster built with a substituted price table sat staged
-    for 45 minutes and was only 0.1 percent out, which is exactly the size of error that survives
-    review. The guard turns that into a failure that names both years.
-    """
-    repo = tmp_path / 'crop_benefits'
-    (repo / 'config').mkdir(parents=True)
-    (repo / 'config' / 'default.yaml').write_text('run:\n  target_year: 2019\n', encoding='utf-8')
-    with pytest.raises(NameError) as raised:
-        pf.run_source_value_pipeline(str(repo), 2023)
-    assert '2019' in str(raised.value) and '2023' in str(raised.value)
-
-
 def test_source_provenance_records_the_file_it_actually_read(tmp_path):
     """A stale staged raster is silent: same name, same shape, a slightly different number.
 
