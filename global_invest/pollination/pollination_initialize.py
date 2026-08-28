@@ -22,6 +22,14 @@ def build_gep_service_calculation_task_tree(p):
         pollination_tasks.pollination_source_value_raster, skip_existing=1)
     p.pollination_value_raster = p.add_task(
         pollination_tasks.pollination_value_raster, skip_existing=1)
+    # Our own construction of the same quantity, and the comparison against his. Not the GEP
+    # number -- the account reports his raster -- but the only check in the library that can
+    # disagree with an author on method rather than on transcription, so it runs every time
+    # rather than sitting dormant as code nobody executes.
+    p.pollination_value_raster_rebuilt = p.add_task(
+        pollination_tasks.pollination_value_raster_rebuilt, skip_existing=1)
+    p.pollination_value_independence_check = p.add_task(
+        pollination_tasks.pollination_value_independence_check, skip_existing=1)
     p.pollination_value_by_region = p.add_task(
         pollination_tasks.pollination_value_by_region, skip_existing=1)
     p.gep_calculation = p.add_task(pollination_tasks.gep_calculation)

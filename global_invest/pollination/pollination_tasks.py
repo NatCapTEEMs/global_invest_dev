@@ -2233,14 +2233,14 @@ def pollination_value_raster_rebuilt(p):
     """
     publish_inputs(p)
     year = int(p.gep_base_year)
-    p.pollination_value_raster_path = os.path.join(
+    p.pollination_value_raster_rebuilt_path = os.path.join(
         p.cur_dir, 'poll_value_per_cell_%dusd.tif' % year)
-    p.pollination_value_summary_path = os.path.join(
+    p.pollination_value_summary_rebuilt_path = os.path.join(
         p.cur_dir, 'poll_value_summary_%dusd.csv' % year)
     if not p.run_this:
         return
 
-    if hb.path_all_exist([p.pollination_value_raster_path, p.pollination_value_summary_path]):
+    if hb.path_all_exist([p.pollination_value_raster_rebuilt_path, p.pollination_value_summary_rebuilt_path]):
         hb.log('Pollination value raster already built. Skipping.')
         return True
 
@@ -2330,12 +2330,12 @@ def pollination_value_raster_rebuilt(p):
 
     out_meta = dict(reference_meta)
     out_meta.update(dtype='float32', nodata=NODATA_OUT, count=1)
-    write_raster(str(p.pollination_value_raster_path),
+    write_raster(str(p.pollination_value_raster_rebuilt_path),
                  np.where(np.isfinite(value_per_cell), value_per_cell, NODATA_OUT).astype('float32'),
                  out_meta, nodata=NODATA_OUT)
 
     df_summary = pd.DataFrame(summary_rows)
-    hb.df_write(df_summary, p.pollination_value_summary_path)
+    hb.df_write(df_summary, p.pollination_value_summary_rebuilt_path)
 
     total = float(np.nansum(value_per_cell))
     hb.log('Pollination value raster: %d crops valued, %.2f bn USD at %d prices.'
@@ -2343,4 +2343,63 @@ def pollination_value_raster_rebuilt(p):
     for reason, crops in skipped.items():
         if crops:
             hb.log('  skipped (%s), %d: %s' % (reason, len(crops), ', '.join(crops[:8])))
+    return True
+
+
+def pollination_value_independence_check(p):
+    """Compare our own construction of the value raster against the author's, and record the gap.
+
+    This is the only level-4 check in the account: an implementation built from the documented
+    method rather than from the author's code, so it can disagree with him for a reason that
+    matters. Reading his raster and reproducing his number tests fidelity; this tests the method.
+
+    The two routes share no code and only some data. He goes CropGrids harvested area times a
+    Monfreda within-country yield pattern times FAO calibration; we take CropGrids production
+    directly, price it with FAO median producer prices we build ourselves, and apply Klein
+    dependence with the arabica/robusta coffee split. That they land within about one percent is
+    the strongest corroboration we have anywhere, and it is worth computing every run rather than
+    asserting from a docstring.
+
+    ⚠ The GEP total is HIS raster, not this one. This task reports only, and changes no number the
+    account publishes.
+    """
+    publish_inputs(p)
+    p.pollination_independence_path = os.path.join(p.cur_dir, 'value_raster_independence.csv')
+    if not p.run_this:
+        return
+
+    if hb.path_exists(p.pollination_independence_path):
+        hb.log('Independence check already computed. Skipping.')
+        return True
+
+    ours_path = getattr(p, 'pollination_value_raster_rebuilt_path', None)
+    theirs_path = getattr(p, 'pollination_value_raster_path', None)
+    if not (ours_path and hb.path_exists(ours_path) and theirs_path and hb.path_exists(theirs_path)):
+        hb.log('Independence check needs both rasters and one is absent; skipping rather than '
+               'reporting a comparison against nothing.')
+        return
+
+    ours, _ = read_raster(str(ours_path))
+    theirs, _ = read_raster(str(theirs_path))
+    ours = np.where(np.isfinite(ours) & (ours != NODATA_OUT), ours, np.nan)
+    theirs = np.where(np.isfinite(theirs) & (theirs != NODATA_OUT), theirs, np.nan)
+
+    ours_total, theirs_total = float(np.nansum(ours)), float(np.nansum(theirs))
+    both = np.isfinite(ours) & np.isfinite(theirs)
+    correlation = float(np.corrcoef(ours[both], theirs[both])[0, 1]) if both.sum() > 1 else float('nan')
+
+    hb.df_write(pd.DataFrame([{
+        'ours_independent_usd': ours_total,
+        'author_raster_usd': theirs_total,
+        'ratio_ours_over_author': ours_total / theirs_total if theirs_total else float('nan'),
+        'pct_difference': (ours_total / theirs_total - 1.0) * 100.0 if theirs_total else float('nan'),
+        'cells_in_both': int(both.sum()),
+        'correlation_where_both': correlation,
+    }]), p.pollination_independence_path)
+
+    hb.log('Independence check: ours $%.2fbn against the author\'s $%.2fbn, %+.2f percent, '
+           'correlation %.4f over %d cells.'
+           % (ours_total / 1e9, theirs_total / 1e9,
+              (ours_total / theirs_total - 1.0) * 100.0 if theirs_total else float('nan'),
+              correlation, int(both.sum())))
     return True
