@@ -114,6 +114,8 @@ If the unweighted total lands near $388bn instead, the GEP path is reading our o
 (`pollination_value_raster_rebuilt`) rather than his — that function is kept as a cross-check, not as
 the GEP path.
 
-If the ratio lands near 0.42, the value raster is his **2020** vintage rather than 2019. The two are
-close in total but differ spatially enough to move the sufficiency-weighted ratio by seven points,
-which is what made this difference so hard to find.
+A ratio near **0.42 is correct** — it is what both pipelines give once cell area is handled properly.
+The 0.4935 that appears in his published figures is the equator-constant summing described above, not
+a different model. An earlier version of this runbook said the opposite, attributing the gap to his
+2020 versus 2019 value raster; that was wrong, and it was wrong because his 2020 raster had been
+compared against his 2019 sufficiency.
