@@ -2380,14 +2380,10 @@ def gep_calculation(p):
     between expected annual damage in a degraded world and in today's. `compute_flood_gep` computes
     it from the three scenario runs and writes `step4e_flood_gep_USD2019.csv`.
 
-    Prefer that when it exists. The author's export, `flood_gep_for_merge_v2_2024hazard.csv` at
-    $11.40bn over 162 non-zero countries, is the fallback for a machine that has not run the
-    counterfactual chain -- it needs the cluster inputs and several hours. Which one was used is
-    written into the log and the result, because "our number" and "his number" are different claims
-    and the account should not have to guess which it is holding.
+    The author's export is the fallback when that chain has not run. Which was used is recorded in
+    the log and in service_results.
 
-    ⚠ This is the GEP, NOT the $887.8bn of undefended expected annual damage the same pipeline
-    reports. Reproducing the damage side settles the port, not the account.
+    ⚠ This is the GEP, not the expected annual damage the same pipeline reports.
     """
     publish_inputs(p)
     configure_valuation(p)

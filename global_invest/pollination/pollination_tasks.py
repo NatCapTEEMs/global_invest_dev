@@ -2126,16 +2126,8 @@ def pollination_source_value_raster(p):
     45 minutes after the real one had been rebuilt, and nothing would have caught it because the
     total was only 0.1 percent out. So the staging is a task, and it records what it staged.
 
-    The task records what is staged and fails loudly when it is absent; it does NOT build anything.
-    Generating a year he has not released is a manual procedure, written down in
-    docs/runbook_pollination_value_raster.md, because it needs his repo, network access to FAOSTAT
-    and the World Bank, and about half an hour. Automating it would make this the only task in the
-    library that runs another repository's code, and the cost of that exception is larger than the
-    convenience: it would put the execution of his science inside our pipeline, for something that
-    changes about once a year.
-
-    What is worth automating is the part that actually failed, which is knowing WHICH copy is in
-    place. The provenance row is the whole point of the task.
+    Records what is staged and raises when it is absent; it does not build anything. Generating a
+    year the author has not released is a manual procedure: docs/runbook_pollination_value_raster.md.
     """
     publish_inputs(p)
     year = int(p.gep_base_year)
@@ -2369,19 +2361,11 @@ def pollination_value_raster_rebuilt(p):
 def pollination_value_independence_check(p):
     """Compare our own construction of the value raster against the author's, and record the gap.
 
-    This is the only level-4 check in the account: an implementation built from the documented
-    method rather than from the author's code, so it can disagree with him for a reason that
-    matters. Reading his raster and reproducing his number tests fidelity; this tests the method.
+    Our construction and the author's share no code and only some data: he goes CropGrids harvested
+    area times a Monfreda yield pattern times FAO calibration, we take CropGrids production directly.
+    Agreement is therefore evidence about the method rather than about the port.
 
-    The two routes share no code and only some data. He goes CropGrids harvested area times a
-    Monfreda within-country yield pattern times FAO calibration; we take CropGrids production
-    directly, price it with FAO median producer prices we build ourselves, and apply Klein
-    dependence with the arabica/robusta coffee split. That they land within about one percent is
-    the strongest corroboration we have anywhere, and it is worth computing every run rather than
-    asserting from a docstring.
-
-    ⚠ The GEP total is HIS raster, not this one. This task reports only, and changes no number the
-    account publishes.
+    ⚠ Reports only. The GEP total is the author's raster, not this one.
     """
     publish_inputs(p)
     p.pollination_independence_path = os.path.join(p.cur_dir, 'value_raster_independence.csv')
