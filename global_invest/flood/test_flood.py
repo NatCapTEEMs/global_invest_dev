@@ -225,14 +225,22 @@ def test_the_flood_module_does_not_import_the_source_repo():
         sys.modules.update(cached)
 
 
-def test_the_flood_root_is_configuration_not_an_environment_variable():
-    """es_parameters declares it, so a machine sets it there rather than exporting a shell variable."""
+def test_every_flood_input_is_an_es_parameters_reference():
+    """Inputs resolve through get_path like every other service, not from a directory convention.
+
+    Flood used to derive some thirty locations by hand from one root, which meant a machine had to
+    reproduce a layout rather than say where its data is, and made the run's inputs invisible to
+    anything that reads the definitions.
+    """
     import csv
     import os
     here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     path = os.path.join(here, 'input_template', 'es_parameters.csv')
     keys = {row[1] for row in csv.reader(open(path, encoding='utf-8-sig')) if len(row) > 1}
-    assert 'flood_root_dir' in keys
+    for name in ('flood_lulc_path', 'flood_sda_raster_path', 'flood_depth_aligned_path',
+                 'flood_spa_path', 'flood_canonical_eur_path', 'flood_cn_table_path'):
+        assert name in keys, '%s must be an es_parameters row' % name
+    assert 'flood_root_dir' not in keys, 'the hand-derived root is gone; inputs are references now'
 
 
 def test_every_flood_module_imports():

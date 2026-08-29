@@ -70,7 +70,6 @@ air_filtration,air_filtration_workbook_path,global_invest/air_filtration/air_fil
 air_filtration,air_filtration_workbook_source_note,"the committed workbook, from the drive air filtration folder"
 water_quality,water_quality_retention_path,global_invest/water_quality/Results/EstimationOutput/retention_estimates.csv
 water_quality,water_quality_international_path,global_invest/water_quality/water_quality_gep.csv
-flood,flood_root_dir,
 flood,flood_iso3_list,all
 flood,flood_iso3_start,0
 flood,flood_iso3_n,0
@@ -81,6 +80,26 @@ flood,flood_return_periods,"[10, 20, 50, 100, 200, 500]"
 flood,flood_return_periods_source_note,"⚠⚠ the module constant RETURN_PERIODS is [10, 20, 50, 500] and the deleted set_flood_paths overrode it with all six. Deleting that without moving this here dropped RP100 and RP200 from the damage integral and took EAD from $887.8bn to $653.0bn, a 26 percent fall, with nothing raising -- the run reported ok=250/250. The six are what is on disk under floodplain_depth_v2_nowater/aligned_to_lulc"
 flood,flood_compute_ead_rasters,false
 flood,flood_damage_depth_mode,interpolated
+flood,flood_lulc_path,global_invest/flood/input/pipeline_inputs/lulc/lulc_esa_2019_int_reproj.tif
+flood,flood_roads_path,global_invest/flood/input/pipeline_inputs/roads/roads_mask_match_depth.tif
+flood,flood_pop_path,global_invest/flood/input/pipeline_inputs/pop/GlobPOP_Count_30arc_2020_I32.tif
+flood,flood_depth_raw_path,global_invest/flood/input/pipeline_inputs/floodplain_depth_raw
+flood,flood_depth_extract_path,global_invest/flood/input/pipeline_inputs/floodplain_depth_raw/extracted_tifs
+flood,flood_depth_aligned_path,global_invest/flood/input/pipeline_inputs/floodplain_depth/aligned_to_lulc
+flood,flood_depth_mask_path,global_invest/flood/input/pipeline_inputs/floodplain_depth/masks_aligned_to_lulc
+flood,flood_sda_mapping_path,global_invest/flood/input/pipeline_inputs/lulc_to_sda_mapping/lulc_to_sda_mapping.json
+flood,flood_sda_legend_path,global_invest/flood/input/pipeline_inputs/sda/sda_esa300m_legend.csv
+flood,flood_spa_path,global_invest/flood/input/pipeline_inputs/global_spa_ben/global_prr_spa.tif
+flood,flood_spa_ratio_path,global_invest/flood/input/pipeline_inputs/global_spa_ben/global_upstream_spa_ratio.tif
+flood,flood_canonical_eur_path,global_invest/flood/input/pipeline_inputs/flood_damage/country_landtype_flood_damage_JRC_EUR_m2.csv
+flood,flood_currency_factors_path,global_invest/flood/input/pipeline_inputs/flood_damage/_currency_audit/currency_conversion_factors_EUR2010_to_USD2019.csv
+flood,flood_damage_long_path,global_invest/flood/input/pipeline_inputs/flood_damage/damage_functions_depth_USD2019_long.csv
+flood,flood_damage_wide_table_path,global_invest/flood/input/pipeline_inputs/flood_damage/damage_functions_depth_USD2019_wide.csv
+flood,flood_sda_damage_long_path,global_invest/flood/input/pipeline_inputs/flood_damage/damage_functions_sda_depth_USD2019_long.csv
+flood,flood_sda_damage_wide_path,global_invest/flood/input/pipeline_inputs/flood_damage/damage_functions_sda_depth_USD2019_wide.csv
+flood,flood_amplification_path,global_invest/flood/input/pipeline_inputs/counterfactual
+flood,flood_cn_table_path,global_invest/flood/input/pipeline_inputs/counterfactual/esa_cci_CN_three_scenarios.csv
+flood,flood_input_reference_note,"every flood input is a get_path reference under base_data, the same way terrestrial_carbon and the rest resolve theirs. The pipeline used to build all of them by hand from a flood_root_dir, which is not how ProjectFlow finds data. outputs are named by the task that writes them, under its own cur_dir, so nothing here points at a results location."
 flood,flood_amplification_pattern,amplification_{scenario}_rp{rp}.tif
 flood,flood_protection_documented_only,true
 flood,flood_protection_path,
@@ -128,7 +147,6 @@ flood,flood_avoided_damage_path,global_invest/flood/country_avoided_damage_usd20
 flood,flood_country_vector_path,global_invest/flood/input/pipeline_inputs/country_vector/country_boundary_r250_with_iso3.gpkg
 flood,flood_sda_raster_path,global_invest/flood/input/pipeline_inputs/sda/sda_esa300m_artif_crop_pasture.tif
 flood,flood_depth_path_template,global_invest/flood/input/pipeline_inputs/floodplain_depth/aligned_to_lulc/JRC_flood_depth_rp{rp}y__matchLULC.tif
-flood,flood_damage_wide_path,global_invest/flood/input/pipeline_inputs/flood_damage/damage_functions_sda_depth_USD2019_wide.csv
 local_climate_regulation,local_climate_regulation_final_path,global_invest/local_climate_regulation/local_climate_regulation_gep.csv
 local_climate_regulation,local_climate_regulation_city_savings_path,global_invest/local_climate_regulation/merged
 local_climate_regulation,local_climate_regulation_city_savings_source_note,"the chain's own per-country city-month valuations, one file per country: avoided kilowatt-hours, national price and their product"
