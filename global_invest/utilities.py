@@ -1074,10 +1074,10 @@ def random_windows(width: int, height: int, n: int, wsize: int, seed: int = 7):
         )
 
 
-def atomic_write_raster(final_path: Path, profile: dict, array: np.ndarray, band: int = 1):
+def save_raster_completely(final_path: Path, profile: dict, array: np.ndarray, band: int = 1):
     """
-    Write to <name>.tmp then rename, so a killed job never leaves a
-    half-written GeoTIFF that a later --skip-done run mistakes for complete.
+    Write to <name>.tmp then rename, so a killed job never leaves a half-written GeoTIFF at the
+    final path for a later skip-existing run to mistake for complete.
     """
     final_path = Path(final_path)
     final_path.parent.mkdir(parents=True, exist_ok=True)

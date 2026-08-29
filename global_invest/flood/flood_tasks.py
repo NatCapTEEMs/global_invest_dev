@@ -334,7 +334,7 @@ def _write_mask_from_depth(depth_tif: str, mask_tif: str, threshold: float = 0.0
         prof = src.profile.copy()
         prof.update(dtype="uint8", count=1, nodata=0, compress="DEFLATE",
                     tiled=True, BIGTIFF="IF_SAFER")
-    utilities.atomic_write_raster(mask_tif, prof, mask)
+    utilities.save_raster_completely(mask_tif, prof, mask)
 
 
 def download_and_align_jrc_depth(p, return_periods: Optional[List[int]] = None) -> Dict[int, str]:
@@ -876,10 +876,10 @@ def process_country(
                     class_tif = os.path.join(str(out_dir), f"sda_class_{iso3}_rp{rp}.tif")
                     prof_class = prof_base.copy()
                     prof_class.update(dtype="uint8", count=1, nodata=0)
-                    utilities.atomic_write_raster(class_tif, prof_class, sda_class.astype("uint8"), band=1)
+                    utilities.save_raster_completely(class_tif, prof_class, sda_class.astype("uint8"), band=1)
 
                     mask_tif = os.path.join(str(out_dir), f"sda_mask_{iso3}_rp{rp}.tif")
-                    utilities.atomic_write_raster(mask_tif, prof_class, sda_mask.astype("uint8"), band=1)
+                    utilities.save_raster_completely(mask_tif, prof_class, sda_mask.astype("uint8"), band=1)
 
                     if write_depthbin:
                         nodata_mask = ~valid_depth
@@ -887,7 +887,7 @@ def process_country(
                         db_tif = os.path.join(str(out_dir), f"sda_depthbin_idx_{iso3}_rp{rp}.tif")
                         prof_db = prof_base.copy()
                         prof_db.update(dtype="int16", count=1, nodata=-1)
-                        utilities.atomic_write_raster(db_tif, prof_db, depthbin.astype("int16"), band=1)
+                        utilities.save_raster_completely(db_tif, prof_db, depthbin.astype("int16"), band=1)
 
                     metrics.append({
                         "iso3": iso3,
@@ -1020,7 +1020,7 @@ def _service_flow_one_iso3(p, iso3: str, admin0: gpd.GeoDataFrame, spa_src) -> T
             prof = spa_src.profile.copy()
             prof.update(height=flow.shape[0], width=flow.shape[1], transform=tr,
                         nodata=-9999, dtype="float32", count=1)
-            utilities.atomic_write_raster(flow_file, prof,
+            utilities.save_raster_completely(flow_file, prof,
                                 np.where(np.isfinite(flow), flow, -9999).astype("float32"))
 
         rows.append(_service_flow_stats(p, iso3, rp, cls_file, mask_file, flow_file))
