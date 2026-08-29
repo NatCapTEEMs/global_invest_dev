@@ -30,10 +30,12 @@ def add_flood_tasks(p):
 def build_flood_task_tree(p):
     """The full pipeline: inputs, SDA, service flow, valuation, the counterfactual GEP, reporting.
 
-    Every variant below builds this same tree and disables what it does not want. Omitting a task
-    would also omit the paths it publishes, and the later sections read those: the valuation task
-    names the per-country directory the GEP task writes its degraded scenarios into, and the SDA
-    task names the directory the service flow reads.
+    Every variant below builds this same tree and turns off what it does not want, by setting run=0
+    on the task itself. Omitting a task would also omit the paths it publishes, and the later
+    sections read those: the valuation task names the per-country directory the GEP task writes its
+    degraded scenarios into, and the SDA task names the directory the service flow reads. Setting
+    the flag directly rather than by name means a typo raises here instead of leaving an expensive
+    task quietly enabled.
     """
     p.prepare_flood_inputs_task = p.add_task(flood_tasks.task_prepare_flood_inputs)
     p.build_sda_task = p.add_task(flood_tasks.task_build_sda)
@@ -47,7 +49,7 @@ def build_flood_task_tree(p):
 def build_flood_calculation_task_tree(p):
     """Calculation only: everything except maps and figures."""
     build_flood_task_tree(p)
-    p.skip_tasks(['generate_maps_and_figures'])
+    p.generate_maps_and_figures_task.run = 0
     return p
 
 
@@ -55,16 +57,20 @@ def build_flood_accounting_task_tree(p):
     """The SEEA-EA physical account on its own: SDA delineation and the SPA-to-SDA service flow,
     no monetary valuation. Useful when the JRC damage tables are not available or not wanted."""
     build_flood_task_tree(p)
-    p.skip_tasks(['compute_flood_damages', 'compute_flood_gep',
-                  'generate_maps_and_figures'])
+    p.compute_flood_damages_task.run = 0
+    p.compute_flood_gep_task.run = 0
+    p.generate_maps_and_figures_task.run = 0
     return p
 
 
 def build_flood_valuation_task_tree(p):
     """Valuation only, against SDA rasters an earlier run produced."""
     build_flood_task_tree(p)
-    p.skip_tasks(['prepare_flood_inputs', 'build_sda', 'compute_service_flow',
-                  'compute_flood_gep', 'generate_maps_and_figures'])
+    p.prepare_flood_inputs_task.run = 0
+    p.build_sda_task.run = 0
+    p.compute_service_flow_task.run = 0
+    p.compute_flood_gep_task.run = 0
+    p.generate_maps_and_figures_task.run = 0
     return p
 
 
@@ -72,16 +78,21 @@ def build_flood_gep_task_tree(p):
     """The paired counterfactual, the only tree that produces a service value rather than gross
     exposure: gep_flood = ead_bare - ead_current, plus the maps."""
     build_flood_task_tree(p)
-    p.skip_tasks(['prepare_flood_inputs', 'build_sda', 'compute_service_flow',
-                  'compute_flood_damages'])
+    p.prepare_flood_inputs_task.run = 0
+    p.build_sda_task.run = 0
+    p.compute_service_flow_task.run = 0
+    p.compute_flood_damages_task.run = 0
     return p
 
 
 def build_flood_results_task_tree(p):
     """Maps and figures from an existing run."""
     build_flood_task_tree(p)
-    p.skip_tasks(['prepare_flood_inputs', 'build_sda', 'compute_service_flow',
-                  'compute_flood_damages', 'compute_flood_gep'])
+    p.prepare_flood_inputs_task.run = 0
+    p.build_sda_task.run = 0
+    p.compute_service_flow_task.run = 0
+    p.compute_flood_damages_task.run = 0
+    p.compute_flood_gep_task.run = 0
     return p
 
 

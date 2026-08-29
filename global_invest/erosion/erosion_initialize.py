@@ -20,23 +20,23 @@ def build_gep_service_calculation_task_tree(p):
     skip_existing=1 on the SDR and routing tasks (dir present -> paths published, work skipped),
     since both cost minutes and are deterministic; the valuation registers plain and skips on its
     registered result, like every service's gep_calculation."""
-    p.invest_sdr = p.add_task(erosion_tasks.invest_sdr, skip_existing=1)
-    p.upstream_prevention_share = p.add_task(erosion_tasks.upstream_prevention_share, skip_existing=1)
-    p.prevention_shares = p.add_task(erosion_tasks.prevention_shares)
-    p.gep_calculation = p.add_task(erosion_tasks.gep_calculation)
+    p.invest_sdr_task = p.add_task(erosion_tasks.invest_sdr, skip_existing=1)
+    p.upstream_prevention_share_task = p.add_task(erosion_tasks.upstream_prevention_share, skip_existing=1)
+    p.prevention_shares_task = p.add_task(erosion_tasks.prevention_shares)
+    p.gep_calculation_task = p.add_task(erosion_tasks.gep_calculation)
     return p
 
 
 def build_gep_service_results_task_tree(p):
     """Results-only: render maps/figures from an existing prevention-share run."""
-    p.maps_and_figures = p.add_task(erosion_tasks.maps_and_figures, skip_existing=1)
+    p.maps_and_figures_task = p.add_task(erosion_tasks.maps_and_figures, skip_existing=1)
     return p
 
 
 def build_gep_service_task_tree(p):
     """Full GEP run: SDR + valuation + maps/figures + the results report."""
     p = build_gep_service_calculation_task_tree(p)
-    p.maps_and_figures = p.add_task(erosion_tasks.maps_and_figures, skip_existing=1)
+    p.maps_and_figures_task = p.add_task(erosion_tasks.maps_and_figures, skip_existing=1)
     p.erosion_gep_result_task = p.add_task(erosion_tasks.gep_result)
     return p
 

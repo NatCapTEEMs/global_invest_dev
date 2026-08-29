@@ -17,22 +17,22 @@ def build_gep_service_calculation_task_tree(p):
     fao_median_prices is the first step towards building that value raster here rather than
     taking it as given. It downloads FAOSTAT production and producer prices and writes the
     per-crop median price the raster is priced at. skip_existing=1 because it is a download."""
-    p.fao_median_prices = p.add_task(pollination_tasks.fao_median_prices, skip_existing=1)
-    p.pollination_source_value_raster = p.add_task(
+    p.fao_median_prices_task = p.add_task(pollination_tasks.fao_median_prices, skip_existing=1)
+    p.pollination_source_value_raster_task = p.add_task(
         pollination_tasks.pollination_source_value_raster, skip_existing=1)
-    p.pollination_value_raster = p.add_task(
+    p.pollination_value_raster_task = p.add_task(
         pollination_tasks.pollination_value_raster, skip_existing=1)
     # Our own construction of the same quantity, and the comparison against his. Not the GEP
     # number -- the account reports his raster -- but the only check in the library that can
     # disagree with an author on method rather than on transcription, so it runs every time
     # rather than sitting dormant as code nobody executes.
-    p.pollination_value_raster_rebuilt = p.add_task(
+    p.pollination_value_raster_rebuilt_task = p.add_task(
         pollination_tasks.pollination_value_raster_rebuilt, skip_existing=1)
-    p.pollination_value_independence_check = p.add_task(
+    p.pollination_value_independence_check_task = p.add_task(
         pollination_tasks.pollination_value_independence_check, skip_existing=1)
-    p.pollination_value_by_region = p.add_task(
+    p.pollination_value_by_region_task = p.add_task(
         pollination_tasks.pollination_value_by_region, skip_existing=1)
-    p.gep_calculation = p.add_task(pollination_tasks.gep_calculation)
+    p.gep_calculation_task = p.add_task(pollination_tasks.gep_calculation)
     return p
 
 

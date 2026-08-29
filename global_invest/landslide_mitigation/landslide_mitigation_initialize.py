@@ -26,7 +26,7 @@ def build_gep_service_calculation_task_tree(p):
     """
     landslide_mitigation_tasks.publish_inputs(p)
     p.tables_figures_task = p.add_task(landslide_mitigation_tasks.tables_figures, creates_dir=True)
-    p.gep_calculation = p.add_task(landslide_mitigation_tasks.gep_calculation, creates_dir=True)
+    p.gep_calculation_task = p.add_task(landslide_mitigation_tasks.gep_calculation, creates_dir=True)
     return p
 
 
@@ -112,7 +112,7 @@ def build_gep_service_prediction_task_tree(p):
     # ---------------------------------------------------------------- #
     # The account's per-country table, then the results report
     # ---------------------------------------------------------------- #
-    p.gep_calculation = p.add_task(landslide_mitigation_tasks.gep_calculation, creates_dir=True)
+    p.gep_calculation_task = p.add_task(landslide_mitigation_tasks.gep_calculation, creates_dir=True)
     p.landslide_mitigation_gep_result_task = p.add_task(landslide_mitigation_tasks.gep_result)
 
     return p
