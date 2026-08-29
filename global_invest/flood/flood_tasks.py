@@ -1785,7 +1785,23 @@ def compute_ead_by_country(scenario: str = "current") -> pd.DataFrame:
     status_df = pd.DataFrame(results)
     write_csv(status_df, VAL_EXPORT_DIR / f"step4c_global_status{suffix}.csv")
     n_ok = int((status_df["status"] == "ok").sum()) if not status_df.empty else 0
-    print(f"[DONE] Step 4C [{scenario}]: ok={n_ok} / {len(iso3_dirs)}")
+    total = float(pd.to_numeric(status_df.get("ead_usd2019"), errors="coerce").sum()) \
+        if not status_df.empty else 0.0
+    print(f"[DONE] Step 4C [{scenario}]: ok={n_ok} / {len(iso3_dirs)}, "
+          f"total EAD ${total:,.0f}")
+
+    # ⚠ "ok" counts countries that completed, not countries that produced a number. On 2026-08-29
+    # this printed ok=250/250 while every country was $0, because the run had hydrated no config
+    # and there was nothing to value -- and the zero total flowed all the way into a published
+    # step4e table without anything raising. A whole-world zero is never a real result, so it stops
+    # the run here rather than being discovered by comparing against someone else's figure.
+    if not status_df.empty and total <= 0.0:
+        raise ValueError(
+            'Step 4C [%s] finished with %d of %d countries ok but a total EAD of $0. That is not a '
+            'result: it means the damage inputs were absent or unconfigured. Check that '
+            'es_parameters and es_config hydrated -- ProjectFlow seeds them from input_template '
+            'beside the calling script, so a runner in a subdirectory finds none.'
+            % (scenario, n_ok, len(iso3_dirs)))
     return status_df
 
 
@@ -1834,10 +1850,10 @@ def export_attributed_summary() -> Optional[Path]:
         f = iso3_dir / "step4c_ead_USD2019.csv"
         if not f.exists():
             continue
-        try:
-            rows.append(pd.read_csv(f))
-        except Exception as e:
-            warnings.warn(f"[WARN] {iso3_dir.name}: could not read {f}: {e}")
+        # No try/except: an unreadable country file used to warn and continue, so that country
+        # dropped out of a global total silently and the sum still looked plausible. A warning in a
+        # 250-country run scrolls past; a missing country does not announce itself in the number.
+        rows.append(pd.read_csv(f))
 
     if not rows:
         warnings.warn("[WARN] No Step 4C files found; attributed summary not written.")
@@ -1898,10 +1914,9 @@ def compute_flood_gep() -> Optional[Path]:
                         if x.is_dir() and len(x.name) == 3 and x.name.isalpha()):
             f = d / f"step4c_ead_USD2019{suffix}.csv"
             if f.exists():
-                try:
-                    rows.append(pd.read_csv(f))
-                except Exception as e:
-                    warnings.warn(f"[WARN] {d.name}: {e}")
+                # No try/except: see the note in export_attributed_summary. A country that fails to
+                # read must not vanish from a scenario total while the total still looks plausible.
+                rows.append(pd.read_csv(f))
         if not rows:
             return None
         df = pd.concat(rows, ignore_index=True)

@@ -32,7 +32,7 @@ def to_float(x) -> float:
     """
     try:
         return float(x)
-    except Exception:
+    except (TypeError, ValueError):
         return np.nan
 
 

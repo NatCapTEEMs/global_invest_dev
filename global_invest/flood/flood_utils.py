@@ -192,7 +192,7 @@ def raster_ok(path: Path) -> bool:
         with rasterio.open(path) as ds:
             _ = ds.profile
         return True
-    except Exception:
+    except (OSError, rasterio.errors.RasterioIOError):
         return False
 
 
@@ -290,7 +290,7 @@ def find_col(df: pd.DataFrame, candidates: Tuple[str, ...]) -> Optional[str]:
 def to_float(x) -> float:
     try:
         return float(x)
-    except Exception:
+    except (TypeError, ValueError):
         return np.nan
 
 
