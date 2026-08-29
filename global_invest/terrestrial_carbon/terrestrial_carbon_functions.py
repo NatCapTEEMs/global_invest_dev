@@ -97,7 +97,7 @@ def generate_carbon_density_raster(lulc_path, cz_path, density_lookup, out_path)
             f"lulc_id {sorted(set(density_lookup.index.get_level_values('lulc_id')))} "
             f"(likely an ESA-classed map fed to the SEALS7-keyed lookup, or a wrong carbon-zones raster). "
             f"Refusing to emit an all-NoData density raster.")
-    print(f"Saved: {out_path}")
+    hb.log(f"Saved: {out_path}")
 
 # Promoted to global_invest.utilities on its second caller (pollination GEP); re-exported here
 # so existing imports keep working. It reads as unused in this file because the caller is the

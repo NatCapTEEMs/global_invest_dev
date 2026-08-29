@@ -263,7 +263,7 @@ def _zone_mean(p, scenario, year, density_lookup):
         tcf.summarize_raster_by_region(density_path, p.region_boundary_path, summary_path,
                                        year=year, id_column=p.terrestrial_carbon_shock_id_col)
     return hb.df_read(summary_path).set_index('region_id')[
-        getattr(p, 'terrestrial_carbon_shock_value_col', 'mean')]
+        p.terrestrial_carbon_shock_value_col]
 
 
 def _align_zones_to_lulc_grid(p, reference_lulc_path):
@@ -377,7 +377,7 @@ def terrestrial_carbon_shock(p):
     out = pd.DataFrame(rows)
     utilities.assert_shock_table_sound(out, scenarios, 'terrestrial_carbon')
     out.to_csv(p.terrestrial_carbon_shock_output_path, index=False)
-    print('  carbon shock: %d rows, %d scenarios (shock_pct=shock_pct_contemp=/base_Y, shock_pct_fixedbase=/base_%d) -> %s'
+    hb.log('  carbon shock: %d rows, %d scenarios (shock_pct=shock_pct_contemp=/base_Y, shock_pct_fixedbase=/base_%d) -> %s'
           % (len(out), out['scenario'].nunique() if rows else 0, es_shock_base_year, p.terrestrial_carbon_shock_output_path))
     return True
 
@@ -413,7 +413,7 @@ def terrestrial_carbon_shock_static(p):
     carb_path = getattr(p, 'terrestrial_carbon_dependency_path', None) or os.path.join(
         p.input_dir, 'raw_dependencies', 'carbon_storage_dependency.csv')
     if not hb.path_exists(carb_path):
-        print('  carbon shock: dependency csv not found (%s) -- skipping' % carb_path)
+        hb.log('  carbon shock: dependency csv not found (%s) -- skipping' % carb_path)
         return
 
     df = hb.df_read(carb_path)
@@ -438,7 +438,7 @@ def terrestrial_carbon_shock_static(p):
     utilities.assert_shock_table_sound(out, es_shock_scenarios, 'terrestrial_carbon')
     out.to_csv(p.terrestrial_carbon_shock_output_path, index=False)
     nz = out[(out['year'] == es_shock_end_year) & (out['shock_pct'] != 0)] if len(out) else out
-    print('  carbon shock: %d rows, %d scenarios, %d nonzero @%d (static, uncapped) -> %s'
+    hb.log('  carbon shock: %d rows, %d scenarios, %d nonzero @%d (static, uncapped) -> %s'
           % (len(out), out['scenario'].nunique() if len(out) else 0, len(nz), es_shock_end_year,
              p.terrestrial_carbon_shock_output_path))
     return True
