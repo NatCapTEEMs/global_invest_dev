@@ -51,7 +51,14 @@ echo "[msi] started: $(date)"
 # conda activate needs a shell whose rc has been sourced, and a batch job does not have one,
 # so the activate silently leaves the system python in place and the job dies on the first
 # import.
+# PYTHONPATH, because `python path/to/script.py` puts the SCRIPT's directory on sys.path and
+# not the repository root -- so `import global_invest` finds whichever copy is installed in
+# the environment rather than this clone. On MSI the installed one is a personal checkout
+# with no flood directory, so the job died on the import. This is also what makes the run
+# independent: it is this checkout that executes, whatever else is installed.
 cd "$CODE_ROOT"
+export PYTHONPATH="$CODE_ROOT${PYTHONPATH:+:$PYTHONPATH}"
+"$PYTHON" -c "import global_invest, os; print('[msi] package:', os.path.dirname(global_invest.__file__))"
 "$PYTHON" global_invest/flood/run_flood.py
 
 echo "[msi] finished: $(date)"
