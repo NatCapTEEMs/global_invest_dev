@@ -1288,18 +1288,23 @@ def configure_valuation(p):
     _ev = getattr(p, 'flood_protection_evidence_csv', None)
     VAL_PROTECTION_EVIDENCE_CSV = Path(_ev) if _ev else None
     if VAL_PROTECTION_EVIDENCE_CSV and VAL_PROTECTION_EVIDENCE_CSV.exists():
-        try:
-            _e = pd.read_csv(VAL_PROTECTION_EVIDENCE_CSV)
-            _c = find_col(_e, ("iso3", "iso_a3", "adm0_a3"))
-            if _c:
-                FLOPROS_DOCUMENTED_ISO3 = set(
-                    _e[_c].astype(str).str.upper().str.strip())
-                print(f"[INFO] documented-protection set loaded from "
-                      f"{VAL_PROTECTION_EVIDENCE_CSV.name}: "
-                      f"{len(FLOPROS_DOCUMENTED_ISO3)} ISO3")
-        except Exception as e:
-            warnings.warn(f"[WARN] could not read {VAL_PROTECTION_EVIDENCE_CSV}: {e}; "
-                          f"using the embedded 37-country set.")
+        # No try/except here on purpose. This used to swallow every exception and fall back to an
+        # embedded 37-country set, so a corrupt or renamed file produced a different but entirely
+        # plausible number instead of a failure -- which countries count as having documented flood
+        # protection changes how much damage is truncated. A check earns its place only if removing
+        # it lets a wrong result pass silently; that one created exactly that.
+        _e = pd.read_csv(VAL_PROTECTION_EVIDENCE_CSV)
+        _c = find_col(_e, ("iso3", "iso_a3", "adm0_a3"))
+        if not _c:
+            raise NameError(
+                'No ISO3 column in %s. Looked for iso3, iso_a3, adm0_a3; found %s. The documented '
+                'protection set decides which countries have their damage truncated, so falling '
+                'back to the embedded list would silently change the answer.'
+                % (VAL_PROTECTION_EVIDENCE_CSV, list(_e.columns)))
+        FLOPROS_DOCUMENTED_ISO3 = set(_e[_c].astype(str).str.upper().str.strip())
+        print(f"[INFO] documented-protection set loaded from "
+              f"{VAL_PROTECTION_EVIDENCE_CSV.name}: "
+              f"{len(FLOPROS_DOCUMENTED_ISO3)} ISO3")
 
 
 def build_damage_tables():

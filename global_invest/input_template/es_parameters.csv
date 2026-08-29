@@ -75,6 +75,36 @@ flood,flood_iso3_list,
 flood,flood_iso3_start,0
 flood,flood_iso3_n,0
 flood,flood_skip_depth_download,false
+flood,flood_all_touched,false
+flood,flood_apply_service_flow,true
+flood,flood_compute_ead_rasters,false
+flood,flood_damage_depth_mode,interpolated
+flood,flood_depth_threshold_m,0.1
+flood,flood_depthbin_max,6.0
+flood,flood_ead_add_p1_zero,false
+flood,flood_ead_enforce_monotone,false
+flood,flood_ead_tail_mode,flat
+flood,flood_ead_write_points,true
+flood,flood_fill_missing_zero,true
+flood,flood_include_existing_in_summary,true
+flood,flood_include_pasture,true
+flood,flood_latitude_correct_area,true
+flood,flood_map_k_classes,5
+flood,flood_mosaic_global_raster,false
+flood,flood_raster_downsample_factor,6
+flood,flood_region_col,region_wb
+flood,flood_report_protection_split,true
+flood,flood_set_pasture_equal_crop,true
+flood,flood_skip_damage_tables,false
+flood,flood_skip_done,true
+flood,flood_top_n,20
+flood,flood_use_roads,false
+flood,flood_with_pop,false
+flood,flood_write_damage_rasters,true
+flood,flood_write_depthbin,false
+flood,flood_write_service_flow_rasters,true
+flood,flood_divergent_defaults_note,"⚠ apply_service_flow and report_protection_split are TRUE here and FALSE as getattr defaults in configure_valuation. The deleted set_flood_paths set both True, so the run behaviour was True while the code default said otherwise. Deleting it without moving these would have silently turned off the ecosystem attribution that produces ead_attributed_to_spa_usd2019"
+flood,flood_valuation_settings_source_note,"the Section D switches, moved out of configure_valuation on 2026-08-29 where they were getattr defaults in code. Code set before hydration WINS over the CSV -- hydrate_es_parameters skips an attribute that is already set -- so defaults living in code silently shadowed anything put here"
 flood,flood_settings_source_note,"the four settings the module actually reads. run_flood.py used to set 55 p.flood_* attributes; a grep across flood_tasks, flood_functions, flood_utils, flood_initialize and the MSI scripts on 2026-08-29 found only six ever read, and configure_paths builds every path from flood_root_dir regardless. iso3_list blank means every country in the Admin0 layer; iso3_n 0 means all remaining; the MSI array runner overwrites start and n from SLURM_ARRAY_TASK_ID"
 flood,flood_msi_shared_dir,/projects/standard/jajohns/shared/flood_gep
 flood,flood_msi_inputs_dir,/projects/standard/jajohns/shared/flood_gep/inputs
