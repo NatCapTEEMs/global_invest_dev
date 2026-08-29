@@ -2413,11 +2413,13 @@ def publish_inputs(p):
     p.flood_sda_summary_path = os.path.join(outputs, "global_sda_summary_countries.csv")
     p.flood_spa_country_summary_path = os.path.join(p.flood_qa_dir, "global_spa_country_summary.csv")
 
-    # Optional companions: a blank es_parameters cell means the table is not supplied, and the
-    # readers below branch on None rather than on a path that happens not to exist.
+    # Optional companions: a blank es_parameters cell means it is not supplied, and the readers
+    # branch on None rather than on a path that happens not to exist.
     for optional in ('flood_protection_path', 'flood_protection_evidence_path'):
         value = getattr(p, optional, None)
         setattr(p, optional, str(value) if value else None)
+    # Blank means every scenario in SCENARIOS rather than a chosen subset.
+    p.flood_gep_scenarios = getattr(p, 'flood_gep_scenarios', None) or None
 
     hb.create_directories([outputs, p.flood_qa_dir, p.flood_global_export_dir,
                            p.flood_figures_dir])
@@ -2545,7 +2547,7 @@ def task_prepare_flood_inputs(p):
     service_results['global_sda_raster'] = p.flood_sda_global_raster_path
     service_results['sda_mapping_json'] = p.flood_sda_mapping_path
 
-    skip_download = getattr(p, 'flood_skip_depth_download', False)
+    skip_download = _required(p, 'flood_skip_depth_download')
     prepare_all_inputs(p, skip_download=skip_download)
     return True
 
@@ -2664,7 +2666,7 @@ def task_compute_flood_damages(p):
         hb.log("%s already exists. Skipping the flood valuation chain."
                % os.path.basename(service_results['country_ead_csv']))
     else:
-        skip_tables = getattr(p, 'flood_skip_damage_tables', False)
+        skip_tables = _required(p, 'flood_skip_damage_tables')
         run_valuation_chain(p.df_countries, skip_damage_tables=skip_tables)
 
     return True
@@ -2690,8 +2692,8 @@ def task_compute_flood_gep(p):
         hb.log("step4e_flood_gep_USD2019.csv already exists. Skipping GEP chain.")
     else:
         run_gep_chain(
-            skip_damage_tables=getattr(p, 'flood_skip_damage_tables', True),
-            scenarios=getattr(p, 'flood_gep_scenarios', None))
+            skip_damage_tables=_required(p, 'flood_skip_damage_tables'),
+            scenarios=p.flood_gep_scenarios)
 
     return True
 

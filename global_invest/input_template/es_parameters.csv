@@ -85,6 +85,7 @@ flood,flood_amplification_pattern,amplification_{scenario}_rp{rp}.tif
 flood,flood_protection_documented_only,true
 flood,flood_protection_path,
 flood,flood_protection_evidence_path,
+flood,flood_gep_scenarios,
 flood,flood_optional_tables_note,"protection_path and protection_evidence_path are optional companions: blank means the table is not supplied, and the readers branch on None. When an evidence table IS given and has no ISO3 column the run stops, because which countries count as documented decides how much damage is truncated."
 flood,flood_depth_threshold_m,0.1
 flood,flood_depthbin_max,6.0
