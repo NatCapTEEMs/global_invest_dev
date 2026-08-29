@@ -71,7 +71,7 @@ air_filtration,air_filtration_workbook_source_note,"the committed workbook, from
 water_quality,water_quality_retention_path,global_invest/water_quality/Results/EstimationOutput/retention_estimates.csv
 water_quality,water_quality_international_path,global_invest/water_quality/water_quality_gep.csv
 flood,flood_root_dir,
-flood,flood_iso3_list,
+flood,flood_iso3_list,all
 flood,flood_iso3_start,0
 flood,flood_iso3_n,0
 flood,flood_skip_depth_download,false
@@ -81,6 +81,11 @@ flood,flood_return_periods,"[10, 20, 50, 100, 200, 500]"
 flood,flood_return_periods_source_note,"⚠⚠ the module constant RETURN_PERIODS is [10, 20, 50, 500] and the deleted set_flood_paths overrode it with all six. Deleting that without moving this here dropped RP100 and RP200 from the damage integral and took EAD from $887.8bn to $653.0bn, a 26 percent fall, with nothing raising -- the run reported ok=250/250. The six are what is on disk under floodplain_depth_v2_nowater/aligned_to_lulc"
 flood,flood_compute_ead_rasters,false
 flood,flood_damage_depth_mode,interpolated
+flood,flood_amplification_pattern,amplification_{scenario}_rp{rp}.tif
+flood,flood_protection_documented_only,true
+flood,flood_protection_path,
+flood,flood_protection_evidence_path,
+flood,flood_optional_tables_note,"protection_path and protection_evidence_path are optional companions: blank means the table is not supplied, and the readers branch on None. When an evidence table IS given and has no ISO3 column the run stops, because which countries count as documented decides how much damage is truncated."
 flood,flood_depth_threshold_m,0.1
 flood,flood_depthbin_max,6.0
 flood,flood_ead_add_p1_zero,false

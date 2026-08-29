@@ -102,7 +102,7 @@ EROSION_YIELD_COEFFICIENT_FALLBACK = 0.08   # the SAME erosion->yield bridge as 
 
 
 # =============================================================================
-# 5) MAIN RUN
+# MAIN RUN
 # =============================================================================
 def run_invest_sdr(paths):
     _setup_sdr_environment()
@@ -122,7 +122,7 @@ def run_invest_sdr(paths):
         target_wkt=dem_wkt,
         layer=ef.WATERSHEDS_SAN_LAYER,
     )
-    print("[prep] ✅ Watersheds sanitized:", ws_sanitized)
+    print("[prep] Watersheds sanitized:", ws_sanitized)
 
     args = ef.build_args(ws_sanitized)
 
@@ -140,7 +140,7 @@ def run_invest_sdr(paths):
     import natcap.invest.sdr.sdr
     file_registry = natcap.invest.sdr.sdr.execute(args)
 
-    print("\n[done] ✅ InVEST SDR finished.")
+    print("\n[done] InVEST SDR finished.")
     print("[done] Results in:", args["workspace_dir"])
     print("[done] MERGED watersheds used (raw):", paths.input.watersheds)
     print("[done] Sanitized watersheds used   :", ws_sanitized)
@@ -1309,7 +1309,7 @@ Elapsed minutes: {manifest['elapsed_minutes']}
     with open(os.path.join(paths.output.directory, "run_metadata.txt"), "w", encoding="utf-8") as f:
         f.write(run_metadata_text)
 
-    print(f"✅ Done → {os.path.join(paths.output.directory, 'integrated_country_gep.csv')}")
+    print(f"Done → {os.path.join(paths.output.directory, 'integrated_country_gep.csv')}")
     print(f"Manifest → {os.path.join(paths.output.directory, 'manifest.json')}")
 
 

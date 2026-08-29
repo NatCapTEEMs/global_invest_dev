@@ -23,20 +23,10 @@ import hazelbean as hb
 import numpy as np
 import pandas as pd
 
+from global_invest import utilities
 
-VAL_APPLY_SERVICE_FLOW = False
+
 INCA_DEPTH_BANDS = np.array([0.25, 0.5, 1.0, 1.5, 2.5, 3.5, 4.5, 5.5], dtype="float32")
-
-def to_float(x) -> float:
-    """Best-effort numeric coercion; anything unparseable becomes NaN rather than raising.
-
-    The damage and return-period columns arrive from CSVs written by several steps, and a single
-    unparseable cell should drop that point from the integral rather than stop a 250-country run.
-    """
-    try:
-        return float(x)
-    except (TypeError, ValueError):
-        return np.nan
 
 
 def integrate_trapezoid(y: np.ndarray, x: np.ndarray) -> float:
@@ -111,7 +101,7 @@ def _attach_service_flow(rec_df: pd.DataFrame, iso3: str,
             that opens its own inputs can only be tested by replacing the file
             reader, which tests the wiring rather than the join.
 
-    See the note on VAL_APPLY_SERVICE_FLOW above: this attributes residual
+    When flood_apply_service_flow is on, this attributes residual
     damage to naturally-served floodplains. It is not avoided damage.
     """
     if flow is None:
@@ -171,8 +161,8 @@ def compute_ead_from_points(rp: np.ndarray, dmg: np.ndarray, *,
         raise ValueError("tail_mode must be one of: flat, zero")
 
     df = pd.DataFrame({"rp": rp, "damage": dmg})
-    df["rp"] = df["rp"].apply(to_float)
-    df["damage"] = df["damage"].apply(to_float)
+    df["rp"] = df["rp"].apply(utilities.to_float)
+    df["damage"] = df["damage"].apply(utilities.to_float)
     df = df.dropna(subset=["rp", "damage"])
     df = df[(df["rp"] > 0) & (df["damage"] >= 0)]
 
