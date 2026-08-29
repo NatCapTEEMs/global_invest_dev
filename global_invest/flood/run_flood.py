@@ -35,10 +35,16 @@ def set_flood_paths(p):
     # during development. Home has ample space (745 TB free on the volume).
     p.flood_output_dir = os.path.join(p.flood_root, "outputs")
 
-    # The shared cartographic layer every other service aggregates on, not the author's staged
-    # copy. ee_r250 carries iso3_r250_label and iso3_r250_name, which pick_iso3_column and
-    # pick_name_column already look for, and it removes the last step of this pipeline that a
-    # reader would have to go to his repository layout to follow.
+    # ⚠ Still the author's staged copy, which is condition 2 of the sign-off left open.
+    # Moving to cartographic/ee/ee_r250.gpkg was tried on 2026-08-29 and reverted: the shared
+    # layer carries only iso3_r250_id/label/name, while his export script needs region_wb as
+    # well, and it reaches for it on the boundary file rather than on the country table
+    # initialize_country_paths already publishes. Two runs failed on that -- first an ISO3
+    # detector in scripts/flood_gep_step4d_export_global_USD2019.py that had drifted from
+    # flood_utils.pick_iso3_column, then region_wb itself. The fix is for step4d to take the
+    # region from df_countries rather than from the geometry, which is a change to his export
+    # script and its own piece of work. Pointing this at ee_r264_correspondence instead would
+    # supply region_wb but reintroduce the split-country double counting erosion moved away from.
     p.flood_country_boundary_path = getattr(
         p, 'flood_country_vector_path', None) or os.path.join(
         str(getattr(p, 'base_data_dir', '')), 'cartographic', 'ee', 'ee_r250.gpkg')
