@@ -1091,7 +1091,7 @@ def load_combined_multiplier(
     """
     if factors_csv:
         df = pd.read_csv(factors_csv)
-        df = df.applymap(ff.clean_missing)
+        df = df.map(ff.clean_missing)
 
         cols = ff.make_colmap(df)
 
@@ -1182,7 +1182,7 @@ def load_canonical_eur_table(canonical_eur: str, audit_dir: Optional[str] = None
     'depth_m' and 'damage_per_m2' as columns. This function handles that.
     """
     df = pd.read_csv(canonical_eur)
-    df = df.applymap(ff.clean_missing)
+    df = df.map(ff.clean_missing)
 
     cols = ff.make_colmap(df)
 
@@ -1276,9 +1276,9 @@ def build_canonical_from_components(
     OUTPUT:
       iso3, landtype, depth_m, damage_per_m2   (EUR2010 per m²)
     """
-    frac = pd.read_csv(fractional_long_csv).applymap(ff.clean_missing)
-    maxd = pd.read_csv(maxdamage_long_csv).applymap(ff.clean_missing)
-    iso3reg = pd.read_csv(iso3_region_csv).applymap(ff.clean_missing)
+    frac = pd.read_csv(fractional_long_csv).map(ff.clean_missing)
+    maxd = pd.read_csv(maxdamage_long_csv).map(ff.clean_missing)
+    iso3reg = pd.read_csv(iso3_region_csv).map(ff.clean_missing)
 
     fcols = ff.make_colmap(frac)
     mcols = ff.make_colmap(maxd)

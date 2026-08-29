@@ -273,3 +273,173 @@ def test_the_run_file_does_not_configure_the_service():
     assignments = re.findall(r'^\s+p\.flood_[a-z_0-9]+\s*=', source, re.M)
     assert not assignments, 'run_flood.py configures the service: %s' % assignments
     assert 'def set_flood_paths' not in source
+
+
+# ---------------------------------------------------------------------------
+# Section D end to end, on frames small enough to check by hand.
+#
+# Until 2026-08-30 nothing here executed 4A, 4C or 4D: the tests covered
+# flood_functions and stopped, so the first cluster run was also the first time
+# those functions had ever run. These exercise the real code paths on a handful
+# of countries and return periods.
+# ---------------------------------------------------------------------------
+def _flood_settings(p, directory):
+    """The es_parameters values Section D reads, on a bare object."""
+    import os
+    p.flood_valuation_country_dir = os.path.join(directory, 'countries')
+    p.flood_global_export_dir = os.path.join(directory, '_global')
+    p.flood_currency_audit_dir = os.path.join(p.flood_global_export_dir, '_currency_audit')
+    p.flood_ead_tail_mode = 'flat'
+    p.flood_ead_add_p1_zero = False
+    p.flood_ead_enforce_monotone = False
+    p.flood_ead_write_points = False
+    p.flood_apply_service_flow = False
+    p.flood_report_protection_split = False
+    p.flood_fill_missing_zero = True
+    p.flood_region_col = 'region_wb'
+    p.flood_set_pasture_equal_crop = True
+    p.flood_protection_path = None
+    p.flood_protection_evidence_path = None
+    os.makedirs(p.flood_valuation_country_dir, exist_ok=True)
+    os.makedirs(p.flood_global_export_dir, exist_ok=True)
+    return p
+
+
+def _write_country_damage(p, iso3, rows):
+    """One country's damage-by-return-period table, the input 4C integrates."""
+    import os
+    d = os.path.join(p.flood_valuation_country_dir, iso3)
+    os.makedirs(d, exist_ok=True)
+    pd.DataFrame(rows).to_csv(
+        os.path.join(d, 'damage_by_return_period_usd2019.csv'), index=False)
+    return d
+
+
+def test_expected_annual_damage_integrates_each_country_and_writes_one_file_per_folder(tmp_path):
+    from types import SimpleNamespace
+    from global_invest.flood import flood_tasks as ft
+
+    p = _flood_settings(SimpleNamespace(), str(tmp_path))
+    # Two return periods, 10 and 100 years, damages 100 and 200. The trapezoid over
+    # p in [0.01, 0.1] is 0.5*(100+200)*0.09 = 13.5, plus the flat tail 200*0.01 = 2.
+    _write_country_damage(p, 'AAA', [{'rp': 10, 'damage_total_usd2019': 100.0},
+                                     {'rp': 100, 'damage_total_usd2019': 200.0}])
+    _write_country_damage(p, 'BBB', [{'rp': 10, 'damage_total_usd2019': 0.0},
+                                     {'rp': 100, 'damage_total_usd2019': 50.0}])
+
+    status = ft.compute_ead_by_country(p)
+
+    assert set(status['iso3']) == {'AAA', 'BBB'}
+    assert (status['status'] == 'ok').all()
+    aaa = float(status.set_index('iso3').loc['AAA', 'ead_usd2019'])
+    assert aaa == pytest.approx(13.5 + 2.0)
+
+    # One file per ISO3 folder, under the name that says what it holds.
+    import os
+    written = os.path.join(p.flood_valuation_country_dir, 'AAA',
+                           'expected_annual_damage_usd2019.csv')
+    assert os.path.exists(written)
+    assert float(pd.read_csv(written)['ead_usd2019'].iloc[0]) == pytest.approx(aaa)
+
+
+def test_a_country_with_no_damage_table_stops_the_run_rather_than_counting_as_zero(tmp_path):
+    """The failure that made France, Australia and Norway look like legitimate zeros.
+
+    Their step 4B was OOM-killed, 4C recorded ead=0, and the global total was short by their
+    value with nothing raising. A country that produced no damage table has no EAD, which is
+    not the same as an EAD of zero.
+    """
+    import os
+    from types import SimpleNamespace
+    from global_invest.flood import flood_tasks as ft
+
+    p = _flood_settings(SimpleNamespace(), str(tmp_path))
+    _write_country_damage(p, 'AAA', [{'rp': 10, 'damage_total_usd2019': 100.0},
+                                     {'rp': 100, 'damage_total_usd2019': 200.0}])
+    os.makedirs(os.path.join(p.flood_valuation_country_dir, 'ZZZ'), exist_ok=True)  # no table
+
+    with pytest.raises(ValueError) as raised:
+        ft.compute_ead_by_country(p)
+    assert 'ZZZ' in str(raised.value)
+    assert 'missing_damage_by_return_period' in str(raised.value)
+
+    # and the row it wrote for that country carries no number, rather than a zero
+    written = pd.read_csv(os.path.join(p.flood_valuation_country_dir, 'ZZZ',
+                                       'expected_annual_damage_usd2019.csv'))
+    assert pd.isna(written['ead_usd2019'].iloc[0])
+
+
+def test_the_damage_tables_convert_eur2010_to_usd2019_and_give_pasture_the_cropland_curve(tmp_path):
+    """Step 4A, which nothing had ever run.
+
+    Every value takes one combined factor, the 2010 FX rate times the US inflator to 2019.
+    Pasture has no curve of its own in the JRC table, so it takes cropland's.
+
+    ⚠ This is the WIDE input shape, where the depth columns are ALREADY absolute EUR/m2.
+    The other shape -- a fractional curve per region times a max damage per country -- is
+    build_canonical_from_components, tested below, and 4A does not call it. Which shape the
+    real canonical file has decides which is right, and getting it wrong scales every damage
+    by the max-damage value.
+    """
+    import os
+    from types import SimpleNamespace
+    from global_invest.flood import flood_tasks as ft
+
+    p = _flood_settings(SimpleNamespace(), str(tmp_path))
+    p.flood_canonical_eur_path = os.path.join(str(tmp_path), 'canonical_eur.csv')
+    p.flood_currency_factors_path = os.path.join(str(tmp_path), 'factors.csv')
+    for name in ('flood_damage_long_path', 'flood_damage_wide_table_path',
+                 'flood_sda_damage_long_path', 'flood_sda_damage_wide_path'):
+        setattr(p, name, os.path.join(str(tmp_path), name + '.csv'))
+
+    pd.DataFrame([{'name': 'fx_usd_per_eur_2010_avg', 'value': 1.3260896},
+                  {'name': 'inflator_us_2010_to_2019', 'value': 1.1600607}]
+                 ).to_csv(p.flood_currency_factors_path, index=False)
+    pd.DataFrame([
+        {'ISO3': 'AAA', 'JRC_Region': 'R1', 'LandType': 'Commercial',
+         'Max_Damage_Euro_per_m2': 100.0, '0m': 0.0, '1m': 40.0},
+        {'ISO3': 'AAA', 'JRC_Region': 'R1', 'LandType': 'Agriculture',
+         'Max_Damage_Euro_per_m2': 10.0, '0m': 0.0, '1m': 4.0},
+    ]).to_csv(p.flood_canonical_eur_path, index=False)
+
+    ft.build_damage_tables(p)
+
+    combined = 1.3260896 * 1.1600607
+    long = pd.read_csv(p.flood_damage_long_path)
+    assert (long['currency'] == 'USD2019').all()
+    at_1m = long[long['depth_m'] == 1.0]
+    assert len(at_1m) > 0
+    # 40 EUR/m2 at 1 m, converted once by the combined factor and by nothing else.
+    assert at_1m['damage_per_m2'].max() == pytest.approx(40.0 * combined, rel=1e-9)
+
+    sda_long = pd.read_csv(p.flood_sda_damage_long_path)
+    type_col = 'sda_type' if 'sda_type' in sda_long.columns else sda_long.columns[1]
+    types = set(sda_long[type_col])
+    assert 'crop' in types and 'pasture' in types, types
+    crop = sda_long[sda_long[type_col] == 'crop'].sort_values('depth_m')['damage_per_m2'].tolist()
+    past = sda_long[sda_long[type_col] == 'pasture'].sort_values('depth_m')['damage_per_m2'].tolist()
+    assert crop == past, 'pasture takes cropland curve when flood_set_pasture_equal_crop is on'
+
+
+def test_the_components_reader_multiplies_the_regional_fraction_by_the_country_max_damage(tmp_path):
+    """The other canonical shape: a fraction per region and land type, times a max damage per
+    country. Nothing calls this today, so if the real canonical file is this shape, 4A is
+    reading fractions as if they were absolute euros.
+    """
+    import os
+    from global_invest.flood import flood_tasks as ft
+
+    frac = os.path.join(str(tmp_path), 'fractional_long.csv')
+    maxd = os.path.join(str(tmp_path), 'maxdamage_long.csv')
+    region = os.path.join(str(tmp_path), 'iso3_region.csv')
+    pd.DataFrame([{'JRC_Region': 'R1', 'LandType': 'Commercial', 'depth_m': 1.0, 'fraction': 0.4}]
+                 ).to_csv(frac, index=False)
+    pd.DataFrame([{'iso3': 'AAA', 'LandType': 'Commercial', 'max_damage_eur_m2': 100.0}]
+                 ).to_csv(maxd, index=False)
+    pd.DataFrame([{'iso3': 'AAA', 'JRC_Region': 'R1'}]).to_csv(region, index=False)
+
+    out = ft.build_canonical_from_components(frac, maxd, region)
+    row = out[(out['iso3'] == 'AAA') & (out['depth_m'] == 1.0)]
+    assert len(row) == 1
+    # 100 EUR/m2 max damage at a 0.4 fraction is 40, in EUR2010.
+    assert float(row['damage_per_m2'].iloc[0]) == pytest.approx(40.0)
