@@ -2641,7 +2641,9 @@ def task_build_sda(p):
     publish_inputs(p)
     # Section C reads the per-country SDA rasters written here, so the directory is published
     # before the run_this guard: a skipped task still tells the later ones where its work is.
-    p.flood_sda_country_dir = p.cur_dir
+    # An es_parameters row wins, so a machine holding an earlier run's per-country tree points
+    # at it and skips Section B rather than rebuilding weeks of work in a fresh task directory.
+    p.flood_sda_country_dir = getattr(p, 'flood_sda_country_dir', None) or p.cur_dir
     p.flood_sda_summary_path = os.path.join(p.cur_dir, 'global_sda_summary_countries.csv')
     if not p.run_this:
         return True
@@ -2684,7 +2686,7 @@ def task_compute_flood_damages(p):
     # The per-country valuation directory and the global tables this section writes. Published
     # before the run_this guard so the GEP task, which writes its degraded scenarios alongside
     # them, finds the same place whether or not this task ran.
-    p.flood_valuation_country_dir = p.cur_dir
+    p.flood_valuation_country_dir = getattr(p, 'flood_valuation_country_dir', None) or p.cur_dir
     p.flood_global_export_dir = os.path.join(p.cur_dir, '_global')
     p.flood_currency_audit_dir = os.path.join(p.flood_global_export_dir, '_currency_audit')
     p.flood_country_ead_path = os.path.join(p.flood_global_export_dir, 'step4d_country_ead_USD2019.csv')

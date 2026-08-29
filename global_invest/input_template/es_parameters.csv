@@ -145,6 +145,9 @@ flood,flood_protection_documented_only,true
 flood,flood_protection_path,
 flood,flood_protection_evidence_path,
 flood,flood_gep_scenarios,
+flood,flood_sda_country_dir,
+flood,flood_valuation_country_dir,
+flood,flood_country_dir_source_note,"blank means each task writes its per-country tree into its own cur_dir, which is the house shape. A machine that already holds an earlier run's tree -- the MSI flood_gep/outputs directory, weeks of Section B -- sets these to it and skips the rebuild, because Section B's outputs are Sections C and D's inputs."
 flood,flood_optional_tables_note,"protection_path and protection_evidence_path are optional companions: blank means the table is not supplied, and the readers branch on None. When an evidence table IS given and has no ISO3 column the run stops, because which countries count as documented decides how much damage is truncated."
 flood,flood_depth_threshold_m,0.1
 flood,flood_depthbin_max,6.0
