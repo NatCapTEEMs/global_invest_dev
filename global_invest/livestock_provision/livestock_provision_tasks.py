@@ -71,7 +71,7 @@ def read_crop_coefs(path):
 
     The table ships semicolon-delimited.
     """
-    return livestock_provision_functions.build_rental_rate_lookup(
+    return utilities.build_rental_rate_lookup(
         pd.read_csv(path, delimiter=';', encoding='utf-8'))
 
 
@@ -122,7 +122,7 @@ def gep_calculation(p):
     df_crop_coefs = read_crop_coefs(p.cwon_crop_coefficients_path)
 
     df_gep_by_country_year_crop = livestock_provision_functions.merge_crop_with_coefs(df_crop_value, df_crop_coefs)
-    df_gep_by_country_year_crop = livestock_provision_functions.normalize_m49_codes(df_gep_by_country_year_crop)
+    df_gep_by_country_year_crop = utilities.normalize_m49_codes(df_gep_by_country_year_crop)
     df_gep_by_country_year_crop = livestock_provision_functions.attach_countries(
         df_gep_by_country_year_crop, p.df_countries)
 

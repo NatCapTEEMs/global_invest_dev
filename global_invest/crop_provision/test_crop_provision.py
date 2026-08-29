@@ -10,6 +10,7 @@ from types import SimpleNamespace
 import numpy as np
 import pandas as pd
 
+from global_invest import utilities
 from global_invest.crop_provision import crop_provision_functions as cp
 from global_invest.crop_provision import crop_provision_tasks as cpt
 
@@ -87,7 +88,7 @@ def test_build_rental_rate_lookup_keys_each_decade_by_its_first_year():
         '1961-1970': [0.30, 0.40],
         '2011-2020': [0.35, 0.45],
     })
-    out = cp.build_rental_rate_lookup(raw)
+    out = utilities.build_rental_rate_lookup(raw)
     assert sorted(out['year'].unique().tolist()) == [1961, 2011]
     assert out['FAO'].dtype.kind == 'i'
     # ISO3 is not a decade column, so it melts in and then falls out with the unparseable start.
@@ -171,7 +172,7 @@ def test_normalize_m49_codes_unquotes_casts_and_maps_successors():
     """FAOSTAT ships quoted codes and keeps dissolved states under their own code: both are
     resolved so every row joins to a current country."""
     df = pd.DataFrame({'area_code_M49': ["'156", "'159", "'891", "'076"], 'value': [1, 2, 3, 4]})
-    out = cp.normalize_m49_codes(df)
+    out = utilities.normalize_m49_codes(df)
     assert list(out['area_code_M49']) == [156, 156, 688, 76]
     assert list(out['value']) == [1, 2, 3, 4]
     assert list(df['area_code_M49']) == ["'156", "'159", "'891", "'076"]   # input untouched

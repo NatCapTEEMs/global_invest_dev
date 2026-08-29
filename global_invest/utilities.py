@@ -1469,3 +1469,222 @@ def income_group_colors(groups):
     ramp = mpl.colormaps["RdYlGn"].resampled(max(len(groups), 2))
     return {g: mpl.colors.to_hex(ramp(i)) for i, g in enumerate(groups)}
 
+
+# =============================================================================================
+# FAOSTAT Value of Production: the pipeline crop_provision, livestock_provision and
+# extractive_materials_provision share. Each of these existed once per service, with the service's
+# own name baked into the value column; the value column is a parameter here instead. Promoted on
+# the third caller. Livestock's versions were the supersets and are the ones kept: items select by
+# FAO item code as well as by name, and the value before the rental rate is carried alongside it.
+# =============================================================================================
+FAOSTAT_VALUE_UNIT = '1000 USD'
+FAOSTAT_GROSS_PRODUCTION_VALUE_ELEMENT = 57
+FAOSTAT_THOUSAND_USD = 1000.0
+FAOSTAT_FIRST_YEAR = 1961
+FAOSTAT_LAST_YEAR = 2022
+FAOSTAT_TURKIYE_AREA_CODE = 223
+FAOSTAT_AGGREGATE_AREAS = [
+    "USSR",
+    "Yugoslav SFR",
+    "World",
+    "Africa",
+    "Eastern Africa",
+    "Middle Africa",
+    "Northern Africa",
+    "Southern Africa",
+    "Western Africa",
+    "Americas",
+    "Northern America",
+    "Central America",
+    "Caribbean",
+    "South America",
+    "Asia",
+    "Central Asia",
+    "Eastern Asia",
+    "Southern Asia",
+    "South-eastern Asia",
+    "Western Asia",
+    "Europe",
+    "Eastern Europe",
+    "Northern Europe",
+    "Southern Europe",
+    "Western Europe",
+    "Oceania",
+    "Australia and New Zealand",
+    "Melanesia",
+    "Micronesia",
+    "Polynesia",
+    "European Union (27)",
+    "Least Developed Countries",
+    "Land Locked Developing Countries",
+    "Low Income Food Deficit Countries",
+    "Small Island Developing States",
+    "Czechoslovakia" "Low Income Food Deficit Countries",
+    "Net Food Importing Developing Countries",
+    "China, Hong Kong SAR",
+    "China, mainland",
+    "China, Macao SAR",
+    "China, Taiwan Province of",
+    "Belgium-Luxembourg",
+]
+CROP_ID_COLUMNS = ['area_code', 'area_code_M49', 'country', 'crop_code', 'crop']
+
+
+def clean_faostat_values(df_raw, items, value_column):
+    """One row per country-item-year of FAOSTAT gross production value, in thousand USD.
+
+    The bulk file is wide (one column per year, each with a flag column beside it) and mixes
+    elements, units, aggregate areas and items nobody asked for. This keeps the gross-production-
+    value rows in USD, keeps the requested items, drops the aggregate areas, and melts the year
+    columns into rows.
+
+    Args:
+        df_raw (pd.DataFrame): the FAOSTAT Value of Production bulk table as shipped.
+        items (iterable): the items to keep. Integer entries select by FAO item code, which is
+            robust to FAO's item-name revisions; strings select by name.
+        value_column (str): what to call the value, e.g. 'crop_provision_gep'.
+
+    Returns:
+        pd.DataFrame: area_code, area_code_M49, country, crop_code, crop, year, <value_column>.
+    """
+    years = range(FAOSTAT_FIRST_YEAR, FAOSTAT_LAST_YEAR + 1)
+    df = df_raw[(df_raw['Unit'] == FAOSTAT_VALUE_UNIT)
+                & (df_raw['Element Code'] == FAOSTAT_GROSS_PRODUCTION_VALUE_ELEMENT)].copy()
+    df = df.drop(columns=[col for col in df.columns if col.endswith('F')])
+
+    old_names = ['Area Code', 'Area Code (M49)', 'Area', 'Item Code', 'Item'] + [f'Y{y}' for y in years]
+    new_names = CROP_ID_COLUMNS + [str(y) for y in years]
+    df = df.rename(columns=dict(zip(old_names, new_names)))
+
+    codes = [i for i in items if isinstance(i, int)]
+    names = [i for i in items if isinstance(i, str)]
+    df = df[df['crop_code'].isin(codes) | df['crop'].isin(names)]
+    df = df[~df['country'].isin(FAOSTAT_AGGREGATE_AREAS)]
+
+    df = pd.melt(df, id_vars=CROP_ID_COLUMNS, value_vars=[str(y) for y in years],
+                 var_name='year', value_name=value_column)
+    df['area_code'] = pd.to_numeric(df['area_code'], errors='coerce').astype(int)
+    df['year'] = pd.to_numeric(df['year'], errors='coerce').astype(int)
+    df.loc[df['area_code'] == FAOSTAT_TURKIYE_AREA_CODE, 'country'] = 'Turkey'
+    hb.log('FAOSTAT values cleaned and reshaped to long (%d rows).' % df.shape[0])
+    return df
+
+
+def apply_rental_rates(df_values, df_coefs, value_column):
+    """Production value attributed to land, country by country.
+
+    Each year takes the rental rate of the most recent decade that has started, which is a
+    backward as-of merge on year within a country. A country the CWoN table never covers keeps a
+    missing rate, so its value becomes missing rather than being attributed in full.
+
+    gross_production_value carries the value BEFORE the rate, because the attribution factor is
+    still an open decision and comparing the two needs the unattributed figure.
+
+    Args:
+        df_values (pd.DataFrame): long values, with area_code, year and <value_column>.
+        df_coefs (pd.DataFrame): the rental-rate lookup, with FAO, year and rental_rate.
+        value_column (str): the value column to attribute.
+
+    Returns:
+        pd.DataFrame: with rental_rate and gross_production_value attached and <value_column>
+        multiplied by the rate, sorted by country then year.
+    """
+    merged_parts = []
+    for code, df_group in df_values.groupby('area_code', sort=True):
+        lookup_sub = df_coefs[df_coefs['FAO'] == code]
+        if lookup_sub.empty:
+            df_group = df_group.copy()
+            df_group['rental_rate'] = pd.NA
+            merged_parts.append(df_group)
+            continue
+        merged = pd.merge_asof(
+            left=df_group.sort_values('year'),
+            right=lookup_sub.sort_values('year')[['year', 'rental_rate']],
+            on='year', direction='backward')
+        merged_parts.append(merged)
+
+    df = pd.concat(merged_parts, ignore_index=True)
+    df['gross_production_value'] = df[value_column]
+    df[value_column] = df[value_column] * df['rental_rate']
+    df = df.sort_values(by=['area_code', 'year'], ascending=[True, True])
+    hb.log('Values merged with rental rates (%d rows).' % df.shape[0])
+    return df
+
+
+def sum_items_to_country_year(df, value_column):
+    """Item rows summed to one row per country and year."""
+    agg_dict = {value_column: 'sum'}
+    if 'gross_production_value' in df.columns:
+        agg_dict['gross_production_value'] = 'sum'
+    out = hb.df_groupby(df, ['iso3_r250_id', 'year'], agg_dict=agg_dict,
+                        preserve='keep_all_valid')
+    out = out.sort_values(by=['iso3_r250_id', 'year'], ascending=[True, True])
+    out[value_column] = pd.to_numeric(out[value_column], errors='coerce')
+    hb.log('Grouped by country-year (%d rows).' % out.shape[0])
+    return out
+
+
+def sum_countries_to_year(df, value_column):
+    """Country-year rows summed to one global row per year."""
+    out = hb.df_groupby(df, groupby_cols='year', agg_cols=value_column,
+                        preserve='keep_all_valid')
+    out.sort_values('year', inplace=True)
+    hb.log('Grouped total by year (%d rows).' % out.shape[0])
+    return out
+
+
+# FAOSTAT keeps dissolved states under their own M49 codes. Each maps to the successor the
+# country correspondence uses, so their production joins to a country instead of dropping.
+M49_SUCCESSORS = {
+    159: 156,   # China (mainland) -> China
+    891: 688,   # Serbia and Montenegro -> Serbia
+    200: 203,   # Czechoslovakia -> Czechia
+    230: 231,   # Ethiopia PDR -> Ethiopia
+    736: 729,   # Sudan (former) -> Sudan
+}
+
+
+def build_rental_rate_lookup(df_raw):
+    """The CWoN rental rates as one row per country and decade start.
+
+    The workbook is one column per decade ("1961-1970", "1971-1980", ...) keyed on the FAO area
+    code. Melting it and keeping the decade's first year gives the lookup merge_crop_with_coefs
+    reads as-of. Columns that are not a decade (the ISO3 label) carry no leading year, so they
+    fall out with the rows whose decade start does not parse.
+
+    Args:
+        df_raw (pd.DataFrame): the CWoN coefficient table as shipped.
+
+    Returns:
+        pd.DataFrame: columns FAO, year, rental_rate.
+    """
+    df = df_raw.melt(id_vars=['Order', 'FAO', 'Country/territory'],
+                     var_name='Decade', value_name='rental_rate')
+    df['Decade_start'] = df['Decade'].str.extract(r'^(\d{4})').astype(float)
+    df = df.dropna(subset=['Decade_start', 'FAO'])
+
+    df = df[['FAO', 'Decade_start', 'rental_rate']].copy()
+    df['FAO'] = df['FAO'].astype(int)
+    df['Decade_start'] = df['Decade_start'].astype(int)
+    df = df.rename(columns={'Decade_start': 'year'})
+    hb.log(f'Prepared coef lookup ({df.shape[0]} rows).')
+    return df
+
+
+def normalize_m49_codes(df, column='area_code_M49', successors=None):
+    """FAOSTAT's M49 area codes as integers, with dissolved states mapped to their successor.
+
+    The codes arrive quoted ("'156"), so they are unquoted and cast before the mapping.
+
+    Args:
+        df (pd.DataFrame): a frame holding FAOSTAT area codes.
+        column (str): the code column.
+        successors (dict): code -> successor code, defaulting to M49_SUCCESSORS.
+
+    Returns:
+        pd.DataFrame: the frame with that column as integers, successors applied.
+    """
+    out = df.copy()
+    out[column] = out[column].astype(str).str.replace("'", '', regex=False).astype(int)
+    out[column] = out[column].replace(M49_SUCCESSORS if successors is None else successors)
+    return out
