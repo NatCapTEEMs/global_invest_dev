@@ -77,19 +77,12 @@ CROPLAND_SEALS7_CLASS = 2
 # methods read a
 # per-crop coefficient from elasticity_crops_fao_revised.csv (see alpha_for in erosion_shock) and
 # falls back here only when neither the crop nor its sector has a value.
-EROSION_ALPHA = 0.08
 # The SES-11 threshold policy and analysis frame (SES-11 = the erosion author's run-series tag;
 # the 11 is the 11 t/ha/yr severe threshold, a standard tolerable-soil-loss benchmark -- the
 # expansion of 'SES' is the author's naming, to confirm at submission): METHOD CONSTANTS defining
 # the published science
 # (provisional, the erosion author's to bless) -- in code so a change costs a reviewed commit, not
 # an input/-copy edit. getattr hooks below allow a deliberate consumer override.
-SES11_SEVERE_THRESHOLD_T_HA = 11.0
-SES11_THRESHOLD_LOW_T_HA = 2.0
-SES11_SMALL_COUNTRY_AREA_KM2 = 50_000
-SES11_LOW_ELEVATION_MEAN_M = 250
-EROSION_ANALYSIS_EPSG = 8857          # Equal Earth: area-true math for the exposure shares
-EROSION_YIELD_COEFFICIENT_FALLBACK = 0.08   # the SAME erosion->yield bridge as EROSION_ALPHA
 
 
 # ---------------------------------------------------------------------------
@@ -2077,8 +2070,8 @@ def erosion_exposure(p):
     from global_invest.erosion import erosion_functions
     from global_invest.erosion import erosion_functions as ef
 
-    thresh_high = float(getattr(p, 'erosion_severe_threshold_t_ha', SES11_SEVERE_THRESHOLD_T_HA))
-    analysis_crs = rioCRS.from_epsg(int(getattr(p, 'erosion_analysis_epsg', EROSION_ANALYSIS_EPSG)))
+    thresh_high = float(p.erosion_threshold_high_t_ha_yr)
+    analysis_crs = rioCRS.from_epsg(int(p.erosion_analysis_epsg))
 
     def _to_grid_da(da, template=None):    # reproject an open DataArray to the equal-area analysis grid
         da = da.rio.reproject(analysis_crs, resampling=Resampling.average)
@@ -2112,9 +2105,9 @@ def erosion_exposure(p):
                         usle, p.get_path(cb),
                         p.get_path(p.erosion_dem_path) if getattr(p, 'erosion_dem_path', None) else None,
                         thresh_high=thresh_high,
-                        thresh_low=float(getattr(p, 'erosion_threshold_low_t_ha', SES11_THRESHOLD_LOW_T_HA)),
-                        small_area_km2=float(getattr(p, 'erosion_small_country_area_km2', SES11_SMALL_COUNTRY_AREA_KM2)),
-                        low_elevation_mean_m=float(getattr(p, 'erosion_low_elevation_mean_m', SES11_LOW_ELEVATION_MEAN_M)))
+                        thresh_low=float(p.erosion_threshold_low_t_ha_yr),
+                        small_area_km2=float(p.erosion_small_country_area_km2),
+                        low_elevation_mean_m=float(p.erosion_low_elevation_mean_m))
                 else:
                     thr = thresh_high        # flat fallback when no country boundary is provided
                 p._erosion_threshold_raster = thr
@@ -2371,8 +2364,8 @@ def erosion_shock(p):
 
     es_shock_base_year = int(p.es_shock_base_year); es_shock_end_year = int(p.es_shock_end_year)
     base_scenario = utilities.required_base_scenario(p, 'erosion')
-    fallback_coef = float(getattr(p, 'erosion_yield_coefficient_fallback', EROSION_YIELD_COEFFICIENT_FALLBACK))
-    alpha = float(getattr(p, 'erosion_alpha', EROSION_ALPHA))
+    fallback_coef = float(p.erosion_yield_coefficient_fallback)
+    alpha = float(p.erosion_alpha)
     # Method B lets the erosion->yield coefficient vary by crop; A applies the flat alpha to all.
     # SOURCE = elasticity_crops_fao_revised.csv (already loaded above as coef_map). Despite the column
     # name, that table holds erosion-to-yield sensitivities, not price responses: its references are all
@@ -2727,7 +2720,7 @@ def invest_sdr(p):
     # Publish Section A's outputs under the names configure_prevention_shares reads off p --
     # explicit task chaining instead of the source repo's copy-between-stage-dirs convention
     # (whose input defaults even carry a different date suffix than the outputs).
-    _sfx = getattr(p, 'erosion_sdr_results_suffix', '2019_revised_dec_14')
+    _sfx = p.erosion_sdr_results_suffix
     p.erosion_usle_path = os.path.join(p.erosion_sdr_output_dir, f'usle_{_sfx}.tif')
     p.erosion_avoided_erosion_path = os.path.join(p.erosion_sdr_output_dir, f'avoided_erosion_{_sfx}.tif')
     if not p.run_this:

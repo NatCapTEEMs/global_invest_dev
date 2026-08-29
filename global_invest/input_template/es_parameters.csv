@@ -45,6 +45,9 @@ erosion,region_boundary_path,gtap_invest/region_boundaries/ee_r50_aez18_correspo
 erosion,erosion_shock_acts,"[""PDR"", ""WHT"", ""GRO"", ""V_F"", ""OSD"", ""C_B"", ""PFB"", ""OCR""]"
 erosion,erosion_crop_to_sector,"{""rice"": ""PDR"", ""whea"": ""WHT"", ""maiz"": ""GRO"", ""barl"": ""GRO"", ""sorg"": ""GRO"", ""mill"": ""GRO"", ""pmil"": ""GRO"", ""ocer"": ""GRO"", ""bana"": ""V_F"", ""plnt"": ""V_F"", ""citr"": ""V_F"", ""temf"": ""V_F"", ""trof"": ""V_F"", ""vege"": ""V_F"", ""toma"": ""V_F"", ""onio"": ""V_F"", ""pota"": ""V_F"", ""swpo"": ""V_F"", ""yams"": ""V_F"", ""cass"": ""V_F"", ""orts"": ""V_F"", ""soyb"": ""OSD"", ""grou"": ""OSD"", ""sunf"": ""OSD"", ""rape"": ""OSD"", ""sesa"": ""OSD"", ""oilp"": ""OSD"", ""cnut"": ""OSD"", ""ooil"": ""OSD"", ""sugc"": ""C_B"", ""sugb"": ""C_B"", ""cott"": ""PFB"", ""ofib"": ""PFB"", ""coff"": ""OCR"", ""rcof"": ""OCR"", ""coco"": ""OCR"", ""teas"": ""OCR"", ""toba"": ""OCR"", ""rubb"": ""OCR"", ""bean"": ""OCR"", ""lent"": ""OCR"", ""cowp"": ""OCR"", ""pige"": ""OCR"", ""chic"": ""OCR"", ""opul"": ""OCR"", ""rest"": ""OCR""}"
 erosion,erosion_method,service_threshold
+erosion,erosion_alpha,0.08
+erosion,erosion_yield_coefficient_fallback,0.08
+erosion,erosion_yield_bridge_source_note,"alpha is the flat erosion-to-yield coefficient Method A applies to every crop; yield_coefficient_fallback is what Method B uses for a crop with no coefficient of its own. They are the same 0.08 today and the code comment says they are the same bridge, but they answer different questions, so they are two rows rather than one. 19 of 46 crops take the fallback and 5 have no entry at all."
 erosion,erosion_sdr_results_suffix,2019_revised_dec_14
 erosion,erosion_sdr_threshold_flow_accumulation,100
 erosion,erosion_sdr_k_param,2.0
