@@ -2533,6 +2533,12 @@ def task_prepare_flood_inputs(p):
     publish_inputs(p)
     p.flood_qa_dir = os.path.join(p.cur_dir, 'qa_maps')
     p.flood_spa_country_summary_path = os.path.join(p.flood_qa_dir, 'global_spa_country_summary.csv')
+    # This task downloads, unzips and masks, so these are its own working directories rather
+    # than inputs. The aligned depths ARE an input when the download is skipped and the set is
+    # already staged, which is the reported configuration, so that one stays an es_parameters row.
+    p.flood_depth_raw_path = os.path.join(p.cur_dir, 'floodplain_depth_raw')
+    p.flood_depth_extract_path = os.path.join(p.flood_depth_raw_path, 'extracted_tifs')
+    p.flood_depth_mask_path = os.path.join(p.cur_dir, 'floodplain_depth_masks')
     if not p.run_this:
         return True
 
