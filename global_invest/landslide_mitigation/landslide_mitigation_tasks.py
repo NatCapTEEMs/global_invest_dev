@@ -198,7 +198,7 @@ def warp_to_reference(
     )
 
     if show_progress:
-        print(f'Warping: {os.path.basename(str(src_path))} -> {os.path.basename(dst_path)}')
+        hb.log(f'Warping: {os.path.basename(str(src_path))} -> {os.path.basename(dst_path)}')
 
     os.makedirs(os.path.dirname(dst_path), exist_ok=True)
     # str() both: this GDAL build's binding rejects pathlib.Path for src (wrong GDALDatasetShadow).
@@ -470,7 +470,7 @@ def reproject_uglc_events(p):
             if date_col in gdf.columns:
                 gdf[date_col] = pd.to_datetime(gdf[date_col], errors='coerce')
 
-        year_source = getattr(p, 'uglc_year_source', 'start_date')
+        year_source = p.uglc_year_source
         gdf['event_year'] = gdf[year_source].dt.year
         if 'end_date' in gdf.columns:
             gdf['event_year'] = gdf['event_year'].fillna(gdf['end_date'].dt.year)

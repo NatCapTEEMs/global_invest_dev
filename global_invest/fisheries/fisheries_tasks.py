@@ -41,7 +41,7 @@ def fisheries_shock(p):
         p.cwon_shocks_path_template.format(aggregation_label=p.aggregation_label),
         raise_error_if_fail=False)
     if not hb.path_exists(cwon_shocks_path):
-        print('  fisheries shock: cwon_shocks.har not found (%s) -- skipping' % cwon_shocks_path)
+        hb.log('  fisheries shock: cwon_shocks.har not found (%s) -- skipping' % cwon_shocks_path)
         return
 
     fi_data = ff.read_fisheries_headers(
@@ -52,7 +52,7 @@ def fisheries_shock(p):
     # 2017->2018 step, then flat), so per-year == constant NUMERICALLY here; the distinction only bites once
     # a genuinely dynamic source (DBEM/Fish-MIP, #45) carries a real trajectory -- then this reads it for
     # free. Set p.fisheries_time_varying=False (+ fisheries_constant_year) to force a freeze if ever needed.
-    time_varying = bool(getattr(p, 'fisheries_time_varying', True))
+    time_varying = bool(p.fisheries_time_varying)
 
     # RAMP the FI value from 0 at the base year rather than taking the HAR's series as-is: the HAR
     # is a STEP asserting the full RCP impact from 2018, which no reading of the source supports (no
@@ -70,8 +70,8 @@ def fisheries_shock(p):
         base_year=es_shock_base_year, end_year=es_shock_end_year,
         time_varying=time_varying,
         constant_year=int(getattr(p, 'fisheries_constant_year', es_shock_end_year)),
-        ramp_to_end=bool(getattr(p, 'fisheries_ramp_to_end_year', True)),
-        ramp_end_year=int(getattr(p, 'fisheries_ramp_end_year', 0)) or max(
+        ramp_to_end=bool(p.fisheries_ramp_to_end_year),
+        ramp_end_year=int(p.fisheries_ramp_end_year) or max(
             [int(y) for y in getattr(p, 'es_shock_years', []) or []] or [es_shock_end_year]))
 
     out = pd.DataFrame(rows)
@@ -83,7 +83,7 @@ def fisheries_shock(p):
     if len(out):
         out['shock_pct'] = out['shock_pct'].clip(-ff.FISH_CAP, ff.FISH_CAP)
     out.to_csv(p.fisheries_shock_output_path, index=False)
-    print('  fisheries shock: %d rows, %d scenarios (%s, capped +-%.0f%%) -> %s'
+    hb.log('  fisheries shock: %d rows, %d scenarios (%s, capped +-%.0f%%) -> %s'
           % (len(out), out['scenario'].nunique() if len(out) else 0,
              ('per-year' if time_varying else 'constant @%d'
               % int(getattr(p, 'fisheries_constant_year', es_shock_end_year))),

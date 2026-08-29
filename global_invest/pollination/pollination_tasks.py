@@ -1846,11 +1846,11 @@ def pollination_shock(p):
     out = pd.DataFrame(rows)
     utilities.assert_shock_table_sound(out, es_shock_scenarios, 'pollination')
     out.to_csv(p.pollination_shock_output_path, index=False)
-    print('  pollination shock: %d rows, %d scenarios (shock_pct=shock_pct_contemp=/baseline-year value, shock_pct_fixedbase=/2023 value) -> %s'
+    hb.log('  pollination shock: %d rows, %d scenarios (shock_pct=shock_pct_contemp=/baseline-year value, shock_pct_fixedbase=/2023 value) -> %s'
           % (len(out), out['scenario'].nunique() if rows else 0, p.pollination_shock_output_path))
     # value_usd_base is the GEP hand-off, not read by GTAP (build_combined_afeall takes shock_pct only).
     if level_usd is not None and len(level_usd):
-        print('  pollination value (GEP): %d zones, total %.4g base-year USD -> column value_usd_base'
+        hb.log('  pollination value (GEP): %d zones, total %.4g base-year USD -> column value_usd_base'
               % (len(level_usd), float(level_usd.sum())))
     return True
 
@@ -1886,7 +1886,7 @@ def pollination_shock_static(p):
     poll_path = getattr(p, 'pollination_dependency_path', None) or os.path.join(
         p.input_dir, 'raw_dependencies', 'pollination_dependency.csv')
     if not hb.path_exists(poll_path):
-        print('  pollination shock: dependency csv not found (%s) -- skipping' % poll_path)
+        hb.log('  pollination shock: dependency csv not found (%s) -- skipping' % poll_path)
         return
 
     df = hb.df_read(poll_path)
@@ -1915,7 +1915,7 @@ def pollination_shock_static(p):
     utilities.assert_shock_table_sound(out, es_shock_scenarios, 'pollination')
     out.to_csv(p.pollination_shock_output_path, index=False)
     nz = out[(out['year'] == es_shock_end_year) & (out['shock_pct'] != 0)] if len(out) else out
-    print('  pollination shock: %d rows, %d scenarios, %d nonzero @%d (static, uncapped) -> %s'
+    hb.log('  pollination shock: %d rows, %d scenarios, %d nonzero @%d (static, uncapped) -> %s'
           % (len(out), out['scenario'].nunique() if len(out) else 0, len(nz), es_shock_end_year,
              p.pollination_shock_output_path))
     return True
