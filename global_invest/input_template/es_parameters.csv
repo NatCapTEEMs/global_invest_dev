@@ -97,7 +97,8 @@ flood,flood_raster_downsample_factor,6
 flood,flood_region_col,region_wb
 flood,flood_report_protection_split,true
 flood,flood_set_pasture_equal_crop,true
-flood,flood_skip_damage_tables,false
+flood,flood_skip_damage_tables,true
+flood,flood_skip_damage_tables_source_note,"⚠ flood_tasks reads this with TWO different defaults -- False at the run_valuation_chain call site and True at the GEP one -- so the behaviour depended on which ran. The damage tables are prebuilt inputs and the inputs directory is not writable, so building them raises PermissionError; the deleted set_flood_paths set True. Setting it here makes both call sites agree"
 flood,flood_skip_done,true
 flood,flood_top_n,20
 flood,flood_use_roads,false

@@ -1288,11 +1288,8 @@ def configure_valuation(p):
     _ev = getattr(p, 'flood_protection_evidence_csv', None)
     VAL_PROTECTION_EVIDENCE_CSV = Path(_ev) if _ev else None
     if VAL_PROTECTION_EVIDENCE_CSV and VAL_PROTECTION_EVIDENCE_CSV.exists():
-        # No try/except here on purpose. This used to swallow every exception and fall back to an
-        # embedded 37-country set, so a corrupt or renamed file produced a different but entirely
-        # plausible number instead of a failure -- which countries count as having documented flood
-        # protection changes how much damage is truncated. A check earns its place only if removing
-        # it lets a wrong result pass silently; that one created exactly that.
+        # Which countries count as having documented protection decides how much damage is
+        # truncated, so a file that cannot be read must stop the run rather than fall back.
         _e = pd.read_csv(VAL_PROTECTION_EVIDENCE_CSV)
         _c = find_col(_e, ("iso3", "iso_a3", "adm0_a3"))
         if not _c:
@@ -1850,9 +1847,8 @@ def export_attributed_summary() -> Optional[Path]:
         f = iso3_dir / "step4c_ead_USD2019.csv"
         if not f.exists():
             continue
-        # No try/except: an unreadable country file used to warn and continue, so that country
-        # dropped out of a global total silently and the sum still looked plausible. A warning in a
-        # 250-country run scrolls past; a missing country does not announce itself in the number.
+        # A country that cannot be read must stop the run: it would otherwise leave the global
+        # total silently, and the sum would still look plausible.
         rows.append(pd.read_csv(f))
 
     if not rows:
@@ -1914,8 +1910,8 @@ def compute_flood_gep() -> Optional[Path]:
                         if x.is_dir() and len(x.name) == 3 and x.name.isalpha()):
             f = d / f"step4c_ead_USD2019{suffix}.csv"
             if f.exists():
-                # No try/except: see the note in export_attributed_summary. A country that fails to
-                # read must not vanish from a scenario total while the total still looks plausible.
+                # A country that cannot be read must stop the run rather than vanish from the
+                # scenario total.
                 rows.append(pd.read_csv(f))
         if not rows:
             return None
