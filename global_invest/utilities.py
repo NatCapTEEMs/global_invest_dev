@@ -975,7 +975,6 @@ def country_attributes(p, columns=None):
 import hashlib
 import os
 import warnings
-from pathlib import Path
 from typing import Dict, Optional, Tuple
 
 import geopandas as gpd
@@ -1074,24 +1073,24 @@ def random_windows(width: int, height: int, n: int, wsize: int, seed: int = 7):
         )
 
 
-def save_raster_completely(final_path: Path, profile: dict, array: np.ndarray, band: int = 1):
+def save_raster_completely(final_path, profile: dict, array: np.ndarray, band: int = 1):
     """
     Write to <name>.tmp then rename, so a killed job never leaves a half-written GeoTIFF at the
     final path for a later skip-existing run to mistake for complete.
     """
-    final_path = Path(final_path)
-    final_path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = final_path.with_suffix(final_path.suffix + ".tmp")
+    final_path = str(final_path)
+    hb.create_directories(os.path.dirname(final_path))
+    tmp = final_path + ".tmp"
     with rasterio.open(tmp, "w", **profile) as dst:
         dst.write(array, band)
-    tmp.replace(final_path)
+    os.replace(tmp, final_path)          # os.replace, not str.replace: this is the rename
     return final_path
 
 
-def raster_ok(path: Path) -> bool:
+def raster_ok(path) -> bool:
     """Cheap validity probe used by the smart-skip logic."""
-    path = Path(path)
-    if not path.exists() or path.stat().st_size == 0:
+    path = str(path)
+    if not hb.path_exists(path) or os.path.getsize(path) == 0:
         return False
     try:
         with rasterio.open(path) as ds:
@@ -1104,7 +1103,7 @@ def raster_ok(path: Path) -> bool:
 # -----------------------------------------------------------------------------
 # Fingerprinting (smart-skip / provenance)
 # -----------------------------------------------------------------------------
-def sha256_file(path: Path, chunk_size: int = 1024 * 1024) -> str:
+def sha256_file(path, chunk_size: int = 1024 * 1024) -> str:
     h = hashlib.sha256()
     with open(path, "rb") as f:
         while True:
@@ -1115,11 +1114,11 @@ def sha256_file(path: Path, chunk_size: int = 1024 * 1024) -> str:
     return h.hexdigest()
 
 
-def file_fingerprint(path: Path) -> dict:
-    path = Path(path)
-    if not path.exists():
-        return {"path": str(path), "exists": False}
-    st = path.stat()
+def file_fingerprint(path) -> dict:
+    path = str(path)
+    if not hb.path_exists(path):
+        return {"path": path, "exists": False}
+    st = os.stat(path)
     return {
         "path": str(path),
         "exists": True,
@@ -1158,11 +1157,11 @@ def to_float(x) -> float:
         return np.nan
 
 
-def write_csv(df: pd.DataFrame, path: Path):
+def write_csv(df: pd.DataFrame, path):
     """hb.df_write, plus the parent directory, which it does not create."""
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    hb.df_write(df, str(path))
+    path = str(path)
+    hb.create_directories(os.path.dirname(path))
+    hb.df_write(df, path)
     return path
 
 
@@ -1278,7 +1277,7 @@ def plot_publication_choropleth_categorical(
     world_joined: gpd.GeoDataFrame,
     value_col: str,
     title: str,
-    out_png: Path,
+    out_png,
     legend_title: str,
     scheme: str = "fisher_jenks",
     k: int = 5,
