@@ -141,7 +141,8 @@ flood,flood_sda_damage_wide_path,
 flood,flood_amplification_path,
 flood,flood_cn_table_path,
 flood,flood_input_reference_note,"every flood pipeline input is machine-specific and ships blank: base_data carries no global_invest/flood tree, so a reference under it resolves nowhere and would only look like it did. On MSI they are under /projects/standard/jajohns/shared/flood_gep/inputs/ -- country_vector/, lulc/, lulc_to_sda_mapping/, sda/, global_spa_ben/, flood_damage/, protection/, pop/. ⚠ Three of them are not where a tidy layout would put them: the reported run uses floodplain_depth_v2_nowater/aligned_to_lulc rather than floodplain_depth/, global_upstream_spa_ratio.tif is in counterfactual_mosaic/ rather than global_spa_ben/, and the amplification rasters are in counterfactual_mosaic/ while the CN table is in counterfactual/. Fill them in the machine input/ copy, not here."
-flood,flood_amplification_pattern,amplification_{scenario}_rp{rp}.tif
+flood,flood_amplification_pattern,global_amplification_{scenario}_rp{rp}.tif
+flood,flood_amplification_pattern_source_note,"⚠ the staged layers are named global_amplification_<scenario>_rp<rp>.tif. The pattern said amplification_... which matched none of them, and _open_amp warns and falls back to current depths, which makes GEP zero for that return period. Twelve scenario-by-RP combinations, so the whole GEP would have been zero with nothing but warnings. The exponent variants f0p3 and f0p5 sit beside them; the unsuffixed file is the default exponent."
 flood,flood_protection_documented_only,true
 flood,flood_protection_path,
 flood,flood_protection_evidence_path,
