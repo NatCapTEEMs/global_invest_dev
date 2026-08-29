@@ -14,12 +14,18 @@ inputs, windowing rasters and writing results, and none of that changes an answe
 """
 from __future__ import annotations
 
+import hashlib
+import json
+import os
+import re
 import warnings
-from pathlib import Path
-from typing import List, Optional, Tuple
+from datetime import datetime
+from typing import Dict, List, Optional
 
 import geopandas as gpd
 import hazelbean as hb
+import rasterio
+from rasterio.warp import reproject, Resampling
 import numpy as np
 import pandas as pd
 
@@ -611,77 +617,93 @@ SDA_CODE_VERSION = "2025-12-15_sda_step2_smartskip_v2_depth_inputs"
 # =============================================================================
 
 
-def signature_path(out_dir: Path, iso3: str) -> Path:
-    return out_dir / f"sda_run_signature_{iso3}.json"
+def signature_path(out_dir: str, iso3: str) -> str:
+    return os.path.join(out_dir, f"sda_run_signature_{iso3}.json")
 
 
-def build_run_signature(args, rp_map: dict[int, Path]) -> dict:
+def build_run_signature(*, depth_threshold: float, all_touched: bool, include_pasture: bool,
+                        use_roads: bool, with_pop: bool, write_depthbin: bool, depthbin_max: float,
+                        lulc_path: str, mapping_path: str, roads_path: str, pop_path: str,
+                        depth_dir: str, depth_json: str, rp_map: dict[int, str]) -> dict:
+    """Fingerprint of the settings and inputs one country's SDA outputs were built from.
+
+    Args:
+        depth_threshold, all_touched, include_pasture, use_roads, with_pop, write_depthbin,
+            depthbin_max: the settings that change what the outputs contain.
+        lulc_path, mapping_path, roads_path, pop_path: inputs, fingerprinted by size and mtime.
+        depth_dir, depth_json: how the depth rasters were selected.
+        rp_map: return period to depth raster.
+
+    Returns:
+        dict: the signature, including a `signature_sha256` over every field but the timestamp.
+    """
     sig = {
         "code_version": SDA_CODE_VERSION,
         "created_utc": datetime.utcnow().isoformat() + "Z",
 
-        "depth_threshold": float(args.depth_threshold),
-        "all_touched": bool(args.all_touched),
-        "include_pasture": bool(args.include_pasture),
-        "use_roads": bool(args.use_roads),
-        "with_pop": bool(args.with_pop),
-        "write_depthbin": bool(args.write_depthbin),
-        "depthbin_max": float(args.depthbin_max),
+        "depth_threshold": float(depth_threshold),
+        "all_touched": bool(all_touched),
+        "include_pasture": bool(include_pasture),
+        "use_roads": bool(use_roads),
+        "with_pop": bool(with_pop),
+        "write_depthbin": bool(write_depthbin),
+        "depthbin_max": float(depthbin_max),
 
         # depth input controls (so signature changes when you change rp selection or sources)
-        "depth_dir": str(args.depth_dir) if args.depth_dir else "",
-        "depth_json": str(args.depth_json) if args.depth_json else "",
+        "depth_dir": str(depth_dir) if depth_dir else "",
+        "depth_json": str(depth_json) if depth_json else "",
         "rps": sorted([int(rp) for rp in rp_map.keys()]),
 
-        "lulc": file_fingerprint(Path(args.lulc_path)),
+        "lulc": utilities.file_fingerprint(str(lulc_path)),
         "mapping_json": {
-            **file_fingerprint(Path(args.mapping_json)),
-            "sha256": sha256_file(Path(args.mapping_json)) if hb.path_exists(args.mapping_json) else None,
+            **utilities.file_fingerprint(str(mapping_path)),
+            "sha256": utilities.sha256_file(str(mapping_path)) if hb.path_exists(mapping_path) else None,
         },
-        "roads": file_fingerprint(Path(args.roads_path)) if args.use_roads else {"path": str(args.roads_path), "exists": False},
-        "pop": file_fingerprint(Path(args.pop_path)) if args.with_pop else {"path": str(args.pop_path), "exists": False},
+        "roads": utilities.file_fingerprint(str(roads_path)) if use_roads else {"path": str(roads_path), "exists": False},
+        "pop": utilities.file_fingerprint(str(pop_path)) if with_pop else {"path": str(pop_path), "exists": False},
 
-        "depth_rasters": {int(rp): file_fingerprint(p) for rp, p in rp_map.items()},
+        "depth_rasters": {int(rp): utilities.file_fingerprint(path) for rp, path in rp_map.items()},
     }
 
     tmp = dict(sig)
     tmp.pop("created_utc", None)
-    sig["signature_sha256"] = _sha256_bytes(json.dumps(tmp, sort_keys=True).encode("utf-8"))
+    sig["signature_sha256"] = hashlib.sha256(
+        json.dumps(tmp, sort_keys=True).encode("utf-8")).hexdigest()
     return sig
 
 
-def read_old_signature(out_dir: Path, iso3: str) -> dict | None:
-    p = signature_path(out_dir, iso3)
-    if not hb.path_exists(p):
+def read_old_signature(out_dir: str, iso3: str) -> dict | None:
+    path = signature_path(out_dir, iso3)
+    if not hb.path_exists(path):
         return None
     try:
-        return json.loads(p.read_text())
+        return json.loads(open(path, encoding="utf-8").read())
     except Exception:
         return None
 
 
-def outputs_complete_for_iso3(out_dir: Path, iso3: str, rp_map: dict[int, Path], write_depthbin: bool) -> bool:
-    summary = out_dir / f"sda_summary_{iso3}.csv"
+def outputs_complete_for_iso3(out_dir: str, iso3: str, rp_map: dict[int, str], write_depthbin: bool) -> bool:
+    summary = os.path.join(out_dir, f"sda_summary_{iso3}.csv")
     if not hb.path_exists(summary):
         return False
 
     for rp in rp_map.keys():
-        class_tif = out_dir / f"sda_class_{iso3}_rp{int(rp)}.tif"
-        mask_tif  = out_dir / f"sda_mask_{iso3}_rp{int(rp)}.tif"
+        class_tif = os.path.join(out_dir, f"sda_class_{iso3}_rp{int(rp)}.tif")
+        mask_tif  = os.path.join(out_dir, f"sda_mask_{iso3}_rp{int(rp)}.tif")
         if not hb.path_exists(class_tif) or not hb.path_exists(mask_tif):
             return False
-        if not raster_ok(class_tif) or not raster_ok(mask_tif):
+        if not utilities.raster_ok(class_tif) or not raster_ok(mask_tif):
             return False
 
         if write_depthbin:
-            db_tif = out_dir / f"sda_depthbin_idx_{iso3}_rp{int(rp)}.tif"
-            if not hb.path_exists(db_tif) or (not raster_ok(db_tif)):
+            db_tif = os.path.join(out_dir, f"sda_depthbin_idx_{iso3}_rp{int(rp)}.tif")
+            if not hb.path_exists(db_tif) or (not utilities.raster_ok(db_tif)):
                 return False
 
     return True
 
 
-def should_skip_iso3(out_dir: Path, iso3: str, new_sig: dict, rp_map: dict[int, Path], write_depthbin: bool) -> bool:
+def should_skip_iso3(out_dir: str, iso3: str, new_sig: dict, rp_map: dict[int, str], write_depthbin: bool) -> bool:
     old = read_old_signature(out_dir, iso3)
     if old is None:
         return False
@@ -690,8 +712,8 @@ def should_skip_iso3(out_dir: Path, iso3: str, new_sig: dict, rp_map: dict[int, 
     return outputs_complete_for_iso3(out_dir, iso3, rp_map=rp_map, write_depthbin=write_depthbin)
 
 
-def write_signature(out_dir: Path, iso3: str, sig: dict):
-    signature_path(out_dir, iso3).write_text(json.dumps(sig, indent=2, sort_keys=True))
+def write_signature(out_dir: str, iso3: str, sig: dict):
+    hb.write_to_file(json.dumps(sig, indent=2, sort_keys=True), signature_path(out_dir, iso3))
 
 
 # -----------------------------------------------------------------------------#
@@ -709,115 +731,17 @@ def parse_rps_arg(rps: str) -> list[int]:
     return sorted(set(out))
 
 
-def load_depth_json(depth_json: str) -> dict[int, Path]:
-    p = Path(depth_json)
-    if not hb.path_exists(p):
-        raise FileNotFoundError(f"--depth-json not found:\n  {p}")
-    d = json.loads(p.read_text())
-    out = {}
-    for k, v in d.items():
-        out[int(k)] = Path(v)
-    return out
 
 
-def autodetect_depth_rasters(depth_dir: Path) -> dict[int, Path]:
-    """
-    Auto-detect RP depth rasters in a directory using filename patterns.
-
-    Recognized patterns (case-insensitive):
-      - rp10y, rp20y, rp100y, rp200y, rp500y
-      - rp10, rp100 (fallback)
-
-    If multiple rasters match an RP, we pick the shortest filename (usually the canonical one).
-    """
-    if not hb.path_exists(depth_dir):
-        raise FileNotFoundError(f"--depth-dir not found:\n  {depth_dir}")
-
-    tifs = sorted(depth_dir.glob("*.tif"))
-    if not tifs:
-        raise FileNotFoundError(f"No .tif files found in:\n  {depth_dir}")
-
-    rp_hits: dict[int, list[Path]] = {}
-
-    # Prefer rp###y (strong)
-    pat_strong = re.compile(r"rp[_-]?(?P<rp>\d{1,4})y", re.IGNORECASE)
-    # Fallback rp### (weak)
-    pat_weak = re.compile(r"rp[_-]?(?P<rp>\d{1,4})", re.IGNORECASE)
-
-    for f in tifs:
-        name = f.name
-        m = pat_strong.search(name)
-        if m:
-            rp = int(m.group("rp"))
-            rp_hits.setdefault(rp, []).append(f)
-            continue
-        m = pat_weak.search(name)
-        if m:
-            rp = int(m.group("rp"))
-            rp_hits.setdefault(rp, []).append(f)
-
-    # Choose best candidate per RP
-    rp_map = {}
-    for rp, files in rp_hits.items():
-        files_sorted = sorted(files, key=lambda x: (len(x.name), x.name))
-        rp_map[int(rp)] = files_sorted[0]
-
-    return rp_map
 
 
-def finalize_rp_map(args) -> dict[int, Path]:
-    """
-    Priority:
-      1) --depth-json (explicit)
-      2) --depth-dir auto-detect
-      3) RP_MAP_DEFAULT (fallback if auto-detect finds nothing)
-    Then apply --rps filtering (if provided).
-    """
-    if args.depth_json and args.depth_json.strip():
-        rp_map = load_depth_json(args.depth_json.strip())
-        source = f"depth-json: {args.depth_json}"
-    else:
-        rp_map = autodetect_depth_rasters(Path(args.depth_dir))
-        source = f"depth-dir: {args.depth_dir}"
-
-        # If auto-detect returns empty (rare), fallback
-        if not rp_map:
-            rp_map = {int(k): Path(v) for k, v in RP_MAP_DEFAULT.items()}
-            source = "RP_MAP_DEFAULT fallback"
-
-    # Filter to requested RPs
-    req = parse_rps_arg(args.rps)
-    if req:
-        rp_map = {rp: p for rp, p in rp_map.items() if int(rp) in set(req)}
-
-    # Validate existence
-    missing = [rp for rp, p in rp_map.items() if not hb.path_exists(p)]
-    if missing:
-        msg = "\n".join([f"  rp{rp}: {rp_map[rp]}" for rp in sorted(missing)])
-        raise FileNotFoundError(
-            "[ERROR] Some depth rasters are missing after RP map construction.\n"
-            f"Depth source: {source}\n"
-            "Missing:\n" + msg
-        )
-
-    if not rp_map:
-        raise FileNotFoundError(
-            "[ERROR] No depth rasters selected.\n"
-            "Check --depth-dir/--depth-json and/or your --rps filter."
-        )
-
-    print(f"[INFO] Depth source: {source}")
-    print(f"[INFO] RPs selected: {sorted(rp_map.keys())}")
-    for rp in sorted(rp_map.keys()):
-        print(f"       rp{rp}: {rp_map[rp]}")
-    return dict(sorted(rp_map.items(), key=lambda kv: int(kv[0])))
 
 
-def load_mapping(mapping_path: Path) -> dict:
+def load_mapping(mapping_path: str) -> dict:
     if not hb.path_exists(mapping_path):
         raise FileNotFoundError(f"mapping JSON not found:\n  {mapping_path}")
 
-    mapping = json.loads(mapping_path.read_text())
+    mapping = json.loads(open(mapping_path, encoding="utf-8").read())
 
     if "artif" not in mapping and "built_up" in mapping:
         mapping["artif"] = mapping["built_up"]
