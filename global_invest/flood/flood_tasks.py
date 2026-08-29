@@ -2656,8 +2656,8 @@ def task_compute_flood_damages(p):
     publish_inputs(p)
 
     service_results = p.results.setdefault('flood', {})
-    # From configure_paths, which is where the writers get them too. Naming the file here as well
-    # would put the same basename in three places, so a rename could be applied to the writer and
+    # From publish_inputs, which is where the writers get them too. Naming the file here as well
+    # would put the same basename in two places, so a rename could be applied to the writer and
     # missed here, leaving the account pointed at a file nothing produces.
     service_results['country_ead_csv'] = p.flood_country_ead_path
     service_results['global_totals_csv'] = p.flood_global_totals_path
