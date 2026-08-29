@@ -35,19 +35,19 @@ def build_flood_task_tree(p):
     names the per-country directory the GEP task writes its degraded scenarios into, and the SDA
     task names the directory the service flow reads.
     """
-    p.task_prepare_flood_inputs = p.add_task(flood_tasks.task_prepare_flood_inputs)
-    p.task_build_sda = p.add_task(flood_tasks.task_build_sda)
-    p.task_compute_service_flow = p.add_task(flood_tasks.task_compute_service_flow)
-    p.task_compute_flood_damages = p.add_task(flood_tasks.task_compute_flood_damages)
-    p.task_compute_flood_gep = p.add_task(flood_tasks.task_compute_flood_gep)
-    p.task_generate_maps_and_figures = p.add_task(flood_tasks.task_generate_maps_and_figures)
+    p.prepare_flood_inputs_task = p.add_task(flood_tasks.task_prepare_flood_inputs)
+    p.build_sda_task = p.add_task(flood_tasks.task_build_sda)
+    p.compute_service_flow_task = p.add_task(flood_tasks.task_compute_service_flow)
+    p.compute_flood_damages_task = p.add_task(flood_tasks.task_compute_flood_damages)
+    p.compute_flood_gep_task = p.add_task(flood_tasks.task_compute_flood_gep)
+    p.generate_maps_and_figures_task = p.add_task(flood_tasks.task_generate_maps_and_figures)
     return p
 
 
 def build_flood_calculation_task_tree(p):
     """Calculation only: everything except maps and figures."""
     build_flood_task_tree(p)
-    p.skip_tasks(['task_generate_maps_and_figures'])
+    p.skip_tasks(['generate_maps_and_figures'])
     return p
 
 
@@ -55,16 +55,16 @@ def build_flood_accounting_task_tree(p):
     """The SEEA-EA physical account on its own: SDA delineation and the SPA-to-SDA service flow,
     no monetary valuation. Useful when the JRC damage tables are not available or not wanted."""
     build_flood_task_tree(p)
-    p.skip_tasks(['task_compute_flood_damages', 'task_compute_flood_gep',
-                  'task_generate_maps_and_figures'])
+    p.skip_tasks(['compute_flood_damages', 'compute_flood_gep',
+                  'generate_maps_and_figures'])
     return p
 
 
 def build_flood_valuation_task_tree(p):
     """Valuation only, against SDA rasters an earlier run produced."""
     build_flood_task_tree(p)
-    p.skip_tasks(['task_prepare_flood_inputs', 'task_build_sda', 'task_compute_service_flow',
-                  'task_compute_flood_gep', 'task_generate_maps_and_figures'])
+    p.skip_tasks(['prepare_flood_inputs', 'build_sda', 'compute_service_flow',
+                  'compute_flood_gep', 'generate_maps_and_figures'])
     return p
 
 
@@ -72,16 +72,16 @@ def build_flood_gep_task_tree(p):
     """The paired counterfactual, the only tree that produces a service value rather than gross
     exposure: gep_flood = ead_bare - ead_current, plus the maps."""
     build_flood_task_tree(p)
-    p.skip_tasks(['task_prepare_flood_inputs', 'task_build_sda', 'task_compute_service_flow',
-                  'task_compute_flood_damages'])
+    p.skip_tasks(['prepare_flood_inputs', 'build_sda', 'compute_service_flow',
+                  'compute_flood_damages'])
     return p
 
 
 def build_flood_results_task_tree(p):
     """Maps and figures from an existing run."""
     build_flood_task_tree(p)
-    p.skip_tasks(['task_prepare_flood_inputs', 'task_build_sda', 'task_compute_service_flow',
-                  'task_compute_flood_damages', 'task_compute_flood_gep'])
+    p.skip_tasks(['prepare_flood_inputs', 'build_sda', 'compute_service_flow',
+                  'compute_flood_damages', 'compute_flood_gep'])
     return p
 
 
