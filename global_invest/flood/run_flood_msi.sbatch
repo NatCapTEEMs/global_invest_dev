@@ -40,16 +40,18 @@ PY
 }
 
 CONDA_ENV="$(read_row flood_msi_conda_env)"
+PYTHON="$CONDA_ENV/bin/python"
+[ -x "$PYTHON" ] || { echo "no interpreter at $PYTHON"; exit 1; }
+
 echo "[msi] code   : $CODE_ROOT"
-echo "[msi] env    : $CONDA_ENV"
-
-module load conda
-conda activate "$CONDA_ENV"
-
-cd "$CODE_ROOT"
-echo "[msi] python : $(which python)"
+echo "[msi] python : $PYTHON"
 echo "[msi] started: $(date)"
 
-python global_invest/flood/run_flood.py
+# The environment interpreter directly, rather than `module load conda; conda activate`:
+# conda activate needs a shell whose rc has been sourced, and a batch job does not have one,
+# so the activate silently leaves the system python in place and the job dies on the first
+# import.
+cd "$CODE_ROOT"
+"$PYTHON" global_invest/flood/run_flood.py
 
 echo "[msi] finished: $(date)"
