@@ -25,7 +25,7 @@ from global_invest.flood import flood_initialize
 
 def build_task_tree(p):
     # This project's task tree: delegates unchanged to the shared library builder.
-    flood_initialize.build_flood_task_tree(p)
+    flood_initialize.build_gep_service_task_tree(p)
 
 
 def run_project(p):

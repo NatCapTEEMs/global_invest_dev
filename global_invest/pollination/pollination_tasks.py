@@ -269,7 +269,7 @@ def _read_and_filter_fao_production(
 
     # The staged bulk, put in base data by the shared download task rather than pulled here.
     logger.info("Reading staged FAOSTAT production bulk from %s", cfg.paths.fao_production_bulk_path)
-    if not os.path.exists(cfg.paths.fao_production_bulk_path):
+    if not hb.path_exists(cfg.paths.fao_production_bulk_path):
         raise NameError(
             'pollination has no FAOSTAT production bulk at %s. es_parameters carries its url and '
             'archive member, so the shared download task stages it.'
@@ -330,7 +330,7 @@ def _read_fao_prices(cfg: Config, years: list[int]) -> pd.DataFrame:
     """Read the staged FAOSTAT producer-price bulk and return annual rows."""
     logger.info("=== 1) READING STAGED FAOSTAT PRODUCER PRICES ===")
 
-    if not os.path.exists(cfg.paths.fao_prices_bulk_path):
+    if not hb.path_exists(cfg.paths.fao_prices_bulk_path):
         raise NameError(
             'pollination has no FAOSTAT producer-price bulk at %s. es_parameters carries its url '
             'and archive member, so the shared download task stages it.'
@@ -393,7 +393,7 @@ def world_bank_fx(fx_path):
         NameError: when the file is absent. Falling through to IMF-only rates would change every
             price without saying so, which is what happened when an empty fetch was not an error.
     """
-    if not os.path.exists(fx_path):
+    if not hb.path_exists(fx_path):
         raise NameError(
             'pollination has no World Bank exchange rates at %s. es_parameters carries the '
             'indicator and its url, so the shared download task stages it. Continuing without '
@@ -1068,7 +1068,7 @@ def run_pollination_sufficiency_300m(
         nat_classes = _SEALS_NAT_CLASSES
         logger.info("Using SEALS LULC classes.")
     
-    if os.path.exists(out_path):
+    if hb.path_exists(out_path):
         logger.info("Output already exists, skipping computation.")
         return out_path
 
@@ -1173,11 +1173,11 @@ def run_pollination_sufficiency_5km(cfg: pf.SufficiencySettings, input_300m: str
     logger.info("Template: %s", template_path)
     logger.info("Output: %s", out_path)
     
-    if os.path.exists(out_path):
+    if hb.path_exists(out_path):
         logger.info("Output already exists, skipping resampling.")
         return out_path
 
-    if not os.path.exists(input_300m):
+    if not hb.path_exists(input_300m):
         raise FileNotFoundError(f"300m sufficiency raster not found at {input_300m}")
         
     with rasterio.open(template_path) as tgt:
@@ -1291,13 +1291,13 @@ def run_pollination_valuation_5km(cfg: pf.SufficiencySettings, scenario: str = "
     logger.info("  Pollination Value Input: %s", poll_value_path)
     logger.info("  Sufficiency Input      : %s", suff_path)
     
-    if os.path.exists(out_total):
+    if hb.path_exists(out_total):
         logger.info("Output already exists, skipping valuation.")
         return out_total
 
-    if not os.path.exists(poll_value_path):
+    if not hb.path_exists(poll_value_path):
         raise FileNotFoundError(f"Global pollination value raster missing: {poll_value_path}")
-    if not os.path.exists(suff_path):
+    if not hb.path_exists(suff_path):
         raise FileNotFoundError(f"Sufficiency raster missing: {suff_path}")
 
     # Load both rasters
@@ -1349,11 +1349,11 @@ def redistribution_value_to_300m(cfg: pf.SufficiencySettings, scenario: str = "2
 
     logger.info("Redistributing value to 300m...")
 
-    if os.path.exists(out_path):
+    if hb.path_exists(out_path):
         logger.info("Output already exists, skipping redistribution.")
         return out_path
 
-    if not os.path.exists(large_path):
+    if not hb.path_exists(large_path):
         raise FileNotFoundError(f"5km value raster missing: {large_path}")
     
     with rasterio.open(large_path) as large, rasterio.open(fine_path) as fine:
@@ -1474,13 +1474,13 @@ def mask_protected_areas_300m(cfg: pf.SufficiencySettings, scenario: str = "2020
     logger.info("Value input : %s", value_path)
     logger.info("PA raster   : %s", pa_path)
 
-    if os.path.exists(out_raster):
+    if hb.path_exists(out_raster):
         logger.info("Output already exists, skipping PA masking.")
         return out_raster
 
-    if not os.path.exists(value_path):
+    if not hb.path_exists(value_path):
         raise FileNotFoundError(f"300m value raster missing: {value_path}")
-    if not os.path.exists(pa_path):
+    if not hb.path_exists(pa_path):
         raise FileNotFoundError(f"PA raster missing: {pa_path}")
 
     with rasterio.open(value_path) as val_src, rasterio.open(pa_path) as pa_src:
@@ -1587,7 +1587,7 @@ def summarize_run(cfg: pf.SufficiencySettings, scenario: str = "2020") -> None:
     
     for fname, desc in targets.items():
         path = out_dir / fname
-        if not os.path.exists(path):
+        if not hb.path_exists(path):
             continue
             
         try:
@@ -1675,7 +1675,7 @@ def run_pollination_diff_5km_pnas(
         scenario, baseline_scenario,
     )
 
-    if os.path.exists(out_path):
+    if hb.path_exists(out_path):
         logger.info("Output already exists, skipping: %s", out_path)
         return out_path
 
@@ -1690,7 +1690,7 @@ def run_pollination_diff_5km_pnas(
         required.append(mask_path)
 
     for p in required:
-        if not os.path.exists(p):
+        if not hb.path_exists(p):
             raise FileNotFoundError(f"Required input missing: {p}")
 
     with rasterio.open(s_path) as src_s, rasterio.open(b_path) as src_b:
@@ -1885,7 +1885,7 @@ def pollination_shock_static(p):
 
     poll_path = getattr(p, 'pollination_dependency_path', None) or os.path.join(
         p.input_dir, 'raw_dependencies', 'pollination_dependency.csv')
-    if not os.path.exists(poll_path):
+    if not hb.path_exists(poll_path):
         print('  pollination shock: dependency csv not found (%s) -- skipping' % poll_path)
         return
 

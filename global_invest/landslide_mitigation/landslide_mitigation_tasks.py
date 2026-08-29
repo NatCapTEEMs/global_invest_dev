@@ -297,7 +297,7 @@ def build_ease_grid_reference(p):
         grid = read_gpd_grid_definition(gpd_path)
 
         out_path = os.path.join(p.input_data_dir, 'ease_grid_reference.tif')
-        if os.path.exists(out_path) and not p.force_run:
+        if hb.path_exists(out_path) and not p.force_run:
             p.L.info('EASE-Grid reference raster already exists, skipping.')
             p.ease_grid_reference_path = out_path
             return p
@@ -322,7 +322,7 @@ def reproject_dem(p):
     if p.run_this:
         src_path = p.get_path(p.landslide_elevation_path)
         out_path = os.path.join(p.input_data_dir, 'dem_1km.tif')
-        if os.path.exists(out_path) and not p.force_run:
+        if hb.path_exists(out_path) and not p.force_run:
             p.dem_path = out_path
             return p
 
@@ -348,7 +348,7 @@ def reproject_gaez(p):
     if p.run_this:
         src_path = os.path.join(p.landslide_input_data_dir, 'fao_gaez', 'GAEZ-V5.AEZ57.tif')
         out_path = os.path.join(p.input_data_dir, 'gaez_zones_1km.tif')
-        if os.path.exists(out_path) and not p.force_run:
+        if hb.path_exists(out_path) and not p.force_run:
             p.gaez_path = out_path
             return p
 
@@ -379,14 +379,14 @@ def reproject_esacci_forest_share(p):
         for year in p.data_processing_range:
             src_path = p.get_path(p.landslide_lulc_path_template.format(year=year),
                                   raise_error_if_fail=False)
-            if not os.path.exists(src_path):
+            if not hb.path_exists(src_path):
                 p.L.warning(f'ESA-CCI {year} not found, skipping year.')
                 continue
 
             out_path = os.path.join(
                 p.input_data_dir, 'forest_share_1km', f'forest_share_{year}_1km.tif'
             )
-            if os.path.exists(out_path) and not p.force_run:
+            if hb.path_exists(out_path) and not p.force_run:
                 continue
 
             # ---- classify raw class codes -> forest weight (0-1), BLOCK-WISE ----
@@ -445,7 +445,7 @@ def reproject_uglc_events(p):
 
         src_path = os.path.join(p.landslide_input_data_dir, 'uglc', 'UGLC_point.csv')
         out_path = os.path.join(p.input_data_dir, 'uglc_points_ease.gpkg')
-        if os.path.exists(out_path) and not p.force_run:
+        if hb.path_exists(out_path) and not p.force_run:
             p.uglc_path = out_path
             return p
 
@@ -528,14 +528,14 @@ def reproject_landscan_population(p):
             src_path = os.path.join(
                 p.landslide_input_data_dir, 'landscan', f'landscan-global-{year}.tif'
             )
-            if not os.path.exists(src_path):
+            if not hb.path_exists(src_path):
                 p.L.warning(f'LandScan {year} not found, skipping year.')
                 continue
 
             out_path = os.path.join(
                 p.input_data_dir, 'landscan_1km', f'landscan_{year}_1km.tif'
             )
-            if os.path.exists(out_path) and not p.force_run:
+            if hb.path_exists(out_path) and not p.force_run:
                 continue
 
             warp_to_reference(
@@ -563,7 +563,7 @@ def reproject_soilgrids_properties(p):
 
         for out_name, (prop_code, conv_factor) in lmf.SOILGRIDS_PROPERTIES.items():
             out_path = os.path.join(p.input_data_dir, f'soilgrids_{out_name}_1km.tif')
-            if os.path.exists(out_path) and not p.force_run:
+            if hb.path_exists(out_path) and not p.force_run:
                 p.soilgrids_paths[out_name] = out_path
                 continue
 
@@ -574,7 +574,7 @@ def reproject_soilgrids_properties(p):
                 for depth in lmf.DEPTH_WEIGHTS_0_30CM
             }
             for depth, path in depth_paths_local.items():
-                if not os.path.exists(path):
+                if not hb.path_exists(path):
                     raise FileNotFoundError(f'Missing SoilGrids TIF: {path}')
 
             native_combined_path = os.path.join(work_dir, f'{out_name}_native.tif')
@@ -606,7 +606,7 @@ def reproject_worldclim_bio12(p):
         src_path = os.path.join(p.landslide_input_data_dir, 'worldclim', 'wc2.1_30s_bio_12.tif')
         out_path = os.path.join(p.input_data_dir, 'worldclim_bio12_1km.tif')
 
-        if os.path.exists(out_path) and not p.force_run:
+        if hb.path_exists(out_path) and not p.force_run:
             p.climatological_rain_path = out_path
             return p
 
@@ -634,7 +634,7 @@ def reproject_worldclim_bio12(p):
             dst_nodata=lmf.NODATA,
             output_type=gdal.GDT_Float32,
         )
-        if os.path.exists(temp_path):
+        if hb.path_exists(temp_path):
             os.remove(temp_path)
 
         p.L.info(f'WorldClim BIO12 reprojected: {out_path}')
@@ -655,7 +655,7 @@ def reproject_hihydrosoil_ksat(p):
         os.makedirs(work_dir, exist_ok=True)
 
         out_path = os.path.join(p.input_data_dir, 'ksat_1km.tif')
-        if os.path.exists(out_path) and not p.force_run:
+        if hb.path_exists(out_path) and not p.force_run:
             p.ksat_path = out_path
             return p
 
@@ -664,7 +664,7 @@ def reproject_hihydrosoil_ksat(p):
             for depth in lmf.DEPTH_WEIGHTS_0_30CM
         }
         for depth, path in depth_paths_local.items():
-            if not os.path.exists(path):
+            if not hb.path_exists(path):
                 raise FileNotFoundError(f'Missing HiHydroSoil file: {path}')
 
         native_combined_path = os.path.join(work_dir, 'ksat_native.tif')
@@ -695,7 +695,7 @@ def reproject_soil_depth(p):
             'average_soil_and_sedimentary-deposit_thickness.tif'
         )
         out_path = os.path.join(p.input_data_dir, 'soil_depth_1km.tif')
-        if os.path.exists(out_path) and not p.force_run:
+        if hb.path_exists(out_path) and not p.force_run:
             p.soil_depth_path = out_path
             return p
 
@@ -727,7 +727,7 @@ def reproject_grip_roads(p):
             p.landslide_input_data_dir, 'GRIP4_density_total', 'grip4_total_dens_m_km2.asc'
         )
         out_path = os.path.join(p.input_data_dir, 'road_density_1km.tif')
-        if os.path.exists(out_path) and not p.force_run:
+        if hb.path_exists(out_path) and not p.force_run:
             p.road_density_path = out_path
             return p
 
@@ -778,14 +778,14 @@ def reproject_rain_daily(p):
                 p.landslide_input_data_dir, 'era5_land_precip_annual_tif',
                 f'era5_max_daily_mm_{year}.tif'
             )
-            if not os.path.exists(src_path):
+            if not hb.path_exists(src_path):
                 p.L.warning(f'ERA5 max daily rain {year} not found at {src_path}, skipping.')
                 continue
 
             out_path = os.path.join(
                 p.input_data_dir, 'era5_land', f'era5_max_daily_mm_{year}.tif'
             )
-            if os.path.exists(out_path) and not p.force_run:
+            if hb.path_exists(out_path) and not p.force_run:
                 continue
 
             warp_to_reference(
@@ -838,7 +838,7 @@ def validate_input_rasters(p):
 
         errors = []
         for label, path in paths_to_check.items():
-            if not os.path.exists(path):
+            if not hb.path_exists(path):
                 errors.append(f'{label}: MISSING file at {path}')
                 continue
             info = pygeo.get_raster_info(path)
@@ -911,7 +911,7 @@ def build_uglc_annual_panels(p):
             binary_out_path = os.path.join(out_dir, f'uglc_binary_{year}.tif')
             mortality_out_path = os.path.join(out_dir, f'uglc_mortality_{year}.tif')
 
-            if (os.path.exists(binary_out_path) and os.path.exists(mortality_out_path)
+            if (hb.path_exists(binary_out_path) and hb.path_exists(mortality_out_path)
                     and not p.force_run):
                 continue
 
@@ -950,7 +950,7 @@ def fill_pits(p):
     publish_inputs(p)
     if p.run_this:
         out_path = os.path.join(p.preprocessing_dir, 'pit_filled_dem_1km.tif')
-        if os.path.exists(out_path) and not p.force_run:
+        if hb.path_exists(out_path) and not p.force_run:
             p.pit_filled_dem_path = out_path
             return p
 
@@ -968,7 +968,7 @@ def compute_flow_dir_d8(p):
     publish_inputs(p)
     if p.run_this:
         out_path = os.path.join(p.preprocessing_dir, 'flow_dir_1km.tif')
-        if os.path.exists(out_path) and not p.force_run:
+        if hb.path_exists(out_path) and not p.force_run:
             p.flow_dir_path = out_path
             return p
 
@@ -989,7 +989,7 @@ def compute_upslope_area(p):
     if p.run_this:
         accum_path = os.path.join(p.preprocessing_dir, 'flow_accum_pixel_count_1km.tif')
         out_path = os.path.join(p.preprocessing_dir, 'upslope_area_m2_1km.tif')
-        if os.path.exists(out_path) and not p.force_run:
+        if hb.path_exists(out_path) and not p.force_run:
             p.upslope_area_path = out_path
             return p
 
@@ -1024,7 +1024,7 @@ def compute_slope(p):
     publish_inputs(p)
     if p.run_this:
         out_path = os.path.join(p.preprocessing_dir, 'slope_degrees_1km.tif')
-        if os.path.exists(out_path) and not p.force_run:
+        if hb.path_exists(out_path) and not p.force_run:
             p.slope_path = out_path
             return p
 
@@ -1040,7 +1040,7 @@ def compute_slope(p):
         fine_gt = (ref_gt[0], fine_pixel_size, 0, ref_gt[3], 0, -fine_pixel_size)
 
         fine_ref_path = os.path.join(work_dir, 'ease_grid_reference_fine.tif')
-        if not os.path.exists(fine_ref_path) or p.force_run:
+        if not hb.path_exists(fine_ref_path) or p.force_run:
             create_reference_raster(
                 fine_ref_path, fine_gt,
                 ref_cols * lmf.SLOPE_FINE_FACTOR, ref_rows * lmf.SLOPE_FINE_FACTOR,
@@ -1049,7 +1049,7 @@ def compute_slope(p):
         # ---- 2. Warp RAW (unfilled) elevation to the fine grid ----
         raw_dem_src = p.get_path(p.landslide_elevation_path)
         dem_fine_path = os.path.join(work_dir, 'dem_fine.tif')
-        if not os.path.exists(dem_fine_path) or p.force_run:
+        if not hb.path_exists(dem_fine_path) or p.force_run:
             warp_to_reference(
                 raw_dem_src, dem_fine_path, fine_ref_path,
                 resample_method='average',  # ~300m native -> ~250m, still continuous
@@ -1060,7 +1060,7 @@ def compute_slope(p):
         # ---- 3. Compute slope at fine resolution (Horn 1981) ----
         p.L.info('Computing slope at fine resolution (gdal.DEMProcessing)...')
         slope_fine_path = os.path.join(work_dir, 'slope_fine.tif')
-        if not os.path.exists(slope_fine_path) or p.force_run:
+        if not hb.path_exists(slope_fine_path) or p.force_run:
             dem_options = gdal.DEMProcessingOptions(
                 slopeFormat='degree',
                 creationOptions=list(lmf.GTIFF_CREATION_OPTIONS),
@@ -1068,7 +1068,7 @@ def compute_slope(p):
             result_ds = gdal.DEMProcessing(
                 slope_fine_path, dem_fine_path, 'slope', options=dem_options,
             )
-            if result_ds is None or not os.path.exists(slope_fine_path):
+            if result_ds is None or not hb.path_exists(slope_fine_path):
                 raise RuntimeError(
                     f'gdal.DEMProcessing failed to produce {slope_fine_path} '
                     f'(check disk space and BIGTIFF support in this GDAL build).'
@@ -1077,7 +1077,7 @@ def compute_slope(p):
             p.L.info(f'Slope (fine resolution) computed: {slope_fine_path}')
 
         # ---- 4. Aggregate fine slope down to 1km via average ----
-        if not os.path.exists(out_path) or p.force_run:
+        if not hb.path_exists(out_path) or p.force_run:
             warp_to_reference(
                 slope_fine_path, out_path, p.ease_grid_reference_path,
                 resample_method='average',
@@ -1119,7 +1119,7 @@ def compute_soil_hydraulic_properties(p):
 
         out_paths = [p.friction_angle_path, p.cohesion_soil_path,
                      p.unit_weight_path, p.transmissivity_path]
-        if all(os.path.exists(op) for op in out_paths) and not p.force_run:
+        if all(hb.path_exists(op) for op in out_paths) and not p.force_run:
             p.L.info('Soil hydraulic properties already computed.')
             return p
 
@@ -1159,7 +1159,7 @@ def compute_static_q(p):
     publish_inputs(p)
     if p.run_this:
         out_path = os.path.join(p.preprocessing_dir, 'static_q_1km.tif')
-        if os.path.exists(out_path) and not p.force_run:
+        if hb.path_exists(out_path) and not p.force_run:
             p.static_q_path = out_path
             return p
 
@@ -1213,7 +1213,7 @@ def compute_si_scenarios(p):
                 out_path = os.path.join(
                     p.preprocessing_dir, 'si_scenarios', f'si_{scenario_name}_{year}_1km.tif'
                 )
-                if os.path.exists(out_path) and not p.force_run:
+                if hb.path_exists(out_path) and not p.force_run:
                     p.si_paths[scenario_name][year] = out_path
                     continue
 
@@ -1303,14 +1303,14 @@ def _sample_panel_covariates(p, panel, observed_years):
                 si_path, panel.loc[mask, 'ease_x'], panel.loc[mask, 'ease_y'])
 
         rain_path = os.path.join(p.input_data_dir, 'era5_land', f'era5_max_daily_mm_{year}.tif')
-        if os.path.exists(rain_path):
+        if hb.path_exists(rain_path):
             panel.loc[mask, 'rain_max_daily'] = sample_raster_at_points(
                 rain_path, panel.loc[mask, 'ease_x'], panel.loc[mask, 'ease_y'])
         else:
             p.L.warning(f'{year}: rain_max_daily raster not found at {rain_path}')
 
         pop_path = os.path.join(p.input_data_dir, 'landscan_1km', f'landscan_{year}_1km.tif')
-        if os.path.exists(pop_path):
+        if hb.path_exists(pop_path):
             panel.loc[mask, 'population'] = sample_raster_at_points(
                 pop_path, panel.loc[mask, 'ease_x'], panel.loc[mask, 'ease_y'])
         else:
@@ -1331,7 +1331,7 @@ def build_estimation_table(p):
     if p.run_this:
 
         out_path = os.path.join(p.preprocessing_dir, 'estimation_table.csv')
-        if os.path.exists(out_path) and not p.force_run:
+        if hb.path_exists(out_path) and not p.force_run:
             p.estimation_table_path = out_path
             return p
 
@@ -1398,7 +1398,7 @@ def calibrate_si_to_probability(p):
     publish_inputs(p)
     if p.run_this:
         out_coef_path = os.path.join(p.modeling_dir, 'hazard_model_coefficients.json')
-        if os.path.exists(out_coef_path) and not p.force_run:
+        if hb.path_exists(out_coef_path) and not p.force_run:
             with open(out_coef_path) as f:
                 p.hazard_model_coefficients = json.load(f)
             return p
@@ -1481,7 +1481,7 @@ def _uglc_and_si_pixel_counts(p, year):
         p.preprocessing_dir, 'uglc_annual_panels', f'uglc_binary_{year}.tif'
     )
     si_path = p.si_paths.get('observed', {}).get(year)
-    if not os.path.exists(binary_path) or not si_path or not os.path.exists(si_path):
+    if not hb.path_exists(binary_path) or not si_path or not hb.path_exists(si_path):
         return None
 
     ds = gdal.Open(binary_path)
@@ -1518,7 +1518,7 @@ def estimate_severity_model(p):
     publish_inputs(p)
     if p.run_this:
         out_coef_path = os.path.join(p.modeling_dir, 'severity_model_coefficients.json')
-        if os.path.exists(out_coef_path) and not p.force_run:
+        if hb.path_exists(out_coef_path) and not p.force_run:
             with open(out_coef_path) as f:
                 p.severity_model_coefficients = json.load(f)
             return p
@@ -1590,7 +1590,7 @@ def estimate_severity_model_si_sensitivity(p):
     publish_inputs(p)
     if p.run_this:
         out_coef_path = os.path.join(p.modeling_dir, 'severity_model_si_sensitivity.json')
-        if os.path.exists(out_coef_path) and not p.force_run:
+        if hb.path_exists(out_coef_path) and not p.force_run:
             with open(out_coef_path) as f:
                 p.severity_model_si_sensitivity = json.load(f)
             return p
@@ -1623,7 +1623,7 @@ def estimate_severity_model_si_sensitivity(p):
 
         # Quick side-by-side vs. the baseline (slope, no SI)
         baseline_path = os.path.join(p.modeling_dir, 'severity_model_coefficients.json')
-        if os.path.exists(baseline_path):
+        if hb.path_exists(baseline_path):
             with open(baseline_path) as f:
                 baseline = json.load(f)
             p.L.info(
@@ -1657,7 +1657,7 @@ def tile_zones(p):
 
     blocks_list_path = os.path.join(p.cur_dir, 'blocks_list.csv')
 
-    if os.path.exists(blocks_list_path):
+    if hb.path_exists(blocks_list_path):
         p.L.info('Blocks list already exists, loading from file...')
         blocks_df = pd.read_csv(blocks_list_path, header=None)
         blocks_df.columns = ['col_offset', 'row_offset', 'n_cols', 'n_rows']
@@ -1756,7 +1756,7 @@ def predict_landslides_scenarios(p):
                                         coef['beta_si'], coef['beta_rain'])
 
         out_path = os.path.join(p.cur_dir, f'hazard_prob_{scenario_name}_{prediction_year}.tif')
-        if os.path.exists(out_path) and not p.force_run:
+        if hb.path_exists(out_path) and not p.force_run:
             continue
         write_raster_from_array(
             np.where(valid, prob, lmf.NODATA).astype(np.float32),
@@ -1823,7 +1823,7 @@ def predict_mortality_scenarios(p):
         hazard_dir = os.path.join(os.path.dirname(p.cur_dir), 'predict_landslides_scenarios')
         hazard_path = os.path.join(hazard_dir, f'hazard_prob_{scenario_name}_{prediction_year}.tif')
 
-        if not os.path.exists(hazard_path):
+        if not hb.path_exists(hazard_path):
             p.L.warning(f'Missing hazard raster: {hazard_path}')
             continue
 
@@ -1834,7 +1834,7 @@ def predict_mortality_scenarios(p):
             valid_hazard &= (hazard != hazard_nodata)
 
         out_path = os.path.join(p.cur_dir, f'expected_deaths_{scenario_name}_{prediction_year}.tif')
-        if os.path.exists(out_path) and not p.force_run:
+        if hb.path_exists(out_path) and not p.force_run:
             continue
         write_raster_from_array(
             np.where(valid_hazard, hazard * severity_expectation, lmf.NODATA).astype(np.float32),
@@ -1851,10 +1851,10 @@ def _stitch_one_global_raster(p, blocks_list, grid, spec, year):
     grid, each existing tile written at its block offset."""
     out_path = os.path.join(p.cur_dir, spec['global_filename'].format(year=year))
 
-    if os.path.exists(out_path) and not getattr(p, 'force_run', False):
+    if hb.path_exists(out_path) and not getattr(p, 'force_run', False):
         p.L.info(f'Skipping existing: {out_path}')
         return
-    if os.path.exists(out_path):
+    if hb.path_exists(out_path):
         os.remove(out_path)
 
     p.L.info(f'Stitching {spec["name"]} {year}')
@@ -1877,7 +1877,7 @@ def _stitch_one_global_raster(p, blocks_list, grid, spec, year):
             spec['tile_subdir'], spec['tile_filename'].format(year=year)
         )
 
-        if not os.path.exists(tile_path):
+        if not hb.path_exists(tile_path):
             missing += 1
             continue
 
@@ -1948,7 +1948,7 @@ def build_vsl_raster(p):
     publish_inputs(p)
     if p.run_this:
         out_path = os.path.join(p.valuation_dir, 'vsl_usd_2019_1km.tif')
-        if os.path.exists(out_path) and not p.force_run:
+        if hb.path_exists(out_path) and not p.force_run:
             p.vsl_raster_path = out_path
             return p
 
@@ -2027,8 +2027,8 @@ def _avoided_mortality_for_year(p, year):
         p.valuation_dir, f'avoided_mortality_value_{year}.tif'
     )
 
-    if (os.path.exists(avoided_mortality_path)
-            and os.path.exists(avoided_mortality_value_path)
+    if (hb.path_exists(avoided_mortality_path)
+            and hb.path_exists(avoided_mortality_value_path)
             and not p.force_run):
         p.L.info(f'{year}: avoided mortality outputs already exist, skipping.')
         return
@@ -2036,7 +2036,7 @@ def _avoided_mortality_for_year(p, year):
     for path, label in [(deaths_observed_path, 'expected_deaths_observed'),
                         (deaths_full_impacts_path, 'expected_deaths_full_impacts'),
                         (vsl_path, 'vsl_usd')]:
-        if not os.path.exists(path):
+        if not hb.path_exists(path):
             raise FileNotFoundError(f'{label} missing for {year}: {path}')
 
     # ---- avoided_mortality = full_impacts - observed ----
@@ -2132,7 +2132,7 @@ def compute_zonal_statistics(p):
             csv_out_path = service_results[f'zonal_statistics_{year}']
             gpkg_out_path = service_results[f'zonal_statistics_vector_{year}']
 
-            if os.path.exists(csv_out_path) and os.path.exists(gpkg_out_path) and not p.force_run:
+            if hb.path_exists(csv_out_path) and hb.path_exists(gpkg_out_path) and not p.force_run:
                 p.L.info(f'{year}: zonal statistics already exist, skipping.')
                 continue
 
@@ -2146,7 +2146,7 @@ def compute_zonal_statistics(p):
             # Reuse the same EASE-Grid-reprojected correspondence vector
             # built for build_vsl_raster, rather than re-reprojecting
             corr_ease_path = os.path.join(p.valuation_dir, 'vsl_work', 'corr_ease_vsl.gpkg')
-            if not os.path.exists(corr_ease_path):
+            if not hb.path_exists(corr_ease_path):
                 raise FileNotFoundError(
                     f'{corr_ease_path} not found -- run build_vsl_raster first '
                     f'(it produces this reprojected correspondence vector).'
@@ -2327,7 +2327,7 @@ def export_results_tables(p):
     if p.run_this:
         for year in p.prediction_years:
             zonal_csv_path = os.path.join(p.tables_figures_dir, f'zonal_statistics_{year}.csv')
-            if not os.path.exists(zonal_csv_path):
+            if not hb.path_exists(zonal_csv_path):
                 p.L.warning(f'{year}: {zonal_csv_path} not found, skipping.')
                 continue
 
@@ -2407,7 +2407,7 @@ def export_si_severity_sensitivity_table(p):
             main_spec = json.load(f)  # slope-based, current production
 
         si_path = os.path.join(p.modeling_dir, 'severity_model_si_sensitivity.json')
-        if not os.path.exists(si_path):
+        if not hb.path_exists(si_path):
             p.L.warning(f'{si_path} not found -- run estimate_severity_model_si_sensitivity first.')
             return p
         with open(si_path) as f:
@@ -2458,7 +2458,7 @@ def export_pi_audit_table(p):
     publish_inputs(p)
     if p.run_this:
         out_path = os.path.join(p.tables_figures_dir, 'pi_audit_table')
-        if not os.path.exists(f'{out_path}.csv') and not p.force_run:
+        if not hb.path_exists(f'{out_path}.csv') and not p.force_run:
             rows = []
             total_event_pixels = 0
             total_land_pixels = 0
@@ -2494,10 +2494,10 @@ def _plot_raster(p, failures, raster_path, out_png, title, cmap, cbar_format):
     """One raster to one PNG, downsampled to the plot dimension cap, ranged on the plot
     percentiles. A missing raster or an unplottable range is recorded in failures rather
     than stopping the sweep."""
-    if os.path.exists(out_png):
+    if hb.path_exists(out_png):
         p.L.info(f'Plot already exists: {out_png}')
         return True
-    if not os.path.exists(raster_path):
+    if not hb.path_exists(raster_path):
         msg = f'Raster not found: {raster_path}'
         p.L.info(f'WARNING: {msg}')
         failures.append(msg)
@@ -2628,7 +2628,7 @@ def plot_country_choropleth_maps(p):
     if p.run_this:
         for year in p.prediction_years:
             gpkg_path = os.path.join(p.tables_figures_dir, f'zonal_statistics_{year}.gpkg')
-            if not os.path.exists(gpkg_path):
+            if not hb.path_exists(gpkg_path):
                 p.L.warning(f'{gpkg_path} not found, skipping.')
                 continue
 
@@ -2643,7 +2643,7 @@ def plot_country_choropleth_maps(p):
 
             for column, divisor, cmap, legend_label, tick_fmt, out_name in specs:
                 out_path = os.path.join(p.tables_figures_dir, out_name)
-                if os.path.exists(out_path) and not p.force_run:
+                if hb.path_exists(out_path) and not p.force_run:
                     p.L.info(f'Choropleth already exists: {out_path}')
                     continue
 
@@ -2697,7 +2697,7 @@ def plot_uglc_from_vector(p):
         return p
 
     out_png = os.path.join(p.tables_figures_dir, 'uglc_events_fatality_bins.png')
-    if os.path.exists(out_png) and not p.force_run:
+    if hb.path_exists(out_png) and not p.force_run:
         p.L.info(f'UGLC events plot already exists: {out_png}')
         return p
 
@@ -2786,13 +2786,13 @@ def gep_calculation(p):
     # not carry.
     year = int(p.gep_base_year)
     zonal_path = os.path.join(p.tables_figures_dir, f'zonal_statistics_{year}.csv')
-    if not os.path.exists(zonal_path):
+    if not hb.path_exists(zonal_path):
         zonal_path = p.get_path(p.landslide_zonal_statistics_path, raise_error_if_fail=False)
     service_results[f'zonal_statistics_{year}'] = zonal_path
 
     if not p.run_this or (already_done and not p.force_run):
         return p
-    if not zonal_path or not os.path.exists(zonal_path):
+    if not zonal_path or not hb.path_exists(zonal_path):
         raise FileNotFoundError(
             f'no zonal statistics for the GEP base year {year}. compute_zonal_statistics writes '
             f'one per prediction year into {p.tables_figures_dir}, and es_parameters names a '

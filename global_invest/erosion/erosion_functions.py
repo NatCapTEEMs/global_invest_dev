@@ -25,6 +25,8 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 import os
+
+import hazelbean as hb
 import sys
 import time
 import logging
@@ -354,9 +356,9 @@ def _set_proj_gdal_env():
     proj_lib = os.path.join(prefix, "share", "proj")
     gdal_data = os.path.join(prefix, "share", "gdal")
 
-    if os.path.exists(proj_lib):
+    if hb.path_exists(proj_lib):
         os.environ["PROJ_LIB"] = str(proj_lib)
-    if os.path.exists(gdal_data):
+    if hb.path_exists(gdal_data):
         os.environ["GDAL_DATA"] = str(gdal_data)
 
     # Prefer official EPSG parameters vs GeoTIFF geokeys when there is mismatch
@@ -392,7 +394,7 @@ LOGGER = logging.getLogger(__name__)
 # 3) HELPERS
 # =============================================================================
 def _assert_exists(path, label: str):
-    if not os.path.exists(path):
+    if not hb.path_exists(path):
         raise FileNotFoundError(f"[missing] {label}: {path}")
 
 
@@ -799,7 +801,7 @@ def get_erosion_yield_coefficient(crop_key, coef_map, fallback=0.08):
 
 
 def assert_exists(p, hint: str = ""):
-    if not os.path.exists(p):
+    if not hb.path_exists(p):
         raise FileNotFoundError(f"Missing: {p}\n{hint}")
 
 

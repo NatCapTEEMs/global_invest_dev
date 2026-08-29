@@ -40,7 +40,7 @@ def fisheries_shock(p):
     cwon_shocks_path = getattr(p, 'cwon_shocks_path', None) or p.get_path(
         p.cwon_shocks_path_template.format(aggregation_label=p.aggregation_label),
         raise_error_if_fail=False)
-    if not os.path.exists(cwon_shocks_path):
+    if not hb.path_exists(cwon_shocks_path):
         print('  fisheries shock: cwon_shocks.har not found (%s) -- skipping' % cwon_shocks_path)
         return
 

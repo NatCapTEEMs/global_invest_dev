@@ -104,7 +104,7 @@ def _align_to_template(src_raster_path, template_raster_path, out_path,
     ha_per_cell grid so they can be read in lockstep with the windowed streaming pass. An
     existing out_path is returned as-is.
     """
-    if os.path.exists(out_path):
+    if hb.path_exists(out_path):
         return out_path
 
     with rasterio.open(template_raster_path) as tmpl, \
@@ -138,10 +138,10 @@ def _build_country_id_raster_if_needed(p):
     callers find it via the shared p.country_id_raster_path attribute.
     """
     existing = getattr(p, 'country_id_raster_path', None)
-    if existing and os.path.exists(existing):
+    if existing and hb.path_exists(existing):
         return
     p.country_id_raster_path = os.path.join(p.cur_dir, "country_id_raster_10sec.tif")
-    if not os.path.exists(p.country_id_raster_path):
+    if not hb.path_exists(p.country_id_raster_path):
         _rasterize_to_template(
             vector_path=p.gep_regions_input_path,
             template_raster_path=p.ha_per_cell_10sec_path,
@@ -160,7 +160,7 @@ def _habitat_mask(p, vector_path, mask_file_name):
     extent, which is what lets it pick the tiles _habitat_coverage_fraction has to visit.
     """
     mask_path = os.path.join(p.cur_dir, mask_file_name)
-    if not os.path.exists(mask_path):
+    if not hb.path_exists(mask_path):
         _rasterize_to_template(
             vector_path=vector_path,
             template_raster_path=p.ha_per_cell_10sec_path,
@@ -183,7 +183,7 @@ def _habitat_coverage_fraction(p, vector_path, mask_path, fraction_file_name):
     Only tiles the all_touched mask reaches are burned, since it is a superset of the extent.
     """
     fraction_path = os.path.join(p.cur_dir, fraction_file_name)
-    if os.path.exists(fraction_path):
+    if hb.path_exists(fraction_path):
         return fraction_path
 
     gdf = gpd.read_file(vector_path)
@@ -241,7 +241,7 @@ def _aligned_density_input(p, src_path, aligned_file_name, label):
     None sends the density function to its latitude fallback, which produces a different
     number, so which source was used is logged either way.
     """
-    if not (src_path and os.path.exists(src_path)):
+    if not (src_path and hb.path_exists(src_path)):
         hb.log(f'  {label}: not supplied, using the latitude fallback')
         return None
     hb.log(f'  {label}: {src_path}')

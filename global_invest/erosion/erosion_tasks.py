@@ -153,7 +153,7 @@ def compute_country_mean_elevation(
     iso_lut: pd.DataFrame,
     elev_path: str | None
 ) -> dict[int, float]:
-    if elev_path is None or not os.path.exists(elev_path):
+    if elev_path is None or not hb.path_exists(elev_path):
         warnings.warn("No DEM provided — elevation rule will be skipped.")
         return {}
 
@@ -522,7 +522,7 @@ def sanitize_watersheds_for_report(
     - Reproject to DEM CRS (clean WKT) to avoid CRS parse failures.
     - Attempt to fix invalid geometries via buffer(0) (common in global vectors).
     """
-    if not os.path.exists(watersheds_in):
+    if not hb.path_exists(watersheds_in):
         raise FileNotFoundError(f"Missing watersheds: {watersheds_in}")
 
     gdf = gpd.read_file(watersheds_in)
@@ -546,7 +546,7 @@ def sanitize_watersheds_for_report(
     gdf_out["ws_id"] = range(1, len(gdf_out) + 1)
 
     # Write a fresh GPKG
-    if os.path.exists(watersheds_out):
+    if hb.path_exists(watersheds_out):
         os.remove(watersheds_out)
 
     gdf_out.to_file(watersheds_out, layer=layer, driver="GPKG")
@@ -816,7 +816,7 @@ def _write_csv(df: pd.DataFrame, path: str):
 
 
 def load_wb_gdp_current_2019(gdp_csv: str) -> pd.DataFrame:
-    if not os.path.exists(gdp_csv):
+    if not hb.path_exists(gdp_csv):
         raise NameError(
             'erosion has no World Bank GDP table at %s. es_parameters carries the path and its '
             'source url, so the shared download task stages it into base data. Fetching it here '
@@ -966,7 +966,7 @@ def run_biophysical_decomposed(paths):
     # ---- Threshold policy (optional DEM)
     mean_elev_by_id = compute_country_mean_elevation(
         usle, iso_id_raster, iso_lut,
-        paths.input.dem if (paths.input.dem and os.path.exists(paths.input.dem)) else None
+        paths.input.dem if (paths.input.dem and hb.path_exists(paths.input.dem)) else None
     )
 
     # A country's area is the sum of the sub-regions the boundary file splits it into, not any
@@ -1079,7 +1079,7 @@ def run_biophysical_decomposed(paths):
     # Optional: include upstream LULC attribution shares as country means (diagnostics only)
     if ef.USE_UPSLOPE_LULC_ATTRIBUTION_DIAGNOSTICS:
         def _load_attr(p, nm: str) -> np.ndarray | None:
-            if not os.path.exists(p):
+            if not hb.path_exists(p):
                 warnings.warn(f"[ATTR] Missing {nm}: {p}")
                 return None
             da0 = open_raster_1band(p)
@@ -1314,7 +1314,7 @@ Elapsed minutes: {manifest['elapsed_minutes']}
 
 
 def load_world_boundary_prefer_run(paths) -> gpd.GeoDataFrame:
-    if os.path.exists(paths.input.country_boundary):
+    if hb.path_exists(paths.input.country_boundary):
         world = gpd.read_file(paths.input.country_boundary)
         iso_col = ef.pick_iso3_column(world)
         if not iso_col:
@@ -1390,7 +1390,7 @@ def generate_all_maps_and_figures(paths):
     if "country_name" not in df.columns:
         df["country_name"] = df["iso3"]
     
-    if os.path.exists(paths.output.country_crop_long):
+    if hb.path_exists(paths.output.country_crop_long):
         df_crop_long = hb.df_read(str(paths.output.country_crop_long))
         df_crop_long.columns = [c.strip() for c in df_crop_long.columns]
         if "ISO3" in df_crop_long.columns and "iso3" not in df_crop_long.columns:
@@ -1959,7 +1959,7 @@ def generate_all_maps_and_figures(paths):
     # =============================================================================
     # 9) RASTER PREVIEWS
     # =============================================================================
-    if os.path.exists(paths.output.prevention_share_onfarm):
+    if hb.path_exists(paths.output.prevention_share_onfarm):
         plot_raster_global(
             paths.output.prevention_share_onfarm,
             "PS_onfarm on cropland & severe",
@@ -1967,7 +1967,7 @@ def generate_all_maps_and_figures(paths):
             downsample_factor=ef.RASTER_DOWNSAMPLE_FACTOR,
         )
     
-    if os.path.exists(paths.output.prevention_share_upstream):
+    if hb.path_exists(paths.output.prevention_share_upstream):
         plot_raster_global(
             paths.output.prevention_share_upstream,
             "PS_upstream on cropland & severe",
@@ -1975,7 +1975,7 @@ def generate_all_maps_and_figures(paths):
             downsample_factor=ef.RASTER_DOWNSAMPLE_FACTOR,
         )
     
-    if os.path.exists(paths.output.prevention_share_combined):
+    if hb.path_exists(paths.output.prevention_share_combined):
         plot_raster_global(
             paths.output.prevention_share_combined,
             "PS_combined (union-of-protection) on cropland & severe",
@@ -2063,7 +2063,7 @@ def erosion_sdr(p):
     # Repaired once per run and cached: SDR's report step unions these and GEOS raises on an invalid
     # ring, so a bad geometry kills the run AFTER the rasters are already computed.
     watersheds = os.path.join(p.cur_dir, 'watersheds_valid.gpkg')
-    if not os.path.exists(watersheds):
+    if not hb.path_exists(watersheds):
         repair_watersheds(p.get_path(p.erosion_watersheds_path), watersheds)
     # SDR matches the biophysical table's lucode against the LULC values, and our maps are SEALS7 while
     # the shipped table is keyed on ESA codes -- so re-key it (once) rather than matching nothing.
@@ -2082,7 +2082,7 @@ def erosion_sdr(p):
                 lulc_grid = lulc
             else:
                 lulc_grid = os.path.join(p.cur_dir, 'lulc_%s_%d_grid.tif' % (scenario, year))
-                if not os.path.exists(lulc_grid):  # categorical LULC -> mode
+                if not hb.path_exists(lulc_grid):  # categorical LULC -> mode
                     hb.resample_to_match(lulc, grid_ref, lulc_grid, resample_method='mode')
             suffix = '%s_%d' % (scenario, year)
             sdr.execute(dict(workspace_dir=os.path.join(p.cur_dir, suffix), results_suffix=suffix,
@@ -2232,7 +2232,7 @@ def erosion_exposure(p):
             # streams it by block to a compressed byte raster, then the average-resample coarsens it.
             lulc_native = p.get_path(by_year[year])
             crop_mask = os.path.join(p.cur_dir, 'cropland_mask_%s.tif' % suffix)
-            if not os.path.exists(crop_mask):
+            if not hb.path_exists(crop_mask):
                 _nodata = pgp.get_raster_info(lulc_native)['nodata'][0]
                 pgp.raster_calculator(
                     [(lulc_native, 1)],
@@ -2751,7 +2751,7 @@ def erosion_shock_static(p):
 
     ero_path = getattr(p, 'erosion_dependency_path', None) or os.path.join(
         p.input_dir, 'raw_dependencies', 'erosion_prevention_dependency.csv')
-    if not os.path.exists(ero_path):
+    if not hb.path_exists(ero_path):
         raise NameError(
             'erosion shock: no dependency table at %s. This used to print and return, which left '
             'the consumer with no erosion shock and nothing in the run that failed -- the same '

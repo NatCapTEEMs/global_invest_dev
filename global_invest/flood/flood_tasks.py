@@ -796,7 +796,7 @@ def qa_spa_raster(sample_windows: int = 80, window_size: int = 1024) -> Path:
     # Alignment checks against the grids SPA has to line up with
     for label, path in (("LULC", LULC_PATH),
                         ("DEPTH", DEPTH_ALIGNED_DIR / f"JRC_flood_depth_rp{RETURN_PERIODS[-1]}y__matchLULC.tif")):
-        if Path(path).exists():
+        if hb.path_exists(path):
             with rasterio.open(path) as x:
                 report += [f"=== ALIGNMENT CHECK: {label} ===\n", raster_profile_string(x) + "\n"]
         else:
@@ -819,7 +819,7 @@ def prepare_all_inputs(skip_download: bool = False) -> dict:
     else:
         print(f"[SKIP] Global SDA raster already exists: {GLOBAL_SDA_TIF}")
         results["global_sda_raster"] = GLOBAL_SDA_TIF
-    if Path(SPA_PATH).exists():
+    if hb.path_exists(SPA_PATH):
         results["spa_qa_report"] = qa_spa_raster()
     else:
         warnings.warn(f"[WARN] SPA raster not found, skipping QA: {SPA_PATH}")
@@ -1583,7 +1583,7 @@ def compute_pixel_damages(iso3_list: Optional[List[str]] = None,
 
 def _load_service_flow_table() -> Optional[pd.DataFrame]:
     """Read Section C's summary once, keyed by (iso3, rp)."""
-    if not Path(VAL_SERVICE_FLOW_CSV).exists():
+    if not hb.path_exists(VAL_SERVICE_FLOW_CSV):
         warnings.warn(
             f"[WARN] flood_apply_service_flow is on but no service-flow summary "
             f"at {VAL_SERVICE_FLOW_CSV}. Run Section C first. Attributed damages "
@@ -1605,7 +1605,7 @@ def load_protection_table() -> Optional[pd.DataFrame]:
     Read the FLOPROS-derived flood protection standards, one return period per
     ISO3. Expected columns: iso3, protection_rp.
     """
-    if not VAL_PROTECTION_CSV or not Path(VAL_PROTECTION_CSV).exists():
+    if not VAL_PROTECTION_CSV or not hb.path_exists(VAL_PROTECTION_CSV):
         return None
     df = pd.read_csv(VAL_PROTECTION_CSV)
     c_iso = find_col(df, ("iso3", "iso_a3", "adm0_a3"))
@@ -2225,7 +2225,7 @@ def generate_all_maps_and_figures() -> dict:
             print(f"[OK] Wrote {png}")
 
     # 4) Mean SPA -> SDA service flow by country (Section C output)
-    if Path(MAP_SERVICE_FLOW_CSV).exists():
+    if hb.path_exists(MAP_SERVICE_FLOW_CSV):
         flow = pd.read_csv(MAP_SERVICE_FLOW_CSV)
         if {"iso3", "mean_spa_ratio_on_sda"}.issubset(flow.columns):
             agg = (flow.groupby("iso3", as_index=False)["mean_spa_ratio_on_sda"].mean())

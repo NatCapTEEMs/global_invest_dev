@@ -24,7 +24,7 @@ def add_flood_tasks(p):
     SPA-to-SDA service flow -> monetary valuation -> maps & figures.
     This is what run_flood.py calls by default.
     """
-    return build_flood_task_tree(p)
+    return build_gep_service_task_tree(p)
 
 
 def build_flood_task_tree(p):

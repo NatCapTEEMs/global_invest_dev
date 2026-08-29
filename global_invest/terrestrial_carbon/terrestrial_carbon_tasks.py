@@ -185,7 +185,7 @@ def gep_preprocess(p):
     for band in ('aboveground', 'belowground'):
         projected[band] = os.path.join(product_dir, 'spawn_%s_biomass_carbon_2010_projected.tif' % band)
         raw = os.path.join(spawn_raw_dir, 'spawn_%s_biomass_carbon_2010.tif' % band)
-        if os.path.exists(raw):   # raw Spawn present -> (re)build the projected raster from it
+        if hb.path_exists(raw):   # raw Spawn present -> (re)build the projected raster from it
             scaled = os.path.join(p.cur_dir, 'spawn_%s_biomass_carbon_2010_scaled.tif' % band)
             hb.raster_calculator_flex(raw, lambda a: a * SPAWN_INTEGER_SCALE, scaled)
             hb.reproject_dataset_to_match(scaled, p.gep_lulc_input_path, projected[band], 'near')
@@ -252,14 +252,14 @@ def _zone_mean(p, scenario, year, density_lookup):
     polygon geometry is identical across scenarios, so the mean is sufficient and area cancels.
     """
     density_path = os.path.join(p.cur_dir, 'carbon_density_%s_%d.tif' % (scenario, year))
-    if not os.path.exists(density_path):
+    if not hb.path_exists(density_path):
         tcf.generate_carbon_density_raster(
             lulc_path=p.scenario_lulc_paths[scenario][year],
             cz_path=p.terrestrial_quantity_input_path,
             density_lookup=density_lookup,
             out_path=density_path)
     summary_path = os.path.join(p.cur_dir, 'carbon_by_zone_%s_%d.csv' % (scenario, year))
-    if not os.path.exists(summary_path):
+    if not hb.path_exists(summary_path):
         tcf.summarize_raster_by_region(density_path, p.region_boundary_path, summary_path,
                                        year=year, id_column=p.terrestrial_carbon_shock_id_col)
     return hb.df_read(summary_path).set_index('region_id')[
@@ -277,7 +277,7 @@ def _align_zones_to_lulc_grid(p, reference_lulc_path):
     if _raster_shape(p.terrestrial_quantity_input_path) == _raster_shape(reference_lulc_path):
         return
     aligned_path = os.path.join(p.cur_dir, 'carbon_zones_aligned.tif')
-    if not os.path.exists(aligned_path):
+    if not hb.path_exists(aligned_path):
         hb.resample_to_match(p.terrestrial_quantity_input_path, reference_lulc_path,
                              aligned_path, resample_method='near')
     p.terrestrial_quantity_input_path = aligned_path
@@ -412,7 +412,7 @@ def terrestrial_carbon_shock_static(p):
 
     carb_path = getattr(p, 'terrestrial_carbon_dependency_path', None) or os.path.join(
         p.input_dir, 'raw_dependencies', 'carbon_storage_dependency.csv')
-    if not os.path.exists(carb_path):
+    if not hb.path_exists(carb_path):
         print('  carbon shock: dependency csv not found (%s) -- skipping' % carb_path)
         return
 
