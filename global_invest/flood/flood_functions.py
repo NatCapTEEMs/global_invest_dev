@@ -440,10 +440,6 @@ def integrate_trapezoid(y: np.ndarray, x: np.ndarray) -> float:
     return float(np.trapz(y, x))
 
 
-def rp_to_p(rp: float) -> float:
-    """Return period (years) -> annual exceedance probability."""
-    rp = float(rp)
-    return 1.0 / rp if rp > 0 else np.nan
 
 
 # =============================================================================
@@ -478,12 +474,6 @@ def normalize_label(s: str) -> str:
     return s
 
 
-def normalize_country_name(s: str) -> str:
-    """Loose normalization for country-name matching."""
-    s = str(s).strip().lower()
-    s = re.sub(r"[^a-z0-9 ]+", " ", s)
-    s = re.sub(r"\s+", " ", s).strip()
-    return s
 
 
 def parse_depth_colname(col: str) -> Optional[float]:
@@ -719,16 +709,6 @@ def write_signature(out_dir: str, iso3: str, sig: dict):
 # -----------------------------------------------------------------------------#
 # Depth RP map builders
 # -----------------------------------------------------------------------------#
-def parse_rps_arg(rps: str) -> list[int]:
-    if not rps.strip():
-        return []
-    out = []
-    for tok in rps.split(","):
-        tok = tok.strip()
-        if not tok:
-            continue
-        out.append(int(tok))
-    return sorted(set(out))
 
 
 

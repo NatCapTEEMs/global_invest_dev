@@ -1059,46 +1059,7 @@ def compute_service_flow_global(p, iso3_list: Optional[List[str]] = None) -> str
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 DEPTH_BINS_M = [0, 0.5, 1, 1.5, 2, 3, 4, 5, 6]
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -1110,25 +1071,6 @@ SCENARIOS = ("current", "degraded_insitu", "degraded_bare")
 SCENARIO_SUFFIX = {"current": "",
                    "degraded_insitu": "__degraded_insitu",
                    "degraded_bare": "__degraded_bare"}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
