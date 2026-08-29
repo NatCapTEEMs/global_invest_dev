@@ -1093,9 +1093,6 @@ def compute_service_flow_global(iso3_list: Optional[List[str]] = None) -> Path:
 VAL_DAMAGE_TABLE_SCRIPT = Path(__file__).parent / "scripts" / "build_damage_table_USD2019.py"
 
 
-VAL_STEP4D_SCRIPT = Path(__file__).parent / "scripts" / "flood_gep_step4d_export_global_USD2019.py"
-
-
 VAL_DAMAGE_DIR = None
 
 
@@ -1212,7 +1209,7 @@ def configure_valuation(p):
     """
     configure_inputs(p)
 
-    global VAL_DAMAGE_TABLE_SCRIPT, VAL_STEP4D_SCRIPT, VAL_DAMAGE_DIR
+    global VAL_DAMAGE_TABLE_SCRIPT, VAL_DAMAGE_DIR
     global VAL_CANONICAL_EUR_CSV, VAL_FACTORS_CSV
     global VAL_DAMAGE_LONG_CSV, VAL_DAMAGE_WIDE_CSV
     global VAL_SDA_DAMAGE_LONG_CSV, VAL_SDA_DAMAGE_WIDE_CSV
@@ -1229,7 +1226,6 @@ def configure_valuation(p):
     global FLOPROS_DOCUMENTED_ISO3
 
     VAL_DAMAGE_TABLE_SCRIPT = Path(getattr(p, 'flood_damage_table_script_path', VAL_DAMAGE_TABLE_SCRIPT))
-    VAL_STEP4D_SCRIPT = Path(getattr(p, 'flood_step4d_script_path', VAL_STEP4D_SCRIPT))
 
     VAL_DAMAGE_DIR = Path(getattr(p, 'flood_damage_dir', INPUTS / "flood_damage"))
     VAL_CANONICAL_EUR_CSV = Path(getattr(p, 'flood_canonical_eur_csv',
@@ -1801,29 +1797,166 @@ def compute_ead_by_country(scenario: str = "current") -> pd.DataFrame:
     return status_df
 
 
-def export_global_results():
-    """Consolidate per-country EAD into global CSV / GPKG (and optional rasters)."""
-    argv = [
-        "--admin0-gpkg", ADMIN0_PATH,
-        "--outputs-root", OUTPUTS,
-        "--out-dir", VAL_EXPORT_DIR,
-        "--ead-filename", "step4c_ead_USD2019.csv",
-        "--region-col", VAL_REGION_COL,
-        "--rps", ",".join(str(r) for r in RETURN_PERIODS),
-        "--tail-mode", VAL_TAIL_MODE,
-        "--write-csvs", "--write-gpkg", "--status-report",
+def list_iso3_dirs(outputs_root: Path) -> List[Path]:
+    """
+    ISO3 dirs are direct children of outputs_root with 3-letter names.
+    Example: outputs/GMB, outputs/USA, outputs/ZAF
+    """
+    if not outputs_root.exists():
+        raise FileNotFoundError(f"outputs_root does not exist: {outputs_root}")
+    return sorted([p for p in outputs_root.iterdir() if p.is_dir() and len(p.name) == 3])
+
+
+def find_step4c_file(iso3_dir: Path, ead_filename: str) -> Optional[Path]:
+    """
+    Find Step 4C EAD CSV within an ISO3 directory.
+
+    Priority:
+      1) exact filename at ISO3 root
+      2) exact filename anywhere under ISO3 (recursive)
+      3) heuristic glob patterns (recursive)
+
+    Returns the newest match by modified time if multiple are found.
+    """
+    p0 = iso3_dir / ead_filename
+    if p0.exists():
+        return p0
+
+    hits = list(iso3_dir.rglob(ead_filename))
+    if hits:
+        return max(hits, key=lambda p: p.stat().st_mtime)
+
+    patterns = [
+        "*step4c*ead*USD2019*.csv",
+        "*step4c*EAD*USD2019*.csv",
+        "*ead*USD2019*.csv",
+        "*step4c*ead*.csv",
     ]
+    cand: List[Path] = []
+    for pat in patterns:
+        cand.extend(list(iso3_dir.rglob(pat)))
+    if cand:
+        return max(cand, key=lambda p: p.stat().st_mtime)
+
+    return None
+
+
+def read_step4c_ead_robust(step4c_csv: Path, iso3_hint: str) -> pd.DataFrame:
+    """
+    Read per-country Step 4C EAD CSV and return standardized:
+      iso3, ead_usd2019
+
+    Supports two common formats:
+      A) wide table with an EAD column (and optionally iso3 column)
+      B) metric/value table (e.g., metric='ead_usd2019', value=...)
+
+    If no iso3 column exists, iso3_hint is used.
+    """
+    df = pd.read_csv(step4c_csv)
+
+    # Case B: metric/value format
+    c_metric = find_col(df, ("metric",))
+    c_value = find_col(df, ("value", "val"))
+    if c_metric is not None and c_value is not None:
+        m = df[c_metric].astype(str).str.strip().str.lower()
+        # Accept any row whose metric contains 'ead' and 'usd2019'
+        mask = m.str.contains("ead") & (m.str.contains("usd2019") | m.str.contains("2019"))
+        if mask.any():
+            v = to_float(df.loc[mask, c_value].iloc[0])
+            return pd.DataFrame([{"iso3": iso3_hint, "ead_usd2019": v}])
+
+    # Case A: table with EAD column
+    c_iso = find_col(df, ("iso3", "country", "country_iso3"))
+    c_ead = find_col(df, (
+        "ead_usd2019", "ead", "expected annual damage", "expected_annual_damage",
+        "ead_total_usd2019", "ead_total", "ead_usd_2019"
+    ))
+    if c_ead is None:
+        raise ValueError(f"Could not find an EAD column in: {step4c_csv} (cols={list(df.columns)})")
+
+    if c_iso is None:
+        df["iso3"] = iso3_hint
+        c_iso = "iso3"
+
+    out = df[[c_iso, c_ead]].copy()
+    out.columns = ["iso3", "ead_usd2019"]
+    out["iso3"] = out["iso3"].astype(str).str.strip().str.upper()
+    out["ead_usd2019"] = out["ead_usd2019"].apply(_to_float)
+    out = out.dropna(subset=["iso3", "ead_usd2019"])
+    return out
+
+
+def compute_global_totals(country_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Global total EAD is the sum across ISO3 entries.
+    Units: USD2019/year (absolute, not scaled).
+    """
+    total = float(country_df["ead_usd2019"].sum(skipna=True))
+    return pd.DataFrame([{"metric": "global_total_ead_usd2019", "value": total}])
+
+
+def export_global_results(df_countries):
+    """Step 4D: consolidate the per-country Step 4C files into the global table.
+
+    Country attributes come from `df_countries`, which every service shares, rather than from
+    columns on the boundary geometry. That is what lets the pipeline run against any Admin0 layer
+    carrying an ISO3 column.
+
+    Args:
+        df_countries (pd.DataFrame): the shared country table, from initialize_country_paths.
+
+    Returns:
+        Path: the per-country table written.
+    """
+    admin0 = load_admin0(ADMIN0_PATH)
+    iso_col = 'iso3'
+    name_col = find_col(admin0, ("name", "country", "country_name", "admin", "name_long",
+                                 "name_en", "sovereignt"))
+    keep = [iso_col] + ([name_col] if name_col else [])
+    enrich = admin0[keep].drop_duplicates(subset=[iso_col]).copy()
+    if name_col:
+        enrich = enrich.rename(columns={name_col: "country_name"})
+
+    # region_wb from the shared country table, not from the geometry. Reading it off the boundary
+    # is what tied this step to one particular Admin0 file.
+    countries = utilities.collapse_countries_to_r250(df_countries)
+    region = countries[['iso3_r250_label', VAL_REGION_COL]].rename(
+        columns={'iso3_r250_label': 'iso3'}) if VAL_REGION_COL in countries.columns else None
+    if region is not None:
+        enrich = enrich.merge(region, on='iso3', how='left')
+
+    rows = []
+    iso3_dirs = list_iso3_dirs(OUTPUTS)
+    for iso3_dir in iso3_dirs:
+        iso3 = iso3_dir.name.upper()
+        step4c = find_step4c_file(iso3_dir, "step4c_ead_USD2019.csv")
+        if step4c is None:
+            continue
+        part = read_step4c_ead_robust(step4c, iso3_hint=iso3)
+        if not part.empty:
+            rows.append(part)
+
+    if rows:
+        country = pd.concat(rows, ignore_index=True).drop_duplicates(subset=["iso3"], keep="last")
+    else:
+        country = pd.DataFrame(columns=["iso3", "ead_usd2019"])
+    country["iso3"] = country["iso3"].astype(str).str.upper().str.strip()
+
     if VAL_FILL_MISSING_ZERO:
-        argv += ["--fill-missing-zero"]
-    if not VAL_ADD_P1_ZERO:
-        argv += ["--no-add-p1-zero"]
-    if VAL_COMPUTE_EAD_RASTERS:
-        argv += ["--compute-ead-rasters"]
-    if VAL_MOSAIC_GLOBAL_RASTER:
-        argv += ["--mosaic-global-raster"]
+        country = enrich[['iso3']].merge(country, on='iso3', how='left')
+        country['ead_usd2019'] = pd.to_numeric(country['ead_usd2019'], errors='coerce').fillna(0.0)
+    country = country.merge(enrich, on='iso3', how='left')
 
-    return _invoke_script(VAL_STEP4D_SCRIPT, argv, label="Step 4D global export")
+    total = float(pd.to_numeric(country['ead_usd2019'], errors='coerce').sum())
+    if len(country) and total <= 0.0:
+        raise ValueError(
+            'Step 4D assembled %d countries with a total EAD of $0. The Step 4C files exist but '
+            'carry nothing, which means the valuation ran unconfigured.' % len(country))
 
+    write_csv(country, MAP_COUNTRY_EAD_CSV)
+    write_csv(compute_global_totals(country), MAP_GLOBAL_TOTALS_CSV)
+    hb.log('Step 4D: %d countries, total EAD $%s' % (len(country), format(total, ',.0f')))
+    return MAP_COUNTRY_EAD_CSV
 
 def export_attributed_summary() -> Optional[Path]:
     """
@@ -2013,14 +2146,14 @@ def run_gep_chain(skip_damage_tables: bool = True,
     return out
 
 
-def run_valuation_chain(skip_damage_tables: bool = False) -> dict:
+def run_valuation_chain(df_countries, skip_damage_tables: bool = False) -> dict:
     """Section D driver: 4A -> 4B -> 4C -> 4D (+ attributed companion export)."""
     out = {}
     if not skip_damage_tables:
         out["damage_tables"] = build_damage_tables()
     out["step4b"] = compute_pixel_damages()
     out["step4c"] = compute_ead_by_country()
-    out["step4d"] = export_global_results()
+    out["step4d"] = export_global_results(df_countries)
     out["attributed"] = export_attributed_summary()
     return out
 
@@ -2347,7 +2480,7 @@ def task_compute_flood_damages(p):
                % os.path.basename(service_results['country_ead_csv']))
     else:
         skip_tables = getattr(p, 'flood_skip_damage_tables', False)
-        run_valuation_chain(skip_damage_tables=skip_tables)
+        run_valuation_chain(p.df_countries, skip_damage_tables=skip_tables)
 
     return True
 
