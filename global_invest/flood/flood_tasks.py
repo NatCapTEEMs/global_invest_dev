@@ -595,7 +595,7 @@ def qa_spa_raster(p, sample_windows: int = 80, window_size: int = 1024) -> str:
 
         # Per-country SPA area, computed window-by-window off the country bbox
         admin0 = load_admin0(p.flood_country_vector_path)[["iso3", "geometry"]].to_crs(ds.crs)
-        pix_m2 = ff.pixel_area_m2(ds.transform)
+        pix_m2 = utilities.pixel_area_m2(ds.transform)
 
         rows = []
         for _, r in admin0.iterrows():
@@ -832,7 +832,7 @@ def process_country(
 
                     sda_mask = (sda_class > 0)
 
-                    pix_km2 = ff.pixel_area_km2(depth_tr)
+                    pix_km2 = utilities.pixel_area_km2(depth_tr)
                     area_total_km2 = float(sda_mask.sum() * pix_km2)
                     area_artif_km2 = float((sda_class == 1).sum() * pix_km2)
                     area_crop_km2  = float((sda_class == 2).sum() * pix_km2)
@@ -925,7 +925,7 @@ def _service_flow_stats(p, iso3: str, rp: int, sda_class_file: str,
         # windows, so the row offset relative to the full grid is unknown here.
         # Approximate with the window's own latitude band, which is exact enough
         # for reported areas (they are diagnostics, not money).
-        pix_km2 = ff.pixel_area_km2(fsrc.transform)
+        pix_km2 = utilities.pixel_area_km2(fsrc.transform)
         if p.flood_latitude_correct_area:
             scale = ff.mercator_area_scale(fsrc.transform, 0, fsrc.height)
             area_km2 = pix_km2 * np.broadcast_to(scale, sda_mask.shape)
@@ -1506,7 +1506,7 @@ def compute_pixel_damages(p, iso3_list: Optional[List[str]] = None,
 
     with rasterio.open(p.flood_sda_raster_path) as sda_ds:
         utilities.warn_if_geographic(sda_ds, "SDA raster")
-        pix_area_m2 = ff.pixel_area_m2(sda_ds.transform)
+        pix_area_m2 = utilities.pixel_area_m2(sda_ds.transform)
         sda_meta = sda_ds.meta.copy()
 
     print(f"[INFO] SDA raster: {p.flood_sda_raster_path}")
@@ -2104,7 +2104,7 @@ def export_attributed_summary(p) -> Optional[str]:
 
     admin0 = load_admin0(p.flood_country_vector_path)
     keep = ["iso3"]
-    name_col = ff.pick_name_column(admin0)
+    name_col = utilities.pick_name_column(admin0)
     if name_col:
         keep.append(name_col)
     if p.flood_region_col in admin0.columns:
@@ -2201,7 +2201,7 @@ def compute_flood_gep(p) -> Optional[str]:
 
     admin0 = load_admin0(p.flood_country_vector_path)
     keep = ["iso3"]
-    name_col = ff.pick_name_column(admin0)
+    name_col = utilities.pick_name_column(admin0)
     if name_col:
         keep.append(name_col)
     if p.flood_region_col in admin0.columns:
@@ -2281,7 +2281,7 @@ def load_admin0(path: str, layer: Optional[str] = None) -> gpd.GeoDataFrame:
     gdf = gpd.read_file(path, layer=layer) if layer else gpd.read_file(path)
     if gdf.crs is None:
         raise ValueError(f"Admin0 has no CRS: {path}")
-    iso_col = ff.pick_iso3_column(gdf)
+    iso_col = utilities.pick_iso3_column(gdf)
     if iso_col is None:
         raise ValueError(f"No ISO3-like column found. Columns: {list(gdf.columns)}")
     gdf["iso3"] = gdf[iso_col].astype(str).str.upper().str.strip()

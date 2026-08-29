@@ -30,7 +30,6 @@ import os
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib as mpl
-from matplotlib.patches import Patch
 import sys
 import time
 import json
@@ -503,7 +502,7 @@ def accumulate_upstream_prevention_share(dem_path, avoided_path, potential_path,
 def load_elasticity_map(elasticity_csv: str, fallback_value: float) -> tuple[dict, pd.DataFrame]:
     utilities.assert_exists(elasticity_csv, "Provide elasticity CSV in inputs/.")
     df = pd.read_csv(elasticity_csv, encoding="utf-8-sig")
-    df = ef._normcols(df)
+    df = utilities.normalize_columns(df)
 
     crop_col = None
     for cand in ["crop", "monfreda_crop", "item", "item_name"]:
@@ -607,7 +606,7 @@ def rasterize_iso3(gdf: gpd.GeoDataFrame, like_da: xr.DataArray):
 def load_fao_prices_full(path: str) -> pd.DataFrame:
     utilities.assert_exists(path, "Provide prices CSV for GPV fallback.")
     df = pd.read_csv(path, encoding="utf-8-sig")
-    df = ef._normcols(df)
+    df = utilities.normalize_columns(df)
 
     if "quantity_tons" not in df.columns and "crop_quantity_fao" in df.columns:
         df = df.rename(columns={"crop_quantity_fao": "quantity_tons"})
@@ -633,7 +632,7 @@ def load_fao_gpv_iso3_const2019_with_fallback(paths,
 ) -> pd.DataFrame:
     utilities.assert_exists(fao_csv_iso3, "Provide iso3-based FAO file (faostat_gpv_2019_iso3.csv).")
     base = pd.read_csv(fao_csv_iso3, encoding="utf-8-sig")
-    base = ef._normcols(base)
+    base = utilities.normalize_columns(base)
 
     needed = {"iso3", "year", "unit", "value", "element"}
     miss = needed - set(base.columns)
@@ -704,7 +703,7 @@ def load_wb_gdp_current_2019(gdp_csv: str) -> pd.DataFrame:
             'source url, so the shared download task stages it into base data. Fetching it here '
             'per run would make the valuation depend on the day it ran, since the World Bank '
             'revises NY.GDP.MKTP.CD.' % gdp_csv)
-    df = ef._normcols(pd.read_csv(gdp_csv, encoding="utf-8-sig"))
+    df = utilities.normalize_columns(pd.read_csv(gdp_csv, encoding="utf-8-sig"))
     if "iso3" not in df.columns:
         raise ValueError("GDP CSV must contain column 'iso3'.")
     df["iso3"] = df["iso3"].astype(str).str.upper()
@@ -883,7 +882,7 @@ def run_biophysical_decomposed(paths):
 
     # ---- Bandmap + elasticity
     bandmap = hb.df_read(str(paths.input.bandmap))
-    bandmap = ef._normcols(bandmap)
+    bandmap = utilities.normalize_columns(bandmap)
     if "band" not in bandmap.columns or "crop" not in bandmap.columns:
         raise ValueError("paths.input.bandmap must have columns: 'band', 'crop'.")
     bandmap["crop"] = bandmap["crop"].astype(str).str.strip()
@@ -1198,13 +1197,13 @@ Elapsed minutes: {manifest['elapsed_minutes']}
 def load_world_boundary_prefer_run(paths) -> gpd.GeoDataFrame:
     if hb.path_exists(paths.input.country_boundary):
         world = gpd.read_file(paths.input.country_boundary)
-        iso_col = ef.pick_iso3_column(world)
+        iso_col = utilities.pick_iso3_column(world)
         if not iso_col:
             raise ValueError(f"Boundary has no ISO3 column. Columns: {list(world.columns)}")
         world = world.rename(columns={iso_col: "iso3"})
         world["iso3"] = world["iso3"].astype(str).str.upper()
 
-        name_col = ef.pick_name_column(world)
+        name_col = utilities.pick_name_column(world)
         if name_col and name_col != "country_name":
             world = world.rename(columns={name_col: "country_name"})
         if "country_name" not in world.columns:
@@ -1240,7 +1239,7 @@ def generate_all_maps_and_figures(paths):
         "mean_ps_onfarm_cropland_severe", "mean_ps_upstream_cropland_severe", "mean_ps_combined_cropland_severe",
         "gep_incremental_upstream_usd", "gep_incremental_onfarm_usd",
     ]
-    df = ef.to_num(df, NUM_COLS)
+    df = utilities.to_num(df, NUM_COLS)
     
     if {"gep_const2019_usd_onfarm", "gep_const2019_usd_upstream", "gep_const2019_usd_combined"}.issubset(df.columns):
         df["gep_const2019_usd_overlap"] = (

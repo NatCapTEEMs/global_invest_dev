@@ -14,8 +14,6 @@ inputs, windowing rasters and writing results, and none of that changes an answe
 """
 from __future__ import annotations
 
-import hashlib
-import json
 import os
 import re
 import warnings
@@ -326,12 +324,8 @@ def combine_components(*frames):
 # -----------------------------------------------------------------------------
 # Raster metadata / geometry
 # -----------------------------------------------------------------------------
-def pixel_area_m2(transform) -> float:
-    return abs(float(transform.a) * float(transform.e))
 
 
-def pixel_area_km2(transform) -> float:
-    return pixel_area_m2(transform) / 1e6
 
 
 def mercator_area_scale(transform, row_off: int, height: int) -> np.ndarray:
@@ -370,23 +364,8 @@ def mercator_area_scale(transform, row_off: int, height: int) -> np.ndarray:
 # -----------------------------------------------------------------------------
 # Admin0 / ISO3 handling
 # -----------------------------------------------------------------------------
-def pick_iso3_column(gdf: gpd.GeoDataFrame) -> Optional[str]:
-    candidates = ["iso3", "ISO3", "iso_a3", "ISO_A3", "ADM0_A3", "adm0_a3", "iso3_r250_label"]
-    for c in candidates:
-        if c in gdf.columns:
-            return c
-    return None
 
 
-def pick_name_column(gdf: gpd.GeoDataFrame) -> Optional[str]:
-    candidates = [
-        "country_name", "NAME_EN", "ADMIN", "NAME_LONG", "NAME",
-        "COUNTRY", "NAME_0", "ADM0_NAME", "GEOUNIT", "iso3_r250_name",
-    ]
-    for c in candidates:
-        if c in gdf.columns:
-            return c
-    return None
 
 
 

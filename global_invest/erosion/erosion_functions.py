@@ -27,6 +27,8 @@ import pandas as pd
 import os
 
 import hazelbean as hb
+
+from global_invest import utilities
 import sys
 import time
 import logging
@@ -601,10 +603,6 @@ def get_erosion_yield_coefficient(crop_key, coef_map, fallback=0.08):
 
 
 
-def _normcols(df: pd.DataFrame) -> pd.DataFrame:
-    df = df.copy()
-    df.columns = [c.strip().lower() for c in df.columns]
-    return df
 
 
 def _ensure_crs(da: xr.DataArray, name: str) -> xr.DataArray:
@@ -664,32 +662,12 @@ def _bincount_weighted_mean(ids: np.ndarray, x: np.ndarray, max_id: int) -> np.n
     return np.divide(s, c, out=np.full_like(s, np.nan), where=c > 0)
 
 
-def to_num(df: pd.DataFrame, cols: list[str]) -> pd.DataFrame:
-    for c in cols:
-        if c in df.columns:
-            df[c] = pd.to_numeric(df[c], errors="coerce")
-    return df
 
 
 
 
-def pick_iso3_column(gdf: gpd.GeoDataFrame) -> str | None:
-    candidates = ["iso3", "ISO3", "iso_a3", "ADM0_A3", "adm0_a3", "ISO_A3", "iso3_r250_label"]
-    for c in candidates:
-        if c in gdf.columns:
-            return c
-    return None
 
 
-def pick_name_column(gdf: gpd.GeoDataFrame) -> str | None:
-    candidates = [
-        "country_name", "NAME_EN", "ADMIN", "NAME_LONG", "NAME",
-        "COUNTRY", "NAME_0", "ADM0_NAME", "GEOUNIT", "iso3_r250_name"
-    ]
-    for c in candidates:
-        if c in gdf.columns:
-            return c
-    return None
 
 
 

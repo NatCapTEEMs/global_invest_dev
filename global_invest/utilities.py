@@ -1359,3 +1359,62 @@ def plot_publication_choropleth_categorical(
     )
     leg.get_frame().set_alpha(0.95)
     savefig(out_png, dpi=300)
+
+
+# ---------------------------------------------------------------------------------------------
+# Country columns and raster geometry. Promoted here on their second caller: each of these existed
+# in both erosion and flood, and pick_iso3_column had already drifted -- flood tried ISO_A3 before
+# ADM0_A3 and erosion the reverse, so a boundary file carrying both was read differently by the two
+# services. ISO_A3 wins here: it is the official code, where ADM0_A3 is Natural Earth's own and
+# fills gaps with invented ones.
+# ---------------------------------------------------------------------------------------------
+def pick_iso3_column(gdf):
+    """The first ISO3-like column present, or None.
+
+    Args:
+        gdf (GeoDataFrame): any country layer.
+
+    Returns:
+        str or None: the column name.
+    """
+    for c in ("iso3", "ISO3", "iso_a3", "ISO_A3", "ADM0_A3", "adm0_a3", "iso3_r250_label"):
+        if c in gdf.columns:
+            return c
+    return None
+
+
+def pick_name_column(gdf):
+    """The first country-name column present, or None."""
+    for c in ("country_name", "NAME_EN", "ADMIN", "NAME_LONG", "NAME",
+              "COUNTRY", "NAME_0", "ADM0_NAME", "GEOUNIT", "iso3_r250_name"):
+        if c in gdf.columns:
+            return c
+    return None
+
+
+def to_num(df, columns):
+    """Coerce the named columns to numeric in place, leaving unparseable cells as NaN."""
+    for c in columns:
+        if c in df.columns:
+            df[c] = pd.to_numeric(df[c], errors="coerce")
+    return df
+
+
+def normalize_columns(df):
+    """A copy with column names stripped and lowercased."""
+    df = df.copy()
+    df.columns = [c.strip().lower() for c in df.columns]
+    return df
+
+
+def pixel_area_m2(transform) -> float:
+    """Nominal pixel area from an affine transform, in square metres.
+
+    ⚠ Nominal: in a conformal projection this is the equatorial value. See mercator_area_scale.
+    """
+    return abs(float(transform.a) * float(transform.e))
+
+
+def pixel_area_km2(transform) -> float:
+    """Nominal pixel area from an affine transform, in square kilometres."""
+    return pixel_area_m2(transform) / 1e6
