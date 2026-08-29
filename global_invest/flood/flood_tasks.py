@@ -22,20 +22,26 @@ task wrappers at the end are the seam `flood_initialize` grafts onto a task tree
 # structure Justin described (2026-07-07 email) for the terrestrial_carbon
 # module, and mirrors global_invest/erosion/erosion_functions.py.
 #
-# The original Flood GEP scripts and notebooks map onto five sections:
+# The pipeline runs in five sections. Outputs are named for what they hold; the source scripts they
+# were folded in from are recorded here, because that correspondence is the only way to compare an
+# output of ours against one of his and it lives nowhere else.
 #
-#   A) Input preparation            (download_and_prep_jrc_flood_depth.ipynb,
-#      + hazard/exposure layers      sda_step_2A_make_lulc_to_sda_mapping_esa300.py,
-#                                    build_sda_from_esa300m.py, road_sda.ipynb,
-#                                    qa_spa_global_step1.py)
-#   B) SDA delineation              (sda_step2_build_sda_global.py)
-#      per ISO3 x return period
-#   C) Service flow SPA -> SDA      (serviceflow_step3_spa_to_sda_ratio_global.py)
-#   D) Monetary valuation           (build_damage_table_USD2019.py = 4A,
-#      (4A -> 4B -> 4C -> 4D)        flood_gep_step4b_pixel_damage_USD2019.py,
-#                                    flood_gep_step4c_ead_USD2019_global.py,
-#                                    flood_gep_step4d_export_global_USD2019.py)
-#   E) Maps & figures               (analyze_step4d_global_results.py)
+#   section              our output                                    folded in from
+#   -------------------------------------------------------------------------------------------
+#   A inputs             (aligned depth rasters, lulc_to_sda_mapping)  download_and_prep_jrc_flood_depth.ipynb
+#                                                                      sda_step_2A_make_lulc_to_sda_mapping_esa300.py
+#                                                                      build_sda_from_esa300m.py, road_sda.ipynb
+#                                                                      qa_spa_global_step1.py
+#   B SDA delineation    sda_class_<iso3>_rp<rp>.tif                   sda_step2_build_sda_global.py
+#     per ISO3 x RP      sda_mask_<iso3>_rp<rp>.tif
+#   C service flow       global_service_flow_spa_to_sda.csv            serviceflow_step3_spa_to_sda_ratio_global.py
+#   D valuation
+#     the damage tables  damage_functions_*_usd2019_*.csv              build_damage_table_USD2019.py       (his 4A)
+#     per pixel per RP   damage_by_return_period_usd2019.csv           flood_gep_step4b_pixel_damage_USD2019.py  (4B)
+#     integrated to EAD  expected_annual_damage_usd2019.csv            flood_gep_step4c_ead_USD2019_global.py    (4C)
+#     consolidated       expected_annual_damage_by_country_usd2019.csv flood_gep_step4d_export_global_USD2019.py (4D)
+#     the service value  flood_gep_usd2019.csv                         the paired counterfactual         (his 4E)
+#   E maps & figures     figures/                                      analyze_step4d_global_results.py
 #
 # Generic raster/table/plotting helpers live in flood_functions.py and the
 # shared utilities.
@@ -689,7 +695,7 @@ SDA_CODE_VERSION = "2025-12-15_sda_step2_smartskip_v2_depth_inputs"
 DEPTH_RASTER_PATTERN = "JRC_flood_depth_rp{rp}y__matchLULC.tif"
 
 # Step 4C writes one of these under each ISO3 directory.
-EAD_FILE_NAME = "step4c_ead_USD2019.csv"
+EAD_FILE_NAME = "expected_annual_damage_usd2019.csv"
 
 
 # -----------------------------------------------------------------------------#
@@ -1485,8 +1491,8 @@ def compute_pixel_damages(p, iso3_list: Optional[List[str]] = None,
     Norway's bounding box is 43,389 x 8,861 = 384 million pixels, because
     Svalbard stretches it to ~81 N -- almost all of that window is empty Arctic.
     Depth (float32) + SDA (int32) + damage (float32) + masks is 6-10 GB per
-    return period. At an 8 GB allocation it was OOM-killed, no step4b CSV was
-    written, Step 4C recorded status="missing_step4b" with ead=0, and Step 4D
+    return period. At an 8 GB allocation it was OOM-killed, no damage-by-return-period CSV was
+    written, Step 4C recorded status="missing_damage_by_return_period" with ead=0, and Step 4D
     reported the country as zero. Silent, plausible, and wrong: France,
     Australia and Norway all appeared as legitimate zeros for this reason.
 
@@ -1664,7 +1670,7 @@ def compute_pixel_damages(p, iso3_list: Optional[List[str]] = None,
                     amp_src.close()
 
         if records:
-            out_csv = os.path.join(str(out_dir), f"step4b_damage_by_rp_USD2019{suffix}.csv")
+            out_csv = os.path.join(str(out_dir), f"damage_by_return_period_usd2019{suffix}.csv")
             rec_df = pd.DataFrame(records).sort_values(["iso3", "rp"])
             if p.flood_apply_service_flow and scenario == "current":
                 rec_df = ff._attach_service_flow(rec_df, iso3, _load_service_flow_table(p))
@@ -1740,12 +1746,12 @@ def load_protection_table(p) -> Optional[pd.DataFrame]:
     return out
 
 
-def _write_step4c(p, iso3_dir: str, iso3: str, ead: float, *, rps_used: List[int],
+def _write_expected_annual_damage(p, iso3_dir: str, iso3: str, ead: float, *, rps_used: List[int],
                   status: str, detail: str, ead_attributed: float = np.nan,
                   suffix: str = "", ead_nc: float = np.nan,
                   protection_rp: Optional[float] = None,
                   protection_evidence: str = "") -> str:
-    out_csv = os.path.join(str(iso3_dir), f"step4c_ead_USD2019{suffix}.csv")
+    out_csv = os.path.join(str(iso3_dir), f"expected_annual_damage_usd2019{suffix}.csv")
     utilities.write_csv(pd.DataFrame([{
         "iso3": iso3,
         "ead_usd2019": float(ead),
@@ -1775,7 +1781,7 @@ def compute_ead_by_country(p, scenario: str = "current") -> pd.DataFrame:
     """
     Step 4C: convert Step 4B's damage-by-RP into an EAD for every ISO3 folder.
 
-    A step4c CSV is written for EVERY ISO3 folder, even when Step 4B is
+    An expected-annual-damage CSV is written for EVERY ISO3 folder, even when the damage table is
     missing or empty, because Step 4D aggregates across folders and a silently
     absent file is indistinguishable from a genuine zero.
     """
@@ -1794,27 +1800,27 @@ def compute_ead_by_country(p, scenario: str = "current") -> pd.DataFrame:
     results = []
     for iso3_dir in iso3_dirs:
         iso3 = os.path.basename(str(iso3_dir)).upper()
-        step4b_csv = os.path.join(str(iso3_dir), f"step4b_damage_by_rp_USD2019{suffix}.csv")
+        damage_csv = os.path.join(str(iso3_dir), f"damage_by_return_period_usd2019{suffix}.csv")
 
-        if not hb.path_exists(step4b_csv):
-            _write_step4c(p, iso3_dir, iso3, np.nan, rps_used=[], status="missing_step4b",
-                          detail="no step4b file found", suffix=suffix)
-            results.append({"iso3": iso3, "status": "missing_step4b", "ead_usd2019": np.nan})
+        if not hb.path_exists(damage_csv):
+            _write_expected_annual_damage(p, iso3_dir, iso3, np.nan, rps_used=[], status="missing_damage_by_return_period",
+                          detail="no damage-by-return-period file found", suffix=suffix)
+            results.append({"iso3": iso3, "status": "missing_damage_by_return_period", "ead_usd2019": np.nan})
             continue
 
         try:
-            df = pd.read_csv(step4b_csv)
+            df = pd.read_csv(damage_csv)
         except Exception as e:
-            _write_step4c(p, iso3_dir, iso3, np.nan, rps_used=[], status="bad_step4b_csv",
+            _write_expected_annual_damage(p, iso3_dir, iso3, np.nan, rps_used=[], status="bad_damage_csv",
                           detail=f"failed_read:{e}", suffix=suffix)
-            results.append({"iso3": iso3, "status": "bad_step4b_csv", "ead_usd2019": np.nan})
+            results.append({"iso3": iso3, "status": "bad_damage_csv", "ead_usd2019": np.nan})
             continue
 
         c_rp = utilities.find_col(df, ("rp", "return period", "return_period", "rp_years"))
         c_dmg = utilities.find_col(df, ("damage_total_usd2019", "total_damage_usd2019",
                               "damage_usd2019", "total_damage", "damage"))
         if c_rp is None or c_dmg is None:
-            _write_step4c(p, iso3_dir, iso3, np.nan, rps_used=[], status="missing_columns",
+            _write_expected_annual_damage(p, iso3_dir, iso3, np.nan, rps_used=[], status="missing_columns",
                           detail=f"need rp+damage cols; have={list(df.columns)}", suffix=suffix)
             results.append({"iso3": iso3, "status": "missing_columns", "ead_usd2019": np.nan})
             continue
@@ -1830,7 +1836,7 @@ def compute_ead_by_country(p, scenario: str = "current") -> pd.DataFrame:
         # Protection standard and its evidence class for this country.
         # 0 is meaningful (unprotected); NaN means "documented-only restriction
         # applied, do not truncate". Both must be defined before any call to
-        # _write_step4c below.
+        # _write_expected_annual_damage below.
         prot, prot_ev = None, ""
         if prot_tbl is not None:
             hit = prot_tbl.loc[prot_tbl.iso3 == iso3]
@@ -1855,7 +1861,7 @@ def compute_ead_by_country(p, scenario: str = "current") -> pd.DataFrame:
                     enforce_monotone=p.flood_ead_enforce_monotone)
 
         rps_used = sorted(int(x) for x in pd.Series(rp).dropna().unique() if x > 0)
-        _write_step4c(p, iso3_dir, iso3, ead, rps_used=rps_used, status="ok",
+        _write_expected_annual_damage(p, iso3_dir, iso3, ead, rps_used=rps_used, status="ok",
                       detail=";".join(msgs), ead_attributed=ead_attr, suffix=suffix,
                       ead_nc=ead_nc, protection_rp=prot,
                       protection_evidence=prot_ev)
@@ -1863,7 +1869,7 @@ def compute_ead_by_country(p, scenario: str = "current") -> pd.DataFrame:
         if p.flood_ead_write_points:
             pts2 = pts.copy()
             pts2.insert(0, "iso3", iso3)
-            utilities.write_csv(pts2, os.path.join(str(iso3_dir), f"step4c_ead_USD2019{suffix}__integration_points.csv"))
+            utilities.write_csv(pts2, os.path.join(str(iso3_dir), f"expected_annual_damage_integration_points_usd2019{suffix}.csv"))
 
         if len(rps_used) < 4:
             warnings.warn(f"[WARN] {iso3}: only {len(rps_used)} unique RP points "
@@ -1875,7 +1881,7 @@ def compute_ead_by_country(p, scenario: str = "current") -> pd.DataFrame:
         hb.log(f"[OK] {iso3}: EAD = {utilities.fmt_usd(ead)}")
 
     status_df = pd.DataFrame(results)
-    utilities.write_csv(status_df, os.path.join(p.flood_global_export_dir, f"step4c_global_status{suffix}.csv"))
+    utilities.write_csv(status_df, os.path.join(p.flood_global_export_dir, f"expected_annual_damage_status{suffix}.csv"))
     n_ok = int((status_df["status"] == "ok").sum()) if not status_df.empty else 0
     total = float(pd.to_numeric(status_df.get("ead_usd2019"), errors="coerce").sum()) \
         if not status_df.empty else 0.0
@@ -1885,7 +1891,7 @@ def compute_ead_by_country(p, scenario: str = "current") -> pd.DataFrame:
     # ⚠ "ok" counts countries that completed, not countries that produced a number. On 2026-08-29
     # this printed ok=250/250 while every country was $0, because the run had hydrated no config
     # and there was nothing to value -- and the zero total flowed all the way into a published
-    # step4e table without anything raising. A whole-world zero is never a real result, so it stops
+    # published GEP table without anything raising. A whole-world zero is never a real result, so it stops
     # the run here rather than being discovered by comparing against someone else's figure.
     if not status_df.empty and total <= 0.0:
         raise ValueError(
@@ -1920,7 +1926,7 @@ def list_iso3_dirs(outputs_root: str) -> List[str]:
                   if os.path.isdir(os.path.join(str(outputs_root), d)) and len(d) == 3)
 
 
-def find_step4c_file(iso3_dir: str, ead_filename: str) -> Optional[str]:
+def find_expected_annual_damage_file(iso3_dir: str, ead_filename: str) -> Optional[str]:
     """
     Find Step 4C EAD CSV within an ISO3 directory.
 
@@ -1940,10 +1946,9 @@ def find_step4c_file(iso3_dir: str, ead_filename: str) -> Optional[str]:
         return max(hits, key=os.path.getmtime)
 
     patterns = [
-        "*step4c*ead*USD2019*.csv",
-        "*step4c*EAD*USD2019*.csv",
+        "*expected_annual_damage*usd2019*.csv",
+        "*expected_annual_damage*.csv",
         "*ead*USD2019*.csv",
-        "*step4c*ead*.csv",
     ]
     cand: List[str] = []
     for pat in patterns:
@@ -1954,7 +1959,7 @@ def find_step4c_file(iso3_dir: str, ead_filename: str) -> Optional[str]:
     return None
 
 
-def read_step4c_ead_robust(step4c_csv: str, iso3_hint: str) -> pd.DataFrame:
+def read_expected_annual_damage(ead_csv: str, iso3_hint: str) -> pd.DataFrame:
     """
     Read per-country Step 4C EAD CSV and return standardized:
       iso3, ead_usd2019
@@ -1965,7 +1970,7 @@ def read_step4c_ead_robust(step4c_csv: str, iso3_hint: str) -> pd.DataFrame:
 
     If no iso3 column exists, iso3_hint is used.
     """
-    df = pd.read_csv(step4c_csv)
+    df = pd.read_csv(ead_csv)
 
     # Case B: metric/value format
     c_metric = utilities.find_col(df, ("metric",))
@@ -1985,7 +1990,7 @@ def read_step4c_ead_robust(step4c_csv: str, iso3_hint: str) -> pd.DataFrame:
         "ead_total_usd2019", "ead_total", "ead_usd_2019"
     ))
     if c_ead is None:
-        raise ValueError(f"Could not find an EAD column in: {step4c_csv} (cols={list(df.columns)})")
+        raise ValueError(f"Could not find an EAD column in: {ead_csv} (cols={list(df.columns)})")
 
     if c_iso is None:
         df["iso3"] = iso3_hint
@@ -2042,10 +2047,10 @@ def export_global_results(p, df_countries):
     iso3_dirs = list_iso3_dirs(p.flood_valuation_country_dir)
     for iso3_dir in iso3_dirs:
         iso3 = os.path.basename(str(iso3_dir)).upper()
-        step4c = find_step4c_file(iso3_dir, EAD_FILE_NAME)
-        if step4c is None:
+        ead_csv = find_expected_annual_damage_file(iso3_dir, EAD_FILE_NAME)
+        if ead_csv is None:
             continue
-        part = read_step4c_ead_robust(step4c, iso3_hint=iso3)
+        part = read_expected_annual_damage(ead_csv, iso3_hint=iso3)
         if not part.empty:
             rows.append(part)
 
@@ -2151,7 +2156,7 @@ def compute_flood_gep(p) -> Optional[str]:
     def collect(suffix: str, label: str) -> Optional[pd.DataFrame]:
         rows = []
         for d in list_iso3_dirs(p.flood_valuation_country_dir):
-            f = os.path.join(str(d), f"step4c_ead_USD2019{suffix}.csv")
+            f = os.path.join(str(d), f"expected_annual_damage_usd2019{suffix}.csv")
             if hb.path_exists(f):
                 # A country that cannot be read must stop the run rather than vanish from the
                 # scenario total.
@@ -2250,8 +2255,8 @@ def run_gep_chain(p, skip_damage_tables: bool = True,
     run = scenarios if scenarios else list(SCENARIOS)
     for n, sc in enumerate(run, 1):
         hb.log(f"\n=== scenario {n} of {len(run)}: {sc} ===")
-        out[f"step4b_{sc}"] = compute_pixel_damages(p, scenario=sc)
-        out[f"step4c_{sc}"] = compute_ead_by_country(p, scenario=sc)
+        out[f"damage_by_return_period_{sc}"] = compute_pixel_damages(p, scenario=sc)
+        out[f"expected_annual_damage_{sc}"] = compute_ead_by_country(p, scenario=sc)
 
     out["gep"] = compute_flood_gep(p)
     return out
@@ -2262,9 +2267,9 @@ def run_valuation_chain(p, df_countries, skip_damage_tables: bool = False) -> di
     out = {}
     if not skip_damage_tables:
         out["damage_tables"] = build_damage_tables(p)
-    out["step4b"] = compute_pixel_damages(p)
-    out["step4c"] = compute_ead_by_country(p)
-    out["step4d"] = export_global_results(p, df_countries)
+    out["damage_by_return_period"] = compute_pixel_damages(p)
+    out["expected_annual_damage"] = compute_ead_by_country(p)
+    out["by_country"] = export_global_results(p, df_countries)
     out["attributed"] = export_attributed_summary(p)
     return out
 
@@ -2689,11 +2694,11 @@ def task_compute_flood_damages(p):
     p.flood_valuation_country_dir = getattr(p, 'flood_valuation_country_dir', None) or p.cur_dir
     p.flood_global_export_dir = os.path.join(p.cur_dir, '_global')
     p.flood_currency_audit_dir = os.path.join(p.flood_global_export_dir, '_currency_audit')
-    p.flood_country_ead_path = os.path.join(p.flood_global_export_dir, 'step4d_country_ead_USD2019.csv')
-    p.flood_global_totals_path = os.path.join(p.flood_global_export_dir, 'step4d_global_totals_USD2019.csv')
+    p.flood_country_ead_path = os.path.join(p.flood_global_export_dir, 'expected_annual_damage_by_country_usd2019.csv')
+    p.flood_global_totals_path = os.path.join(p.flood_global_export_dir, 'expected_annual_damage_global_totals_usd2019.csv')
     p.flood_country_ead_with_service_flow_path = os.path.join(
-        p.flood_global_export_dir, 'step4d_country_ead_with_service_flow_USD2019.csv')
-    p.flood_gep_path = os.path.join(p.flood_global_export_dir, 'step4e_flood_gep_USD2019.csv')
+        p.flood_global_export_dir, 'expected_annual_damage_by_country_with_service_flow_usd2019.csv')
+    p.flood_gep_path = os.path.join(p.flood_global_export_dir, 'flood_gep_usd2019.csv')
     if not p.run_this:
         return True
     hb.create_directories([p.flood_global_export_dir, p.flood_currency_audit_dir])
@@ -2731,7 +2736,7 @@ def task_compute_flood_gep(p):
     service_results['flood_gep_csv'] = p.flood_gep_path
 
     if hb.path_all_exist([service_results['flood_gep_csv']]):
-        hb.log("step4e_flood_gep_USD2019.csv already exists. Skipping GEP chain.")
+        hb.log("flood_gep_usd2019.csv already exists. Skipping GEP chain.")
     else:
         run_gep_chain(
             p, skip_damage_tables=_required(p, 'flood_skip_damage_tables'),
@@ -2760,7 +2765,7 @@ def gep_calculation(p):
 
     The quantity is the flood damage ecosystems prevent: `ead_bare - ead_current`, the difference
     between expected annual damage in a degraded world and in today's. `compute_flood_gep` computes
-    it from the three scenario runs and writes `step4e_flood_gep_USD2019.csv`.
+    it from the three scenario runs and writes `flood_gep_usd2019.csv`.
 
     The author's export is the fallback when that chain has not run. Which was used is recorded in
     the log and in service_results.
