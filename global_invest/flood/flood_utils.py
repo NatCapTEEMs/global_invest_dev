@@ -28,6 +28,7 @@ import warnings
 from pathlib import Path
 from typing import Dict, Optional, Tuple
 
+import hazelbean as hb
 import numpy as np
 import pandas as pd
 import geopandas as gpd
@@ -302,9 +303,10 @@ def to_num(df: pd.DataFrame, cols: list[str]) -> pd.DataFrame:
 
 
 def write_csv(df: pd.DataFrame, path: Path):
+    """hb.df_write, plus the parent directory, which it does not create."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    df.to_csv(path, index=False)
+    hb.df_write(df, str(path))
     return path
 
 
