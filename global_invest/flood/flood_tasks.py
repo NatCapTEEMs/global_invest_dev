@@ -14,38 +14,9 @@ Settings come from es_parameters and are read off `p` where they are used. `publ
 one place that decides where a file lives, so every task sees the same layout however it is run. The
 task wrappers at the end are the seam `flood_initialize` grafts onto a task tree.
 """
-# =============================================================================
-# flood_tasks.py
-#
-# Key science functions for the GEP flood-control / flood-regulation service.
-# Follows the same run_x.py / x_tasks.py / x_functions.py / x_initialization.py
-# structure Justin described (2026-07-07 email) for the terrestrial_carbon
-# module, and mirrors global_invest/erosion/erosion_functions.py.
-#
-# The pipeline runs in five sections. Outputs are named for what they hold; the source scripts they
-# were folded in from are recorded here, because that correspondence is the only way to compare an
-# output of ours against one of his and it lives nowhere else.
-#
-#   section              our output                                    folded in from
-#   -------------------------------------------------------------------------------------------
-#   A inputs             (aligned depth rasters, lulc_to_sda_mapping)  download_and_prep_jrc_flood_depth.ipynb
-#                                                                      sda_step_2A_make_lulc_to_sda_mapping_esa300.py
-#                                                                      build_sda_from_esa300m.py, road_sda.ipynb
-#                                                                      qa_spa_global_step1.py
-#   B SDA delineation    sda_class_<iso3>_rp<rp>.tif                   sda_step2_build_sda_global.py
-#     per ISO3 x RP      sda_mask_<iso3>_rp<rp>.tif
-#   C service flow       global_service_flow_spa_to_sda.csv            serviceflow_step3_spa_to_sda_ratio_global.py
-#   D valuation
-#     the damage tables  damage_functions_*_usd2019_*.csv              build_damage_table_USD2019.py       (his 4A)
-#     per pixel per RP   damage_by_return_period_usd2019.csv           flood_gep_step4b_pixel_damage_USD2019.py  (4B)
-#     integrated to EAD  expected_annual_damage_usd2019.csv            flood_gep_step4c_ead_USD2019_global.py    (4C)
-#     consolidated       expected_annual_damage_by_country_usd2019.csv flood_gep_step4d_export_global_USD2019.py (4D)
-#     the service value  flood_gep_usd2019.csv                         the paired counterfactual         (his 4E)
-#   E maps & figures     figures/                                      analyze_step4d_global_results.py
-#
-# Generic raster/table/plotting helpers live in flood_functions.py and the
-# shared utilities.
-# =============================================================================
+# The pipeline runs in five sections, A to E. Outputs are named for what they hold; which
+# source script each was folded in from is in reference/output_provenance.csv, which is how
+# an output of ours is lined up against one of the original pipeline's.
 from __future__ import annotations
 
 import glob

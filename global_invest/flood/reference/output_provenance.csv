@@ -1,0 +1,14 @@
+section,our_output,folded_in_from
+A inputs,aligned JRC depth rasters,download_and_prep_jrc_flood_depth.ipynb
+A inputs,lulc_to_sda_mapping.json,sda_step_2A_make_lulc_to_sda_mapping_esa300.py
+A inputs,sda_esa300m_artif_crop_pasture.tif,build_sda_from_esa300m.py
+A inputs,global_spa_alignment_report.txt,qa_spa_global_step1.py
+B sda,sda_class_<iso3>_rp<rp>.tif,sda_step2_build_sda_global.py
+B sda,sda_mask_<iso3>_rp<rp>.tif,sda_step2_build_sda_global.py
+C service flow,global_service_flow_spa_to_sda.csv,serviceflow_step3_spa_to_sda_ratio_global.py
+D valuation,damage_functions_depth_USD2019_wide.csv,build_damage_table_USD2019.py
+D valuation,damage_by_return_period_usd2019.csv,flood_gep_step4b_pixel_damage_USD2019.py
+D valuation,expected_annual_damage_usd2019.csv,flood_gep_step4c_ead_USD2019_global.py
+D valuation,expected_annual_damage_by_country_usd2019.csv,flood_gep_step4d_export_global_USD2019.py
+D valuation,flood_gep_usd2019.csv,the paired counterfactual
+E maps,figures/,analyze_step4d_global_results.py
