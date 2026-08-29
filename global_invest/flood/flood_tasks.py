@@ -644,7 +644,7 @@ def qa_spa_raster(p, sample_windows: int = 80, window_size: int = 1024) -> str:
                 "spa_frac_in_country": float(spa1.sum() / inside.sum()),
             })
 
-        out_csv = os.path.join(p.flood_qa_dir, "global_spa_country_summary.csv")
+        out_csv = p.flood_spa_country_summary_path
         utilities.write_csv(pd.DataFrame(rows).sort_values("iso3"), out_csv)
         report.append(f"[OK] Wrote country SPA summary: {out_csv}\n\n")
 
@@ -700,6 +700,9 @@ SDA_CODE_VERSION = "2025-12-15_sda_step2_smartskip_v2_depth_inputs"
 
 
 DEPTH_RASTER_PATTERN = "JRC_flood_depth_rp{rp}y__matchLULC.tif"
+
+# Step 4C writes one of these under each ISO3 directory.
+EAD_FILE_NAME = "step4c_ead_USD2019.csv"
 
 
 # -----------------------------------------------------------------------------#
@@ -2098,7 +2101,7 @@ def export_global_results(p, df_countries):
     iso3_dirs = list_iso3_dirs(p.flood_output_dir)
     for iso3_dir in iso3_dirs:
         iso3 = os.path.basename(str(iso3_dir)).upper()
-        step4c = find_step4c_file(iso3_dir, "step4c_ead_USD2019.csv")
+        step4c = find_step4c_file(iso3_dir, EAD_FILE_NAME)
         if step4c is None:
             continue
         part = read_step4c_ead_robust(step4c, iso3_hint=iso3)
@@ -2144,7 +2147,7 @@ def export_attributed_summary(p) -> Optional[str]:
 
     rows = []
     for iso3_dir in list_iso3_dirs(p.flood_output_dir):
-        f = os.path.join(str(iso3_dir), "step4c_ead_USD2019.csv")
+        f = os.path.join(str(iso3_dir), EAD_FILE_NAME)
         if not hb.path_exists(f):
             continue
         # A country that cannot be read must stop the run: it would otherwise leave the global
@@ -2175,7 +2178,7 @@ def export_attributed_summary(p) -> Optional[str]:
     attr = pd.to_numeric(df.get("ead_attributed_to_spa_usd2019"), errors="coerce")
     df["attributed_share"] = np.where(gross > 0, attr / gross, np.nan)
 
-    out_csv = os.path.join(p.flood_global_export_dir, "step4d_country_ead_with_service_flow_USD2019.csv")
+    out_csv = p.flood_country_ead_with_service_flow_path
     utilities.write_csv(df, out_csv)
 
     print(f"[OK] Attributed summary -> {out_csv}")
@@ -2405,6 +2408,10 @@ def publish_inputs(p):
     p.flood_country_ead_path = os.path.join(p.flood_global_export_dir, "step4d_country_ead_USD2019.csv")
     p.flood_global_totals_path = os.path.join(p.flood_global_export_dir, "step4d_global_totals_USD2019.csv")
     p.flood_gep_path = os.path.join(p.flood_global_export_dir, "step4e_flood_gep_USD2019.csv")
+    p.flood_country_ead_with_service_flow_path = os.path.join(
+        p.flood_global_export_dir, "step4d_country_ead_with_service_flow_USD2019.csv")
+    p.flood_sda_summary_path = os.path.join(outputs, "global_sda_summary_countries.csv")
+    p.flood_spa_country_summary_path = os.path.join(p.flood_qa_dir, "global_spa_country_summary.csv")
 
     # Optional companions: a blank es_parameters cell means the table is not supplied, and the
     # readers below branch on None rather than on a path that happens not to exist.
@@ -2598,9 +2605,9 @@ def build_sda_global(p):
     if not rows:
         raise ValueError('Section B produced no SDA summaries for any of %d countries.' % len(run_list))
     combined = pd.concat(rows, ignore_index=True)
-    utilities.write_csv(combined, os.path.join(p.flood_output_dir, "global_sda_summary_countries.csv"))
+    utilities.write_csv(combined, p.flood_sda_summary_path)
     hb.log('Section B: %d countries, %d SDA rows' % (len(run_list), len(combined)))
-    return os.path.join(p.flood_output_dir, "global_sda_summary_countries.csv")
+    return p.flood_sda_summary_path
 
 
 def task_build_sda(p):
