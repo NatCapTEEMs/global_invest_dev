@@ -36,7 +36,6 @@ import json
 import logging
 import warnings
 from datetime import datetime
-import numpy as np
 import geopandas as gpd
 import rasterio
 import rasterio.features
@@ -49,7 +48,6 @@ import pandas as pd
 import hazelbean as hb
 
 from global_invest import utilities
-from global_invest.erosion import erosion_functions
 from global_invest.erosion import erosion_functions as ef
 
 # 8 crop sectors whose productivity depends on erosion control (sediment retention).
@@ -197,11 +195,11 @@ def compute_country_gep_from_country_crop(
     Reads the crop gross production value and GDP tables, then hands the frames to
     `erosion_functions`, which holds the arithmetic.
     """
-    df_shock = erosion_functions.country_erosion_shock(df_country_crop_component, p.erosion_min_shock_floor)
+    df_shock = ef.country_erosion_shock(df_country_crop_component, p.erosion_min_shock_floor)
     df_crop_gpv = load_fao_gpv_iso3_const2019_with_fallback(
         paths, fao_iso3_csv, prices_full_csv, base_year=base_year)
     df_gdp = load_wb_gdp_current_2019(gdp_current_2019_csv)
-    return erosion_functions.country_gep(df_shock, df_crop_gpv, df_gdp, component)
+    return ef.country_gep(df_shock, df_crop_gpv, df_gdp, component)
 
 
 def read_erosion_dependency(ero_path):
@@ -493,7 +491,7 @@ def accumulate_upstream_prevention_share(dem_path, avoided_path, potential_path,
     routing.flow_accumulation_d8((flow_direction, 1), accumulated_potential,
                                  weight_raster_path_band=(potential_weight, 1))
 
-    share = erosion_functions.upstream_prevention_share(
+    share = ef.upstream_prevention_share(
         hb.as_array(accumulated_avoided), hb.as_array(accumulated_potential))
     pgp.numpy_array_to_raster(share, -9999.0, pixel_size, origin, wkt, output_path)
     return output_path
@@ -859,7 +857,7 @@ def run_biophysical_decomposed(paths):
     # r250, which the run now reads, carries one row per country, so it cannot arise there at all.
     df_country_area = (gdf_countries[["ISO3", "area_km2"]].rename(columns={"ISO3": "iso3"})
                        .groupby("iso3", as_index=False)["area_km2"].sum(min_count=1))
-    df_threshold = erosion_functions.country_threshold_policy(
+    df_threshold = ef.country_threshold_policy(
         iso_lut.rename(columns={"ISO3": "iso3"})
                .merge(df_country_area, on="iso3", how="left")
                .assign(mean_elevation_m=lambda d: [mean_elev_by_id.get(int(i), np.nan)
@@ -925,10 +923,10 @@ def run_biophysical_decomposed(paths):
     cm = cropland_mask.values.astype(bool)
 
     # ---- Prevention shares, on cropland where soil loss is severe (see erosion_functions)
-    ps_onfarm = erosion_functions.restrict_to_valued_pixels(
-        erosion_functions.onfarm_prevention_share(avo.values, usle.values), cm, severe).astype("float32")
-    ps_upstream = erosion_functions.restrict_to_valued_pixels(ups_vals, cm, severe).astype("float32")
-    ps_combined = erosion_functions.combined_prevention_share(ps_onfarm, ps_upstream).astype("float32")
+    ps_onfarm = ef.restrict_to_valued_pixels(
+        ef.onfarm_prevention_share(avo.values, usle.values), cm, severe).astype("float32")
+    ps_upstream = ef.restrict_to_valued_pixels(ups_vals, cm, severe).astype("float32")
+    ps_combined = ef.combined_prevention_share(ps_onfarm, ps_upstream).astype("float32")
 
     # ---- Save PS rasters for transparency
     ef._write_share(os.path.join(paths.output.directory, PS_ONFARM_CROPLAND_SEVERE_TIF), usle, ps_onfarm)
@@ -1523,49 +1521,14 @@ def generate_all_maps_and_figures(paths):
             utilities.savefig(os.path.join(paths.output.figure_directory, "scatter_combined_gep_vs_gdp_log_countrynames.png"), dpi=300)
     
     # 6.3 Income group scatter plots
-    income_map = {
-        "AUS":"High income","AUT":"High income","BEL":"High income","CAN":"High income","CHE":"High income",
-        "CHL":"High income","CZE":"High income","DEU":"High income","DNK":"High income","ESP":"High income",
-        "EST":"High income","FIN":"High income","FRA":"High income","GBR":"High income","GRC":"High income",
-        "HKG":"High income","HRV":"High income","HUN":"High income","IRL":"High income","ISL":"High income",
-        "ISR":"High income","ITA":"High income","JPN":"High income","KOR":"High income","LTU":"High income",
-        "LUX":"High income","LVA":"High income","NLD":"High income","NOR":"High income","NZL":"High income",
-        "POL":"High income","PRT":"High income","SGP":"High income","SVN":"High income","SWE":"High income",
-        "USA":"High income",
     
-        "ARG":"Upper middle income","BRA":"Upper middle income","CHN":"Upper middle income","COL":"Upper middle income",
-        "CRI":"Upper middle income","DOM":"Upper middle income","GAB":"Upper middle income","IDN":"Upper middle income",
-        "IRN":"Upper middle income","KAZ":"Upper middle income","MEX":"Upper middle income","MYS":"Upper middle income",
-        "PER":"Upper middle income","SRB":"Upper middle income","THA":"Upper middle income","TUR":"Upper middle income",
-        "ZAF":"Upper middle income","BGR":"Upper middle income","JOR":"Upper middle income","PRY":"Upper middle income",
-        "ECU":"Upper middle income","VNM":"Upper middle income","BOL":"Upper middle income","ALB":"Upper middle income",
-    
-        "BGD":"Lower middle income","CIV":"Lower middle income","CMR":"Lower middle income","COD":"Lower middle income",
-        "EGY":"Lower middle income","GHA":"Lower middle income","IND":"Lower middle income","KEN":"Lower middle income",
-        "MAR":"Lower middle income","MNG":"Lower middle income","NGA":"Lower middle income","PAK":"Lower middle income",
-        "PHL":"Lower middle income","SLV":"Lower middle income","SEN":"Lower middle income","TZA":"Lower middle income",
-        "UKR":"Lower middle income","UZB":"Lower middle income","VUT":"Lower middle income","LAO":"Lower middle income",
-        "PNG":"Lower middle income","DJI":"Lower middle income","HND":"Lower middle income","NIC":"Lower middle income",
-        "BTN":"Lower middle income","KHM":"Lower middle income","LKA":"Lower middle income","ZMB":"Lower middle income",
-        "AGO":"Lower middle income","NAM":"Lower middle income",
-    
-        "AFG":"Low income","BFA":"Low income","BDI":"Low income","CAF":"Low income","ETH":"Low income","GMB":"Low income",
-        "GIN":"Low income","GNB":"Low income","LBR":"Low income","MDG":"Low income","MLI":"Low income","MOZ":"Low income",
-        "MWI":"Low income","NER":"Low income","NPL":"Low income","RWA":"Low income","SLE":"Low income","SOM":"Low income",
-        "SSD":"Low income","SYR":"Low income","TCD":"Low income","TGO":"Low income","UGA":"Low income","YEM":"Low income",
-        "ZWE":"Low income",
-    }
-    
-    income_colors = {
-        "Low income": "#d73027",
-        "Lower middle income": "#fc8d59",
-        "Upper middle income": "#fee08b",
-        "High income": "#1a9850",
-    }
     
     if {"gdp_const2019_2019", "gep_const2019_usd_combined"}.issubset(df.columns):
-        d0 = df.copy()
-        d0["income_group"] = d0["iso3"].map(income_map)
+        d0, income_order = utilities.attach_income_group(df.copy(), p.df_countries)
+        n_unlabelled = int(d0["income_group"].isna().sum())
+        if n_unlabelled:
+            hb.log("%d of %d countries have no income group and are left out of the "
+                   "income-group figures." % (n_unlabelled, len(d0)))
         d0 = d0.dropna(subset=["income_group"]).copy()
     
         mask = (
@@ -1577,7 +1540,8 @@ def generate_all_maps_and_figures(paths):
         d = d0.loc[mask].copy()
     
         if len(d) > 0:
-            order = ["Low income", "Lower middle income", "Upper middle income", "High income"]
+            order = income_order
+            income_colors = utilities.income_group_colors(order)
     
             # Log-log
             fig, ax = plt.subplots(figsize=(10, 7))

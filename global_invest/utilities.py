@@ -14,7 +14,6 @@ reached terrestrial_carbon + coastal_carbon and not the other five GEP services.
 from osgeo import gdal
 import json
 import mapclassify
-import matplotlib
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import shutil
@@ -748,7 +747,7 @@ def plot_gep_choropleth(df_by_country, value_column, countries_vector_path, out_
     Returns:
         str: out_png_path, or None if the table had no positive value to scale a log ramp on.
     """
-    matplotlib.use('Agg')
+    mpl.use('Agg')
 
     gdf = gpd.read_file(countries_vector_path)
     join_column = 'iso3_r250_id' if 'iso3_r250_id' in gdf.columns else 'ee_r264_id'
@@ -1418,3 +1417,55 @@ def pixel_area_m2(transform) -> float:
 def pixel_area_km2(transform) -> float:
     """Nominal pixel area from an affine transform, in square kilometres."""
     return pixel_area_m2(transform) / 1e6
+
+
+def attach_income_group(df, df_countries, iso3_column="iso3", column="income_group"):
+    """Join the World Bank income group from the shared country table.
+
+    Every service that reports by income group reads the same column, so one country cannot sit in
+    a different group in two accounts. Erosion used to carry a 115-country dict in code and drop
+    every country missing from it, which removed about 77 of its ~192 countries from those figures
+    without saying so.
+
+    Args:
+        df (DataFrame): rows carrying an ISO3 column.
+        df_countries (DataFrame): the shared country table, from initialize_country_paths.
+        iso3_column (str): the ISO3 column in `df`.
+        column (str): the column to write.
+
+    Returns:
+        tuple: (the frame with `column` added, the groups present ordered poorest first).
+
+    Raises:
+        NameError: if the country table carries no income column, rather than leaving every row
+            unlabelled and the figure quietly empty.
+    """
+    source = None
+    for candidate in ("income_grp", "income_group", "incomegrp"):
+        if candidate in df_countries.columns:
+            source = candidate
+            break
+    if source is None:
+        raise NameError(
+            "No income column in the country table; looked for income_grp, income_group, "
+            "incomegrp and found %s." % list(df_countries.columns))
+    key = pick_iso3_column(df_countries)
+    lookup = (df_countries[[key, source]].dropna()
+              .assign(**{key: lambda d: d[key].astype(str).str.upper().str.strip()})
+              .drop_duplicates(key).set_index(key)[source])
+    out = df.copy()
+    out[column] = out[iso3_column].astype(str).str.upper().str.strip().map(lookup)
+
+    groups = [g for g in out[column].dropna().unique()]
+    # Natural Earth prefixes each label with its rank ("1. High income: OECD" ... "5. Low income"),
+    # so descending order puts the poorest first, which is how these read on a chart. Labels
+    # without that prefix fall back to alphabetical.
+    ranked = all(str(g)[:1].isdigit() for g in groups)
+    return out, sorted(groups, reverse=ranked)
+
+
+def income_group_colors(groups):
+    """A red-to-green ramp over the income groups, poorest first."""
+    ramp = mpl.colormaps["RdYlGn"].resampled(max(len(groups), 2))
+    return {g: mpl.colors.to_hex(ramp(i)) for i, g in enumerate(groups)}
+
