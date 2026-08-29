@@ -245,7 +245,7 @@ def test_every_flood_module_imports():
     would have failed.
     """
     import importlib
-    for name in ('flood_functions', 'flood_initialize', 'flood_tasks', 'flood_utils', 'run_flood'):
+    for name in ('flood_functions', 'flood_initialize', 'flood_tasks', 'run_flood'):
         importlib.import_module('global_invest.flood.%s' % name)
 
 

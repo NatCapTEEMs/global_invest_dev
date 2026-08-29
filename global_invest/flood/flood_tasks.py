@@ -38,7 +38,7 @@ and setting the module constants the drivers below read. The task wrappers at th
 #   E) Maps & figures               (analyze_step4d_global_results.py)
 #
 # Generic raster/table/plotting helpers reused across sections live in
-# flood_utils.py and are imported by name below.
+# flood_functions.py and the shared utilities, and are imported by name below.
 #
 # -----------------------------------------------------------------------------
 # DESIGN NOTE ON CONFIG (same rationale as erosion_functions.py)
@@ -102,12 +102,18 @@ import matplotlib
 matplotlib.use("Agg")  # HPC batch nodes have no display
 import matplotlib.pyplot as plt
 
-from global_invest.flood.flood_utils import (
-    assert_exists,
-    assert_same_grid,
+from global_invest.flood.flood_functions import (
     pixel_area_m2,
     pixel_area_km2,
     mercator_area_scale,
+    pick_iso3_column,
+    pick_name_column,
+    integrate_trapezoid,
+    rp_to_p,
+)
+from global_invest.utilities import (
+    assert_exists,
+    assert_same_grid,
     raster_profile_string,
     warn_if_geographic,
     random_windows,
@@ -115,17 +121,11 @@ from global_invest.flood.flood_utils import (
     raster_ok,
     sha256_file,
     file_fingerprint,
-    pick_iso3_column,
-    pick_name_column,
-    load_admin0,
     norm_label,
     find_col,
     to_float,
-    to_num,
     write_csv,
     safe_mean,
-    integrate_trapezoid,
-    rp_to_p,
     fmt_usd,
     fmt_usd_millions,
     fmt_percent,
@@ -133,10 +133,9 @@ from global_invest.flood.flood_utils import (
     compute_classification,
     savefig,
     top_n,
-    plot_raster_global,
     plot_publication_choropleth_categorical,
 )
-from global_invest.flood import flood_utils
+from global_invest import utilities as flood_plot_constants
 
 
 # =============================================================================
@@ -2039,6 +2038,25 @@ MAP_SERVICE_FLOW_CSV = None
 
 
 
+def load_admin0(path: Path, layer: Optional[str] = None) -> gpd.GeoDataFrame:
+    """
+    Load Admin0 polygons, normalize the ISO3 column to lowercase 'iso3',
+    repair invalid geometries with buffer(0), drop empties.
+    """
+    path = Path(path)
+    assert_exists(path, "Admin0 boundary file is required.")
+    gdf = gpd.read_file(path, layer=layer) if layer else gpd.read_file(path)
+    if gdf.crs is None:
+        raise ValueError(f"Admin0 has no CRS: {path}")
+    iso_col = pick_iso3_column(gdf)
+    if iso_col is None:
+        raise ValueError(f"No ISO3-like column found. Columns: {list(gdf.columns)}")
+    gdf["iso3"] = gdf[iso_col].astype(str).str.upper().str.strip()
+    gdf["geometry"] = gdf["geometry"].buffer(0)
+    gdf = gdf[gdf.geometry.notna() & ~gdf.geometry.is_empty].copy()
+    return gdf
+
+
 def publish_inputs(p):
     """Every task's first line: the flood es_config row, its es_parameters data references, the
     shared country references, and the project paths resolved from configuration.
@@ -2125,7 +2143,7 @@ MAP_RASTER_DOWNSAMPLE_FACTOR = 6
 def configure_maps(p):
     """
     Override the Section-E constants from the ProjectFlow object. Also pushes
-    EXCLUDE_ISO3 / ROBINSON_CRS / USD_TO_MILLIONS / TOP_N onto flood_utils,
+    EXCLUDE_ISO3 / ROBINSON_CRS / USD_TO_MILLIONS / TOP_N onto the shared utilities,
     since plot_publication_choropleth_categorical() (which lives there) reads
     those as module globals. Called by
     flood_tasks.task_generate_maps_and_figures().
@@ -2152,11 +2170,11 @@ def configure_maps(p):
     MAP_MONEY_UNIT_LABEL = getattr(p, 'flood_money_unit_label', "2019 USD million")
     MAP_RASTER_DOWNSAMPLE_FACTOR = getattr(p, 'flood_raster_downsample_factor', 6)
 
-    # Push shared plotting constants onto flood_utils (see docstring above).
-    flood_utils.EXCLUDE_ISO3 = getattr(p, 'flood_exclude_iso3', {"ATA"})
-    flood_utils.ROBINSON_CRS = getattr(p, 'flood_robinson_crs', "+proj=robin")
-    flood_utils.USD_TO_MILLIONS = getattr(p, 'flood_usd_to_millions', 1e6)
-    flood_utils.TOP_N = MAP_TOP_N
+    # Push shared plotting constants onto the shared utilities (see docstring above).
+    flood_plot_constants.EXCLUDE_ISO3 = getattr(p, 'flood_exclude_iso3', {"ATA"})
+    flood_plot_constants.ROBINSON_CRS = getattr(p, 'flood_robinson_crs', "+proj=robin")
+    flood_plot_constants.USD_TO_MILLIONS = getattr(p, 'flood_usd_to_millions', 1e6)
+    flood_plot_constants.TOP_N = MAP_TOP_N
 
 
 def _load_country_ead() -> pd.DataFrame:
@@ -2200,7 +2218,7 @@ def generate_all_maps_and_figures() -> dict:
     # 2) Top-N countries by EAD
     top = top_n(country, "ead_usd2019", MAP_TOP_N).copy()
     if not top.empty:
-        top["_m"] = top["ead_usd2019"] / flood_utils.USD_TO_MILLIONS
+        top["_m"] = top["ead_usd2019"] / flood_plot_constants.USD_TO_MILLIONS
         fig, ax = plt.subplots(figsize=(10, 8))
         ax.barh(top["iso3"][::-1], top["_m"][::-1])
         ax.set_xlabel(MAP_MONEY_UNIT_LABEL)
@@ -2213,7 +2231,7 @@ def generate_all_maps_and_figures() -> dict:
     # 3) Regional breakdown, if Step 4D enriched with a region column
     if "region_wb" in country.columns:
         reg = (country.groupby("region_wb", dropna=True)["ead_usd2019"]
-               .sum().sort_values(ascending=False) / flood_utils.USD_TO_MILLIONS)
+               .sum().sort_values(ascending=False) / flood_plot_constants.USD_TO_MILLIONS)
         if not reg.empty:
             fig, ax = plt.subplots(figsize=(10, 6))
             ax.barh(reg.index[::-1], reg.values[::-1])

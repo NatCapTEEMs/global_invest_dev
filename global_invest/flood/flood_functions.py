@@ -15,8 +15,10 @@ inputs, windowing rasters and writing results, and none of that changes an answe
 from __future__ import annotations
 
 import warnings
-from typing import List, Optional
+from pathlib import Path
+from typing import List, Optional, Tuple
 
+import geopandas as gpd
 import numpy as np
 import pandas as pd
 
@@ -317,3 +319,131 @@ def combine_components(*frames):
     """
     return pd.concat(frames, ignore_index=True).sort_values(
         ["component", "iso3"]).reset_index(drop=True)
+
+
+# =============================================================================
+# Grid, geometry and integration.
+# =============================================================================
+
+
+# -----------------------------------------------------------------------------
+# Raster metadata / geometry
+# -----------------------------------------------------------------------------
+def pixel_area_m2(transform) -> float:
+    return abs(float(transform.a) * float(transform.e))
+
+
+def pixel_area_km2(transform) -> float:
+    return pixel_area_m2(transform) / 1e6
+
+
+def mercator_area_scale(transform, row_off: int, height: int) -> np.ndarray:
+    """
+    Areal scale factor for EPSG:3857, as a column vector of shape (height, 1).
+
+        true_ground_area = nominal_pixel_area * cos^2(latitude)
+
+    Web Mercator is conformal, not equal-area: it preserves shape and inflates
+    area by 1/cos^2(lat), exactly. Reading pixel area off the affine transform
+    therefore gives the value at the EQUATOR ONLY, and applying it globally
+    overstates area everywhere else:
+
+        latitude    overstatement
+           0            1.00x
+          45            2.00x
+          60            4.00x
+          65            5.60x
+          70            8.55x
+
+    Every country outside the tropics is affected, progressively worse toward
+    the poles. This is analytic, not an approximation -- cos^2(lat) IS the areal
+    scale factor for Web Mercator -- so correcting per pixel gives true ground
+    area without reprojecting anything.
+
+    Area depends only on latitude, hence only on raster ROW, so one value per
+    row broadcasts across the whole tile.
+    """
+    R = 6378137.0                      # WGS84 semi-major axis, EPSG:3857 sphere
+    rows = np.arange(row_off, row_off + height, dtype="float64") + 0.5
+    y = float(transform.f) + rows * float(transform.e)
+    lat = 2.0 * np.arctan(np.exp(y / R)) - np.pi / 2.0
+    return (np.cos(lat) ** 2).astype("float32").reshape(-1, 1)
+
+
+# -----------------------------------------------------------------------------
+# Admin0 / ISO3 handling
+# -----------------------------------------------------------------------------
+def pick_iso3_column(gdf: gpd.GeoDataFrame) -> Optional[str]:
+    candidates = ["iso3", "ISO3", "iso_a3", "ISO_A3", "ADM0_A3", "adm0_a3", "iso3_r250_label"]
+    for c in candidates:
+        if c in gdf.columns:
+            return c
+    return None
+
+
+def pick_name_column(gdf: gpd.GeoDataFrame) -> Optional[str]:
+    candidates = [
+        "country_name", "NAME_EN", "ADMIN", "NAME_LONG", "NAME",
+        "COUNTRY", "NAME_0", "ADM0_NAME", "GEOUNIT", "iso3_r250_name",
+    ]
+    for c in candidates:
+        if c in gdf.columns:
+            return c
+    return None
+
+
+
+
+def integrate_trapezoid(y: np.ndarray, x: np.ndarray) -> float:
+
+    """
+
+    Trapezoidal integral, with the x axis sorted first.
+
+
+
+    np.trapezoid weights each segment by diff(x). Handing it a descending or
+
+    unordered x makes backwards segments contribute negatively, and the partial
+
+    cancellation returns a small number of the wrong sign rather than an error.
+
+    In this pipeline x is exceedance probability derived from return periods,
+
+    which arrive in descending-p order naturally, so the sort is not optional.
+
+
+
+    Both current call sites happen to sort beforehand -- one by argsort, one via
+
+    a pandas groupby whose sorted-key behaviour is a default rather than a
+
+    guarantee. Sorting here makes the property hold by construction. Sorting an
+
+    already-sorted array is a no-op, so this cannot change existing results.
+
+    """
+
+    x = np.asarray(x, dtype="float64")
+
+    y = np.asarray(y, dtype="float64")
+
+    if x.size != y.size:
+
+        raise ValueError(f"integrate_trapezoid: length mismatch {x.size} vs {y.size}")
+
+    o = np.argsort(x)
+
+    x, y = x[o], y[o]
+
+    if hasattr(np, "trapezoid"):
+
+        return float(np.trapezoid(y, x))
+
+    return float(np.trapz(y, x))
+
+
+def rp_to_p(rp: float) -> float:
+    """Return period (years) -> annual exceedance probability."""
+    rp = float(rp)
+    return 1.0 / rp if rp > 0 else np.nan

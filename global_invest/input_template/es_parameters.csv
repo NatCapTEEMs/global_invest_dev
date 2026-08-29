@@ -116,6 +116,8 @@ flood,flood_msi_results_v2_dir,/projects/standard/jajohns/shared/flood_gep/resul
 flood,flood_msi_code_dir,/projects/standard/jajohns/shared/flood_gep/code/global_invest/flood
 flood,flood_msi_conda_env,/users/4/coles081/envs/earth_econ
 flood,flood_gep_for_merge_path,global_invest/flood/flood_gep_for_merge_v2_2024hazard.csv
+flood,flood_gep_for_merge_source_url,https://github.com/nkdampha/global_flood_gep
+flood,flood_gep_for_merge_source_note,"the author export gep_calculation falls back to when the counterfactual chain has not run here: iso3_r250_label and gep_const2019_usd, $11.40bn over 162 non-zero countries, v2 2024 hazard. Produced by his scripts/export_gep_for_merge.py from step4e_flood_gep_USD2019.csv; that script is not carried here because the output is a base_data input like any other author artifact"
 flood,flood_avoided_damage_path,global_invest/flood/country_avoided_damage_usd2019.csv
 flood,flood_country_vector_path,global_invest/flood/input/pipeline_inputs/country_vector/country_boundary_r250_with_iso3.gpkg
 flood,flood_sda_raster_path,global_invest/flood/input/pipeline_inputs/sda/sda_esa300m_artif_crop_pasture.tif

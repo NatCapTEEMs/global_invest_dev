@@ -572,8 +572,8 @@ def main() -> None:
             if iso_col not in admin0.columns:
                 raise ValueError(f"--iso3-col '{iso_col}' not found. Available columns: {list(admin0.columns)}")
         else:
-            # One list, in flood_utils. A second one here drifts.
-            from global_invest.flood.flood_utils import pick_iso3_column
+            # One list, in flood_functions. A second one here drifts.
+            from global_invest.flood.flood_functions import pick_iso3_column
             iso_col = pick_iso3_column(admin0)
             if iso_col is None:
                 raise ValueError(

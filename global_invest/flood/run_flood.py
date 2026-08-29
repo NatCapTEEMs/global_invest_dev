@@ -6,7 +6,7 @@ configure_paths to resolve every location under `flood_root_dir`. Nothing is har
 
 ⚠ This file used to carry `set_flood_paths(p)`, 200 lines setting 55 `p.flood_*` attributes, which
 the MSI runners imported to learn the project layout. A grep across flood_tasks, flood_functions,
-flood_utils, flood_initialize and the cluster scripts on 2026-08-29 found only six of those
+flood_initialize and the cluster scripts found only six of those
 attributes ever read anywhere: `flood_root_dir` and `flood_gep_for_merge_path`, both already in
 es_parameters, plus `flood_iso3_list`, `flood_iso3_start`, `flood_iso3_n` and
 `flood_skip_depth_download`, which are now there too. The other 51 were dead: `configure_paths`

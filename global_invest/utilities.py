@@ -1007,3 +1007,389 @@ def country_attributes(p, columns=None):
     return collapse_countries_to_r250(p.df_countries)[wanted]
 
 
+# =============================================================================
+# The imports the moved helpers need.
+import hashlib
+import os
+import warnings
+from pathlib import Path
+from typing import Dict, Optional, Tuple
+
+import geopandas as gpd
+import hazelbean as hb
+import numpy as np
+import pandas as pd
+import rasterio
+from rasterio.windows import Window
+
+
+# Raster, table and figure helpers. Not service-specific: any service needing them
+# finds them here rather than keeping a copy.
+# =============================================================================
+
+
+# Defaults for the plotting helpers below (overridden at run time by
+# flood_functions.configure_maps(p) if the project sets different values).
+EXCLUDE_ISO3 = {"ATA"}
+
+
+ROBINSON_CRS = "+proj=robin"
+
+
+USD_TO_MILLIONS = 1e6
+
+
+TOP_N = 20
+
+
+# -----------------------------------------------------------------------------
+# Existence / assertions
+# -----------------------------------------------------------------------------
+def assert_exists(path: Path, hint: str = ""):
+    path = Path(path)
+    if not path.exists():
+        raise FileNotFoundError(f"Missing: {path}\n{hint}")
+
+
+def assert_same_grid(src_a, src_b, label_a: str = "A", label_b: str = "B", rtol: float = 1e-6):
+    """
+    Hard-lock the alignment principle used throughout the flood pipeline:
+    depth rasters, LULC and SDA must share CRS + transform + shape. We never
+    silently warp the accounting grid; if this fails, re-align the *input*
+    to the LULC grid first.
+    """
+    problems = []
+    if src_a.crs != src_b.crs:
+        problems.append(f"CRS differs: {label_a}={src_a.crs} vs {label_b}={src_b.crs}")
+    if (src_a.width, src_a.height) != (src_b.width, src_b.height):
+        problems.append(
+            f"Shape differs: {label_a}=({src_a.height},{src_a.width}) "
+            f"vs {label_b}=({src_b.height},{src_b.width})"
+        )
+    ta, tb = src_a.transform, src_b.transform
+    for name, va, vb in zip("abcdef", ta[:6], tb[:6]):
+        if not np.isclose(va, vb, rtol=rtol, atol=1e-9):
+            problems.append(f"Transform.{name} differs: {va} vs {vb}")
+    if problems:
+        raise ValueError(
+            f"Grid mismatch between {label_a} and {label_b}:\n  " + "\n  ".join(problems)
+        )
+    return True
+
+
+def raster_profile_string(ds) -> str:
+    return (
+        f"CRS: {ds.crs}\n"
+        f"Transform: {ds.transform}\n"
+        f"Width x Height: {ds.width} x {ds.height}\n"
+        f"Res (approx): {ds.transform.a:.4f} x {abs(ds.transform.e):.4f}\n"
+        f"Dtype: {ds.dtypes[0]}\n"
+        f"Nodata: {ds.nodata}\n"
+        f"Bounds: {ds.bounds}\n"
+    )
+
+
+def warn_if_geographic(ds, label: str = "raster"):
+    """Pixel area from an affine transform is only m^2 in a projected CRS."""
+    if ds.crs is not None and ds.crs.is_geographic:
+        warnings.warn(
+            f"[WARN] {label} CRS is geographic (degrees). Pixel area from the "
+            f"transform is NOT m^2. Reproject to a projected CRS aligned to the "
+            f"LULC grid before running valuation."
+        )
+        return True
+    return False
+
+
+def random_windows(width: int, height: int, n: int, wsize: int, seed: int = 7):
+    rng = np.random.default_rng(seed)
+    for _ in range(n):
+        col = int(rng.integers(0, max(1, width - wsize)))
+        row = int(rng.integers(0, max(1, height - wsize)))
+        yield Window(
+            col_off=col, row_off=row,
+            width=min(wsize, width - col), height=min(wsize, height - row),
+        )
+
+
+def atomic_write_raster(final_path: Path, profile: dict, array: np.ndarray, band: int = 1):
+    """
+    Write to <name>.tmp then rename, so a killed job never leaves a
+    half-written GeoTIFF that a later --skip-done run mistakes for complete.
+    """
+    final_path = Path(final_path)
+    final_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = final_path.with_suffix(final_path.suffix + ".tmp")
+    with rasterio.open(tmp, "w", **profile) as dst:
+        dst.write(array, band)
+    tmp.replace(final_path)
+    return final_path
+
+
+def raster_ok(path: Path) -> bool:
+    """Cheap validity probe used by the smart-skip logic."""
+    path = Path(path)
+    if not path.exists() or path.stat().st_size == 0:
+        return False
+    try:
+        with rasterio.open(path) as ds:
+            _ = ds.profile
+        return True
+    except (OSError, rasterio.errors.RasterioIOError):
+        return False
+
+
+# -----------------------------------------------------------------------------
+# Fingerprinting (smart-skip / provenance)
+# -----------------------------------------------------------------------------
+def sha256_file(path: Path, chunk_size: int = 1024 * 1024) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        while True:
+            b = f.read(chunk_size)
+            if not b:
+                break
+            h.update(b)
+    return h.hexdigest()
+
+
+def file_fingerprint(path: Path) -> dict:
+    path = Path(path)
+    if not path.exists():
+        return {"path": str(path), "exists": False}
+    st = path.stat()
+    return {
+        "path": str(path),
+        "exists": True,
+        "size": st.st_size,
+        "mtime": st.st_mtime,
+    }
+
+
+# -----------------------------------------------------------------------------
+# Column detection (tolerant of underscore/space/case differences)
+# -----------------------------------------------------------------------------
+def norm_label(s: str) -> str:
+    s = str(s).strip().lower().replace("_", " ")
+    s = "".join(ch if ch.isalnum() or ch.isspace() else " " for ch in s)
+    return " ".join(s.split())
+
+
+def find_col(df: pd.DataFrame, candidates: Tuple[str, ...]) -> Optional[str]:
+    norm_map: Dict[str, str] = {norm_label(c): c for c in df.columns}
+    for cand in candidates:
+        k = norm_label(cand)
+        if k in norm_map:
+            return norm_map[k]
+    for cand in candidates:  # contains-match fallback
+        k = norm_label(cand)
+        for kk, orig in norm_map.items():
+            if k in kk:
+                return orig
+    return None
+
+
+def to_float(x) -> float:
+    try:
+        return float(x)
+    except (TypeError, ValueError):
+        return np.nan
+
+
+def write_csv(df: pd.DataFrame, path: Path):
+    """hb.df_write, plus the parent directory, which it does not create."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    hb.df_write(df, str(path))
+    return path
+
+
+# -----------------------------------------------------------------------------
+# Numerics
+# -----------------------------------------------------------------------------
+def safe_mean(x: np.ndarray) -> float:
+    x = np.asarray(x)
+    return float(np.nanmean(x)) if x.size else float("nan")
+
+
+# -----------------------------------------------------------------------------
+# Formatting
+# -----------------------------------------------------------------------------
+def fmt_usd_millions(x: float) -> str:
+    if not np.isfinite(x):
+        return "NA"
+    if abs(x) >= 10:
+        return f"{x:,.0f}" if abs(x) >= 100 else f"{x:,.1f}"
+    if abs(x) >= 1:
+        return f"{x:,.1f}"
+    return f"{x:,.2f}"
+
+
+def fmt_percent(x: float) -> str:
+    if not np.isfinite(x):
+        return "NA"
+    if abs(x) >= 10:
+        return f"{x:.1f}"
+    if abs(x) >= 1:
+        return f"{x:.2f}"
+    return f"{x:.3f}"
+
+
+def fmt_usd(x: float) -> str:
+    if not np.isfinite(x):
+        return "NA"
+    return f"${x:,.0f}"
+
+
+def build_interval_labels(edges: np.ndarray, label_format: str = "usd_millions") -> list[str]:
+    labels = []
+    for i in range(len(edges) - 1):
+        lo, hi = edges[i], edges[i + 1]
+        if label_format == "usd_millions":
+            lo_txt, hi_txt = fmt_usd_millions(lo), fmt_usd_millions(hi)
+        else:
+            lo_txt, hi_txt = fmt_percent(lo), fmt_percent(hi)
+        labels.append(f"{lo_txt} - {hi_txt}")
+    return labels
+
+
+# -----------------------------------------------------------------------------
+# Plotting
+# -----------------------------------------------------------------------------
+def savefig(path: Path, dpi: int = 300):
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    plt.tight_layout()
+    plt.savefig(path, dpi=dpi, bbox_inches="tight")
+    plt.close()
+
+
+def top_n(df: pd.DataFrame, col: str, n: int = None) -> pd.DataFrame:
+    n = TOP_N if n is None else n
+    d = df[np.isfinite(pd.to_numeric(df[col], errors="coerce"))].copy()
+    return d.sort_values(col, ascending=False).head(n)
+
+
+def compute_classification(values: pd.Series, scheme: str = "fisher_jenks", k: int = 5):
+    s = pd.to_numeric(values, errors="coerce")
+    m = np.isfinite(s)
+    clean = s[m]
+
+    if clean.empty:
+        return pd.Series(index=values.index, dtype="float64"), np.array([0.0, 1.0])
+
+    try:
+        import mapclassify
+
+        scheme = (scheme or "fisher_jenks").lower()
+        k_eff = max(min(k, int(clean.nunique())), 1)
+
+        if scheme == "equal_interval":
+            classifier = mapclassify.EqualInterval(clean.to_numpy(), k=k_eff)
+        elif scheme == "quantiles":
+            classifier = mapclassify.Quantiles(clean.to_numpy(), k=k_eff)
+        else:
+            classifier = mapclassify.FisherJenks(clean.to_numpy(), k=k_eff)
+
+        edges = np.concatenate(([clean.min()], np.asarray(classifier.bins, dtype=float)))
+        class_ids = pd.Series(np.nan, index=values.index)
+        class_ids.loc[m] = classifier.yb
+        return class_ids, edges
+
+    except Exception:
+        warnings.warn("mapclassify unavailable or failed; falling back to qcut quantiles.")
+        q = min(k, max(1, int(clean.nunique())))
+        cats = pd.qcut(clean, q=q, duplicates="drop")
+        codes = pd.Series(np.nan, index=values.index)
+        codes.loc[m] = cats.cat.codes.astype(float)
+        intervals = cats.cat.categories
+        edges = [intervals[0].left] + [iv.right for iv in intervals]
+        return codes, np.asarray(edges, dtype=float)
+
+
+def plot_publication_choropleth_categorical(
+    world_joined: gpd.GeoDataFrame,
+    value_col: str,
+    title: str,
+    out_png: Path,
+    legend_title: str,
+    scheme: str = "fisher_jenks",
+    k: int = 5,
+    value_unit: str = "raw",
+    label_format: str = "usd_millions",
+    legend_loc: str = "lower left",
+):
+    gdf = world_joined.copy()
+
+    if "iso3" in gdf.columns:
+        gdf = gdf[~gdf["iso3"].isin(EXCLUDE_ISO3)].copy()
+    gdf = gdf[gdf.geometry.notna()].copy()
+
+    if value_col not in gdf.columns:
+        warnings.warn(f"Column not found for map: {value_col}")
+        fig, ax = plt.subplots(figsize=(14, 7))
+        ax.set_axis_off()
+        ax.set_title(f"{title}\n[missing column: {value_col}]", fontsize=16, pad=14)
+        savefig(out_png, dpi=300)
+        return
+
+    if value_unit == "usd_millions":
+        gdf["_plot_value"] = pd.to_numeric(gdf[value_col], errors="coerce") / USD_TO_MILLIONS
+    else:
+        gdf["_plot_value"] = pd.to_numeric(gdf[value_col], errors="coerce")
+
+    try:
+        gdf = gdf.to_crs(ROBINSON_CRS)
+    except Exception as e:
+        warnings.warn(f"CRS transform failed ({e}). Plotting in native CRS.")
+
+    minx, miny, maxx, maxy = gdf.total_bounds
+    class_ids, edges = compute_classification(gdf["_plot_value"], scheme=scheme, k=k)
+
+    valid_codes = pd.Series(class_ids).dropna()
+    if valid_codes.empty:
+        warnings.warn(f"No valid data for map: {value_col}")
+        fig, ax = plt.subplots(figsize=(14, 7))
+        ax.set_axis_off()
+        ax.set_title(title, fontsize=16, pad=14)
+        savefig(out_png, dpi=300)
+        return
+
+    n_classes = int(valid_codes.max()) + 1
+    labels = build_interval_labels(edges[:n_classes + 1], label_format=label_format)
+
+    gdf["_class_id"] = pd.Series(class_ids, index=gdf.index)
+    gdf["_class_label"] = pd.Categorical(
+        [labels[int(x)] if np.isfinite(x) and int(x) < len(labels) else np.nan
+         for x in gdf["_class_id"]],
+        categories=labels, ordered=True,
+    )
+
+    try:
+        cmap = mpl.colormaps[mpl.rcParams["image.cmap"]].resampled(n_classes)
+    except Exception:  # matplotlib < 3.6
+        cmap = mpl.cm.get_cmap(mpl.rcParams["image.cmap"], n_classes)
+    color_list = [mpl.colors.to_hex(cmap(i)) for i in range(n_classes)]
+
+    fig, ax = plt.subplots(figsize=(14, 7))
+    ax.set_axis_off()
+    gdf.plot(
+        column="_class_label", ax=ax,
+        cmap=mpl.colors.ListedColormap(color_list),
+        legend=False, linewidth=0.35, edgecolor="white",
+        missing_kwds={"color": "lightgrey", "edgecolor": "white"},
+    )
+    ax.set_xlim(minx, maxx)
+    ax.set_ylim(miny, maxy)
+    ax.set_title(title, fontsize=16, pad=14)
+
+    handles = [Patch(facecolor=color_list[i], edgecolor="none", label=labels[i])
+               for i in range(n_classes)]
+    handles.append(Patch(facecolor="lightgrey", edgecolor="none", label="No data"))
+    leg = ax.legend(
+        handles=handles, title=legend_title, loc=legend_loc, frameon=True,
+        fontsize=10, title_fontsize=11, borderpad=0.8, labelspacing=0.5,
+        handlelength=1.6, handletextpad=0.6,
+    )
+    leg.get_frame().set_alpha(0.95)
+    savefig(out_png, dpi=300)
