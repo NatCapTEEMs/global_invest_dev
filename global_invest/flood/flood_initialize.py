@@ -72,6 +72,14 @@ def build_flood_gep_task_tree(p):
     Paired-counterfactual variant: the only tree that produces an actual
     ecosystem service value rather than gross exposure. Assumes Sections A-C
     have already run.
+
+    ⚠ Until 2026-08-29 no stage reached this tree. The MSI runner's STAGE_TREES
+    mapped inputs, sda, flow, valuation, maps, accounting and calculation, so the
+    one tree that computes gep_flood = ead_bare - ead_current could only be run by
+    asking for `all`, which redoes Sections A and B as well. That is why the
+    service had a gross-exposure number and no service value: not because the
+    counterfactual damages were missing -- they are on disk per country -- but
+    because nothing invoked the step that differences them.
     """
     p.task_compute_flood_gep = p.add_task(flood_tasks.task_compute_flood_gep)
     p.task_generate_maps_and_figures = p.add_task(flood_tasks.task_generate_maps_and_figures)

@@ -79,7 +79,7 @@ flood,flood_msi_code_dir,/projects/standard/jajohns/shared/flood_gep/code/global
 flood,flood_msi_conda_env,/users/4/coles081/envs/earth_econ
 flood,flood_gep_for_merge_path,global_invest/flood/flood_gep_for_merge_v2_2024hazard.csv
 flood,flood_avoided_damage_path,global_invest/flood/country_avoided_damage_usd2019.csv
-flood,flood_country_vector_path,global_invest/flood/input/pipeline_inputs/country_vector/country_boundary_r250_with_iso3.gpkg
+flood,flood_country_vector_path,cartographic/ee/ee_r250.gpkg
 flood,flood_sda_raster_path,global_invest/flood/input/pipeline_inputs/sda/sda_esa300m_artif_crop_pasture.tif
 flood,flood_depth_path_template,global_invest/flood/input/pipeline_inputs/floodplain_depth/aligned_to_lulc/JRC_flood_depth_rp{rp}y__matchLULC.tif
 flood,flood_damage_wide_path,global_invest/flood/input/pipeline_inputs/flood_damage/damage_functions_sda_depth_USD2019_wide.csv

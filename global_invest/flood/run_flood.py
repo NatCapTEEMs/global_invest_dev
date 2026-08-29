@@ -35,8 +35,13 @@ def set_flood_paths(p):
     # during development. Home has ample space (745 TB free on the volume).
     p.flood_output_dir = os.path.join(p.flood_root, "outputs")
 
-    p.flood_country_boundary_path = os.path.join(
-        p.flood_input_dir, "country_vector", "country_boundary_r250_with_iso3.gpkg")
+    # The shared cartographic layer every other service aggregates on, not the author's staged
+    # copy. ee_r250 carries iso3_r250_label and iso3_r250_name, which pick_iso3_column and
+    # pick_name_column already look for, and it removes the last step of this pipeline that a
+    # reader would have to go to his repository layout to follow.
+    p.flood_country_boundary_path = getattr(
+        p, 'flood_country_vector_path', None) or os.path.join(
+        str(getattr(p, 'base_data_dir', '')), 'cartographic', 'ee', 'ee_r250.gpkg')
 
     # Return periods actually on disk: RP10, RP20, RP50, RP500.
     #   inputs/floodplain_depth/aligned_to_lulc/JRC_flood_depth_rp{RP}y__matchLULC.tif
