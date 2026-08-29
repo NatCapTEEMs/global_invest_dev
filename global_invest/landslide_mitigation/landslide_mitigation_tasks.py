@@ -1851,7 +1851,7 @@ def _stitch_one_global_raster(p, blocks_list, grid, spec, year):
     grid, each existing tile written at its block offset."""
     out_path = os.path.join(p.cur_dir, spec['global_filename'].format(year=year))
 
-    if hb.path_exists(out_path) and not getattr(p, 'force_run', False):
+    if hb.path_exists(out_path) and not p.force_run:
         p.L.info(f'Skipping existing: {out_path}')
         return
     if hb.path_exists(out_path):
