@@ -1935,8 +1935,12 @@ def erosion_sdr(p):
     biophysical = build_seals7_biophysical_table(
         p.get_path(p.erosion_biophysical_table_path),
         os.path.join(p.cur_dir, 'biophysical_table_seals7.csv'))
-    sdr_params = dict(threshold_flow_accumulation=1000, k_param=2, sdr_max=0.8,
-                      ic_0_param=0.5, l_max=122, flow_dir_algorithm='D8', n_workers=-1)
+    # The same rows Section A reads, so the two paths cannot drift apart again.
+    sdr_params = dict(threshold_flow_accumulation=p.erosion_sdr_threshold_flow_accumulation,
+                      k_param=p.erosion_sdr_k_param, sdr_max=p.erosion_sdr_max,
+                      ic_0_param=p.erosion_sdr_ic_0_param, l_max=p.erosion_sdr_l_max,
+                      flow_dir_algorithm=p.erosion_sdr_flow_dir_algorithm,
+                      n_workers=p.erosion_sdr_n_workers)
     sdr_params.update(getattr(p, 'erosion_sdr_params', {}))
 
     n = 0
@@ -2680,12 +2684,17 @@ def invest_sdr(p):
         p.erosion_sdr_output_dir = p.cur_dir
     if not getattr(p, 'erosion_watersheds_sanitized_path', None):
         p.erosion_watersheds_sanitized_path = os.path.join(p.erosion_sdr_output_dir, 'wshed_sanitized.gpkg')
-    # Publish Section A's outputs under the names configure_prevention_shares reads off p --
-    # explicit task chaining instead of the source repo's copy-between-stage-dirs convention
-    # (whose input defaults even carry a different date suffix than the outputs).
+    # Publish Section A's outputs so Section B reads them, but ONLY when this task is producing
+    # them or has already produced them. Unconditionally it overwrote the erosion_usle_path and
+    # erosion_avoided_erosion_path rows, which point at the author's staged rasters -- and those
+    # rasters are what the published number is computed from, so the account was being pointed at
+    # a file this task had not written.
     _sfx = p.erosion_sdr_results_suffix
-    p.erosion_usle_path = os.path.join(p.erosion_sdr_output_dir, f'usle_{_sfx}.tif')
-    p.erosion_avoided_erosion_path = os.path.join(p.erosion_sdr_output_dir, f'avoided_erosion_{_sfx}.tif')
+    usle = os.path.join(p.erosion_sdr_output_dir, f'usle_{_sfx}.tif')
+    avoided = os.path.join(p.erosion_sdr_output_dir, f'avoided_erosion_{_sfx}.tif')
+    if p.run_this or hb.path_exists(usle):
+        p.erosion_usle_path = usle
+        p.erosion_avoided_erosion_path = avoided
     if not p.run_this:
         return
     hb.create_directories(p.erosion_sdr_output_dir)

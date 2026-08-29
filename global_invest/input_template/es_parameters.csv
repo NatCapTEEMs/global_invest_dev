@@ -52,15 +52,15 @@ erosion,erosion_method,service_threshold
 erosion,erosion_alpha,0.08
 erosion,erosion_yield_coefficient_fallback,0.08
 erosion,erosion_yield_bridge_source_note,"alpha is the flat erosion-to-yield coefficient Method A applies to every crop; yield_coefficient_fallback is what Method B uses for a crop with no coefficient of its own. They are the same 0.08 today and the code comment says they are the same bridge, but they answer different questions, so they are two rows rather than one. 19 of 46 crops take the fallback and 5 have no entry at all."
-erosion,erosion_sdr_results_suffix,2019_revised_dec_14
-erosion,erosion_sdr_threshold_flow_accumulation,100
+erosion,erosion_sdr_results_suffix,gep
+erosion,erosion_sdr_threshold_flow_accumulation,1000
 erosion,erosion_sdr_k_param,2.0
-erosion,erosion_sdr_max,0.5
-erosion,erosion_sdr_ic_0_param,0.8
+erosion,erosion_sdr_max,0.8
+erosion,erosion_sdr_ic_0_param,0.5
 erosion,erosion_sdr_l_max,122.0
 erosion,erosion_sdr_flow_dir_algorithm,D8
 erosion,erosion_sdr_n_workers,-1
-erosion,erosion_sdr_params_source_note,"⚠ these are the Section A (static GEP) InVEST SDR settings, taken from build_args where they were hardcoded. The DYNAMIC shock path in erosion_sdr uses a different set: threshold_flow_accumulation 1000 rather than 100, sdr_max 0.8 rather than 0.5, ic_0_param 0.5 rather than 0.8. sdr_max and ic_0_param are transposed between the two, which looks like a transcription error rather than a decision. Both are written out here rather than merged, because merging them would change a number; whoever knows which calibration is intended should settle it."
+erosion,erosion_sdr_params_source_note,"one calibration for both paths. build_args (the static GEP Section A) hardcoded threshold_flow_accumulation 100, sdr_max 0.5 and ic_0_param 0.8, while the dynamic shock path used 1000, 0.8 and 0.5 -- the last two transposed, which reads as a transcription error rather than a decision. The dynamic values are kept because they are the pair actually in use and the conventional Borselli combination. ⚠ This does NOT move the published erosion number: per the status table the account computes it from the author''s staged usle/avoided rasters, not from a Section A run here, so our SDR settings have never produced it. It does change what a Section A run computes, which is the point of it agreeing with the shock path."
 erosion,erosion_analysis_epsg,8857
 erosion,erosion_apply_severe_filter,true
 erosion,erosion_base_year,2019
