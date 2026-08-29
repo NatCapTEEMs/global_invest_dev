@@ -2906,7 +2906,8 @@ def prevention_shares(p):
     if not p.run_this:
         return
     if hb.path_all_exist(list(service_results.values())):
-        hb.log("integrated_country_gep.csv already exists. Skipping prevention-share calculation for erosion.")
+        hb.log("%s already exists. Skipping prevention-share calculation for erosion."
+               % os.path.basename(service_results['integrated_country_gep']))
         return True
     ef.configure_prevention_shares(p)
     paths = erosion_paths(p)

@@ -2318,14 +2318,15 @@ def task_compute_flood_damages(p):
     configure_valuation(p)
 
     service_results = p.results.setdefault('flood', {})
-    service_results['country_ead_csv'] = os.path.join(
-        str(VAL_EXPORT_DIR), "step4d_country_ead_USD2019.csv")
-    service_results['global_totals_csv'] = os.path.join(
-        str(VAL_EXPORT_DIR), "step4d_global_totals_USD2019.csv")
+    # From configure_paths, which is where the writers get them too. Naming the file here as well
+    # would put the same basename in three places, so a rename could be applied to the writer and
+    # missed here, leaving the account pointed at a file nothing produces.
+    service_results['country_ead_csv'] = str(MAP_COUNTRY_EAD_CSV)
+    service_results['global_totals_csv'] = str(MAP_GLOBAL_TOTALS_CSV)
 
     if hb.path_all_exist([service_results['country_ead_csv']]):
-        hb.log("step4d_country_ead_USD2019.csv already exists. "
-               "Skipping the flood valuation chain.")
+        hb.log("%s already exists. Skipping the flood valuation chain."
+               % os.path.basename(service_results['country_ead_csv']))
     else:
         skip_tables = getattr(p, 'flood_skip_damage_tables', False)
         run_valuation_chain(skip_damage_tables=skip_tables)
@@ -2375,23 +2376,43 @@ def task_generate_maps_and_figures(p):
 def gep_calculation(p):
     """GEP valuation for flood: the per-country avoided damage the pipeline produces.
 
-    The quantity is the flood damage ecosystems prevent, which the author's own export writes as
-    `flood_gep_for_merge_v2_2024hazard.csv` -- iso3_r250_label and gep_const2019_usd, $11.40bn over
-    162 non-zero countries. That file is the account's input rather than something recomputed here,
-    for the same reason the other read-a-value services work that way: the full pipeline needs the
-    cluster inputs and about three hours, and the number it produces is this one.
+    The quantity is the flood damage ecosystems prevent: `ead_bare - ead_current`, the difference
+    between expected annual damage in a degraded world and in today's. `compute_flood_gep` computes
+    it from the three scenario runs and writes `step4e_flood_gep_USD2019.csv`.
 
-    ⚠ The distinction that matters: this is the GEP, NOT the $887.8bn of undefended expected annual
-    damage the same pipeline reports. Reproducing the damage side settles the port and not the
-    account.
+    Prefer that when it exists. The author's export, `flood_gep_for_merge_v2_2024hazard.csv` at
+    $11.40bn over 162 non-zero countries, is the fallback for a machine that has not run the
+    counterfactual chain -- it needs the cluster inputs and several hours. Which one was used is
+    written into the log and the result, because "our number" and "his number" are different claims
+    and the account should not have to guess which it is holding.
+
+    ⚠ This is the GEP, NOT the $887.8bn of undefended expected annual damage the same pipeline
+    reports. Reproducing the damage side settles the port, not the account.
     """
     publish_inputs(p)
+    configure_valuation(p)
     service_results, already_done = utilities.begin_gep_calculation(p, 'flood')
     if already_done:
         return
 
-    df_gep = hb.df_read(p.flood_gep_for_merge_path)
-    df_gep = df_gep.rename(columns={'gep_const2019_usd': 'flood_gep'})
+    computed = Path(VAL_GEP_CSV) if VAL_GEP_CSV else None
+    if computed is not None and hb.path_exists(computed):
+        df_gep = hb.df_read(str(computed))
+        column = next((c for c in ('gep_flood_bare_usd2019', 'gep_flood_insitu_usd2019')
+                       if c in df_gep.columns), None)
+        if column is None:
+            raise NameError(
+                'No gep_flood column in %s; found %s. The counterfactual chain writes '
+                'gep_flood_bare_usd2019 and gep_flood_insitu_usd2019, and bare is the one the '
+                'combined table with erosion uses, so a file without either has not run it.'
+                % (computed, list(df_gep.columns)))
+        df_gep = df_gep.rename(columns={column: 'flood_gep'})
+        source = 'computed here (%s, %s)' % (computed.name, column)
+    else:
+        df_gep = hb.df_read(p.flood_gep_for_merge_path)
+        df_gep = df_gep.rename(columns={'gep_const2019_usd': 'flood_gep'})
+        source = "the author's export (%s)" % os.path.basename(str(p.flood_gep_for_merge_path))
+    service_results['flood_gep_source'] = source
     df_gep['year'] = int(p.gep_base_year)
     # The country attributes every other service's table carries, so this output can be read,
     # grouped and reported the same way.
@@ -2401,8 +2422,8 @@ def gep_calculation(p):
     countries = countries[[c for c in attribute_columns if c in countries.columns]]
     df_gep = countries.merge(df_gep, on='iso3_r250_label', how='left')
     hb.df_write(df_gep, service_results['gep_by_country_base_year'])
-    hb.log('Flood GEP: %.4g USD over %d countries with a positive value.'
-           % (df_gep['flood_gep'].sum(), (df_gep['flood_gep'] > 0).sum()))
+    hb.log('Flood GEP: %.4g USD over %d countries with a positive value, from %s.'
+           % (df_gep['flood_gep'].sum(), (df_gep['flood_gep'] > 0).sum(), source))
     return True
 
 
