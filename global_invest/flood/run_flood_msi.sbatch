@@ -4,7 +4,7 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
-#SBATCH --mem=64g
+#SBATCH --mem=400g
 #SBATCH --time=24:00:00
 #SBATCH --output=gep_flood_%j.out
 #SBATCH --error=gep_flood_%j.err
@@ -18,9 +18,13 @@
 # them, the conda environment and the code directory, because the shell needs those before python
 # exists to read anything.
 #
-# Sizing is a starting point, not a measurement: the valuation chain alone took 1h13m (job
-# 17378863). Section B and the 4A path have never run, so their cost is unknown -- check the
-# elapsed time in the log and set --time from it rather than leaving this guess in place.
+# Memory is measured rather than guessed: 64g was OOM-killed inside Section A within a minute
+# (job 17488753). A global 300 m grid is about 7e9 cells, so a whole-array read is tens of GB and
+# several at once exceeds 64. agsmall nodes carry 514g. If this is comfortable, trim it -- a
+# smaller ask queues sooner.
+#
+# Time is still a guess: the valuation chain alone took 1h13m (job 17378863), and Section B and
+# the 4A path have never run. Set --time from the first log that finishes.
 set -euo pipefail
 
 CODE_ROOT="${SLURM_SUBMIT_DIR:-$PWD}"
