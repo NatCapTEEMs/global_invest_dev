@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import List, Optional, Tuple
 
 import geopandas as gpd
+import hazelbean as hb
 import numpy as np
 import pandas as pd
 
@@ -447,3 +448,443 @@ def rp_to_p(rp: float) -> float:
     """Return period (years) -> annual exceedance probability."""
     rp = float(rp)
     return 1.0 / rp if rp > 0 else np.nan
+
+
+# =============================================================================
+# Depth-damage table shaping: label normalisation, the depth-column parser and
+# the long-to-wide pivot. Section 4A's arithmetic, with no IO in it.
+# =============================================================================
+
+
+def clean_missing(x):
+    """Convert common string-missing tokens to np.nan; keep other values unchanged."""
+    if x is None:
+        return np.nan
+    if isinstance(x, float) and np.isnan(x):
+        return np.nan
+    s = str(x).strip()
+    if s == "" or s.lower() in {"nan", "none", "na", "n/a", "null"}:
+        return np.nan
+    return x
+
+
+def normalize_label(s: str) -> str:
+    """
+    Normalize a column name into a comparison key:
+    - lowercase
+    - underscores -> spaces
+    - remove non-alphanum (keep spaces)
+    - collapse spaces
+    """
+    s = str(s).strip().lower().replace("_", " ")
+    s = re.sub(r"[^a-z0-9 ]+", " ", s)
+    s = re.sub(r"\s+", " ", s).strip()
+    return s
+
+
+def normalize_country_name(s: str) -> str:
+    """Loose normalization for country-name matching."""
+    s = str(s).strip().lower()
+    s = re.sub(r"[^a-z0-9 ]+", " ", s)
+    s = re.sub(r"\s+", " ", s).strip()
+    return s
+
+
+def parse_depth_colname(col: str) -> Optional[float]:
+    """
+    Parse wide depth column names like '0m', '0.5m', '1m' into numeric meters.
+    Returns None if not a depth column.
+    """
+    c = str(col).strip().lower()
+    if c.endswith("m"):
+        c2 = c[:-1].strip()
+        try:
+            return float(c2)
+        except Exception:
+            return None
+    return None
+
+
+def fmt_depth(d: float) -> str:
+    """Format numeric depth into a stable wide-column label, e.g., 1 -> '1m', 0.5 -> '0.5m'."""
+    if d is None or (isinstance(d, float) and np.isnan(d)):
+        raise ValueError("depth is NaN")
+    d = float(d)
+    return f"{int(d)}m" if abs(d - int(d)) < 1e-9 else f"{d}m"
+
+
+def make_colmap(df: pd.DataFrame) -> Dict[str, str]:
+    """Return dict: normalized_label -> actual_column_name."""
+    out = {}
+    for c in df.columns:
+        out[normalize_label(c)] = c
+    return out
+
+
+def normalize_landtype_label(x: str) -> str:
+    """
+    Normalize JRC LandType labels to a stable set for merging and output.
+
+    IMPORTANT:
+    - Fraction curves landtypes include:
+      'Agriculture', 'Residential buildings', 'Commercial buildings',
+      'Industrial buildings', 'Infrastructure - roads', 'Transport'
+    - Max damages (your rebuilt file) uses 'Residential' and 'Agriculture' etc.
+      We standardize to the fraction landtypes as much as possible.
+    """
+    if x is None or (isinstance(x, float) and np.isnan(x)):
+        return ""
+    s = str(x).strip()
+
+    # Common canonicalization
+    s0 = s.lower().strip()
+
+    # Map short forms to JRC fraction labels
+    if s0 == "residential":
+        return "Residential buildings"
+    if s0 == "commercial":
+        return "Commercial buildings"
+    if s0 == "industrial":
+        return "Industrial buildings"
+    if s0 in {"roads", "road", "infrastructure roads", "infrastructure - road"}:
+        return "Infrastructure - roads"
+    if s0 in {"transport", "transportation"}:
+        return "Transport"
+    if s0 == "agriculture":
+        return "Agriculture"
+
+    # Pass through already-correct JRC labels
+    # (keeps exact fraction-curve landtypes)
+    return s
+
+
+def sector_label_from_landtype(landtype: str) -> str:
+    """
+    Output-friendly sector label for wide/long sector tables.
+    """
+    lt = normalize_landtype_label(landtype)
+    m = {
+        "Agriculture": "Agriculture",
+        "Residential buildings": "Residential",
+        "Commercial buildings": "Commercial",
+        "Industrial buildings": "Industrial",
+        "Infrastructure - roads": "Roads",
+        "Transport": "Transport",
+    }
+    return m.get(lt, lt)
+
+
+def pivot_wide(long_df: pd.DataFrame, group_cols: list[str], value_col: str) -> pd.DataFrame:
+    """
+    Pivot long table into wide depth columns, dropping NaN depth rows.
+    """
+    tmp = long_df.copy()
+    tmp = tmp.dropna(subset=["depth_m"])
+    tmp["depth_col"] = tmp["depth_m"].apply(lambda d: fmt_depth(d))
+    wide = tmp.pivot_table(
+        index=group_cols,
+        columns="depth_col",
+        values=value_col,
+        aggfunc="mean",
+        fill_value=0.0,
+    ).reset_index()
+    wide.columns = [str(c) for c in wide.columns]
+    return wide
+
+
+def landtype_to_sda(landtype: str) -> Optional[str]:
+    """
+    Map sector landtypes to SDA classes used in flood exposure accounting.
+
+    Conservative JRC-style SDA:
+      - Cropland assets: Agriculture -> crop
+      - Built/asset surfaces: Residential/Commercial/Industrial/Transport/Roads -> artif
+
+    Returns None if the landtype is not used for SDA aggregation.
+    """
+    lt = normalize_landtype_label(landtype)
+
+    if lt == "Agriculture":
+        return "crop"
+    if lt in {"Residential buildings", "Commercial buildings", "Industrial buildings", "Transport", "Infrastructure - roads"}:
+        return "artif"
+
+    return None
+
+
+# =============================================================================
+SDA_CODE_VERSION = "2025-12-15_sda_step2_smartskip_v2_depth_inputs"
+
+
+# Section B: the run signature that decides whether a country can be skipped,
+# the depth-raster discovery and the return-period map.
+# =============================================================================
+
+
+def signature_path(out_dir: Path, iso3: str) -> Path:
+    return out_dir / f"sda_run_signature_{iso3}.json"
+
+
+def build_run_signature(args, rp_map: dict[int, Path]) -> dict:
+    sig = {
+        "code_version": SDA_CODE_VERSION,
+        "created_utc": datetime.utcnow().isoformat() + "Z",
+
+        "depth_threshold": float(args.depth_threshold),
+        "all_touched": bool(args.all_touched),
+        "include_pasture": bool(args.include_pasture),
+        "use_roads": bool(args.use_roads),
+        "with_pop": bool(args.with_pop),
+        "write_depthbin": bool(args.write_depthbin),
+        "depthbin_max": float(args.depthbin_max),
+
+        # depth input controls (so signature changes when you change rp selection or sources)
+        "depth_dir": str(args.depth_dir) if args.depth_dir else "",
+        "depth_json": str(args.depth_json) if args.depth_json else "",
+        "rps": sorted([int(rp) for rp in rp_map.keys()]),
+
+        "lulc": file_fingerprint(Path(args.lulc_path)),
+        "mapping_json": {
+            **file_fingerprint(Path(args.mapping_json)),
+            "sha256": sha256_file(Path(args.mapping_json)) if hb.path_exists(args.mapping_json) else None,
+        },
+        "roads": file_fingerprint(Path(args.roads_path)) if args.use_roads else {"path": str(args.roads_path), "exists": False},
+        "pop": file_fingerprint(Path(args.pop_path)) if args.with_pop else {"path": str(args.pop_path), "exists": False},
+
+        "depth_rasters": {int(rp): file_fingerprint(p) for rp, p in rp_map.items()},
+    }
+
+    tmp = dict(sig)
+    tmp.pop("created_utc", None)
+    sig["signature_sha256"] = _sha256_bytes(json.dumps(tmp, sort_keys=True).encode("utf-8"))
+    return sig
+
+
+def read_old_signature(out_dir: Path, iso3: str) -> dict | None:
+    p = signature_path(out_dir, iso3)
+    if not hb.path_exists(p):
+        return None
+    try:
+        return json.loads(p.read_text())
+    except Exception:
+        return None
+
+
+def outputs_complete_for_iso3(out_dir: Path, iso3: str, rp_map: dict[int, Path], write_depthbin: bool) -> bool:
+    summary = out_dir / f"sda_summary_{iso3}.csv"
+    if not hb.path_exists(summary):
+        return False
+
+    for rp in rp_map.keys():
+        class_tif = out_dir / f"sda_class_{iso3}_rp{int(rp)}.tif"
+        mask_tif  = out_dir / f"sda_mask_{iso3}_rp{int(rp)}.tif"
+        if not hb.path_exists(class_tif) or not hb.path_exists(mask_tif):
+            return False
+        if not raster_ok(class_tif) or not raster_ok(mask_tif):
+            return False
+
+        if write_depthbin:
+            db_tif = out_dir / f"sda_depthbin_idx_{iso3}_rp{int(rp)}.tif"
+            if not hb.path_exists(db_tif) or (not raster_ok(db_tif)):
+                return False
+
+    return True
+
+
+def should_skip_iso3(out_dir: Path, iso3: str, new_sig: dict, rp_map: dict[int, Path], write_depthbin: bool) -> bool:
+    old = read_old_signature(out_dir, iso3)
+    if old is None:
+        return False
+    if old.get("signature_sha256") != new_sig.get("signature_sha256"):
+        return False
+    return outputs_complete_for_iso3(out_dir, iso3, rp_map=rp_map, write_depthbin=write_depthbin)
+
+
+def write_signature(out_dir: Path, iso3: str, sig: dict):
+    signature_path(out_dir, iso3).write_text(json.dumps(sig, indent=2, sort_keys=True))
+
+
+# -----------------------------------------------------------------------------#
+# Depth RP map builders
+# -----------------------------------------------------------------------------#
+def parse_rps_arg(rps: str) -> list[int]:
+    if not rps.strip():
+        return []
+    out = []
+    for tok in rps.split(","):
+        tok = tok.strip()
+        if not tok:
+            continue
+        out.append(int(tok))
+    return sorted(set(out))
+
+
+def load_depth_json(depth_json: str) -> dict[int, Path]:
+    p = Path(depth_json)
+    if not hb.path_exists(p):
+        raise FileNotFoundError(f"--depth-json not found:\n  {p}")
+    d = json.loads(p.read_text())
+    out = {}
+    for k, v in d.items():
+        out[int(k)] = Path(v)
+    return out
+
+
+def autodetect_depth_rasters(depth_dir: Path) -> dict[int, Path]:
+    """
+    Auto-detect RP depth rasters in a directory using filename patterns.
+
+    Recognized patterns (case-insensitive):
+      - rp10y, rp20y, rp100y, rp200y, rp500y
+      - rp10, rp100 (fallback)
+
+    If multiple rasters match an RP, we pick the shortest filename (usually the canonical one).
+    """
+    if not hb.path_exists(depth_dir):
+        raise FileNotFoundError(f"--depth-dir not found:\n  {depth_dir}")
+
+    tifs = sorted(depth_dir.glob("*.tif"))
+    if not tifs:
+        raise FileNotFoundError(f"No .tif files found in:\n  {depth_dir}")
+
+    rp_hits: dict[int, list[Path]] = {}
+
+    # Prefer rp###y (strong)
+    pat_strong = re.compile(r"rp[_-]?(?P<rp>\d{1,4})y", re.IGNORECASE)
+    # Fallback rp### (weak)
+    pat_weak = re.compile(r"rp[_-]?(?P<rp>\d{1,4})", re.IGNORECASE)
+
+    for f in tifs:
+        name = f.name
+        m = pat_strong.search(name)
+        if m:
+            rp = int(m.group("rp"))
+            rp_hits.setdefault(rp, []).append(f)
+            continue
+        m = pat_weak.search(name)
+        if m:
+            rp = int(m.group("rp"))
+            rp_hits.setdefault(rp, []).append(f)
+
+    # Choose best candidate per RP
+    rp_map = {}
+    for rp, files in rp_hits.items():
+        files_sorted = sorted(files, key=lambda x: (len(x.name), x.name))
+        rp_map[int(rp)] = files_sorted[0]
+
+    return rp_map
+
+
+def finalize_rp_map(args) -> dict[int, Path]:
+    """
+    Priority:
+      1) --depth-json (explicit)
+      2) --depth-dir auto-detect
+      3) RP_MAP_DEFAULT (fallback if auto-detect finds nothing)
+    Then apply --rps filtering (if provided).
+    """
+    if args.depth_json and args.depth_json.strip():
+        rp_map = load_depth_json(args.depth_json.strip())
+        source = f"depth-json: {args.depth_json}"
+    else:
+        rp_map = autodetect_depth_rasters(Path(args.depth_dir))
+        source = f"depth-dir: {args.depth_dir}"
+
+        # If auto-detect returns empty (rare), fallback
+        if not rp_map:
+            rp_map = {int(k): Path(v) for k, v in RP_MAP_DEFAULT.items()}
+            source = "RP_MAP_DEFAULT fallback"
+
+    # Filter to requested RPs
+    req = parse_rps_arg(args.rps)
+    if req:
+        rp_map = {rp: p for rp, p in rp_map.items() if int(rp) in set(req)}
+
+    # Validate existence
+    missing = [rp for rp, p in rp_map.items() if not hb.path_exists(p)]
+    if missing:
+        msg = "\n".join([f"  rp{rp}: {rp_map[rp]}" for rp in sorted(missing)])
+        raise FileNotFoundError(
+            "[ERROR] Some depth rasters are missing after RP map construction.\n"
+            f"Depth source: {source}\n"
+            "Missing:\n" + msg
+        )
+
+    if not rp_map:
+        raise FileNotFoundError(
+            "[ERROR] No depth rasters selected.\n"
+            "Check --depth-dir/--depth-json and/or your --rps filter."
+        )
+
+    print(f"[INFO] Depth source: {source}")
+    print(f"[INFO] RPs selected: {sorted(rp_map.keys())}")
+    for rp in sorted(rp_map.keys()):
+        print(f"       rp{rp}: {rp_map[rp]}")
+    return dict(sorted(rp_map.items(), key=lambda kv: int(kv[0])))
+
+
+def load_mapping(mapping_path: Path) -> dict:
+    if not hb.path_exists(mapping_path):
+        raise FileNotFoundError(f"mapping JSON not found:\n  {mapping_path}")
+
+    mapping = json.loads(mapping_path.read_text())
+
+    if "artif" not in mapping and "built_up" in mapping:
+        mapping["artif"] = mapping["built_up"]
+    if "crop" not in mapping and "cropland" in mapping:
+        mapping["crop"] = mapping["cropland"]
+
+    for k in ["artif", "crop", "pasture", "ignore"]:
+        if k not in mapping or mapping[k] is None:
+            mapping[k] = []
+
+    def _to_int_list(x):
+        out = []
+        for v in x:
+            try:
+                out.append(int(v))
+            except Exception:
+                pass
+        return out
+
+    for k in ["artif", "crop", "pasture", "ignore"]:
+        mapping[k] = _to_int_list(mapping.get(k, []))
+
+    return mapping
+
+
+def reproject_pop_to_target(pop_src: rasterio.io.DatasetReader, target_profile: dict) -> np.ndarray:
+    dst = np.zeros((target_profile["height"], target_profile["width"]), dtype=np.float32)
+
+    try:
+        resamp = Resampling.sum
+    except Exception:
+        resamp = Resampling.nearest
+        print("[WARN] Resampling.sum not available; using nearest. Totals may drift if grids differ substantially.")
+
+    reproject(
+        source=rasterio.band(pop_src, 1),
+        destination=dst,
+        src_transform=pop_src.transform,
+        src_crs=pop_src.crs,
+        dst_transform=target_profile["transform"],
+        dst_crs=target_profile["crs"],
+        src_nodata=pop_src.nodata,
+        dst_nodata=0.0,
+        resampling=resamp,
+    )
+    dst[dst < 0] = 0.0
+    return dst
+
+
+def build_depthbin_index(depth_m: np.ndarray, nodata_mask: np.ndarray, max_depth: float = 6.0) -> np.ndarray:
+    edges = np.arange(0, max_depth + 0.5, 0.5)
+    d = depth_m.copy().astype("float32")
+
+    d[~np.isfinite(d)] = np.nan
+    d[(d < 0) & np.isfinite(d)] = 0.0
+    d[(d > max_depth) & np.isfinite(d)] = max_depth
+
+    idx = np.searchsorted(edges, d, side="left").astype(np.int16)
+    idx[nodata_mask] = -1
+    return idx

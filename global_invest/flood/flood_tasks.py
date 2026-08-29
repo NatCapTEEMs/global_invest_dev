@@ -70,7 +70,6 @@ and setting the module constants the drivers below read. The task wrappers at th
 #
 # Rather than re-type them (and risk silently changing behaviour), this module
 # keeps them byte-for-byte as files under flood/scripts/ and drives them via
-# _invoke_script(), which builds an argv from the configured constants and runs
 # the script's own main(). Inlining these three the way Sections A/C/D-4B/D-4C
 # are inlined is the main outstanding refactor -- see README "Known issues".
 # =============================================================================
@@ -79,6 +78,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+from types import SimpleNamespace
 import sys
 import warnings
 import zipfile
@@ -103,6 +103,14 @@ matplotlib.use("Agg")  # HPC batch nodes have no display
 import matplotlib.pyplot as plt
 
 from global_invest.flood.flood_functions import (
+    load_mapping,
+    write_signature,
+    should_skip_iso3,
+    build_run_signature,
+    normalize_landtype_label,
+    sector_label_from_landtype,
+    pivot_wide,
+    landtype_to_sda,
     pixel_area_m2,
     pixel_area_km2,
     mercator_area_scale,
@@ -242,33 +250,6 @@ def configure_shared(p):
     RETURN_PERIODS = list(getattr(p, 'flood_return_periods', RETURN_PERIODS))
 
 
-def _invoke_script(script_path: Path, argv: List[str], label: str = ""):
-    """
-    Load one of the preserved original CLI scripts as a module and run its
-    main() with a constructed argv. See the design note at the top of this file
-    for why these three scripts are driven rather than inlined.
-    """
-    script_path = Path(script_path)
-    assert_exists(
-        script_path,
-        f"Original {label or script_path.name} script not found. Set the "
-        f"corresponding p.flood_*_script_path, or place the script under "
-        f"global_invest/flood/scripts/.")
-
-    spec = importlib.util.spec_from_file_location(f"_flood_script_{script_path.stem}", script_path)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-
-    if not hasattr(mod, "main"):
-        raise AttributeError(f"{script_path} has no main() to invoke.")
-
-    old_argv = sys.argv
-    sys.argv = [str(script_path)] + [str(a) for a in argv]
-    try:
-        print(f"[INVOKE] {script_path.name} {' '.join(str(a) for a in argv)}")
-        return mod.main()
-    finally:
-        sys.argv = old_argv
 
 
 LULC_PATH = None
@@ -825,40 +806,26 @@ def prepare_all_inputs(skip_download: bool = False) -> dict:
     return results
 
 
-SDA_SCRIPT_PATH = Path(__file__).parent / "scripts" / "sda_step2_build_sda_global.py"
-
-
-SDA_ISO3_LIST = ""          # blank = all countries in Admin0
-
-
-SDA_START = 0
-
-
-SDA_N = 0                   # 0 = all remaining
-
-
-SDA_SKIP_DONE = True
-
-
-SDA_ALL_TOUCHED = False
-
-
-SDA_USE_ROADS = False
-
-
 SDA_ROADS_PATH = None
-
-
-SDA_WITH_POP = False
 
 
 SDA_POP_PATH = None
 
 
-SDA_WRITE_DEPTHBIN = False
-
-
 SDA_DEPTHBIN_MAX = 6.0
+
+
+def _required(p, attribute, _unused_default=None):
+    """A setting es_parameters owns. No code default: a missing row must fail, not be guessed.
+
+    RETURN_PERIODS carried a four-element default while the CSV was meant to supply six, and when
+    the run file stopped setting it the damage integral quietly lost two return periods.
+    """
+    if not hasattr(p, attribute):
+        raise AttributeError(
+            '%s is not set. It belongs in es_parameters.csv under the flood service; a default here '
+            'would decide the run silently.' % attribute)
+    return getattr(p, attribute)
 
 
 def configure_sda(p):
@@ -868,67 +835,239 @@ def configure_sda(p):
     """
     configure_inputs(p)  # Section B consumes Section A's paths
 
-    global SDA_SCRIPT_PATH, SDA_ISO3_LIST, SDA_START, SDA_N, SDA_SKIP_DONE
+    global SDA_ISO3_LIST, SDA_START, SDA_N, SDA_SKIP_DONE
     global SDA_ALL_TOUCHED, SDA_USE_ROADS, SDA_ROADS_PATH, SDA_WITH_POP
     global SDA_POP_PATH, SDA_WRITE_DEPTHBIN, SDA_DEPTHBIN_MAX
+    global SDA_DEPTH_THRESHOLD_M, SDA_INCLUDE_PASTURE
 
-    SDA_SCRIPT_PATH = Path(getattr(p, 'flood_sda_script_path', SDA_SCRIPT_PATH))
-    SDA_ISO3_LIST = getattr(p, 'flood_iso3_list', "")
-    SDA_START = getattr(p, 'flood_iso3_start', 0)
-    SDA_N = getattr(p, 'flood_iso3_n', 0)
-    SDA_SKIP_DONE = getattr(p, 'flood_skip_done', True)
-    SDA_ALL_TOUCHED = getattr(p, 'flood_all_touched', False)
+    SDA_ISO3_LIST = _required(p, 'flood_iso3_list', "")
+    SDA_START = _required(p, 'flood_iso3_start', 0)
+    SDA_N = _required(p, 'flood_iso3_n', 0)
+    SDA_SKIP_DONE = _required(p, 'flood_skip_done', True)
+    SDA_ALL_TOUCHED = _required(p, 'flood_all_touched', False)
 
-    SDA_USE_ROADS = getattr(p, 'flood_use_roads', False)
+    SDA_USE_ROADS = _required(p, 'flood_use_roads', False)
     SDA_ROADS_PATH = Path(getattr(p, 'flood_roads_path', INPUTS / "roads" / "roads_mask_match_depth.tif"))
-    SDA_WITH_POP = getattr(p, 'flood_with_pop', False)
+    SDA_WITH_POP = _required(p, 'flood_with_pop', False)
     SDA_POP_PATH = Path(getattr(p, 'flood_pop_path', INPUTS / "pop" / "GlobPOP_Count_30arc_2020_I32.tif"))
-    SDA_WRITE_DEPTHBIN = getattr(p, 'flood_write_depthbin', False)
+    SDA_WRITE_DEPTHBIN = _required(p, 'flood_write_depthbin', False)
+    SDA_DEPTH_THRESHOLD_M = _required(p, 'flood_depth_threshold_m', 0.1)
+    SDA_INCLUDE_PASTURE = _required(p, 'flood_include_pasture', True)
     SDA_DEPTHBIN_MAX = getattr(p, 'flood_depthbin_max', 6.0)
 
 
-def build_sda_global():
-    """Section B driver: build per-country, per-RP SDA rasters."""
-    argv = [
-        "--mapping-json", SDA_MAPPING_JSON,
-        "--lulc-path", LULC_PATH,
-        "--depth-dir", DEPTH_ALIGNED_DIR,
-        "--rps", ",".join(str(r) for r in RETURN_PERIODS),
-        "--depth-threshold", DEPTH_THRESHOLD_M,
-        "--start", SDA_START,
-        "--n", SDA_N,
-    ]
-    if SDA_ISO3_LIST:
-        argv += ["--iso3", SDA_ISO3_LIST]
-    if SDA_SKIP_DONE:
-        argv += ["--skip-done"]
-    if SDA_ALL_TOUCHED:
-        argv += ["--all-touched"]
-    if INCLUDE_PASTURE:
-        argv += ["--include-pasture"]
-    if SDA_USE_ROADS:
-        argv += ["--use-roads", "--roads-path", SDA_ROADS_PATH]
-    if SDA_WITH_POP:
-        argv += ["--with-pop", "--pop-path", SDA_POP_PATH]
-    if SDA_WRITE_DEPTHBIN:
-        argv += ["--write-depthbin", "--depthbin-max", SDA_DEPTHBIN_MAX]
-
-    return _invoke_script(SDA_SCRIPT_PATH, argv, label="Step 2 SDA builder")
+SDA_CODE_VERSION = "2025-12-15_sda_step2_smartskip_v2_depth_inputs"
 
 
-FLOW_SKIP_DONE = True
+DEPTH_RASTER_PATTERN = "JRC_flood_depth_rp{rp}y__matchLULC.tif"
 
 
-FLOW_ALL_TOUCHED = False
+# -----------------------------------------------------------------------------#
+# Process one ISO3
+# -----------------------------------------------------------------------------#
+def process_country(
+    iso3: str,
+    admin0: gpd.GeoDataFrame,
+    rp_map: dict[int, Path],
+    lulc_path: Path,
+    mapping: dict,
+    depth_threshold_m: float,
+    all_touched: bool,
+    include_pasture: bool,
+    use_roads: bool,
+    roads_path: Path,
+    with_pop: bool,
+    pop_path: Path,
+    write_depthbin: bool,
+    depthbin_max: float,
+) -> pd.DataFrame:
 
+    iso3 = iso3.upper().strip()
+    aoi = admin0[admin0["iso3"] == iso3]
+    if aoi.empty:
+        raise ValueError(f"ISO3 {iso3} not found in Admin0.")
 
-FLOW_WRITE_RASTERS = True
+    out_dir = OUT / iso3
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_csv = out_dir / f"sda_summary_{iso3}.csv"
 
+    artif_ids   = set(mapping.get("artif", []))
+    crop_ids    = set(mapping.get("crop", []))
+    pasture_ids = set(mapping.get("pasture", [])) if include_pasture else set()
+    ignore_ids  = set(mapping.get("ignore", []))
 
-FLOW_INCLUDE_EXISTING = True   # include already-computed outputs in the summary
+    if (len(artif_ids) + len(crop_ids) + len(pasture_ids) == 0) and (not use_roads):
+        raise ValueError(
+            "Your mapping JSON provides no SDA codes (artif/crop/pasture all empty) and roads are disabled.\n"
+            "Fix mapping-json or run with --use-roads."
+        )
 
+    if not lulc_path.exists():
+        raise FileNotFoundError(f"LULC raster not found:\n  {lulc_path}")
+    if use_roads and not roads_path.exists():
+        raise FileNotFoundError(f"Roads raster not found:\n  {roads_path}")
+    if with_pop and not pop_path.exists():
+        raise FileNotFoundError(f"Population raster not found:\n  {pop_path}")
 
-FLOW_SUMMARY_CSV = None
+    country_geom = aoi.geometry.values[0]
+
+    print(f"\n=== SDA: Processing {iso3} ===")
+    print(f"[INFO] depth_threshold_m: {depth_threshold_m:.3f} | all_touched={all_touched}")
+    print(f"[INFO] mapping sizes: artif={len(artif_ids)} crop={len(crop_ids)} pasture={len(pasture_ids)} ignore={len(ignore_ids)}")
+    print(f"[INFO] options: include_pasture={include_pasture} use_roads={use_roads} with_pop={with_pop} write_depthbin={write_depthbin}")
+
+    metrics: list[dict] = []
+
+    with rasterio.open(lulc_path) as lulc_src:
+        roads_cm = rasterio.open(roads_path) if use_roads else nullcontext()
+        pop_cm   = rasterio.open(pop_path)   if with_pop  else nullcontext()
+
+        with roads_cm as roads_src, pop_cm as pop_src:
+            for rp, depth_path in rp_map.items():
+                if not depth_path.exists():
+                    print(f"[WARN] Missing depth raster for RP{rp}; skipping:\n  {depth_path}")
+                    continue
+
+                with rasterio.open(depth_path) as depth_src:
+                    # Reproject AOI geometry to raster CRS (depth is the driver)
+                    if admin0.crs != depth_src.crs:
+                        geom_r = gpd.GeoDataFrame(geometry=[country_geom], crs=admin0.crs).to_crs(depth_src.crs).geometry.values[0]
+                    else:
+                        geom_r = country_geom
+
+                    # HARD LOCK: LULC and depth must be aligned globally
+                    assert_same_grid(depth_src, lulc_src, label_a="DEPTH", label_b="LULC")
+
+                    # Clip depth
+                    depth_img, depth_tr = rio_mask(
+                        depth_src, [geom_r],
+                        crop=True, filled=True,
+                        nodata=depth_src.nodata if depth_src.nodata is not None else -9999.0,
+                        all_touched=all_touched,
+                    )
+                    depth = depth_img[0].astype("float32")
+
+                    nd = depth_src.nodata
+                    valid_depth = np.isfinite(depth) if nd is None else (depth != float(nd))
+
+                    depth_q = depth.copy()
+                    depth_q[~valid_depth] = np.nan
+                    depth_q[(depth_q < 0) & np.isfinite(depth_q)] = 0.0
+
+                    floodplain = valid_depth & (depth_q > depth_threshold_m)
+
+                    # Clip LULC (must match by construction)
+                    lulc_img, lulc_tr = rio_mask(
+                        lulc_src, [geom_r],
+                        crop=True, filled=True,
+                        nodata=lulc_src.nodata if lulc_src.nodata is not None else 255,
+                        all_touched=all_touched,
+                    )
+                    lulc = lulc_img[0]
+
+                    if depth_tr != lulc_tr or depth.shape != lulc.shape:
+                        raise ValueError(
+                            f"Post-clip mismatch for {iso3} RP{rp}.\n"
+                            f"  depth shape={depth.shape}, lulc shape={lulc.shape}\n"
+                            "Inputs must be pre-aligned; check your depth alignment or mask settings."
+                        )
+
+                    lulc_valid = np.ones_like(lulc, dtype=bool)
+                    if lulc_src.nodata is not None:
+                        lulc_valid &= (lulc != lulc_src.nodata)
+                    if ignore_ids:
+                        lulc_valid &= ~np.isin(lulc, list(ignore_ids))
+
+                    base_mask = floodplain & lulc_valid
+
+                    sda_class = np.zeros(lulc.shape, dtype=np.uint8)
+                    if pasture_ids:
+                        sda_class[base_mask & np.isin(lulc, list(pasture_ids))] = 3
+                    if crop_ids:
+                        sda_class[base_mask & np.isin(lulc, list(crop_ids))] = 2
+                    if artif_ids:
+                        sda_class[base_mask & np.isin(lulc, list(artif_ids))] = 1
+
+                    if use_roads:
+                        roads_img, _ = rio_mask(
+                            roads_src, [geom_r],
+                            crop=True, filled=True,
+                            nodata=roads_src.nodata if roads_src.nodata is not None else 0,
+                            all_touched=all_touched,
+                        )
+                        roads = roads_img[0]
+                        roads_mask = (roads == 1) & floodplain
+                        sda_class[roads_mask] = 4
+
+                    sda_mask = (sda_class > 0)
+
+                    pix_km2 = pixel_area_km2(depth_tr)
+                    area_total_km2 = float(sda_mask.sum() * pix_km2)
+                    area_artif_km2 = float((sda_class == 1).sum() * pix_km2)
+                    area_crop_km2  = float((sda_class == 2).sum() * pix_km2)
+                    area_past_km2  = float((sda_class == 3).sum() * pix_km2)
+                    area_roads_km2 = float((sda_class == 4).sum() * pix_km2)
+
+                    pop_in_sda = np.nan
+                    if with_pop:
+                        target_profile = depth_src.profile.copy()
+                        target_profile.update(height=depth.shape[0], width=depth.shape[1], transform=depth_tr, crs=depth_src.crs)
+                        pop_reproj = reproject_pop_to_target(pop_src, target_profile)
+                        pop_in_sda = float(pop_reproj[sda_mask].sum())
+
+                    print(
+                        f"[INFO] {iso3} RP{rp}: SDA_area={area_total_km2:,.2f} km² "
+                        f"(artif={area_artif_km2:,.2f}, crop={area_crop_km2:,.2f}, pasture={area_past_km2:,.2f}, roads={area_roads_km2:,.2f}) "
+                        + (f"| pop_in_SDA={pop_in_sda:,.0f}" if with_pop else "")
+                    )
+
+                    prof_base = depth_src.profile.copy()
+                    prof_base.update(
+                        height=depth.shape[0],
+                        width=depth.shape[1],
+                        transform=depth_tr,
+                        crs=depth_src.crs,
+                        compress="DEFLATE",
+                        tiled=True,
+                        BIGTIFF="IF_SAFER",
+                    )
+
+                    class_tif = out_dir / f"sda_class_{iso3}_rp{rp}.tif"
+                    prof_class = prof_base.copy()
+                    prof_class.update(dtype="uint8", count=1, nodata=0)
+                    atomic_write_raster(class_tif, prof_class, sda_class.astype("uint8"), band=1)
+
+                    mask_tif = out_dir / f"sda_mask_{iso3}_rp{rp}.tif"
+                    atomic_write_raster(mask_tif, prof_class, sda_mask.astype("uint8"), band=1)
+
+                    if write_depthbin:
+                        nodata_mask = ~valid_depth
+                        depthbin = build_depthbin_index(depth_q, nodata_mask=nodata_mask, max_depth=depthbin_max)
+                        db_tif = out_dir / f"sda_depthbin_idx_{iso3}_rp{rp}.tif"
+                        prof_db = prof_base.copy()
+                        prof_db.update(dtype="int16", count=1, nodata=-1)
+                        atomic_write_raster(db_tif, prof_db, depthbin.astype("int16"), band=1)
+
+                    metrics.append({
+                        "iso3": iso3,
+                        "rp": int(rp),
+                        "depth_threshold_m": float(depth_threshold_m),
+                        "sda_area_km2_total": area_total_km2,
+                        "sda_area_km2_artif": area_artif_km2,
+                        "sda_area_km2_crop":  area_crop_km2,
+                        "sda_area_km2_pasture": area_past_km2,
+                        "sda_area_km2_roads": area_roads_km2,
+                        "pop_in_sda": float(pop_in_sda) if np.isfinite(pop_in_sda) else np.nan,
+                        "depth_raster": str(depth_path),
+                        "lulc_raster": str(lulc_path),
+                        "roads_raster": str(roads_path) if use_roads else "",
+                        "pop_raster": str(pop_path) if with_pop else "",
+                    })
+
+    df = pd.DataFrame(metrics)
+    df.to_csv(out_csv, index=False)
+    print(f"[OK] Wrote → {out_csv}")
+    return df
 
 
 def configure_service_flow(p):
@@ -1090,9 +1229,6 @@ def compute_service_flow_global(iso3_list: Optional[List[str]] = None) -> Path:
     return FLOW_SUMMARY_CSV
 
 
-VAL_DAMAGE_TABLE_SCRIPT = Path(__file__).parent / "scripts" / "build_damage_table_USD2019.py"
-
-
 VAL_DAMAGE_DIR = None
 
 
@@ -1209,7 +1345,7 @@ def configure_valuation(p):
     """
     configure_inputs(p)
 
-    global VAL_DAMAGE_TABLE_SCRIPT, VAL_DAMAGE_DIR
+    global VAL_DAMAGE_DIR
     global VAL_CANONICAL_EUR_CSV, VAL_FACTORS_CSV
     global VAL_DAMAGE_LONG_CSV, VAL_DAMAGE_WIDE_CSV
     global VAL_SDA_DAMAGE_LONG_CSV, VAL_SDA_DAMAGE_WIDE_CSV
@@ -1225,7 +1361,6 @@ def configure_valuation(p):
     global VAL_PROTECTION_DOCUMENTED_ONLY, VAL_PROTECTION_EVIDENCE_CSV
     global FLOPROS_DOCUMENTED_ISO3
 
-    VAL_DAMAGE_TABLE_SCRIPT = Path(getattr(p, 'flood_damage_table_script_path', VAL_DAMAGE_TABLE_SCRIPT))
 
     VAL_DAMAGE_DIR = Path(getattr(p, 'flood_damage_dir', INPUTS / "flood_damage"))
     VAL_CANONICAL_EUR_CSV = Path(getattr(p, 'flood_canonical_eur_csv',
@@ -1299,21 +1434,360 @@ def configure_valuation(p):
               f"{len(FLOPROS_DOCUMENTED_ISO3)} ISO3")
 
 
-def build_damage_tables():
-    """Convert the canonical JRC EUR2010 damage table into USD2019 sector and SDA tables."""
-    argv = [
-        "--canonical-eur", VAL_CANONICAL_EUR_CSV,
-        "--factors-csv", VAL_FACTORS_CSV,
-        "--out-long", VAL_DAMAGE_LONG_CSV,
-        "--out-wide", VAL_DAMAGE_WIDE_CSV,
-        "--out-sda-long", VAL_SDA_DAMAGE_LONG_CSV,
-        "--out-sda-wide", VAL_SDA_DAMAGE_WIDE_CSV,
-        "--audit-dir", VAL_DAMAGE_DIR / "_currency_audit",
-    ]
-    if VAL_SET_PASTURE_EQUAL_CROP:
-        argv += ["--set-pasture-equal-crop"]
-    return _invoke_script(VAL_DAMAGE_TABLE_SCRIPT, argv, label="Step 4A damage table builder")
+def load_combined_multiplier(
+    factors_csv: Optional[Path] = None,
+    factors_json: Optional[Path] = None
+) -> float:
+    """
+    Load EUR2010 -> USD2019 combined_multiplier.
 
+    Accepted sources:
+
+    1) factors_csv:
+       a) tidy table with columns like [name,value] or [key,value]
+          including 'combined_multiplier'
+       b) or columns present anywhere:
+          - fx_usd_per_eur_2010_avg
+          - inflator_us_2010_to_2019
+          => combined = fx * inflator
+
+    2) factors_json:
+       recursively find:
+          - combined_multiplier
+          OR (fx_usd_per_eur_2010_avg AND inflator_us_2010_to_2019)
+    """
+    if factors_csv:
+        df = pd.read_csv(factors_csv)
+        df = df.applymap(clean_missing)
+
+        cols = make_colmap(df)
+
+        # --- Case (a): tidy name/value or key/value
+        name_col = cols.get("name") or cols.get("key") or cols.get("parameter")
+        value_col = cols.get("value") or cols.get("val")
+
+        if name_col and value_col:
+            tmp = df[[name_col, value_col]].dropna()
+            tmp[name_col] = tmp[name_col].astype(str).str.strip().str.lower()
+            hit = tmp[tmp[name_col] == "combined_multiplier"]
+            if not hit.empty:
+                return float(hit[value_col].iloc[0])
+
+            # fallback: fx + inflator in tidy format
+            fx = tmp[tmp[name_col].isin({"fx_usd_per_eur_2010_avg", "fx"})]
+            infl = tmp[tmp[name_col].isin({"inflator_us_2010_to_2019", "inflator"})]
+            if (not fx.empty) and (not infl.empty):
+                return float(fx[value_col].iloc[0]) * float(infl[value_col].iloc[0])
+
+        # --- Case (b): wide single-row columns
+        # Search any columns that match expected factor column names
+        col_fx = cols.get("fx usd per eur 2010 avg") or cols.get("fx_usd_per_eur_2010_avg")
+        col_infl = cols.get("inflator us 2010 to 2019") or cols.get("inflator_us_2010_to_2019")
+        col_comb = cols.get("combined multiplier") or cols.get("combined_multiplier")
+
+        if col_comb and df[col_comb].dropna().shape[0] > 0:
+            return float(df[col_comb].dropna().iloc[0])
+
+        if col_fx and col_infl:
+            fxv = df[col_fx].dropna()
+            inv = df[col_infl].dropna()
+            if (len(fxv) > 0) and (len(inv) > 0):
+                return float(fxv.iloc[0]) * float(inv.iloc[0])
+
+        raise ValueError(f"Could not find combined_multiplier (or fx+inflator) in factors CSV: {factors_csv}")
+
+    if factors_json:
+        data = json.loads(Path(factors_json).read_text())
+
+        def find_key(obj: Any, keynames: Iterable[str]) -> Optional[float]:
+            """DFS search for numeric leaf with a matching key name."""
+            if isinstance(obj, dict):
+                for k, v in obj.items():
+                    k0 = normalize_label(k)
+                    if k0 in {normalize_label(kn) for kn in keynames}:
+                        try:
+                            return float(v)
+                        except Exception:
+                            pass
+                    got = find_key(v, keynames)
+                    if got is not None:
+                        return got
+            elif isinstance(obj, list):
+                for it in obj:
+                    got = find_key(it, keynames)
+                    if got is not None:
+                        return got
+            return None
+
+        comb = find_key(data, ["combined_multiplier", "combined multiplier"])
+        if comb is not None:
+            return float(comb)
+
+        fx = find_key(data, ["fx_usd_per_eur_2010_avg", "fx usd per eur 2010 avg", "fx"])
+        infl = find_key(data, ["inflator_us_2010_to_2019", "inflator us 2010 to 2019", "inflator"])
+        if fx is not None and infl is not None:
+            return float(fx) * float(infl)
+
+        raise ValueError(f"Could not find combined_multiplier in factors JSON: {factors_json}")
+
+    raise ValueError("Provide either --factors-csv or --factors-json")
+
+
+def load_canonical_eur_table(canonical_eur: Path, audit_dir: Optional[Path] = None) -> pd.DataFrame:
+    """
+    Load a canonical EUR2010 table.
+
+    Supported canonical input forms:
+    1) WIDE: ISO3, JRC_Region, LandType, Max_Damage_Euro_per_m2, 0m, 0.5m, ...
+       -> converted to LONG: iso3, landtype, depth_m, damage_per_m2 (EUR2010/m²)
+
+    2) LONG: iso3, landtype, depth_m, damage_per_m2
+       -> returned as-is (ensuring required columns exist)
+
+    NOTE:
+    Your canonical file often is WIDE with depth columns; it will NOT have
+    'depth_m' and 'damage_per_m2' as columns. This function handles that.
+    """
+    df = pd.read_csv(canonical_eur)
+    df = df.applymap(clean_missing)
+
+    cols = make_colmap(df)
+
+    # If already long:
+    has_long = ("depth_m" in cols or "depth m" in cols) and ("damage_per_m2" in cols or "damage per m2" in cols)
+    if has_long:
+        iso_col = cols.get("iso3") or cols.get("iso 3") or cols.get("iso")
+        land_col = cols.get("landtype") or cols.get("land type") or cols.get("sector")
+        depth_col = cols.get("depth_m") or cols.get("depth m") or cols.get("depth")
+        dmg_col = cols.get("damage_per_m2") or cols.get("damage per m2") or cols.get("damage")
+        out = df[[iso_col, land_col, depth_col, dmg_col]].copy()
+        out.columns = ["iso3", "landtype", "depth_m", "damage_per_m2"]
+        out["depth_m"] = out["depth_m"].apply(to_float)
+        out["damage_per_m2"] = out["damage_per_m2"].apply(to_float)
+        return out
+
+    # Otherwise, try wide:
+    iso_col = cols.get("iso3") or cols.get("iso 3") or cols.get("iso")
+    land_col = cols.get("landtype") or cols.get("land type") or cols.get("sector")
+    if not iso_col:
+        # sometimes ISO3 is uppercase
+        iso_col = next((c for c in df.columns if str(c).strip().upper() == "ISO3"), None)
+    if not land_col:
+        land_col = next((c for c in df.columns if str(c).strip().lower() in {"landtype", "land_type"}), None)
+
+    if iso_col is None or land_col is None:
+        msg = f"Canonical EUR table missing ISO3 or LandType. Columns found: {list(df.columns)}"
+        if audit_dir:
+            audit_dir.mkdir(parents=True, exist_ok=True)
+            (audit_dir / "diagnostics_canonical_missing_iso_or_landtype.txt").write_text(msg)
+        raise ValueError(msg)
+
+    # depth columns are like '0m','0.5m'... OR numeric strings etc
+    depth_cols = []
+    depth_vals = []
+    for c in df.columns:
+        d = parse_depth_colname(c)
+        if d is not None:
+            depth_cols.append(c)
+            depth_vals.append(d)
+
+    if len(depth_cols) == 0:
+        msg = (
+            "Canonical EUR table appears wide but has no depth columns like '0m','0.5m',... "
+            f"Columns found: {list(df.columns)}"
+        )
+        if audit_dir:
+            audit_dir.mkdir(parents=True, exist_ok=True)
+            (audit_dir / "diagnostics_canonical_no_depth_cols.txt").write_text(msg)
+        raise ValueError(msg)
+
+    # Melt wide -> long
+    tmp = df[[iso_col, land_col] + depth_cols].copy()
+    tmp = tmp.rename(columns={iso_col: "iso3", land_col: "landtype"})
+    long = tmp.melt(id_vars=["iso3", "landtype"], var_name="depth_col", value_name="damage_per_m2")
+    long["depth_m"] = long["depth_col"].apply(parse_depth_colname).astype(float)
+    long = long.drop(columns=["depth_col"])
+
+    long["iso3"] = long["iso3"].astype(str).str.strip()
+    long["landtype"] = long["landtype"].astype(str).str.strip()
+    long["damage_per_m2"] = long["damage_per_m2"].apply(to_float)
+
+    return long
+
+
+def build_canonical_from_components(
+    fractional_long_csv: Path,
+    maxdamage_long_csv: Path,
+    iso3_region_csv: Path,
+    audit_dir: Optional[Path] = None
+) -> pd.DataFrame:
+    """
+    Build canonical EUR2010 LONG table from components.
+
+    FRACTIONAL curves LONG must contain:
+      - JRC_Region
+      - LandType
+      - depth_m
+      - fraction
+
+    MAX DAMAGE LONG must contain:
+      - iso3
+      - LandType
+      - max_damage_eur_m2   (or similar)
+    (Your fixed file is: jrc_max_damage_values_long_with_iso3.csv)
+
+    ISO3->REGION must contain:
+      - iso3
+      - JRC_Region
+
+    OUTPUT:
+      iso3, landtype, depth_m, damage_per_m2   (EUR2010 per m²)
+    """
+    frac = pd.read_csv(fractional_long_csv).applymap(clean_missing)
+    maxd = pd.read_csv(maxdamage_long_csv).applymap(clean_missing)
+    iso3reg = pd.read_csv(iso3_region_csv).applymap(clean_missing)
+
+    fcols = make_colmap(frac)
+    mcols = make_colmap(maxd)
+    rcols = make_colmap(iso3reg)
+
+    # ---- Fraction required columns (underscore/space tolerant!)
+    f_reg  = fcols.get("jrc_region") or fcols.get("jrc region")
+    f_land = fcols.get("landtype")   or fcols.get("land type")
+    f_depth = fcols.get("depth_m") or fcols.get("depth m") or fcols.get("depth")
+    f_frac = fcols.get("fraction") or fcols.get("frac")
+    if None in (f_reg, f_land, f_depth, f_frac):
+        raise ValueError(f"fractional_long_csv missing required columns. Columns={list(frac.columns)}")
+
+    # ---- Maxdamage required columns
+    m_iso = mcols.get("iso3") or mcols.get("country iso3") or mcols.get("iso 3")
+    m_land = mcols.get("landtype") or mcols.get("land type")
+    m_max = (
+        mcols.get("max_damage_eur_m2")
+        or mcols.get("max damage eur m2")
+        or mcols.get("max_damage_euro_per_m2")
+        or mcols.get("max damage euro per m2")
+        or mcols.get("max_damage_euro_per_m2".replace("_", " "))
+    )
+    if m_iso is None:
+        raise ValueError(f"maxdamage_long_csv missing ISO3 column. Columns={list(maxd.columns)}")
+    if m_land is None or m_max is None:
+        raise ValueError(f"maxdamage_long_csv missing LandType or max-damage column. Columns={list(maxd.columns)}")
+
+    # ---- Region required columns
+    r_iso = rcols.get("iso3") or rcols.get("iso 3")
+    r_reg = rcols.get("jrc_region") or rcols.get("jrc region")
+    if r_iso is None or r_reg is None:
+        raise ValueError(f"iso3_region_csv missing required columns. Columns={list(iso3reg.columns)}")
+
+    # ---- Clean & normalize
+    frac2 = frac[[f_reg, f_land, f_depth, f_frac]].copy()
+    frac2.columns = ["JRC_Region", "LandType", "depth_m", "fraction"]
+    frac2["JRC_Region"] = frac2["JRC_Region"].astype(str).str.strip()
+    frac2["LandType"] = frac2["LandType"].astype(str).apply(normalize_landtype_label).str.strip()
+    frac2["depth_m"] = frac2["depth_m"].apply(to_float)
+    frac2["fraction"] = frac2["fraction"].apply(to_float)
+
+    max2 = maxd[[m_iso, m_land, m_max]].copy()
+    max2.columns = ["iso3", "LandType", "max_damage_eur_m2"]
+    max2["iso3"] = max2["iso3"].astype(str).str.strip()
+    max2["LandType"] = max2["LandType"].astype(str).apply(normalize_landtype_label).str.strip()
+    max2["max_damage_eur_m2"] = max2["max_damage_eur_m2"].apply(to_float)
+
+    reg2 = iso3reg[[r_iso, r_reg]].copy()
+    reg2.columns = ["iso3", "JRC_Region"]
+    reg2["iso3"] = reg2["iso3"].astype(str).str.strip()
+    reg2["JRC_Region"] = reg2["JRC_Region"].astype(str).str.strip()
+
+    # ---- Join max damages with regions
+    mx = max2.merge(reg2, on="iso3", how="left")
+
+    # Diagnostics for missing regions (should be none if your mapping is complete)
+    missing_reg = mx[mx["JRC_Region"].isna()][["iso3", "LandType"]].drop_duplicates()
+    if len(missing_reg) > 0:
+        warnings.warn(f"[WARN] Missing JRC_Region for {len(missing_reg)} iso3×landtype rows; these will be dropped.")
+        if audit_dir:
+            audit_dir.mkdir(parents=True, exist_ok=True)
+            missing_reg.to_csv(audit_dir / "diagnostics_missing_jrc_region_for_iso3.csv", index=False)
+
+    mx = mx.dropna(subset=["JRC_Region"])
+
+    # ---- Join with fractions on (region, landtype, depth)
+    out = mx.merge(
+        frac2,
+        left_on=["JRC_Region", "LandType"],
+        right_on=["JRC_Region", "LandType"],
+        how="left"
+    )
+
+    # After join, fraction varies by depth; ensure depth present
+    # NOTE: if landtype labels mismatch, fraction will be NaN.
+    missing_frac = out[out["fraction"].isna()][["LandType", "JRC_Region"]].drop_duplicates()
+    if len(missing_frac) > 0:
+        warnings.warn(
+            f"[WARN] Missing fractions for {len(missing_frac)} LandType/JRC_Region combos. "
+            f"Examples:\n{missing_frac.head(10).to_string(index=False)}"
+        )
+        if audit_dir:
+            audit_dir.mkdir(parents=True, exist_ok=True)
+            missing_frac.to_csv(audit_dir / "diagnostics_missing_fraction_landtype_region.csv", index=False)
+
+    # Compute depth damages
+    out["damage_per_m2"] = out["max_damage_eur_m2"] * out["fraction"]
+
+    eur_long = out[["iso3", "LandType", "depth_m", "damage_per_m2"]].copy()
+    eur_long = eur_long.rename(columns={"LandType": "landtype"})
+    eur_long["landtype"] = eur_long["landtype"].apply(normalize_landtype_label)
+    eur_long["depth_m"] = eur_long["depth_m"].apply(to_float)
+    eur_long["damage_per_m2"] = eur_long["damage_per_m2"].apply(to_float)
+
+    # Drop bad rows
+    eur_long = eur_long.dropna(subset=["iso3", "landtype", "depth_m", "damage_per_m2"])
+
+    return eur_long
+
+
+def build_damage_tables():
+    """Step 4A: the canonical JRC EUR2010 table as USD2019 sector and SDA tables.
+
+    Every value is multiplied by one combined factor, FX at 2010 times the US inflator to 2019.
+    Cropland's curve is copied to pasture when `flood_set_pasture_equal_crop` is set, which is the
+    JRC default: pasture has no curve of its own.
+    """
+    multiplier = load_combined_multiplier(factors_csv=VAL_FACTORS_CSV, factors_json=None)
+    eur_long = load_canonical_eur_table(VAL_CANONICAL_EUR_CSV,
+                                        audit_dir=VAL_DAMAGE_DIR / "_currency_audit")
+    eur_long["landtype"] = eur_long["landtype"].apply(normalize_landtype_label)
+
+    usd = eur_long.copy()
+    usd["damage_per_m2"] = usd["damage_per_m2"] * float(multiplier)
+    usd["currency"] = "USD2019"
+    usd["iso3"] = usd["iso3"].astype(str).str.strip()
+    usd["depth_m"] = usd["depth_m"].apply(to_float)
+    usd["damage_per_m2"] = usd["damage_per_m2"].apply(to_float)
+    usd = usd.dropna(subset=["iso3", "landtype", "depth_m", "damage_per_m2"])
+
+    sector_long = usd[["iso3", "landtype", "depth_m", "damage_per_m2", "currency"]].copy()
+    sector_long["landtype"] = sector_long["landtype"].apply(sector_label_from_landtype)
+    write_csv(sector_long, VAL_DAMAGE_LONG_CSV)
+    write_csv(pivot_wide(sector_long, group_cols=["iso3", "landtype"],
+                         value_col="damage_per_m2"), VAL_DAMAGE_WIDE_CSV)
+
+    sda = usd.copy()
+    sda["sda_type"] = sda["landtype"].apply(landtype_to_sda)
+    sda = sda.dropna(subset=["sda_type"])
+    sda_long = sda[["iso3", "sda_type", "depth_m", "damage_per_m2", "currency"]].copy()
+    if VAL_SET_PASTURE_EQUAL_CROP:
+        pasture = sda_long[sda_long["sda_type"] == "crop"].copy()
+        pasture["sda_type"] = "pasture"
+        sda_long = pd.concat([sda_long, pasture], ignore_index=True)
+    write_csv(sda_long, VAL_SDA_DAMAGE_LONG_CSV)
+    write_csv(pivot_wide(sda_long, group_cols=["iso3", "sda_type"],
+                         value_col="damage_per_m2"), VAL_SDA_DAMAGE_WIDE_CSV)
+
+    hb.log('Step 4A: %d sector rows, %d SDA rows, multiplier %.7f'
+           % (len(sector_long), len(sda_long), float(multiplier)))
+    return VAL_SDA_DAMAGE_WIDE_CSV
 
 def load_damage_table_wide(path: Path) -> Dict[Tuple[str, str], Tuple[np.ndarray, np.ndarray]]:
     """Load the wide SDA damage curves into {(iso3, sda_type): (depths, damages)}."""
@@ -2420,6 +2894,60 @@ def task_prepare_flood_inputs(p):
     skip_download = getattr(p, 'flood_skip_depth_download', False)
     prepare_all_inputs(skip_download=skip_download)
     return True
+
+
+def build_sda_global():
+    """Section B: delineate the Service Demanding Areas for every country and return period.
+
+    An SDA is the exposed asset in the floodplain -- built surface, cropland, pasture -- so it is
+    where flood damage lands and therefore where the regulation service has value. One raster and
+    one summary row per country per return period.
+
+    A country whose signature matches and whose outputs are complete is skipped, which is what makes
+    a rerun cheap. A country that raises stops the run: it would otherwise leave the global summary
+    while the summary still looked complete.
+    """
+    admin0 = load_admin0(ADMIN0_PATH)
+    iso_all = sorted(set(admin0["iso3"].astype(str).str.upper().tolist()))
+    mapping = load_mapping(SDA_MAPPING_JSON)
+    rp_map = {rp: DEPTH_ALIGNED_DIR / DEPTH_RASTER_PATTERN.format(rp=rp) for rp in RETURN_PERIODS}
+
+    if str(SDA_ISO3_LIST).strip():
+        run_list = [x.strip().upper() for x in str(SDA_ISO3_LIST).split(",") if x.strip()]
+    else:
+        start = max(int(SDA_START), 0)
+        run_list = iso_all[start:(start + int(SDA_N)) if int(SDA_N) > 0 else None]
+
+    signature = build_run_signature(SimpleNamespace(
+        depth_threshold=SDA_DEPTH_THRESHOLD_M, all_touched=SDA_ALL_TOUCHED,
+        include_pasture=SDA_INCLUDE_PASTURE, use_roads=SDA_USE_ROADS,
+        with_pop=SDA_WITH_POP, write_depthbin=False, depthbin_max=6.0), rp_map)
+    rows = []
+    for iso3 in run_list:
+        out_dir = OUTPUTS / iso3
+        out_dir.mkdir(parents=True, exist_ok=True)
+        if SDA_SKIP_DONE and should_skip_iso3(out_dir, iso3, signature, rp_map=rp_map,
+                                              write_depthbin=False):
+            summary = out_dir / f"sda_summary_{iso3}.csv"
+            if hb.path_exists(summary):
+                rows.append(hb.df_read(str(summary)))
+            continue
+        df = process_country(
+            iso3=iso3, admin0=admin0, rp_map=rp_map, lulc_path=LULC_PATH, mapping=mapping,
+            depth_threshold_m=SDA_DEPTH_THRESHOLD_M, all_touched=SDA_ALL_TOUCHED,
+            include_pasture=SDA_INCLUDE_PASTURE, use_roads=SDA_USE_ROADS,
+            roads_path=SDA_ROADS_PATH, with_pop=SDA_WITH_POP, pop_path=SDA_POP_PATH,
+            write_depthbin=False, depthbin_max=6.0)
+        write_signature(out_dir, iso3, signature)
+        if not df.empty:
+            rows.append(df)
+
+    if not rows:
+        raise ValueError('Section B produced no SDA summaries for any of %d countries.' % len(run_list))
+    combined = pd.concat(rows, ignore_index=True)
+    write_csv(combined, OUTPUTS / "global_sda_summary_countries.csv")
+    hb.log('Section B: %d countries, %d SDA rows' % (len(run_list), len(combined)))
+    return OUTPUTS / "global_sda_summary_countries.csv"
 
 
 def task_build_sda(p):
