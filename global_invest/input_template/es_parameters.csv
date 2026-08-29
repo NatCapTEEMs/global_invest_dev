@@ -77,6 +77,8 @@ flood,flood_iso3_n,0
 flood,flood_skip_depth_download,false
 flood,flood_all_touched,false
 flood,flood_apply_service_flow,true
+flood,flood_return_periods,"[10, 20, 50, 100, 200, 500]"
+flood,flood_return_periods_source_note,"⚠⚠ the module constant RETURN_PERIODS is [10, 20, 50, 500] and the deleted set_flood_paths overrode it with all six. Deleting that without moving this here dropped RP100 and RP200 from the damage integral and took EAD from $887.8bn to $653.0bn, a 26 percent fall, with nothing raising -- the run reported ok=250/250. The six are what is on disk under floodplain_depth_v2_nowater/aligned_to_lulc"
 flood,flood_compute_ead_rasters,false
 flood,flood_damage_depth_mode,interpolated
 flood,flood_depth_threshold_m,0.1
