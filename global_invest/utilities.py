@@ -1007,9 +1007,9 @@ TOP_N = 20
 # -----------------------------------------------------------------------------
 # Existence / assertions
 # -----------------------------------------------------------------------------
-def assert_exists(path: Path, hint: str = ""):
-    path = Path(path)
-    if not path.exists():
+def assert_exists(path, hint: str = ""):
+    """Fail naming the missing file and what needed it, rather than where the read happened."""
+    if not hb.path_exists(path):
         raise FileNotFoundError(f"Missing: {path}\n{hint}")
 
 
@@ -1211,16 +1211,22 @@ def build_interval_labels(edges: np.ndarray, label_format: str = "usd_millions")
             lo_txt, hi_txt = fmt_usd_millions(lo), fmt_usd_millions(hi)
         else:
             lo_txt, hi_txt = fmt_percent(lo), fmt_percent(hi)
-        labels.append(f"{lo_txt} - {hi_txt}")
+        labels.append(f"{lo_txt} \u2013 {hi_txt}")
     return labels
 
 
 # -----------------------------------------------------------------------------
 # Plotting
 # -----------------------------------------------------------------------------
-def savefig(path: Path, dpi: int = 300):
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
+def savefig(path, dpi: int = 300, **kwargs):
+    """Write the current figure, tightly cropped, and close it.
+
+    The call below is plt.savefig, not this function. Without the prefix it recurses, and the
+    recursion is invisible because the inner call passes bbox_inches, which a two-argument
+    signature does not take: the TypeError arrives before the RecursionError, and reads like a
+    matplotlib version problem rather than a name that resolves to the wrong thing.
+    """
+    hb.create_directories(os.path.dirname(str(path)))
     plt.tight_layout()
     plt.savefig(path, dpi=dpi, bbox_inches="tight")
     plt.close()

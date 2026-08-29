@@ -599,9 +599,6 @@ def get_erosion_yield_coefficient(crop_key, coef_map, fallback=0.08):
     return float(np.clip(fallback, 0.0, 1.0))
 
 
-def assert_exists(p, hint: str = ""):
-    if not hb.path_exists(p):
-        raise FileNotFoundError(f"Missing: {p}\n{hint}")
 
 
 def _normcols(df: pd.DataFrame) -> pd.DataFrame:
@@ -695,89 +692,11 @@ def pick_name_column(gdf: gpd.GeoDataFrame) -> str | None:
     return None
 
 
-def fmt_usd_millions(x: float) -> str:
-    if not np.isfinite(x):
-        return "NA"
-    if abs(x) >= 1000:
-        return f"{x:,.0f}"
-    if abs(x) >= 100:
-        return f"{x:,.0f}"
-    if abs(x) >= 10:
-        return f"{x:,.1f}"
-    if abs(x) >= 1:
-        return f"{x:,.1f}"
-    return f"{x:,.2f}"
 
 
-def fmt_percent(x: float) -> str:
-    if not np.isfinite(x):
-        return "NA"
-    if abs(x) >= 10:
-        return f"{x:.1f}"
-    if abs(x) >= 1:
-        return f"{x:.2f}"
-    return f"{x:.3f}"
 
 
-def fmt_usd(x: float) -> str:
-    if not np.isfinite(x):
-        return "NA"
-    return f"${x:,.0f}"
 
 
-def build_interval_labels(edges: np.ndarray, label_format: str = "usd_millions") -> list[str]:
-    labels = []
-    for i in range(len(edges) - 1):
-        lo = edges[i]
-        hi = edges[i + 1]
-        if label_format == "usd_millions":
-            lo_txt = fmt_usd_millions(lo)
-            hi_txt = fmt_usd_millions(hi)
-        else:
-            lo_txt = fmt_percent(lo)
-            hi_txt = fmt_percent(hi)
-        labels.append(f"{lo_txt} – {hi_txt}")
-    return labels
 
 
-def compute_classification(values: pd.Series, scheme: str = "fisher_jenks", k: int = 5):
-    s = pd.to_numeric(values, errors="coerce")
-    m = np.isfinite(s)
-    clean = s[m]
-
-    if clean.empty:
-        return pd.Series(index=values.index, dtype="float64"), np.array([0.0, 1.0])
-
-    try:
-        import mapclassify
-
-        scheme = (scheme or "fisher_jenks").lower()
-        k_eff = min(k, int(clean.nunique()))
-        k_eff = max(k_eff, 1)
-
-        if scheme == "fisher_jenks":
-            classifier = mapclassify.FisherJenks(clean.to_numpy(), k=k_eff)
-        elif scheme == "equal_interval":
-            classifier = mapclassify.EqualInterval(clean.to_numpy(), k=k_eff)
-        elif scheme == "quantiles":
-            classifier = mapclassify.Quantiles(clean.to_numpy(), k=k_eff)
-        else:
-            classifier = mapclassify.FisherJenks(clean.to_numpy(), k=k_eff)
-
-        edges = np.concatenate(([clean.min()], np.asarray(classifier.bins, dtype=float)))
-        class_ids = pd.Series(np.nan, index=values.index)
-        class_ids.loc[m] = classifier.yb
-        return class_ids, edges
-
-    except Exception:
-        warnings.warn("mapclassify unavailable or failed; falling back to qcut quantiles.")
-        q = min(k, max(1, int(clean.nunique())))
-        cats = pd.qcut(clean, q=q, duplicates="drop")
-        codes = pd.Series(np.nan, index=values.index)
-        codes.loc[m] = cats.cat.codes.astype(float)
-
-        intervals = cats.cat.categories
-        edges = [intervals[0].left]
-        for iv in intervals:
-            edges.append(iv.right)
-        return codes, np.asarray(edges, dtype=float)
