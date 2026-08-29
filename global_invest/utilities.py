@@ -1688,3 +1688,46 @@ def normalize_m49_codes(df, column='area_code_M49', successors=None):
     out[column] = out[column].astype(str).str.replace("'", '', regex=False).astype(int)
     out[column] = out[column].replace(M49_SUCCESSORS if successors is None else successors)
     return out
+
+
+def collapse_regions_to_countries(df_regions, attribute_columns, value_column, sum_column='total'):
+    """Per-region totals summed to one row per country and year, with the country attributes back on.
+
+    Summing the r264-expanded table as it stands would count a split country once per sub-region
+    (China spans 6 r264 rows, India 6, France, Turkey, the UK and Pakistan 2), so the sum is taken
+    on the r250 country id and the attributes are attached afterwards from one representative
+    sub-region each.
+
+    Args:
+        df_regions (pd.DataFrame): the per-region table, carrying iso3_r250_id, year and
+            `sum_column`.
+        attribute_columns (list): the country attribute columns to carry through.
+        value_column (str): what to call the summed value.
+        sum_column (str): the column to sum.
+
+    Returns:
+        pd.DataFrame: one row per country and year, with the attributes attached.
+    """
+    totals = (df_regions.groupby(['iso3_r250_id', 'year'], as_index=False)[sum_column].sum()
+              .rename(columns={sum_column: value_column}))
+    attributes = df_regions[attribute_columns].drop_duplicates('iso3_r250_id')
+    return totals.merge(attributes, how='left', on='iso3_r250_id')
+
+
+def expand_country_values_to_regions(df_regions, df_by_country, value_column):
+    """Each r264 region carrying its COUNTRY's value, for the map only.
+
+    ⚠ The result must never be summed: every sub-region of a split country carries the whole
+    country's value, so a sum counts China six times.
+
+    Args:
+        df_regions (pd.DataFrame): the r264 regions.
+        df_by_country (pd.DataFrame): one row per country, carrying iso3_r250_id and `value_column`.
+        value_column (str): the value to attach.
+
+    Returns:
+        pd.DataFrame: df_regions with `value_column` attached.
+    """
+    return df_regions.merge(df_by_country[['iso3_r250_id', value_column]],
+                            how='left', on='iso3_r250_id')
+

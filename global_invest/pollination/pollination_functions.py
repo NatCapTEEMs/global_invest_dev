@@ -18,12 +18,12 @@ import re
 
 import logging
 import numpy as np
-import logging
 from dataclasses import dataclass
 from typing import Any, Dict
 import rasterio
 
 import pandas as pd
+from global_invest import utilities
 
 logger = logging.getLogger(__name__)
 
@@ -230,11 +230,9 @@ def collapse_regions_to_countries(df_regions):
     Returns:
         pd.DataFrame: the attribute columns, year and pollination_gep, one row per country.
     """
-    df_countries = (df_regions.groupby(['iso3_r250_id', 'year'], as_index=False)['total'].sum()
-                    .rename(columns={'total': 'pollination_gep'}))
-    attributes = df_regions[POLLINATION_ATTR_COLS].drop_duplicates('iso3_r250_id')
-    return df_countries.merge(attributes, how='left', on='iso3_r250_id')[
-        POLLINATION_ATTR_COLS + ['year', 'pollination_gep']]
+    df_countries = utilities.collapse_regions_to_countries(
+        df_regions, POLLINATION_ATTR_COLS, 'pollination_gep')
+    return df_countries[POLLINATION_ATTR_COLS + ['year', 'pollination_gep']]
 
 
 def expand_country_values_to_regions(df_regions, df_gep_by_country):
@@ -250,8 +248,8 @@ def expand_country_values_to_regions(df_regions, df_gep_by_country):
     Returns:
         pd.DataFrame: df_regions with pollination_gep attached.
     """
-    return df_regions.merge(df_gep_by_country[['iso3_r250_id', 'pollination_gep']],
-                            how='left', on='iso3_r250_id')
+    return utilities.expand_country_values_to_regions(
+        df_regions, df_gep_by_country, 'pollination_gep')
 
 
 # =============================================================================
