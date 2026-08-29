@@ -11,6 +11,18 @@ Diagnostic -- if a national total is inflated by this, the gap decomposes exactl
 and the four 2-way splits. A gap of any other shape is a legitimate sum, not this bug. This is how the bug
 reached terrestrial_carbon + coastal_carbon and not the other five GEP services.
 """
+from osgeo import gdal
+import json
+import mapclassify
+import matplotlib
+import matplotlib as mpl
+import matplotlib.pyplot as plt
+import shutil
+import subprocess
+import sys
+import urllib.request
+import zipfile
+
 
 # A general library does not hardcode one project's scenario names: each service's static shock
 # task defaults to identity (plus the nature-off spelling alias below) and warns loudly when a
@@ -22,8 +34,6 @@ def initialize_country_paths(p, simplified='300sec'):
     Called from each service's publish_inputs; the service then adds only its service-specific inputs
     (this block used to be pasted into every module).
     """
-    import pandas as pd
-    import hazelbean as hb
 
     if getattr(p, 'df_countries', None) is not None:
         return p          # country world already published (or caller-set): touch nothing
@@ -65,7 +75,6 @@ def initialize_pyramid_paths(p):
     Returns:
         ProjectFlow: the same project.
     """
-    import os
 
     p.ha_per_cell_10sec_path = p.get_path(
         os.path.join(*HA_PER_CELL_10SEC_REF_PARTS))
@@ -84,9 +93,6 @@ def summarize_raster_by_region(value_raster_path, region_boundary_path, out_path
     id so consumers join on a value, never on row position; background zone 0 and empty zones are
     dropped.
     """
-    import os
-    import geopandas as gpd
-    import hazelbean as hb
 
     regions = gpd.read_file(region_boundary_path)
     # zones_raster_data_type=5 (Int32) so ids past 255 don't saturate (r264 runs to 264, r50xAEZ
@@ -138,10 +144,6 @@ def render_service_results(p):
     The qmd copy and sidecars are removed afterwards so nobody edits a copy expecting the source
     to change.
     """
-    import os
-    import sys
-    import subprocess
-    import hazelbean as hb
 
     os.environ['QUARTO_PYTHON'] = sys.executable
     module_root = os.path.dirname(os.path.abspath(__file__))
@@ -360,8 +362,6 @@ def seed_input_template(p, file_name, log=print, required=True):
     resolves the same reference in base_data instead): a missing template is skipped, and the
     later get_path on the reference stays the loud failure if it resolves nowhere at all.
     """
-    import os
-    import shutil
     template_path = os.path.join(os.path.dirname(__file__), 'input_template', file_name)
     local_path = os.path.join(p.input_dir, file_name)
     if not os.path.exists(local_path):
@@ -382,7 +382,6 @@ NOT_A_VALUE = ('computed', 'skip', 'n/a')
 
 def is_not_a_value(value):
     """Whether a definitions cell is blank or says, in words, that it holds no value."""
-    import pandas as pd
 
     return pd.isna(value) or str(value).strip().lower() in ('',) + NOT_A_VALUE
 
@@ -403,8 +402,6 @@ def hydrate_es_config(p, service, log=print):
     a single project. Note the standard caveat: a stale input/ copy shadows an updated
     template; delete it (or use a fresh project) to pick up template changes.
     """
-    import pandas as pd
-    import hazelbean as hb
     df = hb.df_read(seed_input_template(p, 'es_config.csv', log))
     rows = df[df['service'] == service]
     if rows.empty:
@@ -452,9 +449,6 @@ def hydrate_es_parameters(p, service, log=print):
     parse as JSON where they can (ints, lists, dicts, true/false), else stay strings; *_path
     keys resolve via get_path.
     """
-    import json
-    import pandas as pd
-    import hazelbean as hb
     df = hb.df_read(seed_input_template(p, 'es_parameters.csv', log))
     for _, row in df[df['service'] == service].iterrows():
         attribute, value = str(row['parameter']), row['value']
@@ -512,9 +506,6 @@ def hydrate_es_scenarios(p, log=print):
     template seeded into the project's input/; the run reads the input/ copy). Set
     p.es_scenario_definitions_filename to run a different scenarios file.
     """
-    import os
-    import pandas as pd
-    import hazelbean as hb
     file_name = getattr(p, 'es_scenario_definitions_filename', None) or 'es_scenarios_test.csv'
     df = hb.df_read(seed_input_template(p, file_name, log))
 
@@ -570,8 +561,6 @@ def hydrate_es_scenarios(p, log=print):
 def raster_sum(raster_path, block_rows=2048):
     """Nodata-safe sum of a raster's first band, read blockwise so global rasters fit in
     memory. Promotion candidate to hazelbean (no equivalent found there on 2026-08-21)."""
-    import numpy as np
-    from osgeo import gdal
     gdal.UseExceptions()
     ds = gdal.Open(raster_path)
     band = ds.GetRasterBand(1)
@@ -593,7 +582,6 @@ def assert_zonal_conservation(country_totals_sum, raster_path, service, lower=0.
     polygon (or zones were dropped). An excess beyond `upper` means DOUBLE-COUNTING -- the exact
     failure the split-country guard exists for. Verified at 100.0000% on pollination's real
     raster before being encoded here."""
-    import hazelbean as hb
     total = raster_sum(raster_path)
     if total == 0:
         raise ValueError(f'{service}: conservation check impossible, the raster sums to zero.')
@@ -631,12 +619,6 @@ def download_missing_inputs(p, service, log=print):
         (downloaded, needs_a_person): the paths written, and {input name: reason} for the
         inputs a person has to supply.
     """
-    import os
-    import shutil
-    import urllib.request
-    import zipfile
-    import pandas as pd
-    import hazelbean as hb
 
     df = hb.df_read(seed_input_template(p, 'es_parameters.csv', log))
     rows = df[df['service'] == service]
@@ -685,7 +667,6 @@ def download_inputs_task(service):
 
         p.add_task(utilities.download_inputs_task('extractive_energy'))
     """
-    import hazelbean as hb
 
     def download_inputs(p):
         if not p.run_this:
@@ -767,12 +748,7 @@ def plot_gep_choropleth(df_by_country, value_column, countries_vector_path, out_
     Returns:
         str: out_png_path, or None if the table had no positive value to scale a log ramp on.
     """
-    import matplotlib
     matplotlib.use('Agg')
-    import matplotlib as mpl
-    import matplotlib.pyplot as plt
-    import geopandas as gpd
-    import pandas as pd
 
     gdf = gpd.read_file(countries_vector_path)
     join_column = 'iso3_r250_id' if 'iso3_r250_id' in gdf.columns else 'ee_r264_id'
@@ -798,18 +774,10 @@ def plot_gep_choropleth(df_by_country, value_column, countries_vector_path, out_
         mpl.ticker.FuncFormatter(lambda x, _: f'{int(x):,}'))
     axes.set_title(title)
     axes.set_axis_off()
-    hb_create_directories(out_png_path)
+    hb.create_directories(os.path.dirname(out_png_path))
     plt.savefig(out_png_path, bbox_inches='tight', dpi=CHOROPLETH_DPI)
     plt.close(figure)
     return out_png_path
-
-
-def hb_create_directories(path):
-    """The output directory for a file path, created if it is missing."""
-    import os
-    directory = os.path.dirname(path)
-    if directory and not os.path.exists(directory):
-        os.makedirs(directory, exist_ok=True)
 
 
 import numpy as np
@@ -893,7 +861,6 @@ def report_dir():
     Returns:
         str: the report's own directory.
     """
-    import os
 
     return os.getcwd()
 
@@ -916,8 +883,6 @@ def gep_summary_tables(df, value_column, out_dir, log=None):
     Returns:
         dict: 'country' plus one key per grouping present, each a DataFrame.
     """
-    import os
-    import hazelbean as hb
 
     tables = {'country': df[['iso3_r250_name', value_column]]}
     hb.df_write(tables['country'], os.path.join(out_dir, 'gep_by_country_base_year_table.csv'))
@@ -973,8 +938,6 @@ def begin_gep_calculation(p, service, extra_results=None, log=None):
         tuple: (service_results, already_done). When already_done is True the caller returns
         without doing anything, which is what makes a rerun cheap.
     """
-    import os
-    import hazelbean as hb
     log = log or hb.log
     service_results = p.results.setdefault(service, {})
     service_results['gep_by_country_base_year'] = os.path.join(
@@ -1017,7 +980,6 @@ from typing import Dict, Optional, Tuple
 
 import geopandas as gpd
 import hazelbean as hb
-import numpy as np
 import pandas as pd
 import rasterio
 from rasterio.windows import Window
@@ -1279,7 +1241,6 @@ def compute_classification(values: pd.Series, scheme: str = "fisher_jenks", k: i
         return pd.Series(index=values.index, dtype="float64"), np.array([0.0, 1.0])
 
     try:
-        import mapclassify
 
         scheme = (scheme or "fisher_jenks").lower()
         k_eff = max(min(k, int(clean.nunique())), 1)
