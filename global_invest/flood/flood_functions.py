@@ -594,103 +594,16 @@ SDA_CODE_VERSION = "2025-12-15_sda_step2_smartskip_v2_depth_inputs"
 # =============================================================================
 
 
-def signature_path(out_dir: str, iso3: str) -> str:
-    return os.path.join(out_dir, f"sda_run_signature_{iso3}.json")
 
 
-def build_run_signature(*, depth_threshold: float, all_touched: bool, include_pasture: bool,
-                        use_roads: bool, with_pop: bool, write_depthbin: bool, depthbin_max: float,
-                        lulc_path: str, mapping_path: str, roads_path: str, pop_path: str,
-                        depth_dir: str, depth_json: str, rp_map: dict[int, str]) -> dict:
-    """Fingerprint of the settings and inputs one country's SDA outputs were built from.
-
-    Args:
-        depth_threshold, all_touched, include_pasture, use_roads, with_pop, write_depthbin,
-            depthbin_max: the settings that change what the outputs contain.
-        lulc_path, mapping_path, roads_path, pop_path: inputs, fingerprinted by size and mtime.
-        depth_dir, depth_json: how the depth rasters were selected.
-        rp_map: return period to depth raster.
-
-    Returns:
-        dict: the signature, including a `signature_sha256` over every field but the timestamp.
-    """
-    sig = {
-        "code_version": SDA_CODE_VERSION,
-        "created_utc": datetime.utcnow().isoformat() + "Z",
-
-        "depth_threshold": float(depth_threshold),
-        "all_touched": bool(all_touched),
-        "include_pasture": bool(include_pasture),
-        "use_roads": bool(use_roads),
-        "with_pop": bool(with_pop),
-        "write_depthbin": bool(write_depthbin),
-        "depthbin_max": float(depthbin_max),
-
-        # depth input controls (so signature changes when you change rp selection or sources)
-        "depth_dir": str(depth_dir) if depth_dir else "",
-        "depth_json": str(depth_json) if depth_json else "",
-        "rps": sorted([int(rp) for rp in rp_map.keys()]),
-
-        "lulc": utilities.file_fingerprint(str(lulc_path)),
-        "mapping_json": {
-            **utilities.file_fingerprint(str(mapping_path)),
-            "sha256": utilities.sha256_file(str(mapping_path)) if hb.path_exists(mapping_path) else None,
-        },
-        "roads": utilities.file_fingerprint(str(roads_path)) if use_roads else {"path": str(roads_path), "exists": False},
-        "pop": utilities.file_fingerprint(str(pop_path)) if with_pop else {"path": str(pop_path), "exists": False},
-
-        "depth_rasters": {int(rp): utilities.file_fingerprint(path) for rp, path in rp_map.items()},
-    }
-
-    tmp = dict(sig)
-    tmp.pop("created_utc", None)
-    sig["signature_sha256"] = hashlib.sha256(
-        json.dumps(tmp, sort_keys=True).encode("utf-8")).hexdigest()
-    return sig
 
 
-def read_old_signature(out_dir: str, iso3: str) -> dict | None:
-    path = signature_path(out_dir, iso3)
-    if not hb.path_exists(path):
-        return None
-    try:
-        return json.loads(open(path, encoding="utf-8").read())
-    except Exception:
-        return None
 
 
-def outputs_complete_for_iso3(out_dir: str, iso3: str, rp_map: dict[int, str], write_depthbin: bool) -> bool:
-    summary = os.path.join(out_dir, f"sda_summary_{iso3}.csv")
-    if not hb.path_exists(summary):
-        return False
-
-    for rp in rp_map.keys():
-        class_tif = os.path.join(out_dir, f"sda_class_{iso3}_rp{int(rp)}.tif")
-        mask_tif  = os.path.join(out_dir, f"sda_mask_{iso3}_rp{int(rp)}.tif")
-        if not hb.path_exists(class_tif) or not hb.path_exists(mask_tif):
-            return False
-        if not utilities.raster_ok(class_tif) or not raster_ok(mask_tif):
-            return False
-
-        if write_depthbin:
-            db_tif = os.path.join(out_dir, f"sda_depthbin_idx_{iso3}_rp{int(rp)}.tif")
-            if not hb.path_exists(db_tif) or (not utilities.raster_ok(db_tif)):
-                return False
-
-    return True
 
 
-def should_skip_iso3(out_dir: str, iso3: str, new_sig: dict, rp_map: dict[int, str], write_depthbin: bool) -> bool:
-    old = read_old_signature(out_dir, iso3)
-    if old is None:
-        return False
-    if old.get("signature_sha256") != new_sig.get("signature_sha256"):
-        return False
-    return outputs_complete_for_iso3(out_dir, iso3, rp_map=rp_map, write_depthbin=write_depthbin)
 
 
-def write_signature(out_dir: str, iso3: str, sig: dict):
-    hb.write_to_file(json.dumps(sig, indent=2, sort_keys=True), signature_path(out_dir, iso3))
 
 
 # -----------------------------------------------------------------------------#
@@ -698,34 +611,6 @@ def write_signature(out_dir: str, iso3: str, sig: dict):
 # -----------------------------------------------------------------------------#
 
 
-def load_mapping(mapping_path: str) -> dict:
-    if not hb.path_exists(mapping_path):
-        raise FileNotFoundError(f"mapping JSON not found:\n  {mapping_path}")
-
-    mapping = json.loads(open(mapping_path, encoding="utf-8").read())
-
-    if "artif" not in mapping and "built_up" in mapping:
-        mapping["artif"] = mapping["built_up"]
-    if "crop" not in mapping and "cropland" in mapping:
-        mapping["crop"] = mapping["cropland"]
-
-    for k in ["artif", "crop", "pasture", "ignore"]:
-        if k not in mapping or mapping[k] is None:
-            mapping[k] = []
-
-    def _to_int_list(x):
-        out = []
-        for v in x:
-            try:
-                out.append(int(v))
-            except Exception:
-                pass
-        return out
-
-    for k in ["artif", "crop", "pasture", "ignore"]:
-        mapping[k] = _to_int_list(mapping.get(k, []))
-
-    return mapping
 
 
 def reproject_pop_to_target(pop_src: rasterio.io.DatasetReader, target_profile: dict) -> np.ndarray:
