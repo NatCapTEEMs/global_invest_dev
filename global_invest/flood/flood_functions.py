@@ -396,37 +396,24 @@ def integrate_trapezoid(y: np.ndarray, x: np.ndarray) -> float:
     """
 
     Trapezoidal integral, with the x axis sorted first.
-
-
-
     np.trapezoid weights each segment by diff(x). Handing it a descending or
-
     unordered x makes backwards segments contribute negatively, and the partial
-
     cancellation returns a small number of the wrong sign rather than an error.
 
     In this pipeline x is exceedance probability derived from return periods,
-
     which arrive in descending-p order naturally, so the sort is not optional.
 
-
-
     Both current call sites happen to sort beforehand -- one by argsort, one via
-
     a pandas groupby whose sorted-key behaviour is a default rather than a
-
     guarantee. Sorting here makes the property hold by construction. Sorting an
-
     already-sorted array is a no-op, so this cannot change existing results.
 
     """
 
     x = np.asarray(x, dtype="float64")
-
     y = np.asarray(y, dtype="float64")
 
     if x.size != y.size:
-
         raise ValueError(f"integrate_trapezoid: length mismatch {x.size} vs {y.size}")
 
     o = np.argsort(x)
@@ -709,12 +696,6 @@ def write_signature(out_dir: str, iso3: str, sig: dict):
 # -----------------------------------------------------------------------------#
 # Depth RP map builders
 # -----------------------------------------------------------------------------#
-
-
-
-
-
-
 
 
 def load_mapping(mapping_path: str) -> dict:

@@ -45,6 +45,43 @@ erosion,region_boundary_path,gtap_invest/region_boundaries/ee_r50_aez18_correspo
 erosion,erosion_shock_acts,"[""PDR"", ""WHT"", ""GRO"", ""V_F"", ""OSD"", ""C_B"", ""PFB"", ""OCR""]"
 erosion,erosion_crop_to_sector,"{""rice"": ""PDR"", ""whea"": ""WHT"", ""maiz"": ""GRO"", ""barl"": ""GRO"", ""sorg"": ""GRO"", ""mill"": ""GRO"", ""pmil"": ""GRO"", ""ocer"": ""GRO"", ""bana"": ""V_F"", ""plnt"": ""V_F"", ""citr"": ""V_F"", ""temf"": ""V_F"", ""trof"": ""V_F"", ""vege"": ""V_F"", ""toma"": ""V_F"", ""onio"": ""V_F"", ""pota"": ""V_F"", ""swpo"": ""V_F"", ""yams"": ""V_F"", ""cass"": ""V_F"", ""orts"": ""V_F"", ""soyb"": ""OSD"", ""grou"": ""OSD"", ""sunf"": ""OSD"", ""rape"": ""OSD"", ""sesa"": ""OSD"", ""oilp"": ""OSD"", ""cnut"": ""OSD"", ""ooil"": ""OSD"", ""sugc"": ""C_B"", ""sugb"": ""C_B"", ""cott"": ""PFB"", ""ofib"": ""PFB"", ""coff"": ""OCR"", ""rcof"": ""OCR"", ""coco"": ""OCR"", ""teas"": ""OCR"", ""toba"": ""OCR"", ""rubb"": ""OCR"", ""bean"": ""OCR"", ""lent"": ""OCR"", ""cowp"": ""OCR"", ""pige"": ""OCR"", ""chic"": ""OCR"", ""opul"": ""OCR"", ""rest"": ""OCR""}"
 erosion,erosion_method,service_threshold
+erosion,erosion_sdr_results_suffix,2019_revised_dec_14
+erosion,erosion_sdr_threshold_flow_accumulation,100
+erosion,erosion_sdr_k_param,2.0
+erosion,erosion_sdr_max,0.5
+erosion,erosion_sdr_ic_0_param,0.8
+erosion,erosion_sdr_l_max,122.0
+erosion,erosion_sdr_flow_dir_algorithm,D8
+erosion,erosion_sdr_n_workers,-1
+erosion,erosion_sdr_params_source_note,"⚠ these are the Section A (static GEP) InVEST SDR settings, taken from build_args where they were hardcoded. The DYNAMIC shock path in erosion_sdr uses a different set: threshold_flow_accumulation 1000 rather than 100, sdr_max 0.8 rather than 0.5, ic_0_param 0.5 rather than 0.8. sdr_max and ic_0_param are transposed between the two, which looks like a transcription error rather than a decision. Both are written out here rather than merged, because merging them would change a number; whoever knows which calibration is intended should settle it."
+erosion,erosion_analysis_epsg,8857
+erosion,erosion_apply_severe_filter,true
+erosion,erosion_base_year,2019
+erosion,erosion_boundary_source_epsg,
+erosion,erosion_crops_only,true
+erosion,erosion_dem_mask_below_sea_level,true
+erosion,erosion_dem_max_valid_elev_m,9000.0
+erosion,erosion_exclude_iso3,["ATA"]
+erosion,erosion_low_elevation_mean_m,250
+erosion,erosion_map_k_classes,5
+erosion,erosion_min_shock_floor,8e-10
+erosion,erosion_money_unit_label,2019 USD million
+erosion,erosion_rasterize_all_touched,false
+erosion,erosion_raster_downsample_factor,6
+erosion,erosion_robinson_crs,+proj=robin
+erosion,erosion_run_tag,ses11_onfarm_upstream_combined_20260305
+erosion,erosion_scenario_name,SES - On-farm + Upstream (decomposed)
+erosion,erosion_small_country_area_km2,50000
+erosion,erosion_threshold_high_t_ha_yr,11.0
+erosion,erosion_threshold_low_t_ha_yr,2.0
+erosion,erosion_top_n,20
+erosion,erosion_top_n_labels,25
+erosion,erosion_usd_to_millions,1000000.0
+erosion,erosion_watersheds_sanitized_layer,watersheds
+erosion,erosion_yield_reduction_for_shock,0.08
+erosion,erosion_drainage_path,
+erosion,erosion_threshold_source_note,"threshold_high 11.0 t/ha/yr is the SES-11 severe-erosion threshold the account is named for, and threshold_low 2.0 the tolerable one. They decide which pixels count as severe, so they are the two rows most worth checking against the methodology before a run."
+erosion,erosion_yield_reduction_source_note,"0.08 is the fallback yield response used when a crop has no row in the elasticity table. 19 of 46 crops take it, and 5 crops have no entry at all, so it is doing more work than a fallback should."
 erosion,erosion_native_resolution,false
 recreation,recreation_lulc_share_path_template,global_invest/recreation/lulc/lulc_esa_seals7_2010_1km_{lulc_class}_share.tif
 recreation,recreation_pa_share_path,global_invest/recreation/pa/wdpa_accessible_1km_share.tif

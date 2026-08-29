@@ -285,29 +285,7 @@ def _output_path(p, attribute, default_name):
     return os.path.join(str(directory), default_name)
 
 
-def configure_sdr(p):
-    """
-    Override the Section-A (InVEST SDR) module-level path constants from the
-    ProjectFlow object, if the project set them. Called by
-    erosion_tasks.invest_sdr() before run_invest_sdr().
-    """
-    global ROOT, BASE_IN, BASE_OUT, BIOPHYS_CSV, DEM_TIF, LULC_TIF, K_TIF, R_TIF
-    global WATERSHEDS_RAW, WATERSHEDS_SANITIZED, WATERSHEDS_SAN_LAYER, DRAINAGE_PATH
 
-    ROOT = _output_path(p, 'erosion_sdr_root', 'sdr')
-    BASE_IN = _output_path(p, 'erosion_sdr_input_dir', 'sdr_input')
-    BASE_OUT = _output_path(p, 'erosion_sdr_output_dir', 'sdr_output')
-    os.makedirs(BASE_OUT, exist_ok=True)
-
-    BIOPHYS_CSV = _required_path(p, 'erosion_biophysical_table_path', 'BIOPHYS_CSV')
-    DEM_TIF = _required_path(p, 'erosion_dem_path', 'DEM_TIF')
-    LULC_TIF = _required_path(p, 'erosion_lulc_path', 'LULC_TIF')
-    K_TIF = _required_path(p, 'erosion_erodibility_path', 'K_TIF')
-    R_TIF = _required_path(p, 'erosion_erosivity_path', 'R_TIF')
-    WATERSHEDS_RAW = _required_path(p, 'erosion_watersheds_path', 'WATERSHEDS_RAW')
-    WATERSHEDS_SANITIZED = _output_path(p, 'erosion_watersheds_sanitized_path', 'watersheds_sanitized.gpkg')
-    WATERSHEDS_SAN_LAYER = getattr(p, 'erosion_watersheds_sanitized_layer', WATERSHEDS_SAN_LAYER)
-    DRAINAGE_PATH = getattr(p, 'erosion_drainage_path', DRAINAGE_PATH)
 
 
 # =============================================================================
@@ -319,26 +297,14 @@ def configure_sdr(p):
 # es_parameters rows. None until then: these used to hold absolute paths on the machines the
 # source scripts were written on, so a project that forgot a row ran against a directory that
 # does not exist here. _required_path now names the missing row instead.
-ROOT = None
 
-BASE_IN = None
-BASE_OUT = None
 
-BIOPHYS_CSV = None
-DEM_TIF = None
-LULC_TIF = None
-K_TIF = None
-R_TIF = None
 
 # ✅ Use MERGED watershed ONLY
-WATERSHEDS_RAW = None
 
 # Sanitized watersheds used to prevent overflow + CRS parse failures in report
-WATERSHEDS_SANITIZED = None
-WATERSHEDS_SAN_LAYER = "watersheds"
 
 # Optional drainage raster (leave empty to disable)
-DRAINAGE_PATH = ""
 
 
 # =============================================================================
@@ -401,120 +367,87 @@ def _assert_exists(path, label: str):
 # =============================================================================
 # 4) SDR ARGS (INVEST 3.17.x TEMPLATE)
 # =============================================================================
-def build_args(watersheds_path) -> dict:
-    return {
-        "workspace_dir": str(BASE_OUT),
-        "results_suffix": "2019_revised_dec_14",
+def build_args(p, watersheds_path) -> dict:
+    """The InVEST SDR argument dictionary for Section A.
 
-        "biophysical_table_path": str(BIOPHYS_CSV),
-        "dem_path": str(DEM_TIF),
-        "lulc_path": str(LULC_TIF),
-        "erodibility_path": str(K_TIF),
-        "erosivity_path": str(R_TIF),
+    Args:
+        p: the ProjectFlow object, for the erosion_sdr_* settings and the input references.
+        watersheds_path (str): the sanitized watersheds layer.
+
+    Returns:
+        dict: the arguments InVEST SDR takes.
+    """
+    return {
+        "workspace_dir": str(p.erosion_sdr_output_dir),
+        "results_suffix": p.erosion_sdr_results_suffix,
+
+        "biophysical_table_path": str(p.erosion_biophysical_table_path),
+        "dem_path": str(p.erosion_dem_path),
+        "lulc_path": str(p.erosion_lulc_path),
+        "erodibility_path": str(p.erosion_erodibility_path),
+        "erosivity_path": str(p.erosion_erosivity_path),
         "watersheds_path": str(watersheds_path),
 
-        "drainage_path": str(DRAINAGE_PATH) if DRAINAGE_PATH else "",
+        "drainage_path": str(p.erosion_drainage_path) if p.erosion_drainage_path else "",
 
-        "flow_dir_algorithm": "D8",           # "D8" or "MFD"
-        "threshold_flow_accumulation": 100,   # int
-        "k_param": 2.0,                       # float
-        "sdr_max": 0.5,                       # float
-        "ic_0_param": 0.8,                    # float
-        "l_max": 122.0,                       # float
-
-        # Parallelism (remove if your InVEST build rejects unknown keys)
-        "n_workers": -1,
+        "flow_dir_algorithm": p.erosion_sdr_flow_dir_algorithm,
+        "threshold_flow_accumulation": p.erosion_sdr_threshold_flow_accumulation,
+        "k_param": p.erosion_sdr_k_param,
+        "sdr_max": p.erosion_sdr_max,
+        "ic_0_param": p.erosion_sdr_ic_0_param,
+        "l_max": p.erosion_sdr_l_max,
+        "n_workers": p.erosion_sdr_n_workers,
     }
 
 
 # ==============================
 # 1) CONFIG — EDIT AS NEEDED
 # ==============================
-SCENARIO_NAME = "SES — On-farm + Upstream (decomposed)"
-RUN_TAG = "ses11_onfarm_upstream_combined_20260305"
 
 # =============================================================================
 # SECTION B -- On-farm + upstream erosion prevention-share GEP valuation
 #              (from Combine_PS_SES11_3_3_2026.ipynb)
 # =============================================================================
-ROOT = None
 
 # Primary erosion inputs (SDR-derived)
-IN_DIR = None
-USLE_PATH = None
-AVOID_PATH = None
 
 # Precomputed upstream prevention share raster (from your DEM+D8 workflow)
-UPS_DIR = None
-UPS_PATH = None
 
 # Optional upstream LULC attribution shares (diagnostics only)
-UPS_FOREST_SHARE = None
-UPS_GRASS_SHARE = None
-UPS_CROP_SHARE = None
-UPS_BARE_SHARE = None
-USE_UPSLOPE_LULC_ATTRIBUTION_DIAGNOSTICS = True
 
 # Boundary with ISO3 column
-BOUNDARY_GPKG = None
-BOUNDARY_SOURCE_EPSG = None  # set to 4326 if you know it is WGS84
 
 # Optional DEM used ONLY for threshold policy (low-elevation rule). If not present, rule is skipped.
-ELEVATION_PATH = None
 
 # Crops: SPAM2020 stacks
-CROP_DIR = None
-YIELD_STACK = None
-AREA_STACK = None
-BANDMAP_CSV = None
-AREA_STACK_IS_HA_PER_PIXEL = True
 
 # Elasticity table (used only in valuation Option A)
-ELASTICITY_CSV = None
 
 # Valuation inputs
-FAO_GPV_ISO3_CSV = None
-FAO_PRICES_FULL_CSV = None
-GDP_CURRENT_2019_CSV = None
 
 # Output directory
-OUT_DIR = None
 
 # -------- Scientific knobs --------
-THRESH_LOW  = 2.0
-THRESH_HIGH = 11.0   # SES-11 default threshold
-SMALL_COUNTRY_AREA_KM2 = 50_000
-LOW_ELEVATION_MEAN_M   = 250
 
 # If True: PS is computed only for severe pixels on cropland (recommended)
-APPLY_SEVERE_FILTER = True
 
 # Elasticity fallback if crop not found
-YIELD_REDUCTION_FOR_SHOCK = 0.08
 
 # Shock floor (applied only to (0 < shock < floor))
 
-BASE_YEAR_FOR_CONSTANT = 2019
 
 # World Bank API toggles
-AUTO_DOWNLOAD_WB = True
-FORCE_REFRESH_WB = False
 _HTTP_TIMEOUT = 60
 _RETRY = 4
 
 # Rasterization behavior. False is the centre rule, and configure_prevention_shares defaults to
 # the same thing, so a task that reads this before the run is configured gets the same rule.
-RASTERIZE_ALL_TOUCHED = False
 
 # Crops-only filter for FAO GPV
-CROPS_ONLY = True
 
 # DEM validity rules (prevents low-elevation misclassification)
-DEM_MASK_BELOW_SEA_LEVEL = True
-DEM_MAX_VALID_ELEV_M = 9000.0
 
 # -------- Enforce equal-area analysis CRS --------
-ANALYSIS_EPSG = 8857
 
 # Reprojection strategies
 RESAMPLE_USLE_AVOID = Resampling.average
@@ -590,85 +523,12 @@ def _filter_crops_only(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
-def configure_prevention_shares(p):
-    """
-    Override the Section-B (on-farm + upstream prevention share GEP
-    valuation) module-level constants from the ProjectFlow object.
-    Called by erosion_tasks.prevention_shares() before
-    integrate_and_write().
 
-    NOTE (organizational quirk to flag to Justin/Chiara): the original
-    Combine_PS_SES notebook points ROOT at a different filesystem root
-    (/projects/standard/jajohns/shared/sediment_gep/sediment_feb_2026)
-    than the SDR script's ROOT (/users/3/damph002/GEP/sediment) even
-    though Section B's inputs (USLE, avoided erosion) are meant to be
-    Section A's SDR outputs. p.erosion_gep_root defaults to the former;
-    override it once both stages share one project layout.
-    """
-    global SCENARIO_NAME, RUN_TAG, ROOT, IN_DIR, USLE_PATH, AVOID_PATH
-    global UPS_DIR, UPS_PATH, UPS_FOREST_SHARE, UPS_GRASS_SHARE, UPS_CROP_SHARE, UPS_BARE_SHARE
-    global USE_UPSLOPE_LULC_ATTRIBUTION_DIAGNOSTICS, BOUNDARY_GPKG, BOUNDARY_SOURCE_EPSG
-    global ELEVATION_PATH, CROP_DIR, YIELD_STACK, AREA_STACK, BANDMAP_CSV, AREA_STACK_IS_HA_PER_PIXEL
-    global ELASTICITY_CSV, FAO_GPV_ISO3_CSV, FAO_PRICES_FULL_CSV, GDP_CURRENT_2019_CSV
-    global OUT_DIR, THRESH_LOW, THRESH_HIGH, SMALL_COUNTRY_AREA_KM2, LOW_ELEVATION_MEAN_M
-    global APPLY_SEVERE_FILTER, YIELD_REDUCTION_FOR_SHOCK, MIN_SHOCK_FLOOR, BASE_YEAR_FOR_CONSTANT
-    global AUTO_DOWNLOAD_WB, FORCE_REFRESH_WB, RASTERIZE_ALL_TOUCHED, CROPS_ONLY
-    global DEM_MASK_BELOW_SEA_LEVEL, DEM_MAX_VALID_ELEV_M, ANALYSIS_EPSG
-
-    SCENARIO_NAME = getattr(p, 'erosion_scenario_name', SCENARIO_NAME)
-    RUN_TAG = getattr(p, 'erosion_run_tag', RUN_TAG)
-    ROOT = _output_path(p, 'erosion_gep_root', 'gep')
-
-    IN_DIR = _output_path(p, 'erosion_gep_input_dir', 'gep_input')
-    USLE_PATH = _required_path(p, 'erosion_usle_path', 'IN_DIR / "usle_2019_revised_feb_13.tif"')
-    AVOID_PATH = _required_path(p, 'erosion_avoided_erosion_path', 'IN_DIR / "avoided_erosion_2019_revised_feb_13.tif"')
-
-    UPS_DIR = _output_path(p, 'erosion_upstream_dir', 'upstream')
-    UPS_PATH = _output_path(p, 'erosion_upstream_prevention_share_path', 'upstream_prevention_share.tif')
-    UPS_FOREST_SHARE = _output_path(p, 'erosion_upslope_forest_share_path', 'upslope_forest_share.tif')
-    UPS_GRASS_SHARE = _output_path(p, 'erosion_upslope_grass_share_path', 'upslope_grass_share.tif')
-    UPS_CROP_SHARE = _output_path(p, 'erosion_upslope_cropland_share_path', 'upslope_cropland_share.tif')
-    UPS_BARE_SHARE = _output_path(p, 'erosion_upslope_bare_share_path', 'upslope_bare_share.tif')
-    USE_UPSLOPE_LULC_ATTRIBUTION_DIAGNOSTICS = getattr(p, 'erosion_use_upslope_lulc_diagnostics', True)
-
-    BOUNDARY_GPKG = _required_path(p, 'erosion_country_boundary_path', 'IN_DIR / "country_boundary_r250_with_iso3.gpkg"')
-    BOUNDARY_SOURCE_EPSG = getattr(p, 'erosion_boundary_source_epsg', None)
-    ELEVATION_PATH = _required_path(p, 'erosion_dem_path', 'the elevation model')
-
-    CROP_DIR = _output_path(p, 'erosion_crop_dir', 'crops')
-    YIELD_STACK = _required_path(p, 'erosion_yield_stack_path', 'CROP_DIR / "spam2020_yield_stack_TA.tif"')
-    AREA_STACK = _required_path(p, 'erosion_area_stack_path', 'CROP_DIR / "spam2020_harvested_area_stack_TA.tif"')
-    BANDMAP_CSV = _required_path(p, 'erosion_bandmap_csv_path', 'CROP_DIR / "spam2020_bandmap.csv"')
-    AREA_STACK_IS_HA_PER_PIXEL = getattr(p, 'erosion_area_stack_is_ha_per_pixel', True)
-
-    ELASTICITY_CSV = _required_path(p, 'erosion_elasticity_csv_path', 'IN_DIR / "elasticity_crops_fao_revised.csv"')
-    FAO_GPV_ISO3_CSV = _required_path(p, 'erosion_fao_gpv_iso3_csv_path', 'IN_DIR / "faostat_gpv_2019_iso3.csv"')
-    FAO_PRICES_FULL_CSV = _required_path(p, 'erosion_fao_prices_csv_path', 'IN_DIR / "faostat_prices_2019_completed_revised.csv"')
-    GDP_CURRENT_2019_CSV = _required_path(p, 'erosion_gdp_csv_path', 'IN_DIR / "worldbank_gdp_2019.csv"')
-
-    OUT_DIR = _output_path(p, 'erosion_gep_output_dir', 'gep_output')
-    os.makedirs(OUT_DIR, exist_ok=True)
-
-    THRESH_LOW = getattr(p, 'erosion_threshold_low_t_ha_yr', 2.0)
-    THRESH_HIGH = getattr(p, 'erosion_threshold_high_t_ha_yr', 11.0)
-    SMALL_COUNTRY_AREA_KM2 = getattr(p, 'erosion_small_country_area_km2', 50_000)
-    LOW_ELEVATION_MEAN_M = getattr(p, 'erosion_low_elevation_mean_m', 250)
-    APPLY_SEVERE_FILTER = getattr(p, 'erosion_apply_severe_filter', True)
-    YIELD_REDUCTION_FOR_SHOCK = getattr(p, 'erosion_yield_reduction_for_shock', 0.08)
-    MIN_SHOCK_FLOOR = getattr(p, 'erosion_min_shock_floor', 8e-10)
-    BASE_YEAR_FOR_CONSTANT = getattr(p, 'erosion_base_year', 2019)
-    AUTO_DOWNLOAD_WB = getattr(p, 'erosion_auto_download_wb', True)
-    FORCE_REFRESH_WB = getattr(p, 'erosion_force_refresh_wb', False)
     # False is the centre rule: a cell goes to the country covering its centre point, so it has
     # exactly one owner and the answer depends on geography alone. Under True every country whose
     # outline touches a cell claims it, and because the claims are burned into one id raster the
     # country rasterised LAST keeps it, which puts a country's value at the mercy of its row order
     # in the boundary file. This is the rule utilities.py already aggregates on.
-    RASTERIZE_ALL_TOUCHED = getattr(p, 'erosion_rasterize_all_touched', False)
-    CROPS_ONLY = getattr(p, 'erosion_crops_only', True)
-    DEM_MASK_BELOW_SEA_LEVEL = getattr(p, 'erosion_dem_mask_below_sea_level', True)
-    DEM_MAX_VALID_ELEV_M = getattr(p, 'erosion_dem_max_valid_elev_m', 9000.0)
-    ANALYSIS_EPSG = getattr(p, 'erosion_analysis_epsg', 8857)
 
 
 # =============================================================================
@@ -678,82 +538,21 @@ def configure_prevention_shares(p):
 # =============================================================================
 # 0) CONFIG
 # =============================================================================
-ROOT = None
-RUN_DIR = None
 
-FIG_DIR = None
 # (no mkdir at import -- configure_maps re-resolves FIG_DIR from p and creates it at run time)
 
-INTEGRATED_CSV = None
-COUNTRY_CROP_LONG_CSV = None
-
-PS_ONFARM_TIF = None
-PS_UPSTREAM_TIF = None
-PS_COMBINED_TIF = None
-
-RUN_BOUNDARY_GPKG = None
-
-TOP_N = 20
-TOP_N_LABELS = 25
-RASTER_DOWNSAMPLE_FACTOR = 6
-ROBINSON_CRS = "+proj=robin"
-EXCLUDE_ISO3 = {"ATA"}
-
-USD_TO_MILLIONS = 1e6
-MAP_K_CLASSES = 5
-MONEY_UNIT_LABEL = "2019 USD million"
 
 
-def configure_maps(p):
-    """
-    Override the Section-C (maps & figures) module-level constants from the
-    ProjectFlow object. Also pushes EXCLUDE_ISO3 / ROBINSON_CRS /
-    USD_TO_MILLIONS / TOP_N as module globals, since
-    plot_publication_choropleth_categorical() (which lives there) reads
-    those as module globals. Called by
-    erosion_tasks.maps_and_figures() before
-    generate_all_maps_and_figures().
 
-    NOTE (organizational quirk to flag to Justin/Chiara): the original
-    combined_maps_figures notebook pointed RUN_DIR at
-    'output_eps5_onfarm_upstream_combined_20260305', while the
-    Combine_PS_SES notebook that produces those outputs wrote to
-    'output_ses11_onfarm_upstream_combined_20260305' (RUN_TAG mismatch,
-    "eps5" vs "ses11"). p.erosion_run_tag below defaults to the
-    Combine_PS_SES value so the two stages line up; double check this
-    against whichever run you actually want to map.
-    """
-    global ROOT, RUN_DIR, FIG_DIR, INTEGRATED_CSV, COUNTRY_CROP_LONG_CSV
-    global PS_ONFARM_TIF, PS_UPSTREAM_TIF, PS_COMBINED_TIF, RUN_BOUNDARY_GPKG
-    global TOP_N_LABELS, RASTER_DOWNSAMPLE_FACTOR, MAP_K_CLASSES, MONEY_UNIT_LABEL
 
-    ROOT = _output_path(p, 'erosion_gep_root', 'gep')
-    run_tag = getattr(p, 'erosion_run_tag', 'ses11_onfarm_upstream_combined_20260305')
-    RUN_DIR = _output_path(p, 'erosion_gep_output_dir', 'gep_output')
 
-    FIG_DIR = _output_path(p, 'erosion_figures_dir', 'figures')
-    os.makedirs(FIG_DIR, exist_ok=True)
 
-    INTEGRATED_CSV = _output_path(p, 'erosion_integrated_country_gep_csv', 'integrated_country_gep.csv')
-    COUNTRY_CROP_LONG_CSV = _output_path(p, 'erosion_country_crop_long_csv', 'country_crop_protected_production_long.csv')
 
-    PS_ONFARM_TIF = _output_path(p, 'erosion_ps_onfarm_tif', 'ps_onfarm_cropland_severe.tif')
-    PS_UPSTREAM_TIF = _output_path(p, 'erosion_ps_upstream_tif', 'ps_upstream_cropland_severe.tif')
-    PS_COMBINED_TIF = _output_path(p, 'erosion_ps_combined_tif', 'ps_combined_union_cropland_severe.tif')
 
-    RUN_BOUNDARY_GPKG = _required_path(p, 'erosion_country_boundary_path', 'ROOT / "inputs_v2" / "erosion_gep" / "country_boundary_r250_with_iso3.gpkg"')
 
-    TOP_N_LABELS = getattr(p, 'erosion_top_n_labels', 25)
-    RASTER_DOWNSAMPLE_FACTOR = getattr(p, 'erosion_raster_downsample_factor', 6)
-    MAP_K_CLASSES = getattr(p, 'erosion_map_k_classes', 5)
-    MONEY_UNIT_LABEL = getattr(p, 'erosion_money_unit_label', "2019 USD million")
+
 
     # Shared plotting constants (module globals since the utils fold).
-    global EXCLUDE_ISO3, ROBINSON_CRS, USD_TO_MILLIONS, TOP_N
-    EXCLUDE_ISO3 = getattr(p, 'erosion_exclude_iso3', {"ATA"})
-    ROBINSON_CRS = getattr(p, 'erosion_robinson_crs', "+proj=robin")
-    USD_TO_MILLIONS = getattr(p, 'erosion_usd_to_millions', 1e6)
-    TOP_N = getattr(p, 'erosion_top_n', 20)
 
 # ---------------------------------------------------------------------------------------------
 # Helpers the rest of the module shares: array cleaning, formatting and column picking.
@@ -875,9 +674,6 @@ def to_num(df: pd.DataFrame, cols: list[str]) -> pd.DataFrame:
     return df
 
 
-def top_n(df: pd.DataFrame, col: str, n: int = TOP_N) -> pd.DataFrame:
-    d = df[np.isfinite(df[col])].copy()
-    return d.sort_values(col, ascending=False).head(n)
 
 
 def pick_iso3_column(gdf: gpd.GeoDataFrame) -> str | None:

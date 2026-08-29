@@ -2271,13 +2271,6 @@ def run_valuation_chain(p, df_countries, skip_damage_tables: bool = False) -> di
 
 
 
-
-
-
-
-
-
-
 def load_admin0(path: str, layer: Optional[str] = None) -> gpd.GeoDataFrame:
     """
     Load Admin0 polygons, normalize the ISO3 column to lowercase 'iso3',
@@ -2324,14 +2317,7 @@ def publish_inputs(p):
 
 
 
-
-
-
-
 MAP_MONEY_UNIT_LABEL = "2019 USD million"
-
-
-
 
 
 
