@@ -340,16 +340,16 @@ def _set_proj_gdal_env():
 
 
 def _print_env_banner():
-    print("\n" + "=" * 78)
-    print("[env] Python exe:", sys.executable)
-    print("[env] Python ver:", sys.version.replace("\n", " "))
-    print("[env] CWD       :", os.getcwd())
-    print("[env] sys.prefix:", sys.prefix)
-    print("[env] PROJ_LIB  :", os.environ.get("PROJ_LIB", "(not set)"))
-    print("[env] GDAL_DATA :", os.environ.get("GDAL_DATA", "(not set)"))
-    print("[env] PROJ_NETWORK:", os.environ.get("PROJ_NETWORK", "(not set)"))
-    print("[env] GTIFF_SRS_SOURCE:", os.environ.get("GTIFF_SRS_SOURCE", "(not set)"))
-    print("=" * 78 + "\n")
+    hb.log("\n" + "=" * 78)
+    hb.log("[env] Python exe:", sys.executable)
+    hb.log("[env] Python ver:", sys.version.replace("\n", " "))
+    hb.log("[env] CWD       :", os.getcwd())
+    hb.log("[env] sys.prefix:", sys.prefix)
+    hb.log("[env] PROJ_LIB  :", os.environ.get("PROJ_LIB", "(not set)"))
+    hb.log("[env] GDAL_DATA :", os.environ.get("GDAL_DATA", "(not set)"))
+    hb.log("[env] PROJ_NETWORK:", os.environ.get("PROJ_NETWORK", "(not set)"))
+    hb.log("[env] GTIFF_SRS_SOURCE:", os.environ.get("GTIFF_SRS_SOURCE", "(not set)"))
+    hb.log("=" * 78 + "\n")
 
 
 # =============================================================================

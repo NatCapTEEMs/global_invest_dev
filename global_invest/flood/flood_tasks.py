@@ -257,19 +257,19 @@ def _download(url: str, dst: str) -> None:
 
     hb.create_directories(os.path.dirname(str(dst)))
     if hb.path_exists(dst) and os.path.getsize(str(dst)) > 0:
-        print(f"[SKIP] already downloaded: {os.path.basename(str(dst))}")
+        hb.log(f"[SKIP] already downloaded: {os.path.basename(str(dst))}")
         return
-    print(f"[DL] {url}")
+    hb.log(f"[DL] {url}")
     urlretrieve(url, str(dst))
     if not hb.path_exists(dst) or os.path.getsize(str(dst)) == 0:
         raise RuntimeError(f"Download failed or empty file: {dst}")
-    print(f"[OK]  saved: {dst} ({os.path.getsize(str(dst)) / 1e6:.1f} MB)")
+    hb.log(f"[OK]  saved: {dst} ({os.path.getsize(str(dst)) / 1e6:.1f} MB)")
 
 
 def _extract_zip(zip_path: str, out_dir: str) -> List[str]:
     hb.create_directories(str(out_dir))
     extracted: List[str] = []
-    print(f"[UNZIP] {os.path.basename(str(zip_path))}")
+    hb.log(f"[UNZIP] {os.path.basename(str(zip_path))}")
     with zipfile.ZipFile(zip_path, "r") as z:
         tifs = [m for m in z.namelist() if m.lower().endswith((".tif", ".tiff"))]
         if not tifs:
@@ -284,7 +284,7 @@ def _extract_zip(zip_path: str, out_dir: str) -> List[str]:
             if hb.path_exists(nested) and nested != out_path:
                 nested.rename(out_path)
             extracted.append(out_path)
-    print(f"[OK]  extracted {len(extracted)} tif(s)")
+    hb.log(f"[OK]  extracted {len(extracted)} tif(s)")
     return extracted
 
 
@@ -338,10 +338,10 @@ def download_and_align_jrc_depth(p, return_periods: Optional[List[int]] = None) 
         ref_profile.update(width=ref.width, height=ref.height,
                            transform=ref.transform, crs=ref.crs)
 
-    print("[INFO] LULC reference grid:")
-    print("       CRS:", ref_profile["crs"])
-    print("       shape:", (ref_profile["height"], ref_profile["width"]))
-    print("       transform:", ref_profile["transform"])
+    hb.log("[INFO] LULC reference grid:")
+    hb.log("       CRS:", ref_profile["crs"])
+    hb.log("       shape:", (ref_profile["height"], ref_profile["width"]))
+    hb.log("       transform:", ref_profile["transform"])
 
     out: Dict[int, str] = {}
     for rp in rps:
@@ -352,18 +352,18 @@ def download_and_align_jrc_depth(p, return_periods: Optional[List[int]] = None) 
         for tif in tifs:
             out_depth = os.path.join(p.flood_depth_aligned_path, f"JRC_flood_depth_rp{rp}y__matchLULC.tif")
             if utilities.raster_ok(out_depth):
-                print(f"[SKIP] aligned depth exists: {os.path.basename(str(out_depth))}")
+                hb.log(f"[SKIP] aligned depth exists: {os.path.basename(str(out_depth))}")
             else:
-                print(f"[WARP] RP{rp}: {os.path.basename(str(tif))} -> {os.path.basename(str(out_depth))}")
+                hb.log(f"[WARP] RP{rp}: {os.path.basename(str(tif))} -> {os.path.basename(str(out_depth))}")
                 _warp_to_lulc(tif, out_depth, ref_profile)
-                print(f"[OK]   wrote: {out_depth}")
+                hb.log(f"[OK]   wrote: {out_depth}")
 
             out_mask = os.path.join(p.flood_depth_mask_path, f"JRC_flood_mask_rp{rp}y__matchLULC.tif")
             if utilities.raster_ok(out_mask):
-                print(f"[SKIP] mask exists: {os.path.basename(str(out_mask))}")
+                hb.log(f"[SKIP] mask exists: {os.path.basename(str(out_mask))}")
             else:
                 _write_mask_from_depth(out_depth, out_mask, threshold=0.0)
-                print(f"[OK]   wrote: {out_mask}")
+                hb.log(f"[OK]   wrote: {out_mask}")
 
             out[rp] = out_depth
     return out
@@ -398,23 +398,23 @@ def write_lulc_to_sda_mapping(p) -> str:
 
     hb.create_directories(os.path.dirname(p.flood_sda_mapping_path))
     hb.write_to_file(json.dumps(mapping, indent=2), p.flood_sda_mapping_path)
-    print(f"[OK] Wrote SDA mapping JSON -> {p.flood_sda_mapping_path}")
+    hb.log(f"[OK] Wrote SDA mapping JSON -> {p.flood_sda_mapping_path}")
 
     codes = _sample_unique_lulc_codes(p.flood_lulc_path)
-    print(f"[INFO] Unique LULC codes sampled: {len(codes)} -> {codes[:20]}")
+    hb.log(f"[INFO] Unique LULC codes sampled: {len(codes)} -> {codes[:20]}")
 
     all_codes = set(codes)
     for key in ("artif", "crop", "pasture", "ignore"):
         missing = [c for c in mapping[key] if c not in all_codes]
         if missing:
-            print(f"[WARN] Mapping key '{key}' has codes not seen in raster: {missing}")
+            hb.log(f"[WARN] Mapping key '{key}' has codes not seen in raster: {missing}")
 
     categorized = set().union(*(set(v) for v in mapping.values()))
     uncategorized = sorted(c for c in all_codes if c not in categorized)
     if uncategorized:
-        print("[WARN] Raster contains codes not explicitly categorized:")
-        print(f"       {uncategorized}")
-        print("       These will be treated as NON-SDA (sda_class = 0).")
+        hb.log("[WARN] Raster contains codes not explicitly categorized:")
+        hb.log(f"       {uncategorized}")
+        hb.log("       These will be treated as NON-SDA (sda_class = 0).")
 
     return p.flood_sda_mapping_path
 
@@ -425,7 +425,7 @@ def _sample_unique_lulc_codes(lulc_path: str, n_windows: int = 60, win_size: int
     with rasterio.open(lulc_path) as src:
         nodata = src.nodata
         if full_scan:
-            print("[INFO] Performing FULL raster scan for unique codes...")
+            hb.log("[INFO] Performing FULL raster scan for unique codes...")
             for _, window in src.block_windows(1):
                 arr = src.read(1, window=window)
                 if nodata is not None:
@@ -433,7 +433,7 @@ def _sample_unique_lulc_codes(lulc_path: str, n_windows: int = 60, win_size: int
                 if arr.size:
                     codes.update(np.unique(arr).tolist())
         else:
-            print("[INFO] Sampling windows for unique codes...")
+            hb.log("[INFO] Sampling windows for unique codes...")
             for window in utilities.random_windows(src.width, src.height, n_windows, win_size, seed=rng_seed):
                 arr = src.read(1, window=window)
                 if nodata is not None:
@@ -485,7 +485,7 @@ def build_global_sda_raster(p) -> str:
                 dst.write(sda, 1, window=window)
         os.replace(tmp, p.flood_sda_raster_path)
 
-    print("[OK] SDA raster written:", p.flood_sda_raster_path)
+    hb.log("[OK] SDA raster written:", p.flood_sda_raster_path)
     write_sda_legend_csv(p)
     _report_sda_histogram(p.flood_sda_raster_path)
     return p.flood_sda_raster_path
@@ -517,7 +517,7 @@ def write_sda_legend_csv(p) -> str:
             "notes": rule if sda_type != "none" else "ignored (non-SDA)",
         })
     utilities.write_csv(pd.DataFrame(rows), p.flood_sda_legend_path)
-    print("[OK] Legend written:", p.flood_sda_legend_path)
+    hb.log("[OK] Legend written:", p.flood_sda_legend_path)
     return p.flood_sda_legend_path
 
 
@@ -530,11 +530,11 @@ def _report_sda_histogram(path: str):
             for v, c in zip(vals.tolist(), cts.tolist()):
                 counts[v] = counts.get(v, 0) + c
         total = sum(counts.values())
-        print("\n[QA] SDA pixel distribution:")
+        hb.log("\n[QA] SDA pixel distribution:")
         for k in sorted(counts):
-            print(f"  SDA={k}: {counts[k]:,}  ({counts[k] / total if total else 0:.3%})")
-        print("\n[QA] Raster metadata:")
-        print(utilities.raster_profile_string(ds))
+            hb.log(f"  SDA={k}: {counts[k]:,}  ({counts[k] / total if total else 0:.3%})")
+        hb.log("\n[QA] Raster metadata:")
+        hb.log(utilities.raster_profile_string(ds))
     return counts
 
 
@@ -646,7 +646,7 @@ def qa_spa_raster(p, sample_windows: int = 80, window_size: int = 1024) -> str:
 
     out_txt = os.path.join(p.flood_qa_dir, "global_spa_alignment_report.txt")
     hb.write_to_file("".join(report), str(out_txt))
-    print(f"[OK] Wrote report: {out_txt}")
+    hb.log(f"[OK] Wrote report: {out_txt}")
     return out_txt
 
 
@@ -659,7 +659,7 @@ def prepare_all_inputs(p, skip_download: bool = False) -> dict:
     if not utilities.raster_ok(p.flood_sda_raster_path):
         results["global_sda_raster"] = build_global_sda_raster(p)
     else:
-        print(f"[SKIP] Global SDA raster already exists: {p.flood_sda_raster_path}")
+        hb.log(f"[SKIP] Global SDA raster already exists: {p.flood_sda_raster_path}")
         results["global_sda_raster"] = p.flood_sda_raster_path
     if hb.path_exists(p.flood_spa_path):
         results["spa_qa_report"] = qa_spa_raster(p)
@@ -742,10 +742,10 @@ def process_country(
 
     country_geom = aoi.geometry.values[0]
 
-    print(f"\n=== SDA: Processing {iso3} ===")
-    print(f"[INFO] depth_threshold_m: {depth_threshold_m:.3f} | all_touched={all_touched}")
-    print(f"[INFO] mapping sizes: artif={len(artif_ids)} crop={len(crop_ids)} pasture={len(pasture_ids)} ignore={len(ignore_ids)}")
-    print(f"[INFO] options: include_pasture={include_pasture} use_roads={use_roads} with_pop={with_pop} write_depthbin={write_depthbin}")
+    hb.log(f"\n=== SDA: Processing {iso3} ===")
+    hb.log(f"[INFO] depth_threshold_m: {depth_threshold_m:.3f} | all_touched={all_touched}")
+    hb.log(f"[INFO] mapping sizes: artif={len(artif_ids)} crop={len(crop_ids)} pasture={len(pasture_ids)} ignore={len(ignore_ids)}")
+    hb.log(f"[INFO] options: include_pasture={include_pasture} use_roads={use_roads} with_pop={with_pop} write_depthbin={write_depthbin}")
 
     metrics: list[dict] = []
 
@@ -756,7 +756,7 @@ def process_country(
         with roads_cm as roads_src, pop_cm as pop_src:
             for rp, depth_path in rp_map.items():
                 if not hb.path_exists(depth_path):
-                    print(f"[WARN] Missing depth raster for RP{rp}; skipping:\n  {depth_path}")
+                    hb.log(f"[WARN] Missing depth raster for RP{rp}; skipping:\n  {depth_path}")
                     continue
 
                 with rasterio.open(depth_path) as depth_src:
@@ -846,7 +846,7 @@ def process_country(
                         pop_reproj = ff.reproject_pop_to_target(pop_src, target_profile)
                         pop_in_sda = float(pop_reproj[sda_mask].sum())
 
-                    print(
+                    hb.log(
                         f"[INFO] {iso3} RP{rp}: SDA_area={area_total_km2:,.2f} km² "
                         f"(artif={area_artif_km2:,.2f}, crop={area_crop_km2:,.2f}, pasture={area_past_km2:,.2f}, roads={area_roads_km2:,.2f}) "
                         + (f"| pop_in_SDA={pop_in_sda:,.0f}" if with_pop else "")
@@ -897,7 +897,7 @@ def process_country(
 
     df = pd.DataFrame(metrics)
     df.to_csv(out_csv, index=False)
-    print(f"[OK] Wrote → {out_csv}")
+    hb.log(f"[OK] Wrote → {out_csv}")
     return df
 
 
@@ -1036,10 +1036,10 @@ def compute_service_flow_global(p, iso3_list: Optional[List[str]] = None) -> str
 
     if all_rows:
         utilities.write_csv(pd.DataFrame(all_rows), p.flood_service_flow_path)
-        print(f"[DONE] Global service-flow summary -> {p.flood_service_flow_path}")
-        print(f"[INFO] processed={total_p}, skipped_existing={total_s}")
+        hb.log(f"[DONE] Global service-flow summary -> {p.flood_service_flow_path}")
+        hb.log(f"[INFO] processed={total_p}, skipped_existing={total_s}")
     else:
-        print("[INFO] Nothing to do (no SDA outputs found under "
+        hb.log("[INFO] Nothing to do (no SDA outputs found under "
               f"{p.flood_sda_country_dir}; run Section B first).")
     return p.flood_service_flow_path
 
@@ -1509,14 +1509,14 @@ def compute_pixel_damages(p, iso3_list: Optional[List[str]] = None,
         pix_area_m2 = utilities.pixel_area_m2(sda_ds.transform)
         sda_meta = sda_ds.meta.copy()
 
-    print(f"[INFO] SDA raster: {p.flood_sda_raster_path}")
+    hb.log(f"[INFO] SDA raster: {p.flood_sda_raster_path}")
     if p.flood_latitude_correct_area:
-        print(f"[INFO] Pixel area (m^2): {pix_area_m2:,.1f} at the equator, "
+        hb.log(f"[INFO] Pixel area (m^2): {pix_area_m2:,.1f} at the equator, "
               f"scaled by cos^2(lat) per row")
     else:
-        print(f"[INFO] Pixel area (m^2): {pix_area_m2:,.1f} UNCORRECTED "
+        hb.log(f"[INFO] Pixel area (m^2): {pix_area_m2:,.1f} UNCORRECTED "
               f"-- overstates area 4x at 60N")
-    print(f"[INFO] RPs: {p.flood_return_periods} | scenario: {scenario} | tile: {tile}")
+    hb.log(f"[INFO] RPs: {p.flood_return_periods} | scenario: {scenario} | tile: {tile}")
 
     run_list = iso3_list if iso3_list else sorted(admin0.iso3.unique())
     written: List[str] = []
@@ -1527,7 +1527,7 @@ def compute_pixel_damages(p, iso3_list: Optional[List[str]] = None,
             continue
         geom = unary_union(rows.geometry.values)
         if len(rows) > 1:
-            print(f"[INFO] {iso3}: unioned {len(rows)} Admin0 features.")
+            hb.log(f"[INFO] {iso3}: unioned {len(rows)} Admin0 features.")
 
         out_dir = os.path.join(p.flood_valuation_country_dir, iso3)
         hb.create_directories(str(out_dir))
@@ -1539,7 +1539,7 @@ def compute_pixel_damages(p, iso3_list: Optional[List[str]] = None,
         for rp in p.flood_return_periods:
             depth_path = _find_depth_raster(p, rp)
             if depth_path is None:
-                print(f"[WARN] {iso3}: no depth raster for RP={rp} in {p.flood_depth_aligned_path}")
+                hb.log(f"[WARN] {iso3}: no depth raster for RP={rp} in {p.flood_depth_aligned_path}")
                 continue
 
             amp_src = _open_amp(p, scenario, rp)
@@ -1549,7 +1549,7 @@ def compute_pixel_damages(p, iso3_list: Optional[List[str]] = None,
 
                     win = _country_window(dds, geom)
                     if win is None:
-                        print(f"[WARN] {iso3} RP{rp}: empty window in raster space")
+                        hb.log(f"[WARN] {iso3} RP{rp}: empty window in raster space")
                         continue
                     win_tr = window_transform(win, dds.transform)
 
@@ -1647,7 +1647,7 @@ def compute_pixel_damages(p, iso3_list: Optional[List[str]] = None,
                                [(iso3, t) for t in sda_code_to_type(p).values()]
                                if (iso3, t) not in curves]
                     if missing:
-                        print(f"[WARN] {iso3}: no damage curve for {sorted(set(missing))}; "
+                        hb.log(f"[WARN] {iso3}: no damage curve for {sorted(set(missing))}; "
                               f"those classes contribute zero.")
 
                     rec = {"iso3": iso3, "rp": rp, "damage_total_usd2019": total_all}
@@ -1655,7 +1655,7 @@ def compute_pixel_damages(p, iso3_list: Optional[List[str]] = None,
                                 for t, v in totals_by_sda.items()})
                     records.append(rec)
 
-                    print(f"[OK] {iso3} RP{rp} [{scenario}]: "
+                    hb.log(f"[OK] {iso3} RP{rp} [{scenario}]: "
                           f"{total_all:,.2f} USD2019 "
                           f"| window {int(win.height)}x{int(win.width)} "
                           f"| tiles {n_active}/{n_tiles} active")
@@ -1670,9 +1670,9 @@ def compute_pixel_damages(p, iso3_list: Optional[List[str]] = None,
                 rec_df = ff._attach_service_flow(rec_df, iso3, _load_service_flow_table(p))
             utilities.write_csv(rec_df, out_csv)
             written.append(out_csv)
-            print(f"[OK] Wrote summary -> {out_csv} (rows={len(rec_df)})")
+            hb.log(f"[OK] Wrote summary -> {out_csv} (rows={len(rec_df)})")
         else:
-            print(f"[WARN] {iso3}: no RP records written (missing depth rasters?)")
+            hb.log(f"[WARN] {iso3}: no RP records written (missing depth rasters?)")
 
     return written
 
@@ -1727,7 +1727,7 @@ def load_protection_table(p) -> Optional[pd.DataFrame]:
             out.iso3.isin(documented_protection_iso3(p)), "documented", "gdp_inferred")
 
     n_doc = int((out.protection_evidence == "documented").sum())
-    print(f"[INFO] protection standards: {len(out)} countries "
+    hb.log(f"[INFO] protection standards: {len(out)} countries "
           f"({n_doc} documented, {len(out)-n_doc} GDP-inferred)")
 
     if p.flood_protection_documented_only:
@@ -1735,7 +1735,7 @@ def load_protection_table(p) -> Optional[pd.DataFrame]:
         # reported, just untruncated, with the reason recorded.
         mask = out.protection_evidence != "documented"
         out.loc[mask, "protection_rp"] = np.nan
-        print(f"[INFO] truncation restricted to documented protection; "
+        hb.log(f"[INFO] truncation restricted to documented protection; "
               f"{int(mask.sum())} countries reported untruncated")
     return out
 
@@ -1789,7 +1789,7 @@ def compute_ead_by_country(p, scenario: str = "current") -> pd.DataFrame:
                       "NC/NC+ columns will be NaN.")
 
     iso3_dirs = list_iso3_dirs(p.flood_valuation_country_dir)
-    print(f"[INFO] Step 4C [{scenario}]: {len(iso3_dirs)} ISO3 folders under {p.flood_valuation_country_dir}")
+    hb.log(f"[INFO] Step 4C [{scenario}]: {len(iso3_dirs)} ISO3 folders under {p.flood_valuation_country_dir}")
 
     results = []
     for iso3_dir in iso3_dirs:
@@ -1872,14 +1872,14 @@ def compute_ead_by_country(p, scenario: str = "current") -> pd.DataFrame:
 
         results.append({"iso3": iso3, "status": "ok", "ead_usd2019": float(ead),
                         "ead_attributed_to_spa_usd2019": float(ead_attr)})
-        print(f"[OK] {iso3}: EAD = {utilities.fmt_usd(ead)}")
+        hb.log(f"[OK] {iso3}: EAD = {utilities.fmt_usd(ead)}")
 
     status_df = pd.DataFrame(results)
     utilities.write_csv(status_df, os.path.join(p.flood_global_export_dir, f"step4c_global_status{suffix}.csv"))
     n_ok = int((status_df["status"] == "ok").sum()) if not status_df.empty else 0
     total = float(pd.to_numeric(status_df.get("ead_usd2019"), errors="coerce").sum()) \
         if not status_df.empty else 0.0
-    print(f"[DONE] Step 4C [{scenario}]: ok={n_ok} / {len(iso3_dirs)}, "
+    hb.log(f"[DONE] Step 4C [{scenario}]: ok={n_ok} / {len(iso3_dirs)}, "
           f"total EAD ${total:,.0f}")
 
     # ⚠ "ok" counts countries that completed, not countries that produced a number. On 2026-08-29
@@ -2122,12 +2122,12 @@ def export_attributed_summary(p) -> Optional[str]:
     out_csv = p.flood_country_ead_with_service_flow_path
     utilities.write_csv(df, out_csv)
 
-    print(f"[OK] Attributed summary -> {out_csv}")
-    print(f"     gross global EAD      = {utilities.fmt_usd(np.nansum(gross))}")
-    print(f"     attributed to SPA     = {utilities.fmt_usd(np.nansum(attr))}")
+    hb.log(f"[OK] Attributed summary -> {out_csv}")
+    hb.log(f"     gross global EAD      = {utilities.fmt_usd(np.nansum(gross))}")
+    hb.log(f"     attributed to SPA     = {utilities.fmt_usd(np.nansum(attr))}")
     if np.nansum(gross) > 0:
-        print(f"     attributed share      = {np.nansum(attr) / np.nansum(gross):.1%}")
-    print("     NOTE: attribution of residual damage, NOT avoided damage.")
+        hb.log(f"     attributed share      = {np.nansum(attr) / np.nansum(gross):.1%}")
+    hb.log("     NOTE: attribution of residual damage, NOT avoided damage.")
     return out_csv
 
 
@@ -2213,26 +2213,26 @@ def compute_flood_gep(p) -> Optional[str]:
 
     utilities.write_csv(df, p.flood_gep_path)
 
-    print(f"[OK] Flood GEP table -> {p.flood_gep_path}")
-    print(f"     EAD current           = {utilities.fmt_usd(np.nansum(c))}")
+    hb.log(f"[OK] Flood GEP table -> {p.flood_gep_path}")
+    hb.log(f"     EAD current           = {utilities.fmt_usd(np.nansum(c))}")
     for lab in found:
         g = np.nansum(df[f"gep_flood_{lab}_usd2019"])
-        print(f"     GEP ({lab:6s})         = {utilities.fmt_usd(g)}")
+        hb.log(f"     GEP ({lab:6s})         = {utilities.fmt_usd(g)}")
     if len(found) == 2:
         gi = np.nansum(df["gep_flood_insitu_usd2019"])
         gb = np.nansum(df["gep_flood_bare_usd2019"])
-        print(f"     -> bracketed range    = {utilities.fmt_usd(gi)} to {utilities.fmt_usd(gb)}")
-        print("     Use 'bare' for any combined table with erosion (same baseline).")
+        hb.log(f"     -> bracketed range    = {utilities.fmt_usd(gi)} to {utilities.fmt_usd(gb)}")
+        hb.log("     Use 'bare' for any combined table with erosion (same baseline).")
     if p.flood_report_protection_split:
         nc_cols = [c for c in df.columns if c.startswith("ead_nc_")]
-        print("     NC / NC+ columns present (Vallecillo Eq.7 sensitivity).")
+        hb.log("     NC / NC+ columns present (Vallecillo Eq.7 sensitivity).")
         if nc_cols:
             covered = pd.to_numeric(df[nc_cols[0]], errors="coerce").notna()
             share = (pd.to_numeric(df.ead_current_usd2019, errors="coerce")[covered].sum()
                      / max(np.nansum(c), 1e-9))
-            print(f"     truncation applied to {int(covered.sum())} countries "
+            hb.log(f"     truncation applied to {int(covered.sum())} countries "
                   f"= {share:.1%} of current EAD (documented protection only);")
-            print("     the remainder are reported untruncated.")
+            hb.log("     the remainder are reported untruncated.")
     return p.flood_gep_path
 
 
@@ -2249,7 +2249,7 @@ def run_gep_chain(p, skip_damage_tables: bool = True,
 
     run = scenarios if scenarios else list(SCENARIOS)
     for n, sc in enumerate(run, 1):
-        print(f"\n=== scenario {n} of {len(run)}: {sc} ===")
+        hb.log(f"\n=== scenario {n} of {len(run)}: {sc} ===")
         out[f"step4b_{sc}"] = compute_pixel_damages(p, scenario=sc)
         out[f"step4c_{sc}"] = compute_ead_by_country(p, scenario=sc)
 
@@ -2490,7 +2490,7 @@ def generate_all_maps_and_figures(p) -> dict:
         value_unit="usd_millions", label_format="usd_millions",
     )
     outputs["map_country_ead"] = png
-    print(f"[OK] Wrote {png}")
+    hb.log(f"[OK] Wrote {png}")
 
     # 2) Top-N countries by EAD
     top = utilities.top_n(country, "ead_usd2019", p.flood_top_n).copy()
@@ -2503,7 +2503,7 @@ def generate_all_maps_and_figures(p) -> dict:
         png = os.path.join(p.flood_figures_dir, "bar_top_countries_ead.png")
         utilities.savefig(png)
         outputs["bar_top_countries"] = png
-        print(f"[OK] Wrote {png}")
+        hb.log(f"[OK] Wrote {png}")
 
     # 3) Regional breakdown, if Step 4D enriched with a region column
     if "region_wb" in country.columns:
@@ -2517,7 +2517,7 @@ def generate_all_maps_and_figures(p) -> dict:
             png = os.path.join(p.flood_figures_dir, "bar_region_ead.png")
             utilities.savefig(png)
             outputs["bar_region"] = png
-            print(f"[OK] Wrote {png}")
+            hb.log(f"[OK] Wrote {png}")
 
     # 4) Mean SPA -> SDA service flow by country (Section C output)
     if hb.path_exists(p.flood_service_flow_path):
@@ -2535,7 +2535,7 @@ def generate_all_maps_and_figures(p) -> dict:
                 value_unit="raw", label_format="percent",
             )
             outputs["map_service_flow"] = png
-            print(f"[OK] Wrote {png}")
+            hb.log(f"[OK] Wrote {png}")
     else:
         warnings.warn(f"[WARN] No service-flow summary at {p.flood_service_flow_path}; "
                       "skipping the service-flow map.")

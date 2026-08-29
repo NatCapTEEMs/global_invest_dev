@@ -599,7 +599,7 @@ def reproject_pop_to_target(pop_src: rasterio.io.DatasetReader, target_profile: 
         resamp = Resampling.sum
     except Exception:
         resamp = Resampling.nearest
-        print("[WARN] Resampling.sum not available; using nearest. Totals may drift if grids differ substantially.")
+        hb.log("[WARN] Resampling.sum not available; using nearest. Totals may drift if grids differ substantially.")
 
     reproject(
         source=rasterio.band(pop_src, 1),

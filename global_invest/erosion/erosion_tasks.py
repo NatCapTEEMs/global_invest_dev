@@ -105,35 +105,35 @@ def run_invest_sdr(paths):
 
     dem_wkt = _dem_wkt(paths.input.dem)
 
-    print("[prep] Sanitizing MERGED watersheds for SDR report/zonal stats …")
+    hb.log("[prep] Sanitizing MERGED watersheds for SDR report/zonal stats …")
     ws_sanitized = sanitize_watersheds_for_report(
         watersheds_in=paths.input.watersheds,
         watersheds_out=paths.output.watersheds_sanitized,
         target_wkt=dem_wkt,
         layer=p.erosion_watersheds_sanitized_layer,
     )
-    print("[prep] Watersheds sanitized:", ws_sanitized)
+    hb.log("[prep] Watersheds sanitized:", ws_sanitized)
 
     args = ef.build_args(p, ws_sanitized)
 
-    print("\n" + "=" * 78)
-    print("[run] Starting InVEST SDR …")
-    print("[run] workspace_dir :", args["workspace_dir"])
-    print("[run] results_suffix:", args["results_suffix"])
-    print("[run] flow_dir_algorithm:", args["flow_dir_algorithm"])
-    print("[run] threshold_flow_accumulation:", args["threshold_flow_accumulation"])
-    print("[run] params: k_param=%.3f, sdr_max=%.3f, ic_0_param=%.3f, l_max=%.3f"
+    hb.log("\n" + "=" * 78)
+    hb.log("[run] Starting InVEST SDR …")
+    hb.log("[run] workspace_dir :", args["workspace_dir"])
+    hb.log("[run] results_suffix:", args["results_suffix"])
+    hb.log("[run] flow_dir_algorithm:", args["flow_dir_algorithm"])
+    hb.log("[run] threshold_flow_accumulation:", args["threshold_flow_accumulation"])
+    hb.log("[run] params: k_param=%.3f, sdr_max=%.3f, ic_0_param=%.3f, l_max=%.3f"
           % (args["k_param"], args["sdr_max"], args["ic_0_param"], args["l_max"]))
-    print("[run] n_workers:", args.get("n_workers", "(not set)"))
-    print("=" * 78 + "\n")
+    hb.log("[run] n_workers:", args.get("n_workers", "(not set)"))
+    hb.log("=" * 78 + "\n")
 
     import natcap.invest.sdr.sdr
     file_registry = natcap.invest.sdr.sdr.execute(args)
 
-    print("\n[done] InVEST SDR finished.")
-    print("[done] Results in:", args["workspace_dir"])
-    print("[done] MERGED watersheds used (raw):", paths.input.watersheds)
-    print("[done] Sanitized watersheds used   :", ws_sanitized)
+    hb.log("\n[done] InVEST SDR finished.")
+    hb.log("[done] Results in:", args["workspace_dir"])
+    hb.log("[done] MERGED watersheds used (raw):", paths.input.watersheds)
+    hb.log("[done] Sanitized watersheds used   :", ws_sanitized)
     return args, file_registry
 
 
@@ -273,7 +273,7 @@ def repair_watersheds(src_path, out_path):
         gdf.loc[invalid, 'geometry'] = gdf.loc[invalid, 'geometry'].make_valid()
         gdf = gdf[gdf.geometry.notna() & ~gdf.geometry.is_empty]
     gdf.to_file(out_path, driver='GPKG')
-    print('  erosion watersheds: repaired %d of %d invalid geometries -> %s'
+    hb.log('  erosion watersheds: repaired %d of %d invalid geometries -> %s'
           % (int(invalid.sum()), len(gdf), out_path))
     return out_path
 
@@ -1188,8 +1188,8 @@ Elapsed minutes: {manifest['elapsed_minutes']}
     with open(os.path.join(paths.output.directory, "run_metadata.txt"), "w", encoding="utf-8") as f:
         f.write(run_metadata_text)
 
-    print(f"Done → {os.path.join(paths.output.directory, INTEGRATED_COUNTRY_GEP_CSV)}")
-    print(f"Manifest → {os.path.join(paths.output.directory, MANIFEST_JSON)}")
+    hb.log(f"Done → {os.path.join(paths.output.directory, INTEGRATED_COUNTRY_GEP_CSV)}")
+    hb.log(f"Manifest → {os.path.join(paths.output.directory, MANIFEST_JSON)}")
 
 
 def load_world_boundary_prefer_run(paths) -> gpd.GeoDataFrame:
@@ -1832,11 +1832,11 @@ def generate_all_maps_and_figures(paths):
     # =============================================================================
     # 10) SUMMARY
     # =============================================================================
-    print(f"✅ Done. Figures saved to: {paths.output.figure_directory}")
-    print("Created files:")
+    hb.log(f"✅ Done. Figures saved to: {paths.output.figure_directory}")
+    hb.log("Created files:")
     for fp in sorted(glob.glob(os.path.join(paths.output.figure_directory, "*"))):
         if os.path.splitext(fp)[1].lower() in {".png", ".csv"}:
-            print(" -", os.path.basename(fp))
+            hb.log(" -", os.path.basename(fp))
 
 
 # The files Section B writes. Each name is spelled once, so a rename cannot be applied to the
@@ -1955,7 +1955,7 @@ def erosion_sdr(p):
                              lulc_path=lulc_grid, watersheds_path=watersheds,
                              biophysical_table_path=biophysical, **sdr_params))
             n += 1
-    print('  erosion SDR: %d scenario x year maps (%s grid) -> usle_/rkls_ in %s'
+    hb.log('  erosion SDR: %d scenario x year maps (%s grid) -> usle_/rkls_ in %s'
           % (n, 'native SEALS' if native else '6.45 km', p.cur_dir))
     return True
 
@@ -1989,7 +1989,7 @@ def erosion_upstream(p):
                 os.path.join(p.cur_dir, suffix),
                 os.path.join(p.cur_dir, 'upstream_%s.tif' % suffix))
             n += 1
-    print('  erosion upstream: %d maps -> upstream_<scn>_<yr>.tif in %s' % (n, p.cur_dir))
+    hb.log('  erosion upstream: %d maps -> upstream_<scn>_<yr>.tif in %s' % (n, p.cur_dir))
     return True
 
 
@@ -2126,7 +2126,7 @@ def erosion_exposure(p):
             _write(mask.astype('float32'), 'severe_mask')
             n += 1
     per_country = getattr(p, 'erosion_country_boundary_path', None) is not None
-    print('  erosion prevention: %d maps -> ps_gated_ on EPSG:%d (severe T=%s)'
+    hb.log('  erosion prevention: %d maps -> ps_gated_ on EPSG:%d (severe T=%s)'
           % (n, analysis_crs.to_epsg(), 'per-country 11/2' if per_country else '%.1f flat' % thresh_high))
     return True
 
@@ -2582,9 +2582,9 @@ def erosion_shock(p):
     utilities.assert_shock_table_sound(out, scenarios, 'erosion')
     out.to_csv(p.erosion_shock_output_path, index=False)
     end = out[out['year'] == es_shock_end_year]
-    print('  erosion shock (dynamic): %d rows, %d scenarios, %d anchors, alpha=%.3f, primary=%s'
+    hb.log('  erosion shock (dynamic): %d rows, %d scenarios, %d anchors, alpha=%.3f, primary=%s'
           % (len(out), len(scenarios), len(anchor_years), alpha, primary.upper()))
-    print('     mean shock @%d   A: %+.4f%%   B: %+.4f%%   B-thresholded: %+.4f%%'
+    hb.log('     mean shock @%d   A: %+.4f%%   B: %+.4f%%   B-thresholded: %+.4f%%'
           % (es_shock_end_year, end['shock_pct_damage'].mean(), end['shock_pct_service'].mean(),
              end['shock_pct_service_threshold'].mean()))
     return True
@@ -2655,7 +2655,7 @@ def erosion_shock_static(p):
     utilities.assert_shock_table_sound(out, es_shock_scenarios, 'erosion')
     out.to_csv(p.erosion_shock_output_path, index=False)
     nz = out[(out['year'] == es_shock_end_year) & (out['shock_pct'] != 0)] if len(out) else out
-    print('  erosion shock: %d rows, %d scenarios, %d nonzero @%d (static, uncapped) -> %s'
+    hb.log('  erosion shock: %d rows, %d scenarios, %d nonzero @%d (static, uncapped) -> %s'
           % (len(out), out['scenario'].nunique() if len(out) else 0, len(nz), es_shock_end_year,
              p.erosion_shock_output_path))
     return True
