@@ -162,7 +162,7 @@ hectare. `ours` is where that lives.
 - **need:** Is marine carbon in the account's scope?
 
 
-- **signed off:** not assessed
+- **signed off:** n/a: no module in the library
 ## Marine Carbon
 
 - **subgroup:** -
@@ -182,7 +182,7 @@ hectare. `ours` is where that lives.
 - **need:** Is marine carbon in the account's scope?
 
 
-- **signed off:** not assessed
+- **signed off:** n/a: no module in the library
 ## Pollination
 
 - **subgroup:** -
