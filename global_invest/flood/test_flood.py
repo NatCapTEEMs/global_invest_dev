@@ -16,6 +16,8 @@ functions are a published input rather than something this account computes.
 
 import numpy as np
 import pandas as pd
+import re
+
 import pytest
 
 from global_invest.flood import flood_functions as ff
@@ -247,13 +249,19 @@ def test_every_flood_module_imports():
         importlib.import_module('global_invest.flood.%s' % name)
 
 
-def test_set_flood_paths_says_which_parameter_is_missing():
-    """Without a root every path silently becomes relative to the working directory."""
-    from global_invest.flood import run_flood
+def test_the_run_file_does_not_configure_the_service():
+    """run_flood.py used to set 55 p.flood_* attributes; 51 of them were read by nothing.
 
-    class BareProject:
-        pass
-
-    with pytest.raises(NameError) as raised:
-        run_flood.set_flood_paths(BareProject())
-    assert 'flood_root_dir' in str(raised.value)
+    Everything the module needs comes from configure_paths, which resolves each location under
+    flood_root_dir, or from es_parameters. The hardcoded copies were not merely redundant: they let
+    the valuation run correctly on a machine where input_template was absent and no config hydrated
+    at all, so nothing surfaced the gap until the GEP chain -- which does read config -- returned $0
+    for every country while reporting success. H14 in the harmonization gate enforces this across
+    the library; this asserts it for the file that broke the rule.
+    """
+    import os
+    here = os.path.dirname(os.path.abspath(__file__))
+    source = open(os.path.join(here, 'run_flood.py'), encoding='utf-8').read()
+    assignments = re.findall(r'^\s+p\.flood_[a-z_0-9]+\s*=', source, re.M)
+    assert not assignments, 'run_flood.py configures the service: %s' % assignments
+    assert 'def set_flood_paths' not in source

@@ -71,6 +71,11 @@ air_filtration,air_filtration_workbook_source_note,"the committed workbook, from
 water_quality,water_quality_retention_path,global_invest/water_quality/Results/EstimationOutput/retention_estimates.csv
 water_quality,water_quality_international_path,global_invest/water_quality/water_quality_gep.csv
 flood,flood_root_dir,
+flood,flood_iso3_list,
+flood,flood_iso3_start,0
+flood,flood_iso3_n,0
+flood,flood_skip_depth_download,false
+flood,flood_settings_source_note,"the four settings the module actually reads. run_flood.py used to set 55 p.flood_* attributes; a grep across flood_tasks, flood_functions, flood_utils, flood_initialize and the MSI scripts on 2026-08-29 found only six ever read, and configure_paths builds every path from flood_root_dir regardless. iso3_list blank means every country in the Admin0 layer; iso3_n 0 means all remaining; the MSI array runner overwrites start and n from SLURM_ARRAY_TASK_ID"
 flood,flood_msi_shared_dir,/projects/standard/jajohns/shared/flood_gep
 flood,flood_msi_inputs_dir,/projects/standard/jajohns/shared/flood_gep/inputs
 flood,flood_msi_mosaic_dir,/projects/standard/jajohns/shared/flood_gep/inputs/counterfactual_mosaic
