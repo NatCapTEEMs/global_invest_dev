@@ -2434,7 +2434,12 @@ def publish_inputs(p):
 
     # Optional companions: a blank es_parameters cell means it is not supplied, and the readers
     # branch on None rather than on a path that happens not to exist.
-    for optional in ('flood_protection_path', 'flood_protection_evidence_path'):
+    # Optional inputs: a blank es_parameters cell means the run does not use one, and the
+    # readers branch on None. Without this a blank cell is skipped by hydration and the
+    # attribute simply does not exist, which is an AttributeError deep in a task rather than
+    # a switch that reads as off -- roads did exactly that an hour into a run.
+    for optional in ('flood_protection_path', 'flood_protection_evidence_path',
+                     'flood_roads_path', 'flood_pop_path'):
         value = getattr(p, optional, None)
         setattr(p, optional, str(value) if value else None)
     # Blank means every scenario in SCENARIOS rather than a chosen subset.
