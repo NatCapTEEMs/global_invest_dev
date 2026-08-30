@@ -41,10 +41,6 @@ _COS_LAT_FLOOR = 0.1
 _MAX_RX = 2048
 _MAX_RY = 1024
 _METERS_PER_DEG_LAT = 111320.0
-_AG_CLASSES = {10, 11, 12, 20, 30, 40}
-_NAT_CLASSES = {50, 60, 61, 62, 70, 71, 72, 80, 81, 82, 90, 100, 110, 120, 121, 122, 130, 140, 150, 152, 153}
-_SEALS_AG_CLASSES = {2}
-_SEALS_NAT_CLASSES = {3, 4, 5}
 
 
 # ---------------------------------------------------------------------------------------------
@@ -1087,18 +1083,14 @@ def run_pollination_sufficiency_300m(
     logger.info("Output: %s", out_path)
     
     # 0. Interpret LULC mapping
-    if lulc_scheme == "esa":
-        ag_classes = _AG_CLASSES
-        nat_classes = _NAT_CLASSES
-        logger.info("Using default ESA-CCI LULC classes.")
-    elif lulc_scheme == "seals":
-        # 1 = urban, 2 = cropland, 3 = grassland, 4 = forest, 5 = non-forest natural
-        # 6 = water, 7 = barren land
-        ag_classes = _SEALS_AG_CLASSES
-        nat_classes = _SEALS_NAT_CLASSES
-        logger.info("Using SEALS LULC classes.")
-    else:
+    classes = utilities.read_lookup_of_sets(cfg.lulc_classes_path, 'scheme', 'role', 'lulc_id')
+    scheme = {'esa': 'esa', 'seals': 'seals7'}.get(lulc_scheme)
+    if scheme is None:
         raise ValueError("Unknown lulc_scheme %r (expected 'esa' or 'seals')" % lulc_scheme)
+    ag_classes = classes[(scheme, 'agricultural')]
+    nat_classes = classes[(scheme, 'natural')]
+    logger.info("Using %s LULC classes: %d agricultural, %d natural.",
+                scheme, len(ag_classes), len(nat_classes))
     
     if hb.path_exists(out_path):
         logger.info("Output already exists, skipping computation.")

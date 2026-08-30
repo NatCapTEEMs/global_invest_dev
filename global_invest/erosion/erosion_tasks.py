@@ -674,7 +674,7 @@ def load_fao_gpv_iso3_const2019_with_fallback(paths,
 
     # extra diagnostic (publication transparency)
     out_diag = out.merge(gpv_fb, on="iso3", how="left")
-    out_diag.to_csv(os.path.join(paths.output.directory, GPV_FALLBACK_DIAGNOSTIC_CSV), index=False)
+    out_diag.to_csv(paths.output.gpv_fallback_diagnostic, index=False)
 
     return out[["iso3","crop_gpv_const2019_2019"]]
 
@@ -871,7 +871,7 @@ def run_biophysical_decomposed(paths):
     severe = (usle.values > threshold_map) if p.erosion_apply_severe_filter else np.ones_like(usle.values, dtype=bool)
 
     df_threshold.insert(1, "country_name", [name_by_iso.get(i, i) for i in df_threshold["iso3"]])
-    df_threshold.rename(columns={"iso3": "ISO3"}).to_csv(os.path.join(paths.output.directory, THRESHOLD_POLICY_CSV), index=False)
+    df_threshold.rename(columns={"iso3": "ISO3"}).to_csv(paths.output.threshold_policy, index=False)
 
     # ---- Bandmap + elasticity
     bandmap = hb.df_read(str(paths.input.bandmap))
@@ -882,7 +882,7 @@ def run_biophysical_decomposed(paths):
     bandmap["band"] = pd.to_numeric(bandmap["band"], errors="coerce").astype("Int64")
 
     elast_map, elast_audit = load_elasticity_map(paths.input.elasticity, fallback_value=p.erosion_yield_reduction_for_shock)
-    elast_audit.to_csv(os.path.join(paths.output.directory, ELASTICITY_AUDIT_CSV), index=False)
+    elast_audit.to_csv(paths.output.elasticity_audit, index=False)
 
     # ---- Cropland mask built from SPAM area (union across bands) + area conservation audit
     cropland_mask = None
@@ -913,7 +913,7 @@ def run_biophysical_decomposed(paths):
             band_mask = (ha_tgt > 0)
             cropland_mask = band_mask if cropland_mask is None else (cropland_mask | band_mask)
 
-    pd.DataFrame(area_conservation_rows).to_csv(os.path.join(paths.output.directory, AREA_CONSERVATION_AUDIT_CSV), index=False)
+    pd.DataFrame(area_conservation_rows).to_csv(paths.output.area_conservation_audit, index=False)
 
     cm = cropland_mask.values.astype(bool)
 
@@ -924,9 +924,9 @@ def run_biophysical_decomposed(paths):
     ps_combined = ef.combined_prevention_share(ps_onfarm, ps_upstream).astype("float32")
 
     # ---- Save PS rasters for transparency
-    ef._write_share(os.path.join(paths.output.directory, PS_ONFARM_CROPLAND_SEVERE_TIF), usle, ps_onfarm)
-    ef._write_share(os.path.join(paths.output.directory, PS_UPSTREAM_CROPLAND_SEVERE_TIF), usle, ps_upstream)
-    ef._write_share(os.path.join(paths.output.directory, PS_COMBINED_UNION_CROPLAND_SEVERE_TIF), usle, ps_combined)
+    ef._write_share(paths.output.prevention_share_onfarm, usle, ps_onfarm)
+    ef._write_share(paths.output.prevention_share_upstream, usle, ps_upstream)
+    ef._write_share(paths.output.prevention_share_combined, usle, ps_combined)
 
     # ---- Country PS diagnostics (means on cropland&severe)
     diag_mask = cm & severe & (iso_id_raster > 0)
@@ -973,7 +973,7 @@ def run_biophysical_decomposed(paths):
             mean_attr = ef._bincount_weighted_mean(ids_1d, arr[diag_mask], max_id)
             df_diag[f"mean_{nm}_cropland_severe"] = [float(mean_attr[i]) for i in range(1, max_id + 1) if id2iso.get(i)]
 
-    df_diag.to_csv(os.path.join(paths.output.directory, COUNTRY_PS_DIAGNOSTICS_CSV), index=False)
+    df_diag.to_csv(paths.output.country_ps_diagnostics, index=False)
 
     # ---- Soil retained on cropland (tons): AE rate * pixel area, cropland mask (independent of decomposition)
     px_ha = ef.pixel_area_hectares(usle)
@@ -998,7 +998,7 @@ def run_biophysical_decomposed(paths):
 
     # ---- Save per-country-crop (long form; publication transparency)
     df_country_crop_long = pd.concat([df_cc_onfarm, df_cc_upstream, df_cc_combined], ignore_index=True)
-    df_country_crop_long.to_csv(os.path.join(paths.output.directory, COUNTRY_CROP_PROTECTED_PRODUCTION_LONG_CSV), index=False)
+    df_country_crop_long.to_csv(paths.output.country_crop_protected_production_long, index=False)
 
     # Optional: also write 3 separate files (handy for reviewers)
     df_cc_onfarm.to_csv(os.path.join(paths.output.directory, "country_crop_protected_production_onfarm.csv"), index=False)
@@ -1096,11 +1096,11 @@ def integrate_and_write(paths):
     # keep everything else after
     out = out[out_cols_front + [c for c in out.columns if c not in out_cols_front]]
     out = out.sort_values(["country_name","iso3"], na_position="last")
-    out.to_csv(os.path.join(paths.output.directory, INTEGRATED_COUNTRY_GEP_CSV), index=False)
+    out.to_csv(paths.output.integrated_country_gep, index=False)
 
     # ---- Also write a “long” valuation table (nice for figures/tables)
     df_gep_long = pd.concat([df_gep_onfarm, df_gep_upstream, df_gep_combined], ignore_index=True)
-    df_gep_long.to_csv(os.path.join(paths.output.directory, COUNTRY_GEP_DECOMPOSITION_LONG_CSV), index=False)
+    df_gep_long.to_csv(paths.output.country_gep_decomposition_long, index=False)
 
     # ---- Manifest + run metadata
     manifest = {
@@ -1133,21 +1133,21 @@ def integrate_and_write(paths):
             "worldbank_gdp_csv": str(paths.input.gdp),
         },
         "outputs": {
-            "integrated_country_gep": str(os.path.join(paths.output.directory, INTEGRATED_COUNTRY_GEP_CSV)),
-            "country_crop_protected_production_long": str(os.path.join(paths.output.directory, COUNTRY_CROP_PROTECTED_PRODUCTION_LONG_CSV)),
-            "country_gep_decomposition_long": str(os.path.join(paths.output.directory, COUNTRY_GEP_DECOMPOSITION_LONG_CSV)),
-            "country_ps_diagnostics": str(os.path.join(paths.output.directory, COUNTRY_PS_DIAGNOSTICS_CSV)),
-            "ps_onfarm_raster": str(os.path.join(paths.output.directory, PS_ONFARM_CROPLAND_SEVERE_TIF)),
-            "ps_upstream_raster": str(os.path.join(paths.output.directory, PS_UPSTREAM_CROPLAND_SEVERE_TIF)),
-            "ps_combined_raster": str(os.path.join(paths.output.directory, PS_COMBINED_UNION_CROPLAND_SEVERE_TIF)),
-            "area_conservation_audit": str(os.path.join(paths.output.directory, AREA_CONSERVATION_AUDIT_CSV)),
-            "elasticity_audit": str(os.path.join(paths.output.directory, ELASTICITY_AUDIT_CSV)),
-            "gpv_fallback_diagnostic": str(os.path.join(paths.output.directory, GPV_FALLBACK_DIAGNOSTIC_CSV)),
-            "threshold_policy": str(os.path.join(paths.output.directory, THRESHOLD_POLICY_CSV)),
+            "integrated_country_gep": str(paths.output.integrated_country_gep),
+            "country_crop_protected_production_long": str(paths.output.country_crop_protected_production_long),
+            "country_gep_decomposition_long": str(paths.output.country_gep_decomposition_long),
+            "country_ps_diagnostics": str(paths.output.country_ps_diagnostics),
+            "ps_onfarm_raster": str(paths.output.prevention_share_onfarm),
+            "ps_upstream_raster": str(paths.output.prevention_share_upstream),
+            "ps_combined_raster": str(paths.output.prevention_share_combined),
+            "area_conservation_audit": str(paths.output.area_conservation_audit),
+            "elasticity_audit": str(paths.output.elasticity_audit),
+            "gpv_fallback_diagnostic": str(paths.output.gpv_fallback_diagnostic),
+            "threshold_policy": str(paths.output.threshold_policy),
         },
         "elapsed_minutes": round((time.time() - t0) / 60.0, 3),
     }
-    with open(os.path.join(paths.output.directory, MANIFEST_JSON), "w", encoding="utf-8") as f:
+    with open(paths.output.manifest, "w", encoding="utf-8") as f:
         json.dump(manifest, f, indent=2)
 
     run_metadata_text = f"""
@@ -1170,7 +1170,7 @@ Decomposed prevention shares (cropland-only; severe-only if enabled):
   Combined:  PS_combined = 1 - (1-PS_onfarm)(1-PS_upstream)
 
 Primary output:
-  {os.path.join(paths.output.directory, INTEGRATED_COUNTRY_GEP_CSV)}
+  {paths.output.integrated_country_gep}
 
 Also written:
   - country_crop_protected_production_long.csv (country-crop, all components)
@@ -1186,8 +1186,8 @@ Elapsed minutes: {manifest['elapsed_minutes']}
     with open(os.path.join(paths.output.directory, "run_metadata.txt"), "w", encoding="utf-8") as f:
         f.write(run_metadata_text)
 
-    hb.log(f"Done → {os.path.join(paths.output.directory, INTEGRATED_COUNTRY_GEP_CSV)}")
-    hb.log(f"Manifest → {os.path.join(paths.output.directory, MANIFEST_JSON)}")
+    hb.log(f"Done → {paths.output.integrated_country_gep}")
+    hb.log(f"Manifest → {paths.output.manifest}")
 
 
 def load_world_boundary_prefer_run(paths) -> gpd.GeoDataFrame:
@@ -1839,19 +1839,6 @@ def generate_all_maps_and_figures(paths):
 
 # The files Section B writes. Each name is spelled once, so a rename cannot be applied to the
 # writer and missed in the manifest that claims to record what ran.
-AREA_CONSERVATION_AUDIT_CSV = "area_conservation_audit.csv"
-COUNTRY_CROP_PROTECTED_PRODUCTION_LONG_CSV = "country_crop_protected_production_long.csv"
-COUNTRY_GEP_DECOMPOSITION_LONG_CSV = "country_gep_decomposition_long.csv"
-COUNTRY_PS_DIAGNOSTICS_CSV = "country_ps_diagnostics.csv"
-ELASTICITY_AUDIT_CSV = "elasticity_audit.csv"
-EROSION_INTERPOLATED_CSV = "erosion_interpolated.csv"
-GPV_FALLBACK_DIAGNOSTIC_CSV = "gpv_fallback_diagnostic.csv"
-INTEGRATED_COUNTRY_GEP_CSV = "integrated_country_gep.csv"
-MANIFEST_JSON = "manifest.json"
-PS_COMBINED_UNION_CROPLAND_SEVERE_TIF = "ps_combined_union_cropland_severe.tif"
-PS_ONFARM_CROPLAND_SEVERE_TIF = "ps_onfarm_cropland_severe.tif"
-PS_UPSTREAM_CROPLAND_SEVERE_TIF = "ps_upstream_cropland_severe.tif"
-THRESHOLD_POLICY_CSV = "threshold_policy.csv"
 
 def publish_inputs(p):
     """Every task's first line: erosion's es_config row plus its es_parameters block (the SDR
@@ -2213,11 +2200,19 @@ def erosion_paths(p):
                                              'upslope_cropland_share.tif'),
             upslope_bare_share=published('erosion_upslope_bare_share_path',
                                          'upslope_bare_share.tif'),
-            prevention_share_onfarm=os.path.join(out_dir, PS_ONFARM_CROPLAND_SEVERE_TIF),
-            prevention_share_upstream=os.path.join(out_dir, PS_UPSTREAM_CROPLAND_SEVERE_TIF),
-            prevention_share_combined=os.path.join(out_dir, PS_COMBINED_UNION_CROPLAND_SEVERE_TIF),
-            integrated_country_gep=os.path.join(out_dir, INTEGRATED_COUNTRY_GEP_CSV),
-            country_crop_long=os.path.join(out_dir, COUNTRY_CROP_PROTECTED_PRODUCTION_LONG_CSV),
+            area_conservation_audit=os.path.join(out_dir, "area_conservation_audit.csv"),
+            country_gep_decomposition_long=os.path.join(out_dir, "country_gep_decomposition_long.csv"),
+            country_ps_diagnostics=os.path.join(out_dir, "country_ps_diagnostics.csv"),
+            elasticity_audit=os.path.join(out_dir, "elasticity_audit.csv"),
+            erosion_interpolated=os.path.join(out_dir, "erosion_interpolated.csv"),
+            gpv_fallback_diagnostic=os.path.join(out_dir, "gpv_fallback_diagnostic.csv"),
+            manifest=os.path.join(out_dir, "manifest.json"),
+            threshold_policy=os.path.join(out_dir, "threshold_policy.csv"),
+            prevention_share_onfarm=os.path.join(out_dir, "ps_onfarm_cropland_severe.tif"),
+            prevention_share_upstream=os.path.join(out_dir, "ps_upstream_cropland_severe.tif"),
+            prevention_share_combined=os.path.join(out_dir, "ps_combined_union_cropland_severe.tif"),
+            integrated_country_gep=os.path.join(out_dir, "integrated_country_gep.csv"),
+            country_crop_long=os.path.join(out_dir, "country_crop_protected_production_long.csv"),
         ))
 
 

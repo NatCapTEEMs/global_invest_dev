@@ -1108,6 +1108,21 @@ def read_lookup(path, key_column, value_column, key_cast=str, value_cast=str):
             for k, v in zip(df[key_column], df[value_column]) if k == k}
 
 
+
+def read_lookup_of_sets(path, first_key_column, second_key_column, value_column, cast=int):
+    """A three-column reference table as {(first, second): set_of_values}.
+
+    The land-cover class sets are the shape this exists for: which ids count as agricultural and
+    which as natural, in each of two coding schemes. They were four module constants, and the two
+    ESA ones sat in a different file from the ESA codebook they belong with.
+    """
+    df = hb.df_read(path)
+    out = {}
+    for first, second, value in zip(df[first_key_column], df[second_key_column], df[value_column]):
+        out.setdefault((str(first), str(second)), set()).add(cast(value))
+    return out
+
+
 def assert_exists(path, hint: str = ""):
     """Fail naming the missing file and what needed it, rather than where the read happened."""
     if not hb.path_exists(path):
@@ -1588,54 +1603,10 @@ FAOSTAT_THOUSAND_USD = 1000.0
 FAOSTAT_FIRST_YEAR = 1961
 FAOSTAT_LAST_YEAR = 2022
 FAOSTAT_TURKIYE_AREA_CODE = 223
-FAOSTAT_AGGREGATE_AREAS = [
-    "USSR",
-    "Yugoslav SFR",
-    "World",
-    "Africa",
-    "Eastern Africa",
-    "Middle Africa",
-    "Northern Africa",
-    "Southern Africa",
-    "Western Africa",
-    "Americas",
-    "Northern America",
-    "Central America",
-    "Caribbean",
-    "South America",
-    "Asia",
-    "Central Asia",
-    "Eastern Asia",
-    "Southern Asia",
-    "South-eastern Asia",
-    "Western Asia",
-    "Europe",
-    "Eastern Europe",
-    "Northern Europe",
-    "Southern Europe",
-    "Western Europe",
-    "Oceania",
-    "Australia and New Zealand",
-    "Melanesia",
-    "Micronesia",
-    "Polynesia",
-    "European Union (27)",
-    "Least Developed Countries",
-    "Land Locked Developing Countries",
-    "Low Income Food Deficit Countries",
-    "Small Island Developing States",
-    "Czechoslovakia" "Low Income Food Deficit Countries",
-    "Net Food Importing Developing Countries",
-    "China, Hong Kong SAR",
-    "China, mainland",
-    "China, Macao SAR",
-    "China, Taiwan Province of",
-    "Belgium-Luxembourg",
-]
 CROP_ID_COLUMNS = ['area_code', 'area_code_M49', 'country', 'crop_code', 'crop']
 
 
-def clean_faostat_values(df_raw, items, value_column):
+def clean_faostat_values(df_raw, items, value_column, aggregate_areas):
     """One row per country-item-year of FAOSTAT gross production value, in thousand USD.
 
     The bulk file is wide (one column per year, each with a flag column beside it) and mixes
@@ -1664,7 +1635,7 @@ def clean_faostat_values(df_raw, items, value_column):
     codes = [i for i in items if isinstance(i, int)]
     names = [i for i in items if isinstance(i, str)]
     df = df[df['crop_code'].isin(codes) | df['crop'].isin(names)]
-    df = df[~df['country'].isin(FAOSTAT_AGGREGATE_AREAS)]
+    df = df[~df['country'].isin(aggregate_areas)]
 
     df = pd.melt(df, id_vars=CROP_ID_COLUMNS, value_vars=[str(y) for y in years],
                  var_name='year', value_name=value_column)

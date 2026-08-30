@@ -46,10 +46,10 @@ M49_SUCCESSORS = {
 CROP_ID_COLUMNS = ['area_code', 'area_code_M49', 'country', 'crop_code', 'crop']
 
 
-def clean_crop_values(df_raw, items):
+def clean_crop_values(df_raw, items, aggregate_areas):
     """FAOSTAT gross production value, one row per country-crop-year. See
     utilities.clean_faostat_values; this names the value column for the account."""
-    return utilities.clean_faostat_values(df_raw, items, 'crop_provision_gep')
+    return utilities.clean_faostat_values(df_raw, items, 'crop_provision_gep', aggregate_areas)
 
 
 

@@ -258,7 +258,8 @@ def configure_sufficiency(p, target_year):
         country_raster_path=os.path.join(
             crop_benefits_dir, 'poll_value_global_%dusd.tif' % int(target_year)),
         tile_size=int(p.pollination_sufficiency_kernel_tile_rows),
-        n_workers=int(p.pollination_sufficiency_n_workers))
+        n_workers=int(p.pollination_sufficiency_n_workers),
+        lulc_classes_path=p.pollination_lulc_classes_path)
 
 
 # ---------------------------------------------------------------------------------------------
@@ -293,6 +294,7 @@ class SufficiencySettings:
     country_raster_path: str
     tile_size: int
     n_workers: int
+    lulc_classes_path: str
     pa_raster_300m_path: str = None
 
 

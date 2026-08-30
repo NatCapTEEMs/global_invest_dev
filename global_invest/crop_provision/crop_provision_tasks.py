@@ -10,13 +10,13 @@ from global_invest.crop_provision import crop_provision_functions
 # Project content/config (was crop_provision_defaults.py; the template keeps content in the task module).
 
 
-def read_crop_values(path, items):
+def read_crop_values(path, items, aggregate_areas):
     """The FAOSTAT bulk file read and cleaned. See clean_crop_values for the science.
 
     The file ships Latin-1 encoded, so it is read as such rather than as UTF-8.
     """
     return crop_provision_functions.clean_crop_values(
-        pd.read_csv(path, encoding='ISO-8859-1'), items)
+        pd.read_csv(path, encoding='ISO-8859-1'), items, aggregate_areas)
 
 
 def read_crop_coefs(path):
@@ -72,7 +72,9 @@ def gep_calculation(p):
         p.commercial_attribute_subservices = utilities.read_column(
             p.crop_provision_default_items_path, 'item_fao')
 
-    df_crop_value = read_crop_values(p.fao_input_path, p.commercial_attribute_subservices)
+    df_crop_value = read_crop_values(
+        p.fao_input_path, p.commercial_attribute_subservices,
+        utilities.read_column(p.faostat_aggregate_areas_path, 'area_fao'))
     df_crop_coefs = read_crop_coefs(p.cwon_crop_coefficients_path)
 
     df_gep_by_country_year_crop = crop_provision_functions.merge_crop_with_coefs(df_crop_value, df_crop_coefs)

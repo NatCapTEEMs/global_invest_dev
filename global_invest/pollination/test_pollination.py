@@ -312,7 +312,7 @@ def test_the_settings_object_replaces_the_config_that_was_loaded_from_a_gitignor
     settings = pf.SufficiencySettings(
         output_dir='/tmp/out', value_raster_dir='/tmp/base',
         country_raster_path='/tmp/base/poll_value_global_2023usd.tif',
-        tile_size=2048, n_workers=4)
+        tile_size=2048, n_workers=4, lulc_classes_path='/tmp/base/classes.csv')
     assert settings.tile_size == 2048 and settings.n_workers == 4
     assert settings.pa_raster_300m_path is None
     # The compression profiles came off that Config too, and are now named constants.
