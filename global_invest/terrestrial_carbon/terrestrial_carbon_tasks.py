@@ -422,7 +422,7 @@ def terrestrial_carbon_shock_static(p):
     # exact-match miss here gave an empty base -> empty output -> silent GTAP zero.
     raw_base = utilities.resolve_base_scenario(df['scenario'].values, terrestrial_carbon_scenario_map, base_scenario, 'terrestrial_carbon', log=hb.log)
     base = df[(df['scenario'] == raw_base) & (df['year'] == es_shock_end_year)]
-    base_vals = base.set_index(['ENDW', 'REG'])['percentage_change'].astype(float) * tcf.PERCENT
+    base_vals = base.set_index(['ENDW', 'REG'])['percentage_change'].astype(float) * 100.0
 
     rows = []
     for our_scn in es_shock_scenarios:
@@ -430,7 +430,7 @@ def terrestrial_carbon_shock_static(p):
         if raw_scn is None:
             continue
         scn = df[(df['scenario'] == raw_scn) & (df['year'] == es_shock_end_year)]
-        scn_vals = scn.set_index(['ENDW', 'REG'])['percentage_change'].astype(float) * tcf.PERCENT
+        scn_vals = scn.set_index(['ENDW', 'REG'])['percentage_change'].astype(float) * 100.0
         rows += tcf.static_shock_rows(base_vals, scn_vals, our_scn, p.terrestrial_carbon_shock_acts,
                                       es_shock_base_year, es_shock_end_year)
 

@@ -174,7 +174,8 @@ def test_zonal_pct_change_treats_nan_diff_pixels_as_zero_change():
 def test_zone_labels_from_boundary_keeps_one_row_per_zone():
     boundary = pd.DataFrame({'ee_r50_aez18_id': [101, 101, 102], 'aez18_id': [1, 1, 2],
                              'gtapv7_r50_label': ['usa', 'usa', 'chn']})
-    labels = pf.zone_labels_from_boundary(boundary)
+    labels = pf.zone_labels_from_boundary(
+        boundary, 'ee_r50_aez18_id', 'aez18_id', 'gtapv7_r50_label', 'AEZ%d')
     assert labels == {101: ('AEZ1', 'usa'), 102: ('AEZ2', 'chn')}
 
 

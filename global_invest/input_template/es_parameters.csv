@@ -132,7 +132,7 @@ flood,flood_amplification_pattern,global_amplification_{scenario}_rp{rp}.tif
 flood,flood_protection_documented_only,true
 flood,flood_protection_path,
 flood,flood_protection_evidence_path,
-flood,flood_gep_scenarios,
+flood,flood_gep_scenarios,"[""current"", ""degraded_insitu"", ""degraded_bare""]"
 flood,flood_sda_country_dir,
 flood,flood_valuation_country_dir,
 flood,flood_depth_threshold_m,0.1
@@ -258,7 +258,7 @@ pollination,pollination_sufficiency_kernel_tile_rows,8192
 pollination,pollination_sufficiency_n_workers,4
 pollination,pollination_blend_coffee_dependence,true
 pollination,pollination_shock_baseline_label,2023_pnas
-pollination,pollination_shock_region_id_col,ee_r50_aez18_id
+pollination,pollination_shock_id_col,ee_r50_aez18_id
 pollination,pollination_shock_endw_col,aez18_id
 pollination,pollination_shock_reg_col,gtapv7_r50_label
 pollination,pollination_shock_endw_format,AEZ%d

@@ -1031,9 +1031,10 @@ DEPTH_BINS_M = [0, 0.5, 1, 1.5, 2, 3, 4, 5, 6]
 
 
 
-SCENARIOS = ("current", "degraded_insitu", "degraded_bare")
 
 
+# The three counterfactuals and the suffix each writes into a file name. The keys are the
+# scenarios; which of them a run computes is the flood_gep_scenarios row.
 SCENARIO_SUFFIX = {"current": "",
                    "degraded_insitu": "__degraded_insitu",
                    "degraded_bare": "__degraded_bare"}
@@ -1435,7 +1436,7 @@ def _open_amplification_raster(p, scenario: str, rp: int):
 
     Args:
         p: the ProjectFlow object.
-        scenario (str): one of SCENARIOS.
+        scenario (str): one of the SCENARIO_SUFFIX keys.
         rp (int): the return period.
 
     Returns:
@@ -1474,7 +1475,7 @@ def compute_pixel_damages(p, iso3_list: Optional[List[str]] = None,
 
     scenario "current"                            depths as delivered by JRC
     scenario "degraded_insitu" / "degraded_bare"  depths amplified by A(i); see
-                                                  the SCENARIOS note above
+                                                  the SCENARIO_SUFFIX note above
 
     TILED READING -- WHY THIS FUNCTION LOOKS LIKE THIS
     -------------------------------------------------
@@ -1494,8 +1495,8 @@ def compute_pixel_damages(p, iso3_list: Optional[List[str]] = None,
     extent -- roughly 80 MB at the 2048 default. Russia, Canada, the USA and
     every antimeridian country now run in the same footprint as Germany.
     """
-    if scenario not in SCENARIOS:
-        raise ValueError(f"scenario must be one of {SCENARIOS}")
+    if scenario not in SCENARIO_SUFFIX:
+        raise ValueError(f"scenario must be one of {tuple(SCENARIO_SUFFIX)}")
     suffix = SCENARIO_SUFFIX[scenario]
 
     utilities.assert_exists(p.flood_sda_damage_wide_path, "Run step 4A (build_damage_tables) first.")
@@ -1779,8 +1780,8 @@ def compute_ead_by_country(p, scenario: str = "current") -> pd.DataFrame:
     missing or empty, because Step 4D aggregates across folders and a silently
     absent file is indistinguishable from a genuine zero.
     """
-    if scenario not in SCENARIOS:
-        raise ValueError(f"scenario must be one of {SCENARIOS}")
+    if scenario not in SCENARIO_SUFFIX:
+        raise ValueError(f"scenario must be one of {tuple(SCENARIO_SUFFIX)}")
     suffix = SCENARIO_SUFFIX[scenario]
 
     prot_tbl = load_protection_table(p) if p.flood_report_protection_split else None
@@ -2246,7 +2247,7 @@ def run_gep_chain(p, skip_damage_tables: bool = True,
     if not skip_damage_tables:
         out["damage_tables"] = build_damage_tables(p)
 
-    run = scenarios if scenarios else list(SCENARIOS)
+    run = list(scenarios)
     for n, sc in enumerate(run, 1):
         hb.log(f"\n=== scenario {n} of {len(run)}: {sc} ===")
         out[f"damage_by_return_period_{sc}"] = compute_pixel_damages(p, scenario=sc)
@@ -2444,8 +2445,8 @@ def publish_inputs(p):
                      'flood_roads_path', 'flood_pop_path'):
         value = getattr(p, optional, None)
         setattr(p, optional, str(value) if value else None)
-    # Blank means every scenario in SCENARIOS rather than a chosen subset.
-    p.flood_gep_scenarios = getattr(p, 'flood_gep_scenarios', None) or None
+    # The scenarios to compute, named in es_parameters; SCENARIO_SUFFIX says what each is
+    # called on disk.
 
     if not hasattr(p, 'results'):
         p.results = {}

@@ -27,19 +27,6 @@ from global_invest import utilities
 
 logger = logging.getLogger(__name__)
 
-BASELINE_LABEL = '2023_pnas'
-
-
-# The zonal percent changes arrive already expressed in percent, so a percent change of x means a
-# growth factor of 1 + x/100.
-PERCENT = 100.0
-
-# The zone the shock is reported on: one GTAP r50 region crossed with one AEZ18 band. The
-# boundary carries this id plus the two columns the (ENDW, REG) key is built from.
-REGION_ID_FIELD = 'ee_r50_aez18_id'
-AEZ_ID_COLUMN = 'aez18_id'
-REGION_LABEL_COLUMN = 'gtapv7_r50_label'
-ENDW_LABEL_FORMAT = 'AEZ%d'
 
 # The zonal rasters are geographic, and the burned zone raster reserves this id for the cells
 # that fall outside every zone.
@@ -52,18 +39,20 @@ NO_ZONE_ID = 0
 # turns those arrays into one percent change and one absolute value per zone.
 # =============================================================================
 
-def zone_labels_from_boundary(gdf_boundary):
+def zone_labels_from_boundary(gdf_boundary, zone_id_col, endw_col, reg_col, endw_format):
     """Zone id -> the (ENDW, REG) pair every shock row is keyed on.
 
     Args:
-        gdf_boundary (pd.DataFrame): the r50xAEZ boundary attributes, carrying REGION_ID_FIELD,
-            AEZ_ID_COLUMN and REGION_LABEL_COLUMN. One row per zone is kept.
+        gdf_boundary (pd.DataFrame): the r50xAEZ boundary attributes. One row per zone is kept.
+        zone_id_col, endw_col, reg_col, endw_format (str): which columns carry the zone id, the
+            AEZ band and the region label, and how the endowment label is spelled. They are
+            es_parameters rows, the same ones terrestrial_carbon has always read.
 
     Returns:
         dict: zone id -> (ENDW, REG), in the boundary's own row order.
     """
-    unique_zones = gdf_boundary.drop_duplicates(REGION_ID_FIELD).set_index(REGION_ID_FIELD)
-    return {int(zone_id): (ENDW_LABEL_FORMAT % int(row[AEZ_ID_COLUMN]), row[REGION_LABEL_COLUMN])
+    unique_zones = gdf_boundary.drop_duplicates(zone_id_col).set_index(zone_id_col)
+    return {int(zone_id): (endw_format % int(row[endw_col]), row[reg_col])
             for zone_id, row in unique_zones.iterrows()}
 
 
@@ -92,7 +81,7 @@ def zonal_pct_change(diff_arr, baseline_arr, area_arr, zones_arr, zone_labels):
         denominator = np.nansum(baseline_arr[mask] * area_arr[mask])
         if not denominator:
             continue
-        pct_change[key] = np.nansum(diff_arr[mask] * area_arr[mask]) / denominator * PERCENT
+        pct_change[key] = np.nansum(diff_arr[mask] * area_arr[mask]) / denominator * 100.0
         baseline_value[key] = denominator
     return pd.Series(pct_change), pd.Series(baseline_value)
 
@@ -125,7 +114,7 @@ def anchor_shock_tables(scenario_pct_by_year, baseline_pct_by_year):
     anchor_years = sorted(scenario_pct_by_year)
     fixedbase = pd.DataFrame({y: scenario_pct_by_year[y] - baseline_pct_by_year[y]
                               for y in anchor_years}).dropna()
-    base_factor = pd.DataFrame({y: 1.0 + baseline_pct_by_year[y] / PERCENT
+    base_factor = pd.DataFrame({y: 1.0 + baseline_pct_by_year[y] / 100.0
                                 for y in anchor_years}).reindex(fixedbase.index).replace(0, np.nan)
     return fixedbase, fixedbase / base_factor
 

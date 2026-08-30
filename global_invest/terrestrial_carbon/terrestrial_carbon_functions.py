@@ -23,9 +23,6 @@ from global_invest import utilities
 # against is uint8, which would round every density to a whole Mg C/ha.
 GDAL_FLOAT32 = 6
 
-# The shocks are reported in percent, so the ratio is scaled by this before it is written.
-PERCENT = 100.0
-
 # The country attributes every GEP per-country CSV carries, in the order the CSV writes them.
 CARBON_ATTR_COLS = ['iso3_r250_id', 'iso3_r250_label', 'iso3_r250_name',
                     'continent', 'region_un', 'region_wb', 'income_grp', 'subregion']
@@ -129,7 +126,7 @@ def shock_percent(scenario_values, baseline_values, denominator_values=None):
         infinite shock.
     """
     denominator = baseline_values if denominator_values is None else denominator_values
-    return (scenario_values - baseline_values) / denominator.replace(0, np.nan) * PERCENT
+    return (scenario_values - baseline_values) / denominator.replace(0, np.nan) * 100.0
 
 
 def interpolate_annual_shock(years, anchor_years, anchor_values, base_year):

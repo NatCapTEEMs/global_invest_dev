@@ -111,11 +111,11 @@ def save_parquet(df: pd.DataFrame, path: str | str) -> str:
 
 def baseline_denominator(cfg, baseline_lulc_path, target_year):
     """Unpaired 2023 pollination value (the % change denominator), computed once."""
-    run_pollination_sufficiency_300m(cfg, lulc_path=baseline_lulc_path, scenario=pf.BASELINE_LABEL,
+    run_pollination_sufficiency_300m(cfg, lulc_path=baseline_lulc_path, scenario=p.pollination_shock_baseline_label,
                                      lulc_scheme='seals')
-    run_pollination_sufficiency_5km(cfg, scenario=pf.BASELINE_LABEL)
-    run_pollination_valuation_5km(cfg, scenario=pf.BASELINE_LABEL, target_year=target_year)
-    return os.path.join(cfg.output_dir, f'value_pollination_sufficiency_{pf.BASELINE_LABEL}_5km.tif')
+    run_pollination_sufficiency_5km(cfg, scenario=p.pollination_shock_baseline_label)
+    run_pollination_valuation_5km(cfg, scenario=p.pollination_shock_baseline_label, target_year=target_year)
+    return os.path.join(cfg.output_dir, f'value_pollination_sufficiency_{p.pollination_shock_baseline_label}_5km.tif')
 
 
 def scenario_diff_raster(cfg, scenario, lulc_path, baseline_lulc_path, target_year):
@@ -124,7 +124,7 @@ def scenario_diff_raster(cfg, scenario, lulc_path, baseline_lulc_path, target_ye
     Returns the path crop_benefits wrote it to; the task reads it and hands the array to
     zonal_pct_change.
     """
-    stab, b_stab = f'{scenario}_stab', f'{pf.BASELINE_LABEL}_stab_{scenario}'
+    stab, b_stab = f'{scenario}_stab', f'{p.pollination_shock_baseline_label}_stab_{scenario}'
     for suff_scen, lulc, other in [(stab, lulc_path, baseline_lulc_path),
                                    (b_stab, baseline_lulc_path, lulc_path)]:
         run_pollination_sufficiency_300m_stable_ag(cfg, lulc_path=lulc, other_lulc_path=other,
@@ -134,7 +134,7 @@ def scenario_diff_raster(cfg, scenario, lulc_path, baseline_lulc_path, target_ye
 
     suff_dir = cfg.output_dir
     return run_pollination_diff_5km_pnas(
-        cfg, scenario=scenario, baseline_scenario=pf.BASELINE_LABEL,
+        cfg, scenario=scenario, baseline_scenario=p.pollination_shock_baseline_label,
         scenario_value_path=os.path.join(suff_dir, f'value_pollination_sufficiency_{stab}_5km.tif'),
         baseline_value_path=os.path.join(suff_dir, f'value_pollination_sufficiency_{b_stab}_5km.tif'))
 
@@ -1785,7 +1785,7 @@ def _read_masked(raster_path):
         return arr, src.meta.copy()
 
 
-def _zonal_context(denominator_path, correspondence_gpkg):
+def _zonal_context(p, denominator_path, correspondence_gpkg):
     """The fixed side of every zonal percent change, read once.
 
     The baseline value raster defines the grid, so the pixel-area raster and the burned zone ids
@@ -1798,14 +1798,18 @@ def _zonal_context(denominator_path, correspondence_gpkg):
     gdf = gpd.read_file(correspondence_gpkg, engine='pyogrio')
     if gdf.crs is None or gdf.crs.to_epsg() != pf.LATLON_EPSG:
         gdf = gdf.to_crs(pf.LATLON_EPSG)
-    gdf[pf.REGION_ID_FIELD] = gdf[pf.REGION_ID_FIELD].astype(int)
+    gdf[p.pollination_shock_id_col] = gdf[p.pollination_shock_id_col].astype(int)
 
     baseline, meta = _read_masked(denominator_path)
     zones = rasterize(
-        ((g, int(r)) for g, r in zip(gdf.geometry, gdf[pf.REGION_ID_FIELD]) if g is not None and not g.is_empty),
+        ((g, int(r)) for g, r in zip(gdf.geometry, gdf[p.pollination_shock_id_col])
+         if g is not None and not g.is_empty),
         out_shape=(meta['height'], meta['width']), transform=meta['transform'],
         fill=pf.NO_ZONE_ID, dtype=np.int32)
-    return baseline, pf.build_area_km2_raster(meta), zones, pf.zone_labels_from_boundary(gdf)
+    return baseline, pf.build_area_km2_raster(meta), zones, pf.zone_labels_from_boundary(gdf, p.pollination_shock_id_col,
+                                          p.pollination_shock_endw_col,
+                                          p.pollination_shock_reg_col,
+                                          p.pollination_shock_endw_format)
 
 
 def pollination_shock(p):
@@ -1849,7 +1853,7 @@ def pollination_shock(p):
     # The denominator (unpaired 2023 value) is year- and scenario-independent, so the fixed side of
     # the zonal step is built once.
     denominator_path = baseline_denominator(cfg, base_map, es_shock_base_year)
-    baseline_arr, area_arr, zones_arr, zone_labels = _zonal_context(denominator_path, p.region_boundary_path)
+    baseline_arr, area_arr, zones_arr, zone_labels = _zonal_context(p, denominator_path, p.region_boundary_path)
 
     # value[scenario][year] = per-zone % change of that scenario's year-map vs the 2023 baseline (stable
     # ag). level_usd = the denominator of that % change, the per-zone absolute baseline value in base-year
