@@ -147,7 +147,7 @@ def scenario_diff_raster(cfg, scenario, lulc_path, baseline_lulc_path, target_ye
 def _add_geographic_and_classification_data(
     df: pd.DataFrame,
     classif: pd.DataFrame,
-    cfg: Config,
+    cfg: pf.FaoPriceSettings,
 ) -> pd.DataFrame:
     """Normalise columns, add ISO3 and FAO group."""
 
@@ -198,7 +198,7 @@ def _add_geographic_and_classification_data(
     return df
 
 
-def run_fao_production(cfg: Config) -> str:
+def run_fao_production(cfg: pf.FaoPriceSettings) -> str:
     """
     Execute the full FAO production pipeline.
 
@@ -217,7 +217,7 @@ def run_fao_production(cfg: Config) -> str:
     return pq_path
 
 
-def run_fao_prices(cfg: Config) -> str:
+def run_fao_prices(cfg: pf.FaoPriceSettings) -> str:
     """
     Execute the full FAO producer-price pipeline.
 
@@ -249,7 +249,7 @@ def run_fao_prices(cfg: Config) -> str:
 
 
 def _read_and_filter_fao_production(
-    cfg: Config,
+    cfg: pf.FaoPriceSettings,
 ) -> pd.DataFrame:
     """Read the staged FAOSTAT production bulk, filter years / elements / items."""
 
@@ -326,7 +326,7 @@ def _save_production_outputs(
     return pq_out
 
 
-def _read_fao_prices(cfg: Config, years: list[int]) -> pd.DataFrame:
+def _read_fao_prices(cfg: pf.FaoPriceSettings, years: list[int]) -> pd.DataFrame:
     """Read the staged FAOSTAT producer-price bulk and return annual rows."""
     logger.info("=== 1) READING STAGED FAOSTAT PRODUCER PRICES ===")
 
@@ -404,7 +404,7 @@ def world_bank_fx(fx_path):
 
 def _add_iso3_and_fx(
     pp3: pd.DataFrame,
-    cfg: Config,
+    cfg: pf.FaoPriceSettings,
     years: list[int],
 ) -> pd.DataFrame:
     """Add ISO3, read WB and IMF FX, combine with inheritance."""
@@ -540,7 +540,7 @@ def _save_price_outputs(
     return pq_out
 
 
-def _load_production_and_prices(cfg: Config) -> tuple[pd.DataFrame, pd.DataFrame]:
+def _load_production_and_prices(cfg: pf.FaoPriceSettings) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Load the production and price parquets from earlier pipeline steps."""
     prod_dir = cfg.outputs.fao_production
     prod_pq = os.path.join(prod_dir, "fao_production_1993_2024.parquet")
@@ -728,7 +728,7 @@ def _merge_production_value(
     return pq_out
 
 
-def run_fao_values(cfg: Config) -> str:
+def run_fao_values(cfg: pf.FaoPriceSettings) -> str:
     """
     Compute total production value by merging prices and production.
 
@@ -760,7 +760,7 @@ def run_fao_values(cfg: Config) -> str:
     return pq_path
 
 
-def load_m49_iso3(cfg: Config) -> Tuple[pd.DataFrame, Set[str]]:
+def load_m49_iso3(cfg: pf.FaoPriceSettings) -> Tuple[pd.DataFrame, Set[str]]:
     """
     Load the M49 -> ISO3 crosswalk and return *(df, valid_m49)*.
 
@@ -769,7 +769,7 @@ def load_m49_iso3(cfg: Config) -> Tuple[pd.DataFrame, Set[str]]:
 
     Parameters
     ----------
-    cfg : Config
+    cfg : pf.FaoPriceSettings
 
     Returns
     -------
@@ -796,13 +796,13 @@ def load_m49_iso3(cfg: Config) -> Tuple[pd.DataFrame, Set[str]]:
     return df, valid_m49
 
 
-def load_fao_classification(cfg: Config) -> pd.DataFrame:
+def load_fao_classification(cfg: pf.FaoPriceSettings) -> pd.DataFrame:
     """
     Load the FAO crop classification table.
 
     Parameters
     ----------
-    cfg : Config
+    cfg : pf.FaoPriceSettings
 
     Returns
     -------
@@ -813,7 +813,7 @@ def load_fao_classification(cfg: Config) -> pd.DataFrame:
     return pd.read_csv(path)
 
 
-def load_fao_cropgrids(cfg: Config) -> pd.DataFrame:
+def load_fao_cropgrids(cfg: pf.FaoPriceSettings) -> pd.DataFrame:
     """
     Load the crosswalk that maps CropGrids crop names to FAO item codes.
 
