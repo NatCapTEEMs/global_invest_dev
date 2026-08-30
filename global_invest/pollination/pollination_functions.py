@@ -271,7 +271,7 @@ def configure_sufficiency(p, target_year):
         value_raster_dir=str(crop_benefits_dir),
         country_raster_path=os.path.join(
             crop_benefits_dir, 'poll_value_global_%dusd.tif' % int(target_year)),
-        tile_size=int(p.pollination_sufficiency_tile_size),
+        tile_size=int(p.pollination_sufficiency_kernel_tile_rows),
         n_workers=int(p.pollination_sufficiency_n_workers))
 
 
@@ -292,10 +292,14 @@ class SufficiencySettings:
         country_raster_path (str): the raster defining the 5 km target grid. The valuation needs
             sufficiency and value on one grid, so this points at the value raster itself.
         pa_raster_300m_path (str): the protected-area raster, for the protected-area summary.
-        tile_size (int): rows per block when streaming a raster. ⚠ Not only a
-            performance knob: the foraging-radius kernel takes its latitude from the
-            tile's midpoint, so the tile height changes the result. 8192 is the
-            source pipeline's value and is set to match it.
+        tile_size (int): rows per block when streaming the 300 m land cover. ⚠⚠ **This changes
+            the result, it is not a performance setting.** The foraging-radius kernel takes its
+            latitude from the tile's midpoint and rounds the 2 km radius to an integer pixel
+            count, so the tile height decides the kernel. At 2048 our raster agreed with the
+            source pipeline's on 78.67 percent of cells, in bands; at its own 8192 every one of
+            331,871,070 cells matches. The es_parameters row is named
+            `pollination_sufficiency_kernel_tile_rows` to say so, since it sits beside n_workers,
+            which really is about speed.
         n_workers (int): parallel workers for the tiled sufficiency pass.
     """
     output_dir: str

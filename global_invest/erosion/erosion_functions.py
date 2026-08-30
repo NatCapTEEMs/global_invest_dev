@@ -541,15 +541,6 @@ def _filter_crops_only(df: pd.DataFrame) -> pd.DataFrame:
 
 
 
-
-
-
-
-
-
-
-
-
     # Shared plotting constants (module globals since the utils fold).
 
 # ---------------------------------------------------------------------------------------------

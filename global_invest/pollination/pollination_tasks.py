@@ -206,7 +206,7 @@ def run_fao_production(cfg: pf.FaoPriceSettings) -> str:
     df = _add_geographic_and_classification_data(df, classif, cfg)
 
     outdir = cfg.output_dir
-    pq_path = _save_production_outputs(df, outdir)
+    pq_path = _save_production_outputs(df, outdir, cfg)
 
     logger.info("=== FAO Production Pipeline COMPLETE ===")
     return pq_path
@@ -237,10 +237,21 @@ def run_fao_prices(cfg: pf.FaoPriceSettings) -> str:
 
     # Step 16
     outdir = cfg.output_dir
-    pq_path = _save_price_outputs(pp_usd, outdir)
+    pq_path = _save_price_outputs(pp_usd, outdir, cfg)
 
     logger.info("=== FAO Prices Pipeline COMPLETE ===")
     return pq_path
+
+
+
+def fao_table_name(kind, cfg, extension):
+    """The name of one FAO table, stamped with the span it was built over.
+
+    The span was written into six filenames as a literal `1993_2024` while the years themselves
+    were configuration, so a run over a different span would have overwritten the old file under
+    the old name.
+    """
+    return 'fao_%s_%d_%d.%s' % (kind, cfg.fao_start_year, cfg.fao_end_year, extension)
 
 
 def _read_and_filter_fao_production(
@@ -300,6 +311,7 @@ def _read_and_filter_fao_production(
 def _save_production_outputs(
     df: pd.DataFrame,
     outdir: str,
+    cfg: pf.FaoPriceSettings,
 ) -> str:
     """Save final production dataset in standard column order."""
     os.makedirs(outdir, exist_ok=True)
@@ -311,8 +323,8 @@ def _save_production_outputs(
     ]
     df = df[col_order]
 
-    csv_out = os.path.join(outdir, "fao_production_1993_2024.csv")
-    pq_out = os.path.join(outdir, "fao_production_1993_2024.parquet")
+    csv_out = os.path.join(outdir, fao_table_name('production', cfg, 'csv'))
+    pq_out = os.path.join(outdir, fao_table_name('production', cfg, 'parquet'))
 
     save_csv(df, csv_out)
     save_parquet(df, pq_out)
@@ -525,8 +537,8 @@ def _save_price_outputs(
 
     pp_final = pp_usd[final_cols].copy()
 
-    csv_out = os.path.join(outdir, "fao_prices_1993_2024.csv")
-    pq_out = os.path.join(outdir, "fao_prices_1993_2024.parquet")
+    csv_out = os.path.join(outdir, fao_table_name('prices', cfg, 'csv'))
+    pq_out = os.path.join(outdir, fao_table_name('prices', cfg, 'parquet'))
 
     save_csv(pp_final, csv_out)
     save_parquet(pp_final, pq_out)
@@ -538,12 +550,12 @@ def _save_price_outputs(
 def _load_production_and_prices(cfg: pf.FaoPriceSettings) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Load the production and price parquets from earlier pipeline steps."""
     prod_dir = cfg.output_dir
-    prod_pq = os.path.join(prod_dir, "fao_production_1993_2024.parquet")
+    prod_pq = os.path.join(prod_dir, fao_table_name('production', cfg, 'parquet'))
     logger.info("Loading production: %s", prod_pq)
     prod = pd.read_parquet(prod_pq)
 
     price_dir = cfg.output_dir
-    price_pq = os.path.join(price_dir, "fao_prices_1993_2024.parquet")
+    price_pq = os.path.join(price_dir, fao_table_name('prices', cfg, 'parquet'))
     logger.info("Loading prices: %s", price_pq)
     prices = pd.read_parquet(price_pq)
 
@@ -632,9 +644,12 @@ def _merge_production_value(
     price_subregion: pd.DataFrame,
     price_region: pd.DataFrame,
     price_world: pd.DataFrame,
-    outdir: str,
-) -> str:
-    """Merge production with annual prices (country -> subregion -> region -> world fallback)."""
+) -> pd.DataFrame:
+    """Production times annual price, falling back country to subregion to region to world.
+
+    Returns the frame. It used to take an output directory and return a path, which put file
+    writing inside what reads as arithmetic and made the fallback untestable without a disk.
+    """
     logger.info("Merging production × annual prices (Hierarchical)")
 
     prod_q = prod[prod["element"] == "Production"].copy()
@@ -713,14 +728,8 @@ def _merge_production_value(
     if "element" in merged.columns:
         merged = merged.drop(columns=["element"])
 
-    csv_out = os.path.join(outdir, "fao_values_1993_2024.csv")
-    pq_out = os.path.join(outdir, "fao_values_1993_2024.parquet")
-
-    save_csv(merged, csv_out)
-    save_parquet(merged, pq_out)
-
     logger.info("Production value dataset: %d rows", len(merged))
-    return pq_out
+    return merged
 
 
 def run_fao_values(cfg: pf.FaoPriceSettings) -> str:
@@ -747,12 +756,18 @@ def run_fao_values(cfg: pf.FaoPriceSettings) -> str:
     # Main pipeline: use annual prices
     price_country, price_subregion, price_region, price_world = pf._compute_annual_prices(prices, cw)
 
-    pq_path = _merge_production_value(
-        prod, price_country, price_subregion, price_region, price_world, cfg.output_dir,
-    )
+    merged = _merge_production_value(
+        prod, price_country, price_subregion, price_region, price_world)
+
+    # The writing is the task layer's, which is what keeps the merge testable without a disk.
+    os.makedirs(cfg.output_dir, exist_ok=True)
+    csv_out = os.path.join(cfg.output_dir, fao_table_name('values', cfg, 'csv'))
+    pq_out = os.path.join(cfg.output_dir, fao_table_name('values', cfg, 'parquet'))
+    save_csv(merged, csv_out)
+    save_parquet(merged, pq_out)
 
     logger.info("=== FAO Values Pipeline COMPLETE ===")
-    return pq_path
+    return pq_out
 
 
 def load_m49_iso3(cfg: pf.FaoPriceSettings) -> Tuple[pd.DataFrame, Set[str]]:
@@ -2034,7 +2049,7 @@ def median_prices_ref_path(price_years):
     while the account's base year was 2019.
     """
     years = sorted(int(y) for y in price_years)
-    return os.path.join('global_invest', 'pollination', 'fao', 'median_prices',
+    return os.path.join(FAO_MEDIAN_PRICES_REF_PATH,
                         'price_median_usd_tonne_%d_%d.parquet' % (years[0], years[-1]))
 
 
