@@ -292,7 +292,10 @@ class SufficiencySettings:
         country_raster_path (str): the raster defining the 5 km target grid. The valuation needs
             sufficiency and value on one grid, so this points at the value raster itself.
         pa_raster_300m_path (str): the protected-area raster, for the protected-area summary.
-        tile_size (int): rows per block when streaming a raster.
+        tile_size (int): rows per block when streaming a raster. ⚠ Not only a
+            performance knob: the foraging-radius kernel takes its latitude from the
+            tile's midpoint, so the tile height changes the result. 8192 is the
+            source pipeline's value and is set to match it.
         n_workers (int): parallel workers for the tiled sufficiency pass.
     """
     output_dir: str
