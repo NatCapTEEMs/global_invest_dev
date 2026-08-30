@@ -425,10 +425,13 @@ class FaoPriceSettings:
     fao_prices_bulk_path: str
     fx_lcu_per_usd_path: str
     output_dir: str
-    # The span the panel's own filename records, so name and content agree.
-    fao_start_year: int = 1993
-    fao_end_year: int = 2024
-    price_years: tuple = (2018, 2019, 2020, 2021, 2022)
+    # No defaults on the three windows: es_parameters is the only place they are set, so a run
+    # at a different base year cannot silently inherit one built for another. price_years kept a
+    # 2018-2022 default through the move to a 2019 account, which is what put the price window
+    # two years off the base year and made a deflator necessary to hide it.
+    fao_start_year: int
+    fao_end_year: int
+    price_years: tuple
 
     # The vendored code reads these as nested attributes; these keep its call sites unchanged.
     @property

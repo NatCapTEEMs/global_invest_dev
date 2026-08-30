@@ -238,6 +238,7 @@ def test_pollination_gep_sums_split_country_once(tmp_path):
                         df_countries=pd.DataFrame({'placeholder': [1]}),   # trips the caller-wins guard
                         # our own raster now, in USD per cell rather than a density from elsewhere
                         pollination_value_raster_path=str(tmp_path / 'poll_value.tif'),
+                            pollination_value_raster_rebuilt_path=str(tmp_path / 'poll_value.tif'),
                         gep_quantity_input_path=str(tmp_path / 'poll_value.tif'),
                         gep_regions_input_path=str(tmp_path / 'regions.gpkg'),
                         gep_regions_id_col='ee_r264_id',

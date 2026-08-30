@@ -868,7 +868,9 @@ def fao_median_prices(p):
         fao_prices_bulk_path=str(p.pollination_fao_prices_path),
         fx_lcu_per_usd_path=str(p.pollination_fx_path),
         output_dir=str(os.path.dirname(p.fao_median_prices_dir)),
-        price_years=tuple(p.pollination_price_years))
+        price_years=tuple(p.pollination_price_years),
+        fao_start_year=int(p.pollination_fao_start_year),
+        fao_end_year=int(p.pollination_fao_end_year))
     run_fao_production(settings)
     run_fao_prices(settings)
     run_fao_values(settings)
@@ -1945,10 +1947,13 @@ def pollination_value_by_region(p):
     p.pollination_value_by_region_path = os.path.join(p.cur_dir, "pollination_value_by_region.csv")
     if not p.run_this:
         return
-    # Our own raster, in USD per cell, so this sum is a sum of money. It used to be
-    # p.gep_quantity_input_path, a density from elsewhere, which made the total 26x too small.
+    # The raster our own chain builds, in USD per cell, so this sum is a sum of money. Between
+    # 2026-08-28 and 2026-08-30 it was the author's staged file: the yield and production steps had
+    # no port, so no run here could produce the value raster from source. They do now, and the
+    # account reports what our code computes. His raster is still built and read alongside, by
+    # pollination_value_raster, and the two are differenced in the independence check.
     utilities.summarize_raster_by_region(
-        value_raster_path=p.pollination_value_raster_path,
+        value_raster_path=p.pollination_value_raster_rebuilt_path,
         region_boundary_path=p.gep_regions_input_path,
         out_path=p.pollination_value_by_region_path,
         year=p.gep_base_year, id_column=p.gep_regions_id_col)
@@ -1956,7 +1961,7 @@ def pollination_value_by_region(p):
     # (verified at 100.0000% on the real raster when this check was added).
     df_regions = hb.df_read(p.pollination_value_by_region_path)
     utilities.assert_zonal_conservation(df_regions['total'].sum(),
-                                        p.pollination_value_raster_path, 'pollination')
+                                        p.pollination_value_raster_rebuilt_path, 'pollination')
     return True
 
 
@@ -2044,8 +2049,16 @@ CROP_PRODUCTION_RASTER_REF_PATH = os.path.join('crops', 'cropgrids', 'production
 # directory reference resolved into intermediate/pollination/ rather than into base data.
 POLLINATION_DEPENDENCE_REF_PATH = os.path.join('global_invest', 'pollination', 'fao', 'pollination',
                                                'pollination_1993_2024.parquet')
-FAO_MEDIAN_PRICES_FILE_REF_PATH = os.path.join('global_invest', 'pollination', 'fao', 'median_prices',
-                                               'price_median_usd_tonne_2018_2022.parquet')
+def median_prices_ref_path(price_years):
+    """Where the median price table for one window lives, under base data.
+
+    The window is part of the file name, so a run at a different base year reads a different file
+    rather than silently reusing one built for another year. This was a constant naming 2018-2022
+    while the account's base year was 2019.
+    """
+    years = sorted(int(y) for y in price_years)
+    return os.path.join('global_invest', 'pollination', 'fao', 'median_prices',
+                        'price_median_usd_tonne_%d_%d.parquet' % (years[0], years[-1]))
 CROPGRIDS_COUNTRY_RASTER_REF_PATH = os.path.join('crops', 'cropgrids', 'country_m49_cropgrids_grid.tif')
 COFFEE_ARABICA_ROBUSTA_REF_PATH = os.path.join('global_invest', 'pollination', 'coffee_types_distribution', 'prop_arabica_robusta.csv')
 CROPGRIDS_CROSSWALK_REF_PATH = os.path.join('global_invest', 'pollination', 'fao', 'crosswalks', 'crosswalk_fao_cropgrids.csv')
@@ -2277,7 +2290,7 @@ def pollination_value_raster_rebuilt(p):
     # pd.read_parquet, not hb.df_read: df_read is a CSV reader and reports a parquet as an
     # encoding failure, naming every text encoding it tried.
     prices = world_prices_by_item(pd.read_parquet(
-        p.get_path(FAO_MEDIAN_PRICES_FILE_REF_PATH)))
+        p.get_path(median_prices_ref_path(p.pollination_price_years))))
     dependence = pollination_dependence_by_item(pd.read_parquet(
         p.get_path(POLLINATION_DEPENDENCE_REF_PATH)))
 
@@ -2341,7 +2354,14 @@ def pollination_value_raster_rebuilt(p):
             'cropgrids_crop': crop_name, 'item_code_fao': item_code,
             'item_fao': row.get('item_fao'),
             'price_usd_per_tonne': float(price) * deflator,
-            'pollination_dependence': ratio,
+            # Coffee's ratio is a per-cell array rather than a scalar, because item 656 is arabica
+            # and robusta blended by what each country grows. Writing the array itself put a
+            # stringified 3600x7200 grid in one CSV cell; the production-weighted mean is the
+            # number a reader wants, and for every other crop it is the scalar unchanged.
+            'pollination_dependence': (
+                float(np.nansum(np.asarray(ratio) * production_density)
+                      / np.nansum(production_density))
+                if np.ndim(ratio) else float(ratio)),
             'crop_value_usd': float(np.nansum(
                 pf.value_density_to_per_cell(crop_density, area_km2))),
             'pollination_value_usd': float(np.nansum(
