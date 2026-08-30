@@ -26,10 +26,12 @@ def build_gep_service_calculation_task_tree(p):
     # value raster is priced from, and until they were ported the account read the source
     # author's finished production rasters out of base_data instead.
     p.fao_yield_change_task = p.add_task(pollination_tasks.fao_yield_change, skip_existing=1)
-    p.pollination_yield_rasters_task = p.add_task(
-        pollination_tasks.pollination_yield_rasters, skip_existing=1)
+    # No skip_existing on these two: each guards itself per crop, so a run that stopped part way
+    # resumes at the crop it reached. skip_existing works on the task's directory, which exists as
+    # soon as the first raster lands, so an interrupted run would come back and skip the other 145.
+    p.pollination_yield_rasters_task = p.add_task(pollination_tasks.pollination_yield_rasters)
     p.pollination_production_rasters_task = p.add_task(
-        pollination_tasks.pollination_production_rasters, skip_existing=1)
+        pollination_tasks.pollination_production_rasters)
     p.pollination_source_value_raster_task = p.add_task(
         pollination_tasks.pollination_source_value_raster, skip_existing=1)
     p.pollination_value_raster_task = p.add_task(
