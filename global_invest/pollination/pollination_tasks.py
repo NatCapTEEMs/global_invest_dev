@@ -2236,13 +2236,17 @@ def pollination_value_raster(p):
 def pollination_value_raster_rebuilt(p):
     """Rebuild the pollination value raster from source: production times price times dependence.
 
-    ⚠ NOT the GEP path. `pollination_value_raster` reads the source author's raster instead, because
-    the construction below is a different scientific method from his (we take CropGrids production
-    directly; he goes harvested area times a Monfreda within-country yield pattern times FAO
-    calibration). Under the rule that infrastructure is ours and the science is the author's, that
-    was not ours to change. This is kept as an independent cross-check: it agrees with his national
-    total to about one percent, which is a useful confirmation that his raster is being consumed
-    correctly, and it is the only thing here that would catch a units error in that consumption.
+    ⚠ NOT the GEP path, which reads the author's finished raster through `pollination_value_raster`.
+
+    ⚠⚠ This is the author's method, not a second one. The production rasters it reads,
+    `base_data/crops/cropgrids/production_2020/`, are byte-identical to the output of his own
+    pipeline (checked on five crops, 2026-08-30), so what differs from his published raster is the
+    vintage and the prices: production dated 2020 against his 2019, and a 2018-2022 median price
+    window against his 2017-2021. That is where the roughly one percent comes from. It is not
+    evidence about the method, because both sides run his.
+
+    The step that would make this our own construction end to end -- FAO yield change, Monfreda
+    yield pattern, production -- is the one part of his pipeline not yet ported.
 
     The GEP valuation used to sum a raster somebody else produced. This makes it, from the
     CropGrids production rasters, the FAO world producer price we now build ourselves, and
@@ -2375,9 +2379,10 @@ def pollination_value_raster_rebuilt(p):
 def pollination_value_independence_check(p):
     """Compare our own construction of the value raster against the author's, and record the gap.
 
-    Our construction and the author's share no code and only some data: he goes CropGrids harvested
-    area times a Monfreda yield pattern times FAO calibration, we take CropGrids production directly.
-    Agreement is therefore evidence about the method rather than about the port.
+    ⚠ Both sides start from the author's production rasters -- ours are his 2020 vintage, staged in
+    base_data and byte-identical to his pipeline's output -- so this measures the vintage and the
+    price window, not two methods. Until the yield and production steps are ported it cannot say
+    anything about the science.
 
     ⚠ Reports only. The GEP total is the author's raster, not this one.
     """
