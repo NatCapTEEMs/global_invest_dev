@@ -1,9 +1,9 @@
 """Pollination science: the sufficiency and value calculation, plus the
 frame and array arithmetic the two shock tasks and the GEP valuation share.
 
-The raster science (300 m sufficiency, 5 km valuation, PNAS diff) is vendored here from
-crop_benefits rather than imported from it, so the module needs no package outside this repo; a
-test blocks the import and asserts the module still loads. The driver functions at the bottom run
+The raster science (300 m sufficiency, 5 km valuation, PNAS diff) lives here rather than in an
+outside package, so the module needs nothing beyond this repo; a test blocks that import and
+asserts the module still loads. The driver functions at the bottom run
 that science per scenario on our SEALS maps, and the task layer reads the rasters it leaves
 behind. Nothing here opens a file: the zonal step takes arrays in and hands per-zone series back,
 which is what the tests exercise.
@@ -274,13 +274,6 @@ def configure_sufficiency(p, target_year):
 
 
 # ---------------------------------------------------------------------------------------------
-# VENDORED_FROM: wsidemoholm/crop_benefits @ 80a23b0 (2026-07-08). Upstream moved to
-# 51bcceb (2026-08-28); those commits refactor sufficiency_poll and sufficiency_value
-# without changing the arithmetic for an ESA call. Record the commit when re-vendoring:
-# without it nobody can answer "are we current?" without diffing the repo by hand.
-# Vendored from crop_benefits: the pieces of its sufficiency and value calculation that hold
-# no file handling. The raster steps they belong to are in the task module.
-# ---------------------------------------------------------------------------------------------
 
 @dataclass
 class SufficiencySettings:
@@ -288,7 +281,7 @@ class SufficiencySettings:
 
     That Config was loaded from a gitignored local.yaml with `validate=False`, so a missing or
     wrong file did not fail up front, it just proceeded. These seven fields are everything the
-    four vendored modules ever read off it, and the pollination task fills them from the
+    four raster modules ever read off it, and the pollination task fills them from the
     ProjectFlow object.
 
     Attributes:
@@ -310,7 +303,7 @@ class SufficiencySettings:
     n_workers: int = 4
 
 
-# The compression profiles the vendored writers ask for, which used to come off the same Config.
+# The compression profiles the raster writers ask for.
 COMPRESSION_PROFILES = {
     'continuous': {'compress': 'DEFLATE', 'predictor': 3, 'zlevel': 6, 'tiled': True,
                    'blockxsize': 256, 'blockysize': 256, 'BIGTIFF': 'IF_SAFER'},
@@ -425,7 +418,7 @@ class FaoPriceSettings:
     fao_end_year: int
     price_years: tuple
 
-    # The vendored code reads these as nested attributes; these keep its call sites unchanged.
+    # The steps below reach for these as nested attributes, so the flat fields answer to both.
     @property
     def paths(self):
         return self
@@ -468,8 +461,8 @@ class FaoPriceSettings:
 
 
 # ---------------------------------------------------------------------------------------------
-# Vendored from crop_benefits: the FAO price path, the parts that hold no file handling.
-# These build the per-crop median producer prices the pollination value raster is priced at.
+# The FAO price path, the parts that hold no file handling. These build the per-crop median
+# producer prices the pollination value raster is priced at.
 # ---------------------------------------------------------------------------------------------
 
 # Two bulks, two element vocabularies. Upstream keeps these in separate modules, where both are

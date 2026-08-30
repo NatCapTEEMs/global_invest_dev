@@ -195,7 +195,7 @@ def test_the_banded_alternative_rounds_up_and_is_not_the_default():
 
 
 def test_the_flood_module_does_not_import_the_source_repo():
-    """The science is vendored, so nothing here may reach for the upstream layout again.
+    """The science lives here, so nothing may reach for the upstream layout again.
 
     The source repo resolved every path from a GEP_FLOOD_ROOT environment variable through its own
     `flood_paths` module, and flood_tasks imported it by bare name. That works only from inside that

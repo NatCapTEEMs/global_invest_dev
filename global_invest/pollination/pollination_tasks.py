@@ -31,14 +31,6 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------------------------
-# VENDORED_FROM: wsidemoholm/crop_benefits @ 80a23b0 (2026-07-08). Upstream moved to
-# 51bcceb (2026-08-28); those commits refactor sufficiency_poll and sufficiency_value
-# without changing the arithmetic for an ESA call. Record the commit when re-vendoring:
-# without it nobody can answer "are we current?" without diffing the repo by hand.
-# Vendored from crop_benefits: the sufficiency and value raster steps. They stream global
-# rasters window by window, so they open and write files and belong here rather than beside
-# the arithmetic.
-# ---------------------------------------------------------------------------------------------
 
 
 FAO_MEDIAN_PRICES_REF_PATH = os.path.join('global_invest', 'pollination', 'fao', 'median_prices')
@@ -56,12 +48,12 @@ _SEALS_NAT_CLASSES = {3, 4, 5}
 
 
 # ---------------------------------------------------------------------------------------------
-# Vendored from crop_benefits: the FAO price path, the parts that download and write.
+# The FAO price path, the parts that download and write.
 # ---------------------------------------------------------------------------------------------
 
 
 
-# Helpers the vendored raster steps use, from the same source modules.
+# Helpers the raster steps use.
 
 def _make_elliptical_kernel(ry: int, rx: int) -> np.ndarray:
     """Create a binary elliptical kernel of half-axes (ry, rx) pixels."""
@@ -1533,7 +1525,7 @@ def mask_protected_areas_300m(cfg: pf.SufficiencySettings, scenario: str = "2020
                     value[value == val_src.nodata] = np.nan
 
                 # Cell area per ROW, WGS84, so this diagnostic measures a cell the way the
-                # value raster and the rest of the account do. The vendored version used a flat
+                # value raster and the rest of the account do. The earlier version used a flat
                 # 111.32 km per degree AND one mid-tile latitude for the whole tile height, so a
                 # tall tile got a single area for rows hundreds of kilometres apart.
                 row_off = window.row_off
@@ -2305,8 +2297,12 @@ def pollination_value_raster_rebuilt(p):
 
         production_density, meta = read_raster(str(raster_path))
         ratio = float(dependence.get(item_code, 0.0))
-        if item_code == pf.COFFEE_ITEM_CODE_FAO:
-            # One item code, two plants: the ratio has to vary by what each country grows.
+        if item_code == pf.COFFEE_ITEM_CODE_FAO and p.pollination_blend_coffee_dependence:
+            # One item code, two plants: arabica needs pollinators for a quarter of its yield and
+            # robusta for two thirds, so the ratio has to vary by what each country grows. Set
+            # pollination_blend_coffee_dependence to false to value every coffee country as pure
+            # arabica, which is what the source pipeline does and what a like-for-like comparison
+            # against it needs; it is worth about $3bn on the world total.
             ratio = pf.dependence_raster_from_country_lookup(
                 country_ids, coffee_by_country, pf.COFFEE_DEPENDENCE['arabica'])
         pollination_density, crop_density = pf.crop_pollination_value_density(

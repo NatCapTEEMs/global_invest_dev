@@ -242,6 +242,12 @@ pollination,pollination_dependence_table_path,global_invest/pollination/fao/poll
 pollination,pollination_coffee_split_path,global_invest/pollination/coffee_types_distribution/prop_arabica_robusta.csv
 pollination,pollination_author_production_dir_path,global_invest/pollination/cropgrids/production_2020
 pollination,pollination_price_years,"[2017, 2018, 2019, 2020, 2021]"
+pollination,pollination_blend_coffee_dependence,true
+pollination,pollination_shock_baseline_label,2023_pnas
+pollination,pollination_shock_region_id_col,ee_r50_aez18_id
+pollination,pollination_shock_endw_col,aez18_id
+pollination,pollination_shock_reg_col,gtapv7_r50_label
+pollination,pollination_shock_endw_format,AEZ%d
 pollination,pollination_fao_start_year,1993
 pollination,pollination_fao_end_year,2024
 pollination,pollination_yield_method,"target"

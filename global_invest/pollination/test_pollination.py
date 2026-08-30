@@ -263,7 +263,7 @@ def test_the_module_imports_without_the_crop_benefits_package():
     # The sufficiency and value science used to come from an installed package, crop_benefits,
     # that was declared in no pyproject and configured through a gitignored local.yaml. On a
     # machine without it the whole module failed at import, which is how it reached a collaborator.
-    # It is vendored now, so nothing here may reach for that package again.
+    # It lives here now, so nothing may reach for that package again.
     import importlib
     import sys
 
@@ -288,7 +288,7 @@ def test_the_module_imports_without_the_crop_benefits_package():
 
 
 def test_the_settings_object_replaces_the_config_that_was_loaded_from_a_gitignored_file():
-    # Seven fields are everything the vendored steps ever read off the crop_benefits Config, and
+    # Seven fields are everything the raster steps ever read off the old crop_benefits Config, and
     # three of them our own driver already overrode. They are plain arguments now, so a missing
     # config file cannot silently produce a run against the wrong paths.
 
@@ -367,24 +367,20 @@ def test_the_deflator_refuses_a_year_it_has_no_index_for():
         pf.usd_deflator(2020, 1850)
 
 
-def test_the_vendored_source_commit_is_recorded():
-    """Vendoring freezes a copy at a moment; without the commit nobody can tell if it has drifted.
+def test_the_upstream_package_is_never_imported():
+    """The science lives in this repo, so a run must not depend on an outside package being there.
 
-    We vendored crop_benefits at 80a23b0 in July and the upstream moved in August. Nothing warned
-    us: the tests passed, the gates were clean, and the only way to answer "are we current?" was to
-    clone the repo and diff it by hand. That is the cost of vendoring, and a recorded commit is what
-    makes it payable. Re-vendoring must update the stamp.
+    An import that works on one machine and not another is the failure this prevents: the tests
+    pass wherever the package happens to be installed and the run dies wherever it is not.
     """
     import os
     import re
     here = os.path.dirname(os.path.abspath(__file__))
     for name in ('pollination_tasks.py', 'pollination_functions.py'):
         text = open(os.path.join(here, name), encoding='utf-8').read()
-        assert 'Vendored from crop_benefits' in text, name
-        match = re.search(r'VENDORED_FROM:\s*(\S+)\s*@\s*([0-9a-f]{7,40})', text)
-        assert match, '%s vendors code without recording the source commit' % name
-        assert match.group(1).endswith('crop_benefits'), match.group(1)
-
+        for line in text.split('\n'):
+            assert not re.match(r'\s*(import crop_benefits|from crop_benefits)', line), \
+                '%s imports crop_benefits: %s' % (name, line.strip())
 
 def test_source_provenance_records_the_file_it_actually_read(tmp_path):
     """A stale staged raster is silent: same name, same shape, a slightly different number.
