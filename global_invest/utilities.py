@@ -16,6 +16,7 @@ import json
 import mapclassify
 import matplotlib as mpl
 import matplotlib.pyplot as plt
+from matplotlib.patches import Patch
 import shutil
 import subprocess
 import sys

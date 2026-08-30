@@ -20,11 +20,13 @@ task wrappers at the end are the seam `flood_initialize` grafts onto a task tree
 from __future__ import annotations
 
 import glob
+import hashlib
 import json
 import os
 import warnings
 import zipfile
 from contextlib import nullcontext
+from datetime import datetime
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import numpy as np
@@ -2367,7 +2369,7 @@ def outputs_complete_for_iso3(out_dir: str, iso3: str, rp_map: dict[int, str], w
         mask_tif  = os.path.join(out_dir, f"sda_mask_{iso3}_rp{int(rp)}.tif")
         if not hb.path_exists(class_tif) or not hb.path_exists(mask_tif):
             return False
-        if not utilities.raster_ok(class_tif) or not raster_ok(mask_tif):
+        if not utilities.raster_ok(class_tif) or not utilities.raster_ok(mask_tif):
             return False
 
         if write_depthbin:
