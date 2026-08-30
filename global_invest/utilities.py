@@ -984,7 +984,7 @@ def country_attributes(p, columns=None):
 import hashlib
 import os
 import warnings
-from typing import Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 import geopandas as gpd
 import hazelbean as hb
@@ -1026,6 +1026,61 @@ def service_data_dir(p, service):
     if not os.path.isdir(path):
         raise NameError('%s has no data directory at %s' % (service, path))
     return path
+
+
+# ---------------------------------------------------------------------------------------------
+# Rasterio read and write. Seven services open rasters by hand; hazelbean is GDAL-based and
+# its as_array returns a Dataset, a Band and an array rather than the rasterio profile these
+# writers need, so this pair is ours rather than a duplicate of hb.as_array.
+# ---------------------------------------------------------------------------------------------
+
+def read_raster(path: str) -> Tuple[np.ndarray, Dict[str, Any]]:
+    """
+    Read a single-band GeoTIFF.
+
+    Returns
+    -------
+    data : np.ndarray
+        2-D float32 array.
+    meta : dict
+        Rasterio profile (used to write matching outputs).
+    """
+    path = str(path)
+
+    with rasterio.open(path) as src:
+        data = src.read(1).astype(np.float32)
+        meta = src.meta.copy()
+
+    return data, meta
+
+
+def write_raster(path, data, meta, nodata=None):
+    """Write a single-band float32 GeoTIFF, creating the parent directory if needed.
+
+    Args:
+        path (Path): where to write.
+        data (np.ndarray): the 2-D array.
+        meta (dict): a rasterio profile, normally the one read_raster returned.
+        nodata (float): overrides the profile's nodata when given.
+
+    Returns:
+        Path: the path written.
+    """
+    path = str(path)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    profile = dict(meta)
+    profile.update(driver='GTiff', dtype='float32', count=1,
+                   compress='deflate', predictor=2, tiled=True, zlevel=6)
+    if nodata is not None:
+        profile['nodata'] = nodata
+    with rasterio.open(path, 'w', **profile) as dst:
+        dst.write(data.astype(np.float32), 1)
+    return path
+
+
+# The files, not their directories: get_path searches the task's own directory first, so a
+# directory reference resolved into intermediate/pollination/ rather than into base data.
+
 
 def assert_exists(path, hint: str = ""):
     """Fail naming the missing file and what needed it, rather than where the read happened."""

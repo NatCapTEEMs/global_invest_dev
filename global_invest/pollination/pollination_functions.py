@@ -436,46 +436,6 @@ class FaoPriceSettings:
     qc_bad_median_times_off: float
     qc_bad_share_over_3x: float
 
-    # The steps below reach for these as nested attributes, so the flat fields answer to both.
-    @property
-    def paths(self):
-        return self
-
-    @property
-    def outputs(self):
-        return self
-
-    @property
-    def run(self):
-        return self
-
-    @property
-    def crosswalk_m49_iso3(self):
-        return self.crosswalk_m49_iso3_path
-
-    @property
-    def fao_classification(self):
-        return self.fao_classification_path
-
-    @property
-    def crosswalk_fao_cropgrids(self):
-        return self.crosswalk_fao_cropgrids_path
-
-    @property
-    def fao_production(self):
-        return self.output_dir
-
-    @property
-    def fao_prices(self):
-        return self.output_dir
-
-    @property
-    def fao_values(self):
-        return self.output_dir
-
-    @property
-    def fao_median_prices(self):
-        return os.path.join(self.output_dir, 'median_prices')
 
 
 # ---------------------------------------------------------------------------------------------
