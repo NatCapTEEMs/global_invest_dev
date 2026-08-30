@@ -118,7 +118,8 @@ def save_parquet(df: pd.DataFrame, path: str | str) -> str:
 
 def baseline_denominator(cfg, baseline_lulc_path, target_year):
     """Unpaired 2023 pollination value (the % change denominator), computed once."""
-    run_pollination_sufficiency_300m(cfg, lulc_path=baseline_lulc_path, scenario=pf.BASELINE_LABEL)
+    run_pollination_sufficiency_300m(cfg, lulc_path=baseline_lulc_path, scenario=pf.BASELINE_LABEL,
+                                     lulc_scheme='seals')
     run_pollination_sufficiency_5km(cfg, scenario=pf.BASELINE_LABEL)
     run_pollination_valuation_5km(cfg, scenario=pf.BASELINE_LABEL, target_year=target_year)
     return cfg.output_dir / f'value_pollination_sufficiency_{pf.BASELINE_LABEL}_5km.tif'
@@ -133,7 +134,8 @@ def scenario_diff_raster(cfg, scenario, lulc_path, baseline_lulc_path, target_ye
     stab, b_stab = f'{scenario}_stab', f'{pf.BASELINE_LABEL}_stab_{scenario}'
     for suff_scen, lulc, other in [(stab, lulc_path, baseline_lulc_path),
                                    (b_stab, baseline_lulc_path, lulc_path)]:
-        run_pollination_sufficiency_300m_stable_ag(cfg, lulc_path=lulc, other_lulc_path=other, scenario=suff_scen)
+        run_pollination_sufficiency_300m_stable_ag(cfg, lulc_path=lulc, other_lulc_path=other,
+                                                   scenario=suff_scen, lulc_scheme='seals')
         run_pollination_sufficiency_5km(cfg, scenario=suff_scen)
         run_pollination_valuation_5km(cfg, scenario=suff_scen, target_year=target_year)
 
@@ -1024,6 +1026,7 @@ def run_pollination_sufficiency_300m(
     cfg: pf.SufficiencySettings,
     lulc_path: str | None = None,
     scenario: str = "2020",
+    lulc_scheme: str = "esa",
     fill_non_ag: float | None = None,
     stable_ag_lulc_path: str | None = None,
 ) -> str:
@@ -1035,6 +1038,12 @@ def run_pollination_sufficiency_300m(
 
     Parameters
     ----------
+    scenario:
+        Output label; determines the output filename and nothing else.
+    lulc_scheme:
+        Which code set ``lulc_path`` uses, ``'esa'`` or ``'seals'``. It decides which values
+        count as agricultural and which as natural, so it changes the result rather than the
+        file name. An unrecognised value raises.
     fill_non_ag:
         Passed through to :func:`_process_tile`.  ``None`` (default) leaves
         non-agricultural pixels as NaN so the 5 km average is computed only
@@ -1055,18 +1064,18 @@ def run_pollination_sufficiency_300m(
     logger.info("Output: %s", out_path)
     
     # 0. Interpret LULC mapping
-    if scenario == "2020":
-        # ESA-CCI default classes
+    if lulc_scheme == "esa":
         ag_classes = _AG_CLASSES
         nat_classes = _NAT_CLASSES
         logger.info("Using default ESA-CCI LULC classes.")
-    else:
-        # SEALS future scenario classes
+    elif lulc_scheme == "seals":
         # 1 = urban, 2 = cropland, 3 = grassland, 4 = forest, 5 = non-forest natural
         # 6 = water, 7 = barren land
         ag_classes = _SEALS_AG_CLASSES
         nat_classes = _SEALS_NAT_CLASSES
         logger.info("Using SEALS LULC classes.")
+    else:
+        raise ValueError("Unknown lulc_scheme %r (expected 'esa' or 'seals')" % lulc_scheme)
     
     if hb.path_exists(out_path):
         logger.info("Output already exists, skipping computation.")
@@ -1227,6 +1236,7 @@ def run_pollination_sufficiency_300m_stable_ag(
     lulc_path: str,
     other_lulc_path: str,
     scenario: str,
+    lulc_scheme: str = "seals",
 ) -> str:
     """Compute 300 m sufficiency restricted to pixels agricultural in both periods.
 
@@ -1256,6 +1266,9 @@ def run_pollination_sufficiency_300m_stable_ag(
         is NOT counted from here).
     scenario:
         Output label; determines the output filename.
+    lulc_scheme:
+        Which code set both LULC rasters use, ``'esa'`` or ``'seals'``. Defaults to SEALS
+        because the two-period comparison this serves runs on SEALS maps.
 
     Returns
     -------
@@ -1266,6 +1279,7 @@ def run_pollination_sufficiency_300m_stable_ag(
         cfg,
         lulc_path=lulc_path,
         scenario=scenario,
+        lulc_scheme=lulc_scheme,
         fill_non_ag=None,           # NaN for non-stable-ag (exclude from average)
         stable_ag_lulc_path=other_lulc_path,
     )
