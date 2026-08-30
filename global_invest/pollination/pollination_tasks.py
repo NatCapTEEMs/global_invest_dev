@@ -122,7 +122,7 @@ def baseline_denominator(cfg, baseline_lulc_path, target_year):
                                      lulc_scheme='seals')
     run_pollination_sufficiency_5km(cfg, scenario=pf.BASELINE_LABEL)
     run_pollination_valuation_5km(cfg, scenario=pf.BASELINE_LABEL, target_year=target_year)
-    return cfg.output_dir / f'value_pollination_sufficiency_{pf.BASELINE_LABEL}_5km.tif'
+    return os.path.join(cfg.output_dir, f'value_pollination_sufficiency_{pf.BASELINE_LABEL}_5km.tif')
 
 
 def scenario_diff_raster(cfg, scenario, lulc_path, baseline_lulc_path, target_year):
@@ -142,8 +142,8 @@ def scenario_diff_raster(cfg, scenario, lulc_path, baseline_lulc_path, target_ye
     suff_dir = cfg.output_dir
     return run_pollination_diff_5km_pnas(
         cfg, scenario=scenario, baseline_scenario=pf.BASELINE_LABEL,
-        scenario_value_path=suff_dir / f'value_pollination_sufficiency_{stab}_5km.tif',
-        baseline_value_path=suff_dir / f'value_pollination_sufficiency_{b_stab}_5km.tif')
+        scenario_value_path=os.path.join(suff_dir, f'value_pollination_sufficiency_{stab}_5km.tif'),
+        baseline_value_path=os.path.join(suff_dir, f'value_pollination_sufficiency_{b_stab}_5km.tif'))
 
 
 def _add_geographic_and_classification_data(
@@ -626,7 +626,7 @@ def _compute_median_prices(
 
     os.makedirs(outdir, exist_ok=True)
     yr_start, yr_end = min(price_years), max(price_years)
-    pq_out = outdir / f"price_median_usd_tonne_{yr_start}_{yr_end}.parquet"
+    pq_out = os.path.join(outdir, f"price_median_usd_tonne_{yr_start}_{yr_end}.parquet")
     save_parquet(median_prices, pq_out)
 
     logger.info("Median prices: %d rows", len(median_prices))
@@ -867,7 +867,8 @@ def fao_median_prices(p):
         fao_production_bulk_path=str(p.pollination_fao_production_path),
         fao_prices_bulk_path=str(p.pollination_fao_prices_path),
         fx_lcu_per_usd_path=str(p.pollination_fx_path),
-        output_dir=str(os.path.dirname(p.fao_median_prices_dir)))
+        output_dir=str(os.path.dirname(p.fao_median_prices_dir)),
+        price_years=tuple(p.pollination_price_years))
     run_fao_production(settings)
     run_fao_prices(settings)
     run_fao_values(settings)
@@ -1057,7 +1058,7 @@ def run_pollination_sufficiency_300m(
         
     out_dir = cfg.output_dir
     os.makedirs(out_dir, exist_ok=True)
-    out_path = out_dir / f"pollination_sufficiency_{scenario}_300m.tif"
+    out_path = os.path.join(out_dir, f"pollination_sufficiency_{scenario}_300m.tif")
     
     logger.info("Computing 300m Pollination Sufficiency...")
     logger.info("Input LULC: %s", lulc_path)
@@ -1168,10 +1169,10 @@ def run_pollination_sufficiency_5km(cfg: pf.SufficiencySettings, input_300m: str
     Returns the path to the 5 km output GeoTIFF.
     """
     if input_300m is None:
-        input_300m = cfg.output_dir / f"pollination_sufficiency_{scenario}_300m.tif"
+        input_300m = os.path.join(cfg.output_dir, f"pollination_sufficiency_{scenario}_300m.tif")
         
     out_dir = cfg.output_dir
-    out_path = out_dir / f"pollination_sufficiency_{scenario}_5km.tif"
+    out_path = os.path.join(out_dir, f"pollination_sufficiency_{scenario}_5km.tif")
     
     # Template target: We need a 5km grid.
     # The config has 'country_raster' which should be 5km.
@@ -1291,15 +1292,15 @@ def run_pollination_valuation_5km(cfg: pf.SufficiencySettings, scenario: str = "
     Uses the pre-calculated global pollination value raster (from build_pollination_value.py)
     and multiplies it by the 5 km sufficiency index.
     """
-    suff_path = cfg.output_dir / f"pollination_sufficiency_{scenario}_5km.tif"
+    suff_path = os.path.join(cfg.output_dir, f"pollination_sufficiency_{scenario}_5km.tif")
 
     # Input: Pre-calculated global pollination value
-    poll_value_path = cfg.value_raster_dir / f"poll_value_global_{target_year}usd.tif"
+    poll_value_path = os.path.join(cfg.value_raster_dir, f"poll_value_global_{target_year}usd.tif")
 
     out_dir = cfg.output_dir
     os.makedirs(out_dir, exist_ok=True)
     
-    out_total = out_dir / f"value_pollination_sufficiency_{scenario}_5km.tif"
+    out_total = os.path.join(out_dir, f"value_pollination_sufficiency_{scenario}_5km.tif")
 
     logger.info("Computing 5km Pollination Value (weighted by sufficiency, %d USD)...", target_year)
     logger.info("  Pollination Value Input: %s", poll_value_path)
@@ -1357,9 +1358,9 @@ def redistribution_value_to_300m(cfg: pf.SufficiencySettings, scenario: str = "2
     Each 300 m pixel receives a share of its parent 5 km cell's value
     proportional to its sufficiency weight (suff_i / Σ suff).
     """
-    large_path = cfg.output_dir / f"value_pollination_sufficiency_{scenario}_5km.tif"
-    fine_path = cfg.output_dir / f"pollination_sufficiency_{scenario}_300m.tif"
-    out_path = cfg.output_dir / f"value_pollination_sufficiency_{scenario}_300m.tif"
+    large_path = os.path.join(cfg.output_dir, f"value_pollination_sufficiency_{scenario}_5km.tif")
+    fine_path = os.path.join(cfg.output_dir, f"pollination_sufficiency_{scenario}_300m.tif")
+    out_path = os.path.join(cfg.output_dir, f"value_pollination_sufficiency_{scenario}_300m.tif")
 
     logger.info("Redistributing value to 300m...")
 
@@ -1470,19 +1471,13 @@ def mask_protected_areas_300m(cfg: pf.SufficiencySettings, scenario: str = "2020
     Path
         Path to the masked output raster.
     """
-    value_path = (
-        cfg.output_dir
-        / f"value_pollination_sufficiency_{scenario}_300m.tif"
-    )
+    value_path = os.path.join(
+        cfg.output_dir, f"value_pollination_sufficiency_{scenario}_300m.tif")
     pa_path = cfg.pa_raster_300m_path
-    out_raster = (
-        cfg.output_dir
-        / f"value_pollination_sufficiency_{scenario}_300m_no_agri_in_PA.tif"
-    )
-    out_csv = (
-        cfg.output_dir
-        / f"summary_300m_no_agri_in_PA_{scenario}.csv"
-    )
+    out_raster = os.path.join(
+        cfg.output_dir, f"value_pollination_sufficiency_{scenario}_300m_no_agri_in_PA.tif")
+    out_csv = os.path.join(
+        cfg.output_dir, f"summary_300m_no_agri_in_PA_{scenario}.csv")
 
     logger.info("Masking PA pixels from 300m pollination value...")
     logger.info("Value input : %s", value_path)
@@ -1586,7 +1581,7 @@ def summarize_run(cfg: pf.SufficiencySettings, scenario: str = "2020") -> None:
     """Summarize total values of all generated valuation rasters."""
     logger = logging.getLogger("poll_suff_pipeline")
     out_dir = cfg.output_dir
-    summary_path = out_dir / f"pollination_sufficiency_valuation_totals_{scenario}.csv"
+    summary_path = os.path.join(out_dir, f"pollination_sufficiency_valuation_totals_{scenario}.csv")
     
     # Rasters to check (Name -> Description)
     targets = {
@@ -1600,7 +1595,7 @@ def summarize_run(cfg: pf.SufficiencySettings, scenario: str = "2020") -> None:
     rows = []
     
     for fname, desc in targets.items():
-        path = out_dir / fname
+        path = os.path.join(out_dir, fname)
         if not hb.path_exists(path):
             continue
             
@@ -1682,7 +1677,7 @@ def run_pollination_diff_5km_pnas(
         ``diff_value_pollination_sufficiency_{scenario}_vs_{baseline_scenario}_5km.tif``
     """
     out_dir  = cfg.output_dir
-    out_path = out_dir / f"diff_value_pollination_sufficiency_{scenario}_vs_{baseline_scenario}_5km.tif"
+    out_path = os.path.join(out_dir, f"diff_value_pollination_sufficiency_{scenario}_vs_{baseline_scenario}_5km.tif")
 
     logger.info(
         "Computing PNAS-style difference raster (stable ag only): %s − %s",
@@ -1694,13 +1689,13 @@ def run_pollination_diff_5km_pnas(
         return out_path
 
     # Resolve input paths
-    s_path = scenario_value_path  or (out_dir / f"value_pollination_sufficiency_{scenario}_5km.tif")
-    b_path = baseline_value_path  or (out_dir / f"value_pollination_sufficiency_{baseline_scenario}_5km.tif")
+    s_path = scenario_value_path  or (os.path.join(out_dir, f"value_pollination_sufficiency_{scenario}_5km.tif"))
+    b_path = baseline_value_path  or (os.path.join(out_dir, f"value_pollination_sufficiency_{baseline_scenario}_5km.tif"))
     exact_mode = scenario_value_path is not None
 
     required = [s_path, b_path]
     if not exact_mode:
-        mask_path = out_dir / f"stable_ag_mask_{scenario}_vs_{baseline_scenario}_5km.tif"
+        mask_path = os.path.join(out_dir, f"stable_ag_mask_{scenario}_vs_{baseline_scenario}_5km.tif")
         required.append(mask_path)
 
     for p in required:
@@ -2288,9 +2283,9 @@ def pollination_value_raster_rebuilt(p):
 
     # The deflator is on the PRICE, not on production: the median is taken over a five-year window
     # and is therefore in that window's centre-year dollars.
-    deflator = pf.usd_deflator(pf.PRICE_WINDOW_CENTRE_YEAR, year)
+    deflator = pf.usd_deflator(pf.price_window_centre_year(p.pollination_price_years), year)
     hb.log('Pricing at %d USD: prices are %d-centred, deflator %.4f'
-           % (year, pf.PRICE_WINDOW_CENTRE_YEAR, deflator))
+           % (year, pf.price_window_centre_year(p.pollination_price_years), deflator))
 
     country_ids, _ = read_raster(str(p.get_path(CROPGRIDS_COUNTRY_RASTER_REF_PATH)))
     country_ids = country_ids.astype('int32')

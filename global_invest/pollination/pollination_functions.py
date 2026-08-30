@@ -973,11 +973,16 @@ CPI_BY_YEAR = {
     2025: 321.9,
 }
 
-# The median price is taken over a five-year window, so it is denominated in the dollars of that
-# window's centre and has to be deflated to the base year before it multiplies anything. The
-# comment here used to say this was the production raster's vintage, which it never was: the
-# deflator is applied to `price`, not to production.
-PRICE_WINDOW_CENTRE_YEAR = 2020
+def price_window_centre_year(price_years):
+    """The year the median price is denominated in: the centre of the window it is taken over.
+
+    A median over 2017-2021 is 2019 money and needs no deflating for a 2019 account; a median over
+    2018-2022 is 2020 money and does. The window used to be a hardcoded 2018-2022 with the centre
+    written out as a constant called PRODUCTION_RASTER_YEAR, which named neither the thing it was
+    nor the thing it was used for -- the deflator is applied to `price`, never to production.
+    """
+    years = sorted(int(y) for y in price_years)
+    return years[len(years) // 2]
 
 
 def usd_deflator(from_year, to_year):
