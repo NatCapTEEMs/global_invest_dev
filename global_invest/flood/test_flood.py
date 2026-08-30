@@ -443,3 +443,26 @@ def test_the_components_reader_multiplies_the_regional_fraction_by_the_country_m
     assert len(row) == 1
     # 100 EUR/m2 max damage at a 0.4 fraction is 40, in EUR2010.
     assert float(row['damage_per_m2'].iloc[0]) == pytest.approx(40.0)
+
+
+def test_a_missing_amplification_raster_stops_the_run_rather_than_zeroing_the_gep(tmp_path):
+    """The degraded world is the current depths times an amplification factor, so a missing factor
+    makes the two worlds identical and that return period's GEP exactly zero. It used to warn and
+    return None, which is indistinguishable from the current scenario, where None is correct.
+    """
+    import os
+    from types import SimpleNamespace
+    from global_invest.flood import flood_tasks as ft
+
+    p = SimpleNamespace()
+    p.flood_amplification_path = str(tmp_path)
+    p.flood_amplification_pattern = 'global_amplification_{scenario}_rp{rp}.tif'
+
+    # the current world legitimately has none
+    assert ft._open_amplification_raster(p, 'current', 100) is None
+
+    # a degraded world without one is a broken run, not a zero
+    with pytest.raises(FileNotFoundError) as raised:
+        ft._open_amplification_raster(p, 'degraded_bare', 100)
+    assert 'degraded_bare' in str(raised.value)
+    assert 'exactly zero' in str(raised.value)

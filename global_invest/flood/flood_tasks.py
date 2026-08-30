@@ -1424,18 +1424,39 @@ def _find_depth_raster(p, rp: int) -> Optional[str]:
     return None
 
 
-def _open_amp(p, scenario: str, rp: int):
-    """Open the amplification raster for one scenario x RP, or None."""
+def _open_amplification_raster(p, scenario: str, rp: int):
+    """The per-pixel amplification factor for one scenario and return period.
+
+    The degraded world is not a separate depth dataset: it is the same JRC depths multiplied by
+    this factor, which is how much more runoff a degraded landscape sheds. Returned as an open
+    dataset rather than an array because it is global and is read a tile at a time.
+
+    Args:
+        p: the ProjectFlow object.
+        scenario (str): one of SCENARIOS.
+        rp (int): the return period.
+
+    Returns:
+        rasterio dataset, or None for the current scenario, which has no amplification by
+        definition.
+
+    Raises:
+        FileNotFoundError: if a DEGRADED scenario has no raster. Returning None there would make
+            the degraded depths equal the current ones, so that return period's GEP would be
+            exactly zero -- which is what a missing file used to do, behind a warning.
+    """
     if scenario == "current":
         return None
     path = os.path.join(p.flood_amplification_path,
                         p.flood_amplification_pattern.format(scenario=scenario, rp=rp))
     if not hb.path_exists(path):
-        warnings.warn(
-            f"[WARN] no amplification raster for {scenario} RP{rp} at {path}. "
-            f"Build it with counterfactual/build_amplification_rasters.py. "
-            f"Falling back to current depths (GEP for this RP will be zero).")
-        return None
+        raise FileNotFoundError(
+            "No amplification raster for %s RP%s at %s. The GEP is the difference between the "
+            "degraded world and today's, so without it that return period contributes exactly "
+            "zero and the run would look like it had worked. Check "
+            "flood_amplification_path and flood_amplification_pattern against the staged "
+            "filenames, which are global_amplification_<scenario>_rp<rp>.tif."
+            % (scenario, rp, path))
     return rasterio.open(path)
 
 
@@ -1519,7 +1540,7 @@ def compute_pixel_damages(p, iso3_list: Optional[List[str]] = None,
                 hb.log(f"[WARN] {iso3}: no depth raster for RP={rp} in {p.flood_depth_aligned_path}")
                 continue
 
-            amp_src = _open_amp(p, scenario, rp)
+            amp_src = _open_amplification_raster(p, scenario, rp)
             try:
                 with rasterio.open(depth_path) as dds, rasterio.open(p.flood_sda_raster_path) as sds:
                     utilities.assert_same_grid(dds, sds, f"depth_rp{rp}", "sda")
