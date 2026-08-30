@@ -265,12 +265,14 @@ def configure_sufficiency(p, target_year):
     value tasks. The 5 km template points at the value raster itself, because the valuation needs
     sufficiency and value on one grid and that removes a separate country-raster input.
     """
-    crop_benefits_dir = p.get_path('crop_benefits')
+    crop_benefits_dir = p.get_path(SOURCE_VALUE_RASTER_DIR_REF_PATH)
     return SufficiencySettings(
         output_dir=str(p.cur_dir),
         value_raster_dir=str(crop_benefits_dir),
         country_raster_path=os.path.join(
-            crop_benefits_dir, 'poll_value_global_%dusd.tif' % int(target_year)))
+            crop_benefits_dir, 'poll_value_global_%dusd.tif' % int(target_year)),
+        tile_size=int(p.pollination_sufficiency_tile_size),
+        n_workers=int(p.pollination_sufficiency_n_workers))
 
 
 # ---------------------------------------------------------------------------------------------
@@ -289,7 +291,6 @@ class SufficiencySettings:
         value_raster_dir (str): where the precomputed baseline pollination-value raster lives.
         country_raster_path (str): the raster defining the 5 km target grid. The valuation needs
             sufficiency and value on one grid, so this points at the value raster itself.
-        lulc_path (str): the land-cover map the sufficiency is computed from.
         pa_raster_300m_path (str): the protected-area raster, for the protected-area summary.
         tile_size (int): rows per block when streaming a raster.
         n_workers (int): parallel workers for the tiled sufficiency pass.
@@ -297,10 +298,9 @@ class SufficiencySettings:
     output_dir: str
     value_raster_dir: str
     country_raster_path: str
-    lulc_path: str = None
+    tile_size: int
+    n_workers: int
     pa_raster_300m_path: str = None
-    tile_size: int = 2048
-    n_workers: int = 4
 
 
 # The compression profiles the raster writers ask for.
@@ -423,6 +423,15 @@ class FaoPriceSettings:
     excluded_item_codes: set
     fx_inherit_iso3: dict
     imf_fao_names: dict
+    # Price quality-control tolerances. _QC_START_YEAR was a separate constant holding 1993,
+    # the same value as fao_start_year, so the panel's span and the QC window could disagree.
+    tol_near_equal_lcu_slc: float
+    anchor_max_year_dist: int
+    anchor_max_times_off: float
+    global_median_max_times_off: float
+    qc_min_overlap: int
+    qc_bad_median_times_off: float
+    qc_bad_share_over_3x: float
 
     # The steps below reach for these as nested attributes, so the flat fields answer to both.
     @property
@@ -484,22 +493,6 @@ _PRICE_ELEMENTS_KEEP = [
     "Producer Price (LCU/tonne)",
     "Producer Price Index (2014-2016 = 100)",
 ]
-
-_TOL_NEAR_EQUAL_LCU_SLC = 0.01
-
-_ANCHOR_MAX_YEAR_DIST = 10
-
-_ANCHOR_MAX_TIMES_OFF = 10
-
-_GLOBAL_MED_MAX_TIMES_OFF = 10
-
-_QC_START_YEAR = 1993
-
-_QC_MIN_OVERLAP = 50
-
-_QC_BAD_MEDIAN_TIMES_OFF = 3
-
-_QC_BAD_SHARE_OVER_3X = 0.5
 
 
 
@@ -604,7 +597,7 @@ def _reconstruct_slc_lcu(pp_wide: pd.DataFrame) -> pd.DataFrame:
             pp3["lcu_tonne"].isna() & pp3["slc_filled"].notna() & pp3["lcu_per_slc_year_country"].notna(),
             pp3["lcu_tonne"].isna() & pp3["slc_filled"].notna()
             & pp3["lcu_per_slc_year_country"].isna() & pp3["lcu_per_slc_country"].notna()
-            & (pp3["lcu_per_slc_country"] - 1).abs() <= _TOL_NEAR_EQUAL_LCU_SLC,
+            & (pp3["lcu_per_slc_country"] - 1).abs() <= cfg.tol_near_equal_lcu_slc,
             pp3["lcu_tonne"].isna() & pp3["slc_filled"].notna()
             & pp3["lcu_per_slc_year_country"].isna() & pp3["lcu_per_slc_country"].notna(),
             pp3["lcu_tonne"].isna() & pp3["slc_filled"].notna(),
@@ -625,7 +618,7 @@ def _reconstruct_slc_lcu(pp_wide: pd.DataFrame) -> pd.DataFrame:
             pp3["lcu_tonne"].isna() & pp3["slc_filled"].notna() & pp3["lcu_per_slc_year_country"].notna(),
             pp3["lcu_tonne"].isna() & pp3["slc_filled"].notna()
             & pp3["lcu_per_slc_year_country"].isna() & pp3["lcu_per_slc_country"].notna()
-            & (pp3["lcu_per_slc_country"] - 1).abs() <= _TOL_NEAR_EQUAL_LCU_SLC,
+            & (pp3["lcu_per_slc_country"] - 1).abs() <= cfg.tol_near_equal_lcu_slc,
             pp3["lcu_tonne"].isna() & pp3["slc_filled"].notna()
             & pp3["lcu_per_slc_year_country"].isna() & pp3["lcu_per_slc_country"].notna(),
             pp3["lcu_tonne"].isna() & pp3["slc_filled"].notna(),
@@ -688,7 +681,7 @@ def _build_usd_with_qc(
 
     use_anchor = (
         (pp_usd["usd_source"] == "filled")
-        & (pp_usd["anchor_year_dist"] <= _ANCHOR_MAX_YEAR_DIST)
+        & (pp_usd["anchor_year_dist"] <= cfg.anchor_max_year_dist)
         & pp_usd["anchor_usd"].notna() & (pp_usd["anchor_usd"] > 0)
         & pp_usd["usd_fx_implied"].notna() & (pp_usd["usd_fx_implied"] > 0)
     )
@@ -696,7 +689,7 @@ def _build_usd_with_qc(
         pp_usd.loc[use_anchor, "usd_fx_implied"] / pp_usd.loc[use_anchor, "anchor_usd"],
         pp_usd.loc[use_anchor, "anchor_usd"] / pp_usd.loc[use_anchor, "usd_fx_implied"],
     )
-    bad_anchor = use_anchor & (pp_usd["times_off_closest_obs"] > _ANCHOR_MAX_TIMES_OFF)
+    bad_anchor = use_anchor & (pp_usd["times_off_closest_obs"] > cfg.anchor_max_times_off)
     logger.warning("Anchor QC dropping %d rows", bad_anchor.sum())
     pp_usd.loc[bad_anchor, ["usd_fx_implied", "usd_filled", "usd_source"]] = [
         np.nan, np.nan, "implausible_vs_closest_observed_10x",
@@ -720,8 +713,8 @@ def _build_usd_with_qc(
         pp_usd.loc[use_global, "usd_fx_implied"] / pp_usd.loc[use_global, "global_median_usd"]
     )
     bad_global = use_global & (
-        (pp_usd["global_ratio"] > _GLOBAL_MED_MAX_TIMES_OFF)
-        | (pp_usd["global_ratio"] < 1 / _GLOBAL_MED_MAX_TIMES_OFF)
+        (pp_usd["global_ratio"] > cfg.global_median_max_times_off)
+        | (pp_usd["global_ratio"] < 1 / cfg.global_median_max_times_off)
     )
     logger.warning("Global median QC dropping %d rows", bad_global.sum())
     pp_usd.loc[bad_global, ["usd_fx_implied", "usd_filled", "usd_source"]] = [
@@ -732,7 +725,7 @@ def _build_usd_with_qc(
     logger.info("=== 15d) QC: FX RELIABILITY BY COUNTRY ===")
     qc = (
         pp_usd.loc[
-            (pp_usd["year"] >= _QC_START_YEAR)
+            (pp_usd["year"] >= cfg.fao_start_year)
             & pp_usd["usd_tonne_obs"].notna() & pp_usd["usd_fx_implied"].notna()
             & (pp_usd["usd_tonne_obs"] > 0) & (pp_usd["usd_fx_implied"] > 0),
             ["iso3", "usd_tonne_obs", "usd_fx_implied"],
@@ -751,10 +744,10 @@ def _build_usd_with_qc(
     )
     bad_fx_countries = set(
         country_qc.loc[
-            (country_qc["n_overlap"] >= _QC_MIN_OVERLAP)
+            (country_qc["n_overlap"] >= cfg.qc_min_overlap)
             & (
-                (country_qc["median_times_off"] > _QC_BAD_MEDIAN_TIMES_OFF)
-                | (country_qc["share_over_3x"] > _QC_BAD_SHARE_OVER_3X)
+                (country_qc["median_times_off"] > cfg.qc_bad_median_times_off)
+                | (country_qc["share_over_3x"] > cfg.qc_bad_share_over_3x)
             ),
             "iso3",
         ]

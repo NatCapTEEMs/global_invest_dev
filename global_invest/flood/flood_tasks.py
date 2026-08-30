@@ -2499,7 +2499,7 @@ def generate_all_maps_and_figures(p) -> dict:
     # 2) Top-N countries by EAD
     top = utilities.top_n(country, "ead_usd2019", p.flood_top_n).copy()
     if not top.empty:
-        top["_m"] = top["ead_usd2019"] / utilities.USD_TO_MILLIONS
+        top["_m"] = top["ead_usd2019"] / p.flood_usd_to_millions
         fig, ax = plt.subplots(figsize=(10, 8))
         ax.barh(top["iso3"][::-1], top["_m"][::-1])
         ax.set_xlabel(MAP_MONEY_UNIT_LABEL)
@@ -2512,7 +2512,7 @@ def generate_all_maps_and_figures(p) -> dict:
     # 3) Regional breakdown, if Step 4D enriched with a region column
     if "region_wb" in country.columns:
         reg = (country.groupby("region_wb", dropna=True)["ead_usd2019"]
-               .sum().sort_values(ascending=False) / utilities.USD_TO_MILLIONS)
+               .sum().sort_values(ascending=False) / p.flood_usd_to_millions)
         if not reg.empty:
             fig, ax = plt.subplots(figsize=(10, 6))
             ax.barh(reg.index[::-1], reg.values[::-1])

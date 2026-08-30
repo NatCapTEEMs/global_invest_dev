@@ -41,10 +41,6 @@ from rasterio.enums import Resampling
 from rasterio.crs import CRS as rioCRS
 
 
-# Shocks below this are numerical residue rather than economics, but a country with a genuinely
-# tiny protected share should not fall to exactly zero and drop out of the account.
-MIN_SHOCK_FLOOR = 8e-10
-
 
 def country_threshold_policy(df_countries, threshold_high, threshold_low,
                              small_country_area_km2, low_elevation_mean_m):
@@ -128,7 +124,7 @@ def restrict_to_valued_pixels(share, is_cropland, is_severe):
     return np.where(np.asarray(is_cropland) & np.asarray(is_severe), np.asarray(share), 0.0)
 
 
-def country_erosion_shock(df_country_crop, min_shock_floor=MIN_SHOCK_FLOOR):
+def country_erosion_shock(df_country_crop, min_shock_floor):
     """A country's crop production shock, from its per-crop protected shares.
 
     The shock is the production-weighted mean over crops of `protected share x elasticity`, so a

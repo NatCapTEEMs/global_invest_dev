@@ -227,13 +227,13 @@ def run_fao_prices(cfg: pf.FaoPriceSettings) -> str:
     pp_wide = pf._reshape_prices(pp_raw)
 
     # Steps 4-7
-    pp3 = pf._reconstruct_slc_lcu(pp_wide)
+    pp3 = pf._reconstruct_slc_lcu(pp_wide, cfg)
 
     # Steps 9-12
     pp3, fx = _add_iso3_and_fx(pp3, cfg, years)
 
     # Steps 13-15
-    pp_usd = pf._build_usd_with_qc(pp3, fx)
+    pp_usd = pf._build_usd_with_qc(pp3, fx, cfg)
 
     # Step 16
     outdir = cfg.outputs.fao_prices
@@ -866,7 +866,14 @@ def fao_median_prices(p):
         fao_end_year=int(p.pollination_fao_end_year),
         excluded_item_codes=load_excluded_item_codes(p),
         fx_inherit_iso3=load_fx_inherit_iso3(p),
-        imf_fao_names=load_imf_fao_country_names(p))
+        imf_fao_names=load_imf_fao_country_names(p),
+        tol_near_equal_lcu_slc=float(p.pollination_price_tol_near_equal_lcu_slc),
+        anchor_max_year_dist=int(p.pollination_price_anchor_max_year_dist),
+        anchor_max_times_off=float(p.pollination_price_anchor_max_times_off),
+        global_median_max_times_off=float(p.pollination_price_global_median_max_times_off),
+        qc_min_overlap=int(p.pollination_price_qc_min_overlap),
+        qc_bad_median_times_off=float(p.pollination_price_qc_bad_median_times_off),
+        qc_bad_share_over_3x=float(p.pollination_price_qc_bad_share_over_3x))
     run_fao_production(settings)
     run_fao_prices(settings)
     run_fao_values(settings)
@@ -1074,7 +1081,6 @@ def run_pollination_sufficiency_300m(
         approach where non-agricultural pixels contribute zero to the average,
         scaling the 5 km sufficiency by the agricultural area fraction.
     """
-    lulc_path = lulc_path or cfg.lulc_path
     if not lulc_path or str(lulc_path) == ".":
         raise ValueError("lulc_esa path not defined in config (and no override provided)")
         

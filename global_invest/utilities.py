@@ -998,18 +998,10 @@ from rasterio.windows import Window
 # =============================================================================
 
 
-# Defaults for the plotting helpers below (overridden at run time by
-# flood_functions.configure_maps(p) if the project sets different values).
-EXCLUDE_ISO3 = {"ATA"}
-
-
-ROBINSON_CRS = "+proj=robin"
-
-
-USD_TO_MILLIONS = 1e6
-
-
-TOP_N = 20
+# These four were module defaults for the plotting helpers, with a comment saying a
+# configure_maps(p) call overrode them at run time. That call was removed in the structural pass,
+# so the defaults became unconditional and the four es_parameters rows naming them went dead. They
+# are arguments now, supplied by the caller from the CSV.
 
 
 # -----------------------------------------------------------------------------
@@ -1240,8 +1232,7 @@ def savefig(path, dpi: int = 300, **kwargs):
     plt.close()
 
 
-def top_n(df: pd.DataFrame, col: str, n: int = None) -> pd.DataFrame:
-    n = TOP_N if n is None else n
+def top_n(df: pd.DataFrame, col: str, n: int) -> pd.DataFrame:
     d = df[np.isfinite(pd.to_numeric(df[col], errors="coerce"))].copy()
     return d.sort_values(col, ascending=False).head(n)
 
@@ -1293,11 +1284,14 @@ def plot_publication_choropleth_categorical(
     value_unit: str = "raw",
     label_format: str = "usd_millions",
     legend_loc: str = "lower left",
+    exclude_iso3=("ATA",),
+    robinson_crs: str = "+proj=robin",
+    usd_to_millions: float = 1e6,
 ):
     gdf = world_joined.copy()
 
     if "iso3" in gdf.columns:
-        gdf = gdf[~gdf["iso3"].isin(EXCLUDE_ISO3)].copy()
+        gdf = gdf[~gdf["iso3"].isin(set(exclude_iso3))].copy()
     gdf = gdf[gdf.geometry.notna()].copy()
 
     if value_col not in gdf.columns:
@@ -1309,12 +1303,12 @@ def plot_publication_choropleth_categorical(
         return
 
     if value_unit == "usd_millions":
-        gdf["_plot_value"] = pd.to_numeric(gdf[value_col], errors="coerce") / USD_TO_MILLIONS
+        gdf["_plot_value"] = pd.to_numeric(gdf[value_col], errors="coerce") / usd_to_millions
     else:
         gdf["_plot_value"] = pd.to_numeric(gdf[value_col], errors="coerce")
 
     try:
-        gdf = gdf.to_crs(ROBINSON_CRS)
+        gdf = gdf.to_crs(robinson_crs)
     except Exception as e:
         warnings.warn(f"CRS transform failed ({e}). Plotting in native CRS.")
 

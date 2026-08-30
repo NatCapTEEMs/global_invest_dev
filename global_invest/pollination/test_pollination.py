@@ -296,9 +296,10 @@ def test_the_settings_object_replaces_the_config_that_was_loaded_from_a_gitignor
 
     settings = pf.SufficiencySettings(
         output_dir='/tmp/out', value_raster_dir='/tmp/base',
-        country_raster_path='/tmp/base/poll_value_global_2023usd.tif')
+        country_raster_path='/tmp/base/poll_value_global_2023usd.tif',
+        tile_size=2048, n_workers=4)
     assert settings.tile_size == 2048 and settings.n_workers == 4
-    assert settings.lulc_path is None and settings.pa_raster_300m_path is None
+    assert settings.pa_raster_300m_path is None
     # The compression profiles came off that Config too, and are now named constants.
     assert set(pf.COMPRESSION_PROFILES) == {'continuous', 'categorical', 'defaults'}
 
@@ -373,7 +374,7 @@ def test_the_cpi_table_matches_the_series_the_deflator_used_to_hold():
     import csv
     import os
     here = os.path.dirname(os.path.abspath(__file__))
-    path = os.path.join(here, 'input_template', 'us_cpi_u_annual.csv')
+    path = os.path.join(here, 'reference', 'us_cpi_u_annual.csv')
     with open(path, encoding='utf-8-sig') as f:
         cpi = {int(r['year']): float(r['cpi_u']) for r in csv.DictReader(f)}
     assert cpi[2019] == 255.7 and cpi[2020] == 258.8 and cpi[1993] == 144.5

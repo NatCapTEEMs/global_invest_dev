@@ -20,7 +20,7 @@ from global_invest.erosion import erosion_tasks as et
 
 def test_country_gep_weights_clips_and_floors():
     # Three countries: AAA exercises the production-weighted elasticity mean; BBB the elasticity
-    # clip at 1.0; CCC the tiny-positive numerical floor (MIN_SHOCK_FLOOR = 8e-10).
+    # clip at 1.0; CCC the tiny-positive numerical floor, 8e-10.
     #
     # This used to monkeypatch the two price loaders, because the only way in was a function that
     # opened them. It is not needed: the shock and the valuation are separate pure functions, so
@@ -37,7 +37,7 @@ def test_country_gep_weights_clips_and_floors():
     df_gdp = pd.DataFrame({'iso3': ['AAA', 'BBB', 'CCC'],
                            'gdp_const2019_2019': [10000.0, 8000.0, 1e12]})
 
-    out = ef.country_gep(ef.country_erosion_shock(df_country_crop),
+    out = ef.country_gep(ef.country_erosion_shock(df_country_crop, 8e-10),
                          df_crop_gpv, df_gdp, component='combined').set_index('iso3')
 
     # AAA: shock = (100*0.5*0.4 + 100*1.0*0.2) / 200 = 0.2 -> GEP = 1000 * 0.2 = 200; GDP% = 2.0
@@ -50,9 +50,9 @@ def test_country_gep_weights_clips_and_floors():
     assert out.loc['BBB', 'erosion_shock_share'] == pytest.approx(0.25)
     assert out.loc['BBB', 'gep_const2019_usd'] == pytest.approx(100.0)
 
-    # CCC: tiny positive shock floors at MIN_SHOCK_FLOOR (numerical, not economic)
-    assert out.loc['CCC', 'erosion_shock_share'] == pytest.approx(ef.MIN_SHOCK_FLOOR)
-    assert out.loc['CCC', 'gep_const2019_usd'] == pytest.approx(1e9 * ef.MIN_SHOCK_FLOOR)
+    # CCC: tiny positive shock floors at the configured floor (numerical, not economic)
+    assert out.loc['CCC', 'erosion_shock_share'] == pytest.approx(8e-10)
+    assert out.loc['CCC', 'gep_const2019_usd'] == pytest.approx(1e9 * 8e-10)
 
 
 def test_read_erosion_dependency_normalizes_scenario_labels(tmp_path):
@@ -137,7 +137,7 @@ def test_the_shock_weights_crops_by_production_not_by_crop_count():
         'share_protected_production': [0.99, 0.0],
         'elasticity_used': [1.0, 1.0],
     })
-    out = ec.country_erosion_shock(df).set_index('iso3')
+    out = ec.country_erosion_shock(df, 8e-10).set_index('iso3')
     assert out.loc['AAA', 'erosion_shock_share'] == pytest.approx(9900.0 / 10100.0)
 
 
@@ -147,7 +147,7 @@ def test_a_country_with_no_production_has_no_shock_rather_than_a_zero_one():
     df = pd.DataFrame({
         'ISO3': ['NONE'], 'protected_production_tons': [0.0], 'total_production_tons': [0.0],
         'share_protected_production': [np.nan], 'elasticity_used': [0.5]})
-    out = ec.country_erosion_shock(df).set_index('iso3')
+    out = ec.country_erosion_shock(df, 8e-10).set_index('iso3')
     assert pd.isna(out.loc['NONE', 'erosion_shock_share'])
     assert pd.isna(out.loc['NONE', 'share_protected_production'])
 
