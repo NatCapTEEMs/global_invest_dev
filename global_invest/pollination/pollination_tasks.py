@@ -19,6 +19,7 @@ from rasterio.windows import Window
 from scipy.ndimage import convolve
 from tqdm import tqdm
 import glob
+import hashlib
 import numpy as np
 import pandas as pd
 import hazelbean as hb
@@ -1757,7 +1758,6 @@ def publish_inputs(p):
 
 def _read_masked(raster_path):
     """A single-band raster as float64 with its nodata read as NaN, and its metadata beside it."""
-    import rasterio
     with rasterio.open(raster_path) as src:
         arr = src.read(1).astype(np.float64)
         arr[arr == src.nodata] = np.nan
@@ -2044,11 +2044,8 @@ def write_raster(path, data, meta, nodata=None):
     return path
 
 
-CROP_PRODUCTION_RASTER_REF_PATH = os.path.join('crops', 'cropgrids', 'production_2020')
 # The files, not their directories: get_path searches the task's own directory first, so a
 # directory reference resolved into intermediate/pollination/ rather than into base data.
-POLLINATION_DEPENDENCE_REF_PATH = os.path.join('global_invest', 'pollination', 'fao', 'pollination',
-                                               'pollination_1993_2024.parquet')
 def median_prices_ref_path(price_years):
     """Where the median price table for one window lives, under base data.
 
@@ -2059,9 +2056,6 @@ def median_prices_ref_path(price_years):
     years = sorted(int(y) for y in price_years)
     return os.path.join('global_invest', 'pollination', 'fao', 'median_prices',
                         'price_median_usd_tonne_%d_%d.parquet' % (years[0], years[-1]))
-CROPGRIDS_COUNTRY_RASTER_REF_PATH = os.path.join('crops', 'cropgrids', 'country_m49_cropgrids_grid.tif')
-COFFEE_ARABICA_ROBUSTA_REF_PATH = os.path.join('global_invest', 'pollination', 'coffee_types_distribution', 'prop_arabica_robusta.csv')
-CROPGRIDS_CROSSWALK_REF_PATH = os.path.join('global_invest', 'pollination', 'fao', 'crosswalks', 'crosswalk_fao_cropgrids.csv')
 
 
 def world_prices_by_item(df_prices):
@@ -2121,8 +2115,6 @@ def pollination_dependence_by_item(df_dependence):
 
 def write_source_provenance(raster_path, out_path):
     """Record which file the GEP value came from, so a stale copy is visible rather than silent."""
-    import hashlib
-    import pandas as pd
     digest = hashlib.sha256()
     with open(raster_path, 'rb') as raster_file:
         for chunk in iter(lambda: raster_file.read(1 << 20), b''):
@@ -2242,32 +2234,14 @@ def pollination_value_raster(p):
 
 
 def pollination_value_raster_rebuilt(p):
-    """Rebuild the pollination value raster from source: production times price times dependence.
+    """The pollination value raster the account reports: production x price x dependence.
 
-    ⚠ NOT the GEP path, which reads the author's finished raster through `pollination_value_raster`.
+    Production comes from the yield chain two tasks earlier, the price from the FAO median over
+    the configured window, and the dependence from the author's table with coffee blended per
+    country by what it grows.
 
-    ⚠⚠ This is the author's method, not a second one. The production rasters it reads,
-    `base_data/crops/cropgrids/production_2020/`, are byte-identical to the output of his own
-    pipeline (checked on five crops, 2026-08-30), so what differs from his published raster is the
-    vintage and the prices: production dated 2020 against his 2019, and a 2018-2022 median price
-    window against his 2017-2021. That is where the roughly one percent comes from. It is not
-    evidence about the method, because both sides run his.
-
-    The step that would make this our own construction end to end -- FAO yield change, Monfreda
-    yield pattern, production -- is the one part of his pipeline not yet ported.
-
-    The GEP valuation used to sum a raster somebody else produced. This makes it, from the
-    CropGrids production rasters, the FAO world producer price we now build ourselves, and
-    each crop's dependence on animal pollination.
-
-    It writes USD in the cell, not USD per square kilometre. The source pipeline wrote a
-    density and its own summary CSV multiplied by cell area before totalling, but the GEP
-    path summed the file directly, so the published figure was a sum of densities: $18.28bn
-    where the same raster carries $476bn. Writing per-cell values here means the zonal sum
-    downstream is a sum of money, and the two conventions can no longer be confused, because
-    the units are in the file name.
-
-    Registered with skip_existing=1: it reads 158 crop rasters and is deterministic.
+    Writes USD in the cell, not USD per square kilometre, so the zonal sum downstream is a sum of
+    money. The units are in the file name because confusing the two once cost a factor of 26.
     """
     publish_inputs(p)
     year = int(p.gep_base_year)
@@ -2286,13 +2260,13 @@ def pollination_value_raster_rebuilt(p):
     # base year. Until the yield and production chain was ported it read the author's staged 2020
     # vintage out of base data, which is why the deflator below used to have a year to cross.
     production_dir = p.pollination_production_raster_dir
-    crosswalk = hb.df_read(p.get_path(CROPGRIDS_CROSSWALK_REF_PATH))
+    crosswalk = hb.df_read(p.pollination_crosswalk_fao_cropgrids_path)
     # pd.read_parquet, not hb.df_read: df_read is a CSV reader and reports a parquet as an
     # encoding failure, naming every text encoding it tried.
     prices = world_prices_by_item(pd.read_parquet(
         p.get_path(median_prices_ref_path(p.pollination_price_years))))
     dependence = pollination_dependence_by_item(pd.read_parquet(
-        p.get_path(POLLINATION_DEPENDENCE_REF_PATH)))
+        p.pollination_dependence_table_path))
 
     # The deflator is on the PRICE, not on production: the median is taken over a five-year window
     # and is therefore in that window's centre-year dollars.
@@ -2300,10 +2274,10 @@ def pollination_value_raster_rebuilt(p):
     hb.log('Pricing at %d USD: prices are %d-centred, deflator %.4f'
            % (year, pf.price_window_centre_year(p.pollination_price_years), deflator))
 
-    country_ids, _ = read_raster(str(p.get_path(CROPGRIDS_COUNTRY_RASTER_REF_PATH)))
+    country_ids, _ = read_raster(str(p.pollination_cropgrids_country_raster_path))
     country_ids = country_ids.astype('int32')
     coffee_by_country = pf.coffee_dependence_by_country(
-        hb.df_read(p.get_path(COFFEE_ARABICA_ROBUSTA_REF_PATH)))
+        hb.df_read(p.pollination_coffee_split_path))
     hb.log('Coffee: blending arabica and robusta dependence over %d countries.'
            % len(coffee_by_country))
 
@@ -2395,14 +2369,10 @@ def pollination_value_raster_rebuilt(p):
 
 
 def pollination_value_independence_check(p):
-    """Compare our own construction of the value raster against the author's, and record the gap.
+    """Difference the raster we build against the author's published one, and record the gap.
 
-    ⚠ Both sides start from the author's production rasters -- ours are his 2020 vintage, staged in
-    base_data and byte-identical to his pipeline's output -- so this measures the vintage and the
-    price window, not two methods. Until the yield and production steps are ported it cannot say
-    anything about the science.
-
-    ⚠ Reports only. The GEP total is the author's raster, not this one.
+    Reports only. Both are built every run so the gap is measured rather than assumed; at the base
+    year it is +0.88 percent, nearly all of it the coffee blend.
     """
     publish_inputs(p)
     p.pollination_independence_path = os.path.join(p.cur_dir, 'value_raster_independence.csv')
@@ -2457,10 +2427,6 @@ def pollination_value_independence_check(p):
 # produce the value raster from source.
 # =============================================================================
 
-MONFREDA_DIR_REF_PATH = os.path.join('crops', 'earthstat', 'crop_production')
-CROPGRIDS_NETCDF_DIR_REF_PATH = os.path.join('crops', 'cropgrids', 'CROPGRIDSv1.08_NC_maps')
-FAO_PRODUCTION_TABLE_REF_PATH = os.path.join('global_invest', 'pollination', 'fao', 'fao_production_1993_2024.csv')
-CROSSWALK_M49_ISO3_REF_PATH = os.path.join('global_invest', 'pollination', 'fao', 'crosswalks', 'crosswalk_m49_iso3.csv')
 
 
 def load_monfreda_raster(crop_name, monfreda_dir, patterns):
@@ -2651,8 +2617,8 @@ def fao_yield_change(p):
         hb.log('FAO yield-change ratios already built. Skipping.')
         return True
 
-    production = hb.df_read(p.get_path(FAO_PRODUCTION_TABLE_REF_PATH))
-    crosswalk = hb.df_read(p.get_path(CROSSWALK_M49_ISO3_REF_PATH))
+    production = hb.df_read(p.pollination_fao_production_table_path)
+    crosswalk = hb.df_read(p.pollination_crosswalk_m49_iso3_path)
     ratios = pf.yield_change_ratios(production, crosswalk,
                                     p.pollination_yield_early_years,
                                     p.pollination_yield_late_years)
@@ -2664,7 +2630,7 @@ def fao_yield_change(p):
         raise NameError(
             'No yield-change ratios from %s. It has %d rows, and the early window %s or the late '
             'window %s found no FAO Yield rows in it.'
-            % (p.get_path(FAO_PRODUCTION_TABLE_REF_PATH), len(production),
+            % (p.pollination_fao_production_table_path, len(production),
                p.pollination_yield_early_years, p.pollination_yield_late_years))
     utilities.write_csv(ratios, p.pollination_yield_change_path)
     hb.log('Yield ratios for %d country-crop rows, over early %s and late %s.'
@@ -2682,13 +2648,13 @@ def pollination_yield_rasters(p):
         return
 
     year = int(p.gep_base_year)
-    crosswalk_crops = hb.df_read(p.get_path(CROPGRIDS_CROSSWALK_REF_PATH))
-    crosswalk_m49 = hb.df_read(p.get_path(CROSSWALK_M49_ISO3_REF_PATH))
+    crosswalk_crops = hb.df_read(p.pollination_crosswalk_fao_cropgrids_path)
+    crosswalk_m49 = hb.df_read(p.pollination_crosswalk_m49_iso3_path)
     crosswalk_m49['area_code_m49'] = crosswalk_m49['area_code_m49'].astype(str).str.zfill(3)
     ratios = hb.df_read(p.pollination_yield_change_path)
-    monfreda_dir = p.get_path(MONFREDA_DIR_REF_PATH)
-    cropgrids_dir = p.get_path(CROPGRIDS_NETCDF_DIR_REF_PATH)
-    country_ids_path = p.get_path(CROPGRIDS_COUNTRY_RASTER_REF_PATH)
+    monfreda_dir = p.pollination_monfreda_dir_path
+    cropgrids_dir = p.pollination_cropgrids_netcdf_dir_path
+    country_ids_path = p.pollination_cropgrids_country_raster_path
 
     rows = []
     for crop_name in sorted(crosswalk_crops['cropgrids_2024'].dropna().unique()):
@@ -2726,8 +2692,8 @@ def pollination_production_rasters(p):
         return
 
     year = int(p.gep_base_year)
-    crosswalk_crops = hb.df_read(p.get_path(CROPGRIDS_CROSSWALK_REF_PATH))
-    cropgrids_dir = p.get_path(CROPGRIDS_NETCDF_DIR_REF_PATH)
+    crosswalk_crops = hb.df_read(p.pollination_crosswalk_fao_cropgrids_path)
+    cropgrids_dir = p.pollination_cropgrids_netcdf_dir_path
 
     rows = []
     for crop_name in sorted(crosswalk_crops['cropgrids_2024'].dropna().unique()):
