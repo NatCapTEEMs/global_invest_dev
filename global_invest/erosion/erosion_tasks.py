@@ -2317,7 +2317,8 @@ def erosion_shock(p):
     # Default into the es_shocks parent dir. Runtime, not build time: p.es_shock_dir is
     # published by that task, which ProjectFlow runs before this one.
     if not getattr(p, 'erosion_shock_output_path', None):
-        p.erosion_shock_output_path = os.path.join(getattr(p, 'es_shock_dir', None) or p.project_dir, EROSION_INTERPOLATED_CSV)
+        p.erosion_shock_output_path = os.path.join(getattr(p, 'es_shock_dir', None) or p.project_dir,
+                                                   'erosion_interpolated.csv')
     if not p.run_this:
         return
     import numpy as np, pandas as pd, rioxarray as rxr, geopandas as gpd
@@ -2604,7 +2605,8 @@ def erosion_shock_static(p):
     # Default into the es_shocks parent dir. Runtime, not build time: p.es_shock_dir is
     # published by that task, which ProjectFlow runs before this one.
     if not getattr(p, 'erosion_shock_output_path', None):
-        p.erosion_shock_output_path = os.path.join(getattr(p, 'es_shock_dir', None) or p.project_dir, EROSION_INTERPOLATED_CSV)
+        p.erosion_shock_output_path = os.path.join(getattr(p, 'es_shock_dir', None) or p.project_dir,
+                                                   'erosion_interpolated.csv')
     if not p.run_this:
         return
 
@@ -2773,7 +2775,7 @@ def prevention_shares(p):
         p.erosion_gep_output_dir = p.cur_dir
     service_results = p.results.setdefault('erosion', {})
     service_results['integrated_country_gep'] = os.path.join(
-        p.erosion_gep_output_dir, INTEGRATED_COUNTRY_GEP_CSV)
+        p.erosion_gep_output_dir, 'integrated_country_gep.csv')
     if not p.run_this:
         return
     if hb.path_all_exist(list(service_results.values())):
