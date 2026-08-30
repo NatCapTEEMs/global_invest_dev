@@ -220,6 +220,7 @@ erosion,erosion_upslope_grass_share_path,global_invest/erosion/author_drive/msi_
 erosion,erosion_upslope_cropland_share_path,global_invest/erosion/author_drive/msi_upstream_attribution_v3/upslope_cropland_share.tif
 erosion,erosion_upslope_bare_share_path,global_invest/erosion/author_drive/msi_upstream_attribution_v3/upslope_bare_share.tif
 pollination,pollination_fx_path,fao/currencies/worldbank/fx_lcu_per_usd.csv
+pollination,pollination_crop_benefits_repo_dir,
 pollination,pollination_crop_benefits_repo_source_url,https://github.com/wsidemoholm/crop_benefits
 pollination,pollination_fx_source_url,https://api.worldbank.org/v2/country/all/indicator/PA.NUS.FCRF
 pollination,pollination_fao_production_path,fao/bulk/Production_Crops_Livestock_E_All_Data_(Normalized).csv
