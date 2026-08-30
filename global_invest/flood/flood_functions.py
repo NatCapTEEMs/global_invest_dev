@@ -540,9 +540,6 @@ def landtype_to_sda(landtype: str) -> Optional[str]:
     return None
 
 
-# =============================================================================
-SDA_CODE_VERSION = "2025-12-15_sda_step2_smartskip_v2_depth_inputs"
-
 
 # Section B: the run signature that decides whether a country can be skipped,
 # the depth-raster discovery and the return-period map.

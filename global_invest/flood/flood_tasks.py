@@ -114,13 +114,6 @@ def _amp_tile(amp_src, shape, transform, crs) -> Optional[np.ndarray]:
 
 
 
-JRC_ZIP_URL_TEMPLATE = (
-    "https://jeodpp.jrc.ec.europa.eu/ftp/jrc-opendata/FLOODS/GlobalMaps/floodMapGL_rp{rp}y.zip"
-)
-
-
-
-
 
 
 
@@ -325,7 +318,7 @@ def download_and_align_jrc_depth(p, return_periods: Optional[List[int]] = None) 
     out: Dict[int, str] = {}
     for rp in rps:
         zip_path = os.path.join(p.flood_depth_raw_path, f"floodMapGL_rp{rp}y.zip")
-        _download(JRC_ZIP_URL_TEMPLATE.format(rp=rp), zip_path)
+        _download(p.flood_depth_source_url.format(rp=rp), zip_path)
         tifs = _extract_zip(zip_path, p.flood_depth_extract_path)
 
         for tif in tifs:
@@ -1416,8 +1409,6 @@ def load_damage_table_wide(path: str) -> Dict[Tuple[str, str], Tuple[np.ndarray,
     return curves
 
 
-INCA_DEPTH_BANDS = np.array([0.25, 0.5, 1.0, 1.5, 2.5, 3.5, 4.5, 5.5], dtype="float32")
-
 
 def _find_depth_raster(p, rp: int) -> Optional[str]:
     for pattern in (f"*rp{rp}y*matchLULC*.tif", f"*rp{rp}*matchLULC*.tif", f"*rp{rp}*.tif"):
@@ -2455,8 +2446,6 @@ def publish_inputs(p):
 
 
 
-MAP_MONEY_UNIT_LABEL = "2019 USD million"
-
 
 
 def _load_country_ead(p) -> pd.DataFrame:
@@ -2490,7 +2479,7 @@ def generate_all_maps_and_figures(p) -> dict:
     utilities.plot_publication_choropleth_categorical(
         joined, value_col="ead_usd2019",
         title="Expected Annual Flood Damage to Service Demanding Areas",
-        out_png=png, legend_title=MAP_MONEY_UNIT_LABEL,
+        out_png=png, legend_title=p.flood_money_unit_label,
         scheme="fisher_jenks", k=p.flood_map_k_classes,
         value_unit="usd_millions", label_format="usd_millions",
     )
@@ -2503,7 +2492,7 @@ def generate_all_maps_and_figures(p) -> dict:
         top["_m"] = top["ead_usd2019"] / p.flood_usd_to_millions
         fig, ax = plt.subplots(figsize=(10, 8))
         ax.barh(top["iso3"][::-1], top["_m"][::-1])
-        ax.set_xlabel(MAP_MONEY_UNIT_LABEL)
+        ax.set_xlabel(p.flood_money_unit_label)
         ax.set_title(f"Top {p.flood_top_n} countries by Expected Annual Flood Damage")
         png = os.path.join(p.flood_figures_dir, "bar_top_countries_ead.png")
         utilities.savefig(png)
@@ -2517,7 +2506,7 @@ def generate_all_maps_and_figures(p) -> dict:
         if not reg.empty:
             fig, ax = plt.subplots(figsize=(10, 6))
             ax.barh(reg.index[::-1], reg.values[::-1])
-            ax.set_xlabel(MAP_MONEY_UNIT_LABEL)
+            ax.set_xlabel(p.flood_money_unit_label)
             ax.set_title("Expected Annual Flood Damage by World Bank region")
             png = os.path.join(p.flood_figures_dir, "bar_region_ead.png")
             utilities.savefig(png)

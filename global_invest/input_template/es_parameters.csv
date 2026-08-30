@@ -155,6 +155,8 @@ flood,flood_skip_damage_tables,false
 flood,flood_skip_done,true
 flood,flood_top_n,20
 flood,flood_usd_to_millions,1000000.0
+flood,flood_money_unit_label,2019 USD million
+flood,flood_depth_source_url,https://jeodpp.jrc.ec.europa.eu/ftp/jrc-opendata/FLOODS/GlobalMaps/floodMapGL_rp{rp}y.zip
 flood,flood_use_roads,false
 flood,flood_with_pop,false
 flood,flood_write_damage_rasters,true
