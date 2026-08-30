@@ -335,17 +335,18 @@ def _set_proj_gdal_env():
     os.environ.setdefault("OGR_ENABLE_PARTIAL_REPROJECTION", "YES")
 
 
-def _print_env_banner():
-    hb.log("\n" + "=" * 78)
-    hb.log("[env] Python exe:", sys.executable)
-    hb.log("[env] Python ver:", sys.version.replace("\n", " "))
-    hb.log("[env] CWD       :", os.getcwd())
-    hb.log("[env] sys.prefix:", sys.prefix)
-    hb.log("[env] PROJ_LIB  :", os.environ.get("PROJ_LIB", "(not set)"))
-    hb.log("[env] GDAL_DATA :", os.environ.get("GDAL_DATA", "(not set)"))
-    hb.log("[env] PROJ_NETWORK:", os.environ.get("PROJ_NETWORK", "(not set)"))
-    hb.log("[env] GTIFF_SRS_SOURCE:", os.environ.get("GTIFF_SRS_SOURCE", "(not set)"))
-    hb.log("=" * 78 + "\n")
+def proj_gdal_env():
+    """The PROJ/GDAL settings that decide how a CRS is read and a reprojection is done.
+
+    Erosion reads rasters stored in one CRS and computes in another, so these four settings are
+    part of a run's provenance: they change what a stored CRS resolves to and which datum grids
+    are used. `run_metadata.txt` records them beside the analysis EPSG.
+
+    Returns:
+        dict: setting name -> value, with "(not set)" where the variable is absent.
+    """
+    return {name: os.environ.get(name, "(not set)")
+            for name in ("PROJ_LIB", "GDAL_DATA", "PROJ_NETWORK", "GTIFF_SRS_SOURCE")}
 
 
 # =============================================================================

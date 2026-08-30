@@ -348,15 +348,52 @@ def assert_shock_table_sound(df, requested_scenarios, label, abs_max=SHOCK_ABS_M
     return True
 
 
-def seed_input_template(p, file_name, log=print, required=True):
+def add_rows_missing_from_template(local_path, template_path, key_columns, log=print):
+    """Append template rows whose key is absent from the project's copy. Local values always win.
+
+    A definitions CSV is a schema plus values: the template names every key the code may read,
+    and the project's copy supplies this machine's values. Seeding copies the file only when it
+    is absent, so a copy made before a key was added keeps shadowing the template forever, and
+    the key reaches the run as a missing attribute rather than as its documented value. Topping
+    up the absent keys keeps the schema current without touching a value anyone has set.
+
+    Args:
+        local_path (str): the project's input/ copy, modified in place when rows are missing.
+        template_path (str): the tracked template to take absent rows from.
+        key_columns (list): columns that together identify a row, e.g. ['service', 'parameter'].
+        log (callable): where to report what was added.
+    """
+    if not os.path.exists(template_path) or not os.path.exists(local_path):
+        return
+    local, template = hb.df_read(local_path), hb.df_read(template_path)
+    if any(c not in local.columns or c not in template.columns for c in key_columns):
+        return
+
+    def keys_of(df):
+        return list(zip(*[df[c].astype(str) for c in key_columns])) if len(df) else []
+
+    present = set(keys_of(local))
+    missing = template[[k not in present for k in keys_of(template)]]
+    if missing.empty:
+        return
+    hb.df_write(pd.concat([local, missing], ignore_index=True), local_path)
+    named = ', '.join(':'.join(k) for k in keys_of(missing)[:6])
+    log(f'{os.path.basename(local_path)}: added {len(missing)} row(s) the project copy did not '
+        f'have ({named}{", ..." if len(missing) > 6 else ""}).')
+
+
+def seed_input_template(p, file_name, log=print, required=True, key_columns=None):
     """Return the project's input/ copy of a tracked input_template file, seeding it on first use.
 
     The house input calculation (same as ngfs/seals): the tracked template under
     global_invest/input_template/ is copied into the project's input/ if absent, and the run
     always reads the input/ copy -- edit that copy to configure a single project. file_name may
     be a relative path (e.g. the lulc test fixtures); the nesting is recreated under input/.
-    Standard caveat: a stale input/ copy shadows an updated template; delete it (or use a fresh
-    project) to pick up template changes.
+
+    key_columns names the columns identifying a row in a definitions CSV. Given it, an existing
+    copy has any absent keys topped up from the template, so a copy predating a new key does not
+    silently withhold it. Local values are never overwritten: a stale copy still shadows an
+    updated template for keys it already carries, which is what lets a machine keep its own.
 
     required=False is for files that only OPTIONALLY ship as fixtures (a production machine
     resolves the same reference in base_data instead): a missing template is skipped, and the
@@ -370,6 +407,8 @@ def seed_input_template(p, file_name, log=print, required=True):
         os.makedirs(os.path.dirname(local_path), exist_ok=True)
         shutil.copy(template_path, local_path)
         log(f'Seeded {file_name} into {p.input_dir} from the tracked template.')
+    elif key_columns:
+        add_rows_missing_from_template(local_path, template_path, key_columns, log)
     return local_path
 
 
@@ -402,7 +441,7 @@ def hydrate_es_config(p, service, log=print):
     a single project. Note the standard caveat: a stale input/ copy shadows an updated
     template; delete it (or use a fresh project) to pick up template changes.
     """
-    df = hb.df_read(seed_input_template(p, 'es_config.csv', log))
+    df = hb.df_read(seed_input_template(p, 'es_config.csv', log, key_columns=['service']))
     rows = df[df['service'] == service]
     if rows.empty:
         log(f"es_config.csv has no row for service '{service}' -- nothing hydrated.")
@@ -449,7 +488,8 @@ def hydrate_es_parameters(p, service, log=print):
     parse as JSON where they can (ints, lists, dicts, true/false), else stay strings; *_path
     keys resolve via get_path.
     """
-    df = hb.df_read(seed_input_template(p, 'es_parameters.csv', log))
+    df = hb.df_read(seed_input_template(p, 'es_parameters.csv', log,
+                                        key_columns=['service', 'parameter']))
     for _, row in df[df['service'] == service].iterrows():
         attribute, value = str(row['parameter']), row['value']
         if pd.isna(value) or str(value) == '':
@@ -624,7 +664,8 @@ def download_missing_inputs(p, service, log=print):
         inputs a person has to supply.
     """
 
-    df = hb.df_read(seed_input_template(p, 'es_parameters.csv', log))
+    df = hb.df_read(seed_input_template(p, 'es_parameters.csv', log,
+                                        key_columns=['service', 'parameter']))
     rows = df[df['service'] == service]
 
     def companions(suffix):

@@ -362,7 +362,6 @@ def _setup_sdr_environment():
     config, GDAL error behaviour). In the source repo this ran at module import."""
     import natcap.invest.utils
     ef._set_proj_gdal_env()
-    ef._print_env_banner()
     gdal.UseExceptions()
     handler = logging.StreamHandler(sys.stdout)
     formatter = logging.Formatter(fmt=natcap.invest.utils.LOG_FMT, datefmt="%m/%d/%Y %H:%M:%S ")
@@ -1158,6 +1157,8 @@ Timestamp (UTC): {manifest['timestamp_utc']}
 
 Analysis CRS:
   EPSG:{p.erosion_analysis_epsg} (equal-area required for tons conversions)
+  GDAL {gdal.__version__}, and the settings that decide how a stored CRS is read:
+{chr(10).join(f'    {name}: {value}' for name, value in ef.proj_gdal_env().items())}
 
 Severe erosion definition:
   severe = usle_actual > threshold(country)
