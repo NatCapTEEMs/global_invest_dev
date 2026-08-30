@@ -260,18 +260,10 @@ def expand_country_values_to_regions(df_regions, df_gep_by_country):
 def configure_sufficiency(p, target_year):
     """The settings the sufficiency and value steps need, filled from the ProjectFlow object.
 
-    Our calculation skips the FAO and CropGrids tabular stages, so the only external input it
-    needs is the precomputed baseline pollination-value raster under base_data/crop_benefits/.
-    That raster is the output of the source pipeline's FAO and raster stages, run once over
-    Monfreda yields times CropGrids area times FAO producer prices times pollination-dependence
-    ratios, and it is reused rather than rebuilt.
-
-    The 5 km resample template only has to define the target grid, and the valuation requires
-    sufficiency and value to share that grid, so the template points at the value raster itself.
-    That removes the separate country-raster input. Sufficiency outputs go to the task's own dir.
-
-    This replaces a crop_benefits Config loaded from a gitignored local.yaml with validate=False,
-    which meant a missing or wrong config did not fail up front, it proceeded.
+    The shock side weights a value raster that is fixed across scenarios, so it reads the finished
+    raster rather than rebuilding it; the GEP side builds its own through the yield, production and
+    value tasks. The 5 km template points at the value raster itself, because the valuation needs
+    sufficiency and value on one grid and that removes a separate country-raster input.
     """
     crop_benefits_dir = p.get_path('crop_benefits')
     return SufficiencySettings(
