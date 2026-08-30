@@ -33,30 +33,6 @@ from global_invest import utilities
 INCA_DEPTH_BANDS = np.array([0.25, 0.5, 1.0, 1.5, 2.5, 3.5, 4.5, 5.5], dtype="float32")
 
 
-def integrate_trapezoid(y: np.ndarray, x: np.ndarray) -> float:
-    """
-    Trapezoidal integral, with the x axis sorted first.
-    np.trapezoid weights each segment by diff(x). Handing it a descending or
-    unordered x makes backwards segments contribute negatively, and the partial
-    cancellation returns a small number of the wrong sign rather than an error.
-    In this pipeline x is exceedance probability derived from return periods,
-    which arrive in descending-p order naturally, so the sort is not optional.
-    Both current call sites happen to sort beforehand -- one by argsort, one via
-    a pandas groupby whose sorted-key behaviour is a default rather than a
-    guarantee. Sorting here makes the property hold by construction. Sorting an
-    already-sorted array is a no-op, so this cannot change existing results.
-    """
-    x = np.asarray(x, dtype="float64")
-    y = np.asarray(y, dtype="float64")
-    if x.size != y.size:
-        raise ValueError(f"integrate_trapezoid: length mismatch {x.size} vs {y.size}")
-    o = np.argsort(x)
-    x, y = x[o], y[o]
-    if hasattr(np, "trapezoid"):
-        return float(np.trapezoid(y, x))
-    return float(np.trapz(y, x))
-
-
 def _fmt_depth_col(d: float) -> str:
     return f"{int(d)}m" if abs(d - int(d)) < 1e-9 else f"{d}m"
 

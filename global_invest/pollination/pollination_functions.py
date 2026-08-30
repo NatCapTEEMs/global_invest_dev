@@ -425,8 +425,9 @@ class FaoPriceSettings:
     fao_prices_bulk_path: str
     fx_lcu_per_usd_path: str
     output_dir: str
-    fao_start_year: int = 1991
-    fao_end_year: int = 2023
+    # The span the panel's own filename records, so name and content agree.
+    fao_start_year: int = 1993
+    fao_end_year: int = 2024
     price_years: tuple = (2018, 2019, 2020, 2021, 2022)
 
     # The vendored code reads these as nested attributes; these keep its call sites unchanged.
@@ -476,7 +477,11 @@ class FaoPriceSettings:
 # These build the per-crop median producer prices the pollination value raster is priced at.
 # ---------------------------------------------------------------------------------------------
 
-_ELEMENTS_KEEP = {"Yield", "Production"}
+# Two bulks, two element vocabularies. Upstream keeps these in separate modules, where both are
+# called _ELEMENTS_KEEP; flattening those modules into this one let the price list overwrite the
+# production list, so the production filter kept price elements from a production bulk and the
+# panel came out empty.
+_PRODUCTION_ELEMENTS_KEEP = {"Yield", "Production"}
 
 _EXCLUDE_ITEM_CODES = {
     836,    # Natural rubber in primary forms (processed latex)
@@ -493,7 +498,7 @@ _EXCLUDE_ITEM_CODES = {
     17530,  # Fibre Crops, Fibre Equivalent (derived equivalent)
 }
 
-_ELEMENTS_KEEP = [
+_PRICE_ELEMENTS_KEEP = [
     "Producer Price (USD/tonne)",
     "Producer Price (SLC/tonne)",
     "Producer Price (LCU/tonne)",
@@ -596,7 +601,7 @@ def _reshape_prices(pp_raw: pd.DataFrame) -> pd.DataFrame:
     """Keep relevant elements and pivot to wide format."""
     logger.info("=== 2-3) FILTER ELEMENTS + RESHAPE TO WIDE ===")
 
-    pp = pp_raw[pp_raw["Element"].isin(_ELEMENTS_KEEP)].copy()
+    pp = pp_raw[pp_raw["Element"].isin(_PRICE_ELEMENTS_KEEP)].copy()
 
     pp_wide = (
         pp.pivot_table(

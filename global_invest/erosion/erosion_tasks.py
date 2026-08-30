@@ -331,13 +331,6 @@ def open_raster_1band(path: str) -> xr.DataArray:
     return rxr.open_rasterio(path, masked=True).squeeze()
 
 
-def _write_csv(df: pd.DataFrame, path: str):
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    df.to_csv(path, index=False)
-
-
-
-
 def plot_raster_global(tif_path: str, title: str, out_png: str, downsample_factor: int = 6):
     utilities.assert_exists(tif_path)
     da = rxr.open_rasterio(tif_path, masked=True).squeeze()

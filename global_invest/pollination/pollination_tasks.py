@@ -295,7 +295,7 @@ def _read_and_filter_fao_production(
 
     df = df[
         df["Year"].isin(years)
-        & df["Element"].isin(pf._ELEMENTS_KEEP)
+        & df["Element"].isin(pf._PRODUCTION_ELEMENTS_KEEP)
         & df["Item Code"].isin(item_codes)
         & (df["Value"] > 0)
     ].copy()
