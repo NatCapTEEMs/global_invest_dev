@@ -8,7 +8,19 @@ import pandas as pd
 from global_invest import utilities
 from global_invest.timber_provision import timber_provision_functions as tp
 
-REFERENCE_DIR = os.path.join(os.path.dirname(tp.__file__), 'reference')
+
+def _base_data_project():
+    """A bare ProjectFlow, only for its base_data_dir.
+
+    The anchors are inputs, so a test finds them the way a run does rather than by walking
+    directories of its own.
+    """
+    import tempfile
+    import hazelbean as hb
+    return hb.ProjectFlow(project_dir=os.path.join(tempfile.mkdtemp(), 'anchors'))
+
+
+REFERENCE_DIR = utilities.service_data_dir(_base_data_project(), 'timber_provision')
 
 
 def test_join_reproduces_the_committed_anchor():

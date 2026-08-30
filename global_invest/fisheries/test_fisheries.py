@@ -6,13 +6,27 @@ script's country exclusions, and the no-data-is-not-zero join. The CWoN .dta inp
 source pipeline's output CSV are the open staging asks; when they land, the anchor test joins
 this file the way fire_protection's did.
 """
+import os
 from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
 import pytest
 
+from global_invest import utilities
 from global_invest.fisheries import fisheries_functions as ff
+
+
+def _base_data_project():
+    """A bare ProjectFlow, only for its base_data_dir.
+
+    The anchors are inputs, so a test finds them the way a run does rather than by walking
+    directories of its own.
+    """
+    import tempfile
+    import hazelbean as hb
+    return hb.ProjectFlow(project_dir=os.path.join(tempfile.mkdtemp(), 'anchors'))
+
 
 
 def test_cpi_imputation_fills_missing_with_that_years_cross_country_mean():
@@ -102,7 +116,7 @@ def test_subsistence_computed_value_reproduces_the_committed_output():
     no price behind it; those stay empty here, because a value we cannot derive is not a
     measurement of zero, and being zero they take nothing out of the total."""
     import os
-    reference_dir = os.path.join(os.path.dirname(ff.__file__), 'reference')
+    reference_dir = utilities.service_data_dir(_base_data_project(), 'fisheries')
     lynch = pd.read_excel(os.path.join(reference_dir, 'Rec fish food_20230509_for USGS data release.xlsx'),
                           engine='openpyxl')
     countries = pd.read_csv(os.path.join(reference_dir, 'subsistence_correspondence.csv'))
@@ -131,7 +145,7 @@ def test_subsistence_recompute_matches_the_releases_own_published_total():
     """The release publishes TCUV beside the quantities and prices it was built from. Our sum
     over species must land on it, or one of the two is wrong."""
     import os
-    reference_dir = os.path.join(os.path.dirname(ff.__file__), 'reference')
+    reference_dir = utilities.service_data_dir(_base_data_project(), 'fisheries')
     lynch = pd.read_excel(os.path.join(reference_dir, 'Rec fish food_20230509_for USGS data release.xlsx'),
                           engine='openpyxl')
     by_admin = ff.subsistence_value_by_admin(lynch)

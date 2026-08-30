@@ -6,14 +6,28 @@ real calculation (a tiny USD value raster through utilities.summarize_raster_by_
 gep_calculation) to pin the r250 contract: a split country is summed once, and the map gpkg
 carries per-sub-region rows that are never summed.
 """
+import os
 from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
 import pytest
+from global_invest import utilities
 
 from global_invest.pollination import pollination_functions as pf
 from global_invest.pollination import pollination_tasks as pt
+
+
+def _base_data_project():
+    """A bare ProjectFlow, only for its base_data_dir.
+
+    The anchors are inputs, so a test finds them the way a run does rather than by walking
+    directories of its own.
+    """
+    import tempfile
+    import hazelbean as hb
+    return hb.ProjectFlow(project_dir=os.path.join(tempfile.mkdtemp(), 'anchors'))
+
 
 ATTRS = {'iso3_r250_label': {156: 'CHN', 528: 'NLD'},
          'iso3_r250_name': {156: 'China', 528: 'Netherlands'},
@@ -374,7 +388,7 @@ def test_the_cpi_table_matches_the_series_the_deflator_used_to_hold():
     import csv
     import os
     here = os.path.dirname(os.path.abspath(__file__))
-    path = os.path.join(here, 'reference', 'us_cpi_u_annual.csv')
+    path = os.path.join(utilities.service_data_dir(_base_data_project(), 'pollination'), 'us_cpi_u_annual.csv')
     with open(path, encoding='utf-8-sig') as f:
         cpi = {int(r['year']): float(r['cpi_u']) for r in csv.DictReader(f)}
     assert cpi[2019] == 255.7 and cpi[2020] == 258.8 and cpi[1993] == 144.5

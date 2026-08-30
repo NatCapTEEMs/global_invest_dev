@@ -18,7 +18,6 @@ import hazelbean as hb
 from global_invest import utilities
 from global_invest.fire_protection import fire_protection_functions as ffn
 
-MODULE_REFERENCE_DIR = os.path.join(os.path.dirname(__file__), 'reference')
 FIRE_GEP_PROVISIONAL_VARIANT = 'nn_hh'   # the account's variant: OPEN question, see docstring
 EMDAT_SHEET_NAME = 'EM-DAT Data'         # the extract's only data sheet
 
@@ -74,7 +73,7 @@ def avoided_burned_area(p):
             hb.log('fire_protection: ADM2 panel not staged -- 2018 burned areas read from '
                    'the frozen reference output (the open data ask).')
             burned_2018 = hb.df_read(os.path.join(
-                MODULE_REFERENCE_DIR, 'GEP_wildfire_2019_results.csv'))[
+                utilities.service_data_dir(p, 'fire_protection'), 'GEP_wildfire_2019_results.csv'))[
                 ['GID_0', 'total_burned_areas_ha_2018', 'n_adm2_units']]
         ffn.compute_avoided_acres(beta, burned_2018).to_csv(p.fire_avoided_acres_path, index=False)
     return True
@@ -101,7 +100,7 @@ def damage_per_acre(p):
             hb.log('fire_protection: ADM2 panel not staged -- damage rates read from the '
                    'frozen reference output (the open data ask).')
             rates = hb.df_read(os.path.join(
-                MODULE_REFERENCE_DIR, 'GEP_wildfire_2019_results.csv'))[
+                utilities.service_data_dir(p, 'fire_protection'), 'GEP_wildfire_2019_results.csv'))[
                 ['GID_0', 'damages_usd_per_acre_country']]
         rates.to_csv(p.fire_damage_per_acre_path, index=False)
     return True

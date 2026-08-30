@@ -1007,6 +1007,26 @@ from rasterio.windows import Window
 # -----------------------------------------------------------------------------
 # Existence / assertions
 # -----------------------------------------------------------------------------
+
+def service_data_dir(p, service):
+    """Where one service's inputs live under base data, from the ProjectFlow that knows.
+
+    Replication anchors sit here with everything else the service reads. They used to be a
+    `reference/` directory inside the repo, which made them a special kind of input; they are
+    not, they are inputs.
+
+    Args:
+        p: the ProjectFlow, for `base_data_dir`.
+        service (str): the service directory name.
+
+    Raises:
+        NameError: naming the directory, because reading the wrong one is worse than not reading.
+    """
+    path = os.path.join(p.base_data_dir, 'global_invest', service)
+    if not os.path.isdir(path):
+        raise NameError('%s has no data directory at %s' % (service, path))
+    return path
+
 def assert_exists(path, hint: str = ""):
     """Fail naming the missing file and what needed it, rather than where the read happened."""
     if not hb.path_exists(path):
