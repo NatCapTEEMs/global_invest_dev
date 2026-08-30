@@ -2606,11 +2606,15 @@ def build_sda_global(p):
     rp_map = {rp: os.path.join(p.flood_depth_aligned_path, DEPTH_RASTER_PATTERN.format(rp=rp))
               for rp in p.flood_return_periods}
 
-    if str(p.flood_iso3_list).strip():
-        run_list = [x.strip().upper() for x in str(p.flood_iso3_list).split(",") if x.strip()]
-    else:
+    # `all` is the sentinel for every country in the boundary layer, and blank means the same;
+    # anything else is a comma-separated list of ISO3 codes. Without the sentinel, `all` reads as
+    # a one-country list and the run stops on `ISO3 ALL not found in Admin0`.
+    selection = str(getattr(p, 'flood_iso3_list', '') or '').strip()
+    if selection.lower() in ('', 'all'):
         start = max(int(p.flood_iso3_start), 0)
         run_list = iso_all[start:(start + int(p.flood_iso3_n)) if int(p.flood_iso3_n) > 0 else None]
+    else:
+        run_list = [x.strip().upper() for x in selection.split(",") if x.strip()]
 
     signature = build_run_signature(
         depth_threshold=p.flood_depth_threshold_m, all_touched=p.flood_all_touched,
