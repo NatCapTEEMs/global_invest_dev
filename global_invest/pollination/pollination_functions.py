@@ -1025,7 +1025,7 @@ def crop_pollination_value_density(production_density, price_usd_per_tonne, depe
     return crop_value_density * np.asarray(dependence_ratio, dtype='float64'), crop_value_density
 
 
-SOURCE_VALUE_RASTER_DIR_REF_PATH = os.path.join('crop_benefits')
+SOURCE_VALUE_RASTER_DIR_REF_PATH = os.path.join('global_invest', 'pollination', 'crop_benefits')
 
 
 def find_source_value_raster(p, gep_base_year):

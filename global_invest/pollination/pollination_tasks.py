@@ -40,7 +40,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------------------------
 
 
-FAO_MEDIAN_PRICES_REF_PATH = os.path.join('fao', 'median_prices')
+FAO_MEDIAN_PRICES_REF_PATH = os.path.join('global_invest', 'pollination', 'fao', 'median_prices')
 
 _RADIUS_METERS = 2000.0
 _THRESHOLD = 0.30
@@ -2047,13 +2047,13 @@ def write_raster(path, data, meta, nodata=None):
 CROP_PRODUCTION_RASTER_REF_PATH = os.path.join('crops', 'cropgrids', 'production_2020')
 # The files, not their directories: get_path searches the task's own directory first, so a
 # directory reference resolved into intermediate/pollination/ rather than into base data.
-POLLINATION_DEPENDENCE_REF_PATH = os.path.join('fao', 'pollination',
+POLLINATION_DEPENDENCE_REF_PATH = os.path.join('global_invest', 'pollination', 'fao', 'pollination',
                                                'pollination_1993_2024.parquet')
-FAO_MEDIAN_PRICES_FILE_REF_PATH = os.path.join('fao', 'median_prices',
+FAO_MEDIAN_PRICES_FILE_REF_PATH = os.path.join('global_invest', 'pollination', 'fao', 'median_prices',
                                                'price_median_usd_tonne_2018_2022.parquet')
 CROPGRIDS_COUNTRY_RASTER_REF_PATH = os.path.join('crops', 'cropgrids', 'country_m49_cropgrids_grid.tif')
-COFFEE_ARABICA_ROBUSTA_REF_PATH = os.path.join('pollination', 'coffee_types_distribution', 'prop_arabica_robusta.csv')
-CROPGRIDS_CROSSWALK_REF_PATH = os.path.join('fao', 'crosswalks', 'crosswalk_fao_cropgrids.csv')
+COFFEE_ARABICA_ROBUSTA_REF_PATH = os.path.join('global_invest', 'pollination', 'coffee_types_distribution', 'prop_arabica_robusta.csv')
+CROPGRIDS_CROSSWALK_REF_PATH = os.path.join('global_invest', 'pollination', 'fao', 'crosswalks', 'crosswalk_fao_cropgrids.csv')
 
 
 def world_prices_by_item(df_prices):
@@ -2441,8 +2441,8 @@ def pollination_value_independence_check(p):
 
 MONFREDA_DIR_REF_PATH = os.path.join('crops', 'earthstat', 'crop_production')
 CROPGRIDS_NETCDF_DIR_REF_PATH = os.path.join('crops', 'cropgrids', 'CROPGRIDSv1.08_NC_maps')
-FAO_PRODUCTION_TABLE_REF_PATH = os.path.join('fao', 'fao_production_1993_2024.csv')
-CROSSWALK_M49_ISO3_REF_PATH = os.path.join('fao', 'crosswalks', 'crosswalk_m49_iso3.csv')
+FAO_PRODUCTION_TABLE_REF_PATH = os.path.join('global_invest', 'pollination', 'fao', 'fao_production_1993_2024.csv')
+CROSSWALK_M49_ISO3_REF_PATH = os.path.join('global_invest', 'pollination', 'fao', 'crosswalks', 'crosswalk_m49_iso3.csv')
 
 
 def load_monfreda_raster(crop_name, monfreda_dir, patterns):
