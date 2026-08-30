@@ -2183,15 +2183,17 @@ def pollination_source_value_raster(p):
                                    p.pollination_source_provenance_path)
         return True
 
+    # Absent is not fatal. The account's number comes from the raster our own chain builds, so his
+    # is only the other side of the independence check; a machine without it gets a run with one
+    # fewer comparison rather than no run at all. It used to raise here, which made a manual
+    # procedure in somebody else's repository a required step of this pipeline.
     available = pf.available_source_value_years(p)
-    raise NameError(
-        'No %s in %s. The GEP pollination value is the source author\'s raster, and he publishes '
-        'only some price years — this directory has %s. Generating %d means running his pipeline '
-        'at that year: see docs/runbook_pollination_value_raster.md, which is six commands and '
-        'about half an hour. It is deliberately not automated here, because doing so would put the '
-        'execution of his pipeline inside ours.'
-        % (file_name, os.path.dirname(p.pollination_source_value_raster_path),
-           ', '.join(str(y) for y in available) if available else 'none', year))
+    hb.log('No %s in %s (that directory has %s), so the independence check will be skipped. The '
+           'account does not depend on it: the GEP value comes from pollination_value_raster_rebuilt.'
+           % (file_name, os.path.dirname(p.pollination_source_value_raster_path),
+              ', '.join(str(y) for y in available) if available else 'none'))
+    p.pollination_source_value_raster_path = None
+    return True
 
 
 def pollination_value_raster(p):
@@ -2210,8 +2212,8 @@ def pollination_value_raster(p):
     other service, and to deflate to the GEP base year when his file is stamped in another year's
     dollars.
 
-    `pollination_value_raster_rebuilt` is our own construction of the same quantity and is kept as
-    a cross-check, not as the GEP path.
+    The account reads `pollination_value_raster_rebuilt`, which our own chain builds; this reads
+    his so the two can be differenced, and is skipped when his raster is not staged.
     """
     publish_inputs(p)
     year = int(p.gep_base_year)
@@ -2221,6 +2223,12 @@ def pollination_value_raster(p):
         p.cur_dir, 'poll_value_summary_%dusd.csv' % year)
     if not p.run_this:
         return
+
+    if not p.pollination_source_value_raster_path:
+        hb.log('No source raster staged, so there is nothing to convert; the account reads the '
+               'raster our own chain builds.')
+        p.pollination_value_raster_path = None
+        return True
 
     if hb.path_all_exist([p.pollination_value_raster_path, p.pollination_value_summary_path]):
         hb.log('Pollination value raster already built. Skipping.')
