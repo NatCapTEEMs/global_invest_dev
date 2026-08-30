@@ -2539,6 +2539,17 @@ def task_prepare_flood_inputs(p):
     p.flood_depth_raw_path = os.path.join(p.cur_dir, 'floodplain_depth_raw')
     p.flood_depth_extract_path = os.path.join(p.flood_depth_raw_path, 'extracted_tifs')
     p.flood_depth_mask_path = os.path.join(p.cur_dir, 'floodplain_depth_masks')
+    # Section A PRODUCES these three. Publishing them under this task's directory is what stops
+    # the run writing into a staged input tree it does not own -- the first attempt died with a
+    # PermissionError doing exactly that. A configured copy still stands when this task is not
+    # the one producing them, which is how a valuation-only run reads an earlier Section A.
+    for attribute, produced_name in (
+            ('flood_sda_mapping_path', 'lulc_to_sda_mapping.json'),
+            ('flood_sda_raster_path', 'sda_esa300m_artif_crop_pasture.tif'),
+            ('flood_sda_legend_path', 'sda_esa300m_legend.csv')):
+        produced = os.path.join(p.cur_dir, produced_name)
+        if p.run_this or hb.path_exists(produced):
+            setattr(p, attribute, produced)
     if not p.run_this:
         return True
 

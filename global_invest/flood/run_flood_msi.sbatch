@@ -4,7 +4,7 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
-#SBATCH --mem=400g
+#SBATCH --mem=200g
 #SBATCH --time=24:00:00
 #SBATCH --output=gep_flood_%j.out
 #SBATCH --error=gep_flood_%j.err
@@ -18,10 +18,10 @@
 # them, the conda environment and the code directory, because the shell needs those before python
 # exists to read anything.
 #
-# Memory is measured rather than guessed: 64g was OOM-killed inside Section A within a minute
-# (job 17488753). A global 300 m grid is about 7e9 cells, so a whole-array read is tens of GB and
-# several at once exceeds 64. agsmall nodes carry 514g. If this is comfortable, trim it -- a
-# smaller ask queues sooner.
+# Memory is measured: 64g was OOM-killed inside Section A (job 17488753), and a 400g run peaked
+# at 130g (job 17488957). 200g is that peak plus headroom. A global 300 m grid is about 7e9
+# cells, so a whole-array read is tens of GB. It costs nothing but queue time to ask for more
+# than a step needs, and the number changes no result.
 #
 # Time is still a guess: the valuation chain alone took 1h13m (job 17378863), and Section B and
 # the 4A path have never run. Set --time from the first log that finishes.
