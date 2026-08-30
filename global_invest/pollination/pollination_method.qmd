@@ -66,6 +66,25 @@ for other services, read from a precomputed table.
 | `poll_value_global_<base_year>usd.tif` | `crop_benefits` precomputed baseline value raster |
 | `ee_r50_aez18_correspondence.gpkg` | GTAP r50 × AEZ18 region boundaries |
 
-The FAO / CropGrids / Monfreda tabular stages of `crop_benefits` are **not** run here: they exist to
-build the baseline value raster, which is fixed across scenarios, so the finished raster is used
-directly.
+The FAO / CropGrids / Monfreda stages are not run on the **shock** side: they build the baseline
+value raster, which is fixed across scenarios, so the finished raster is used directly here.
+
+They are run on the **GEP** side, where the account needs the value raster for a base year rather
+than a scenario. That chain is ours, in `pollination_tasks.py`, and it is the author's method
+rather than a second one:
+
+1. **FAO panel.** Filter the FAOSTAT production bulk to `Yield` and `Production` over 1993–2024
+   for the crop items in the FAO classification (`run_fao_production`).
+2. **Yield-change ratios.** Median FAO yield in a window at the base year over a window at 2000,
+   per country and crop, with subregion, region and world medians alongside for the countries FAO
+   does not report (`fao_yield_change`).
+3. **Yield rasters.** Monfreda's 2000 yields aligned to the CropGrids grid, gaps filled from the
+   nearest valid cell in the same country, then each country rescaled so its area-weighted mean
+   matches the FAO number for the base year (`pollination_yield_rasters`).
+4. **Production rasters.** Yield times CropGrids harvested area, written as tonnes per square
+   kilometre (`pollination_production_rasters`).
+5. **Value raster.** Production times the world producer price we build ourselves times each crop's
+   dependence on animal pollination, with coffee blended per country from what it grows.
+
+Checked against the author's own 2019 rasters on 2026-08-30: the FAO panel matches his row for row,
+and global production over 157 crops is 9,008.3 million tonnes on both sides.

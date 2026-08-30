@@ -2719,6 +2719,13 @@ def task_compute_flood_damages(p):
     p.flood_country_ead_with_service_flow_path = os.path.join(
         p.flood_global_export_dir, 'expected_annual_damage_by_country_with_service_flow_usd2019.csv')
     p.flood_gep_path = os.path.join(p.flood_global_export_dir, 'flood_gep_usd2019.csv')
+    # Step 4A's four tables. These are outputs, so they belong to the task that writes them rather
+    # than to es_parameters, where they sat as blank rows -- which meant the attribute did not
+    # exist at all and 4B raised AttributeError on the guard meant to tell you 4A had not run.
+    p.flood_damage_long_path = os.path.join(p.flood_global_export_dir, 'damage_by_landtype_usd2019_long.csv')
+    p.flood_damage_wide_table_path = os.path.join(p.flood_global_export_dir, 'damage_by_landtype_usd2019_wide.csv')
+    p.flood_sda_damage_long_path = os.path.join(p.flood_global_export_dir, 'damage_by_sda_usd2019_long.csv')
+    p.flood_sda_damage_wide_path = os.path.join(p.flood_global_export_dir, 'damage_by_sda_usd2019_wide.csv')
     if not p.run_this:
         return True
     hb.create_directories([p.flood_global_export_dir, p.flood_currency_audit_dir])

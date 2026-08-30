@@ -126,10 +126,6 @@ flood,flood_spa_path,
 flood,flood_spa_ratio_path,
 flood,flood_canonical_eur_path,
 flood,flood_currency_factors_path,
-flood,flood_damage_long_path,
-flood,flood_damage_wide_table_path,
-flood,flood_sda_damage_long_path,
-flood,flood_sda_damage_wide_path,
 flood,flood_amplification_path,
 flood,flood_cn_table_path,
 flood,flood_amplification_pattern,global_amplification_{scenario}_rp{rp}.tif
@@ -155,7 +151,7 @@ flood,flood_raster_downsample_factor,6
 flood,flood_region_col,region_wb
 flood,flood_report_protection_split,true
 flood,flood_set_pasture_equal_crop,true
-flood,flood_skip_damage_tables,true
+flood,flood_skip_damage_tables,false
 flood,flood_skip_done,true
 flood,flood_top_n,20
 flood,flood_use_roads,false

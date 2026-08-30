@@ -2274,7 +2274,10 @@ def pollination_value_raster_rebuilt(p):
         hb.log('Pollination value raster already built. Skipping.')
         return True
 
-    production_dir = p.get_path(CROP_PRODUCTION_RASTER_REF_PATH)
+    # The production rasters this prices are the ones the tree builds two tasks earlier, at the GEP
+    # base year. Until the yield and production chain was ported it read the author's staged 2020
+    # vintage out of base data, which is why the deflator below used to have a year to cross.
+    production_dir = p.pollination_production_raster_dir
     crosswalk = hb.df_read(p.get_path(CROPGRIDS_CROSSWALK_REF_PATH))
     # pd.read_parquet, not hb.df_read: df_read is a CSV reader and reports a parquet as an
     # encoding failure, naming every text encoding it tried.
@@ -2283,11 +2286,11 @@ def pollination_value_raster_rebuilt(p):
     dependence = pollination_dependence_by_item(pd.read_parquet(
         p.get_path(POLLINATION_DEPENDENCE_REF_PATH)))
 
-    # The prices are medians over 2018-2022 in the dollars of their own years and the
-    # production rasters are dated 2020, so both are brought to the GEP base year.
-    deflator = pf.usd_deflator(pf.PRODUCTION_RASTER_YEAR, year)
-    hb.log('Pricing at %d USD: deflator from %d is %.4f'
-           % (year, pf.PRODUCTION_RASTER_YEAR, deflator))
+    # The deflator is on the PRICE, not on production: the median is taken over a five-year window
+    # and is therefore in that window's centre-year dollars.
+    deflator = pf.usd_deflator(pf.PRICE_WINDOW_CENTRE_YEAR, year)
+    hb.log('Pricing at %d USD: prices are %d-centred, deflator %.4f'
+           % (year, pf.PRICE_WINDOW_CENTRE_YEAR, deflator))
 
     country_ids, _ = read_raster(str(p.get_path(CROPGRIDS_COUNTRY_RASTER_REF_PATH)))
     country_ids = country_ids.astype('int32')
@@ -2309,7 +2312,7 @@ def pollination_value_raster_rebuilt(p):
             skipped['no_item_code'].append(crop_name)
             continue
         item_code = int(item_code)
-        raster_path = os.path.join(production_dir, 'production_%s_2020.tif' % crop_name)
+        raster_path = os.path.join(production_dir, 'production_%s_%d.tif' % (crop_name, year))
         if not hb.path_exists(raster_path):
             skipped['no_raster'].append(crop_name)
             continue

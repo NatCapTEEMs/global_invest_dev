@@ -973,10 +973,11 @@ CPI_BY_YEAR = {
     2025: 321.9,
 }
 
-# The production rasters are dated 2020, so a price expressed in any other year's dollars
-# has to be brought to 2020 before it multiplies them, or the year of the money and the
-# year of the harvest disagree.
-PRODUCTION_RASTER_YEAR = 2020
+# The median price is taken over a five-year window, so it is denominated in the dollars of that
+# window's centre and has to be deflated to the base year before it multiplies anything. The
+# comment here used to say this was the production raster's vintage, which it never was: the
+# deflator is applied to `price`, not to production.
+PRICE_WINDOW_CENTRE_YEAR = 2020
 
 
 def usd_deflator(from_year, to_year):
