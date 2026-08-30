@@ -2426,3 +2426,305 @@ def pollination_value_independence_check(p):
               (ours_total / theirs_total - 1.0) * 100.0 if theirs_total else float('nan'),
               correlation, int(both.sum())))
     return True
+
+
+# =============================================================================
+# The yield and production chain.
+#
+# This is the half of the source author's pipeline that builds the production
+# rasters the value raster is priced from: Monfreda's 2000 yields, aligned to
+# the CropGrids grid, carried to the base year by FAO country ratios, then
+# multiplied by CropGrids harvested area. Until it was ported the account read
+# his finished production rasters out of base_data, so no run here could
+# produce the value raster from source.
+# =============================================================================
+
+MONFREDA_DIR_REF_PATH = os.path.join('crops', 'earthstat', 'crop_production')
+CROPGRIDS_NETCDF_DIR_REF_PATH = os.path.join('crops', 'cropgrids', 'CROPGRIDSv1.08_NC_maps')
+FAO_PRODUCTION_TABLE_REF_PATH = os.path.join('fao', 'fao_production_1993_2024.csv')
+CROSSWALK_M49_ISO3_REF_PATH = os.path.join('fao', 'crosswalks', 'crosswalk_m49_iso3.csv')
+
+
+def load_monfreda_raster(crop_name, monfreda_dir, patterns):
+    """Read one Monfreda GeoTIFF for a crop, trying each filename convention in turn.
+
+    EarthStat's own release and the NatCap staging of it name the same layer differently, and
+    base_data holds the second, so both are tried rather than assumed.
+    """
+    crop_dir = os.path.join(str(monfreda_dir), crop_name)
+    for pattern in patterns:
+        found = sorted(glob.glob(os.path.join(crop_dir, pattern)))
+        if found:
+            return read_raster(found[0])
+    raise FileNotFoundError('No %s for %s in %s' % (' or '.join(patterns), crop_name, crop_dir))
+
+
+def load_monfreda_yield(crop_name, monfreda_dir):
+    """Monfreda 2000 yield for one crop, tonnes per harvested hectare."""
+    return load_monfreda_raster(crop_name, monfreda_dir,
+                                ('*YieldPerHectare*.tif', '*yield_Mg_per_harvested_ha*.tif'))
+
+
+def load_monfreda_harvested_area(crop_name, monfreda_dir):
+    """Monfreda 2000 harvested area for one crop, hectares."""
+    return load_monfreda_raster(crop_name, monfreda_dir,
+                                ('*HarvestedAreaHectares*.tif', '*harvested_ha*.tif'))
+
+
+def load_cropgrids_harvested_area(crop_name, cropgrids_dir):
+    """CropGrids harvested area for one crop, hectares, flipped to north-up.
+
+    The NetCDF is stored south-up, so both the array and the transform's origin are turned over;
+    reading it without that puts every crop in the wrong hemisphere.
+    """
+    import xarray as xr
+    from affine import Affine
+    found = sorted(glob.glob(os.path.join(str(cropgrids_dir), '*_%s.nc' % crop_name)))
+    if not found:
+        raise FileNotFoundError('No CropGrids NetCDF for %s in %s' % (crop_name, cropgrids_dir))
+
+    with xr.open_dataset(found[0], engine='netcdf4') as dataset:
+        variable = [v for v in dataset.data_vars if v not in ('lat', 'lon', 'crs')][0]
+        data = dataset[variable].values.astype(np.float32)
+        if data.ndim == 3:
+            data = data[0]
+        transform = dataset[variable].rio.write_crs('EPSG:4326', inplace=False).rio.transform()
+
+    height, width = data.shape
+    meta = {'driver': 'GTiff', 'dtype': 'float32', 'nodata': -9999.0, 'count': 1,
+            'width': width, 'height': height, 'crs': 'EPSG:4326',
+            'transform': Affine(transform.a, transform.b, transform.c,
+                                transform.d, -transform.e,
+                                transform.f + (transform.e * height))}
+    return data[::-1, :], meta
+
+
+def crop_yield_raster(crop_name, item_code_fao, ratios, crosswalk_m49, monfreda_dir,
+                      cropgrids_dir, country_ids_path, out_path, method):
+    """Build one crop's target-year yield raster, or return None if the crop cannot be built.
+
+    Monfreda's yields are aligned to the CropGrids grid and masked to where Monfreda itself
+    reports harvested area, then gaps inside the crop extent are filled from the nearest valid
+    cell in the same country. What FAO supplies on top of that is the country level: `target`
+    rescales each country so its area-weighted mean matches FAO's late-window yield, `ratio`
+    multiplies by the late-over-early ratio instead.
+
+    Returns:
+        dict: counts of how many cells rested on a country, subregion, region or world number,
+        or None when the crop has no CropGrids extent, no FAO item code or no Monfreda layer.
+    """
+    try:
+        cropgrids_ha, meta = load_cropgrids_harvested_area(crop_name, cropgrids_dir)
+    except FileNotFoundError:
+        hb.log('%s: no CropGrids harvested area, skipping.' % crop_name)
+        return None
+    mask_crop = cropgrids_ha > 0
+
+    try:
+        monfreda_yield, monfreda_meta = load_monfreda_yield(crop_name, monfreda_dir)
+        monfreda_ha, _ = load_monfreda_harvested_area(crop_name, monfreda_dir)
+    except FileNotFoundError:
+        hb.log('%s: no Monfreda layer, skipping.' % crop_name)
+        return None
+
+    yield_raster = pf.align_to_reference(monfreda_yield, monfreda_meta, meta)
+    monfreda_ha_aligned = pf.align_to_reference(monfreda_ha, monfreda_meta, meta, dst_nodata=0.0)
+    yield_raster[~(monfreda_ha_aligned > 0)] = np.nan
+    yield_raster[~mask_crop] = np.nan
+
+    country_ids, _ = read_raster(str(country_ids_path))
+    country_ids = country_ids.astype('int32')
+    yield_raster = pf.fill_nearest_by_country(
+        yield_raster, mask_crop & np.isnan(yield_raster), country_ids)
+    country_ids = pf.assign_nearest_country(country_ids, mask_crop)
+
+    has_base = mask_crop & np.isfinite(yield_raster)
+    missing_base = mask_crop & ~np.isfinite(yield_raster)
+
+    crop_ratios = ratios[ratios['item_code_fao'] == int(item_code_fao)]
+    counts = {'n_country': 0, 'n_subregion': 0, 'n_region': 0, 'n_world': 0,
+              'n_none': int(np.count_nonzero(has_base))}
+    if not crop_ratios.empty:
+        if method == 'target':
+            target_lookup, provenance_lookup = pf.build_hierarchical_lookup(
+                crop_ratios, crosswalk_m49, 'late_yield')
+            yield_raster, provenance = pf.normalize_yield_to_target(
+                yield_raster, cropgrids_ha, mask_crop, country_ids,
+                target_lookup, provenance_lookup)
+        elif method == 'ratio':
+            ratio_lookup, provenance_lookup = pf.build_hierarchical_lookup(
+                crop_ratios, crosswalk_m49, 'yield_ratio')
+            ratio_raster = pf.lookup_by_country(ratio_lookup, country_ids)
+            provenance = pf.lookup_by_country(provenance_lookup, country_ids)
+            updatable = has_base & np.isfinite(ratio_raster)
+            yield_raster[updatable] = yield_raster[updatable] * ratio_raster[updatable]
+        else:
+            raise NameError("pollination_yield_method is %r; expected 'target' or 'ratio'."
+                            % method)
+        counts = provenance_counts(provenance[has_base])
+
+        # A cell inside the crop extent with no Monfreda yield takes its country's FAO number
+        # flat: there is a country total but nothing to spread it over.
+        if np.any(missing_base):
+            late_lookup, _ = pf.build_hierarchical_lookup(crop_ratios, crosswalk_m49, 'late_yield')
+            late_raster = pf.lookup_by_country(late_lookup, country_ids)
+            fillable = missing_base & np.isfinite(late_raster)
+            yield_raster[fillable] = late_raster[fillable]
+
+    out = yield_raster.copy()
+    out[mask_crop & np.isnan(out)] = NODATA_OUT
+    out[~mask_crop] = NODATA_OUT
+    write_raster(out_path, out, meta, nodata=NODATA_OUT)
+    return dict(crop=crop_name, item_code_fao=int(item_code_fao),
+                n_crop_pixels=int(np.count_nonzero(mask_crop)),
+                n_have_base=int(np.count_nonzero(has_base)),
+                n_missing_base=int(np.count_nonzero(missing_base)), **counts)
+
+
+def provenance_counts(provenance):
+    """How many cells took a country, subregion, region or world number, and how many none."""
+    return {'n_country': int(np.count_nonzero(provenance == pf.PROVENANCE_COUNTRY)),
+            'n_subregion': int(np.count_nonzero(provenance == pf.PROVENANCE_SUBREGION)),
+            'n_region': int(np.count_nonzero(provenance == pf.PROVENANCE_REGION)),
+            'n_world': int(np.count_nonzero(provenance == pf.PROVENANCE_WORLD)),
+            'n_none': int(np.count_nonzero(provenance == pf.PROVENANCE_NONE))}
+
+
+def crop_production_raster(crop_name, yield_path, cropgrids_dir, out_path):
+    """Build one crop's production raster from its yield raster and CropGrids harvested area.
+
+    Written as tonnes per square kilometre rather than tonnes in the cell, which is the
+    convention the value step and the author's own rasters use.
+    """
+    yield_raster, meta = read_raster(str(yield_path))
+    outside = yield_raster == meta.get('nodata', NODATA_OUT)
+    try:
+        cropgrids_ha, _ = load_cropgrids_harvested_area(crop_name, cropgrids_dir)
+    except FileNotFoundError:
+        hb.log('%s: no CropGrids harvested area, skipping.' % crop_name)
+        return None
+
+    mask_crop = (cropgrids_ha > 0) & (~outside)
+    yield_raster[outside] = np.nan
+    production = pf.compute_production(yield_raster, cropgrids_ha, mask_crop)
+
+    area_km2 = pf.build_area_km2_raster(meta)
+    density = pf.convert_mass_to_density(production, area_km2)
+    density[~mask_crop] = NODATA_OUT
+    density[np.isnan(density)] = NODATA_OUT
+    write_raster(out_path, density, meta, nodata=NODATA_OUT)
+    return dict(crop=crop_name, valid_pixels=int(np.count_nonzero(mask_crop)),
+                total_production_tonnes=float(np.nansum(production[mask_crop])))
+
+
+def fao_yield_change(p):
+    """FAO yield ratios per country and crop, between a window at 2000 and one at the base year.
+
+    Monfreda's yields are for 2000 and the account is priced at the GEP base year, so the yield
+    rasters need a per-country factor to carry them forward. This writes it, with subregion,
+    region and world medians alongside for the countries FAO does not report.
+    """
+    publish_inputs(p)
+    p.pollination_yield_change_path = os.path.join(p.cur_dir, 'yield_change_ratios.csv')
+    if not p.run_this:
+        return
+
+    if hb.path_exists(p.pollination_yield_change_path):
+        hb.log('FAO yield-change ratios already built. Skipping.')
+        return True
+
+    production = hb.df_read(p.get_path(FAO_PRODUCTION_TABLE_REF_PATH))
+    crosswalk = hb.df_read(p.get_path(CROSSWALK_M49_ISO3_REF_PATH))
+    ratios = pf.yield_change_ratios(production, crosswalk,
+                                    p.pollination_yield_early_years,
+                                    p.pollination_yield_late_years)
+    # An empty table is not an empty result, it is a missing input, and it does not raise on its
+    # own: every yield raster silently keeps Monfreda's 2000 values and the production comes out
+    # about thirty percent low. That is what an empty stub of the FAO panel in base_data did on
+    # 2026-08-30, and only a crop-by-crop comparison against the author caught it.
+    if ratios.empty:
+        raise NameError(
+            'No yield-change ratios from %s. It has %d rows, and the early window %s or the late '
+            'window %s found no FAO Yield rows in it.'
+            % (p.get_path(FAO_PRODUCTION_TABLE_REF_PATH), len(production),
+               p.pollination_yield_early_years, p.pollination_yield_late_years))
+    utilities.write_csv(ratios, p.pollination_yield_change_path)
+    hb.log('Yield ratios for %d country-crop rows, over early %s and late %s.'
+           % (int((ratios['agg_level'] == 'country').sum()),
+              p.pollination_yield_early_years, p.pollination_yield_late_years))
+    return True
+
+
+def pollination_yield_rasters(p):
+    """One target-year yield raster per crop, from Monfreda 2000 and the FAO country ratios."""
+    publish_inputs(p)
+    p.pollination_yield_raster_dir = p.cur_dir
+    p.pollination_yield_summary_path = os.path.join(p.cur_dir, 'yield_summary_by_crop.csv')
+    if not p.run_this:
+        return
+
+    year = int(p.gep_base_year)
+    crosswalk_crops = hb.df_read(p.get_path(CROPGRIDS_CROSSWALK_REF_PATH))
+    crosswalk_m49 = hb.df_read(p.get_path(CROSSWALK_M49_ISO3_REF_PATH))
+    crosswalk_m49['area_code_m49'] = crosswalk_m49['area_code_m49'].astype(str).str.zfill(3)
+    ratios = hb.df_read(p.pollination_yield_change_path)
+    monfreda_dir = p.get_path(MONFREDA_DIR_REF_PATH)
+    cropgrids_dir = p.get_path(CROPGRIDS_NETCDF_DIR_REF_PATH)
+    country_ids_path = p.get_path(CROPGRIDS_COUNTRY_RASTER_REF_PATH)
+
+    rows = []
+    for crop_name in sorted(crosswalk_crops['cropgrids_2024'].dropna().unique()):
+        item_code = pd.to_numeric(
+            crosswalk_crops[crosswalk_crops['cropgrids_2024'] == crop_name].iloc[0]['item_code_fao'],
+            errors='coerce')
+        if pd.isna(item_code):
+            continue
+        out_path = os.path.join(p.cur_dir, 'yield_%s_%d.tif' % (crop_name, year))
+        if hb.path_exists(out_path):
+            continue
+        stats = crop_yield_raster(crop_name, int(item_code), ratios, crosswalk_m49, monfreda_dir,
+                                  cropgrids_dir, country_ids_path, out_path,
+                                  p.pollination_yield_method)
+        if stats:
+            rows.append(stats)
+            hb.log('yield %s: %d crop cells, %d with a Monfreda base.'
+                   % (crop_name, stats['n_crop_pixels'], stats['n_have_base']))
+    if rows:
+        utilities.write_csv(pd.DataFrame(rows), p.pollination_yield_summary_path)
+    return True
+
+
+def pollination_production_rasters(p):
+    """One production raster per crop, tonnes per square kilometre.
+
+    This is the file the value raster is priced from. Until it was built here the account read
+    the source author's own production rasters out of base_data.
+    """
+    publish_inputs(p)
+    p.pollination_production_raster_dir = p.cur_dir
+    p.pollination_production_summary_path = os.path.join(
+        p.cur_dir, 'production_summary_by_crop.csv')
+    if not p.run_this:
+        return
+
+    year = int(p.gep_base_year)
+    crosswalk_crops = hb.df_read(p.get_path(CROPGRIDS_CROSSWALK_REF_PATH))
+    cropgrids_dir = p.get_path(CROPGRIDS_NETCDF_DIR_REF_PATH)
+
+    rows = []
+    for crop_name in sorted(crosswalk_crops['cropgrids_2024'].dropna().unique()):
+        yield_path = os.path.join(p.pollination_yield_raster_dir,
+                                  'yield_%s_%d.tif' % (crop_name, year))
+        if not hb.path_exists(yield_path):
+            continue
+        out_path = os.path.join(p.cur_dir, 'production_%s_%d.tif' % (crop_name, year))
+        if hb.path_exists(out_path):
+            continue
+        stats = crop_production_raster(crop_name, yield_path, cropgrids_dir, out_path)
+        if stats:
+            rows.append(stats)
+    if rows:
+        utilities.write_csv(pd.DataFrame(rows), p.pollination_production_summary_path)
+        hb.log('Production rasters for %d crops, %.1f M tonnes in total.'
+               % (len(rows), sum(r['total_production_tonnes'] for r in rows) / 1e6))
+    return True

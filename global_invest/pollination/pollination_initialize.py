@@ -18,6 +18,15 @@ def build_gep_service_calculation_task_tree(p):
     taking it as given. It downloads FAOSTAT production and producer prices and writes the
     per-crop median price the raster is priced at. skip_existing=1 because it is a download."""
     p.fao_median_prices_task = p.add_task(pollination_tasks.fao_median_prices, skip_existing=1)
+    # The yield and production chain: Monfreda 2000 yields carried to the base year by FAO
+    # country ratios, then multiplied by CropGrids harvested area. These are what the rebuilt
+    # value raster is priced from, and until they were ported the account read the source
+    # author's finished production rasters out of base_data instead.
+    p.fao_yield_change_task = p.add_task(pollination_tasks.fao_yield_change, skip_existing=1)
+    p.pollination_yield_rasters_task = p.add_task(
+        pollination_tasks.pollination_yield_rasters, skip_existing=1)
+    p.pollination_production_rasters_task = p.add_task(
+        pollination_tasks.pollination_production_rasters, skip_existing=1)
     p.pollination_source_value_raster_task = p.add_task(
         pollination_tasks.pollination_source_value_raster, skip_existing=1)
     p.pollination_value_raster_task = p.add_task(

@@ -237,4 +237,7 @@ landslide_mitigation,landslide_lulc_path_template,lulc/esa/lulc_esa_{year}.tif
 pollination,pollination_crosswalk_m49_iso3_path,fao/crosswalks/crosswalk_m49_iso3.csv
 pollination,pollination_fao_classification_path,fao/crosswalks/fao_classification.csv
 pollination,pollination_crosswalk_fao_cropgrids_path,fao/crosswalks/crosswalk_fao_cropgrids.csv
+pollination,pollination_yield_method,"target"
+pollination,pollination_yield_early_years,"[1998, 1999, 2000, 2001, 2002]"
+pollination,pollination_yield_late_years,"[2017, 2018, 2019, 2020, 2021]"
 erosion,erosion_gdp_csv_source_url,https://api.worldbank.org/v2/country/all/indicator/NY.GDP.MKTP.CD?format=json&per_page=20000

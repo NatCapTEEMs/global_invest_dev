@@ -1169,3 +1169,321 @@ def dependence_raster_from_country_lookup(country_id_array, dependence_by_countr
             continue
         out[country_id_array == int(code)] = float(ratio)
     return out
+
+
+# =============================================================================
+# The yield and production chain: Monfreda 2000 yields carried to a target year
+# by FAO country ratios, then multiplied by CropGrids harvested area.
+#
+# This is the half of the source author's pipeline that produces the production
+# rasters the value raster is built from. Everything here is array and table
+# maths so the task layer can open the per-crop rasters and these stay testable
+# without one.
+# =============================================================================
+
+# Pixel sentinels, the source author's values. A cell outside the crop's harvested extent and a
+# cell inside it with no Monfreda yield are different facts, and the summary counts them apart.
+OUTSIDE_CROP = -1.0
+UNRESOLVED = -2.0
+
+# M49 country codes run to 894; the lookup is a dense array indexed by code, so it needs a ceiling.
+MAX_M49_CODE = 1000
+
+# Which level of the hierarchy supplied a cell's value, written into the provenance raster.
+PROVENANCE_NONE, PROVENANCE_COUNTRY, PROVENANCE_SUBREGION = 0, 1, 2
+PROVENANCE_REGION, PROVENANCE_WORLD = 3, 4
+
+
+def yield_change_ratios(production_df, crosswalk_m49, early_years, late_years):
+    """FAO yield in a late window over yield in an early window, per country and crop.
+
+    Monfreda's yields are for 2000. Carrying them to a target year needs a per-country, per-crop
+    factor, and this is it: the median FAO yield over the late window divided by the median over
+    the early one. Medians rather than means, so one drought or one bumper harvest does not set
+    the factor.
+
+    A country-crop pair FAO does not report gets no row, so the table also carries subregion,
+    region and world medians for `build_hierarchical_lookup` to fall back through.
+
+    Args:
+        production_df (pd.DataFrame): FAO production rows, with `element`, `area_code_m49`,
+            `item_code_fao`, `year`, `value` and `item_fao`.
+        crosswalk_m49 (pd.DataFrame): M49 to `region_fao` and `subregion_fao`.
+        early_years (iterable): the base window, around Monfreda's 2000.
+        late_years (iterable): the window around the target year.
+
+    Returns:
+        pd.DataFrame: one row per country-crop plus the aggregate rows, with `yield_ratio`,
+        `late_yield`, `early_yield` and an `agg_level` of country, subregion, region or world.
+    """
+    df = production_df[production_df['element'] == 'Yield'].copy()
+    df['area_code_m49'] = df['area_code_m49'].astype(str).str.zfill(3)
+    df['item_code_fao'] = df['item_code_fao'].astype(int)
+    df['year'] = df['year'].astype(int)
+    # The FAO panel reads back as object, because a blank cell makes the whole column one. A
+    # median over strings sorts them, so this has to be numeric before the groupby, not after.
+    df['value'] = pd.to_numeric(df['value'], errors='coerce')
+    df = df[np.isfinite(df['value'])]
+
+    def window_yield(sub, prefix):
+        return (sub.groupby(['area_code_m49', 'item_code_fao'], as_index=False)
+                .agg(**{'%s_yield' % prefix: ('value', 'median'),
+                        '%s_years_count' % prefix: ('year', 'nunique'),
+                        'item_fao': ('item_fao', 'first')}))
+
+    early = window_yield(df[df['year'].isin(list(early_years))], 'early')
+    late = window_yield(df[df['year'].isin(list(late_years))], 'late')
+
+    merged = early.merge(late, on=['area_code_m49', 'item_code_fao'], how='inner',
+                         suffixes=('_x', '_y'))
+    if 'item_fao_y' in merged.columns:
+        merged = merged.drop(columns=['item_fao_y']).rename(columns={'item_fao_x': 'item_fao'})
+
+    merged['yield_ratio'] = merged['late_yield'] / merged['early_yield']
+    merged = merged[np.isfinite(merged['yield_ratio'])]
+
+    crosswalk = crosswalk_m49.copy()
+    crosswalk['area_code_m49'] = crosswalk['area_code_m49'].astype(str).str.zfill(3)
+    merged = merged.merge(crosswalk[['area_code_m49', 'iso3', 'region_fao', 'subregion_fao']],
+                          on='area_code_m49', how='left')
+
+    def aggregate(level_column, level_name, sentinel):
+        agg = (merged.dropna(subset=[level_column])
+               .groupby(['item_code_fao', level_column], as_index=False)
+               .agg(yield_ratio=('yield_ratio', 'median'),
+                    late_yield=('late_yield', 'median'),
+                    early_yield=('early_yield', 'median'),
+                    item_fao=('item_fao', 'first')))
+        agg['area_code_m49'] = sentinel
+        agg['agg_level'] = level_name
+        return agg
+
+    subregion = aggregate('subregion_fao', 'subregion', 'SUB').assign(region_fao=np.nan)
+    region = aggregate('region_fao', 'region', 'REG').assign(subregion_fao=np.nan)
+    world = (merged.groupby('item_code_fao', as_index=False)
+             .agg(yield_ratio=('yield_ratio', 'median'),
+                  late_yield=('late_yield', 'median'),
+                  early_yield=('early_yield', 'median'),
+                  item_fao=('item_fao', 'first')))
+    world['area_code_m49'], world['agg_level'] = 'WOR', 'world'
+    world = world.assign(subregion_fao=np.nan, region_fao=np.nan)
+
+    merged['agg_level'] = 'country'
+    columns = ['area_code_m49', 'item_code_fao', 'yield_ratio', 'late_yield', 'early_yield',
+               'agg_level', 'subregion_fao', 'region_fao', 'item_fao']
+    return pd.concat([merged[columns], subregion[columns], region[columns], world[columns]],
+                     ignore_index=True)
+
+
+def build_hierarchical_lookup(rows, crosswalk_m49, value_column, default=np.nan):
+    """A value per M49 country code, falling back country to subregion to region to world.
+
+    FAO does not report every crop in every country, so a country with no row for a crop takes
+    its subregion's median, then its region's, then the world's. The fallback level is recorded
+    per country rather than left implicit, because a world-median yield ratio applied to a whole
+    country is a much weaker number than its own, and the summary needs to say how many cells
+    rest on each.
+
+    Args:
+        rows (pd.DataFrame): one crop's slice of `yield_change_ratios`.
+        crosswalk_m49 (pd.DataFrame): every M49 code with its `region_fao` and `subregion_fao`.
+        value_column (str): which column to map, `yield_ratio` or `late_yield`.
+        default (float): the value for a code no level covers.
+
+    Returns:
+        tuple: (values, provenance), both arrays indexed by M49 code, provenance carrying
+        PROVENANCE_COUNTRY through PROVENANCE_WORLD and PROVENANCE_NONE.
+    """
+    lookup = np.full(MAX_M49_CODE, default, dtype=np.float32)
+    provenance = np.zeros(MAX_M49_CODE, dtype=np.uint8)
+
+    world_rows = rows[rows['agg_level'] == 'world']
+    world_value = world_rows[value_column].iloc[0] if not world_rows.empty else np.nan
+    region_values = rows[rows['agg_level'] == 'region'].set_index('region_fao')[value_column]
+    subregion_values = rows[rows['agg_level'] == 'subregion'].set_index('subregion_fao')[value_column]
+
+    country_values = {}
+    for _, row in rows[rows['agg_level'] == 'country'].iterrows():
+        try:
+            code = int(row['area_code_m49'])
+        except (ValueError, TypeError):
+            continue
+        if code < MAX_M49_CODE and np.isfinite(row[value_column]):
+            country_values[code] = row[value_column]
+
+    for _, row in crosswalk_m49.iterrows():
+        try:
+            code = int(row['area_code_m49'])
+        except (ValueError, TypeError):
+            continue
+        if code >= MAX_M49_CODE:
+            continue
+        subregion, region = row.get('subregion_fao'), row.get('region_fao')
+        if code in country_values:
+            lookup[code], provenance[code] = country_values[code], PROVENANCE_COUNTRY
+        elif subregion in subregion_values.index and np.isfinite(subregion_values[subregion]):
+            lookup[code], provenance[code] = subregion_values[subregion], PROVENANCE_SUBREGION
+        elif region in region_values.index and np.isfinite(region_values[region]):
+            lookup[code], provenance[code] = region_values[region], PROVENANCE_REGION
+        elif np.isfinite(world_value):
+            lookup[code], provenance[code] = world_value, PROVENANCE_WORLD
+    return lookup, provenance
+
+
+def lookup_by_country(lookup, country_id_array):
+    """Read a per-M49-code lookup onto the grid, with codes past the lookup treated as absent."""
+    codes = country_id_array.copy()
+    codes[codes >= MAX_M49_CODE] = 0
+    return lookup[codes]
+
+
+def convert_mass_to_density(mass_raster, area_km2_raster):
+    """Mass per cell to mass per square kilometre.
+
+    Args:
+        mass_raster (np.ndarray): tonnes in the cell.
+        area_km2_raster (np.ndarray): the area each cell covers, same shape.
+
+    Returns:
+        np.ndarray: tonnes per square kilometre, NaN where the cell has no area or no mass.
+    """
+    density = np.full_like(mass_raster, np.nan, dtype=np.float32)
+    valid = np.isfinite(mass_raster) & (area_km2_raster > 0)
+    density[valid] = mass_raster[valid] / area_km2_raster[valid]
+    return density
+
+
+def apply_yield_change(yield_base, ratio, mask_crop):
+    """Carry base-year yields to the target year by one country-crop ratio."""
+    out = np.full_like(yield_base, OUTSIDE_CROP)
+    out[mask_crop] = yield_base[mask_crop] * ratio
+    return out
+
+
+def normalize_yield_to_target(yield_base, harvested_area, mask_crop, country_ids,
+                              target_lookup, provenance_lookup):
+    """Scale each country's yields so its area-weighted mean matches the FAO target yield.
+
+    The alternative, `apply_yield_change`, multiplies by a ratio and inherits whatever level
+    Monfreda's 2000 mean sat at. This instead pins the country mean to what FAO reports for the
+    late window and keeps Monfreda only for the shape of the variation within the country.
+
+    A country with no valid Monfreda cell keeps its base values, and a crop cell inside a country
+    with no Monfreda yield takes the country target flat, which is the `UNRESOLVED` case: there
+    is a country-level number but nothing to spread it over.
+
+    Args:
+        yield_base (np.ndarray): Monfreda yield, t/ha, NaN where absent.
+        harvested_area (np.ndarray): CropGrids harvested area, ha, the weight in the mean.
+        mask_crop (np.ndarray): True where the crop is grown.
+        country_ids (np.ndarray): M49 code per cell.
+        target_lookup (np.ndarray): target yield per M49 code, from `build_hierarchical_lookup`
+            on `late_yield`.
+        provenance_lookup (np.ndarray): the matching fallback level per code.
+
+    Returns:
+        tuple: (yield_target, provenance), the second being which level backed each cell.
+    """
+    yield_target = np.full_like(yield_base, np.nan)
+    yield_target[~mask_crop] = OUTSIDE_CROP
+    provenance = lookup_by_country(provenance_lookup, country_ids)
+
+    has_base = mask_crop & (yield_base >= 0) & (~np.isnan(yield_base))
+    for code in np.unique(country_ids):
+        if code == 0 or code >= MAX_M49_CODE:
+            continue
+        target = target_lookup[code]
+        in_country = (country_ids == code)
+        valid = in_country & has_base
+
+        if np.isnan(target) or target <= 0:
+            # No FAO number at any level: Monfreda's own values are the best available.
+            if np.any(valid):
+                yield_target[valid] = yield_base[valid]
+            continue
+
+        gaps = in_country & mask_crop & (~has_base)
+        if np.any(valid):
+            area = harvested_area[valid]
+            total_area = np.sum(area)
+            mean_yield = np.sum(yield_base[valid] * area) / total_area if total_area > 0 else 0.0
+            if mean_yield > 0:
+                yield_target[valid] = yield_base[valid] * (target / mean_yield)
+            else:
+                yield_target[valid] = target
+        if np.any(gaps):
+            yield_target[gaps] = target
+    return yield_target, provenance
+
+
+def compute_production(yield_raster, harvested_area, mask_crop):
+    """Production in tonnes: yield in tonnes per hectare times harvested hectares.
+
+    Args:
+        yield_raster (np.ndarray): t/ha.
+        harvested_area (np.ndarray): ha in the cell.
+        mask_crop (np.ndarray): True where the crop is grown.
+
+    Returns:
+        np.ndarray: tonnes, NaN outside the crop mask.
+    """
+    out = np.full_like(yield_raster, np.nan)
+    out[mask_crop] = (yield_raster * harvested_area)[mask_crop]
+    return out
+
+
+def assign_nearest_country(country_ids, mask_crop):
+    """Give a cropped cell with no country the code of the nearest cell that has one.
+
+    A cell can carry harvested area and fall outside every country polygon, on a coastline or a
+    small island. Left at zero it would be skipped by every per-country step, silently dropping
+    its production; the nearest real country is the closest available answer.
+    """
+    from scipy.spatial import cKDTree
+    out = country_ids.copy()
+    needs = mask_crop & (country_ids == 0)
+    has = country_ids > 0
+    if not np.any(needs) or not np.any(has):
+        return out
+    rows, cols = np.indices(country_ids.shape)
+    tree = cKDTree(np.column_stack((rows[has], cols[has])))
+    _, nearest = tree.query(np.column_stack((rows[needs], cols[needs])))
+    out[needs] = country_ids[has][nearest]
+    return out
+
+
+def fill_nearest_by_country(data, mask_to_fill, country_ids):
+    """Fill each missing cell from the nearest valid cell in its own country.
+
+    Within a country rather than globally: a missing yield next to a border would otherwise take
+    a neighbouring country's value, which is exactly the variation the country step is about to
+    normalise away.
+    """
+    from scipy.spatial import cKDTree
+    filled = data.copy()
+    rows, cols = np.indices(data.shape)
+    for code in np.unique(country_ids):
+        if code == 0:
+            continue
+        in_country = (country_ids == code)
+        missing = mask_to_fill & in_country & np.isnan(filled)
+        valid = in_country & (~np.isnan(filled))
+        if not missing.any() or not valid.any():
+            continue
+        tree = cKDTree(np.column_stack((rows[valid], cols[valid])))
+        _, nearest = tree.query(np.column_stack((rows[missing], cols[missing])))
+        filled[missing] = filled[valid][nearest]
+    return filled
+
+
+def align_to_reference(src_data, src_meta, ref_meta, resampling=None, dst_nodata=np.nan):
+    """Put an array on the reference grid. Arrays only; nothing is opened."""
+    from rasterio.warp import reproject, Resampling
+    destination = np.full((ref_meta['height'], ref_meta['width']), dst_nodata, dtype=np.float32)
+    reproject(source=src_data.astype(np.float32), destination=destination,
+              src_transform=src_meta['transform'], src_crs=src_meta.get('crs', 'EPSG:4326'),
+              src_nodata=src_meta.get('nodata'),
+              dst_transform=ref_meta['transform'], dst_crs=ref_meta.get('crs', 'EPSG:4326'),
+              dst_nodata=dst_nodata,
+              resampling=Resampling.nearest if resampling is None else resampling)
+    return destination
