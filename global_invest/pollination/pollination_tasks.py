@@ -2142,7 +2142,7 @@ def pollination_source_value_raster(p):
     year = int(p.gep_base_year)
     file_name = 'poll_value_global_%dusd.tif' % year
     p.pollination_source_value_raster_path = os.path.join(
-        str(p.get_path(pf.SOURCE_VALUE_RASTER_DIR_REF_PATH)), file_name)
+        str(p.pollination_value_raster_dir), file_name)
     p.pollination_source_provenance_path = os.path.join(p.cur_dir, 'source_raster_provenance.csv')
     if not p.run_this:
         return

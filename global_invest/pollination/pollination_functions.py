@@ -29,9 +29,6 @@ logger = logging.getLogger(__name__)
 
 BASELINE_LABEL = '2023_pnas'
 
-# The country attributes every GEP per-country CSV carries, in the order the CSV writes them.
-POLLINATION_ATTR_COLS = ['iso3_r250_id', 'iso3_r250_label', 'iso3_r250_name',
-                         'continent', 'region_un', 'region_wb', 'income_grp', 'subregion']
 
 # The zonal percent changes arrive already expressed in percent, so a percent change of x means a
 # growth factor of 1 + x/100.
@@ -231,8 +228,8 @@ def collapse_regions_to_countries(df_regions):
         pd.DataFrame: the attribute columns, year and pollination_gep, one row per country.
     """
     df_countries = utilities.collapse_regions_to_countries(
-        df_regions, POLLINATION_ATTR_COLS, 'pollination_gep')
-    return df_countries[POLLINATION_ATTR_COLS + ['year', 'pollination_gep']]
+        df_regions, utilities.GEP_COUNTRY_ATTR_COLS, 'pollination_gep')
+    return df_countries[utilities.GEP_COUNTRY_ATTR_COLS + ['year', 'pollination_gep']]
 
 
 def expand_country_values_to_regions(df_regions, df_gep_by_country):
@@ -265,7 +262,7 @@ def configure_sufficiency(p, target_year):
     value tasks. The 5 km template points at the value raster itself, because the valuation needs
     sufficiency and value on one grid and that removes a separate country-raster input.
     """
-    crop_benefits_dir = p.get_path(SOURCE_VALUE_RASTER_DIR_REF_PATH)
+    crop_benefits_dir = p.pollination_value_raster_dir
     return SufficiencySettings(
         output_dir=str(p.cur_dir),
         value_raster_dir=str(crop_benefits_dir),
@@ -878,7 +875,6 @@ def crop_pollination_value_density(production_density, price_usd_per_tonne, depe
     return crop_value_density * np.asarray(dependence_ratio, dtype='float64'), crop_value_density
 
 
-SOURCE_VALUE_RASTER_DIR_REF_PATH = os.path.join('global_invest', 'pollination', 'crop_benefits')
 
 
 def find_source_value_raster(p, gep_base_year):
@@ -906,7 +902,7 @@ def find_source_value_raster(p, gep_base_year):
     """
     import glob
     import re
-    source_dir = p.get_path(SOURCE_VALUE_RASTER_DIR_REF_PATH)
+    source_dir = p.pollination_value_raster_dir
     candidates = {}
     for path in glob.glob(os.path.join(str(source_dir), 'poll_value_global_*usd.tif')):
         match = re.search(r'poll_value_global_(\d{4})usd\.tif$', os.path.basename(path))
@@ -923,7 +919,7 @@ def find_source_value_raster(p, gep_base_year):
 def available_source_value_years(p):
     """The price years the source author's directory actually holds, for a clear error message."""
     import glob
-    source_dir = p.get_path(SOURCE_VALUE_RASTER_DIR_REF_PATH)
+    source_dir = p.pollination_value_raster_dir
     years = []
     for path in glob.glob(os.path.join(str(source_dir), 'poll_value_global_*usd.tif')):
         match = re.search(r'poll_value_global_(\d{4})usd\.tif$', os.path.basename(path))

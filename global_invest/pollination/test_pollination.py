@@ -194,7 +194,7 @@ def _region_frame():
 
 def test_collapse_regions_to_countries_sums_a_split_country_once():
     out = pf.collapse_regions_to_countries(_region_frame())
-    assert list(out.columns) == pf.POLLINATION_ATTR_COLS + ['year', 'pollination_gep']
+    assert list(out.columns) == utilities.GEP_COUNTRY_ATTR_COLS + ['year', 'pollination_gep']
     by_country = out.set_index('iso3_r250_label')
     assert len(by_country) == 2
     assert by_country.loc['CHN', 'pollination_gep'] == 60.0     # 40 + 20, not 40 and 20
@@ -438,8 +438,7 @@ def test_the_latest_vintage_wins_when_the_base_year_is_unpublished(tmp_path):
     the older model whenever the base year sits below the newest release.
     """
     class FakeProject:
-        def get_path(self, ref_path, **kwargs):
-            return str(tmp_path)
+        pollination_value_raster_dir = str(tmp_path)
     for year in (2023, 2024):
         (tmp_path / ('poll_value_global_%dusd.tif' % year)).write_bytes(b'x')
     path, year = pf.find_source_value_raster(FakeProject(), 2019)

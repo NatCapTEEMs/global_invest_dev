@@ -1082,6 +1082,14 @@ def write_raster(path, data, meta, nodata=None):
 # directory reference resolved into intermediate/pollination/ rather than into base data.
 
 
+
+# The country attributes every GEP per-country CSV carries, in the order the CSV writes them. One
+# list rather than one per service, because a service that spells them differently produces a
+# table that will not stack with the others.
+GEP_COUNTRY_ATTR_COLS = ['iso3_r250_id', 'iso3_r250_label', 'iso3_r250_name',
+                         'continent', 'region_un', 'region_wb', 'income_grp', 'subregion']
+
+
 def assert_exists(path, hint: str = ""):
     """Fail naming the missing file and what needed it, rather than where the read happened."""
     if not hb.path_exists(path):
