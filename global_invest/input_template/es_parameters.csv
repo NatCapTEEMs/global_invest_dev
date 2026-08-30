@@ -60,7 +60,7 @@ erosion,erosion_sdr_ic_0_param,0.5
 erosion,erosion_sdr_l_max,122.0
 erosion,erosion_sdr_flow_dir_algorithm,D8
 erosion,erosion_sdr_n_workers,-1
-erosion,erosion_sdr_params_source_note,"one calibration for both paths. build_args (the static GEP Section A) hardcoded threshold_flow_accumulation 100, sdr_max 0.5 and ic_0_param 0.8, while the dynamic shock path used 1000, 0.8 and 0.5 -- the last two transposed, which reads as a transcription error rather than a decision. The dynamic values are kept because they are the pair actually in use and the conventional Borselli combination. ⚠ This does NOT move the published erosion number: per the status table the account computes it from the author''s staged usle/avoided rasters, not from a Section A run here, so our SDR settings have never produced it. It does change what a Section A run computes, which is the point of it agreeing with the shock path."
+erosion,erosion_sdr_params_source_note,"one calibration for both the static GEP and the dynamic shock path. ⚠ They used to differ, with sdr_max and ic_0_param transposed between them; these are the dynamic values, the conventional Borselli pair."
 erosion,erosion_analysis_epsg,8857
 erosion,erosion_apply_severe_filter,true
 erosion,erosion_base_year,2019
@@ -68,7 +68,7 @@ erosion,erosion_boundary_source_epsg,
 erosion,erosion_crops_only,true
 erosion,erosion_dem_mask_below_sea_level,true
 erosion,erosion_dem_max_valid_elev_m,9000.0
-erosion,erosion_exclude_iso3,["ATA"]
+erosion,erosion_exclude_iso3,"[""ATA""]"
 erosion,erosion_low_elevation_mean_m,250
 erosion,erosion_map_k_classes,5
 erosion,erosion_min_shock_floor,8e-10
@@ -121,7 +121,7 @@ flood,flood_skip_depth_download,false
 flood,flood_all_touched,false
 flood,flood_apply_service_flow,true
 flood,flood_return_periods,"[10, 20, 50, 100, 200, 500]"
-flood,flood_return_periods_source_note,"⚠⚠ the module constant RETURN_PERIODS is [10, 20, 50, 500] and the deleted set_flood_paths overrode it with all six. Deleting that without moving this here dropped RP100 and RP200 from the damage integral and took EAD from $887.8bn to $653.0bn, a 26 percent fall, with nothing raising -- the run reported ok=250/250. The six are what is on disk under floodplain_depth_v2_nowater/aligned_to_lulc"
+flood,flood_return_periods_source_note,"the six on disk under floodplain_depth_v2_nowater/aligned_to_lulc, which is the reported 2024 hazard set with permanent water removed."
 flood,flood_compute_ead_rasters,false
 flood,flood_damage_depth_mode,interpolated
 flood,flood_lulc_path,
@@ -140,16 +140,16 @@ flood,flood_sda_damage_long_path,
 flood,flood_sda_damage_wide_path,
 flood,flood_amplification_path,
 flood,flood_cn_table_path,
-flood,flood_input_reference_note,"every flood pipeline input is machine-specific and ships blank: base_data carries no global_invest/flood tree, so a reference under it resolves nowhere and would only look like it did. On MSI they are under /projects/standard/jajohns/shared/flood_gep/inputs/ -- country_vector/, lulc/, lulc_to_sda_mapping/, sda/, global_spa_ben/, flood_damage/, protection/, pop/. ⚠ Three of them are not where a tidy layout would put them: the reported run uses floodplain_depth_v2_nowater/aligned_to_lulc rather than floodplain_depth/, global_upstream_spa_ratio.tif is in counterfactual_mosaic/ rather than global_spa_ben/, and the amplification rasters are in counterfactual_mosaic/ while the CN table is in counterfactual/. Fill them in the machine input/ copy, not here."
+flood,flood_input_reference_note,"machine-specific, so these ship blank: base_data carries no global_invest/flood tree. On MSI they are under /projects/standard/jajohns/shared/flood_gep/inputs/. ⚠ Three are not where a tidy layout would put them: the reported depths are floodplain_depth_v2_nowater/, the SPA ratio is in counterfactual_mosaic/, and the CN table is in counterfactual/ while the amplification rasters are in counterfactual_mosaic/."
 flood,flood_amplification_pattern,global_amplification_{scenario}_rp{rp}.tif
-flood,flood_amplification_pattern_source_note,"⚠ the staged layers are named global_amplification_<scenario>_rp<rp>.tif. The pattern said amplification_... which matched none of them, and _open_amp warns and falls back to current depths, which makes GEP zero for that return period. Twelve scenario-by-RP combinations, so the whole GEP would have been zero with nothing but warnings. The exponent variants f0p3 and f0p5 sit beside them; the unsuffixed file is the default exponent."
+flood,flood_amplification_pattern_source_note,the staged files are global_amplification_<scenario>_rp<rp>.tif. The f0p3 and f0p5 variants beside them are alternative depth exponents; the unsuffixed file is the default.
 flood,flood_protection_documented_only,true
 flood,flood_protection_path,
 flood,flood_protection_evidence_path,
 flood,flood_gep_scenarios,
 flood,flood_sda_country_dir,
 flood,flood_valuation_country_dir,
-flood,flood_country_dir_source_note,"blank means each task writes its per-country tree into its own cur_dir, which is the house shape. A machine that already holds an earlier run's tree -- the MSI flood_gep/outputs directory, weeks of Section B -- sets these to it and skips the rebuild, because Section B's outputs are Sections C and D's inputs."
+flood,flood_country_dir_source_note,blank means each task writes its per-country tree into its own cur_dir. A machine holding an earlier run points these at it to reuse Section B rather than rebuild it.
 flood,flood_optional_tables_note,"protection_path and protection_evidence_path are optional companions: blank means the table is not supplied, and the readers branch on None. When an evidence table IS given and has no ISO3 column the run stops, because which countries count as documented decides how much damage is truncated."
 flood,flood_depth_threshold_m,0.1
 flood,flood_depthbin_max,6.0
@@ -178,7 +178,7 @@ flood,flood_write_depthbin,false
 flood,flood_write_service_flow_rasters,true
 flood,flood_divergent_defaults_note,"⚠ apply_service_flow and report_protection_split are TRUE here and FALSE as getattr defaults in configure_valuation. The deleted set_flood_paths set both True, so the run behaviour was True while the code default said otherwise. Deleting it without moving these would have silently turned off the ecosystem attribution that produces ead_attributed_to_spa_usd2019"
 flood,flood_valuation_settings_source_note,"the Section D switches, moved out of configure_valuation on 2026-08-29 where they were getattr defaults in code. Code set before hydration WINS over the CSV -- hydrate_es_parameters skips an attribute that is already set -- so defaults living in code silently shadowed anything put here"
-flood,flood_settings_source_note,"the four settings the module actually reads. run_flood.py used to set 55 p.flood_* attributes; a grep across flood_tasks, flood_functions, flood_utils, flood_initialize and the MSI scripts on 2026-08-29 found only six ever read, and configure_paths builds every path from flood_root_dir regardless. iso3_list blank means every country in the Admin0 layer; iso3_n 0 means all remaining; the MSI array runner overwrites start and n from SLURM_ARRAY_TASK_ID"
+flood,flood_settings_source_note,the settings the module reads. iso3_list all means every country in the boundary layer; iso3_n 0 means all remaining; an MSI array runner overwrites start and n from SLURM_ARRAY_TASK_ID.
 flood,flood_msi_shared_dir,/projects/standard/jajohns/shared/flood_gep
 flood,flood_msi_inputs_dir,/projects/standard/jajohns/shared/flood_gep/inputs
 flood,flood_msi_mosaic_dir,/projects/standard/jajohns/shared/flood_gep/inputs/counterfactual_mosaic
@@ -269,10 +269,10 @@ landslide_mitigation,landslide_elevation_source_note,"elevation in metres, the s
 landslide_mitigation,landslide_lulc_path_template,lulc/esa/lulc_esa_{year}.tif
 landslide_mitigation,landslide_lulc_path_template_source_note,"the ESA land cover per year, formatted with the year. A template rather than a path because the task iterates data_processing_range."
 pollination,pollination_crosswalk_m49_iso3_path,fao/crosswalks/crosswalk_m49_iso3.csv
-pollination,pollination_crosswalk_m49_iso3_source_note,"FAO M49 area codes to ISO3."
+pollination,pollination_crosswalk_m49_iso3_source_note,FAO M49 area codes to ISO3.
 pollination,pollination_fao_classification_path,fao/crosswalks/fao_classification.csv
-pollination,pollination_fao_classification_source_note,"the FAO item classification."
+pollination,pollination_fao_classification_source_note,the FAO item classification.
 pollination,pollination_crosswalk_fao_cropgrids_path,fao/crosswalks/crosswalk_fao_cropgrids.csv
-pollination,pollination_crosswalk_fao_cropgrids_source_note,"FAO items to CropGrids crop names."
+pollination,pollination_crosswalk_fao_cropgrids_source_note,FAO items to CropGrids crop names.
 erosion,erosion_gdp_csv_source_url,https://api.worldbank.org/v2/country/all/indicator/NY.GDP.MKTP.CD?format=json&per_page=20000
 erosion,erosion_gdp_csv_source_note,"World Bank NY.GDP.MKTP.CD, GDP in current US dollars, filtered to 2019. Staged rather than fetched per run because the World Bank revises it, which would move the erosion valuation without recording why."
