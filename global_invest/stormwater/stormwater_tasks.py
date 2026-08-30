@@ -29,10 +29,6 @@ def publish_inputs(p):
 PROJECT_NAME = 'gep_stormwater'
 INVEST_WORKSPACE_DIR_NAME = 'stormwater_invest'
 RETENTION_VOLUME_FILE_NAME = 'retention_volume_urbanstorm_water.tif'
-COUNTRIES_REF_PATH = 'cartographic/ee/ee_r250.gpkg'
-COUNTRIES_ON_GRID_REF_PATH = 'cartographic/ee/ee_r250_3857.gpkg'
-ZONE_IDS_REF_PATH = 'cartographic/ee/ee_r250_id_3857_537m.tif'
-RETENTION_BY_COUNTRY_REF_PATH = 'global_invest/stormwater/retention_m3_by_country.csv'
 ZONE_ID_FIELD = 'iso3_r250_id'
 ZONE_LABEL_FIELD = 'iso3_r250_label'
 ZONE_ID_NDV = 0                 # the id convention (0 = NDV), so 0 is the rasterized background
@@ -127,8 +123,7 @@ def retention_by_country(p):
     is deterministic, the same reason erosion's SDR and routing steps skip.
     """
     publish_inputs(p)
-    p.stormwater_retention_by_country_path = p.get_path(
-        RETENTION_BY_COUNTRY_REF_PATH, possible_dirs=[p.base_data_dir], raise_error_if_fail=False)
+    p.stormwater_retention_by_country_path = p.stormwater_retention_by_country_path
     if not p.run_this:
         return
     if hb.path_exists(p.stormwater_retention_by_country_path):
@@ -143,11 +138,9 @@ def retention_by_country(p):
             'The InVEST retention raster is not at %s. That run happens outside this tree; see '
             'base_data/global_invest/stormwater/run_recipe.md for its configuration.'
             % retention_path)
-    countries_path = p.get_path(COUNTRIES_REF_PATH, possible_dirs=[p.base_data_dir])
-    countries_on_grid_path = p.get_path(COUNTRIES_ON_GRID_REF_PATH,
-                                        possible_dirs=[p.base_data_dir], raise_error_if_fail=False)
-    zone_ids_path = p.get_path(ZONE_IDS_REF_PATH, possible_dirs=[p.base_data_dir],
-                               raise_error_if_fail=False)
+    countries_path = p.stormwater_countries_path
+    countries_on_grid_path = p.stormwater_countries_on_grid_path
+    zone_ids_path = p.stormwater_zone_ids_path
     if not hb.path_exists(countries_on_grid_path):
         write_countries_on_retention_grid(countries_path, countries_on_grid_path)
     if not hb.path_exists(zone_ids_path):

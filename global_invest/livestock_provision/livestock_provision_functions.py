@@ -39,55 +39,6 @@ FAOSTAT_LAST_YEAR = 2022
 # the M49 code, so the name is normalised only to keep the item-level table readable.
 FAOSTAT_TURKIYE_AREA_CODE = 223
 
-# FAOSTAT mixes country rows with regional and thematic aggregates under the same Area column, and
-# an aggregate row would be counted on top of its members. These are the aggregate and
-# no-longer-existing areas the valuation drops. The three China sub-entities are dropped because
-# the file also carries the "China" total, which is what the country correspondence expects.
-FAOSTAT_AGGREGATE_AREAS = [
-    "USSR",
-    "Yugoslav SFR",
-    "World",
-    "Africa",
-    "Eastern Africa",
-    "Middle Africa",
-    "Northern Africa",
-    "Southern Africa",
-    "Western Africa",
-    "Americas",
-    "Northern America",
-    "Central America",
-    "Caribbean",
-    "South America",
-    "Asia",
-    "Central Asia",
-    "Eastern Asia",
-    "Southern Asia",
-    "South-eastern Asia",
-    "Western Asia",
-    "Europe",
-    "Eastern Europe",
-    "Northern Europe",
-    "Southern Europe",
-    "Western Europe",
-    "Oceania",
-    "Australia and New Zealand",
-    "Melanesia",
-    "Micronesia",
-    "Polynesia",
-    "European Union (27)",
-    "Least Developed Countries",
-    "Land Locked Developing Countries",
-    "Low Income Food Deficit Countries",
-    "Small Island Developing States",
-    "Czechoslovakia" "Low Income Food Deficit Countries",
-    "Net Food Importing Developing Countries",
-    "China, Hong Kong SAR",
-    "China, mainland",
-    "China, Macao SAR",
-    "China, Taiwan Province of",
-    "Belgium-Luxembourg",
-]
-
 # FAOSTAT keeps dissolved states under their own M49 codes. Each maps to the successor the
 # country correspondence uses, so their production joins to a country instead of dropping.
 M49_SUCCESSORS = {

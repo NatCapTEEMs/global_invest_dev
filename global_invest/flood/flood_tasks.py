@@ -122,47 +122,6 @@ def _amp_tile(amp_src, shape, transform, crs) -> Optional[np.ndarray]:
 
 
 
-ESA_CODEBOOK = {
-    0: "No Data",
-    10: "Cropland, rainfed",
-    11: "Cropland, rainfed, herbaceous cover",
-    12: "Cropland, rainfed, tree or shrub cover",
-    20: "Cropland, irrigated or post-flooding",
-    30: "Mosaic cropland (>50%) / natural vegetation (<50%)",
-    40: "Mosaic natural vegetation (>50%) / cropland (<50%)",
-    50: "Tree cover, broadleaved, evergreen",
-    60: "Tree cover, broadleaved, deciduous",
-    61: "Tree cover, broadleaved, deciduous, closed",
-    62: "Tree cover, broadleaved, deciduous, open",
-    70: "Tree cover, needleleaved, evergreen",
-    71: "Tree cover, needleleaved, evergreen, closed",
-    72: "Tree cover, needleleaved, evergreen, open",
-    80: "Tree cover, needleleaved, deciduous",
-    81: "Tree cover, needleleaved, deciduous, closed",
-    82: "Tree cover, needleleaved, deciduous, open",
-    90: "Tree cover, mixed leaf type",
-    100: "Mosaic tree and shrub (>50%) / herbaceous cover (<50%)",
-    110: "Mosaic herbaceous cover (>50%) / tree and shrub (<50%)",
-    120: "Shrubland",
-    121: "Evergreen shrubland",
-    122: "Deciduous shrubland",
-    130: "Grassland",
-    140: "Lichens and mosses",
-    150: "Sparse vegetation",
-    151: "Sparse tree",
-    152: "Sparse shrub",
-    153: "Sparse herbaceous",
-    160: "Tree cover, flooded, fresh/brackish water",
-    170: "Tree cover, flooded, saline water",
-    180: "Shrub/herbaceous cover, flooded",
-    190: "Urban areas",
-    200: "Bare areas",
-    201: "Consolidated bare areas",
-    202: "Unconsolidated bare areas",
-    210: "Water bodies",
-    220: "Permanent snow and ice",
-}
-
 
 ESA_TO_SDA = {
     "artif": [190],
@@ -172,14 +131,6 @@ ESA_TO_SDA = {
 
 
 SDA_CODE = {"none": 0, "artif": 1, "crop": 2, "pasture": 3, "roads": 4}
-
-# The countries FLOPROS documents a protection standard for; the rest are inferred from GDP.
-FLOPROS_DOCUMENTED_ISO3 = {
-    "ARG", "AUS", "AUT", "BEL", "BGD", "BLZ", "BRA", "CAN", "CHE", "CHN",
-    "CZE", "DEU", "DNK", "ESP", "GBR", "GHA", "HRV", "HUN", "IDN", "IND",
-    "IRL", "ITA", "JPN", "MDG", "MOZ", "NLD", "NZL", "POL", "ROU", "RUS",
-    "SGP", "SVK", "THA", "TWN", "USA", "VNM", "ZAF",
-}
 
 
 def sda_code_to_type(p):
@@ -204,14 +155,14 @@ def documented_protection_iso3(p):
         p: the ProjectFlow object, for `flood_protection_evidence_path`.
 
     Returns:
-        set: ISO3 codes, from the evidence table when one is supplied, else FLOPROS_DOCUMENTED_ISO3.
+        set: ISO3 codes, from the evidence table when one is supplied, else the documented list.
 
     Raises:
         NameError: if a supplied evidence table has no ISO3 column. Which countries these are
             decides how much damage is truncated, so an unreadable table stops the run.
     """
     if not p.flood_protection_evidence_path:
-        return FLOPROS_DOCUMENTED_ISO3
+        return set(utilities.read_column(p.flood_flopros_documented_iso3_path, 'iso3'))
     evidence = hb.df_read(str(p.flood_protection_evidence_path))
     column = utilities.find_col(evidence, ("iso3", "iso_a3", "adm0_a3"))
     if not column:
@@ -346,7 +297,7 @@ def write_lulc_to_sda_mapping(p) -> str:
     Write the JRC-INCA style LULC -> SDA mapping JSON, then QA it against the
     codes actually present in the LULC raster.
 
-    Everything in ESA_CODEBOOK that is not artif/crop/pasture is written to
+    Everything in the ESA codebook that is not artif/crop/pasture is written to
     'ignore' explicitly, so a reviewer can confirm every code was classified
     on purpose rather than by falling through to 0.
     """
@@ -355,7 +306,8 @@ def write_lulc_to_sda_mapping(p) -> str:
     pasture = list(ESA_TO_SDA.get("pasture", [])) if p.flood_include_pasture else []
 
     assigned = set(built_up) | set(cropland) | set(pasture)
-    ignore = sorted(c for c in ESA_CODEBOOK if c not in assigned and c != 0)
+    esa_codebook = utilities.read_lookup(p.flood_esa_codebook_path, 'esa_id', 'esa_name', int)
+    ignore = sorted(c for c in esa_codebook if c not in assigned and c != 0)
 
     mapping = {
         # REQUIRED by the Section B SDA builder
@@ -465,7 +417,8 @@ def build_global_sda_raster(p) -> str:
 
 def write_sda_legend_csv(p) -> str:
     """Complete ESA code legend: lucode, label, sda_type, sda_code, rule used."""
-    esa_to_type = {k: "none" for k in ESA_CODEBOOK}
+    esa_codebook = utilities.read_lookup(p.flood_esa_codebook_path, 'esa_id', 'esa_name', int)
+    esa_to_type = {k: "none" for k in esa_codebook}
     for k in ESA_TO_SDA.get("artif", []):
         esa_to_type[k] = "artif"
     for k in ESA_TO_SDA.get("crop", []):
@@ -479,11 +432,11 @@ def write_sda_legend_csv(p) -> str:
             f"pasture={ESA_TO_SDA.get('pasture')} (include={p.flood_include_pasture})")
 
     rows = []
-    for lucode in sorted(ESA_CODEBOOK):
+    for lucode in sorted(esa_codebook):
         sda_type = esa_to_type.get(lucode, "none")
         rows.append({
             "lucode": lucode,
-            "label": ESA_CODEBOOK[lucode],
+            "label": esa_codebook[lucode],
             "sda_type": sda_type,
             "sda_code": SDA_CODE[sda_type],
             "notes": rule if sda_type != "none" else "ignored (non-SDA)",

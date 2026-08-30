@@ -1090,6 +1090,24 @@ GEP_COUNTRY_ATTR_COLS = ['iso3_r250_id', 'iso3_r250_label', 'iso3_r250_name',
                          'continent', 'region_un', 'region_wb', 'income_grp', 'subregion']
 
 
+
+def read_column(path, column, cast=str):
+    """One column of a small reference table, as a list.
+
+    The tables these read used to be dictionaries and lists in the modules -- 38 ESA codes, 37
+    FLOPROS countries, 178 FAO crop names. A list of facts in a .py is a list nobody can open in a
+    spreadsheet, diff usefully, or correct without a commit.
+    """
+    return [cast(v) for v in hb.df_read(path)[column].dropna().tolist()]
+
+
+def read_lookup(path, key_column, value_column, key_cast=str, value_cast=str):
+    """A two-column reference table as a dict."""
+    df = hb.df_read(path)
+    return {key_cast(k): value_cast(v)
+            for k, v in zip(df[key_column], df[value_column]) if k == k}
+
+
 def assert_exists(path, hint: str = ""):
     """Fail naming the missing file and what needed it, rather than where the read happened."""
     if not hb.path_exists(path):

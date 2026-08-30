@@ -458,17 +458,18 @@ RESAMPLE_DEM        = Resampling.average
 # ==========================================================
 # 3) Elasticity loader (with SPAM support)
 # ==========================================================
-# SPAM_ALIAS_MAP: uses the corrected map defined ABOVE in this module (exact FAO item names
+# The alias map is passed in, not read from a module constant (exact FAO item names
 # first; the source repo's stem-only aliases never exact-matched the FAO names, so every crop
 # silently took the 0.08 fallback).
 
 
-def get_elasticity_for_crop(crop_key: str, elast_map: dict, fallback: float) -> float:
+def get_elasticity_for_crop(crop_key: str, elast_map: dict, fallback: float,
+                            spam_aliases: dict) -> float:
     crop_key = str(crop_key).strip().lower()
     v = elast_map.get(crop_key, np.nan)
     if np.isfinite(v):
         return float(np.clip(v, 0.0, 1.0))
-    for alias in SPAM_ALIAS_MAP.get(crop_key, []):
+    for alias in spam_aliases.get(crop_key, []):
         v2 = elast_map.get(alias.strip().lower(), np.nan)
         if np.isfinite(v2):
             return float(np.clip(v2, 0.0, 1.0))
@@ -547,41 +548,14 @@ def _filter_crops_only(df: pd.DataFrame) -> pd.DataFrame:
 # Helpers the rest of the module shares: array cleaning, formatting and column picking.
 # ---------------------------------------------------------------------------------------------
 
-SPAM_ALIAS_MAP = {
-    "whea": ["wheat"], "rice": ["rice"], "maiz": ["maize (corn)", "maize", "corn"],
-    "barl": ["barley"], "sorg": ["sorghum"], "mill": ["millet", "small millet"],
-    "pmil": ["millet", "pearl millet"], "pota": ["potatoes", "potato"],
-    "cass": ["cassava, fresh", "cassava"], "soyb": ["soya beans", "soybean", "soy"],
-    "grou": ["groundnut", "peanut"], "cott": ["seed cotton, unginned", "cotton"],
-    "sugc": ["sugar cane", "sugarcane"], "bana": ["bananas", "banana"],
-    "plnt": ["plantains and cooking bananas", "plantain"], "coco": ["cocoa beans", "cocoa"],
-    "coff": ["coffee, green", "arabica coffee", "coffee"], "rcof": ["coffee, green", "robusta coffee"],
-    "teas": ["tea leaves", "tea"], "toba": ["unmanufactured tobacco", "tobacco"],
-    "toma": ["tomatoes", "tomato"],
-    "onio": ["onions and shallots, dry (excluding dehydrated)", "onion"],
-    "vege": ["vegetable", "other vegetables"], "sunf": ["sunflower seed", "sunflower"],
-    "rape": ["rape or colza seed", "rapeseed", "canola"], "sesa": ["sesame seed", "sesame"],
-    "citr": ["oranges", "citrus"], "lent": ["lentils, dry", "lentil"],
-    "bean": ["beans, dry", "bean"], "chic": ["chick peas, dry", "chickpea"],
-    "cowp": ["cow peas, dry", "cowpea"], "pige": ["peas, dry", "pigeon pea"], "yams": ["yams"],
-    "swpo": ["sweet potatoes", "sweet potato"], "sugb": ["sugar beet", "sugarbeet"],
-    "oilp": ["oil palm fruit", "oilpalm", "oil palm"], "cnut": ["coconuts, in shell", "coconut"],
-    "ocer": ["other cereals"], "orts": ["other roots"],
-    "opul": ["other pulses n.e.c.", "other pulses"], "ooil": ["castor oil seeds", "other oil crops"],
-    "ofib": ["agave fibres, raw, n.e.c.", "other fibre crops"],
-    "rubb": ["natural rubber in primary forms", "rubber"],
-    "trof": ["other tropical fruits, n.e.c.", "other tropical fruit"],
-    "temf": ["apples", "temperate fruit"], "rest": ["rest of crops"],
-}
 
-
-def get_erosion_yield_coefficient(crop_key, coef_map, fallback=0.08):
+def get_erosion_yield_coefficient(crop_key, coef_map, fallback, spam_aliases):
     """crop_key -> erosion-to-yield coefficient: direct hit, else SPAM alias, else the flat fallback."""
     k = str(crop_key).strip().lower()
     v = coef_map.get(k, np.nan)
     if np.isfinite(v):
         return float(np.clip(v, 0.0, 1.0))
-    for alias in SPAM_ALIAS_MAP.get(k, []):
+    for alias in spam_aliases.get(k, []):
         v2 = coef_map.get(str(alias).strip().lower(), np.nan)
         if np.isfinite(v2):
             return float(np.clip(v2, 0.0, 1.0))

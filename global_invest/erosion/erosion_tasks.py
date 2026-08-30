@@ -716,7 +716,7 @@ def load_wb_gdp_current_2019(gdp_csv: str) -> pd.DataFrame:
 # ==========================================================
 # 7) CORE: SPAM production aggregation given a PS raster
 # ==========================================================
-def aggregate_country_crop_production(paths, 
+def aggregate_country_crop_production(paths, spam_aliases,
     ps_arr01: np.ndarray,                        # 2D array aligned to USLE grid
     usle_like: xr.DataArray,                     # template for coords/dims
     iso_id_raster: np.ndarray,                   # int32 country ids aligned to grid
@@ -744,7 +744,9 @@ def aggregate_country_crop_production(paths,
             if b < 1 or b > ds_y.count or b > ds_a.count:
                 continue
 
-            elast = ef.get_elasticity_for_crop(crop_key, elast_map, p.erosion_yield_reduction_for_shock)
+            elast = ef.get_elasticity_for_crop(crop_key, elast_map,
+                                               p.erosion_yield_reduction_for_shock,
+                                               spam_aliases)
 
             y_native = rxr.open_rasterio(ds_y.name, masked=True).sel(band=b).squeeze()
             a_native = rxr.open_rasterio(ds_a.name, masked=True).sel(band=b).squeeze()
@@ -987,9 +989,12 @@ def run_biophysical_decomposed(paths):
     })
 
     # ---- Compute country-crop protected production for each component
-    df_cc_onfarm   = aggregate_country_crop_production(paths, ps_onfarm,   usle, iso_id_raster, id2iso, bandmap, elast_map, max_id, "onfarm")
-    df_cc_upstream = aggregate_country_crop_production(paths, ps_upstream, usle, iso_id_raster, id2iso, bandmap, elast_map, max_id, "upstream")
-    df_cc_combined = aggregate_country_crop_production(paths, ps_combined, usle, iso_id_raster, id2iso, bandmap, elast_map, max_id, "combined")
+    spam_aliases = {k: v.split(';') for k, v in
+                    utilities.read_lookup(p.erosion_spam_alias_path,
+                                          'spam_label', 'aliases').items()}
+    df_cc_onfarm   = aggregate_country_crop_production(paths, spam_aliases, ps_onfarm,   usle, iso_id_raster, id2iso, bandmap, elast_map, max_id, "onfarm")
+    df_cc_upstream = aggregate_country_crop_production(paths, spam_aliases, ps_upstream, usle, iso_id_raster, id2iso, bandmap, elast_map, max_id, "upstream")
+    df_cc_combined = aggregate_country_crop_production(paths, spam_aliases, ps_combined, usle, iso_id_raster, id2iso, bandmap, elast_map, max_id, "combined")
 
     # ---- Save per-country-crop (long form; publication transparency)
     df_country_crop_long = pd.concat([df_cc_onfarm, df_cc_upstream, df_cc_combined], ignore_index=True)
@@ -2310,6 +2315,9 @@ def erosion_shock(p):
     erosion_elasticity_csv_path; base scenario via es_shock_base_scenario. Optional: erosion_alpha,
     erosion_method.
     """
+    spam_aliases = {k: v.split(';') for k, v in
+                    utilities.read_lookup(p.erosion_spam_alias_path,
+                                          'spam_label', 'aliases').items()}
     publish_inputs(p)
     # Default into the es_shocks parent dir. Runtime, not build time: p.es_shock_dir is
     # published by that task, which ProjectFlow runs before this one.
@@ -2346,7 +2354,7 @@ def erosion_shock(p):
     def _table_alpha(crop):
         for key in [crop] + list(ef.SPAM_ALIAS_MAP.get(crop, [])):
             if str(key).strip().lower() in coef_map:
-                return ef.get_erosion_yield_coefficient(crop, coef_map, alpha)
+                return ef.get_erosion_yield_coefficient(crop, coef_map, alpha, spam_aliases)
         return _MISS
 
     def alpha_for(crop):
@@ -2402,7 +2410,8 @@ def erosion_shock(p):
         b = int(r[bcol])
         if b < 1 or b > nb:
             continue
-        elast = ef.get_erosion_yield_coefficient(str(r[crcol]).strip().lower(), coef_map, fallback_coef)
+        elast = ef.get_erosion_yield_coefficient(str(r[crcol]).strip().lower(), coef_map,
+                                                 fallback_coef, spam_aliases)
         # Yield averages and area sums: see resample_band_to_match for why the pair is not
         # interchangeable. Byte-identical to the rioxarray path this replaced, and ~11x faster.
         y = resample_band_to_match(yield_stack, b, _ref_path, _resample_dir, 'average')
