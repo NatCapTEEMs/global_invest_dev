@@ -417,6 +417,12 @@ class FaoPriceSettings:
     fao_start_year: int
     fao_end_year: int
     price_years: tuple
+    # Tables the price path needs, read from CSVs beside the service rather than held as
+    # dictionaries in this module: FAO aggregate codes to leave out, countries with no
+    # exchange rate of their own, and IMF country names in the FAO spelling.
+    excluded_item_codes: set
+    fx_inherit_iso3: dict
+    imf_fao_names: dict
 
     # The steps below reach for these as nested attributes, so the flat fields answer to both.
     @property
@@ -471,20 +477,6 @@ class FaoPriceSettings:
 # panel came out empty.
 _PRODUCTION_ELEMENTS_KEEP = {"Yield", "Production"}
 
-_EXCLUDE_ITEM_CODES = {
-    836,    # Natural rubber in primary forms (processed latex)
-    1717,   # Cereals, primary (aggregate)
-    1720,   # Roots and Tubers, Total (aggregate)
-    1723,   # Sugar Crops Primary (aggregate)
-    1726,   # Pulses, Total (aggregate)
-    1729,   # Treenuts, Total (aggregate)
-    1732,   # Oilcrops, Oil Equivalent (derived equivalent)
-    1735,   # Vegetables Primary (aggregate)
-    1738,   # Fruit Primary (aggregate)
-    1804,   # Citrus Fruit, Total (aggregate)
-    1841,   # Oilcrops, Cake Equivalent (derived equivalent)
-    17530,  # Fibre Crops, Fibre Equivalent (derived equivalent)
-}
 
 _PRICE_ELEMENTS_KEEP = [
     "Producer Price (USD/tonne)",
@@ -509,64 +501,7 @@ _QC_BAD_MEDIAN_TIMES_OFF = 3
 
 _QC_BAD_SHARE_OVER_3X = 0.5
 
-_FX_INHERIT_ISO3 = {
-    "COK": "NZL",
-    "PRI": "USA",
-    "REU": "FRA",
-    "KNA": "DMA",
-    "VCT": "DMA",
-    "LCA": "DMA",
-}
 
-_IMF_RECODE = {
-    "Afghanistan, Islamic Republic of": "Afghanistan",
-    "Armenia, Republic of": "Armenia",
-    "Azerbaijan, Republic of": "Azerbaijan",
-    "Bahrain, Kingdom of": "Bahrain",
-    "Belarus, Republic of": "Belarus",
-    "Bolivia": "Bolivia (Plurinational State of)",
-    "Hong Kong Special Administrative Region, People's Republic of China": "China, Hong Kong SAR",
-    "China, People's Republic of": "China, mainland",
-    "Comoros, Union of the": "Comoros",
-    "Congo, Republic of": "Congo",
-    "Côte d'Ivoire": "Ivory Coast",
-    "Croatia, Republic of": "Croatia",
-    "Czech Republic": "Czechia",
-    "Egypt, Arab Republic of": "Egypt",
-    "Equatorial Guinea, Republic of": "Equatorial Guinea",
-    "Eritrea, The State of": "Eritrea",
-    "Estonia, Republic of": "Estonia",
-    "Ethiopia, The Federal Democratic Republic of": "Ethiopia",
-    "Fiji, Republic of": "Fiji",
-    "Gambia, The": "Gambia",
-    "Iran, Islamic Republic of": "Iran (Islamic Republic of)",
-    "Kazakhstan, Republic of": "Kazakhstan",
-    "Kyrgyz Republic": "Kyrgyzstan",
-    "Latvia, Republic of": "Latvia",
-    "Lesotho, Kingdom of": "Lesotho",
-    "Lithuania, Republic of": "Lithuania",
-    "Madagascar, Republic of": "Madagascar",
-    "Mauritania, Islamic Republic of": "Mauritania",
-    "Mozambique, Republic of": "Mozambique",
-    "Netherlands, The": "Netherlands (Kingdom of the)",
-    "North Macedonia, Republic of": "North Macedonia",
-    "Poland, Republic of": "Poland",
-    "Korea, Republic of": "Republic of Korea",
-    "Moldova, Republic of": "Republic of Moldova",
-    "Serbia, Republic of": "Serbia",
-    "Slovak Republic": "Slovakia",
-    "Slovenia, Republic of": "Slovenia",
-    "Tajikistan, Republic of": "Tajikistan",
-    "Timor-Leste, Democratic Republic of": "Timor-Leste",
-    "Türkiye, Republic of": "Turkey",
-    "United Kingdom": "United Kingdom of Great Britain and Northern Ireland",
-    "Tanzania, United Republic of": "United Republic of Tanzania",
-    "United States": "United States of America",
-    "Uzbekistan, Republic of": "Uzbekistan",
-    "Venezuela, República Bolivariana de": "Venezuela (Bolivarian Republic of)",
-    "Vietnam": "Viet Nam",
-    "Yemen, Republic of": "Yemen",
-}
 
 
 def _convert_yield_units(df: pd.DataFrame) -> pd.DataFrame:
@@ -923,43 +858,6 @@ def pixel_area_km2_spherical(lat_deg: np.ndarray, res_deg: float = PIXEL_RES_DEG
 # testable without one.
 # =============================================================================
 
-# US CPI-U annual averages (BLS, all urban consumers). Prices are nominal in the year
-# FAOSTAT reports them, so a target year needs a deflator, and a deflator needs an index.
-CPI_BY_YEAR = {
-    1993: 144.5,
-    1994: 148.2,
-    1995: 152.4,
-    1996: 156.9,
-    1997: 160.5,
-    1998: 163.0,
-    1999: 166.6,
-    2000: 172.2,
-    2001: 177.1,
-    2002: 179.9,
-    2003: 184.0,
-    2004: 188.9,
-    2005: 195.3,
-    2006: 201.6,
-    2007: 207.3,
-    2008: 215.3,
-    2009: 214.5,
-    2010: 218.1,
-    2011: 224.9,
-    2012: 229.6,
-    2013: 232.9,
-    2014: 236.7,
-    2015: 237.0,
-    2016: 240.0,
-    2017: 245.1,
-    2018: 251.1,
-    2019: 255.7,
-    2020: 258.8,
-    2021: 270.9,
-    2022: 292.7,
-    2023: 305.1,
-    2024: 314.9,
-    2025: 321.9,
-}
 
 def price_window_centre_year(price_years):
     """The year the median price is denominated in: the centre of the window it is taken over.
@@ -973,22 +871,23 @@ def price_window_centre_year(price_years):
     return years[len(years) // 2]
 
 
-def usd_deflator(from_year, to_year):
+def usd_deflator(from_year, to_year, cpi_by_year):
     """CPI ratio converting dollars of one year into dollars of another.
 
     Args:
         from_year (int): the year the value is currently denominated in.
         to_year (int): the year wanted.
+        cpi_by_year (dict): year to price index, read from the CPI table by the task layer.
 
     Returns:
         float: multiply a `from_year` dollar amount by this to get `to_year` dollars.
 
     Raises:
-        KeyError: if either year is outside the CPI table, which is deliberate. Silently
-            returning 1.0 for an unknown year would leave the value undeflated and
-            indistinguishable from a correct one.
+        KeyError: if either year is outside the table, which is deliberate. Silently returning
+            1.0 for an unknown year would leave the value undeflated and indistinguishable from
+            a correct one.
     """
-    return CPI_BY_YEAR[int(to_year)] / CPI_BY_YEAR[int(from_year)]
+    return cpi_by_year[int(to_year)] / cpi_by_year[int(from_year)]
 
 
 def crop_pollination_value_density(production_density, price_usd_per_tonne, dependence_ratio):

@@ -256,7 +256,7 @@ def _read_and_filter_fao_production(
         .copy()
     )
     classif["item_code_fao"] = classif["item_code_fao"].astype(int)
-    item_codes = set(classif["item_code_fao"].unique()) - pf._EXCLUDE_ITEM_CODES
+    item_codes = set(classif["item_code_fao"].unique()) - cfg.excluded_item_codes
     logger.info("Valid FAO crop item codes: %d", len(item_codes))
 
     # Year range from config
@@ -456,7 +456,7 @@ def _add_iso3_and_fx(
         )
 
         # 11b) Harmonise IMF country names
-        imf_fx["country"] = pf._recode_country(imf_fx["country"], pf._IMF_RECODE)
+        imf_fx["country"] = pf._recode_country(imf_fx["country"], cfg.imf_fao_names)
 
         # 11c) Map IMF to ISO3
         country_to_iso3 = pp3[["country", "iso3"]].dropna().drop_duplicates()
@@ -479,7 +479,7 @@ def _add_iso3_and_fx(
     # 12b) FX inheritance
     logger.info("=== 12b) FX INHERITANCE ===")
     inherit_rows = []
-    for child, parent in pf._FX_INHERIT_ISO3.items():
+    for child, parent in cfg.fx_inherit_iso3.items():
         parent_frame = fx.loc[fx["iso3"] == parent].copy()
         if parent_frame.empty:
             continue
@@ -863,12 +863,39 @@ def fao_median_prices(p):
         output_dir=str(os.path.dirname(p.fao_median_prices_dir)),
         price_years=tuple(p.pollination_price_years),
         fao_start_year=int(p.pollination_fao_start_year),
-        fao_end_year=int(p.pollination_fao_end_year))
+        fao_end_year=int(p.pollination_fao_end_year),
+        excluded_item_codes=load_excluded_item_codes(p),
+        fx_inherit_iso3=load_fx_inherit_iso3(p),
+        imf_fao_names=load_imf_fao_country_names(p))
     run_fao_production(settings)
     run_fao_prices(settings)
     run_fao_values(settings)
     hb.log('FAO median prices written to %s' % p.fao_median_prices_dir)
     return True
+
+
+
+def load_cpi_by_year(p):
+    """The US CPI-U annual series, year to index, from the table beside the service."""
+    df = hb.df_read(p.pollination_cpi_path)
+    return {int(r.year): float(r.cpi_u) for r in df.itertuples()}
+
+
+def load_excluded_item_codes(p):
+    """The FAO item codes the account leaves out: aggregates and derived equivalents."""
+    return set(hb.df_read(p.pollination_excluded_item_codes_path)['item_code_fao'].astype(int))
+
+
+def load_fx_inherit_iso3(p):
+    """Countries with no exchange rate of their own, and the one whose rate they use."""
+    df = hb.df_read(p.pollination_fx_inherit_path)
+    return {str(r.src_label): str(r.dst_label) for r in df.itertuples()}
+
+
+def load_imf_fao_country_names(p):
+    """IMF country names to the FAO spelling, so the two tables join."""
+    df = hb.df_read(p.pollination_imf_fao_names_path)
+    return {str(r.imf_name): str(r.fao_name) for r in df.itertuples()}
 
 
 def read_raster(path: str) -> Tuple[np.ndarray, Dict[str, Any]]:
@@ -2196,7 +2223,7 @@ def pollination_value_raster(p):
     # Prefer his raster for the GEP base year itself; fall back to the nearest year he publishes
     # and deflate, which is exact because the deflator is a scalar on a density.
     source_path, source_year = pf.find_source_value_raster(p, year)
-    deflator = pf.usd_deflator(source_year, year)
+    deflator = pf.usd_deflator(source_year, year, load_cpi_by_year(p))
     hb.log('Pollination value raster from the source author: %s (%d USD), deflator to %d is %.4f'
            % (os.path.basename(source_path), source_year, year, deflator))
 
@@ -2262,7 +2289,8 @@ def pollination_value_raster_rebuilt(p):
 
     # The deflator is on the PRICE, not on production: the median is taken over a five-year window
     # and is therefore in that window's centre-year dollars.
-    deflator = pf.usd_deflator(pf.price_window_centre_year(p.pollination_price_years), year)
+    deflator = pf.usd_deflator(pf.price_window_centre_year(p.pollination_price_years),
+                               year, load_cpi_by_year(p))
     hb.log('Pricing at %d USD: prices are %d-centred, deflator %.4f'
            % (year, pf.price_window_centre_year(p.pollination_price_years), deflator))
 

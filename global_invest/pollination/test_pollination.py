@@ -361,10 +361,23 @@ def test_coffee_dependence_follows_what_each_country_actually_grows():
 
 def test_the_deflator_refuses_a_year_it_has_no_index_for():
     # Returning 1.0 for an unknown year would leave the value undeflated and looking correct.
-    assert pf.usd_deflator(2020, 2020) == 1.0
-    assert pf.usd_deflator(2020, 2019) == pytest.approx(0.98802, abs=1e-5)
+    cpi = {2019: 255.7, 2020: 258.8}
+    assert pf.usd_deflator(2020, 2020, cpi) == 1.0
+    assert pf.usd_deflator(2020, 2019, cpi) == pytest.approx(0.98802, abs=1e-5)
     with pytest.raises(KeyError):
-        pf.usd_deflator(2020, 1850)
+        pf.usd_deflator(2020, 1850, cpi)
+
+
+def test_the_cpi_table_matches_the_series_the_deflator_used_to_hold():
+    """The CPI series moved from a module dict to a CSV; the values must not have moved with it."""
+    import csv
+    import os
+    here = os.path.dirname(os.path.abspath(__file__))
+    path = os.path.join(here, 'input_template', 'us_cpi_u_annual.csv')
+    with open(path, encoding='utf-8-sig') as f:
+        cpi = {int(r['year']): float(r['cpi_u']) for r in csv.DictReader(f)}
+    assert cpi[2019] == 255.7 and cpi[2020] == 258.8 and cpi[1993] == 144.5
+    assert sorted(cpi) == list(range(1993, 2026))
 
 
 def test_the_upstream_package_is_never_imported():
