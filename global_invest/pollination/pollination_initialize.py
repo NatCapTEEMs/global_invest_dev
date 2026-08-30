@@ -8,6 +8,7 @@ the zonal sum added the densities: that is where the old $18.28bn came from.
 Shock side: consumers (ngfs_pnas, nff_global) call add_pollination_tasks(p) after their SEALS
 stitch task; it dispatches static vs dynamic on p.dynamic_es (mirrors add_terrestrial_carbon_tasks).
 """
+from global_invest import utilities
 from global_invest.pollination import pollination_tasks
 
 
@@ -17,6 +18,8 @@ def build_gep_service_calculation_task_tree(p):
     fao_median_prices is the first step towards building that value raster here rather than
     taking it as given. It downloads FAOSTAT production and producer prices and writes the
     per-crop median price the raster is priced at. skip_existing=1 because it is a download."""
+    p.download_pollination_inputs_task = p.add_task(
+        utilities.download_inputs_task('pollination'), skip_existing=1)
     p.fao_median_prices_task = p.add_task(pollination_tasks.fao_median_prices, skip_existing=1)
     # The yield and production chain: Monfreda 2000 yields carried to the base year by FAO
     # country ratios, then multiplied by CropGrids harvested area. These are what the rebuilt

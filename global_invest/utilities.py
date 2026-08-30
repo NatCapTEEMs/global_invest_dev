@@ -611,9 +611,13 @@ def download_missing_inputs(p, service, log=print):
     with no source at all, are returned by name rather than silently skipped: that list is
     what a collaborator has to send.
 
-    This is a deliberate step, not part of publish_inputs. A task that quietly refetches
-    could swap a file's vintage mid-analysis, and checking every path on every task would
-    cost a run more than it saves.
+    Everything lands in base_data, which is where a shared input belongs and what
+    `run_ngfs_pnas.py` means by "if anything is missing, it will download it": one base_data
+    across projects, so a file fetched for one run is there for the next.
+
+    This is a deliberate step, not part of publish_inputs. Only files that are absent are
+    fetched, so it cannot swap a vintage; what it must not become is a check on every path in
+    every task, which would cost a run more than it saves.
 
     Returns:
         (downloaded, needs_a_person): the paths written, and {input name: reason} for the
@@ -632,11 +636,16 @@ def download_missing_inputs(p, service, log=print):
 
     downloaded, needs_a_person = [], {}
     for _, row in rows.iterrows():
-        attribute = str(row['parameter'])
-        if not attribute.endswith('_path'):
+        attribute, ref_path = str(row['parameter']), row['value']
+        if not attribute.endswith('_path') or pd.isna(ref_path) or not str(ref_path).strip():
             continue
-        path = getattr(p, attribute, None)
-        if path is None or hb.path_exists(path):
+        # The destination comes from the CSV's reference path under base_data, not from p. An
+        # input that resolves nowhere leaves its attribute unset, so reading p would skip exactly
+        # the file that needs fetching -- and get_path, asked not to raise, answers with the
+        # project dir, which puts a shared input somewhere no other project can see it.
+        path = str(ref_path) if os.path.isabs(str(ref_path)) else os.path.join(
+            p.base_data_dir, str(ref_path))
+        if hb.path_exists(path):
             continue
         name = attribute[:-len('_path')]
         if name not in urls:
