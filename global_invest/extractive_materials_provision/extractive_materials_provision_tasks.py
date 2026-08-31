@@ -64,9 +64,12 @@ def gep_calculation(p):
     service_results['gep_by_country_year'] = os.path.join(p.cur_dir, "gep_by_country_year.csv")
     service_results['gep_by_year'] = os.path.join(p.cur_dir, "gep_by_year.csv")
 
-    if hb.path_all_exist(list(service_results.values())):
-        hb.log("All results already exist. Skipping GEP calculation for extractive materials provision.")
+    reason = utilities.reuse_reason(p, 'extractive_materials_provision',
+                                    list(service_results.values()))
+    if reason is None:
+        hb.log('extractive_materials_provision reuses its gep outputs: the signature is unchanged.')
         return
+    hb.log('extractive_materials_provision recomputes its gep, %s' % reason)
     hb.log("Starting GEP calculation for extractive materials provision.")
 
     base_year = int(p.gep_base_year)
@@ -101,6 +104,7 @@ def gep_calculation(p):
         service_results['gep_by_country_base_year'])
     hb.df_write(df_gep_by_year, service_results['gep_by_year'], handle_quotes='all')
     hb.df_write(df_gep_by_year, hb.replace_ext(service_results['gep_by_year'], 'xlsx'), handle_quotes='all')
+    utilities.write_reuse_signature(p, 'extractive_materials_provision', list(service_results.values()))
 
     # Map only: the r264-expanded boundaries, each sub-region carrying its country's value.
     gdf_gep_by_country_base_year = hb.df_merge(p.gdf_countries_simplified, df_gep_by_country_base_year, how='outer', left_on='ee_r264_id', right_on='ee_r264_id')

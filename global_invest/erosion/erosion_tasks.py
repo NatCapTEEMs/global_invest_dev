@@ -2779,13 +2779,15 @@ def prevention_shares(p):
         p.erosion_gep_output_dir, 'integrated_country_gep.csv')
     if not p.run_this:
         return
-    if hb.path_all_exist(list(service_results.values())):
-        hb.log("%s already exists. Skipping prevention-share calculation for erosion."
-               % os.path.basename(service_results['integrated_country_gep']))
+    reason = utilities.reuse_reason(p, 'erosion', list(service_results.values()))
+    if reason is None:
+        hb.log('erosion reuses its prevention-share outputs: the signature is unchanged.')
         return True
+    hb.log('erosion recomputes the prevention shares, %s' % reason)
     hb.create_directories(p.erosion_gep_output_dir)
     paths = erosion_paths(p)
     integrate_and_write(paths)
+    utilities.write_reuse_signature(p, 'erosion', list(service_results.values()))
     return True
 
 

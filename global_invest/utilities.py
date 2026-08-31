@@ -348,6 +348,76 @@ def assert_shock_table_sound(df, requested_scenarios, label, abs_max=SHOCK_ABS_M
     return True
 
 
+def reuse_reason(p, service, outputs, signature_name='run_signature.json'):
+    """Why a task cannot reuse what is on disk, or None when it can.
+
+    An existence check answers "is there an output?" when the question is "was it made from what
+    we are running now?". Four services gate a whole calculation on their final file existing, so
+    a rerun after a fix silently republishes the old answer: flood reported COMPLETED in 2h15m and
+    returned the previous run's figures in every digit.
+
+    The signature is the service's own es_parameters values plus a fingerprint of every input path
+    among them, so any configuration or input change invalidates it without each service listing
+    its dependencies by hand.
+
+    Args:
+        p: the ProjectFlow object, already hydrated.
+        service (str): the es_parameters service name.
+        outputs (list): the files reuse would republish.
+        signature_name (str): the signature filename, written beside the first output.
+
+    Returns:
+        str | None: the reason to recompute, naming what differs, or None to reuse.
+    """
+    missing = [o for o in outputs if not hb.path_exists(o)]
+    if missing:
+        return 'there is no %s to reuse' % os.path.basename(missing[0])
+
+    prefix = service + '_'
+    settings, inputs = {}, {}
+    for name, value in sorted(vars(p).items()):
+        if not name.startswith(prefix) or callable(value):
+            continue
+        if name.endswith('_path') and isinstance(value, str):
+            inputs[name] = file_fingerprint(value)
+        elif isinstance(value, (str, int, float, bool, list, tuple, type(None))):
+            settings[name] = value
+    signature = {'settings': settings, 'inputs': inputs}
+
+    path = os.path.join(os.path.dirname(outputs[0]), signature_name)
+    if not hb.path_exists(path):
+        return ('the outputs carry no signature, so what produced them is unknown; they predate '
+                'this check')
+    try:
+        old = json.loads(open(path, encoding='utf-8').read())
+    except Exception:
+        return 'the signature beside the outputs cannot be read'
+
+    changed = sorted(k for k in set(old.get('settings', {})) | set(settings)
+                     if old.get('settings', {}).get(k) != settings.get(k))
+    moved = sorted(k for k in set(old.get('inputs', {})) | set(inputs)
+                   if old.get('inputs', {}).get(k) != inputs.get(k))
+    if changed or moved:
+        return 'the signature changed in %s' % ', '.join(changed + moved)
+    return None
+
+
+def write_reuse_signature(p, service, outputs, signature_name='run_signature.json'):
+    """Record what produced these outputs, so the next run can tell whether it may reuse them."""
+    prefix = service + '_'
+    settings, inputs = {}, {}
+    for name, value in sorted(vars(p).items()):
+        if not name.startswith(prefix) or callable(value):
+            continue
+        if name.endswith('_path') and isinstance(value, str):
+            inputs[name] = file_fingerprint(value)
+        elif isinstance(value, (str, int, float, bool, list, tuple, type(None))):
+            settings[name] = value
+    hb.write_to_file(json.dumps({'settings': settings, 'inputs': inputs},
+                                indent=2, sort_keys=True, default=str),
+                     os.path.join(os.path.dirname(outputs[0]), signature_name))
+
+
 def add_rows_missing_from_template(local_path, template_path, key_columns, log=print):
     """Append template rows whose key is absent from the project's copy. Local values always win.
 

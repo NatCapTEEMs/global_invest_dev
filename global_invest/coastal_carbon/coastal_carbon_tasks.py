@@ -666,9 +666,11 @@ def gep_calculation(p):
     # valuation (same contract fix as terrestrial_carbon).
 
     final_csv = service_results['gep_by_country_base_year']
-    if hb.path_all_exist(list(service_results.values())):
-        hb.log("gep_calculation: skipped (all registered results exist)")
+    reason = utilities.reuse_reason(p, 'coastal_carbon', list(service_results.values()))
+    if reason is None:
+        hb.log('coastal_carbon reuses its gep outputs: the signature is unchanged.')
         return
+    hb.log('coastal_carbon recomputes its gep, %s' % reason)
 
     r566_csv = service_results['gep_by_country_base_year_r566']
     r566_gpkg = r566_csv.replace('.csv', '.gpkg')
@@ -709,6 +711,7 @@ def gep_calculation(p):
     attributes = [c for c in utilities.GEP_COUNTRY_ATTRIBUTE_COLUMNS if c in df_r250_final.columns]
     df_r250_final = df_r250_final[attributes + ['year', 'coastal_carbon_gep']]
     hb.df_write(df_r250_final, final_csv)
+    utilities.write_reuse_signature(p, 'coastal_carbon', list(service_results.values()))
     hb.log('Total coastal_carbon GEP for base year %d: %s over %d countries'
            % (int(p.gep_base_year), format(df_r250_final['coastal_carbon_gep'].sum(), ',.2f'),
               int(df_r250_final['coastal_carbon_gep'].notna().sum())))
