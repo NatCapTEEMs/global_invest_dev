@@ -104,3 +104,30 @@ def test_writing_changed_content_still_writes(tmp_path):
 
     assert os.stat(path).st_mtime_ns != before
     assert pd.read_csv(path)['a'].tolist() == [9]
+
+
+def test_a_fingerprint_survives_a_touch(tmp_path):
+    """The question reuse asks is whether the bytes changed, not whether the file was written. A
+    restore from backup, an rsync without --times, or a task rewriting its own unchanged output all
+    move the mtime and none of them is a reason to redo the work that read it."""
+    import time
+
+    path = tmp_path / 'raster.bin'
+    path.write_bytes(b'some staged input')
+    before = utilities.file_fingerprint(str(path))
+
+    time.sleep(1.1)
+    os.utime(path, None)                                  # touched, not changed
+    assert utilities.file_fingerprint(str(path)) == before
+
+    path.write_bytes(b'a different input')
+    assert utilities.file_fingerprint(str(path)) != before
+
+
+def test_size_and_mtime_remain_available_for_a_file_too_big_to_read(tmp_path):
+    """Hashing is cheap against a false rebuild, but not against every possible caller, so the old
+    behaviour stays reachable and says so at the call site."""
+    path = tmp_path / 'huge.bin'
+    path.write_bytes(b'x' * 32)
+    cheap = utilities.file_fingerprint(str(path), content=False)
+    assert 'sha256' not in cheap and 'mtime' in cheap

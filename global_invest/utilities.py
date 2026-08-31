@@ -1392,17 +1392,41 @@ def sha256_file(path, chunk_size: int = 1024 * 1024) -> str:
     return h.hexdigest()
 
 
-def file_fingerprint(path) -> dict:
+def file_fingerprint(path, content: bool = True) -> dict:
+    """What a file was, for deciding whether work that read it can be reused.
+
+    Content by default, because size and mtime answer a different question than the one being
+    asked. They say whether the file was touched; reuse turns on whether it changed. A restore
+    from backup, an rsync without --times, a `touch`, or a task rewriting its own unchanged output
+    all move the mtime while the bytes stay put, and every one of those invalidates hours of
+    downstream work that did not need redoing.
+
+    Hashing is cheap against what it prevents: 278 MB of land cover is 0.63 seconds on MSI, about
+    440 MB/s, so flood's whole 1.7 GB input set costs about four seconds where a false rebuild of
+    Section D costs two and a half hours.
+
+    Args:
+        path: the file to fingerprint.
+        content (bool): hash the bytes. False keys on size and mtime alone, for a file so large
+            that reading it is itself the cost being avoided.
+
+    Returns:
+        dict: what the file was, comparable across runs.
+    """
     path = str(path)
     if not hb.path_exists(path):
         return {"path": path, "exists": False}
     st = os.stat(path)
-    return {
+    found = {
         "path": str(path),
         "exists": True,
         "size": st.st_size,
-        "mtime": st.st_mtime,
     }
+    if content and os.path.isfile(path):
+        found["sha256"] = sha256_file(path)
+    else:
+        found["mtime"] = st.st_mtime
+    return found
 
 
 # -----------------------------------------------------------------------------

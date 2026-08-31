@@ -2770,10 +2770,9 @@ def valuation_signature(p):
         'return_periods': sorted(int(rp) for rp in p.flood_return_periods),
         'depth_mode': str(getattr(p, 'flood_damage_depth_mode', '')),
         'depth_dir': str(p.flood_depth_aligned_path),
-        'sda_damage_curves': {
-            **utilities.file_fingerprint(curves),
-            'sha256': utilities.sha256_file(curves) if hb.path_exists(curves) else None,
-        },
+        # file_fingerprint hashes by default now, so the explicit sha256 that used to sit here
+        # is the same call twice. The reason it was here is now the reason it is everywhere.
+        'sda_damage_curves': utilities.file_fingerprint(curves),
         'service_flow': utilities.file_fingerprint(str(p.flood_service_flow_path)),
     }
 
