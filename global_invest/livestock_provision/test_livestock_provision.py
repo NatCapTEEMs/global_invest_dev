@@ -58,7 +58,8 @@ def _raw_faostat_frame():
 
 
 def test_clean_crop_values_selects_items_by_code_or_by_name():
-    out = lp.clean_crop_values(_raw_faostat_frame(), items=[1017, 'Raw milk of cattle'],
+    out = utilities.clean_faostat_values(_raw_faostat_frame(), items=[1017, 'Raw milk of cattle'],
+                                         value_column='livestock_provision_gep',
                              aggregate_areas=['World'])
 
     # Both Aaaland rows selected: one by code 1017, one by name. 'World' is an aggregate area
@@ -75,14 +76,14 @@ def test_clean_crop_values_selects_items_by_code_or_by_name():
 
 
 def test_clean_crop_values_drops_an_item_matched_by_neither_code_nor_name():
-    out = lp.clean_crop_values(_raw_faostat_frame(), items=[1017], aggregate_areas=['World'])
+    out = utilities.clean_faostat_values(_raw_faostat_frame(), items=[1017], value_column='livestock_provision_gep', aggregate_areas=['World'])
     assert out['crop_code'].unique().tolist() == [1017]
 
 
 def test_clean_crop_values_renames_area_223_to_turkey():
     raw = _raw_faostat_frame()
     raw.loc[3, 'Element Code'] = lp.FAOSTAT_GROSS_PRODUCTION_VALUE_ELEMENT
-    out = lp.clean_crop_values(raw, items=[1017], aggregate_areas=['World'])
+    out = utilities.clean_faostat_values(raw, items=[1017], value_column='livestock_provision_gep', aggregate_areas=['World'])
     assert set(out.loc[out['area_code'] == 223, 'country']) == {'Turkey'}
 
 
@@ -113,7 +114,7 @@ def test_merge_crop_with_coefs_applies_the_decade_in_force_and_leaves_uncovered_
     })
     coefs = pd.DataFrame({'FAO': [1, 1], 'year': [1961, 2011], 'rental_rate': [0.30, 0.35]})
 
-    out = lp.merge_crop_with_coefs(values, coefs).set_index(['area_code', 'year'])['livestock_provision_gep']
+    out = utilities.apply_rental_rates(values, coefs, 'livestock_provision_gep').set_index(['area_code', 'year'])['livestock_provision_gep']
     assert np.isnan(out.loc[(1, 1960)])          # before the first decade: no rate in force
     assert out.loc[(1, 1961)] == 30.0            # 100 x 0.30
     assert out.loc[(1, 2015)] == 70.0            # 200 x 0.35, the 2011-2020 decade
@@ -165,13 +166,13 @@ def test_group_crops_then_group_countries_sum_to_the_same_total():
         'year': [2019, 2019, 2019, 2018],
         'livestock_provision_gep': [30.0, 15.0, 40.0, 1.0],
     })
-    by_country = lp.group_crops(item_rows)
+    by_country = utilities.sum_items_to_country_year(item_rows, 'livestock_provision_gep')
     per_country = by_country.set_index(['iso3_r250_id', 'year'])['livestock_provision_gep']
     assert per_country.loc[(10, 2019)] == 45.0        # two items summed
     assert per_country.loc[(20, 2019)] == 40.0
     assert per_country.loc[(10, 2018)] == 1.0
 
-    by_year = lp.group_countries(by_country).set_index('year')['livestock_provision_gep']
+    by_year = utilities.sum_countries_to_year(by_country, 'livestock_provision_gep').set_index('year')['livestock_provision_gep']
     assert by_year.loc[2019] == 85.0
     assert by_year.loc[2018] == 1.0
 

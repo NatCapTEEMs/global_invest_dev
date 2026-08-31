@@ -94,7 +94,7 @@ def gep_calculation(p):
 
     df_gep_by_country_year = df_gep_by_country_year_mineral.copy()
     df_gep_by_country_base_year = df_gep_by_country_year.loc[df_gep_by_country_year['year'] == base_year].copy()
-    df_gep_by_year = emf.group_countries(df_gep_by_country_year)
+    df_gep_by_year = utilities.sum_countries_to_year(df_gep_by_country_year, 'Value')
 
     # Write to CSVs
     hb.df_write(df_gep_by_country_year_mineral, service_results['gep_by_country_year_mineral'])

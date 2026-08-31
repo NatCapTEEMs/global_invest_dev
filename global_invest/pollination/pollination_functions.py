@@ -221,22 +221,6 @@ def collapse_regions_to_countries(df_regions):
     return df_countries[utilities.GEP_COUNTRY_ATTR_COLS + ['year', 'pollination_gep']]
 
 
-def expand_country_values_to_regions(df_regions, df_gep_by_country):
-    """Each r264 region carrying its COUNTRY's value, for the map only.
-
-    The sub-region rows repeat the national value rather than splitting it, so this table is
-    never summed. It exists because the choropleth draws r264 polygons.
-
-    Args:
-        df_regions (pd.DataFrame): the zonal summary, one row per r264 region.
-        df_gep_by_country (pd.DataFrame): the collapsed per-country table.
-
-    Returns:
-        pd.DataFrame: df_regions with pollination_gep attached.
-    """
-    return utilities.expand_country_values_to_regions(
-        df_regions, df_gep_by_country, 'pollination_gep')
-
 
 # =============================================================================
 # Driver over the crop_benefits raster chain. Nothing below here is arithmetic
@@ -429,7 +413,6 @@ class FaoPriceSettings:
     qc_bad_share_over_3x: float
 
 
-
 # ---------------------------------------------------------------------------------------------
 # The FAO price path, the parts that hold no file handling. These build the per-crop median
 # producer prices the pollination value raster is priced at.
@@ -448,7 +431,6 @@ _PRICE_ELEMENTS_KEEP = [
     "Producer Price (LCU/tonne)",
     "Producer Price Index (2014-2016 = 100)",
 ]
-
 
 
 
@@ -864,7 +846,6 @@ def crop_pollination_value_density(production_density, price_usd_per_tonne, depe
     production = np.where(production_density < 0, np.nan, production_density)
     crop_value_density = production * float(price_usd_per_tonne)
     return crop_value_density * np.asarray(dependence_ratio, dtype='float64'), crop_value_density
-
 
 
 

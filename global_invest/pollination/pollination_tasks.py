@@ -2087,7 +2087,7 @@ def gep_calculation(p):
 
     # 2. Map only: r264-expanded, each sub-region carries its country's value, never summed
     #    (carbon template; the repo-wide map convention is the open flag-3 decision).
-    df_regions = pf.expand_country_values_to_regions(df_q264, df_gep)
+    df_regions = utilities.expand_country_values_to_regions(df_q264, df_gep, 'pollination_gep')
     gdf = hb.df_merge(p.gdf_countries_simplified, df_regions, how='outer',
                       left_on='ee_r264_id', right_on='ee_r264_id')
     gdf.to_file(service_results['gep_by_country_base_year'].replace('.csv', '.gpkg'), driver='GPKG')

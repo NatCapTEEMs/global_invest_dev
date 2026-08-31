@@ -270,7 +270,3 @@ def collapse_regions_to_countries(df_regions, df_price, price_column):
                                   'terrestrial_carbon_gep']]
 
 
-def expand_country_values_to_regions(df_regions, df_gep_by_country):
-    """Each r264 region carrying its COUNTRY's GEP, for the map only. Never sum the result."""
-    return utilities.expand_country_values_to_regions(
-        df_regions, df_gep_by_country, 'terrestrial_carbon_gep')

@@ -205,7 +205,8 @@ def test_collapse_regions_to_countries_sums_a_split_country_once():
 
 def test_expand_country_values_to_regions_repeats_the_national_value_per_sub_region():
     df_regions = _region_frame()
-    out = pf.expand_country_values_to_regions(df_regions, pf.collapse_regions_to_countries(df_regions))
+    out = utilities.expand_country_values_to_regions(
+        df_regions, pf.collapse_regions_to_countries(df_regions), 'pollination_gep')
     assert len(out) == 3
     assert out.set_index('ee_r264_id')['pollination_gep'].loc[[1, 2]].tolist() == [60.0, 60.0]
     # The per-region raster totals are kept beside the national value, not overwritten by it.

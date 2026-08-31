@@ -212,7 +212,8 @@ def gep_calculation(p):
 
     # Map only: r264-expanded, each sub-region carries its country's value, never summed.
     gdf = hb.df_merge(p.gdf_countries_simplified,
-                      tcf.expand_country_values_to_regions(df_regions, df_gep),
+                      utilities.expand_country_values_to_regions(
+                          df_regions, df_gep, 'terrestrial_carbon_gep'),
                       how='outer', left_on='ee_r264_id', right_on='ee_r264_id')
     gdf.to_file(service_results['gep_by_country_base_year'].replace('.csv', '.gpkg'), driver='GPKG')
 

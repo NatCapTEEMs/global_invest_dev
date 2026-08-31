@@ -35,26 +35,6 @@ FAOSTAT_TURKIYE_AREA_CODE = 223
 CROP_ID_COLUMNS = ['area_code', 'area_code_M49', 'country', 'crop_code', 'crop']
 
 
-def clean_crop_values(df_raw, items, aggregate_areas):
-    """FAOSTAT gross production value, one row per country-crop-year. See
-    utilities.clean_faostat_values; this names the value column for the account."""
-    return utilities.clean_faostat_values(df_raw, items, 'crop_provision_gep', aggregate_areas)
-
-
-
-def merge_crop_with_coefs(df_crop_value, df_crop_coefs):
-    """Production value attributed to land, country by country."""
-    return utilities.apply_rental_rates(df_crop_value, df_crop_coefs, 'crop_provision_gep')
-
-
-def group_crops(df):
-    """Crop rows summed to one row per country and year."""
-    return utilities.sum_items_to_country_year(df, 'crop_provision_gep')
-
-
-def group_countries(df):
-    """Country-year rows summed to one global row per year."""
-    return utilities.sum_countries_to_year(df, 'crop_provision_gep')
 
 
 

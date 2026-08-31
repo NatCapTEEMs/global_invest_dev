@@ -15,8 +15,8 @@ def read_crop_values(path, items, aggregate_areas):
 
     The file ships Latin-1 encoded, so it is read as such rather than as UTF-8.
     """
-    return crop_provision_functions.clean_crop_values(
-        pd.read_csv(path, encoding='ISO-8859-1'), items, aggregate_areas)
+    return utilities.clean_faostat_values(
+        pd.read_csv(path, encoding='ISO-8859-1'), items, 'crop_provision_gep', aggregate_areas)
 
 
 def read_crop_coefs(path):
@@ -77,14 +77,16 @@ def gep_calculation(p):
         utilities.read_column(p.faostat_aggregate_areas_path, 'area_fao'))
     df_crop_coefs = read_crop_coefs(p.cwon_crop_coefficients_path)
 
-    df_gep_by_country_year_crop = crop_provision_functions.merge_crop_with_coefs(df_crop_value, df_crop_coefs)
+    df_gep_by_country_year_crop = utilities.apply_rental_rates(
+        df_crop_value, df_crop_coefs, 'crop_provision_gep')
     df_gep_by_country_year_crop = utilities.normalize_m49_codes(df_gep_by_country_year_crop)
     df_gep_by_country_year_crop = crop_provision_functions.attach_countries_in_usd(
         df_gep_by_country_year_crop, p.df_countries)
 
-    df_gep_by_country_year = crop_provision_functions.group_crops(df_gep_by_country_year_crop)
+    df_gep_by_country_year = utilities.sum_items_to_country_year(
+        df_gep_by_country_year_crop, 'crop_provision_gep')
 
-    df_gep_by_year = crop_provision_functions.group_countries(df_gep_by_country_year)
+    df_gep_by_year = utilities.sum_countries_to_year(df_gep_by_country_year, 'crop_provision_gep')
 
     base_year = int(p.gep_base_year)
     df_gep_by_country_base_year = df_gep_by_country_year.loc[
