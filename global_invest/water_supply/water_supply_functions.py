@@ -216,11 +216,33 @@ def water_use_components_from_chain(gep_by_country_year_df, countries_df):
     all-sector sum, keyed to r250 by exact country-name match (iso3_r250_name, then
     name_long). Unmatched calculation countries keep an empty iso3 so a name drift is visible
     instead of silently dropped."""
-    latest = (gep_by_country_year_df.sort_values('year')
-              .groupby('country', as_index=False).last())
+    # One row, one year. `groupby.last()` returns the last NON-NULL value per column
+    # independently, not the last row, so a country reporting only municipal water in 2015 took
+    # its industrial and agricultural values from 2010 and the whole row was stamped 2015.
+    # Slovakia is the clean example: agriculture from 2015, industry and municipal from 2010,
+    # summed as if one year. No country's published figure matched any single year of its own
+    # chain, and the all-sector total sat between 2010's $26.9T and 2015's $14.9T because it was
+    # neither. The docstring already said "the latest survey year", which is what this now does.
+    #
+    # The row kept is the year reporting the most sectors, ties going to the later year. Latest-
+    # year-outright would throw away a complete 2010 for a 2015 carrying one sector; complete-
+    # years-only would drop a country like Norway, which reports no agricultural water use in any
+    # year. Both of those trade a true year for a worse number, and this trades neither.
     sector_cols = ['gep_water_agricultural', 'gep_water_industrial', 'gep_water_municipal']
+    sectors_present = gep_by_country_year_df[sector_cols].notna().sum(axis=1)
+    ordered = (gep_by_country_year_df.assign(_sectors=sectors_present)
+               .sort_values(['_sectors', 'year']))
+    latest = ordered.groupby('country', as_index=False).tail(1).drop(columns='_sectors')
     latest['water_use_agriculture_gep'] = latest['gep_water_agricultural']
     latest['water_use_all_sector_gep'] = latest[sector_cols].sum(axis=1, min_count=1)
+    # The two the account reports, matching the authors' split of 2026-08-31: irrigation, and
+    # domestic covering industrial, commercial and residential. Published as their own columns
+    # because the table used to carry agriculture and the total, so domestic existed only as a
+    # subtraction -- and only worked because there happen to be three sectors and one of them was
+    # published. A reader wanting industry apart from residential could not have got it at all.
+    latest['water_use_irrigation_gep'] = latest['gep_water_agricultural']
+    latest['water_use_domestic_gep'] = latest[
+        ['gep_water_industrial', 'gep_water_municipal']].sum(axis=1, min_count=1)
 
     by_name = countries_df.drop_duplicates('iso3_r250_name').set_index('iso3_r250_name')['iso3_r250_label']
     by_long = (countries_df.drop_duplicates('name_long').set_index('name_long')['iso3_r250_label']
@@ -236,7 +258,8 @@ def water_use_components_from_chain(gep_by_country_year_df, countries_df):
     latest = latest.merge(countries_df[['iso3_r250_label', 'iso3_r250_id']].drop_duplicates('iso3_r250_label'),
                           on='iso3_r250_label', how='left')
     return one_row_per_country(latest[['country', 'iso3_r250_id', 'iso3_r250_label', 'year',
-                                       'water_use_agriculture_gep', 'water_use_all_sector_gep']])
+                                       'water_use_agriculture_gep', 'water_use_irrigation_gep',
+                                       'water_use_domestic_gep', 'water_use_all_sector_gep']])
 
 
 # The AQUASTAT export names some countries twice, once in full and once short ("Russian
@@ -245,7 +268,8 @@ def water_use_components_from_chain(gep_by_country_year_df, countries_df):
 # the country gets two rows and is counted twice in every total. Korea and Russia did exactly
 # that, inflating the reported hydropower total by 1.89bn USD, which stayed invisible because
 # the deck quoted the reference file's total rather than the module's own.
-WATER_USE_VALUE_COLUMNS = ('water_use_agriculture_gep', 'water_use_all_sector_gep')
+WATER_USE_VALUE_COLUMNS = ('water_use_agriculture_gep', 'water_use_irrigation_gep',
+                           'water_use_domestic_gep', 'water_use_all_sector_gep')
 
 
 def one_row_per_country(df_components):

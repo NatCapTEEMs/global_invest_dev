@@ -63,6 +63,7 @@ def gep_calculation(p):
     df_gep['water_supply_gep'] = df_gep['hydropower_gep']
     utilities.write_gep_by_country(
         p, df_gep[attr_cols + ['year', 'hydropower_gep', 'hydropower_gep_reference_variant',
+                               'water_use_irrigation_gep', 'water_use_domestic_gep',
                                'water_use_agriculture_gep', 'water_use_all_sector_gep',
                                'water_supply_gep']],
         service_results['gep_by_country_base_year'])
