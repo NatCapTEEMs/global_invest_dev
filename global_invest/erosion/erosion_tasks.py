@@ -30,14 +30,12 @@ import os
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib as mpl
-from matplotlib.patches import Patch
 import sys
 import time
 import json
 import logging
 import warnings
 from datetime import datetime
-import numpy as np
 import geopandas as gpd
 import rasterio
 import rasterio.features
@@ -50,7 +48,6 @@ import pandas as pd
 import hazelbean as hb
 
 from global_invest import utilities
-from global_invest.erosion import erosion_functions
 from global_invest.erosion import erosion_functions as ef
 
 # 8 crop sectors whose productivity depends on erosion control (sediment retention).
@@ -77,19 +74,12 @@ CROPLAND_SEALS7_CLASS = 2
 # methods read a
 # per-crop coefficient from elasticity_crops_fao_revised.csv (see alpha_for in erosion_shock) and
 # falls back here only when neither the crop nor its sector has a value.
-EROSION_ALPHA = 0.08
 # The SES-11 threshold policy and analysis frame (SES-11 = the erosion author's run-series tag;
 # the 11 is the 11 t/ha/yr severe threshold, a standard tolerable-soil-loss benchmark -- the
 # expansion of 'SES' is the author's naming, to confirm at submission): METHOD CONSTANTS defining
 # the published science
 # (provisional, the erosion author's to bless) -- in code so a change costs a reviewed commit, not
 # an input/-copy edit. getattr hooks below allow a deliberate consumer override.
-SES11_SEVERE_THRESHOLD_T_HA = 11.0
-SES11_THRESHOLD_LOW_T_HA = 2.0
-SES11_SMALL_COUNTRY_AREA_KM2 = 50_000
-SES11_LOW_ELEVATION_MEAN_M = 250
-EROSION_ANALYSIS_EPSG = 8857          # Equal Earth: area-true math for the exposure shares
-EROSION_YIELD_COEFFICIENT_FALLBACK = 0.08   # the SAME erosion->yield bridge as EROSION_ALPHA
 
 
 # ---------------------------------------------------------------------------
@@ -102,7 +92,7 @@ EROSION_YIELD_COEFFICIENT_FALLBACK = 0.08   # the SAME erosion->yield bridge as 
 
 
 # =============================================================================
-# 5) MAIN RUN
+# SDR RUN
 # =============================================================================
 def run_invest_sdr(paths):
     _setup_sdr_environment()
@@ -115,35 +105,35 @@ def run_invest_sdr(paths):
 
     dem_wkt = _dem_wkt(paths.input.dem)
 
-    print("[prep] Sanitizing MERGED watersheds for SDR report/zonal stats …")
+    hb.log("[prep] Sanitizing MERGED watersheds for SDR report/zonal stats …")
     ws_sanitized = sanitize_watersheds_for_report(
         watersheds_in=paths.input.watersheds,
         watersheds_out=paths.output.watersheds_sanitized,
         target_wkt=dem_wkt,
-        layer=ef.WATERSHEDS_SAN_LAYER,
+        layer=p.erosion_watersheds_sanitized_layer,
     )
-    print("[prep] ✅ Watersheds sanitized:", ws_sanitized)
+    hb.log("[prep] Watersheds sanitized:", ws_sanitized)
 
-    args = ef.build_args(ws_sanitized)
+    args = ef.build_args(p, ws_sanitized)
 
-    print("\n" + "=" * 78)
-    print("[run] Starting InVEST SDR …")
-    print("[run] workspace_dir :", args["workspace_dir"])
-    print("[run] results_suffix:", args["results_suffix"])
-    print("[run] flow_dir_algorithm:", args["flow_dir_algorithm"])
-    print("[run] threshold_flow_accumulation:", args["threshold_flow_accumulation"])
-    print("[run] params: k_param=%.3f, sdr_max=%.3f, ic_0_param=%.3f, l_max=%.3f"
+    hb.log("\n" + "=" * 78)
+    hb.log("[run] Starting InVEST SDR …")
+    hb.log("[run] workspace_dir :", args["workspace_dir"])
+    hb.log("[run] results_suffix:", args["results_suffix"])
+    hb.log("[run] flow_dir_algorithm:", args["flow_dir_algorithm"])
+    hb.log("[run] threshold_flow_accumulation:", args["threshold_flow_accumulation"])
+    hb.log("[run] params: k_param=%.3f, sdr_max=%.3f, ic_0_param=%.3f, l_max=%.3f"
           % (args["k_param"], args["sdr_max"], args["ic_0_param"], args["l_max"]))
-    print("[run] n_workers:", args.get("n_workers", "(not set)"))
-    print("=" * 78 + "\n")
+    hb.log("[run] n_workers:", args.get("n_workers", "(not set)"))
+    hb.log("=" * 78 + "\n")
 
     import natcap.invest.sdr.sdr
     file_registry = natcap.invest.sdr.sdr.execute(args)
 
-    print("\n[done] ✅ InVEST SDR finished.")
-    print("[done] Results in:", args["workspace_dir"])
-    print("[done] MERGED watersheds used (raw):", paths.input.watersheds)
-    print("[done] Sanitized watersheds used   :", ws_sanitized)
+    hb.log("\n[done] InVEST SDR finished.")
+    hb.log("[done] Results in:", args["workspace_dir"])
+    hb.log("[done] MERGED watersheds used (raw):", paths.input.watersheds)
+    hb.log("[done] Sanitized watersheds used   :", ws_sanitized)
     return args, file_registry
 
 
@@ -153,7 +143,7 @@ def compute_country_mean_elevation(
     iso_lut: pd.DataFrame,
     elev_path: str | None
 ) -> dict[int, float]:
-    if elev_path is None or not os.path.exists(elev_path):
+    if elev_path is None or not hb.path_exists(elev_path):
         warnings.warn("No DEM provided — elevation rule will be skipped.")
         return {}
 
@@ -169,10 +159,10 @@ def compute_country_mean_elevation(
         vals[vals == float(nodata)] = np.nan
     vals[~np.isfinite(vals)] = np.nan
 
-    if ef.DEM_MASK_BELOW_SEA_LEVEL:
+    if p.erosion_dem_mask_below_sea_level:
         vals[vals < 0.0] = np.nan
-    if ef.DEM_MAX_VALID_ELEV_M is not None and np.isfinite(ef.DEM_MAX_VALID_ELEV_M):
-        vals[vals > float(ef.DEM_MAX_VALID_ELEV_M)] = np.nan
+    if p.erosion_dem_max_valid_elev_m is not None and np.isfinite(p.erosion_dem_max_valid_elev_m):
+        vals[vals > float(p.erosion_dem_max_valid_elev_m)] = np.nan
 
     m = np.isfinite(vals) & (ids > 0)
     max_id = int(iso_lut["iso_id"].max())
@@ -205,11 +195,11 @@ def compute_country_gep_from_country_crop(
     Reads the crop gross production value and GDP tables, then hands the frames to
     `erosion_functions`, which holds the arithmetic.
     """
-    df_shock = erosion_functions.country_erosion_shock(df_country_crop_component, ef.MIN_SHOCK_FLOOR)
+    df_shock = ef.country_erosion_shock(df_country_crop_component, p.erosion_min_shock_floor)
     df_crop_gpv = load_fao_gpv_iso3_const2019_with_fallback(
         paths, fao_iso3_csv, prices_full_csv, base_year=base_year)
     df_gdp = load_wb_gdp_current_2019(gdp_current_2019_csv)
-    return erosion_functions.country_gep(df_shock, df_crop_gpv, df_gdp, component)
+    return ef.country_gep(df_shock, df_crop_gpv, df_gdp, component)
 
 
 def read_erosion_dependency(ero_path):
@@ -283,7 +273,7 @@ def repair_watersheds(src_path, out_path):
         gdf.loc[invalid, 'geometry'] = gdf.loc[invalid, 'geometry'].make_valid()
         gdf = gdf[gdf.geometry.notna() & ~gdf.geometry.is_empty]
     gdf.to_file(out_path, driver='GPKG')
-    print('  erosion watersheds: repaired %d of %d invalid geometries -> %s'
+    hb.log('  erosion watersheds: repaired %d of %d invalid geometries -> %s'
           % (int(invalid.sum()), len(gdf), out_path))
     return out_path
 
@@ -341,29 +331,8 @@ def open_raster_1band(path: str) -> xr.DataArray:
     return rxr.open_rasterio(path, masked=True).squeeze()
 
 
-def _write_csv(df: pd.DataFrame, path: str):
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    df.to_csv(path, index=False)
-
-
-def savefig(path: str, dpi: int = 300, **kwargs):
-    """Write the current figure, tightly cropped, and close it.
-
-    The call below is plt.savefig, not this function. Without the prefix it recurses, and the
-    recursion is invisible because the inner call passes bbox_inches, which a two-argument
-    signature does not take: the TypeError arrives before the RecursionError, and reads like a
-    matplotlib version problem rather than a name that resolves to the wrong thing.
-
-    Two of the twenty call sites pass bbox_inches themselves, so anything extra is forwarded and
-    the caller's value wins over the default.
-    """
-    plt.tight_layout()
-    plt.savefig(path, dpi=dpi, **{'bbox_inches': 'tight', **kwargs})
-    plt.close()
-
-
 def plot_raster_global(tif_path: str, title: str, out_png: str, downsample_factor: int = 6):
-    ef.assert_exists(tif_path)
+    utilities.assert_exists(tif_path)
     da = rxr.open_rasterio(tif_path, masked=True).squeeze()
 
     if downsample_factor and downsample_factor > 1:
@@ -382,106 +351,9 @@ def plot_raster_global(tif_path: str, title: str, out_png: str, downsample_facto
     cbar = fig.colorbar(im, ax=ax, fraction=0.03, pad=0.02)
     cbar.set_label("Share (0–1)", fontsize=12)
     cbar.ax.tick_params(labelsize=10)
-    savefig(out_png, dpi=300)
+    utilities.savefig(out_png, dpi=300)
 
 
-def plot_publication_choropleth_categorical(
-    world_joined: gpd.GeoDataFrame,
-    value_col: str,
-    title: str,
-    out_png: str,
-    legend_title: str,
-    scheme: str = "fisher_jenks",
-    k: int = 5,
-    value_unit: str = "raw",
-    label_format: str = "usd_millions",
-    legend_loc: str = "lower left",
-):
-    gdf = world_joined.copy()
-
-    if "iso3" in gdf.columns:
-        gdf = gdf[~gdf["iso3"].isin(ef.EXCLUDE_ISO3)].copy()
-
-    gdf = gdf[gdf.geometry.notna()].copy()
-
-    if value_col not in gdf.columns:
-        warnings.warn(f"Column not found for map: {value_col}")
-        fig, ax = plt.subplots(figsize=(14, 7))
-        ax.set_axis_off()
-        ax.set_title(f"{title}\n[missing column: {value_col}]", fontsize=16, pad=14)
-        savefig(out_png, dpi=300)
-        return
-
-    if value_unit == "usd_millions":
-        gdf["_plot_value"] = pd.to_numeric(gdf[value_col], errors="coerce") / ef.USD_TO_MILLIONS
-    else:
-        gdf["_plot_value"] = pd.to_numeric(gdf[value_col], errors="coerce")
-
-    try:
-        gdf = gdf.to_crs(ef.ROBINSON_CRS)
-    except Exception as e:
-        warnings.warn(f"CRS transform failed ({e}). Plotting in native CRS.")
-
-    minx, miny, maxx, maxy = gdf.total_bounds
-    class_ids, edges = ef.compute_classification(gdf["_plot_value"], scheme=scheme, k=k)
-
-    valid_codes = pd.Series(class_ids).dropna()
-    if valid_codes.empty:
-        warnings.warn(f"No valid data for map: {value_col}")
-        fig, ax = plt.subplots(figsize=(14, 7))
-        ax.set_axis_off()
-        ax.set_title(title, fontsize=16, pad=14)
-        savefig(out_png, dpi=300)
-        return
-
-    n_classes = int(valid_codes.max()) + 1
-    labels = ef.build_interval_labels(edges[:n_classes + 1], label_format=label_format)
-
-    gdf["_class_id"] = pd.Series(class_ids, index=gdf.index)
-    gdf["_class_label"] = pd.Categorical(
-        [labels[int(x)] if np.isfinite(x) and int(x) < len(labels) else np.nan for x in gdf["_class_id"]],
-        categories=labels,
-        ordered=True,
-    )
-
-    cmap = mpl.cm.get_cmap(mpl.rcParams["image.cmap"], n_classes)
-    color_list = [mpl.colors.to_hex(cmap(i)) for i in range(n_classes)]
-
-    fig, ax = plt.subplots(figsize=(14, 7))
-    ax.set_axis_off()
-
-    gdf.plot(
-        column="_class_label",
-        ax=ax,
-        cmap=mpl.colors.ListedColormap(color_list),
-        legend=False,
-        linewidth=0.35,
-        edgecolor="white",
-        missing_kwds={"color": "lightgrey", "edgecolor": "white"},
-    )
-
-    ax.set_xlim(minx, maxx)
-    ax.set_ylim(miny, maxy)
-    ax.set_title(title, fontsize=16, pad=14)
-
-    handles = [Patch(facecolor=color_list[i], edgecolor="none", label=labels[i]) for i in range(n_classes)]
-    handles.append(Patch(facecolor="lightgrey", edgecolor="none", label="No data"))
-
-    leg = ax.legend(
-        handles=handles,
-        title=legend_title,
-        loc=legend_loc,
-        frameon=True,
-        fontsize=10,
-        title_fontsize=11,
-        borderpad=0.8,
-        labelspacing=0.5,
-        handlelength=1.6,
-        handletextpad=0.6,
-    )
-    leg.get_frame().set_alpha(0.95)
-
-    savefig(out_png, dpi=300)
 
 
 def _setup_sdr_environment():
@@ -490,7 +362,6 @@ def _setup_sdr_environment():
     config, GDAL error behaviour). In the source repo this ran at module import."""
     import natcap.invest.utils
     ef._set_proj_gdal_env()
-    ef._print_env_banner()
     gdal.UseExceptions()
     handler = logging.StreamHandler(sys.stdout)
     formatter = logging.Formatter(fmt=natcap.invest.utils.LOG_FMT, datefmt="%m/%d/%Y %H:%M:%S ")
@@ -522,7 +393,7 @@ def sanitize_watersheds_for_report(
     - Reproject to DEM CRS (clean WKT) to avoid CRS parse failures.
     - Attempt to fix invalid geometries via buffer(0) (common in global vectors).
     """
-    if not os.path.exists(watersheds_in):
+    if not hb.path_exists(watersheds_in):
         raise FileNotFoundError(f"Missing watersheds: {watersheds_in}")
 
     gdf = gpd.read_file(watersheds_in)
@@ -546,7 +417,7 @@ def sanitize_watersheds_for_report(
     gdf_out["ws_id"] = range(1, len(gdf_out) + 1)
 
     # Write a fresh GPKG
-    if os.path.exists(watersheds_out):
+    if hb.path_exists(watersheds_out):
         os.remove(watersheds_out)
 
     gdf_out.to_file(watersheds_out, layer=layer, driver="GPKG")
@@ -612,16 +483,16 @@ def accumulate_upstream_prevention_share(dem_path, avoided_path, potential_path,
     routing.flow_accumulation_d8((flow_direction, 1), accumulated_potential,
                                  weight_raster_path_band=(potential_weight, 1))
 
-    share = erosion_functions.upstream_prevention_share(
+    share = ef.upstream_prevention_share(
         hb.as_array(accumulated_avoided), hb.as_array(accumulated_potential))
     pgp.numpy_array_to_raster(share, -9999.0, pixel_size, origin, wkt, output_path)
     return output_path
 
 
 def load_elasticity_map(elasticity_csv: str, fallback_value: float) -> tuple[dict, pd.DataFrame]:
-    ef.assert_exists(elasticity_csv, "Provide elasticity CSV in inputs/.")
+    utilities.assert_exists(elasticity_csv, "Provide elasticity CSV in inputs/.")
     df = pd.read_csv(elasticity_csv, encoding="utf-8-sig")
-    df = ef._normcols(df)
+    df = utilities.normalize_columns(df)
 
     crop_col = None
     for cand in ["crop", "monfreda_crop", "item", "item_name"]:
@@ -653,14 +524,14 @@ def load_elasticity_map(elasticity_csv: str, fallback_value: float) -> tuple[dic
 # 4) Countries utilities
 # ==============================
 def load_countries_iso3_alpha(paths, in_crs: rioCRS):
-    ef.assert_exists(paths.input.country_boundary, "Provide boundary with ISO3 column.")
+    utilities.assert_exists(paths.input.country_boundary, "Provide boundary with ISO3 column.")
     gdf = gpd.read_file(str(paths.input.country_boundary))
     gdf = gdf[gdf.geometry.notnull()].copy()
 
     if gdf.crs is None:
-        if ef.BOUNDARY_SOURCE_EPSG is not None:
-            gdf = gdf.set_crs(ef.BOUNDARY_SOURCE_EPSG)
-            warnings.warn(f"Boundary had no CRS; set to EPSG:{ef.BOUNDARY_SOURCE_EPSG}.")
+        if p.erosion_boundary_source_epsg is not None:
+            gdf = gdf.set_crs(p.erosion_boundary_source_epsg)
+            warnings.warn(f"Boundary had no CRS; set to EPSG:{p.erosion_boundary_source_epsg}.")
         else:
             minx, miny, maxx, maxy = gdf.total_bounds
             looks_like_wgs84 = (-180.01 <= minx <= 180.01 and -180.01 <= maxx <= 180.01 and
@@ -671,11 +542,17 @@ def load_countries_iso3_alpha(paths, in_crs: rioCRS):
             else:
                 raise ValueError(
                     "Boundary file has no CRS and does not look like lon/lat. "
-                    "Set ef.BOUNDARY_SOURCE_EPSG to the file’s source CRS."
+                    "Set p.erosion_boundary_source_epsg to the file’s source CRS."
                 )
 
     iso_col = None
-    for cand in ["iso3", "ISO3", "iso_a3", "adm0_a3", "ADM0_A3", "iso3_r250_label"]:
+    # The devstack's own label comes first. A boundary file may carry Natural Earth's columns
+    # beside it, and those disagree: in ee_r264_correspondence South Sudan is SSD under
+    # iso3_r250_label and SDS under adm0_a3, sov_a3 and su_a3. Preferring adm0_a3 gave the country
+    # a code the FAO tables do not use, so its crop GPV came back empty and its GEP was zero while
+    # the author's run values it at $3.7M. Only ee_r264_correspondence carries both, so ee_r250
+    # never showed it.
+    for cand in ["iso3_r250_label", "iso3", "ISO3", "iso_a3", "adm0_a3", "ADM0_A3"]:
         if cand in gdf.columns:
             iso_col = cand
             break
@@ -711,15 +588,15 @@ def rasterize_iso3(gdf: gpd.GeoDataFrame, like_da: xr.DataArray):
         transform=like_da.rio.transform(),
         fill=0,
         dtype="int32",
-        all_touched=ef.RASTERIZE_ALL_TOUCHED,
+        all_touched=p.erosion_rasterize_all_touched,
     )
     return arr, lut
 
 
 def load_fao_prices_full(path: str) -> pd.DataFrame:
-    ef.assert_exists(path, "Provide prices CSV for GPV fallback.")
+    utilities.assert_exists(path, "Provide prices CSV for GPV fallback.")
     df = pd.read_csv(path, encoding="utf-8-sig")
-    df = ef._normcols(df)
+    df = utilities.normalize_columns(df)
 
     if "quantity_tons" not in df.columns and "crop_quantity_fao" in df.columns:
         df = df.rename(columns={"crop_quantity_fao": "quantity_tons"})
@@ -743,9 +620,9 @@ def load_fao_gpv_iso3_const2019_with_fallback(paths,
     prices_full_csv: str,
     base_year: int = 2019
 ) -> pd.DataFrame:
-    ef.assert_exists(fao_csv_iso3, "Provide iso3-based FAO file (faostat_gpv_2019_iso3.csv).")
+    utilities.assert_exists(fao_csv_iso3, "Provide iso3-based FAO file (faostat_gpv_2019_iso3.csv).")
     base = pd.read_csv(fao_csv_iso3, encoding="utf-8-sig")
-    base = ef._normcols(base)
+    base = utilities.normalize_columns(base)
 
     needed = {"iso3", "year", "unit", "value", "element"}
     miss = needed - set(base.columns)
@@ -756,7 +633,7 @@ def load_fao_gpv_iso3_const2019_with_fallback(paths,
     el_ok = base["element"].astype(str).str.lower().str.contains("gross production value")
     usd_ok = base["unit"].astype(str).str.lower().str.contains("1000") & base["unit"].astype(str).str.upper().str.contains("USD")
     base = base[el_ok & usd_ok].copy()
-    if ef.CROPS_ONLY:
+    if p.erosion_crops_only:
         base = ef._filter_crops_only(base)
 
     base["iso3"] = base["iso3"].astype(str).str.upper()
@@ -796,7 +673,7 @@ def load_fao_gpv_iso3_const2019_with_fallback(paths,
 
     # extra diagnostic (publication transparency)
     out_diag = out.merge(gpv_fb, on="iso3", how="left")
-    out_diag.to_csv(os.path.join(paths.output.directory, "gpv_fallback_diagnostic.csv"), index=False)
+    out_diag.to_csv(paths.output.gpv_fallback_diagnostic, index=False)
 
     return out[["iso3","crop_gpv_const2019_2019"]]
 
@@ -810,13 +687,13 @@ def _write_csv(df: pd.DataFrame, path: str):
 
 
 def load_wb_gdp_current_2019(gdp_csv: str) -> pd.DataFrame:
-    if not os.path.exists(gdp_csv):
+    if not hb.path_exists(gdp_csv):
         raise NameError(
             'erosion has no World Bank GDP table at %s. es_parameters carries the path and its '
             'source url, so the shared download task stages it into base data. Fetching it here '
             'per run would make the valuation depend on the day it ran, since the World Bank '
             'revises NY.GDP.MKTP.CD.' % gdp_csv)
-    df = ef._normcols(pd.read_csv(gdp_csv, encoding="utf-8-sig"))
+    df = utilities.normalize_columns(pd.read_csv(gdp_csv, encoding="utf-8-sig"))
     if "iso3" not in df.columns:
         raise ValueError("GDP CSV must contain column 'iso3'.")
     df["iso3"] = df["iso3"].astype(str).str.upper()
@@ -838,7 +715,7 @@ def load_wb_gdp_current_2019(gdp_csv: str) -> pd.DataFrame:
 # ==========================================================
 # 7) CORE: SPAM production aggregation given a PS raster
 # ==========================================================
-def aggregate_country_crop_production(paths, 
+def aggregate_country_crop_production(paths, spam_aliases,
     ps_arr01: np.ndarray,                        # 2D array aligned to USLE grid
     usle_like: xr.DataArray,                     # template for coords/dims
     iso_id_raster: np.ndarray,                   # int32 country ids aligned to grid
@@ -866,7 +743,9 @@ def aggregate_country_crop_production(paths,
             if b < 1 or b > ds_y.count or b > ds_a.count:
                 continue
 
-            elast = ef.get_elasticity_for_crop(crop_key, elast_map, ef.YIELD_REDUCTION_FOR_SHOCK)
+            elast = ef.get_elasticity_for_crop(crop_key, elast_map,
+                                               p.erosion_yield_reduction_for_shock,
+                                               spam_aliases)
 
             y_native = rxr.open_rasterio(ds_y.name, masked=True).sel(band=b).squeeze()
             a_native = rxr.open_rasterio(ds_a.name, masked=True).sel(band=b).squeeze()
@@ -916,16 +795,16 @@ def aggregate_country_crop_production(paths,
 # ==========================================================
 def run_biophysical_decomposed(paths):
     # ---- Required inputs
-    ef.assert_exists(paths.input.usle,  "Expected USLE raster.")
-    ef.assert_exists(paths.input.avoided_erosion, "Expected avoided_erosion raster.")
-    ef.assert_exists(paths.output.upstream_prevention_share,   "Expected upstream_prevention_share.tif from upstream workflow.")
-    ef.assert_exists(paths.input.yield_stack, "Missing SPAM yield stack.")
-    ef.assert_exists(paths.input.area_stack,  "Missing SPAM harvested area stack.")
-    ef.assert_exists(paths.input.bandmap, "Missing SPAM band map CSV.")
-    ef.assert_exists(paths.input.elasticity, "Missing elasticity table.")
-    ef.assert_exists(paths.input.country_boundary, "Missing country boundary GPKG.")
+    utilities.assert_exists(paths.input.usle,  "Expected USLE raster.")
+    utilities.assert_exists(paths.input.avoided_erosion, "Expected avoided_erosion raster.")
+    utilities.assert_exists(paths.output.upstream_prevention_share,   "Expected upstream_prevention_share.tif from upstream workflow.")
+    utilities.assert_exists(paths.input.yield_stack, "Missing SPAM yield stack.")
+    utilities.assert_exists(paths.input.area_stack,  "Missing SPAM harvested area stack.")
+    utilities.assert_exists(paths.input.bandmap, "Missing SPAM band map CSV.")
+    utilities.assert_exists(paths.input.elasticity, "Missing elasticity table.")
+    utilities.assert_exists(paths.input.country_boundary, "Missing country boundary GPKG.")
 
-    analysis_crs = rioCRS.from_epsg(ef.ANALYSIS_EPSG)
+    analysis_crs = rioCRS.from_epsg(p.erosion_analysis_epsg)
 
     # ---- Load native erosion layers
     usle_native = open_raster_1band(paths.input.usle)
@@ -960,48 +839,49 @@ def run_biophysical_decomposed(paths):
     # ---- Threshold policy (optional DEM)
     mean_elev_by_id = compute_country_mean_elevation(
         usle, iso_id_raster, iso_lut,
-        paths.input.dem if (paths.input.dem and os.path.exists(paths.input.dem)) else None
+        paths.input.dem if (paths.input.dem and hb.path_exists(paths.input.dem)) else None
     )
 
     # A country's area is the sum of the sub-regions the boundary file splits it into, not any
-    # one of them. The boundary file is r264, which splits 13 countries out into territories, so
-    # taking a sub-region's area let China and India qualify as small on the strength of an
-    # island: they were being given the low soil-loss tolerance, which counts far more of their
-    # cropland as severely eroding. Seven countries changed on this: AUS, CHN, FRA, IND, NOR,
-    # NZL, SRB.
+    # one of them. r264 splits six countries out into territories -- CHN and IND into six rows
+    # each, FRA, GBR, PAK and TUR into two -- so deciding on a single sub-region's area could let
+    # a country qualify as small on the strength of an island and take the low soil-loss
+    # tolerance, which enlarges the domain the severity threshold defines. Measured on that file,
+    # the countries whose small/large status can turn on this are CHN, FRA, GBR, IND and TUR.
+    # r250, which the run now reads, carries one row per country, so it cannot arise there at all.
     df_country_area = (gdf_countries[["ISO3", "area_km2"]].rename(columns={"ISO3": "iso3"})
                        .groupby("iso3", as_index=False)["area_km2"].sum(min_count=1))
-    df_threshold = erosion_functions.country_threshold_policy(
+    df_threshold = ef.country_threshold_policy(
         iso_lut.rename(columns={"ISO3": "iso3"})
                .merge(df_country_area, on="iso3", how="left")
                .assign(mean_elevation_m=lambda d: [mean_elev_by_id.get(int(i), np.nan)
                                                    for i in d["iso_id"]]),
-        ef.THRESH_HIGH, ef.THRESH_LOW, ef.SMALL_COUNTRY_AREA_KM2, ef.LOW_ELEVATION_MEAN_M)
+        p.erosion_threshold_high_t_ha_yr, p.erosion_threshold_low_t_ha_yr, p.erosion_small_country_area_km2, p.erosion_low_elevation_mean_m)
     if df_threshold["iso3"].duplicated().any():
         raise ValueError("the threshold policy has more than one row for a country, so the "
                          "per-country threshold raster would depend on row order.")
 
-    threshold_by_id = np.full(max_id + 1, ef.THRESH_HIGH, dtype="float32")
+    threshold_by_id = np.full(max_id + 1, p.erosion_threshold_high_t_ha_yr, dtype="float32")
     id_by_iso = dict(zip(iso_lut["ISO3"], iso_lut["iso_id"].astype(int)))
     for iso3, threshold in zip(df_threshold["iso3"], df_threshold["threshold_t_ha_yr"]):
         threshold_by_id[id_by_iso[iso3]] = threshold
     threshold_map = threshold_by_id[iso_id_raster.astype("int32")]
 
-    severe = (usle.values > threshold_map) if ef.APPLY_SEVERE_FILTER else np.ones_like(usle.values, dtype=bool)
+    severe = (usle.values > threshold_map) if p.erosion_apply_severe_filter else np.ones_like(usle.values, dtype=bool)
 
     df_threshold.insert(1, "country_name", [name_by_iso.get(i, i) for i in df_threshold["iso3"]])
-    df_threshold.rename(columns={"iso3": "ISO3"}).to_csv(os.path.join(paths.output.directory, "threshold_policy.csv"), index=False)
+    df_threshold.rename(columns={"iso3": "ISO3"}).to_csv(paths.output.threshold_policy, index=False)
 
     # ---- Bandmap + elasticity
     bandmap = hb.df_read(str(paths.input.bandmap))
-    bandmap = ef._normcols(bandmap)
+    bandmap = utilities.normalize_columns(bandmap)
     if "band" not in bandmap.columns or "crop" not in bandmap.columns:
         raise ValueError("paths.input.bandmap must have columns: 'band', 'crop'.")
     bandmap["crop"] = bandmap["crop"].astype(str).str.strip()
     bandmap["band"] = pd.to_numeric(bandmap["band"], errors="coerce").astype("Int64")
 
-    elast_map, elast_audit = load_elasticity_map(paths.input.elasticity, fallback_value=ef.YIELD_REDUCTION_FOR_SHOCK)
-    elast_audit.to_csv(os.path.join(paths.output.directory, "elasticity_audit.csv"), index=False)
+    elast_map, elast_audit = load_elasticity_map(paths.input.elasticity, fallback_value=p.erosion_yield_reduction_for_shock)
+    elast_audit.to_csv(paths.output.elasticity_audit, index=False)
 
     # ---- Cropland mask built from SPAM area (union across bands) + area conservation audit
     cropland_mask = None
@@ -1032,20 +912,20 @@ def run_biophysical_decomposed(paths):
             band_mask = (ha_tgt > 0)
             cropland_mask = band_mask if cropland_mask is None else (cropland_mask | band_mask)
 
-    pd.DataFrame(area_conservation_rows).to_csv(os.path.join(paths.output.directory, "area_conservation_audit.csv"), index=False)
+    pd.DataFrame(area_conservation_rows).to_csv(paths.output.area_conservation_audit, index=False)
 
     cm = cropland_mask.values.astype(bool)
 
     # ---- Prevention shares, on cropland where soil loss is severe (see erosion_functions)
-    ps_onfarm = erosion_functions.restrict_to_valued_pixels(
-        erosion_functions.onfarm_prevention_share(avo.values, usle.values), cm, severe).astype("float32")
-    ps_upstream = erosion_functions.restrict_to_valued_pixels(ups_vals, cm, severe).astype("float32")
-    ps_combined = erosion_functions.combined_prevention_share(ps_onfarm, ps_upstream).astype("float32")
+    ps_onfarm = ef.restrict_to_valued_pixels(
+        ef.onfarm_prevention_share(avo.values, usle.values), cm, severe).astype("float32")
+    ps_upstream = ef.restrict_to_valued_pixels(ups_vals, cm, severe).astype("float32")
+    ps_combined = ef.combined_prevention_share(ps_onfarm, ps_upstream).astype("float32")
 
     # ---- Save PS rasters for transparency
-    ef._write_share(os.path.join(paths.output.directory, "ps_onfarm_cropland_severe.tif"), usle, ps_onfarm)
-    ef._write_share(os.path.join(paths.output.directory, "ps_upstream_cropland_severe.tif"), usle, ps_upstream)
-    ef._write_share(os.path.join(paths.output.directory, "ps_combined_union_cropland_severe.tif"), usle, ps_combined)
+    ef._write_share(paths.output.prevention_share_onfarm, usle, ps_onfarm)
+    ef._write_share(paths.output.prevention_share_upstream, usle, ps_upstream)
+    ef._write_share(paths.output.prevention_share_combined, usle, ps_combined)
 
     # ---- Country PS diagnostics (means on cropland&severe)
     diag_mask = cm & severe & (iso_id_raster > 0)
@@ -1070,9 +950,9 @@ def run_biophysical_decomposed(paths):
     df_diag = pd.DataFrame(diag_rows)
 
     # Optional: include upstream LULC attribution shares as country means (diagnostics only)
-    if ef.USE_UPSLOPE_LULC_ATTRIBUTION_DIAGNOSTICS:
+    if p.erosion_use_upslope_lulc_diagnostics:
         def _load_attr(p, nm: str) -> np.ndarray | None:
-            if not os.path.exists(p):
+            if not hb.path_exists(p):
                 warnings.warn(f"[ATTR] Missing {nm}: {p}")
                 return None
             da0 = open_raster_1band(p)
@@ -1092,7 +972,7 @@ def run_biophysical_decomposed(paths):
             mean_attr = ef._bincount_weighted_mean(ids_1d, arr[diag_mask], max_id)
             df_diag[f"mean_{nm}_cropland_severe"] = [float(mean_attr[i]) for i in range(1, max_id + 1) if id2iso.get(i)]
 
-    df_diag.to_csv(os.path.join(paths.output.directory, "country_ps_diagnostics.csv"), index=False)
+    df_diag.to_csv(paths.output.country_ps_diagnostics, index=False)
 
     # ---- Soil retained on cropland (tons): AE rate * pixel area, cropland mask (independent of decomposition)
     px_ha = ef.pixel_area_hectares(usle)
@@ -1108,13 +988,16 @@ def run_biophysical_decomposed(paths):
     })
 
     # ---- Compute country-crop protected production for each component
-    df_cc_onfarm   = aggregate_country_crop_production(paths, ps_onfarm,   usle, iso_id_raster, id2iso, bandmap, elast_map, max_id, "onfarm")
-    df_cc_upstream = aggregate_country_crop_production(paths, ps_upstream, usle, iso_id_raster, id2iso, bandmap, elast_map, max_id, "upstream")
-    df_cc_combined = aggregate_country_crop_production(paths, ps_combined, usle, iso_id_raster, id2iso, bandmap, elast_map, max_id, "combined")
+    spam_aliases = {k: v.split(';') for k, v in
+                    utilities.read_lookup(p.erosion_spam_alias_path,
+                                          'spam_label', 'aliases').items()}
+    df_cc_onfarm   = aggregate_country_crop_production(paths, spam_aliases, ps_onfarm,   usle, iso_id_raster, id2iso, bandmap, elast_map, max_id, "onfarm")
+    df_cc_upstream = aggregate_country_crop_production(paths, spam_aliases, ps_upstream, usle, iso_id_raster, id2iso, bandmap, elast_map, max_id, "upstream")
+    df_cc_combined = aggregate_country_crop_production(paths, spam_aliases, ps_combined, usle, iso_id_raster, id2iso, bandmap, elast_map, max_id, "combined")
 
     # ---- Save per-country-crop (long form; publication transparency)
     df_country_crop_long = pd.concat([df_cc_onfarm, df_cc_upstream, df_cc_combined], ignore_index=True)
-    df_country_crop_long.to_csv(os.path.join(paths.output.directory, "country_crop_protected_production_long.csv"), index=False)
+    df_country_crop_long.to_csv(paths.output.country_crop_protected_production_long, index=False)
 
     # Optional: also write 3 separate files (handy for reviewers)
     df_cc_onfarm.to_csv(os.path.join(paths.output.directory, "country_crop_protected_production_onfarm.csv"), index=False)
@@ -1155,13 +1038,13 @@ def integrate_and_write(paths):
 
     # ---- Compute valuation per component
     df_gep_onfarm = compute_country_gep_from_country_crop(
-        paths, dcc["onfarm"], paths.input.fao_gpv, paths.input.fao_prices, ef.BASE_YEAR_FOR_CONSTANT, paths.input.gdp, "onfarm"
+        paths, dcc["onfarm"], paths.input.fao_gpv, paths.input.fao_prices, p.erosion_base_year, paths.input.gdp, "onfarm"
     )
     df_gep_upstream = compute_country_gep_from_country_crop(
-        paths, dcc["upstream"], paths.input.fao_gpv, paths.input.fao_prices, ef.BASE_YEAR_FOR_CONSTANT, paths.input.gdp, "upstream"
+        paths, dcc["upstream"], paths.input.fao_gpv, paths.input.fao_prices, p.erosion_base_year, paths.input.gdp, "upstream"
     )
     df_gep_combined = compute_country_gep_from_country_crop(
-        paths, dcc["combined"], paths.input.fao_gpv, paths.input.fao_prices, ef.BASE_YEAR_FOR_CONSTANT, paths.input.gdp, "combined"
+        paths, dcc["combined"], paths.input.fao_gpv, paths.input.fao_prices, p.erosion_base_year, paths.input.gdp, "combined"
     )
 
     # ---- Pivot to wide (one row per country) for integrated_country_gep.csv
@@ -1212,23 +1095,23 @@ def integrate_and_write(paths):
     # keep everything else after
     out = out[out_cols_front + [c for c in out.columns if c not in out_cols_front]]
     out = out.sort_values(["country_name","iso3"], na_position="last")
-    out.to_csv(os.path.join(paths.output.directory, "integrated_country_gep.csv"), index=False)
+    out.to_csv(paths.output.integrated_country_gep, index=False)
 
     # ---- Also write a “long” valuation table (nice for figures/tables)
     df_gep_long = pd.concat([df_gep_onfarm, df_gep_upstream, df_gep_combined], ignore_index=True)
-    df_gep_long.to_csv(os.path.join(paths.output.directory, "country_gep_decomposition_long.csv"), index=False)
+    df_gep_long.to_csv(paths.output.country_gep_decomposition_long, index=False)
 
     # ---- Manifest + run metadata
     manifest = {
         "timestamp_utc": datetime.utcnow().isoformat(),
-        "scenario_name": ef.SCENARIO_NAME,
-        "run_tag": ef.RUN_TAG,
-        "analysis_epsg": ef.ANALYSIS_EPSG,
-        "apply_severe_filter": ef.APPLY_SEVERE_FILTER,
-        "threshold_high_t_ha_yr": ef.THRESH_HIGH,
-        "threshold_low_t_ha_yr": ef.THRESH_LOW,
-        "small_country_area_km2": ef.SMALL_COUNTRY_AREA_KM2,
-        "low_elevation_mean_m": ef.LOW_ELEVATION_MEAN_M,
+        "scenario_name": p.erosion_scenario_name,
+        "run_tag": p.erosion_run_tag,
+        "analysis_epsg": p.erosion_analysis_epsg,
+        "apply_severe_filter": p.erosion_apply_severe_filter,
+        "threshold_high_t_ha_yr": p.erosion_threshold_high_t_ha_yr,
+        "threshold_low_t_ha_yr": p.erosion_threshold_low_t_ha_yr,
+        "small_country_area_km2": p.erosion_small_country_area_km2,
+        "low_elevation_mean_m": p.erosion_low_elevation_mean_m,
         "definitions": {
             "PS_onfarm": "AE/(AE+USLE) on cropland pixels (and severe if enabled); else 0",
             "UPS": "upstream_prevention_share evaluated at pixel j (and restricted to cropland & severe); else 0",
@@ -1249,36 +1132,38 @@ def integrate_and_write(paths):
             "worldbank_gdp_csv": str(paths.input.gdp),
         },
         "outputs": {
-            "integrated_country_gep": str(os.path.join(paths.output.directory, "integrated_country_gep.csv")),
-            "country_crop_protected_production_long": str(os.path.join(paths.output.directory, "country_crop_protected_production_long.csv")),
-            "country_gep_decomposition_long": str(os.path.join(paths.output.directory, "country_gep_decomposition_long.csv")),
-            "country_ps_diagnostics": str(os.path.join(paths.output.directory, "country_ps_diagnostics.csv")),
-            "ps_onfarm_raster": str(os.path.join(paths.output.directory, "ps_onfarm_cropland_severe.tif")),
-            "ps_upstream_raster": str(os.path.join(paths.output.directory, "ps_upstream_cropland_severe.tif")),
-            "ps_combined_raster": str(os.path.join(paths.output.directory, "ps_combined_union_cropland_severe.tif")),
-            "area_conservation_audit": str(os.path.join(paths.output.directory, "area_conservation_audit.csv")),
-            "elasticity_audit": str(os.path.join(paths.output.directory, "elasticity_audit.csv")),
-            "gpv_fallback_diagnostic": str(os.path.join(paths.output.directory, "gpv_fallback_diagnostic.csv")),
-            "threshold_policy": str(os.path.join(paths.output.directory, "threshold_policy.csv")),
+            "integrated_country_gep": str(paths.output.integrated_country_gep),
+            "country_crop_protected_production_long": str(paths.output.country_crop_protected_production_long),
+            "country_gep_decomposition_long": str(paths.output.country_gep_decomposition_long),
+            "country_ps_diagnostics": str(paths.output.country_ps_diagnostics),
+            "ps_onfarm_raster": str(paths.output.prevention_share_onfarm),
+            "ps_upstream_raster": str(paths.output.prevention_share_upstream),
+            "ps_combined_raster": str(paths.output.prevention_share_combined),
+            "area_conservation_audit": str(paths.output.area_conservation_audit),
+            "elasticity_audit": str(paths.output.elasticity_audit),
+            "gpv_fallback_diagnostic": str(paths.output.gpv_fallback_diagnostic),
+            "threshold_policy": str(paths.output.threshold_policy),
         },
         "elapsed_minutes": round((time.time() - t0) / 60.0, 3),
     }
-    with open(os.path.join(paths.output.directory, "manifest.json"), "w", encoding="utf-8") as f:
+    with open(paths.output.manifest, "w", encoding="utf-8") as f:
         json.dump(manifest, f, indent=2)
 
-    (os.path.join(paths.output.directory, "run_metadata.txt")).write_text(f"""
+    run_metadata_text = f"""
 ============================================================
-Integrated GEP run — {ef.SCENARIO_NAME}
-Run tag: {ef.RUN_TAG}
+Integrated GEP run — {p.erosion_scenario_name}
+Run tag: {p.erosion_run_tag}
 Timestamp (UTC): {manifest['timestamp_utc']}
 
 Analysis CRS:
-  EPSG:{ef.ANALYSIS_EPSG} (equal-area required for tons conversions)
+  EPSG:{p.erosion_analysis_epsg} (equal-area required for tons conversions)
+  GDAL {gdal.__version__}, and the settings that decide how a stored CRS is read:
+{chr(10).join(f'    {name}: {value}' for name, value in ef.proj_gdal_env().items())}
 
 Severe erosion definition:
   severe = usle_actual > threshold(country)
-  Default threshold (high): {ef.THRESH_HIGH:g} t/ha/yr
-  Low threshold (special cases): {ef.THRESH_LOW:g} t/ha/yr
+  Default threshold (high): {p.erosion_threshold_high_t_ha_yr:g} t/ha/yr
+  Low threshold (special cases): {p.erosion_threshold_low_t_ha_yr:g} t/ha/yr
 
 Decomposed prevention shares (cropland-only; severe-only if enabled):
   On-farm:   PS_onfarm = AE/(AE+USLE)
@@ -1286,7 +1171,7 @@ Decomposed prevention shares (cropland-only; severe-only if enabled):
   Combined:  PS_combined = 1 - (1-PS_onfarm)(1-PS_upstream)
 
 Primary output:
-  {os.path.join(paths.output.directory, 'integrated_country_gep.csv')}
+  {paths.output.integrated_country_gep}
 
 Also written:
   - country_crop_protected_production_long.csv (country-crop, all components)
@@ -1298,22 +1183,24 @@ Also written:
 
 Elapsed minutes: {manifest['elapsed_minutes']}
 ============================================================
-""", encoding="utf-8")
+"""
+    with open(os.path.join(paths.output.directory, "run_metadata.txt"), "w", encoding="utf-8") as f:
+        f.write(run_metadata_text)
 
-    print(f"✅ Done → {os.path.join(paths.output.directory, 'integrated_country_gep.csv')}")
-    print(f"Manifest → {os.path.join(paths.output.directory, 'manifest.json')}")
+    hb.log(f"Done → {paths.output.integrated_country_gep}")
+    hb.log(f"Manifest → {paths.output.manifest}")
 
 
 def load_world_boundary_prefer_run(paths) -> gpd.GeoDataFrame:
-    if os.path.exists(paths.input.country_boundary):
+    if hb.path_exists(paths.input.country_boundary):
         world = gpd.read_file(paths.input.country_boundary)
-        iso_col = ef.pick_iso3_column(world)
+        iso_col = utilities.pick_iso3_column(world)
         if not iso_col:
             raise ValueError(f"Boundary has no ISO3 column. Columns: {list(world.columns)}")
         world = world.rename(columns={iso_col: "iso3"})
         world["iso3"] = world["iso3"].astype(str).str.upper()
 
-        name_col = ef.pick_name_column(world)
+        name_col = utilities.pick_name_column(world)
         if name_col and name_col != "country_name":
             world = world.rename(columns={name_col: "country_name"})
         if "country_name" not in world.columns:
@@ -1330,7 +1217,7 @@ def generate_all_maps_and_figures(paths):
     # =============================================================================
     # 2) LOAD DATA
     # =============================================================================
-    ef.assert_exists(paths.output.integrated_country_gep, "Run the latest integrated pipeline first.")
+    utilities.assert_exists(paths.output.integrated_country_gep, "Run the latest integrated pipeline first.")
     df = hb.df_read(str(paths.output.integrated_country_gep))
     df.columns = [c.strip() for c in df.columns]
     
@@ -1349,7 +1236,7 @@ def generate_all_maps_and_figures(paths):
         "mean_ps_onfarm_cropland_severe", "mean_ps_upstream_cropland_severe", "mean_ps_combined_cropland_severe",
         "gep_incremental_upstream_usd", "gep_incremental_onfarm_usd",
     ]
-    df = ef.to_num(df, NUM_COLS)
+    df = utilities.to_num(df, NUM_COLS)
     
     if {"gep_const2019_usd_onfarm", "gep_const2019_usd_upstream", "gep_const2019_usd_combined"}.issubset(df.columns):
         df["gep_const2019_usd_overlap"] = (
@@ -1376,12 +1263,12 @@ def generate_all_maps_and_figures(paths):
         "gep_incremental_onfarm_usd",
     ]:
         if c in df.columns:
-            df[f"{c}_million"] = df[c] / ef.USD_TO_MILLIONS
+            df[f"{c}_million"] = df[c] / p.erosion_usd_to_millions
     
     if "country_name" not in df.columns:
         df["country_name"] = df["iso3"]
     
-    if os.path.exists(paths.output.country_crop_long):
+    if hb.path_exists(paths.output.country_crop_long):
         df_crop_long = hb.df_read(str(paths.output.country_crop_long))
         df_crop_long.columns = [c.strip() for c in df_crop_long.columns]
         if "ISO3" in df_crop_long.columns and "iso3" not in df_crop_long.columns:
@@ -1407,20 +1294,20 @@ def generate_all_maps_and_figures(paths):
     # 4.1 Top countries: Combined GEP
     col = "gep_const2019_usd_combined"
     if col in df.columns:
-        top = ef.top_n(df, col, ef.TOP_N).copy()
+        top = utilities.top_n(df, col, p.erosion_top_n).copy()
         top["label"] = top["country_name"].fillna(top["iso3"])
         top = top.sort_values(col, ascending=True)
     
         plt.figure(figsize=(12, 10))
         plt.barh(top["label"], top[f"{col}_million"])
-        plt.xlabel(f"Combined GEP ({ef.MONEY_UNIT_LABEL})", fontsize=12)
-        plt.title(f"Top {ef.TOP_N}: Combined GEP from severe erosion protection", fontsize=16, pad=12)
+        plt.xlabel(f"Combined GEP ({p.erosion_money_unit_label})", fontsize=12)
+        plt.title(f"Top {p.erosion_top_n}: Combined GEP from severe erosion protection", fontsize=16, pad=12)
         plt.grid(axis="x", alpha=0.25)
-        savefig(os.path.join(paths.output.figure_directory, "fig1_top20_combined_gep_2019usd_million.png"), dpi=300)
+        utilities.savefig(os.path.join(paths.output.figure_directory, "fig1_top20_combined_gep_2019usd_million.png"), dpi=300)
     
     # 4.2 Decomposition to combined
     if {"gep_const2019_usd_onfarm_million", "gep_const2019_usd_combined_million"}.issubset(df.columns):
-        top2 = ef.top_n(df, "gep_const2019_usd_combined", ef.TOP_N).copy()
+        top2 = utilities.top_n(df, "gep_const2019_usd_combined", p.erosion_top_n).copy()
         top2["label"] = top2["country_name"].fillna(top2["iso3"])
         top2 = top2.sort_values("gep_const2019_usd_combined", ascending=True)
     
@@ -1431,80 +1318,80 @@ def generate_all_maps_and_figures(paths):
         plt.figure(figsize=(12, 10))
         plt.barh(top2["label"], on, label="On-farm protection (standalone)")
         plt.barh(top2["label"], incr_up, left=on, label="Incremental upstream protection (given on-farm)")
-        plt.xlabel(f"GEP ({ef.MONEY_UNIT_LABEL})", fontsize=12)
-        plt.title(f"Top {ef.TOP_N}: Decomposition summing to Combined GEP", fontsize=16, pad=12)
+        plt.xlabel(f"GEP ({p.erosion_money_unit_label})", fontsize=12)
+        plt.title(f"Top {p.erosion_top_n}: Decomposition summing to Combined GEP", fontsize=16, pad=12)
         plt.grid(axis="x", alpha=0.25)
         plt.legend(loc="lower right", frameon=True)
-        savefig(os.path.join(paths.output.figure_directory, "fig2_top20_decomposition_to_combined_2019usd_million.png"), dpi=300)
+        utilities.savefig(os.path.join(paths.output.figure_directory, "fig2_top20_decomposition_to_combined_2019usd_million.png"), dpi=300)
     
     # 4.3 Top overlap percent
     if "overlap_pct_of_sum_components" in df.columns:
-        top_ov = ef.top_n(df, "gep_const2019_usd_overlap", ef.TOP_N).copy()
+        top_ov = utilities.top_n(df, "gep_const2019_usd_overlap", p.erosion_top_n).copy()
         top_ov["label"] = top_ov["country_name"].fillna(top_ov["iso3"])
         top_ov = top_ov.sort_values("gep_const2019_usd_overlap", ascending=True)
     
         plt.figure(figsize=(12, 10))
         plt.barh(top_ov["label"], top_ov["overlap_pct_of_sum_components"])
         plt.xlabel("Overlap as % of (On-farm + Upstream)", fontsize=12)
-        plt.title(f"Top {ef.TOP_N}: Overlap removed by union-of-protection", fontsize=16, pad=12)
+        plt.title(f"Top {p.erosion_top_n}: Overlap removed by union-of-protection", fontsize=16, pad=12)
         plt.grid(axis="x", alpha=0.25)
-        savefig(os.path.join(paths.output.figure_directory, "fig3_top20_overlap_pct_of_sum.png"), dpi=300)
+        utilities.savefig(os.path.join(paths.output.figure_directory, "fig3_top20_overlap_pct_of_sum.png"), dpi=300)
     
     # 4.4 Top overlap absolute
     if "gep_const2019_usd_overlap_million" in df.columns:
-        top_ov_abs = ef.top_n(df, "gep_const2019_usd_overlap", ef.TOP_N).copy()
+        top_ov_abs = utilities.top_n(df, "gep_const2019_usd_overlap", p.erosion_top_n).copy()
         top_ov_abs["label"] = top_ov_abs["country_name"].fillna(top_ov_abs["iso3"])
         top_ov_abs = top_ov_abs.sort_values("gep_const2019_usd_overlap", ascending=True)
     
         plt.figure(figsize=(12, 10))
         plt.barh(top_ov_abs["label"], top_ov_abs["gep_const2019_usd_overlap_million"])
-        plt.xlabel(f"Overlap removed ({ef.MONEY_UNIT_LABEL})", fontsize=12)
-        plt.title(f"Top {ef.TOP_N}: Overlap removed in absolute terms", fontsize=16, pad=12)
+        plt.xlabel(f"Overlap removed ({p.erosion_money_unit_label})", fontsize=12)
+        plt.title(f"Top {p.erosion_top_n}: Overlap removed in absolute terms", fontsize=16, pad=12)
         plt.grid(axis="x", alpha=0.25)
-        savefig(os.path.join(paths.output.figure_directory, "fig4_top20_overlap_removed_2019usd_million.png"), dpi=300)
+        utilities.savefig(os.path.join(paths.output.figure_directory, "fig4_top20_overlap_removed_2019usd_million.png"), dpi=300)
     
     # 4.5 Macro exposure
     if "gdp_loss_pct_combined" in df.columns:
-        top_gdp = ef.top_n(df, "gdp_loss_pct_combined", ef.TOP_N).copy()
+        top_gdp = utilities.top_n(df, "gdp_loss_pct_combined", p.erosion_top_n).copy()
         top_gdp["label"] = top_gdp["country_name"].fillna(top_gdp["iso3"])
         top_gdp = top_gdp.sort_values("gdp_loss_pct_combined", ascending=True)
     
         plt.figure(figsize=(12, 10))
         plt.barh(top_gdp["label"], top_gdp["gdp_loss_pct_combined"])
         plt.xlabel("Combined GEP as % of GDP", fontsize=12)
-        plt.title(f"Top {ef.TOP_N}: Macro exposure (Combined GEP / GDP)", fontsize=16, pad=12)
+        plt.title(f"Top {p.erosion_top_n}: Macro exposure (Combined GEP / GDP)", fontsize=16, pad=12)
         plt.grid(axis="x", alpha=0.25)
-        savefig(os.path.join(paths.output.figure_directory, "fig5_top20_gdp_loss_pct_combined.png"), dpi=300)
+        utilities.savefig(os.path.join(paths.output.figure_directory, "fig5_top20_gdp_loss_pct_combined.png"), dpi=300)
     
     # 4.6 Top countries by combined protected production
     if "protected_production_tons_combined" in df.columns:
-        top_prot = ef.top_n(df, "protected_production_tons_combined", ef.TOP_N).copy()
+        top_prot = utilities.top_n(df, "protected_production_tons_combined", p.erosion_top_n).copy()
         top_prot["label"] = top_prot["country_name"].fillna(top_prot["iso3"])
         top_prot = top_prot.sort_values("protected_production_tons_combined", ascending=True)
     
         plt.figure(figsize=(12, 10))
         plt.barh(top_prot["label"], top_prot["protected_production_tons_combined"])
         plt.xlabel("Protected production (tons)", fontsize=12)
-        plt.title(f"Top {ef.TOP_N}: Countries by protected production (combined)", fontsize=16, pad=12)
+        plt.title(f"Top {p.erosion_top_n}: Countries by protected production (combined)", fontsize=16, pad=12)
         plt.grid(axis="x", alpha=0.25)
-        savefig(os.path.join(paths.output.figure_directory, "fig6_top20_protected_production_tons_combined.png"), dpi=300)
+        utilities.savefig(os.path.join(paths.output.figure_directory, "fig6_top20_protected_production_tons_combined.png"), dpi=300)
     
     # 4.7 Top countries by crop GPV
     if "crop_gpv_const2019_2019_million" in df.columns:
-        top_gpv = ef.top_n(df, "crop_gpv_const2019_2019", ef.TOP_N).copy()
+        top_gpv = utilities.top_n(df, "crop_gpv_const2019_2019", p.erosion_top_n).copy()
         top_gpv["label"] = top_gpv["country_name"].fillna(top_gpv["iso3"])
         top_gpv = top_gpv.sort_values("crop_gpv_const2019_2019", ascending=True)
     
         plt.figure(figsize=(12, 10))
         plt.barh(top_gpv["label"], top_gpv["crop_gpv_const2019_2019_million"])
-        plt.xlabel(f"Crop production value ({ef.MONEY_UNIT_LABEL})", fontsize=12)
-        plt.title(f"Top {ef.TOP_N}: Countries by crop production value", fontsize=16, pad=12)
+        plt.xlabel(f"Crop production value ({p.erosion_money_unit_label})", fontsize=12)
+        plt.title(f"Top {p.erosion_top_n}: Countries by crop production value", fontsize=16, pad=12)
         plt.grid(axis="x", alpha=0.25)
-        savefig(os.path.join(paths.output.figure_directory, "fig7_top20_crop_gpv_2019usd_million.png"), dpi=300)
+        utilities.savefig(os.path.join(paths.output.figure_directory, "fig7_top20_crop_gpv_2019usd_million.png"), dpi=300)
     
     # 4.8 On-farm vs upstream standalone
     if {"gep_const2019_usd_onfarm_million", "gep_const2019_usd_upstream_million"}.issubset(df.columns):
-        top_cmp = ef.top_n(df, "gep_const2019_usd_combined", ef.TOP_N).copy()
+        top_cmp = utilities.top_n(df, "gep_const2019_usd_combined", p.erosion_top_n).copy()
         top_cmp["label"] = top_cmp["country_name"].fillna(top_cmp["iso3"])
         top_cmp = top_cmp.sort_values("gep_const2019_usd_combined", ascending=True)
     
@@ -1515,11 +1402,11 @@ def generate_all_maps_and_figures(paths):
         plt.barh(y - h/2, top_cmp["gep_const2019_usd_onfarm_million"].fillna(0.0), height=h, label="On-farm")
         plt.barh(y + h/2, top_cmp["gep_const2019_usd_upstream_million"].fillna(0.0), height=h, label="Upstream")
         plt.yticks(y, top_cmp["label"])
-        plt.xlabel(f"GEP ({ef.MONEY_UNIT_LABEL})", fontsize=12)
-        plt.title(f"Top {ef.TOP_N}: Standalone On-farm vs Upstream GEP", fontsize=16, pad=12)
+        plt.xlabel(f"GEP ({p.erosion_money_unit_label})", fontsize=12)
+        plt.title(f"Top {p.erosion_top_n}: Standalone On-farm vs Upstream GEP", fontsize=16, pad=12)
         plt.grid(axis="x", alpha=0.25)
         plt.legend(frameon=True)
-        savefig(os.path.join(paths.output.figure_directory, "fig8_top20_onfarm_vs_upstream_2019usd_million.png"), dpi=300)
+        utilities.savefig(os.path.join(paths.output.figure_directory, "fig8_top20_onfarm_vs_upstream_2019usd_million.png"), dpi=300)
     
     
     # =============================================================================
@@ -1534,7 +1421,7 @@ def generate_all_maps_and_figures(paths):
         plt.ylabel("Number of countries", fontsize=12)
         plt.title("Distribution of share of protected production (combined)", fontsize=16, pad=12)
         plt.grid(alpha=0.25)
-        savefig(os.path.join(paths.output.figure_directory, "hist_share_protected_production_combined.png"), dpi=300)
+        utilities.savefig(os.path.join(paths.output.figure_directory, "hist_share_protected_production_combined.png"), dpi=300)
     
     if "erosion_shock_share_combined" in df.columns:
         m = np.isfinite(df["erosion_shock_share_combined"])
@@ -1544,7 +1431,7 @@ def generate_all_maps_and_figures(paths):
         plt.ylabel("Number of countries", fontsize=12)
         plt.title("Distribution of erosion shock shares (combined)", fontsize=16, pad=12)
         plt.grid(alpha=0.25)
-        savefig(os.path.join(paths.output.figure_directory, "hist_erosion_shock_share_combined.png"), dpi=300)
+        utilities.savefig(os.path.join(paths.output.figure_directory, "hist_erosion_shock_share_combined.png"), dpi=300)
     
     if "overlap_pct_of_sum_components" in df.columns:
         m = np.isfinite(df["overlap_pct_of_sum_components"])
@@ -1554,7 +1441,7 @@ def generate_all_maps_and_figures(paths):
         plt.ylabel("Number of countries", fontsize=12)
         plt.title("Distribution of overlap removed by union-of-protection", fontsize=16, pad=12)
         plt.grid(alpha=0.25)
-        savefig(os.path.join(paths.output.figure_directory, "hist_overlap_pct_of_sum.png"), dpi=300)
+        utilities.savefig(os.path.join(paths.output.figure_directory, "hist_overlap_pct_of_sum.png"), dpi=300)
     
     
     # =============================================================================
@@ -1577,13 +1464,13 @@ def generate_all_maps_and_figures(paths):
             d["gep_const2019_usd_combined_million"],
             s=18
         )
-        plt.xlabel(f"Crop GPV ({ef.MONEY_UNIT_LABEL})", fontsize=12)
-        plt.ylabel(f"Combined GEP ({ef.MONEY_UNIT_LABEL})", fontsize=12)
+        plt.xlabel(f"Crop GPV ({p.erosion_money_unit_label})", fontsize=12)
+        plt.ylabel(f"Combined GEP ({p.erosion_money_unit_label})", fontsize=12)
         plt.title("Combined GEP vs Crop GPV (log-log)", fontsize=16, pad=12)
         plt.xscale("log")
         plt.yscale("log")
         plt.grid(alpha=0.25)
-        savefig(os.path.join(paths.output.figure_directory, "scatter_combined_gep_vs_crop_gpv_loglog_2019usd_million.png"), dpi=300)
+        utilities.savefig(os.path.join(paths.output.figure_directory, "scatter_combined_gep_vs_crop_gpv_loglog_2019usd_million.png"), dpi=300)
     
     # 6.2 Combined GEP vs GDP with labels
     if {"gdp_const2019_2019", "gep_const2019_usd_combined"}.issubset(df.columns):
@@ -1612,7 +1499,7 @@ def generate_all_maps_and_figures(paths):
             ax.set_ylabel("Combined GEP (USD, log scale)")
             ax.set_title("Combined GEP vs GDP (log-log)")
     
-            label_subset = d.sort_values("gep_const2019_usd_combined", ascending=False).head(ef.TOP_N_LABELS)
+            label_subset = d.sort_values("gep_const2019_usd_combined", ascending=False).head(p.erosion_top_n_labels)
             for _, r in label_subset.iterrows():
                 ax.text(
                     r["gdp_const2019_2019"] * 1.03,
@@ -1630,52 +1517,17 @@ def generate_all_maps_and_figures(paths):
             if diag_max > diag_min:
                 ax.plot([diag_min, diag_max], [diag_min, diag_max], linestyle="--", linewidth=0.8, color="black", alpha=0.4)
     
-            savefig(os.path.join(paths.output.figure_directory, "scatter_combined_gep_vs_gdp_log_countrynames.png"), dpi=300)
+            utilities.savefig(os.path.join(paths.output.figure_directory, "scatter_combined_gep_vs_gdp_log_countrynames.png"), dpi=300)
     
     # 6.3 Income group scatter plots
-    income_map = {
-        "AUS":"High income","AUT":"High income","BEL":"High income","CAN":"High income","CHE":"High income",
-        "CHL":"High income","CZE":"High income","DEU":"High income","DNK":"High income","ESP":"High income",
-        "EST":"High income","FIN":"High income","FRA":"High income","GBR":"High income","GRC":"High income",
-        "HKG":"High income","HRV":"High income","HUN":"High income","IRL":"High income","ISL":"High income",
-        "ISR":"High income","ITA":"High income","JPN":"High income","KOR":"High income","LTU":"High income",
-        "LUX":"High income","LVA":"High income","NLD":"High income","NOR":"High income","NZL":"High income",
-        "POL":"High income","PRT":"High income","SGP":"High income","SVN":"High income","SWE":"High income",
-        "USA":"High income",
     
-        "ARG":"Upper middle income","BRA":"Upper middle income","CHN":"Upper middle income","COL":"Upper middle income",
-        "CRI":"Upper middle income","DOM":"Upper middle income","GAB":"Upper middle income","IDN":"Upper middle income",
-        "IRN":"Upper middle income","KAZ":"Upper middle income","MEX":"Upper middle income","MYS":"Upper middle income",
-        "PER":"Upper middle income","SRB":"Upper middle income","THA":"Upper middle income","TUR":"Upper middle income",
-        "ZAF":"Upper middle income","BGR":"Upper middle income","JOR":"Upper middle income","PRY":"Upper middle income",
-        "ECU":"Upper middle income","VNM":"Upper middle income","BOL":"Upper middle income","ALB":"Upper middle income",
-    
-        "BGD":"Lower middle income","CIV":"Lower middle income","CMR":"Lower middle income","COD":"Lower middle income",
-        "EGY":"Lower middle income","GHA":"Lower middle income","IND":"Lower middle income","KEN":"Lower middle income",
-        "MAR":"Lower middle income","MNG":"Lower middle income","NGA":"Lower middle income","PAK":"Lower middle income",
-        "PHL":"Lower middle income","SLV":"Lower middle income","SEN":"Lower middle income","TZA":"Lower middle income",
-        "UKR":"Lower middle income","UZB":"Lower middle income","VUT":"Lower middle income","LAO":"Lower middle income",
-        "PNG":"Lower middle income","DJI":"Lower middle income","HND":"Lower middle income","NIC":"Lower middle income",
-        "BTN":"Lower middle income","KHM":"Lower middle income","LKA":"Lower middle income","ZMB":"Lower middle income",
-        "AGO":"Lower middle income","NAM":"Lower middle income",
-    
-        "AFG":"Low income","BFA":"Low income","BDI":"Low income","CAF":"Low income","ETH":"Low income","GMB":"Low income",
-        "GIN":"Low income","GNB":"Low income","LBR":"Low income","MDG":"Low income","MLI":"Low income","MOZ":"Low income",
-        "MWI":"Low income","NER":"Low income","NPL":"Low income","RWA":"Low income","SLE":"Low income","SOM":"Low income",
-        "SSD":"Low income","SYR":"Low income","TCD":"Low income","TGO":"Low income","UGA":"Low income","YEM":"Low income",
-        "ZWE":"Low income",
-    }
-    
-    income_colors = {
-        "Low income": "#d73027",
-        "Lower middle income": "#fc8d59",
-        "Upper middle income": "#fee08b",
-        "High income": "#1a9850",
-    }
     
     if {"gdp_const2019_2019", "gep_const2019_usd_combined"}.issubset(df.columns):
-        d0 = df.copy()
-        d0["income_group"] = d0["iso3"].map(income_map)
+        d0, income_order = utilities.attach_income_group(df.copy(), p.df_countries)
+        n_unlabelled = int(d0["income_group"].isna().sum())
+        if n_unlabelled:
+            hb.log("%d of %d countries have no income group and are left out of the "
+                   "income-group figures." % (n_unlabelled, len(d0)))
         d0 = d0.dropna(subset=["income_group"]).copy()
     
         mask = (
@@ -1687,7 +1539,8 @@ def generate_all_maps_and_figures(paths):
         d = d0.loc[mask].copy()
     
         if len(d) > 0:
-            order = ["Low income", "Lower middle income", "Upper middle income", "High income"]
+            order = income_order
+            income_colors = utilities.income_group_colors(order)
     
             # Log-log
             fig, ax = plt.subplots(figsize=(10, 7))
@@ -1712,7 +1565,7 @@ def generate_all_maps_and_figures(paths):
             ax.set_ylabel("Combined GEP (USD, log scale)")
             ax.set_title("Combined GEP vs GDP (log-log), by income group")
     
-            label_subset = d.sort_values("gep_const2019_usd_combined", ascending=False).head(ef.TOP_N_LABELS)
+            label_subset = d.sort_values("gep_const2019_usd_combined", ascending=False).head(p.erosion_top_n_labels)
             for _, r in label_subset.iterrows():
                 ax.text(
                     r["gdp_const2019_2019"] * 1.03,
@@ -1730,7 +1583,7 @@ def generate_all_maps_and_figures(paths):
     
             ax.legend(title="Income Group", fontsize=8, title_fontsize=9, loc="center left", bbox_to_anchor=(1.02, 0.5), frameon=False)
             plt.tight_layout()
-            savefig(os.path.join(paths.output.figure_directory, "scatter_combined_gep_vs_gdp_log_income_groups.png"), dpi=300, bbox_inches="tight")
+            utilities.savefig(os.path.join(paths.output.figure_directory, "scatter_combined_gep_vs_gdp_log_income_groups.png"), dpi=300, bbox_inches="tight")
             plt.close()
     
             # Linear capped
@@ -1760,7 +1613,7 @@ def generate_all_maps_and_figures(paths):
             ax.set_xlim(0, x_cap)
             ax.set_ylim(0, y_cap)
     
-            label_subset = d.sort_values("gep_const2019_usd_combined", ascending=False).head(ef.TOP_N_LABELS)
+            label_subset = d.sort_values("gep_const2019_usd_combined", ascending=False).head(p.erosion_top_n_labels)
             for _, r in label_subset.iterrows():
                 if r["gdp_const2019_2019"] <= x_cap and r["gep_const2019_usd_combined"] <= y_cap:
                     ax.text(
@@ -1779,7 +1632,7 @@ def generate_all_maps_and_figures(paths):
     
             ax.legend(title="Income Group", fontsize=8, title_fontsize=9, loc="center left", bbox_to_anchor=(1.02, 0.5), frameon=False)
             fig.subplots_adjust(right=0.78)
-            savefig(os.path.join(paths.output.figure_directory, "scatter_combined_gep_vs_gdp_linear_income_groups.png"), dpi=300, bbox_inches="tight")
+            utilities.savefig(os.path.join(paths.output.figure_directory, "scatter_combined_gep_vs_gdp_linear_income_groups.png"), dpi=300, bbox_inches="tight")
             plt.close()
     
     
@@ -1797,7 +1650,7 @@ def generate_all_maps_and_figures(paths):
                 dcc_comb.groupby("crop", as_index=False)["protected_production_tons"]
                 .sum()
                 .sort_values("protected_production_tons", ascending=False)
-                .head(ef.TOP_N)
+                .head(p.erosion_top_n)
                 .copy()
             )
     
@@ -1807,9 +1660,9 @@ def generate_all_maps_and_figures(paths):
                 plt.figure(figsize=(11, 8))
                 plt.barh(top_crop["crop"], top_crop["protected_production_tons"])
                 plt.xlabel("Protected production (tons)")
-                plt.title(f"Top {ef.TOP_N} crops by nature protected production (combined)", fontsize=16, pad=12)
+                plt.title(f"Top {p.erosion_top_n} crops by nature protected production (combined)", fontsize=16, pad=12)
                 plt.grid(axis="x", alpha=0.25)
-                savefig(os.path.join(paths.output.figure_directory, "bar_top20_crops_protected_tons_combined.png"), dpi=300)
+                utilities.savefig(os.path.join(paths.output.figure_directory, "bar_top20_crops_protected_tons_combined.png"), dpi=300)
     
     
     # =============================================================================
@@ -1817,173 +1670,176 @@ def generate_all_maps_and_figures(paths):
     # =============================================================================
     
     # Monetary maps
-    plot_publication_choropleth_categorical(
+    utilities.plot_publication_choropleth_categorical(
         g, "gep_const2019_usd_combined",
         "Combined GEP from severe erosion protection",
         os.path.join(paths.output.figure_directory, "map1_country_combined_gep_5class_2019usd_million.png"),
-        f"Combined GEP ({ef.MONEY_UNIT_LABEL})",
-        scheme="fisher_jenks", k=ef.MAP_K_CLASSES, value_unit="usd_millions", label_format="usd_millions"
+        f"Combined GEP ({p.erosion_money_unit_label})",
+        scheme="fisher_jenks", k=p.erosion_map_k_classes, value_unit="usd_millions", label_format="usd_millions"
     )
     
-    plot_publication_choropleth_categorical(
+    utilities.plot_publication_choropleth_categorical(
         g, "gep_const2019_usd_onfarm",
         "On-farm GEP from severe erosion protection",
         os.path.join(paths.output.figure_directory, "map2_country_onfarm_gep_5class_2019usd_million.png"),
-        f"On-farm GEP ({ef.MONEY_UNIT_LABEL})",
-        scheme="fisher_jenks", k=ef.MAP_K_CLASSES, value_unit="usd_millions", label_format="usd_millions"
+        f"On-farm GEP ({p.erosion_money_unit_label})",
+        scheme="fisher_jenks", k=p.erosion_map_k_classes, value_unit="usd_millions", label_format="usd_millions"
     )
     
-    plot_publication_choropleth_categorical(
+    utilities.plot_publication_choropleth_categorical(
         g, "gep_const2019_usd_upstream",
         "Upstream GEP from severe erosion protection",
         os.path.join(paths.output.figure_directory, "map3_country_upstream_gep_5class_2019usd_million.png"),
-        f"Upstream GEP ({ef.MONEY_UNIT_LABEL})",
-        scheme="fisher_jenks", k=ef.MAP_K_CLASSES, value_unit="usd_millions", label_format="usd_millions"
+        f"Upstream GEP ({p.erosion_money_unit_label})",
+        scheme="fisher_jenks", k=p.erosion_map_k_classes, value_unit="usd_millions", label_format="usd_millions"
     )
     
-    plot_publication_choropleth_categorical(
+    utilities.plot_publication_choropleth_categorical(
         g, "gep_const2019_usd_overlap",
         "Overlap removed = On-farm + Upstream - Combined",
         os.path.join(paths.output.figure_directory, "map4_country_overlap_5class_2019usd_million.png"),
-        f"Overlap ({ef.MONEY_UNIT_LABEL})",
-        scheme="fisher_jenks", k=ef.MAP_K_CLASSES, value_unit="usd_millions", label_format="usd_millions"
+        f"Overlap ({p.erosion_money_unit_label})",
+        scheme="fisher_jenks", k=p.erosion_map_k_classes, value_unit="usd_millions", label_format="usd_millions"
     )
     
-    plot_publication_choropleth_categorical(
+    utilities.plot_publication_choropleth_categorical(
         g, "crop_gpv_const2019_2019",
         "Total crop production value (FAO 2019)",
         os.path.join(paths.output.figure_directory, "map5_country_crop_gpv_5class_2019usd_million.png"),
-        f"Crop GPV ({ef.MONEY_UNIT_LABEL})",
-        scheme="fisher_jenks", k=ef.MAP_K_CLASSES, value_unit="usd_millions", label_format="usd_millions"
+        f"Crop GPV ({p.erosion_money_unit_label})",
+        scheme="fisher_jenks", k=p.erosion_map_k_classes, value_unit="usd_millions", label_format="usd_millions"
     )
     
     # Shares / percentages
-    plot_publication_choropleth_categorical(
+    utilities.plot_publication_choropleth_categorical(
         g, "overlap_pct_of_sum_components",
         "Overlap as % of (On-farm + Upstream)",
         os.path.join(paths.output.figure_directory, "map6_country_overlap_pct_5class.png"),
         "Overlap (% of On-farm + Upstream)",
-        scheme="equal_interval", k=ef.MAP_K_CLASSES, value_unit="raw", label_format="percent"
+        scheme="equal_interval", k=p.erosion_map_k_classes, value_unit="raw", label_format="percent"
     )
     
-    plot_publication_choropleth_categorical(
+    utilities.plot_publication_choropleth_categorical(
         g, "gdp_loss_pct_combined",
         "Combined GEP as % of GDP (indicative macro exposure)",
         os.path.join(paths.output.figure_directory, "map7_country_gdp_loss_pct_combined_5class.png"),
         "Combined GEP / GDP (%)",
-        scheme="equal_interval", k=ef.MAP_K_CLASSES, value_unit="raw", label_format="percent"
+        scheme="equal_interval", k=p.erosion_map_k_classes, value_unit="raw", label_format="percent"
     )
     
-    plot_publication_choropleth_categorical(
+    utilities.plot_publication_choropleth_categorical(
         g, "share_protected_production_combined",
         "Share of protected production (combined)",
         os.path.join(paths.output.figure_directory, "map8_country_share_protected_combined_5class.png"),
         "Share protected production",
-        scheme="equal_interval", k=ef.MAP_K_CLASSES, value_unit="raw", label_format="percent"
+        scheme="equal_interval", k=p.erosion_map_k_classes, value_unit="raw", label_format="percent"
     )
     
-    plot_publication_choropleth_categorical(
+    utilities.plot_publication_choropleth_categorical(
         g, "share_protected_production_onfarm",
         "Share of protected production (on-farm)",
         os.path.join(paths.output.figure_directory, "map9_country_share_protected_onfarm_5class.png"),
         "Share protected production",
-        scheme="equal_interval", k=ef.MAP_K_CLASSES, value_unit="raw", label_format="percent"
+        scheme="equal_interval", k=p.erosion_map_k_classes, value_unit="raw", label_format="percent"
     )
     
-    plot_publication_choropleth_categorical(
+    utilities.plot_publication_choropleth_categorical(
         g, "share_protected_production_upstream",
         "Share of protected production (upstream)",
         os.path.join(paths.output.figure_directory, "map10_country_share_protected_upstream_5class.png"),
         "Share protected production",
-        scheme="equal_interval", k=ef.MAP_K_CLASSES, value_unit="raw", label_format="percent"
+        scheme="equal_interval", k=p.erosion_map_k_classes, value_unit="raw", label_format="percent"
     )
     
-    plot_publication_choropleth_categorical(
+    utilities.plot_publication_choropleth_categorical(
         g, "erosion_shock_share_combined",
         "Erosion shock share (combined)",
         os.path.join(paths.output.figure_directory, "map11_country_erosion_shock_share_combined_5class.png"),
         "Shock share",
-        scheme="equal_interval", k=ef.MAP_K_CLASSES, value_unit="raw", label_format="percent"
+        scheme="equal_interval", k=p.erosion_map_k_classes, value_unit="raw", label_format="percent"
     )
     
     # Mean PS maps
-    plot_publication_choropleth_categorical(
+    utilities.plot_publication_choropleth_categorical(
         g, "mean_ps_onfarm_cropland_severe",
         "Mean prevention share on cropland severe pixels (on-farm)",
         os.path.join(paths.output.figure_directory, "map12_country_mean_ps_onfarm_5class.png"),
         "Mean PS_onfarm (0–1)",
-        scheme="equal_interval", k=ef.MAP_K_CLASSES, value_unit="raw", label_format="percent"
+        scheme="equal_interval", k=p.erosion_map_k_classes, value_unit="raw", label_format="percent"
     )
     
-    plot_publication_choropleth_categorical(
+    utilities.plot_publication_choropleth_categorical(
         g, "mean_ps_upstream_cropland_severe",
         "Mean prevention share on cropland severe pixels (upstream)",
         os.path.join(paths.output.figure_directory, "map13_country_mean_ps_upstream_5class.png"),
         "Mean PS_upstream (0–1)",
-        scheme="equal_interval", k=ef.MAP_K_CLASSES, value_unit="raw", label_format="percent"
+        scheme="equal_interval", k=p.erosion_map_k_classes, value_unit="raw", label_format="percent"
     )
     
-    plot_publication_choropleth_categorical(
+    utilities.plot_publication_choropleth_categorical(
         g, "mean_ps_combined_cropland_severe",
         "Mean prevention share on cropland severe pixels (combined)",
         os.path.join(paths.output.figure_directory, "map14_country_mean_ps_combined_5class.png"),
         "Mean PS_combined (0–1)",
-        scheme="equal_interval", k=ef.MAP_K_CLASSES, value_unit="raw", label_format="percent"
+        scheme="equal_interval", k=p.erosion_map_k_classes, value_unit="raw", label_format="percent"
     )
     
     # Log10 combined GEP map
     if "gep_const2019_usd_combined" in g.columns:
         g_log = g.copy()
         g_log["log10_gep_million_usd_combined"] = np.log10(
-            (pd.to_numeric(g_log["gep_const2019_usd_combined"], errors="coerce") / ef.USD_TO_MILLIONS)
+            (pd.to_numeric(g_log["gep_const2019_usd_combined"], errors="coerce") / p.erosion_usd_to_millions)
             .where(pd.to_numeric(g_log["gep_const2019_usd_combined"], errors="coerce") > 0)
         )
-        plot_publication_choropleth_categorical(
+        utilities.plot_publication_choropleth_categorical(
             g_log, "log10_gep_million_usd_combined",
             "Combined GEP (log10 USD million)",
             os.path.join(paths.output.figure_directory, "map15_country_log10_combined_gep_5class.png"),
             "log10(USD million)",
-            scheme="fisher_jenks", k=ef.MAP_K_CLASSES, value_unit="raw", label_format="percent"
+            scheme="fisher_jenks", k=p.erosion_map_k_classes, value_unit="raw", label_format="percent"
         )
     
     
     # =============================================================================
     # 9) RASTER PREVIEWS
     # =============================================================================
-    if os.path.exists(paths.output.prevention_share_onfarm):
+    if hb.path_exists(paths.output.prevention_share_onfarm):
         plot_raster_global(
             paths.output.prevention_share_onfarm,
             "PS_onfarm on cropland & severe",
             os.path.join(paths.output.figure_directory, "raster1_ps_onfarm_cropland_severe.png"),
-            downsample_factor=ef.RASTER_DOWNSAMPLE_FACTOR,
+            downsample_factor=p.erosion_raster_downsample_factor,
         )
     
-    if os.path.exists(paths.output.prevention_share_upstream):
+    if hb.path_exists(paths.output.prevention_share_upstream):
         plot_raster_global(
             paths.output.prevention_share_upstream,
             "PS_upstream on cropland & severe",
             os.path.join(paths.output.figure_directory, "raster2_ps_upstream_cropland_severe.png"),
-            downsample_factor=ef.RASTER_DOWNSAMPLE_FACTOR,
+            downsample_factor=p.erosion_raster_downsample_factor,
         )
     
-    if os.path.exists(paths.output.prevention_share_combined):
+    if hb.path_exists(paths.output.prevention_share_combined):
         plot_raster_global(
             paths.output.prevention_share_combined,
             "PS_combined (union-of-protection) on cropland & severe",
             os.path.join(paths.output.figure_directory, "raster3_ps_combined_union_cropland_severe.png"),
-            downsample_factor=ef.RASTER_DOWNSAMPLE_FACTOR,
+            downsample_factor=p.erosion_raster_downsample_factor,
         )
     
     
     # =============================================================================
     # 10) SUMMARY
     # =============================================================================
-    print(f"✅ Done. Figures saved to: {paths.output.figure_directory}")
-    print("Created files:")
+    hb.log(f"✅ Done. Figures saved to: {paths.output.figure_directory}")
+    hb.log("Created files:")
     for fp in sorted(glob.glob(os.path.join(paths.output.figure_directory, "*"))):
         if os.path.splitext(fp)[1].lower() in {".png", ".csv"}:
-            print(" -", os.path.basename(fp))
+            hb.log(" -", os.path.basename(fp))
 
+
+# The files Section B writes. Each name is spelled once, so a rename cannot be applied to the
+# writer and missed in the manifest that claims to record what ran.
 
 def publish_inputs(p):
     """Every task's first line: erosion's es_config row plus its es_parameters block (the SDR
@@ -2003,6 +1859,10 @@ def publish_inputs(p):
         p.erosion_sdr_input_dir = os.path.dirname(p.erosion_dem_path)
     if getattr(p, 'erosion_elevation_path', None) is None:
         p.erosion_elevation_path = p.erosion_dem_path
+    # Optional: a blank es_parameters cell means the run does not use one, and the readers branch
+    # on None rather than on a value that happens not to resolve.
+    for optional in ('erosion_drainage_path', 'erosion_boundary_source_epsg'):
+        setattr(p, optional, getattr(p, optional, None) or None)
     if not hasattr(p, 'results'):
         p.results = {}
     return p
@@ -2054,15 +1914,19 @@ def erosion_sdr(p):
     # Repaired once per run and cached: SDR's report step unions these and GEOS raises on an invalid
     # ring, so a bad geometry kills the run AFTER the rasters are already computed.
     watersheds = os.path.join(p.cur_dir, 'watersheds_valid.gpkg')
-    if not os.path.exists(watersheds):
+    if not hb.path_exists(watersheds):
         repair_watersheds(p.get_path(p.erosion_watersheds_path), watersheds)
     # SDR matches the biophysical table's lucode against the LULC values, and our maps are SEALS7 while
     # the shipped table is keyed on ESA codes -- so re-key it (once) rather than matching nothing.
     biophysical = build_seals7_biophysical_table(
         p.get_path(p.erosion_biophysical_table_path),
         os.path.join(p.cur_dir, 'biophysical_table_seals7.csv'))
-    sdr_params = dict(threshold_flow_accumulation=1000, k_param=2, sdr_max=0.8,
-                      ic_0_param=0.5, l_max=122, flow_dir_algorithm='D8', n_workers=-1)
+    # The same rows Section A reads, so the two paths cannot drift apart again.
+    sdr_params = dict(threshold_flow_accumulation=p.erosion_sdr_threshold_flow_accumulation,
+                      k_param=p.erosion_sdr_k_param, sdr_max=p.erosion_sdr_max,
+                      ic_0_param=p.erosion_sdr_ic_0_param, l_max=p.erosion_sdr_l_max,
+                      flow_dir_algorithm=p.erosion_sdr_flow_dir_algorithm,
+                      n_workers=p.erosion_sdr_n_workers)
     sdr_params.update(getattr(p, 'erosion_sdr_params', {}))
 
     n = 0
@@ -2073,7 +1937,7 @@ def erosion_sdr(p):
                 lulc_grid = lulc
             else:
                 lulc_grid = os.path.join(p.cur_dir, 'lulc_%s_%d_grid.tif' % (scenario, year))
-                if not os.path.exists(lulc_grid):  # categorical LULC -> mode
+                if not hb.path_exists(lulc_grid):  # categorical LULC -> mode
                     hb.resample_to_match(lulc, grid_ref, lulc_grid, resample_method='mode')
             suffix = '%s_%d' % (scenario, year)
             sdr.execute(dict(workspace_dir=os.path.join(p.cur_dir, suffix), results_suffix=suffix,
@@ -2081,7 +1945,7 @@ def erosion_sdr(p):
                              lulc_path=lulc_grid, watersheds_path=watersheds,
                              biophysical_table_path=biophysical, **sdr_params))
             n += 1
-    print('  erosion SDR: %d scenario x year maps (%s grid) -> usle_/rkls_ in %s'
+    hb.log('  erosion SDR: %d scenario x year maps (%s grid) -> usle_/rkls_ in %s'
           % (n, 'native SEALS' if native else '6.45 km', p.cur_dir))
     return True
 
@@ -2115,7 +1979,7 @@ def erosion_upstream(p):
                 os.path.join(p.cur_dir, suffix),
                 os.path.join(p.cur_dir, 'upstream_%s.tif' % suffix))
             n += 1
-    print('  erosion upstream: %d maps -> upstream_<scn>_<yr>.tif in %s' % (n, p.cur_dir))
+    hb.log('  erosion upstream: %d maps -> upstream_<scn>_<yr>.tif in %s' % (n, p.cur_dir))
     return True
 
 
@@ -2159,8 +2023,8 @@ def erosion_exposure(p):
     from global_invest.erosion import erosion_functions
     from global_invest.erosion import erosion_functions as ef
 
-    thresh_high = float(getattr(p, 'erosion_severe_threshold_t_ha', SES11_SEVERE_THRESHOLD_T_HA))
-    analysis_crs = rioCRS.from_epsg(int(getattr(p, 'erosion_analysis_epsg', EROSION_ANALYSIS_EPSG)))
+    thresh_high = float(p.erosion_threshold_high_t_ha_yr)
+    analysis_crs = rioCRS.from_epsg(int(p.erosion_analysis_epsg))
 
     def _to_grid_da(da, template=None):    # reproject an open DataArray to the equal-area analysis grid
         da = da.rio.reproject(analysis_crs, resampling=Resampling.average)
@@ -2194,9 +2058,9 @@ def erosion_exposure(p):
                         usle, p.get_path(cb),
                         p.get_path(p.erosion_dem_path) if getattr(p, 'erosion_dem_path', None) else None,
                         thresh_high=thresh_high,
-                        thresh_low=float(getattr(p, 'erosion_threshold_low_t_ha', SES11_THRESHOLD_LOW_T_HA)),
-                        small_area_km2=float(getattr(p, 'erosion_small_country_area_km2', SES11_SMALL_COUNTRY_AREA_KM2)),
-                        low_elevation_mean_m=float(getattr(p, 'erosion_low_elevation_mean_m', SES11_LOW_ELEVATION_MEAN_M)))
+                        thresh_low=float(p.erosion_threshold_low_t_ha_yr),
+                        small_area_km2=float(p.erosion_small_country_area_km2),
+                        low_elevation_mean_m=float(p.erosion_low_elevation_mean_m))
                 else:
                     thr = thresh_high        # flat fallback when no country boundary is provided
                 p._erosion_threshold_raster = thr
@@ -2223,7 +2087,7 @@ def erosion_exposure(p):
             # streams it by block to a compressed byte raster, then the average-resample coarsens it.
             lulc_native = p.get_path(by_year[year])
             crop_mask = os.path.join(p.cur_dir, 'cropland_mask_%s.tif' % suffix)
-            if not os.path.exists(crop_mask):
+            if not hb.path_exists(crop_mask):
                 _nodata = pgp.get_raster_info(lulc_native)['nodata'][0]
                 pgp.raster_calculator(
                     [(lulc_native, 1)],
@@ -2252,7 +2116,7 @@ def erosion_exposure(p):
             _write(mask.astype('float32'), 'severe_mask')
             n += 1
     per_country = getattr(p, 'erosion_country_boundary_path', None) is not None
-    print('  erosion prevention: %d maps -> ps_gated_ on EPSG:%d (severe T=%s)'
+    hb.log('  erosion prevention: %d maps -> ps_gated_ on EPSG:%d (severe T=%s)'
           % (n, analysis_crs.to_epsg(), 'per-country 11/2' if per_country else '%.1f flat' % thresh_high))
     return True
 
@@ -2337,11 +2201,19 @@ def erosion_paths(p):
                                              'upslope_cropland_share.tif'),
             upslope_bare_share=published('erosion_upslope_bare_share_path',
                                          'upslope_bare_share.tif'),
-            prevention_share_onfarm=os.path.join(out_dir, 'ps_onfarm_cropland_severe.tif'),
-            prevention_share_upstream=os.path.join(out_dir, 'ps_upstream_cropland_severe.tif'),
-            prevention_share_combined=os.path.join(out_dir, 'ps_combined_union_cropland_severe.tif'),
-            integrated_country_gep=os.path.join(out_dir, 'integrated_country_gep.csv'),
-            country_crop_long=os.path.join(out_dir, 'country_crop_protected_production_long.csv'),
+            area_conservation_audit=os.path.join(out_dir, "area_conservation_audit.csv"),
+            country_gep_decomposition_long=os.path.join(out_dir, "country_gep_decomposition_long.csv"),
+            country_ps_diagnostics=os.path.join(out_dir, "country_ps_diagnostics.csv"),
+            elasticity_audit=os.path.join(out_dir, "elasticity_audit.csv"),
+            erosion_interpolated=os.path.join(out_dir, "erosion_interpolated.csv"),
+            gpv_fallback_diagnostic=os.path.join(out_dir, "gpv_fallback_diagnostic.csv"),
+            manifest=os.path.join(out_dir, "manifest.json"),
+            threshold_policy=os.path.join(out_dir, "threshold_policy.csv"),
+            prevention_share_onfarm=os.path.join(out_dir, "ps_onfarm_cropland_severe.tif"),
+            prevention_share_upstream=os.path.join(out_dir, "ps_upstream_cropland_severe.tif"),
+            prevention_share_combined=os.path.join(out_dir, "ps_combined_union_cropland_severe.tif"),
+            integrated_country_gep=os.path.join(out_dir, "integrated_country_gep.csv"),
+            country_crop_long=os.path.join(out_dir, "country_crop_protected_production_long.csv"),
         ))
 
 
@@ -2439,11 +2311,15 @@ def erosion_shock(p):
     erosion_elasticity_csv_path; base scenario via es_shock_base_scenario. Optional: erosion_alpha,
     erosion_method.
     """
+    spam_aliases = {k: v.split(';') for k, v in
+                    utilities.read_lookup(p.erosion_spam_alias_path,
+                                          'spam_label', 'aliases').items()}
     publish_inputs(p)
     # Default into the es_shocks parent dir. Runtime, not build time: p.es_shock_dir is
     # published by that task, which ProjectFlow runs before this one.
     if not getattr(p, 'erosion_shock_output_path', None):
-        p.erosion_shock_output_path = os.path.join(getattr(p, 'es_shock_dir', None) or p.project_dir, 'erosion_interpolated.csv')
+        p.erosion_shock_output_path = os.path.join(getattr(p, 'es_shock_dir', None) or p.project_dir,
+                                                   'erosion_interpolated.csv')
     if not p.run_this:
         return
     import numpy as np, pandas as pd, rioxarray as rxr, geopandas as gpd
@@ -2453,8 +2329,8 @@ def erosion_shock(p):
 
     es_shock_base_year = int(p.es_shock_base_year); es_shock_end_year = int(p.es_shock_end_year)
     base_scenario = utilities.required_base_scenario(p, 'erosion')
-    fallback_coef = float(getattr(p, 'erosion_yield_coefficient_fallback', EROSION_YIELD_COEFFICIENT_FALLBACK))
-    alpha = float(getattr(p, 'erosion_alpha', EROSION_ALPHA))
+    fallback_coef = float(p.erosion_yield_coefficient_fallback)
+    alpha = float(p.erosion_alpha)
     # Method B lets the erosion->yield coefficient vary by crop; A applies the flat alpha to all.
     # SOURCE = elasticity_crops_fao_revised.csv (already loaded above as coef_map). Despite the column
     # name, that table holds erosion-to-yield sensitivities, not price responses: its references are all
@@ -2475,7 +2351,7 @@ def erosion_shock(p):
     def _table_alpha(crop):
         for key in [crop] + list(ef.SPAM_ALIAS_MAP.get(crop, [])):
             if str(key).strip().lower() in coef_map:
-                return ef.get_erosion_yield_coefficient(crop, coef_map, alpha)
+                return ef.get_erosion_yield_coefficient(crop, coef_map, alpha, spam_aliases)
         return _MISS
 
     def alpha_for(crop):
@@ -2531,7 +2407,8 @@ def erosion_shock(p):
         b = int(r[bcol])
         if b < 1 or b > nb:
             continue
-        elast = ef.get_erosion_yield_coefficient(str(r[crcol]).strip().lower(), coef_map, fallback_coef)
+        elast = ef.get_erosion_yield_coefficient(str(r[crcol]).strip().lower(), coef_map,
+                                                 fallback_coef, spam_aliases)
         # Yield averages and area sums: see resample_band_to_match for why the pair is not
         # interchangeable. Byte-identical to the rioxarray path this replaced, and ~11x faster.
         y = resample_band_to_match(yield_stack, b, _ref_path, _resample_dir, 'average')
@@ -2708,9 +2585,9 @@ def erosion_shock(p):
     utilities.assert_shock_table_sound(out, scenarios, 'erosion')
     out.to_csv(p.erosion_shock_output_path, index=False)
     end = out[out['year'] == es_shock_end_year]
-    print('  erosion shock (dynamic): %d rows, %d scenarios, %d anchors, alpha=%.3f, primary=%s'
+    hb.log('  erosion shock (dynamic): %d rows, %d scenarios, %d anchors, alpha=%.3f, primary=%s'
           % (len(out), len(scenarios), len(anchor_years), alpha, primary.upper()))
-    print('     mean shock @%d   A: %+.4f%%   B: %+.4f%%   B-thresholded: %+.4f%%'
+    hb.log('     mean shock @%d   A: %+.4f%%   B: %+.4f%%   B-thresholded: %+.4f%%'
           % (es_shock_end_year, end['shock_pct_damage'].mean(), end['shock_pct_service'].mean(),
              end['shock_pct_service_threshold'].mean()))
     return True
@@ -2729,7 +2606,8 @@ def erosion_shock_static(p):
     # Default into the es_shocks parent dir. Runtime, not build time: p.es_shock_dir is
     # published by that task, which ProjectFlow runs before this one.
     if not getattr(p, 'erosion_shock_output_path', None):
-        p.erosion_shock_output_path = os.path.join(getattr(p, 'es_shock_dir', None) or p.project_dir, 'erosion_interpolated.csv')
+        p.erosion_shock_output_path = os.path.join(getattr(p, 'es_shock_dir', None) or p.project_dir,
+                                                   'erosion_interpolated.csv')
     if not p.run_this:
         return
 
@@ -2742,7 +2620,7 @@ def erosion_shock_static(p):
 
     ero_path = getattr(p, 'erosion_dependency_path', None) or os.path.join(
         p.input_dir, 'raw_dependencies', 'erosion_prevention_dependency.csv')
-    if not os.path.exists(ero_path):
+    if not hb.path_exists(ero_path):
         raise NameError(
             'erosion shock: no dependency table at %s. This used to print and return, which left '
             'the consumer with no erosion shock and nothing in the run that failed -- the same '
@@ -2781,7 +2659,7 @@ def erosion_shock_static(p):
     utilities.assert_shock_table_sound(out, es_shock_scenarios, 'erosion')
     out.to_csv(p.erosion_shock_output_path, index=False)
     nz = out[(out['year'] == es_shock_end_year) & (out['shock_pct'] != 0)] if len(out) else out
-    print('  erosion shock: %d rows, %d scenarios, %d nonzero @%d (static, uncapped) -> %s'
+    hb.log('  erosion shock: %d rows, %d scenarios, %d nonzero @%d (static, uncapped) -> %s'
           % (len(out), out['scenario'].nunique() if len(out) else 0, len(nz), es_shock_end_year,
              p.erosion_shock_output_path))
     return True
@@ -2806,15 +2684,20 @@ def invest_sdr(p):
         p.erosion_sdr_output_dir = p.cur_dir
     if not getattr(p, 'erosion_watersheds_sanitized_path', None):
         p.erosion_watersheds_sanitized_path = os.path.join(p.erosion_sdr_output_dir, 'wshed_sanitized.gpkg')
-    # Publish Section A's outputs under the names configure_prevention_shares reads off p --
-    # explicit task chaining instead of the source repo's copy-between-stage-dirs convention
-    # (whose input defaults even carry a different date suffix than the outputs).
-    _sfx = getattr(p, 'erosion_sdr_results_suffix', '2019_revised_dec_14')
-    p.erosion_usle_path = os.path.join(p.erosion_sdr_output_dir, f'usle_{_sfx}.tif')
-    p.erosion_avoided_erosion_path = os.path.join(p.erosion_sdr_output_dir, f'avoided_erosion_{_sfx}.tif')
+    # Publish Section A's outputs so Section B reads them, but ONLY when this task is producing
+    # them or has already produced them. Unconditionally it overwrote the erosion_usle_path and
+    # erosion_avoided_erosion_path rows, which point at the author's staged rasters -- and those
+    # rasters are what the published number is computed from, so the account was being pointed at
+    # a file this task had not written.
+    _sfx = p.erosion_sdr_results_suffix
+    usle = os.path.join(p.erosion_sdr_output_dir, f'usle_{_sfx}.tif')
+    avoided = os.path.join(p.erosion_sdr_output_dir, f'avoided_erosion_{_sfx}.tif')
+    if p.run_this or hb.path_exists(usle):
+        p.erosion_usle_path = usle
+        p.erosion_avoided_erosion_path = avoided
     if not p.run_this:
         return
-    ef.configure_sdr(p)
+    hb.create_directories(p.erosion_sdr_output_dir)
     paths = erosion_paths(p)
     p.erosion_sdr_args, p.erosion_sdr_file_registry = run_invest_sdr(paths)
     return True
@@ -2834,8 +2717,20 @@ def upstream_prevention_share(p):
     publish_inputs(p)
     # Published before the run_this guard: Section B reads this path off p whether or not this
     # task ran, the same way it reads Section A's.
-    p.erosion_upstream_prevention_share_path = os.path.join(
-        p.cur_dir, 'upstream_prevention_share.tif')
+    #
+    # A path configured in es_parameters wins, so the account can read the author's own layer
+    # rather than our rebuild of it. Until 2026-08-27 this line overwrote the configured value
+    # unconditionally, which made that row inert: it could be set to anything and the task's own
+    # output was used regardless. Where nothing is configured, or the configured file is absent,
+    # the task owns the path -- that fallback is what lets the account run on a machine that
+    # cannot reach the cluster the layer came from.
+    built = os.path.join(p.cur_dir, 'upstream_prevention_share.tif')
+    configured = getattr(p, 'erosion_upstream_prevention_share_path', None)
+    if configured and os.path.abspath(str(configured)) != os.path.abspath(built) \
+            and hb.path_exists(configured):
+        hb.log('upstream_prevention_share: reading the configured layer at %s' % configured)
+    else:
+        p.erosion_upstream_prevention_share_path = built
     if not p.run_this:
         return
     if hb.path_exists(p.erosion_upstream_prevention_share_path):
@@ -2881,13 +2776,14 @@ def prevention_shares(p):
         p.erosion_gep_output_dir = p.cur_dir
     service_results = p.results.setdefault('erosion', {})
     service_results['integrated_country_gep'] = os.path.join(
-        p.erosion_gep_output_dir, "integrated_country_gep.csv")
+        p.erosion_gep_output_dir, 'integrated_country_gep.csv')
     if not p.run_this:
         return
     if hb.path_all_exist(list(service_results.values())):
-        hb.log("integrated_country_gep.csv already exists. Skipping prevention-share calculation for erosion.")
+        hb.log("%s already exists. Skipping prevention-share calculation for erosion."
+               % os.path.basename(service_results['integrated_country_gep']))
         return True
-    ef.configure_prevention_shares(p)
+    hb.create_directories(p.erosion_gep_output_dir)
     paths = erosion_paths(p)
     integrate_and_write(paths)
     return True
@@ -2908,7 +2804,7 @@ def maps_and_figures(p):
         p.erosion_figures_dir = p.cur_dir
     if not p.run_this:
         return
-    ef.configure_maps(p)
+    hb.create_directories(p.erosion_figures_dir)
     paths = erosion_paths(p)
     generate_all_maps_and_figures(paths)
     return True

@@ -57,6 +57,7 @@ FIELD_COLUMNS = [
     ('decided', 'what we decided and changed'),
     ('number', 'what the number is, and what it is checked against'),
     ('need', 'what we need'),
+    ('signed off', 'signed off'),
 ]
 COLUMN_WIDTHS = (22, 16, 22, 26, 11, 8, 30, 52, 64, 56, 56, 16, 64, 40)
 LINE_HEIGHT_POINTS = 13.5

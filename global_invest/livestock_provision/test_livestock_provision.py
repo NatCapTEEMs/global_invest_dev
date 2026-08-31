@@ -12,6 +12,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from global_invest import utilities
 from global_invest.livestock_provision import livestock_provision_functions as lp
 from global_invest.livestock_provision import livestock_provision_tasks as lpt
 
@@ -57,7 +58,8 @@ def _raw_faostat_frame():
 
 
 def test_clean_crop_values_selects_items_by_code_or_by_name():
-    out = lp.clean_crop_values(_raw_faostat_frame(), items=[1017, 'Raw milk of cattle'])
+    out = lp.clean_crop_values(_raw_faostat_frame(), items=[1017, 'Raw milk of cattle'],
+                             aggregate_areas=['World'])
 
     # Both Aaaland rows selected: one by code 1017, one by name. 'World' is an aggregate area
     # and area 223's row is element 152.
@@ -73,14 +75,14 @@ def test_clean_crop_values_selects_items_by_code_or_by_name():
 
 
 def test_clean_crop_values_drops_an_item_matched_by_neither_code_nor_name():
-    out = lp.clean_crop_values(_raw_faostat_frame(), items=[1017])
+    out = lp.clean_crop_values(_raw_faostat_frame(), items=[1017], aggregate_areas=['World'])
     assert out['crop_code'].unique().tolist() == [1017]
 
 
 def test_clean_crop_values_renames_area_223_to_turkey():
     raw = _raw_faostat_frame()
     raw.loc[3, 'Element Code'] = lp.FAOSTAT_GROSS_PRODUCTION_VALUE_ELEMENT
-    out = lp.clean_crop_values(raw, items=[1017])
+    out = lp.clean_crop_values(raw, items=[1017], aggregate_areas=['World'])
     assert set(out.loc[out['area_code'] == 223, 'country']) == {'Turkey'}
 
 
@@ -93,7 +95,7 @@ def test_build_rental_rate_lookup_keys_each_decade_by_its_first_year():
         '1961-1970': [0.30, 0.40],
         '2011-2020': [0.35, 0.45],
     })
-    out = lp.build_rental_rate_lookup(raw)
+    out = utilities.build_rental_rate_lookup(raw)
     assert sorted(out['year'].unique().tolist()) == [1961, 2011]
     assert out['FAO'].dtype.kind == 'i'
     # ISO3 is not a decade column, so it melts in and then falls out with the unparseable start.
@@ -176,7 +178,7 @@ def test_group_crops_then_group_countries_sum_to_the_same_total():
 
 def test_normalize_m49_codes_unquotes_casts_and_maps_successors():
     df = pd.DataFrame({'area_code_M49': ["'156", "'159", "'891", "'076"], 'value': [1, 2, 3, 4]})
-    out = lp.normalize_m49_codes(df)
+    out = utilities.normalize_m49_codes(df)
     assert list(out['area_code_M49']) == [156, 156, 688, 76]
     assert list(df['area_code_M49']) == ["'156", "'159", "'891", "'076"]   # input untouched
 
@@ -220,7 +222,7 @@ def test_task_reader_cleans_the_faostat_bulk_file(tmp_path):
     raw.loc[0, 'Area'] = 'Côte'
     raw.to_csv(path, index=False, encoding='ISO-8859-1')
 
-    out = lpt.read_crop_values(path, items=[1017])
+    out = lpt.read_crop_values(path, items=[1017], aggregate_areas=['World'])
     assert set(out['country']) == {'Côte'}
     assert out.set_index('year')['livestock_provision_gep'].loc[1961] == 1.0
 

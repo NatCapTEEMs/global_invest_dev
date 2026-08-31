@@ -185,7 +185,7 @@ def gep_preprocess(p):
     for band in ('aboveground', 'belowground'):
         projected[band] = os.path.join(product_dir, 'spawn_%s_biomass_carbon_2010_projected.tif' % band)
         raw = os.path.join(spawn_raw_dir, 'spawn_%s_biomass_carbon_2010.tif' % band)
-        if os.path.exists(raw):   # raw Spawn present -> (re)build the projected raster from it
+        if hb.path_exists(raw):   # raw Spawn present -> (re)build the projected raster from it
             scaled = os.path.join(p.cur_dir, 'spawn_%s_biomass_carbon_2010_scaled.tif' % band)
             hb.raster_calculator_flex(raw, lambda a: a * SPAWN_INTEGER_SCALE, scaled)
             hb.reproject_dataset_to_match(scaled, p.gep_lulc_input_path, projected[band], 'near')
@@ -252,18 +252,18 @@ def _zone_mean(p, scenario, year, density_lookup):
     polygon geometry is identical across scenarios, so the mean is sufficient and area cancels.
     """
     density_path = os.path.join(p.cur_dir, 'carbon_density_%s_%d.tif' % (scenario, year))
-    if not os.path.exists(density_path):
+    if not hb.path_exists(density_path):
         tcf.generate_carbon_density_raster(
             lulc_path=p.scenario_lulc_paths[scenario][year],
             cz_path=p.terrestrial_quantity_input_path,
             density_lookup=density_lookup,
             out_path=density_path)
     summary_path = os.path.join(p.cur_dir, 'carbon_by_zone_%s_%d.csv' % (scenario, year))
-    if not os.path.exists(summary_path):
+    if not hb.path_exists(summary_path):
         tcf.summarize_raster_by_region(density_path, p.region_boundary_path, summary_path,
                                        year=year, id_column=p.terrestrial_carbon_shock_id_col)
     return hb.df_read(summary_path).set_index('region_id')[
-        getattr(p, 'terrestrial_carbon_shock_value_col', 'mean')]
+        p.terrestrial_carbon_shock_value_col]
 
 
 def _align_zones_to_lulc_grid(p, reference_lulc_path):
@@ -277,7 +277,7 @@ def _align_zones_to_lulc_grid(p, reference_lulc_path):
     if _raster_shape(p.terrestrial_quantity_input_path) == _raster_shape(reference_lulc_path):
         return
     aligned_path = os.path.join(p.cur_dir, 'carbon_zones_aligned.tif')
-    if not os.path.exists(aligned_path):
+    if not hb.path_exists(aligned_path):
         hb.resample_to_match(p.terrestrial_quantity_input_path, reference_lulc_path,
                              aligned_path, resample_method='near')
     p.terrestrial_quantity_input_path = aligned_path
@@ -377,7 +377,7 @@ def terrestrial_carbon_shock(p):
     out = pd.DataFrame(rows)
     utilities.assert_shock_table_sound(out, scenarios, 'terrestrial_carbon')
     out.to_csv(p.terrestrial_carbon_shock_output_path, index=False)
-    print('  carbon shock: %d rows, %d scenarios (shock_pct=shock_pct_contemp=/base_Y, shock_pct_fixedbase=/base_%d) -> %s'
+    hb.log('  carbon shock: %d rows, %d scenarios (shock_pct=shock_pct_contemp=/base_Y, shock_pct_fixedbase=/base_%d) -> %s'
           % (len(out), out['scenario'].nunique() if rows else 0, es_shock_base_year, p.terrestrial_carbon_shock_output_path))
     return True
 
@@ -412,8 +412,8 @@ def terrestrial_carbon_shock_static(p):
 
     carb_path = getattr(p, 'terrestrial_carbon_dependency_path', None) or os.path.join(
         p.input_dir, 'raw_dependencies', 'carbon_storage_dependency.csv')
-    if not os.path.exists(carb_path):
-        print('  carbon shock: dependency csv not found (%s) -- skipping' % carb_path)
+    if not hb.path_exists(carb_path):
+        hb.log('  carbon shock: dependency csv not found (%s) -- skipping' % carb_path)
         return
 
     df = hb.df_read(carb_path)
@@ -422,7 +422,7 @@ def terrestrial_carbon_shock_static(p):
     # exact-match miss here gave an empty base -> empty output -> silent GTAP zero.
     raw_base = utilities.resolve_base_scenario(df['scenario'].values, terrestrial_carbon_scenario_map, base_scenario, 'terrestrial_carbon', log=hb.log)
     base = df[(df['scenario'] == raw_base) & (df['year'] == es_shock_end_year)]
-    base_vals = base.set_index(['ENDW', 'REG'])['percentage_change'].astype(float) * tcf.PERCENT
+    base_vals = base.set_index(['ENDW', 'REG'])['percentage_change'].astype(float) * 100.0
 
     rows = []
     for our_scn in es_shock_scenarios:
@@ -430,7 +430,7 @@ def terrestrial_carbon_shock_static(p):
         if raw_scn is None:
             continue
         scn = df[(df['scenario'] == raw_scn) & (df['year'] == es_shock_end_year)]
-        scn_vals = scn.set_index(['ENDW', 'REG'])['percentage_change'].astype(float) * tcf.PERCENT
+        scn_vals = scn.set_index(['ENDW', 'REG'])['percentage_change'].astype(float) * 100.0
         rows += tcf.static_shock_rows(base_vals, scn_vals, our_scn, p.terrestrial_carbon_shock_acts,
                                       es_shock_base_year, es_shock_end_year)
 
@@ -438,7 +438,7 @@ def terrestrial_carbon_shock_static(p):
     utilities.assert_shock_table_sound(out, es_shock_scenarios, 'terrestrial_carbon')
     out.to_csv(p.terrestrial_carbon_shock_output_path, index=False)
     nz = out[(out['year'] == es_shock_end_year) & (out['shock_pct'] != 0)] if len(out) else out
-    print('  carbon shock: %d rows, %d scenarios, %d nonzero @%d (static, uncapped) -> %s'
+    hb.log('  carbon shock: %d rows, %d scenarios, %d nonzero @%d (static, uncapped) -> %s'
           % (len(out), out['scenario'].nunique() if len(out) else 0, len(nz), es_shock_end_year,
              p.terrestrial_carbon_shock_output_path))
     return True

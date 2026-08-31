@@ -15,9 +15,22 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from global_invest import utilities
 from global_invest.water_supply import water_supply_functions as wf
 
-REFERENCE_DIR = os.path.join(os.path.dirname(wf.__file__), 'reference')
+
+def _base_data_project():
+    """A bare ProjectFlow, only for its base_data_dir.
+
+    The anchors are inputs, so a test finds them the way a run does rather than by walking
+    directories of its own.
+    """
+    import tempfile
+    import hazelbean as hb
+    return hb.ProjectFlow(project_dir=os.path.join(tempfile.mkdtemp(), 'anchors'))
+
+
+REFERENCE_DIR = utilities.service_data_dir(_base_data_project(), 'water_supply')
 
 
 def test_annuity_identity_matches_the_observed_anchor_ratio():

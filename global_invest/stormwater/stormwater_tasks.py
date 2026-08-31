@@ -5,10 +5,12 @@ sums its raster inside each country, and gep_calculation prices the result."""
 import os
 
 import numpy as np
+import pyproj
 import rasterio
 from osgeo import gdal
 import hazelbean as hb
 from global_invest import utilities
+from global_invest.stormwater import stormwater_functions
 
 
 def publish_inputs(p):
@@ -27,10 +29,6 @@ def publish_inputs(p):
 PROJECT_NAME = 'gep_stormwater'
 INVEST_WORKSPACE_DIR_NAME = 'stormwater_invest'
 RETENTION_VOLUME_FILE_NAME = 'retention_volume_urbanstorm_water.tif'
-COUNTRIES_REF_PATH = 'cartographic/ee/ee_r250.gpkg'
-COUNTRIES_ON_GRID_REF_PATH = 'cartographic/ee/ee_r250_3857.gpkg'
-ZONE_IDS_REF_PATH = 'cartographic/ee/ee_r250_id_3857_537m.tif'
-RETENTION_BY_COUNTRY_REF_PATH = 'global_invest/stormwater/retention_m3_by_country.csv'
 ZONE_ID_FIELD = 'iso3_r250_id'
 ZONE_LABEL_FIELD = 'iso3_r250_label'
 ZONE_ID_NDV = 0                 # the id convention (0 = NDV), so 0 is the rasterized background
@@ -93,12 +91,18 @@ def retention_m3_by_country(retention_path, zone_ids_path, countries_df):
         if zone_src.shape != src.shape:
             raise ValueError('country-id raster %s is %s; retention raster %s is %s' % (
                 zone_ids_path, zone_src.shape, retention_path, src.shape))
+        # The volumes arrive built on one constant cell area; ground_area_share puts each row
+        # back on its own ground area. See stormwater_functions.ground_area_share.
+        to_wgs84 = pyproj.Transformer.from_crs(src.crs, 'EPSG:4326', always_xy=True)
         for block_index, row_0 in enumerate(range(0, src.height, BLOCK_N_ROWS)):
             window = rasterio.windows.Window(0, row_0, src.width,
                                              min(BLOCK_N_ROWS, src.height - row_0))
             volume = src.read(1, window=window)
             # Nodata and non-finite pixels contribute nothing to a country's total.
             valid = np.isfinite(volume) & (volume != src.nodata)
+            row_y = [src.xy(row, 0)[1] for row in range(row_0, row_0 + volume.shape[0])]
+            row_lat = to_wgs84.transform(np.zeros(len(row_y)), np.asarray(row_y))[1]
+            volume = volume * stormwater_functions.ground_area_share(row_lat)[:, None]
             sums += utilities.sum_by_zone(
                 np.where(valid, volume, 0.0), zone_src.read(1, window=window), n_zones)
             if block_index % LOG_EVERY_N_BLOCKS == 0:
@@ -119,8 +123,7 @@ def retention_by_country(p):
     is deterministic, the same reason erosion's SDR and routing steps skip.
     """
     publish_inputs(p)
-    p.stormwater_retention_by_country_path = p.get_path(
-        RETENTION_BY_COUNTRY_REF_PATH, possible_dirs=[p.base_data_dir], raise_error_if_fail=False)
+    p.stormwater_retention_by_country_path = p.stormwater_retention_by_country_path
     if not p.run_this:
         return
     if hb.path_exists(p.stormwater_retention_by_country_path):
@@ -135,11 +138,9 @@ def retention_by_country(p):
             'The InVEST retention raster is not at %s. That run happens outside this tree; see '
             'base_data/global_invest/stormwater/run_recipe.md for its configuration.'
             % retention_path)
-    countries_path = p.get_path(COUNTRIES_REF_PATH, possible_dirs=[p.base_data_dir])
-    countries_on_grid_path = p.get_path(COUNTRIES_ON_GRID_REF_PATH,
-                                        possible_dirs=[p.base_data_dir], raise_error_if_fail=False)
-    zone_ids_path = p.get_path(ZONE_IDS_REF_PATH, possible_dirs=[p.base_data_dir],
-                               raise_error_if_fail=False)
+    countries_path = p.stormwater_countries_path
+    countries_on_grid_path = p.stormwater_countries_on_grid_path
+    zone_ids_path = p.stormwater_zone_ids_path
     if not hb.path_exists(countries_on_grid_path):
         write_countries_on_retention_grid(countries_path, countries_on_grid_path)
     if not hb.path_exists(zone_ids_path):

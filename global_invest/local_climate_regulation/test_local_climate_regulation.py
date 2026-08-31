@@ -13,9 +13,22 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from global_invest import utilities
 from global_invest.local_climate_regulation import local_climate_regulation_functions as lc
 
-REFERENCE_DIR = os.path.join(os.path.dirname(lc.__file__), 'reference')
+
+def _base_data_project():
+    """A bare ProjectFlow, only for its base_data_dir.
+
+    The anchors are inputs, so a test finds them the way a run does rather than by walking
+    directories of its own.
+    """
+    import tempfile
+    import hazelbean as hb
+    return hb.ProjectFlow(project_dir=os.path.join(tempfile.mkdtemp(), 'anchors'))
+
+
+REFERENCE_DIR = utilities.service_data_dir(_base_data_project(), 'local_climate_regulation')
 
 
 def test_city_savings_identity_and_the_lineage_sum():

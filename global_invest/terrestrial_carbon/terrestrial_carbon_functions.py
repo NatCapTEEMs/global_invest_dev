@@ -13,6 +13,8 @@ import numpy as np
 import pandas as pd
 import hazelbean as hb
 
+from global_invest import utilities
+
 # The raw-Spawn density build (uint -> float32 scaling, aboveground+belowground add) is a one-off
 # base-data job, not part of the per-run tree; it lives in howto/rebuild_spawn_total_carbon_density.md
 # and the run consumes its finished product (spawn_total_biomass_carbon_2010.tif) from base_data.
@@ -20,9 +22,6 @@ import hazelbean as hb
 # hazelbean's output_data_type code for Float32. The LULC grid the density rasters are written
 # against is uint8, which would round every density to a whole Mg C/ha.
 GDAL_FLOAT32 = 6
-
-# The shocks are reported in percent, so the ratio is scaled by this before it is written.
-PERCENT = 100.0
 
 # The country attributes every GEP per-country CSV carries, in the order the CSV writes them.
 CARBON_ATTR_COLS = ['iso3_r250_id', 'iso3_r250_label', 'iso3_r250_name',
@@ -97,7 +96,7 @@ def generate_carbon_density_raster(lulc_path, cz_path, density_lookup, out_path)
             f"lulc_id {sorted(set(density_lookup.index.get_level_values('lulc_id')))} "
             f"(likely an ESA-classed map fed to the SEALS7-keyed lookup, or a wrong carbon-zones raster). "
             f"Refusing to emit an all-NoData density raster.")
-    print(f"Saved: {out_path}")
+    hb.log(f"Saved: {out_path}")
 
 # Promoted to global_invest.utilities on its second caller (pollination GEP); re-exported here
 # so existing imports keep working. It reads as unused in this file because the caller is the
@@ -127,7 +126,7 @@ def shock_percent(scenario_values, baseline_values, denominator_values=None):
         infinite shock.
     """
     denominator = baseline_values if denominator_values is None else denominator_values
-    return (scenario_values - baseline_values) / denominator.replace(0, np.nan) * PERCENT
+    return (scenario_values - baseline_values) / denominator.replace(0, np.nan) * 100.0
 
 
 def interpolate_annual_shock(years, anchor_years, anchor_values, base_year):
@@ -254,15 +253,8 @@ def static_shock_rows(baseline_values, scenario_values, scenario, sector, base_y
 def collapse_regions_to_countries(df_regions, df_price, price_column):
     """Per-region carbon stock summed to one row per country, priced at the base-year carbon price.
 
-    Summing the r264-expanded table as it stands would count a split country once per sub-region
-    (China spans 6 r264 rows, India 6, France, Turkey, the UK and Pakistan 2), so the sum is taken
-    on the r250 country id and the country attributes are attached afterwards from one
-    representative sub-region each. This table is the source of truth for the national total and
-    for every aggregation.
-
     Args:
-        df_regions (pd.DataFrame): the zonal summary, one row per r264 region, with
-            iso3_r250_id, year, total and the country attribute columns.
+        df_regions (pd.DataFrame): the per-region carbon stock table.
         df_price (pd.DataFrame): the carbon price by year, carrying `year` and `price_column`.
         price_column (str): the price convention in force, e.g. 'rental scc r2%'.
 
@@ -270,28 +262,15 @@ def collapse_regions_to_countries(df_regions, df_price, price_column):
         pd.DataFrame: the attribute columns, year, quantity, price and terrestrial_carbon_gep,
         one row per country and year.
     """
-    df_quantity = (df_regions.groupby(['iso3_r250_id', 'year'], as_index=False)['total'].sum()
-                   .rename(columns={'total': 'terrestrial_carbon_quantity'}))
-    df_gep = df_quantity.merge(df_price, how='left', on='year')
-    df_gep['terrestrial_carbon_gep'] = df_gep['terrestrial_carbon_quantity'] * df_gep[price_column]
-
-    attributes = df_regions[CARBON_ATTR_COLS].drop_duplicates('iso3_r250_id')
-    return df_gep.merge(attributes, how='left', on='iso3_r250_id')[
-        CARBON_ATTR_COLS + ['year', 'terrestrial_carbon_quantity', price_column, 'terrestrial_carbon_gep']]
+    df = utilities.collapse_regions_to_countries(
+        df_regions, CARBON_ATTR_COLS, 'terrestrial_carbon_quantity')
+    df = df.merge(df_price, how='left', on='year')
+    df['terrestrial_carbon_gep'] = df['terrestrial_carbon_quantity'] * df[price_column]
+    return df[CARBON_ATTR_COLS + ['year', 'terrestrial_carbon_quantity', price_column,
+                                  'terrestrial_carbon_gep']]
 
 
 def expand_country_values_to_regions(df_regions, df_gep_by_country):
-    """Each r264 region carrying its COUNTRY's GEP, for the map only.
-
-    The sub-region rows repeat the national value rather than splitting it, so this table is
-    never summed. It exists because the choropleth draws r264 polygons.
-
-    Args:
-        df_regions (pd.DataFrame): the zonal summary, one row per r264 region.
-        df_gep_by_country (pd.DataFrame): the collapsed per-country table.
-
-    Returns:
-        pd.DataFrame: df_regions with terrestrial_carbon_gep attached.
-    """
-    return df_regions.merge(df_gep_by_country[['iso3_r250_id', 'terrestrial_carbon_gep']],
-                            how='left', on='iso3_r250_id')
+    """Each r264 region carrying its COUNTRY's GEP, for the map only. Never sum the result."""
+    return utilities.expand_country_values_to_regions(
+        df_regions, df_gep_by_country, 'terrestrial_carbon_gep')

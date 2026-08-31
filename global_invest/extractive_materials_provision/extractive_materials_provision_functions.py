@@ -9,6 +9,8 @@ import logging
 
 import hazelbean as hb
 
+from global_invest import utilities
+
 # The World Bank publishes one indicator per file in wide form: four descriptive columns
 # (country name, country code, indicator name, indicator code) and then one column per year.
 WORLD_BANK_COUNTRY_COLUMN = 'Country Code'
@@ -34,13 +36,8 @@ def world_bank_wide_to_long(df_wide, value_column):
 
 def group_countries(df):
     """Country-year rows summed to one global row per year."""
-    # agg_cols, not agg_dict: hb.df_groupby(df, groupby_cols='year', agg_dict={'Value': 'sum'})
-    # returns a badly shaped frame here.
-    df_gep_by_year = hb.df_groupby(df, groupby_cols='year', agg_cols='Value',
-                                   preserve='keep_all_valid')
-    df_gep_by_year.sort_values('year', inplace=True)
-    logging.info(f'Grouped total by year ({df_gep_by_year.shape[0]} rows).')
-    return df_gep_by_year
+    return utilities.sum_countries_to_year(df, 'Value')
+
 
 
 def mineral_rent_gep(mineral_rent_percent, gdp_current_usd, factor):

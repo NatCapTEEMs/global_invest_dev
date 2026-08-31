@@ -39,55 +39,6 @@ FAOSTAT_LAST_YEAR = 2022
 # the M49 code, so the name is normalised only to keep the item-level table readable.
 FAOSTAT_TURKIYE_AREA_CODE = 223
 
-# FAOSTAT mixes country rows with regional and thematic aggregates under the same Area column, and
-# an aggregate row would be counted on top of its members. These are the aggregate and
-# no-longer-existing areas the valuation drops. The three China sub-entities are dropped because
-# the file also carries the "China" total, which is what the country correspondence expects.
-FAOSTAT_AGGREGATE_AREAS = [
-    "USSR",
-    "Yugoslav SFR",
-    "World",
-    "Africa",
-    "Eastern Africa",
-    "Middle Africa",
-    "Northern Africa",
-    "Southern Africa",
-    "Western Africa",
-    "Americas",
-    "Northern America",
-    "Central America",
-    "Caribbean",
-    "South America",
-    "Asia",
-    "Central Asia",
-    "Eastern Asia",
-    "Southern Asia",
-    "South-eastern Asia",
-    "Western Asia",
-    "Europe",
-    "Eastern Europe",
-    "Northern Europe",
-    "Southern Europe",
-    "Western Europe",
-    "Oceania",
-    "Australia and New Zealand",
-    "Melanesia",
-    "Micronesia",
-    "Polynesia",
-    "European Union (27)",
-    "Least Developed Countries",
-    "Land Locked Developing Countries",
-    "Low Income Food Deficit Countries",
-    "Small Island Developing States",
-    "Czechoslovakia" "Low Income Food Deficit Countries",
-    "Net Food Importing Developing Countries",
-    "China, Hong Kong SAR",
-    "China, mainland",
-    "China, Macao SAR",
-    "China, Taiwan Province of",
-    "Belgium-Luxembourg",
-]
-
 # FAOSTAT keeps dissolved states under their own M49 codes. Each maps to the successor the
 # country correspondence uses, so their production joins to a country instead of dropping.
 M49_SUCCESSORS = {
@@ -103,136 +54,36 @@ M49_SUCCESSORS = {
 CROP_ID_COLUMNS = ['area_code', 'area_code_M49', 'country', 'crop_code', 'crop']
 
 
-def clean_crop_values(df_raw, items):
-    """One row per country-item-year of FAOSTAT gross production value, in thousand USD.
-
-    The bulk file is wide (one column per year, each with a flag column beside it) and mixes
-    elements, units, aggregate areas and items nobody asked for. This keeps the gross-production-
-    value rows in USD, keeps the requested items, drops the aggregate areas, and melts the year
-    columns into rows.
-
-    Args:
-        df_raw (pd.DataFrame): the FAOSTAT Value of Production bulk table as shipped.
-        items (iterable): the items to keep. Integer entries select by FAO item code (the
-            owner's convention, robust to FAO's item-name revisions); strings select by name.
-
-    Returns:
-        pd.DataFrame: columns area_code, area_code_M49, country, crop_code, crop, year,
-        livestock_provision_gep.
-    """
-    years = range(FAOSTAT_FIRST_YEAR, FAOSTAT_LAST_YEAR + 1)
-    df = df_raw[(df_raw['Unit'] == FAOSTAT_VALUE_UNIT)
-                & (df_raw['Element Code'] == FAOSTAT_GROSS_PRODUCTION_VALUE_ELEMENT)].copy()
-    df = df.drop(columns=[col for col in df.columns if col.endswith('F')])
-
-    old_names = ['Area Code', 'Area Code (M49)', 'Area', 'Item Code', 'Item'] + [f'Y{y}' for y in years]
-    new_names = CROP_ID_COLUMNS + [str(y) for y in years]
-    df = df.rename(columns=dict(zip(old_names, new_names)))
-
-    codes = [i for i in items if isinstance(i, int)]
-    names = [i for i in items if isinstance(i, str)]
-    df = df[df['crop_code'].isin(codes) | df['crop'].isin(names)]
-    df = df[~df['country'].isin(FAOSTAT_AGGREGATE_AREAS)]
-    logging.info(f'Finished cleaning up ({df.shape[0]} rows).')
-
-    df = pd.melt(df, id_vars=CROP_ID_COLUMNS, value_vars=[str(y) for y in years],
-                 var_name='year', value_name='livestock_provision_gep')
-    df['area_code'] = pd.to_numeric(df['area_code'], errors='coerce').astype(int)
-    df['year'] = pd.to_numeric(df['year'], errors='coerce').astype(int)
-    df.loc[df['area_code'] == FAOSTAT_TURKIYE_AREA_CODE, 'country'] = 'Turkey'
-
-    logging.info(f'Reshaped to long format ({df.shape[0]} rows).')
-    return df
+def clean_crop_values(df_raw, items, aggregate_areas):
+    """FAOSTAT gross production value, one row per country-item-year. See
+    utilities.clean_faostat_values; this names the value column for the account."""
+    return utilities.clean_faostat_values(df_raw, items, 'livestock_provision_gep', aggregate_areas)
 
 
-def build_rental_rate_lookup(df_raw):
-    """The CWoN rental rates as one row per country and decade start.
 
-    The workbook is one column per decade ("1961-1970", "1971-1980", ...) keyed on the FAO area
-    code. Melting it and keeping the decade's first year gives the lookup merge_crop_with_coefs
-    reads as-of. Columns that are not a decade (the ISO3 label) carry no leading year, so they
-    fall out with the rows whose decade start does not parse.
 
-    Args:
-        df_raw (pd.DataFrame): the CWoN coefficient table as shipped.
-
-    Returns:
-        pd.DataFrame: columns FAO, year, rental_rate.
-    """
-    df = df_raw.melt(id_vars=['Order', 'FAO', 'Country/territory'],
-                     var_name='Decade', value_name='rental_rate')
-    df['Decade_start'] = df['Decade'].str.extract(r'^(\d{4})').astype(float)
-    df = df.dropna(subset=['Decade_start', 'FAO'])
-
-    df = df[['FAO', 'Decade_start', 'rental_rate']].copy()
-    df['FAO'] = df['FAO'].astype(int)
-    df['Decade_start'] = df['Decade_start'].astype(int)
-    df = df.rename(columns={'Decade_start': 'year'})
-    logging.info(f'Prepared coef lookup ({df.shape[0]} rows).')
-    return df
 
 
 def merge_crop_with_coefs(df_crop_value, df_crop_coefs):
-    """Production value attributed to land, country by country.
-
-    Each year takes the rental rate of the most recent decade that has started, which is a
-    backward as-of merge on year within a country. A country the CWoN table never covers keeps
-    a missing rate, so its value becomes missing rather than being attributed in full.
-
-    Args:
-        df_crop_value (pd.DataFrame): long item values, with area_code, year and
-            livestock_provision_gep.
-        df_crop_coefs (pd.DataFrame): the rental-rate lookup, with FAO, year and rental_rate.
-
-    Returns:
-        pd.DataFrame: df_crop_value with rental_rate attached and livestock_provision_gep
-        multiplied by it, sorted by country then year.
-    """
-    merged_parts = []
-    for code, df_group in df_crop_value.groupby('area_code', sort=True):
-        lookup_sub = df_crop_coefs[df_crop_coefs['FAO'] == code]
-        if lookup_sub.empty:
-            df_group = df_group.copy()
-            df_group['rental_rate'] = pd.NA
-            merged_parts.append(df_group)
-            continue
-
-        merged = pd.merge_asof(
-            left=df_group.sort_values('year'),
-            right=lookup_sub.sort_values('year')[['year', 'rental_rate']],
-            on='year',
-            direction='backward',
-        )
-        merged_parts.append(merged)
-
-    df = pd.concat(merged_parts, ignore_index=True)
-    # Kept because the attribution factor is still an open decision: the rental rate is a
-    # stand-in for the share of feed that ecosystems provided, and comparing the two needs the
-    # value before either is applied.
-    df['gross_production_value'] = df['livestock_provision_gep']
-    df['livestock_provision_gep'] = df['livestock_provision_gep'] * df['rental_rate']
-    df = df.sort_values(by=['area_code', 'year'], ascending=[True, True])
-    logging.info(f'Merged values + coefs ({df.shape[0]} rows).')
-    return df
+    """Production value attributed to land, country by country."""
+    return utilities.apply_rental_rates(df_crop_value, df_crop_coefs, 'livestock_provision_gep')
 
 
-def normalize_m49_codes(df, column='area_code_M49', successors=None):
-    """FAOSTAT's M49 area codes as integers, with dissolved states mapped to their successor.
+def group_crops(df):
+    """Item rows summed to one row per country and year."""
+    return utilities.sum_items_to_country_year(df, 'livestock_provision_gep')
 
-    The codes arrive quoted ("'156"), so they are unquoted and cast before the mapping.
 
-    Args:
-        df (pd.DataFrame): a frame holding FAOSTAT area codes.
-        column (str): the code column.
-        successors (dict): code -> successor code, defaulting to M49_SUCCESSORS.
+def group_countries(df):
+    """Country-year rows summed to one global row per year."""
+    return utilities.sum_countries_to_year(df, 'livestock_provision_gep')
 
-    Returns:
-        pd.DataFrame: the frame with that column as integers, successors applied.
-    """
-    out = df.copy()
-    out[column] = out[column].astype(str).str.replace("'", '', regex=False).astype(int)
-    out[column] = out[column].replace(M49_SUCCESSORS if successors is None else successors)
-    return out
+
+
+
+
+
+
 
 
 def attach_countries(df_crop_value, df_countries):
@@ -267,31 +118,8 @@ def attach_countries(df_crop_value, df_countries):
     return df
 
 
-def group_crops(df):
-    """Item rows summed to one row per country and year."""
-    hb.log('Grouping GEP by country-year.')
-    agg_dict = {'livestock_provision_gep': 'sum'}
-    if 'gross_production_value' in df.columns:
-        agg_dict['gross_production_value'] = 'sum'
-    df_gep_by_year_country = hb.df_groupby(df, ['iso3_r250_id', 'year'],
-                                           agg_dict=agg_dict,
-                                           preserve='keep_all_valid')
-    df_gep_by_year_country = df_gep_by_year_country.sort_values(by=['iso3_r250_id', 'year'],
-                                                                ascending=[True, True])
-    df_gep_by_year_country['livestock_provision_gep'] = pd.to_numeric(
-        df_gep_by_year_country['livestock_provision_gep'], errors='coerce')
-
-    logging.info(f'Grouped by country-year ({df_gep_by_year_country.shape[0]} rows).')
-    return df_gep_by_year_country
 
 
-def group_countries(df):
-    """Country-year rows summed to one global row per year."""
-    df_gep_by_year = hb.df_groupby(df, groupby_cols='year', agg_cols='livestock_provision_gep',
-                                   preserve='keep_all_valid')
-    df_gep_by_year.sort_values('year', inplace=True)
-    logging.info(f'Grouped total by year ({df_gep_by_year.shape[0]} rows).')
-    return df_gep_by_year
 
 
 # The source repo's step-two attribution (lambda.py): lambda = the ecosystem-provided share

@@ -12,6 +12,9 @@ The run's replacement cost is 1 USD/m3, a placeholder rather than a valuation. T
 price per cubic metre is the open ask, held in one named constant until the author answers.
 """
 
+import numpy as np
+
+
 # The committed InVEST configuration prices retention at 1 USD/m3. That is a placeholder
 # (the ask on the status sheet); every output built on it is provisional by construction.
 STORMWATER_PRICE_PER_M3_PLACEHOLDER = 1.0
@@ -31,3 +34,26 @@ def stormwater_gep_by_country(retention_m3_df, price_per_m3):
     df = retention_m3_df.copy()
     df['stormwater_gep'] = df['retention_m3'] * float(price_per_m3)
     return df
+
+
+def ground_area_share(latitudes_deg):
+    """The fraction of a projected cell's area that is real ground, per row of latitude.
+
+    InVEST builds its retention volumes as precipitation times ONE pixel area, a single scalar
+    it takes off the transform (`pixel_area = abs(pixel_size[0] * pixel_size[1])` in
+    natcap.invest.stormwater). It has to work on a projected grid, and this run is EPSG:3857,
+    where that constant is the area a cell covers at the equator. Real ground area falls as the
+    square of the cosine of latitude, so a volume built on the constant credits every cell away
+    from the equator with more water than its ground can hold: 1.7 times at 40 degrees.
+
+    Multiplying by this share puts each cell back on its own ground area. It is what
+    `ha_per_cell` does for the geographic grids the rest of the library works on, expressed for
+    a grid that is projected only because InVEST demands one.
+
+    Args:
+        latitudes_deg (numpy.ndarray): latitude of each raster row, in degrees.
+
+    Returns:
+        numpy.ndarray: the share in (0, 1], one per row.
+    """
+    return np.cos(np.radians(np.asarray(latitudes_deg, dtype='float64'))) ** 2

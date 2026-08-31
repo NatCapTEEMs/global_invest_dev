@@ -1,0 +1,167 @@
+---
+title: "Riverine flood-control ecosystem service"
+format: html
+---
+
+## Purpose
+
+Vegetated landscapes intercept rainfall, slow its passage into rivers and store part of it in
+the soil. Where they do so upstream of towns and farmland, floods downstream are shallower than
+they would otherwise be, and the damage those floods cause is smaller. That reduction in damage
+is what this account values.
+
+The scope is river flooding only. Coastal flooding, storm surge and pluvial flooding lie outside
+it, following the hazard product the account uses. Coverage is 250 countries at 537 m, reported
+in USD 2019.
+
+## Method
+
+Valuing this service requires answering a question that cannot be observed: how much flood damage
+would occur if landscapes stopped absorbing rain. The account simulates a counterfactual world in
+which ecosystems no longer retain water, routes the same storms through it, and takes the
+difference.
+
+Everything turns on one number per location, the **depth amplification**: the ratio of flood depth
+in the degraded world to flood depth in the current one. Hydrology has no standard name for it,
+because it has not previously been needed -- it exists here only because there is a paired
+counterfactual world to run.
+
+### Step 1, how absorbent each piece of land is
+
+A curve number between 30 and 100 is assigned to every cell by crossing land cover with soil
+hydrologic group, from USDA field measurements:
+
+$$S = 25400 / \text{CN} - 254$$
+
+$S$ is the potential maximum retention in millimetres. Forest on loam holds 208 mm; the same soil
+stripped bare holds 41 mm. This is the only point in the account where vegetation enters the
+physics.
+
+### Step 2, how much extra water runs off
+
+$$I_a = 0.2S, \qquad Q = (P - I_a)^2 / (P - I_a + S) \text{ for } P > I_a$$
+
+The relation saturates. As $P$ grows large relative to $S$, runoff approaches total rainfall
+regardless of land cover, so the service is concentrated in frequent events and the largest
+proportional effects appear where storms are small relative to what the soil can hold.
+
+### Step 3, following the water downhill
+
+$$\text{ratio}(i) = \text{accum}(Q_\text{degraded})(i) / \text{accum}(Q_\text{current})(i)$$
+
+Routing uses MERIT Hydro. On the Upper Mississippi, seven per cent more runoff at the point of
+rainfall becomes twenty-two per cent more discharge in the river: routing roughly triples the
+local effect, and that is what makes flood regulation a landscape service rather than a local one.
+
+### Step 4, turning more water into deeper water
+
+$$A(i) = [\text{ratio}(i)]^{f}, \qquad f \approx 0.4$$
+
+At-a-station hydraulic geometry gives the split between width, depth and velocity. So 21.5% more
+discharge produces 8% more depth. The exponent is the least constrained element of the chain and
+is swept over 0.3 to 0.5.
+
+## Two counterfactuals
+
+**Bare soil** removes land cover entirely, setting curve numbers to the fallow values of the
+reference tables. This is the world a gross product asks about, and it is the reference the
+erosion account uses, so the two services are measured against one hypothetical landscape and can
+be summed.
+
+**In-situ degradation** raises curve numbers less: soils compacted and canopy thinned, the land
+still present. Closer to what realistic degradation would produce, and reported alongside rather
+than as a sensitivity.
+
+Bare soil exceeds in-situ by about 2.5, and that ratio is stable to within four per cent across
+both hazard products and both treatments of permanent water.
+
+## Lambda
+
+Lambda is 1 for this service. The counterfactual already isolates the ecosystem contribution: it
+is a difference between two worlds identical in every respect except the ecosystem, so whatever
+remains in the difference is the ecosystem's doing by construction.
+
+The **prevention share** reported throughout is a different quantity and not an attribution
+coefficient:
+
+$$\text{prevention share} = (\text{EAD}_\text{degraded} - \text{EAD}_\text{current}) / \text{EAD}_\text{degraded}$$
+
+An attribution share near 1 and a prevention share near 0.01 are not two estimates of one thing.
+
+## Sign conventions
+
+GEP is positive: it is damage that does not occur. Degradation raises expected annual damage, so
+the difference is non-negative by construction and a negative value indicates a routing or
+alignment fault rather than a result.
+
+## Compute
+
+The amplification field is built from rainfall and flow direction rather than from the hazard
+maps, so it survives a change of hazard product. Building it is two weeks of single-threaded flow
+accumulation over 75 billion cells; everything downstream of it is hours. `RUN.md` documents both
+paths.
+
+
+## Before trusting any rerun of the pipeline
+
+The account as it stands does **not** rerun the pipeline: `gep_calculation` reads the author's own
+per-country export, so the number here is his verified one. This section matters only if that
+changes.
+
+### The failure that made this account wrong twice
+
+The author's `RUN.md` is explicit, and it is the most important thing in it:
+
+> Check flow-direction coverage. This is not optional, and it is the reason this account was wrong
+> twice.
+
+Seven MERIT flow-direction packages were missing at various points, and **every absence was
+silent**. Accumulation over a missing network writes nodata, the amplification clips to a minimum of
+1.0, and the valuation reads 1.0 as *no change here* rather than *no data here*. Japan, Korea,
+Portugal and Kazakhstan returned zero service against **49 bn USD of exposure**; Nigeria, Chad,
+Cameroon, Niger and the Central African Republic another **4 bn**. Nothing in any log recorded a
+problem. Both were found because a country looked implausible. Recovering them raised GEP by
+**18.5 per cent and then a further 16**.
+
+    python prep_merit_dir.py --check-tiles
+
+⚠ **The check has a limit the author states plainly.** Its reference list was generated from a tile
+set believed complete, so it detects regressions — a lost file, a partial copy, an interrupted
+extraction — **but not a package that was never downloaded**, which was the original failure.
+
+A missing amplification raster behaves the same way: the pipeline warns, falls back to current
+depths and returns a GEP of zero, so the job completes and the number is wrong. `RUN.md` carries a
+three-line check that the mosaic resolves, and `msi/final_run.sbatch` verifies the totals itself and
+prints ALL MATCH or the quantity that differs.
+
+### The account should compute this itself
+
+⚠ **Reading the author's per-country export is an interim, not the destination.**
+
+Not because every service computes its own — about a third do not, and for some that is right: the
+account does not recompute the World Bank's CWON resource rents for extractive materials or energy,
+because the published rent *is* the source. The distinction is whether we hold a model we could run.
+
+Flood's peers are stormwater and air filtration, both recorded as "not yet": a model that exists,
+that we have, and that has not been run here. Erosion is the case to follow — it has no scenario
+shock either, and it still runs the sediment model here and reports $13.96bn against the author's
+$14.59bn.
+
+The distinction worth keeping: **producing our own number** is what the library is for, and it is
+what makes the figure reproducible, auditable and rerunnable here. **Comparing it to the author's**
+is a fidelity check and not a correctness one. The second does not argue against the first.
+
+Until then, `gep_calculation` reads `flood_gep_for_merge_v2_2024hazard.csv` and the account carries
+his $11.40bn. That is honest and it is not finished.
+
+### What running it needs
+
+
+
+The inputs are on MSI at `/projects/standard/jajohns/shared/flood_gep`, read-only, so a run needs a
+writable root with those inputs linked in and the Sections B and C rasters copied across — about
+1 GB, without which a run rebuilds them and takes eleven hours rather than three. In this library
+the root is `flood_root_dir` in `es_parameters.csv` rather than the source repo's `GEP_FLOOD_ROOT`
+environment variable, so only the linking and copying carry over.
+
+⚠ **Not done as of 2026-08-28.** Nothing here has been run; the account reads his export.

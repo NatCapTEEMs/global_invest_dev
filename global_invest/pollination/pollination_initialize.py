@@ -8,6 +8,7 @@ the zonal sum added the densities: that is where the old $18.28bn came from.
 Shock side: consumers (ngfs_pnas, nff_global) call add_pollination_tasks(p) after their SEALS
 stitch task; it dispatches static vs dynamic on p.dynamic_es (mirrors add_terrestrial_carbon_tasks).
 """
+from global_invest import utilities
 from global_invest.pollination import pollination_tasks
 
 
@@ -17,12 +18,35 @@ def build_gep_service_calculation_task_tree(p):
     fao_median_prices is the first step towards building that value raster here rather than
     taking it as given. It downloads FAOSTAT production and producer prices and writes the
     per-crop median price the raster is priced at. skip_existing=1 because it is a download."""
-    p.fao_median_prices = p.add_task(pollination_tasks.fao_median_prices, skip_existing=1)
-    p.pollination_value_raster = p.add_task(
+    p.download_pollination_inputs_task = p.add_task(
+        utilities.download_inputs_task('pollination'), skip_existing=1)
+    p.fao_median_prices_task = p.add_task(pollination_tasks.fao_median_prices, skip_existing=1)
+    # The yield and production chain: Monfreda 2000 yields carried to the base year by FAO
+    # country ratios, then multiplied by CropGrids harvested area. These are what the rebuilt
+    # value raster is priced from, and until they were ported the account read the source
+    # author's finished production rasters out of base_data instead.
+    p.fao_yield_change_task = p.add_task(pollination_tasks.fao_yield_change, skip_existing=1)
+    # No skip_existing on these two: each guards itself per crop, so a run that stopped part way
+    # resumes at the crop it reached. skip_existing works on the task's directory, which exists as
+    # soon as the first raster lands, so an interrupted run would come back and skip the other 145.
+    p.pollination_yield_rasters_task = p.add_task(pollination_tasks.pollination_yield_rasters)
+    p.pollination_production_rasters_task = p.add_task(
+        pollination_tasks.pollination_production_rasters)
+    p.pollination_source_value_raster_task = p.add_task(
+        pollination_tasks.pollination_source_value_raster, skip_existing=1)
+    p.pollination_value_raster_task = p.add_task(
         pollination_tasks.pollination_value_raster, skip_existing=1)
-    p.pollination_value_by_region = p.add_task(
+    # Our own construction of the same quantity, and the comparison against his. Not the GEP
+    # number -- the account reports his raster -- but the only check in the library that can
+    # disagree with an author on method rather than on transcription, so it runs every time
+    # rather than sitting dormant as code nobody executes.
+    p.pollination_value_raster_rebuilt_task = p.add_task(
+        pollination_tasks.pollination_value_raster_rebuilt, skip_existing=1)
+    p.pollination_value_independence_check_task = p.add_task(
+        pollination_tasks.pollination_value_independence_check, skip_existing=1)
+    p.pollination_value_by_region_task = p.add_task(
         pollination_tasks.pollination_value_by_region, skip_existing=1)
-    p.gep_calculation = p.add_task(pollination_tasks.gep_calculation)
+    p.gep_calculation_task = p.add_task(pollination_tasks.gep_calculation)
     return p
 
 

@@ -6,14 +6,28 @@ real calculation (a tiny USD value raster through utilities.summarize_raster_by_
 gep_calculation) to pin the r250 contract: a split country is summed once, and the map gpkg
 carries per-sub-region rows that are never summed.
 """
+import os
 from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
 import pytest
+from global_invest import utilities
 
 from global_invest.pollination import pollination_functions as pf
 from global_invest.pollination import pollination_tasks as pt
+
+
+def _base_data_project():
+    """A bare ProjectFlow, only for its base_data_dir.
+
+    The anchors are inputs, so a test finds them the way a run does rather than by walking
+    directories of its own.
+    """
+    import tempfile
+    import hazelbean as hb
+    return hb.ProjectFlow(project_dir=os.path.join(tempfile.mkdtemp(), 'anchors'))
+
 
 ATTRS = {'iso3_r250_label': {156: 'CHN', 528: 'NLD'},
          'iso3_r250_name': {156: 'China', 528: 'Netherlands'},
@@ -160,7 +174,8 @@ def test_zonal_pct_change_treats_nan_diff_pixels_as_zero_change():
 def test_zone_labels_from_boundary_keeps_one_row_per_zone():
     boundary = pd.DataFrame({'ee_r50_aez18_id': [101, 101, 102], 'aez18_id': [1, 1, 2],
                              'gtapv7_r50_label': ['usa', 'usa', 'chn']})
-    labels = pf.zone_labels_from_boundary(boundary)
+    labels = pf.zone_labels_from_boundary(
+        boundary, 'ee_r50_aez18_id', 'aez18_id', 'gtapv7_r50_label', 'AEZ%d')
     assert labels == {101: ('AEZ1', 'usa'), 102: ('AEZ2', 'chn')}
 
 
@@ -180,7 +195,7 @@ def _region_frame():
 
 def test_collapse_regions_to_countries_sums_a_split_country_once():
     out = pf.collapse_regions_to_countries(_region_frame())
-    assert list(out.columns) == pf.POLLINATION_ATTR_COLS + ['year', 'pollination_gep']
+    assert list(out.columns) == utilities.GEP_COUNTRY_ATTR_COLS + ['year', 'pollination_gep']
     by_country = out.set_index('iso3_r250_label')
     assert len(by_country) == 2
     assert by_country.loc['CHN', 'pollination_gep'] == 60.0     # 40 + 20, not 40 and 20
@@ -238,6 +253,7 @@ def test_pollination_gep_sums_split_country_once(tmp_path):
                         df_countries=pd.DataFrame({'placeholder': [1]}),   # trips the caller-wins guard
                         # our own raster now, in USD per cell rather than a density from elsewhere
                         pollination_value_raster_path=str(tmp_path / 'poll_value.tif'),
+                            pollination_value_raster_rebuilt_path=str(tmp_path / 'poll_value.tif'),
                         gep_quantity_input_path=str(tmp_path / 'poll_value.tif'),
                         gep_regions_input_path=str(tmp_path / 'regions.gpkg'),
                         gep_regions_id_col='ee_r264_id',
@@ -262,7 +278,7 @@ def test_the_module_imports_without_the_crop_benefits_package():
     # The sufficiency and value science used to come from an installed package, crop_benefits,
     # that was declared in no pyproject and configured through a gitignored local.yaml. On a
     # machine without it the whole module failed at import, which is how it reached a collaborator.
-    # It is vendored now, so nothing here may reach for that package again.
+    # It lives here now, so nothing may reach for that package again.
     import importlib
     import sys
 
@@ -287,7 +303,7 @@ def test_the_module_imports_without_the_crop_benefits_package():
 
 
 def test_the_settings_object_replaces_the_config_that_was_loaded_from_a_gitignored_file():
-    # Seven fields are everything the vendored steps ever read off the crop_benefits Config, and
+    # Seven fields are everything the raster steps ever read off the old crop_benefits Config, and
     # three of them our own driver already overrode. They are plain arguments now, so a missing
     # config file cannot silently produce a run against the wrong paths.
 
@@ -295,9 +311,10 @@ def test_the_settings_object_replaces_the_config_that_was_loaded_from_a_gitignor
 
     settings = pf.SufficiencySettings(
         output_dir='/tmp/out', value_raster_dir='/tmp/base',
-        country_raster_path='/tmp/base/poll_value_global_2023usd.tif')
+        country_raster_path='/tmp/base/poll_value_global_2023usd.tif',
+        tile_size=2048, n_workers=4, lulc_classes_path='/tmp/base/classes.csv')
     assert settings.tile_size == 2048 and settings.n_workers == 4
-    assert settings.lulc_path is None and settings.pa_raster_300m_path is None
+    assert settings.pa_raster_300m_path is None
     # The compression profiles came off that Config too, and are now named constants.
     assert set(pf.COMPRESSION_PROFILES) == {'continuous', 'categorical', 'defaults'}
 
@@ -360,7 +377,74 @@ def test_coffee_dependence_follows_what_each_country_actually_grows():
 
 def test_the_deflator_refuses_a_year_it_has_no_index_for():
     # Returning 1.0 for an unknown year would leave the value undeflated and looking correct.
-    assert pf.usd_deflator(2020, 2020) == 1.0
-    assert pf.usd_deflator(2020, 2019) == pytest.approx(0.98802, abs=1e-5)
+    cpi = {2019: 255.7, 2020: 258.8}
+    assert pf.usd_deflator(2020, 2020, cpi) == 1.0
+    assert pf.usd_deflator(2020, 2019, cpi) == pytest.approx(0.98802, abs=1e-5)
     with pytest.raises(KeyError):
-        pf.usd_deflator(2020, 1850)
+        pf.usd_deflator(2020, 1850, cpi)
+
+
+def test_the_cpi_table_matches_the_series_the_deflator_used_to_hold():
+    """The CPI series moved from a module dict to a CSV; the values must not have moved with it."""
+    import csv
+    import os
+    here = os.path.dirname(os.path.abspath(__file__))
+    path = os.path.join(utilities.service_data_dir(_base_data_project(), 'pollination'), 'us_cpi_u_annual.csv')
+    with open(path, encoding='utf-8-sig') as f:
+        cpi = {int(r['year']): float(r['cpi_u']) for r in csv.DictReader(f)}
+    assert cpi[2019] == 255.7 and cpi[2020] == 258.8 and cpi[1993] == 144.5
+    assert sorted(cpi) == list(range(1993, 2026))
+
+
+def test_the_upstream_package_is_never_imported():
+    """The science lives in this repo, so a run must not depend on an outside package being there.
+
+    An import that works on one machine and not another is the failure this prevents: the tests
+    pass wherever the package happens to be installed and the run dies wherever it is not.
+    """
+    import os
+    import re
+    here = os.path.dirname(os.path.abspath(__file__))
+    for name in ('pollination_tasks.py', 'pollination_functions.py'):
+        text = open(os.path.join(here, name), encoding='utf-8').read()
+        for line in text.split('\n'):
+            assert not re.match(r'\s*(import crop_benefits|from crop_benefits)', line), \
+                '%s imports crop_benefits: %s' % (name, line.strip())
+
+def test_source_provenance_records_the_file_it_actually_read(tmp_path):
+    """A stale staged raster is silent: same name, same shape, a slightly different number.
+
+    Recording the hash is what makes "which copy produced this total?" answerable after the fact,
+    rather than a question nobody can settle once the file has been overwritten.
+    """
+    raster = tmp_path / 'poll_value_global_2019usd.tif'
+    raster.write_bytes(b'not really a raster, but bytes are bytes')
+    out = pt.write_source_provenance(str(raster), str(tmp_path / 'prov' / 'provenance.csv'))
+    row = pd.read_csv(out, encoding='utf-8-sig').iloc[0]
+    assert row['source_raster'] == 'poll_value_global_2019usd.tif'
+    assert row['bytes'] == raster.stat().st_size
+    assert len(row['sha256']) == 64
+
+    raster.write_bytes(b'not really a raster, but bytes are different now')
+    changed = pd.read_csv(pt.write_source_provenance(str(raster), str(tmp_path / 'prov' / 'p2.csv')),
+                          encoding='utf-8-sig').iloc[0]
+    assert changed['sha256'] != row['sha256'], 'a changed file must change the recorded hash'
+
+
+def test_the_latest_vintage_wins_when_the_base_year_is_unpublished(tmp_path):
+    """His year files are separate model vintages, not one raster restated in other dollars.
+
+    Measured on 2026-08-28: his 2024 file deflates to $386.76bn at 2019 prices and his 2023 file to
+    $398.74bn, three percent apart, which no price index produces. Choosing by proximity would take
+    the older model whenever the base year sits below the newest release.
+    """
+    class FakeProject:
+        pollination_value_raster_dir = str(tmp_path)
+    for year in (2023, 2024):
+        (tmp_path / ('poll_value_global_%dusd.tif' % year)).write_bytes(b'x')
+    path, year = pf.find_source_value_raster(FakeProject(), 2019)
+    assert year == 2024, 'nearest-year selection would have taken 2023'
+
+    (tmp_path / 'poll_value_global_2019usd.tif').write_bytes(b'x')
+    path, year = pf.find_source_value_raster(FakeProject(), 2019)
+    assert year == 2019, 'the exact base year must win when it exists'

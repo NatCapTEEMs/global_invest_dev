@@ -12,7 +12,6 @@ import hazelbean as hb
 from global_invest import utilities
 from global_invest.air_filtration import air_filtration_functions as af
 
-MODULE_REFERENCE_DIR = os.path.join(os.path.dirname(__file__), 'reference')
 
 
 def publish_inputs(p):
@@ -42,7 +41,7 @@ def gep_calculation(p):
     workbook = pd.read_excel(p.air_filtration_workbook_path)
     af.verify_global_average_fill(workbook)
 
-    r250_order = hb.df_read(os.path.join(MODULE_REFERENCE_DIR, 'r250_gpkg_order.csv'))
+    r250_order = hb.df_read(os.path.join(utilities.service_data_dir(p, 'air_filtration'), 'r250_gpkg_order.csv'))
 
     # The valuation reads the group's country table rather than the workbook's VSL column, and
     # says where the two disagree. They are the same build, so a disagreement is a question for

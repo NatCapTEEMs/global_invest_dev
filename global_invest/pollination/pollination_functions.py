@@ -1,9 +1,9 @@
 """Pollination science: the sufficiency and value calculation, plus the
 frame and array arithmetic the two shock tasks and the GEP valuation share.
 
-The raster science (300 m sufficiency, 5 km valuation, PNAS diff) is vendored here from
-crop_benefits rather than imported from it, so the module needs no package outside this repo; a
-test blocks the import and asserts the module still loads. The driver functions at the bottom run
+The raster science (300 m sufficiency, 5 km valuation, PNAS diff) lives here rather than in an
+outside package, so the module needs nothing beyond this repo; a test blocks that import and
+asserts the module still loads. The driver functions at the bottom run
 that science per scenario on our SEALS maps, and the task layer reads the rasters it leaves
 behind. Nothing here opens a file: the zonal step takes arrays in and hands per-zone series back,
 which is what the tests exercise.
@@ -14,34 +14,19 @@ input.
 """
 from __future__ import annotations
 import os
+import re
 
 import logging
 import numpy as np
-import logging
 from dataclasses import dataclass
 from typing import Any, Dict
 import rasterio
 
 import pandas as pd
+from global_invest import utilities
 
 logger = logging.getLogger(__name__)
 
-BASELINE_LABEL = '2023_pnas'
-
-# The country attributes every GEP per-country CSV carries, in the order the CSV writes them.
-POLLINATION_ATTR_COLS = ['iso3_r250_id', 'iso3_r250_label', 'iso3_r250_name',
-                         'continent', 'region_un', 'region_wb', 'income_grp', 'subregion']
-
-# The zonal percent changes arrive already expressed in percent, so a percent change of x means a
-# growth factor of 1 + x/100.
-PERCENT = 100.0
-
-# The zone the shock is reported on: one GTAP r50 region crossed with one AEZ18 band. The
-# boundary carries this id plus the two columns the (ENDW, REG) key is built from.
-REGION_ID_FIELD = 'ee_r50_aez18_id'
-AEZ_ID_COLUMN = 'aez18_id'
-REGION_LABEL_COLUMN = 'gtapv7_r50_label'
-ENDW_LABEL_FORMAT = 'AEZ%d'
 
 # The zonal rasters are geographic, and the burned zone raster reserves this id for the cells
 # that fall outside every zone.
@@ -54,18 +39,20 @@ NO_ZONE_ID = 0
 # turns those arrays into one percent change and one absolute value per zone.
 # =============================================================================
 
-def zone_labels_from_boundary(gdf_boundary):
+def zone_labels_from_boundary(gdf_boundary, zone_id_col, endw_col, reg_col, endw_format):
     """Zone id -> the (ENDW, REG) pair every shock row is keyed on.
 
     Args:
-        gdf_boundary (pd.DataFrame): the r50xAEZ boundary attributes, carrying REGION_ID_FIELD,
-            AEZ_ID_COLUMN and REGION_LABEL_COLUMN. One row per zone is kept.
+        gdf_boundary (pd.DataFrame): the r50xAEZ boundary attributes. One row per zone is kept.
+        zone_id_col, endw_col, reg_col, endw_format (str): which columns carry the zone id, the
+            AEZ band and the region label, and how the endowment label is spelled. They are
+            es_parameters rows, the same ones terrestrial_carbon has always read.
 
     Returns:
         dict: zone id -> (ENDW, REG), in the boundary's own row order.
     """
-    unique_zones = gdf_boundary.drop_duplicates(REGION_ID_FIELD).set_index(REGION_ID_FIELD)
-    return {int(zone_id): (ENDW_LABEL_FORMAT % int(row[AEZ_ID_COLUMN]), row[REGION_LABEL_COLUMN])
+    unique_zones = gdf_boundary.drop_duplicates(zone_id_col).set_index(zone_id_col)
+    return {int(zone_id): (endw_format % int(row[endw_col]), row[reg_col])
             for zone_id, row in unique_zones.iterrows()}
 
 
@@ -94,7 +81,7 @@ def zonal_pct_change(diff_arr, baseline_arr, area_arr, zones_arr, zone_labels):
         denominator = np.nansum(baseline_arr[mask] * area_arr[mask])
         if not denominator:
             continue
-        pct_change[key] = np.nansum(diff_arr[mask] * area_arr[mask]) / denominator * PERCENT
+        pct_change[key] = np.nansum(diff_arr[mask] * area_arr[mask]) / denominator * 100.0
         baseline_value[key] = denominator
     return pd.Series(pct_change), pd.Series(baseline_value)
 
@@ -127,7 +114,7 @@ def anchor_shock_tables(scenario_pct_by_year, baseline_pct_by_year):
     anchor_years = sorted(scenario_pct_by_year)
     fixedbase = pd.DataFrame({y: scenario_pct_by_year[y] - baseline_pct_by_year[y]
                               for y in anchor_years}).dropna()
-    base_factor = pd.DataFrame({y: 1.0 + baseline_pct_by_year[y] / PERCENT
+    base_factor = pd.DataFrame({y: 1.0 + baseline_pct_by_year[y] / 100.0
                                 for y in anchor_years}).reindex(fixedbase.index).replace(0, np.nan)
     return fixedbase, fixedbase / base_factor
 
@@ -229,11 +216,9 @@ def collapse_regions_to_countries(df_regions):
     Returns:
         pd.DataFrame: the attribute columns, year and pollination_gep, one row per country.
     """
-    df_countries = (df_regions.groupby(['iso3_r250_id', 'year'], as_index=False)['total'].sum()
-                    .rename(columns={'total': 'pollination_gep'}))
-    attributes = df_regions[POLLINATION_ATTR_COLS].drop_duplicates('iso3_r250_id')
-    return df_countries.merge(attributes, how='left', on='iso3_r250_id')[
-        POLLINATION_ATTR_COLS + ['year', 'pollination_gep']]
+    df_countries = utilities.collapse_regions_to_countries(
+        df_regions, utilities.GEP_COUNTRY_ATTR_COLS, 'pollination_gep')
+    return df_countries[utilities.GEP_COUNTRY_ATTR_COLS + ['year', 'pollination_gep']]
 
 
 def expand_country_values_to_regions(df_regions, df_gep_by_country):
@@ -249,8 +234,8 @@ def expand_country_values_to_regions(df_regions, df_gep_by_country):
     Returns:
         pd.DataFrame: df_regions with pollination_gep attached.
     """
-    return df_regions.merge(df_gep_by_country[['iso3_r250_id', 'pollination_gep']],
-                            how='left', on='iso3_r250_id')
+    return utilities.expand_country_values_to_regions(
+        df_regions, df_gep_by_country, 'pollination_gep')
 
 
 # =============================================================================
@@ -261,30 +246,22 @@ def expand_country_values_to_regions(df_regions, df_gep_by_country):
 def configure_sufficiency(p, target_year):
     """The settings the sufficiency and value steps need, filled from the ProjectFlow object.
 
-    Our calculation skips the FAO and CropGrids tabular stages, so the only external input it
-    needs is the precomputed baseline pollination-value raster under base_data/crop_benefits/.
-    That raster is the output of the source pipeline's FAO and raster stages, run once over
-    Monfreda yields times CropGrids area times FAO producer prices times pollination-dependence
-    ratios, and it is reused rather than rebuilt.
-
-    The 5 km resample template only has to define the target grid, and the valuation requires
-    sufficiency and value to share that grid, so the template points at the value raster itself.
-    That removes the separate country-raster input. Sufficiency outputs go to the task's own dir.
-
-    This replaces a crop_benefits Config loaded from a gitignored local.yaml with validate=False,
-    which meant a missing or wrong config did not fail up front, it proceeded.
+    The shock side weights a value raster that is fixed across scenarios, so it reads the finished
+    raster rather than rebuilding it; the GEP side builds its own through the yield, production and
+    value tasks. The 5 km template points at the value raster itself, because the valuation needs
+    sufficiency and value on one grid and that removes a separate country-raster input.
     """
-    crop_benefits_dir = p.get_path('crop_benefits')
+    crop_benefits_dir = p.pollination_value_raster_dir
     return SufficiencySettings(
         output_dir=str(p.cur_dir),
         value_raster_dir=str(crop_benefits_dir),
         country_raster_path=os.path.join(
-            crop_benefits_dir, 'poll_value_global_%dusd.tif' % int(target_year)))
+            crop_benefits_dir, 'poll_value_global_%dusd.tif' % int(target_year)),
+        tile_size=int(p.pollination_sufficiency_kernel_tile_rows),
+        n_workers=int(p.pollination_sufficiency_n_workers),
+        lulc_classes_path=p.pollination_lulc_classes_path)
 
 
-# ---------------------------------------------------------------------------------------------
-# Vendored from crop_benefits: the pieces of its sufficiency and value calculation that hold
-# no file handling. The raster steps they belong to are in the task module.
 # ---------------------------------------------------------------------------------------------
 
 @dataclass
@@ -293,7 +270,7 @@ class SufficiencySettings:
 
     That Config was loaded from a gitignored local.yaml with `validate=False`, so a missing or
     wrong file did not fail up front, it just proceeded. These seven fields are everything the
-    four vendored modules ever read off it, and the pollination task fills them from the
+    four raster modules ever read off it, and the pollination task fills them from the
     ProjectFlow object.
 
     Attributes:
@@ -301,21 +278,27 @@ class SufficiencySettings:
         value_raster_dir (str): where the precomputed baseline pollination-value raster lives.
         country_raster_path (str): the raster defining the 5 km target grid. The valuation needs
             sufficiency and value on one grid, so this points at the value raster itself.
-        lulc_path (str): the land-cover map the sufficiency is computed from.
         pa_raster_300m_path (str): the protected-area raster, for the protected-area summary.
-        tile_size (int): rows per block when streaming a raster.
+        tile_size (int): rows per block when streaming the 300 m land cover. ⚠⚠ **This changes
+            the result, it is not a performance setting.** The foraging-radius kernel takes its
+            latitude from the tile's midpoint and rounds the 2 km radius to an integer pixel
+            count, so the tile height decides the kernel. At 2048 our raster agreed with the
+            source pipeline's on 78.67 percent of cells, in bands; at its own 8192 every one of
+            331,871,070 cells matches. The es_parameters row is named
+            `pollination_sufficiency_kernel_tile_rows` to say so, since it sits beside n_workers,
+            which really is about speed.
         n_workers (int): parallel workers for the tiled sufficiency pass.
     """
     output_dir: str
     value_raster_dir: str
     country_raster_path: str
-    lulc_path: str = None
+    tile_size: int
+    n_workers: int
+    lulc_classes_path: str
     pa_raster_300m_path: str = None
-    tile_size: int = 2048
-    n_workers: int = 4
 
 
-# The compression profiles the vendored writers ask for, which used to come off the same Config.
+# The compression profiles the raster writers ask for.
 COMPRESSION_PROFILES = {
     'continuous': {'compress': 'DEFLATE', 'predictor': 3, 'zlevel': 6, 'tiled': True,
                    'blockxsize': 256, 'blockysize': 256, 'BIGTIFF': 'IF_SAFER'},
@@ -422,155 +405,51 @@ class FaoPriceSettings:
     fao_prices_bulk_path: str
     fx_lcu_per_usd_path: str
     output_dir: str
-    fao_start_year: int = 1991
-    fao_end_year: int = 2023
-    price_years: tuple = (2018, 2019, 2020, 2021, 2022)
+    # No defaults on the three windows: es_parameters is the only place they are set, so a run
+    # at a different base year cannot silently inherit one built for another. price_years kept a
+    # 2018-2022 default through the move to a 2019 account, which is what put the price window
+    # two years off the base year and made a deflator necessary to hide it.
+    fao_start_year: int
+    fao_end_year: int
+    price_years: tuple
+    # Tables the price path needs, read from CSVs beside the service rather than held as
+    # dictionaries in this module: FAO aggregate codes to leave out, countries with no
+    # exchange rate of their own, and IMF country names in the FAO spelling.
+    excluded_item_codes: set
+    fx_inherit_iso3: dict
+    imf_fao_names: dict
+    # Price quality-control tolerances. _QC_START_YEAR was a separate constant holding 1993,
+    # the same value as fao_start_year, so the panel's span and the QC window could disagree.
+    tol_near_equal_lcu_slc: float
+    anchor_max_year_dist: int
+    anchor_max_times_off: float
+    global_median_max_times_off: float
+    qc_min_overlap: int
+    qc_bad_median_times_off: float
+    qc_bad_share_over_3x: float
 
-    # The vendored code reads these as nested attributes; these keep its call sites unchanged.
-    @property
-    def paths(self):
-        return self
-
-    @property
-    def outputs(self):
-        return self
-
-    @property
-    def run(self):
-        return self
-
-    @property
-    def crosswalk_m49_iso3(self):
-        return self.crosswalk_m49_iso3_path
-
-    @property
-    def fao_classification(self):
-        return self.fao_classification_path
-
-    @property
-    def crosswalk_fao_cropgrids(self):
-        return self.crosswalk_fao_cropgrids_path
-
-    @property
-    def fao_production(self):
-        return self.output_dir
-
-    @property
-    def fao_prices(self):
-        return self.output_dir
-
-    @property
-    def fao_values(self):
-        return self.output_dir
-
-    @property
-    def fao_median_prices(self):
-        return os.path.join(self.output_dir, 'median_prices')
 
 
 # ---------------------------------------------------------------------------------------------
-# Vendored from crop_benefits: the FAO price path, the parts that hold no file handling.
-# These build the per-crop median producer prices the pollination value raster is priced at.
+# The FAO price path, the parts that hold no file handling. These build the per-crop median
+# producer prices the pollination value raster is priced at.
 # ---------------------------------------------------------------------------------------------
 
-_ELEMENTS_KEEP = {"Yield", "Production"}
+# Two bulks, two element vocabularies. Upstream keeps these in separate modules, where both are
+# called _ELEMENTS_KEEP; flattening those modules into this one let the price list overwrite the
+# production list, so the production filter kept price elements from a production bulk and the
+# panel came out empty.
+_PRODUCTION_ELEMENTS_KEEP = {"Yield", "Production"}
 
-_EXCLUDE_ITEM_CODES = {
-    836,    # Natural rubber in primary forms (processed latex)
-    1717,   # Cereals, primary (aggregate)
-    1720,   # Roots and Tubers, Total (aggregate)
-    1723,   # Sugar Crops Primary (aggregate)
-    1726,   # Pulses, Total (aggregate)
-    1729,   # Treenuts, Total (aggregate)
-    1732,   # Oilcrops, Oil Equivalent (derived equivalent)
-    1735,   # Vegetables Primary (aggregate)
-    1738,   # Fruit Primary (aggregate)
-    1804,   # Citrus Fruit, Total (aggregate)
-    1841,   # Oilcrops, Cake Equivalent (derived equivalent)
-    17530,  # Fibre Crops, Fibre Equivalent (derived equivalent)
-}
 
-_ELEMENTS_KEEP = [
+_PRICE_ELEMENTS_KEEP = [
     "Producer Price (USD/tonne)",
     "Producer Price (SLC/tonne)",
     "Producer Price (LCU/tonne)",
     "Producer Price Index (2014-2016 = 100)",
 ]
 
-_TOL_NEAR_EQUAL_LCU_SLC = 0.01
 
-_ANCHOR_MAX_YEAR_DIST = 10
-
-_ANCHOR_MAX_TIMES_OFF = 10
-
-_GLOBAL_MED_MAX_TIMES_OFF = 10
-
-_QC_START_YEAR = 1993
-
-_QC_MIN_OVERLAP = 50
-
-_QC_BAD_MEDIAN_TIMES_OFF = 3
-
-_QC_BAD_SHARE_OVER_3X = 0.5
-
-_FX_INHERIT_ISO3 = {
-    "COK": "NZL",
-    "PRI": "USA",
-    "REU": "FRA",
-    "KNA": "DMA",
-    "VCT": "DMA",
-    "LCA": "DMA",
-}
-
-_IMF_RECODE = {
-    "Afghanistan, Islamic Republic of": "Afghanistan",
-    "Armenia, Republic of": "Armenia",
-    "Azerbaijan, Republic of": "Azerbaijan",
-    "Bahrain, Kingdom of": "Bahrain",
-    "Belarus, Republic of": "Belarus",
-    "Bolivia": "Bolivia (Plurinational State of)",
-    "Hong Kong Special Administrative Region, People's Republic of China": "China, Hong Kong SAR",
-    "China, People's Republic of": "China, mainland",
-    "Comoros, Union of the": "Comoros",
-    "Congo, Republic of": "Congo",
-    "Côte d'Ivoire": "Ivory Coast",
-    "Croatia, Republic of": "Croatia",
-    "Czech Republic": "Czechia",
-    "Egypt, Arab Republic of": "Egypt",
-    "Equatorial Guinea, Republic of": "Equatorial Guinea",
-    "Eritrea, The State of": "Eritrea",
-    "Estonia, Republic of": "Estonia",
-    "Ethiopia, The Federal Democratic Republic of": "Ethiopia",
-    "Fiji, Republic of": "Fiji",
-    "Gambia, The": "Gambia",
-    "Iran, Islamic Republic of": "Iran (Islamic Republic of)",
-    "Kazakhstan, Republic of": "Kazakhstan",
-    "Kyrgyz Republic": "Kyrgyzstan",
-    "Latvia, Republic of": "Latvia",
-    "Lesotho, Kingdom of": "Lesotho",
-    "Lithuania, Republic of": "Lithuania",
-    "Madagascar, Republic of": "Madagascar",
-    "Mauritania, Islamic Republic of": "Mauritania",
-    "Mozambique, Republic of": "Mozambique",
-    "Netherlands, The": "Netherlands (Kingdom of the)",
-    "North Macedonia, Republic of": "North Macedonia",
-    "Poland, Republic of": "Poland",
-    "Korea, Republic of": "Republic of Korea",
-    "Moldova, Republic of": "Republic of Moldova",
-    "Serbia, Republic of": "Serbia",
-    "Slovak Republic": "Slovakia",
-    "Slovenia, Republic of": "Slovenia",
-    "Tajikistan, Republic of": "Tajikistan",
-    "Timor-Leste, Democratic Republic of": "Timor-Leste",
-    "Türkiye, Republic of": "Turkey",
-    "United Kingdom": "United Kingdom of Great Britain and Northern Ireland",
-    "Tanzania, United Republic of": "United Republic of Tanzania",
-    "United States": "United States of America",
-    "Uzbekistan, Republic of": "Uzbekistan",
-    "Venezuela, República Bolivariana de": "Venezuela (Bolivarian Republic of)",
-    "Vietnam": "Viet Nam",
-    "Yemen, Republic of": "Yemen",
-}
 
 
 def _convert_yield_units(df: pd.DataFrame) -> pd.DataFrame:
@@ -593,7 +472,7 @@ def _reshape_prices(pp_raw: pd.DataFrame) -> pd.DataFrame:
     """Keep relevant elements and pivot to wide format."""
     logger.info("=== 2-3) FILTER ELEMENTS + RESHAPE TO WIDE ===")
 
-    pp = pp_raw[pp_raw["Element"].isin(_ELEMENTS_KEEP)].copy()
+    pp = pp_raw[pp_raw["Element"].isin(_PRICE_ELEMENTS_KEEP)].copy()
 
     pp_wide = (
         pp.pivot_table(
@@ -673,7 +552,7 @@ def _reconstruct_slc_lcu(pp_wide: pd.DataFrame) -> pd.DataFrame:
             pp3["lcu_tonne"].isna() & pp3["slc_filled"].notna() & pp3["lcu_per_slc_year_country"].notna(),
             pp3["lcu_tonne"].isna() & pp3["slc_filled"].notna()
             & pp3["lcu_per_slc_year_country"].isna() & pp3["lcu_per_slc_country"].notna()
-            & (pp3["lcu_per_slc_country"] - 1).abs() <= _TOL_NEAR_EQUAL_LCU_SLC,
+            & (pp3["lcu_per_slc_country"] - 1).abs() <= cfg.tol_near_equal_lcu_slc,
             pp3["lcu_tonne"].isna() & pp3["slc_filled"].notna()
             & pp3["lcu_per_slc_year_country"].isna() & pp3["lcu_per_slc_country"].notna(),
             pp3["lcu_tonne"].isna() & pp3["slc_filled"].notna(),
@@ -694,7 +573,7 @@ def _reconstruct_slc_lcu(pp_wide: pd.DataFrame) -> pd.DataFrame:
             pp3["lcu_tonne"].isna() & pp3["slc_filled"].notna() & pp3["lcu_per_slc_year_country"].notna(),
             pp3["lcu_tonne"].isna() & pp3["slc_filled"].notna()
             & pp3["lcu_per_slc_year_country"].isna() & pp3["lcu_per_slc_country"].notna()
-            & (pp3["lcu_per_slc_country"] - 1).abs() <= _TOL_NEAR_EQUAL_LCU_SLC,
+            & (pp3["lcu_per_slc_country"] - 1).abs() <= cfg.tol_near_equal_lcu_slc,
             pp3["lcu_tonne"].isna() & pp3["slc_filled"].notna()
             & pp3["lcu_per_slc_year_country"].isna() & pp3["lcu_per_slc_country"].notna(),
             pp3["lcu_tonne"].isna() & pp3["slc_filled"].notna(),
@@ -757,7 +636,7 @@ def _build_usd_with_qc(
 
     use_anchor = (
         (pp_usd["usd_source"] == "filled")
-        & (pp_usd["anchor_year_dist"] <= _ANCHOR_MAX_YEAR_DIST)
+        & (pp_usd["anchor_year_dist"] <= cfg.anchor_max_year_dist)
         & pp_usd["anchor_usd"].notna() & (pp_usd["anchor_usd"] > 0)
         & pp_usd["usd_fx_implied"].notna() & (pp_usd["usd_fx_implied"] > 0)
     )
@@ -765,7 +644,7 @@ def _build_usd_with_qc(
         pp_usd.loc[use_anchor, "usd_fx_implied"] / pp_usd.loc[use_anchor, "anchor_usd"],
         pp_usd.loc[use_anchor, "anchor_usd"] / pp_usd.loc[use_anchor, "usd_fx_implied"],
     )
-    bad_anchor = use_anchor & (pp_usd["times_off_closest_obs"] > _ANCHOR_MAX_TIMES_OFF)
+    bad_anchor = use_anchor & (pp_usd["times_off_closest_obs"] > cfg.anchor_max_times_off)
     logger.warning("Anchor QC dropping %d rows", bad_anchor.sum())
     pp_usd.loc[bad_anchor, ["usd_fx_implied", "usd_filled", "usd_source"]] = [
         np.nan, np.nan, "implausible_vs_closest_observed_10x",
@@ -789,8 +668,8 @@ def _build_usd_with_qc(
         pp_usd.loc[use_global, "usd_fx_implied"] / pp_usd.loc[use_global, "global_median_usd"]
     )
     bad_global = use_global & (
-        (pp_usd["global_ratio"] > _GLOBAL_MED_MAX_TIMES_OFF)
-        | (pp_usd["global_ratio"] < 1 / _GLOBAL_MED_MAX_TIMES_OFF)
+        (pp_usd["global_ratio"] > cfg.global_median_max_times_off)
+        | (pp_usd["global_ratio"] < 1 / cfg.global_median_max_times_off)
     )
     logger.warning("Global median QC dropping %d rows", bad_global.sum())
     pp_usd.loc[bad_global, ["usd_fx_implied", "usd_filled", "usd_source"]] = [
@@ -801,7 +680,7 @@ def _build_usd_with_qc(
     logger.info("=== 15d) QC: FX RELIABILITY BY COUNTRY ===")
     qc = (
         pp_usd.loc[
-            (pp_usd["year"] >= _QC_START_YEAR)
+            (pp_usd["year"] >= cfg.fao_start_year)
             & pp_usd["usd_tonne_obs"].notna() & pp_usd["usd_fx_implied"].notna()
             & (pp_usd["usd_tonne_obs"] > 0) & (pp_usd["usd_fx_implied"] > 0),
             ["iso3", "usd_tonne_obs", "usd_fx_implied"],
@@ -820,10 +699,10 @@ def _build_usd_with_qc(
     )
     bad_fx_countries = set(
         country_qc.loc[
-            (country_qc["n_overlap"] >= _QC_MIN_OVERLAP)
+            (country_qc["n_overlap"] >= cfg.qc_min_overlap)
             & (
-                (country_qc["median_times_off"] > _QC_BAD_MEDIAN_TIMES_OFF)
-                | (country_qc["share_over_3x"] > _QC_BAD_SHARE_OVER_3X)
+                (country_qc["median_times_off"] > cfg.qc_bad_median_times_off)
+                | (country_qc["share_over_3x"] > cfg.qc_bad_share_over_3x)
             ),
             "iso3",
         ]
@@ -927,66 +806,36 @@ def pixel_area_km2_spherical(lat_deg: np.ndarray, res_deg: float = PIXEL_RES_DEG
 # testable without one.
 # =============================================================================
 
-# US CPI-U annual averages (BLS, all urban consumers). Prices are nominal in the year
-# FAOSTAT reports them, so a target year needs a deflator, and a deflator needs an index.
-CPI_BY_YEAR = {
-    1993: 144.5,
-    1994: 148.2,
-    1995: 152.4,
-    1996: 156.9,
-    1997: 160.5,
-    1998: 163.0,
-    1999: 166.6,
-    2000: 172.2,
-    2001: 177.1,
-    2002: 179.9,
-    2003: 184.0,
-    2004: 188.9,
-    2005: 195.3,
-    2006: 201.6,
-    2007: 207.3,
-    2008: 215.3,
-    2009: 214.5,
-    2010: 218.1,
-    2011: 224.9,
-    2012: 229.6,
-    2013: 232.9,
-    2014: 236.7,
-    2015: 237.0,
-    2016: 240.0,
-    2017: 245.1,
-    2018: 251.1,
-    2019: 255.7,
-    2020: 258.8,
-    2021: 270.9,
-    2022: 292.7,
-    2023: 305.1,
-    2024: 314.9,
-    2025: 321.9,
-}
 
-# The production rasters are dated 2020, so a price expressed in any other year's dollars
-# has to be brought to 2020 before it multiplies them, or the year of the money and the
-# year of the harvest disagree.
-PRODUCTION_RASTER_YEAR = 2020
+def price_window_centre_year(price_years):
+    """The year the median price is denominated in: the centre of the window it is taken over.
+
+    A median over 2017-2021 is 2019 money and needs no deflating for a 2019 account; a median over
+    2018-2022 is 2020 money and does. The window used to be a hardcoded 2018-2022 with the centre
+    written out as a constant called PRODUCTION_RASTER_YEAR, which named neither the thing it was
+    nor the thing it was used for -- the deflator is applied to `price`, never to production.
+    """
+    years = sorted(int(y) for y in price_years)
+    return years[len(years) // 2]
 
 
-def usd_deflator(from_year, to_year):
+def usd_deflator(from_year, to_year, cpi_by_year):
     """CPI ratio converting dollars of one year into dollars of another.
 
     Args:
         from_year (int): the year the value is currently denominated in.
         to_year (int): the year wanted.
+        cpi_by_year (dict): year to price index, read from the CPI table by the task layer.
 
     Returns:
         float: multiply a `from_year` dollar amount by this to get `to_year` dollars.
 
     Raises:
-        KeyError: if either year is outside the CPI table, which is deliberate. Silently
-            returning 1.0 for an unknown year would leave the value undeflated and
-            indistinguishable from a correct one.
+        KeyError: if either year is outside the table, which is deliberate. Silently returning
+            1.0 for an unknown year would leave the value undeflated and indistinguishable from
+            a correct one.
     """
-    return CPI_BY_YEAR[int(to_year)] / CPI_BY_YEAR[int(from_year)]
+    return cpi_by_year[int(to_year)] / cpi_by_year[int(from_year)]
 
 
 def crop_pollination_value_density(production_density, price_usd_per_tonne, dependence_ratio):
@@ -1015,6 +864,59 @@ def crop_pollination_value_density(production_density, price_usd_per_tonne, depe
     production = np.where(production_density < 0, np.nan, production_density)
     crop_value_density = production * float(price_usd_per_tonne)
     return crop_value_density * np.asarray(dependence_ratio, dtype='float64'), crop_value_density
+
+
+
+
+def find_source_value_raster(p, gep_base_year):
+    """Locate the source author's pollination value raster, preferring the GEP base year.
+
+    His files are named `poll_value_global_<year>usd.tif`, one per price year, and he does not
+    publish every year. Take the exact year when it exists, which needs no deflation at all.
+
+    ⚠ Otherwise take the LATEST year he publishes, not the nearest. The files are separate vintages
+    of his model, not one raster restated in different dollars: measured on 2026-08-28, his 2024
+    file deflates to $386.76bn at 2019 prices while his 2023 file deflates to $398.74bn, a three
+    percent spread that a price index cannot produce. The later file is the later method, and it is
+    the one that lands on the figure he reports for 2019. Choosing by proximity would silently pick
+    the older model whenever the base year sits below the newest release.
+
+    Args:
+        p (ProjectFlow): the project, used for path resolution.
+        gep_base_year (int): the year the GEP account reports in.
+
+    Returns:
+        tuple: (path to the raster, the year its dollars are stated in).
+
+    Raises:
+        NameError: if the source directory holds no `poll_value_global_<year>usd.tif` at all.
+    """
+    import glob
+    import re
+    source_dir = p.pollination_value_raster_dir
+    candidates = {}
+    for path in glob.glob(os.path.join(str(source_dir), 'poll_value_global_*usd.tif')):
+        match = re.search(r'poll_value_global_(\d{4})usd\.tif$', os.path.basename(path))
+        if match:
+            candidates[int(match.group(1))] = path
+    if not candidates:
+        raise NameError('No poll_value_global_<year>usd.tif in %s. The GEP pollination value comes '
+                        'from the source author\'s raster; without it there is nothing to read.'
+                        % source_dir)
+    year = gep_base_year if gep_base_year in candidates else max(candidates)
+    return candidates[year], year
+
+
+def available_source_value_years(p):
+    """The price years the source author's directory actually holds, for a clear error message."""
+    import glob
+    source_dir = p.pollination_value_raster_dir
+    years = []
+    for path in glob.glob(os.path.join(str(source_dir), 'poll_value_global_*usd.tif')):
+        match = re.search(r'poll_value_global_(\d{4})usd\.tif$', os.path.basename(path))
+        if match:
+            years.append(int(match.group(1)))
+    return sorted(years)
 
 
 def value_density_to_per_cell(value_density, area_km2):
@@ -1112,3 +1014,321 @@ def dependence_raster_from_country_lookup(country_id_array, dependence_by_countr
             continue
         out[country_id_array == int(code)] = float(ratio)
     return out
+
+
+# =============================================================================
+# The yield and production chain: Monfreda 2000 yields carried to a target year
+# by FAO country ratios, then multiplied by CropGrids harvested area.
+#
+# This is the half of the source author's pipeline that produces the production
+# rasters the value raster is built from. Everything here is array and table
+# maths so the task layer can open the per-crop rasters and these stay testable
+# without one.
+# =============================================================================
+
+# Pixel sentinels, the source author's values. A cell outside the crop's harvested extent and a
+# cell inside it with no Monfreda yield are different facts, and the summary counts them apart.
+OUTSIDE_CROP = -1.0
+UNRESOLVED = -2.0
+
+# M49 country codes run to 894; the lookup is a dense array indexed by code, so it needs a ceiling.
+MAX_M49_CODE = 1000
+
+# Which level of the hierarchy supplied a cell's value, written into the provenance raster.
+PROVENANCE_NONE, PROVENANCE_COUNTRY, PROVENANCE_SUBREGION = 0, 1, 2
+PROVENANCE_REGION, PROVENANCE_WORLD = 3, 4
+
+
+def yield_change_ratios(production_df, crosswalk_m49, early_years, late_years):
+    """FAO yield in a late window over yield in an early window, per country and crop.
+
+    Monfreda's yields are for 2000. Carrying them to a target year needs a per-country, per-crop
+    factor, and this is it: the median FAO yield over the late window divided by the median over
+    the early one. Medians rather than means, so one drought or one bumper harvest does not set
+    the factor.
+
+    A country-crop pair FAO does not report gets no row, so the table also carries subregion,
+    region and world medians for `build_hierarchical_lookup` to fall back through.
+
+    Args:
+        production_df (pd.DataFrame): FAO production rows, with `element`, `area_code_m49`,
+            `item_code_fao`, `year`, `value` and `item_fao`.
+        crosswalk_m49 (pd.DataFrame): M49 to `region_fao` and `subregion_fao`.
+        early_years (iterable): the base window, around Monfreda's 2000.
+        late_years (iterable): the window around the target year.
+
+    Returns:
+        pd.DataFrame: one row per country-crop plus the aggregate rows, with `yield_ratio`,
+        `late_yield`, `early_yield` and an `agg_level` of country, subregion, region or world.
+    """
+    df = production_df[production_df['element'] == 'Yield'].copy()
+    df['area_code_m49'] = df['area_code_m49'].astype(str).str.zfill(3)
+    df['item_code_fao'] = df['item_code_fao'].astype(int)
+    df['year'] = df['year'].astype(int)
+    # The FAO panel reads back as object, because a blank cell makes the whole column one. A
+    # median over strings sorts them, so this has to be numeric before the groupby, not after.
+    df['value'] = pd.to_numeric(df['value'], errors='coerce')
+    df = df[np.isfinite(df['value'])]
+
+    def window_yield(sub, prefix):
+        return (sub.groupby(['area_code_m49', 'item_code_fao'], as_index=False)
+                .agg(**{'%s_yield' % prefix: ('value', 'median'),
+                        '%s_years_count' % prefix: ('year', 'nunique'),
+                        'item_fao': ('item_fao', 'first')}))
+
+    early = window_yield(df[df['year'].isin(list(early_years))], 'early')
+    late = window_yield(df[df['year'].isin(list(late_years))], 'late')
+
+    merged = early.merge(late, on=['area_code_m49', 'item_code_fao'], how='inner',
+                         suffixes=('_x', '_y'))
+    if 'item_fao_y' in merged.columns:
+        merged = merged.drop(columns=['item_fao_y']).rename(columns={'item_fao_x': 'item_fao'})
+
+    merged['yield_ratio'] = merged['late_yield'] / merged['early_yield']
+    merged = merged[np.isfinite(merged['yield_ratio'])]
+
+    crosswalk = crosswalk_m49.copy()
+    crosswalk['area_code_m49'] = crosswalk['area_code_m49'].astype(str).str.zfill(3)
+    merged = merged.merge(crosswalk[['area_code_m49', 'iso3', 'region_fao', 'subregion_fao']],
+                          on='area_code_m49', how='left')
+
+    def aggregate(level_column, level_name, sentinel):
+        agg = (merged.dropna(subset=[level_column])
+               .groupby(['item_code_fao', level_column], as_index=False)
+               .agg(yield_ratio=('yield_ratio', 'median'),
+                    late_yield=('late_yield', 'median'),
+                    early_yield=('early_yield', 'median'),
+                    item_fao=('item_fao', 'first')))
+        agg['area_code_m49'] = sentinel
+        agg['agg_level'] = level_name
+        return agg
+
+    subregion = aggregate('subregion_fao', 'subregion', 'SUB').assign(region_fao=np.nan)
+    region = aggregate('region_fao', 'region', 'REG').assign(subregion_fao=np.nan)
+    world = (merged.groupby('item_code_fao', as_index=False)
+             .agg(yield_ratio=('yield_ratio', 'median'),
+                  late_yield=('late_yield', 'median'),
+                  early_yield=('early_yield', 'median'),
+                  item_fao=('item_fao', 'first')))
+    world['area_code_m49'], world['agg_level'] = 'WOR', 'world'
+    world = world.assign(subregion_fao=np.nan, region_fao=np.nan)
+
+    merged['agg_level'] = 'country'
+    columns = ['area_code_m49', 'item_code_fao', 'yield_ratio', 'late_yield', 'early_yield',
+               'agg_level', 'subregion_fao', 'region_fao', 'item_fao']
+    return pd.concat([merged[columns], subregion[columns], region[columns], world[columns]],
+                     ignore_index=True)
+
+
+def build_hierarchical_lookup(rows, crosswalk_m49, value_column, default=np.nan):
+    """A value per M49 country code, falling back country to subregion to region to world.
+
+    FAO does not report every crop in every country, so a country with no row for a crop takes
+    its subregion's median, then its region's, then the world's. The fallback level is recorded
+    per country rather than left implicit, because a world-median yield ratio applied to a whole
+    country is a much weaker number than its own, and the summary needs to say how many cells
+    rest on each.
+
+    Args:
+        rows (pd.DataFrame): one crop's slice of `yield_change_ratios`.
+        crosswalk_m49 (pd.DataFrame): every M49 code with its `region_fao` and `subregion_fao`.
+        value_column (str): which column to map, `yield_ratio` or `late_yield`.
+        default (float): the value for a code no level covers.
+
+    Returns:
+        tuple: (values, provenance), both arrays indexed by M49 code, provenance carrying
+        PROVENANCE_COUNTRY through PROVENANCE_WORLD and PROVENANCE_NONE.
+    """
+    lookup = np.full(MAX_M49_CODE, default, dtype=np.float32)
+    provenance = np.zeros(MAX_M49_CODE, dtype=np.uint8)
+
+    world_rows = rows[rows['agg_level'] == 'world']
+    world_value = world_rows[value_column].iloc[0] if not world_rows.empty else np.nan
+    region_values = rows[rows['agg_level'] == 'region'].set_index('region_fao')[value_column]
+    subregion_values = rows[rows['agg_level'] == 'subregion'].set_index('subregion_fao')[value_column]
+
+    country_values = {}
+    for _, row in rows[rows['agg_level'] == 'country'].iterrows():
+        try:
+            code = int(row['area_code_m49'])
+        except (ValueError, TypeError):
+            continue
+        if code < MAX_M49_CODE and np.isfinite(row[value_column]):
+            country_values[code] = row[value_column]
+
+    for _, row in crosswalk_m49.iterrows():
+        try:
+            code = int(row['area_code_m49'])
+        except (ValueError, TypeError):
+            continue
+        if code >= MAX_M49_CODE:
+            continue
+        subregion, region = row.get('subregion_fao'), row.get('region_fao')
+        if code in country_values:
+            lookup[code], provenance[code] = country_values[code], PROVENANCE_COUNTRY
+        elif subregion in subregion_values.index and np.isfinite(subregion_values[subregion]):
+            lookup[code], provenance[code] = subregion_values[subregion], PROVENANCE_SUBREGION
+        elif region in region_values.index and np.isfinite(region_values[region]):
+            lookup[code], provenance[code] = region_values[region], PROVENANCE_REGION
+        elif np.isfinite(world_value):
+            lookup[code], provenance[code] = world_value, PROVENANCE_WORLD
+    return lookup, provenance
+
+
+def lookup_by_country(lookup, country_id_array):
+    """Read a per-M49-code lookup onto the grid, with codes past the lookup treated as absent."""
+    codes = country_id_array.copy()
+    codes[codes >= MAX_M49_CODE] = 0
+    return lookup[codes]
+
+
+def convert_mass_to_density(mass_raster, area_km2_raster):
+    """Mass per cell to mass per square kilometre.
+
+    Args:
+        mass_raster (np.ndarray): tonnes in the cell.
+        area_km2_raster (np.ndarray): the area each cell covers, same shape.
+
+    Returns:
+        np.ndarray: tonnes per square kilometre, NaN where the cell has no area or no mass.
+    """
+    density = np.full_like(mass_raster, np.nan, dtype=np.float32)
+    valid = np.isfinite(mass_raster) & (area_km2_raster > 0)
+    density[valid] = mass_raster[valid] / area_km2_raster[valid]
+    return density
+
+
+def apply_yield_change(yield_base, ratio, mask_crop):
+    """Carry base-year yields to the target year by one country-crop ratio."""
+    out = np.full_like(yield_base, OUTSIDE_CROP)
+    out[mask_crop] = yield_base[mask_crop] * ratio
+    return out
+
+
+def normalize_yield_to_target(yield_base, harvested_area, mask_crop, country_ids,
+                              target_lookup, provenance_lookup):
+    """Scale each country's yields so its area-weighted mean matches the FAO target yield.
+
+    The alternative, `apply_yield_change`, multiplies by a ratio and inherits whatever level
+    Monfreda's 2000 mean sat at. This instead pins the country mean to what FAO reports for the
+    late window and keeps Monfreda only for the shape of the variation within the country.
+
+    A country with no valid Monfreda cell keeps its base values, and a crop cell inside a country
+    with no Monfreda yield takes the country target flat, which is the `UNRESOLVED` case: there
+    is a country-level number but nothing to spread it over.
+
+    Args:
+        yield_base (np.ndarray): Monfreda yield, t/ha, NaN where absent.
+        harvested_area (np.ndarray): CropGrids harvested area, ha, the weight in the mean.
+        mask_crop (np.ndarray): True where the crop is grown.
+        country_ids (np.ndarray): M49 code per cell.
+        target_lookup (np.ndarray): target yield per M49 code, from `build_hierarchical_lookup`
+            on `late_yield`.
+        provenance_lookup (np.ndarray): the matching fallback level per code.
+
+    Returns:
+        tuple: (yield_target, provenance), the second being which level backed each cell.
+    """
+    yield_target = np.full_like(yield_base, np.nan)
+    yield_target[~mask_crop] = OUTSIDE_CROP
+    provenance = lookup_by_country(provenance_lookup, country_ids)
+
+    has_base = mask_crop & (yield_base >= 0) & (~np.isnan(yield_base))
+    for code in np.unique(country_ids):
+        if code == 0 or code >= MAX_M49_CODE:
+            continue
+        target = target_lookup[code]
+        in_country = (country_ids == code)
+        valid = in_country & has_base
+
+        if np.isnan(target) or target <= 0:
+            # No FAO number at any level: Monfreda's own values are the best available.
+            if np.any(valid):
+                yield_target[valid] = yield_base[valid]
+            continue
+
+        gaps = in_country & mask_crop & (~has_base)
+        if np.any(valid):
+            area = harvested_area[valid]
+            total_area = np.sum(area)
+            mean_yield = np.sum(yield_base[valid] * area) / total_area if total_area > 0 else 0.0
+            if mean_yield > 0:
+                yield_target[valid] = yield_base[valid] * (target / mean_yield)
+            else:
+                yield_target[valid] = target
+        if np.any(gaps):
+            yield_target[gaps] = target
+    return yield_target, provenance
+
+
+def compute_production(yield_raster, harvested_area, mask_crop):
+    """Production in tonnes: yield in tonnes per hectare times harvested hectares.
+
+    Args:
+        yield_raster (np.ndarray): t/ha.
+        harvested_area (np.ndarray): ha in the cell.
+        mask_crop (np.ndarray): True where the crop is grown.
+
+    Returns:
+        np.ndarray: tonnes, NaN outside the crop mask.
+    """
+    out = np.full_like(yield_raster, np.nan)
+    out[mask_crop] = (yield_raster * harvested_area)[mask_crop]
+    return out
+
+
+def assign_nearest_country(country_ids, mask_crop):
+    """Give a cropped cell with no country the code of the nearest cell that has one.
+
+    A cell can carry harvested area and fall outside every country polygon, on a coastline or a
+    small island. Left at zero it would be skipped by every per-country step, silently dropping
+    its production; the nearest real country is the closest available answer.
+    """
+    from scipy.spatial import cKDTree
+    out = country_ids.copy()
+    needs = mask_crop & (country_ids == 0)
+    has = country_ids > 0
+    if not np.any(needs) or not np.any(has):
+        return out
+    rows, cols = np.indices(country_ids.shape)
+    tree = cKDTree(np.column_stack((rows[has], cols[has])))
+    _, nearest = tree.query(np.column_stack((rows[needs], cols[needs])))
+    out[needs] = country_ids[has][nearest]
+    return out
+
+
+def fill_nearest_by_country(data, mask_to_fill, country_ids):
+    """Fill each missing cell from the nearest valid cell in its own country.
+
+    Within a country rather than globally: a missing yield next to a border would otherwise take
+    a neighbouring country's value, which is exactly the variation the country step is about to
+    normalise away.
+    """
+    from scipy.spatial import cKDTree
+    filled = data.copy()
+    rows, cols = np.indices(data.shape)
+    for code in np.unique(country_ids):
+        if code == 0:
+            continue
+        in_country = (country_ids == code)
+        missing = mask_to_fill & in_country & np.isnan(filled)
+        valid = in_country & (~np.isnan(filled))
+        if not missing.any() or not valid.any():
+            continue
+        tree = cKDTree(np.column_stack((rows[valid], cols[valid])))
+        _, nearest = tree.query(np.column_stack((rows[missing], cols[missing])))
+        filled[missing] = filled[valid][nearest]
+    return filled
+
+
+def align_to_reference(src_data, src_meta, ref_meta, resampling=None, dst_nodata=np.nan):
+    """Put an array on the reference grid. Arrays only; nothing is opened."""
+    from rasterio.warp import reproject, Resampling
+    destination = np.full((ref_meta['height'], ref_meta['width']), dst_nodata, dtype=np.float32)
+    reproject(source=src_data.astype(np.float32), destination=destination,
+              src_transform=src_meta['transform'], src_crs=src_meta.get('crs', 'EPSG:4326'),
+              src_nodata=src_meta.get('nodata'),
+              dst_transform=ref_meta['transform'], dst_crs=ref_meta.get('crs', 'EPSG:4326'),
+              dst_nodata=dst_nodata,
+              resampling=Resampling.nearest if resampling is None else resampling)
+    return destination

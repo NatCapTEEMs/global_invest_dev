@@ -18,12 +18,12 @@ def build_gep_service_calculation_task_tree(p):
     """
     # skip_existing=1 makes the chain re-runnable: each task's dir already present -> p.run_this=0 and
     # the task publishes its paths then returns early (cf. erosion's SDR chain).
-    p.total_carbon_density = p.add_task(terrestrial_carbon_tasks.total_carbon_density, skip_existing=1)
-    p.carbon_density_table = p.add_task(terrestrial_carbon_tasks.carbon_density_table, skip_existing=1)
-    p.carbon_density_raster_base_year = p.add_task(terrestrial_carbon_tasks.carbon_density_raster_base_year, skip_existing=1)
-    p.carbon_density_raster_per_cell_base_year = p.add_task(terrestrial_carbon_tasks.carbon_density_raster_per_cell_base_year, skip_existing=1)
-    p.carbon_by_region = p.add_task(terrestrial_carbon_tasks.carbon_by_region, skip_existing=1)
-    p.gep_calculation = p.add_task(terrestrial_carbon_tasks.gep_calculation)
+    p.total_carbon_density_task = p.add_task(terrestrial_carbon_tasks.total_carbon_density, skip_existing=1)
+    p.carbon_density_table_task = p.add_task(terrestrial_carbon_tasks.carbon_density_table, skip_existing=1)
+    p.carbon_density_raster_base_year_task = p.add_task(terrestrial_carbon_tasks.carbon_density_raster_base_year, skip_existing=1)
+    p.carbon_density_raster_per_cell_base_year_task = p.add_task(terrestrial_carbon_tasks.carbon_density_raster_per_cell_base_year, skip_existing=1)
+    p.carbon_by_region_task = p.add_task(terrestrial_carbon_tasks.carbon_by_region, skip_existing=1)
+    p.gep_calculation_task = p.add_task(terrestrial_carbon_tasks.gep_calculation)
 
     return p
 

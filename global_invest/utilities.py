@@ -11,6 +11,18 @@ Diagnostic -- if a national total is inflated by this, the gap decomposes exactl
 and the four 2-way splits. A gap of any other shape is a legitimate sum, not this bug. This is how the bug
 reached terrestrial_carbon + coastal_carbon and not the other five GEP services.
 """
+from osgeo import gdal
+import json
+import mapclassify
+import matplotlib as mpl
+import matplotlib.pyplot as plt
+from matplotlib.patches import Patch
+import shutil
+import subprocess
+import sys
+import urllib.request
+import zipfile
+
 
 # A general library does not hardcode one project's scenario names: each service's static shock
 # task defaults to identity (plus the nature-off spelling alias below) and warns loudly when a
@@ -22,8 +34,6 @@ def initialize_country_paths(p, simplified='300sec'):
     Called from each service's publish_inputs; the service then adds only its service-specific inputs
     (this block used to be pasted into every module).
     """
-    import pandas as pd
-    import hazelbean as hb
 
     if getattr(p, 'df_countries', None) is not None:
         return p          # country world already published (or caller-set): touch nothing
@@ -65,7 +75,6 @@ def initialize_pyramid_paths(p):
     Returns:
         ProjectFlow: the same project.
     """
-    import os
 
     p.ha_per_cell_10sec_path = p.get_path(
         os.path.join(*HA_PER_CELL_10SEC_REF_PARTS))
@@ -84,9 +93,6 @@ def summarize_raster_by_region(value_raster_path, region_boundary_path, out_path
     id so consumers join on a value, never on row position; background zone 0 and empty zones are
     dropped.
     """
-    import os
-    import geopandas as gpd
-    import hazelbean as hb
 
     regions = gpd.read_file(region_boundary_path)
     # zones_raster_data_type=5 (Int32) so ids past 255 don't saturate (r264 runs to 264, r50xAEZ
@@ -138,10 +144,6 @@ def render_service_results(p):
     The qmd copy and sidecars are removed afterwards so nobody edits a copy expecting the source
     to change.
     """
-    import os
-    import sys
-    import subprocess
-    import hazelbean as hb
 
     os.environ['QUARTO_PYTHON'] = sys.executable
     module_root = os.path.dirname(os.path.abspath(__file__))
@@ -346,22 +348,57 @@ def assert_shock_table_sound(df, requested_scenarios, label, abs_max=SHOCK_ABS_M
     return True
 
 
-def seed_input_template(p, file_name, log=print, required=True):
+def add_rows_missing_from_template(local_path, template_path, key_columns, log=print):
+    """Append template rows whose key is absent from the project's copy. Local values always win.
+
+    A definitions CSV is a schema plus values: the template names every key the code may read,
+    and the project's copy supplies this machine's values. Seeding copies the file only when it
+    is absent, so a copy made before a key was added keeps shadowing the template forever, and
+    the key reaches the run as a missing attribute rather than as its documented value. Topping
+    up the absent keys keeps the schema current without touching a value anyone has set.
+
+    Args:
+        local_path (str): the project's input/ copy, modified in place when rows are missing.
+        template_path (str): the tracked template to take absent rows from.
+        key_columns (list): columns that together identify a row, e.g. ['service', 'parameter'].
+        log (callable): where to report what was added.
+    """
+    if not os.path.exists(template_path) or not os.path.exists(local_path):
+        return
+    local, template = hb.df_read(local_path), hb.df_read(template_path)
+    if any(c not in local.columns or c not in template.columns for c in key_columns):
+        return
+
+    def keys_of(df):
+        return list(zip(*[df[c].astype(str) for c in key_columns])) if len(df) else []
+
+    present = set(keys_of(local))
+    missing = template[[k not in present for k in keys_of(template)]]
+    if missing.empty:
+        return
+    hb.df_write(pd.concat([local, missing], ignore_index=True), local_path)
+    named = ', '.join(':'.join(k) for k in keys_of(missing)[:6])
+    log(f'{os.path.basename(local_path)}: added {len(missing)} row(s) the project copy did not '
+        f'have ({named}{", ..." if len(missing) > 6 else ""}).')
+
+
+def seed_input_template(p, file_name, log=print, required=True, key_columns=None):
     """Return the project's input/ copy of a tracked input_template file, seeding it on first use.
 
     The house input calculation (same as ngfs/seals): the tracked template under
     global_invest/input_template/ is copied into the project's input/ if absent, and the run
     always reads the input/ copy -- edit that copy to configure a single project. file_name may
     be a relative path (e.g. the lulc test fixtures); the nesting is recreated under input/.
-    Standard caveat: a stale input/ copy shadows an updated template; delete it (or use a fresh
-    project) to pick up template changes.
+
+    key_columns names the columns identifying a row in a definitions CSV. Given it, an existing
+    copy has any absent keys topped up from the template, so a copy predating a new key does not
+    silently withhold it. Local values are never overwritten: a stale copy still shadows an
+    updated template for keys it already carries, which is what lets a machine keep its own.
 
     required=False is for files that only OPTIONALLY ship as fixtures (a production machine
     resolves the same reference in base_data instead): a missing template is skipped, and the
     later get_path on the reference stays the loud failure if it resolves nowhere at all.
     """
-    import os
-    import shutil
     template_path = os.path.join(os.path.dirname(__file__), 'input_template', file_name)
     local_path = os.path.join(p.input_dir, file_name)
     if not os.path.exists(local_path):
@@ -370,6 +407,8 @@ def seed_input_template(p, file_name, log=print, required=True):
         os.makedirs(os.path.dirname(local_path), exist_ok=True)
         shutil.copy(template_path, local_path)
         log(f'Seeded {file_name} into {p.input_dir} from the tracked template.')
+    elif key_columns:
+        add_rows_missing_from_template(local_path, template_path, key_columns, log)
     return local_path
 
 
@@ -382,7 +421,6 @@ NOT_A_VALUE = ('computed', 'skip', 'n/a')
 
 def is_not_a_value(value):
     """Whether a definitions cell is blank or says, in words, that it holds no value."""
-    import pandas as pd
 
     return pd.isna(value) or str(value).strip().lower() in ('',) + NOT_A_VALUE
 
@@ -403,9 +441,7 @@ def hydrate_es_config(p, service, log=print):
     a single project. Note the standard caveat: a stale input/ copy shadows an updated
     template; delete it (or use a fresh project) to pick up template changes.
     """
-    import pandas as pd
-    import hazelbean as hb
-    df = hb.df_read(seed_input_template(p, 'es_config.csv', log))
+    df = hb.df_read(seed_input_template(p, 'es_config.csv', log, key_columns=['service']))
     rows = df[df['service'] == service]
     if rows.empty:
         log(f"es_config.csv has no row for service '{service}' -- nothing hydrated.")
@@ -452,10 +488,8 @@ def hydrate_es_parameters(p, service, log=print):
     parse as JSON where they can (ints, lists, dicts, true/false), else stay strings; *_path
     keys resolve via get_path.
     """
-    import json
-    import pandas as pd
-    import hazelbean as hb
-    df = hb.df_read(seed_input_template(p, 'es_parameters.csv', log))
+    df = hb.df_read(seed_input_template(p, 'es_parameters.csv', log,
+                                        key_columns=['service', 'parameter']))
     for _, row in df[df['service'] == service].iterrows():
         attribute, value = str(row['parameter']), row['value']
         if pd.isna(value) or str(value) == '':
@@ -512,9 +546,6 @@ def hydrate_es_scenarios(p, log=print):
     template seeded into the project's input/; the run reads the input/ copy). Set
     p.es_scenario_definitions_filename to run a different scenarios file.
     """
-    import os
-    import pandas as pd
-    import hazelbean as hb
     file_name = getattr(p, 'es_scenario_definitions_filename', None) or 'es_scenarios_test.csv'
     df = hb.df_read(seed_input_template(p, file_name, log))
 
@@ -570,8 +601,6 @@ def hydrate_es_scenarios(p, log=print):
 def raster_sum(raster_path, block_rows=2048):
     """Nodata-safe sum of a raster's first band, read blockwise so global rasters fit in
     memory. Promotion candidate to hazelbean (no equivalent found there on 2026-08-21)."""
-    import numpy as np
-    from osgeo import gdal
     gdal.UseExceptions()
     ds = gdal.Open(raster_path)
     band = ds.GetRasterBand(1)
@@ -593,7 +622,6 @@ def assert_zonal_conservation(country_totals_sum, raster_path, service, lower=0.
     polygon (or zones were dropped). An excess beyond `upper` means DOUBLE-COUNTING -- the exact
     failure the split-country guard exists for. Verified at 100.0000% on pollination's real
     raster before being encoded here."""
-    import hazelbean as hb
     total = raster_sum(raster_path)
     if total == 0:
         raise ValueError(f'{service}: conservation check impossible, the raster sums to zero.')
@@ -623,22 +651,21 @@ def download_missing_inputs(p, service, log=print):
     with no source at all, are returned by name rather than silently skipped: that list is
     what a collaborator has to send.
 
-    This is a deliberate step, not part of publish_inputs. A task that quietly refetches
-    could swap a file's vintage mid-analysis, and checking every path on every task would
-    cost a run more than it saves.
+    Everything lands in base_data, which is where a shared input belongs and what
+    `run_ngfs_pnas.py` means by "if anything is missing, it will download it": one base_data
+    across projects, so a file fetched for one run is there for the next.
+
+    This is a deliberate step, not part of publish_inputs. Only files that are absent are
+    fetched, so it cannot swap a vintage; what it must not become is a check on every path in
+    every task, which would cost a run more than it saves.
 
     Returns:
         (downloaded, needs_a_person): the paths written, and {input name: reason} for the
         inputs a person has to supply.
     """
-    import os
-    import shutil
-    import urllib.request
-    import zipfile
-    import pandas as pd
-    import hazelbean as hb
 
-    df = hb.df_read(seed_input_template(p, 'es_parameters.csv', log))
+    df = hb.df_read(seed_input_template(p, 'es_parameters.csv', log,
+                                        key_columns=['service', 'parameter']))
     rows = df[df['service'] == service]
 
     def companions(suffix):
@@ -650,11 +677,16 @@ def download_missing_inputs(p, service, log=print):
 
     downloaded, needs_a_person = [], {}
     for _, row in rows.iterrows():
-        attribute = str(row['parameter'])
-        if not attribute.endswith('_path'):
+        attribute, ref_path = str(row['parameter']), row['value']
+        if not attribute.endswith('_path') or pd.isna(ref_path) or not str(ref_path).strip():
             continue
-        path = getattr(p, attribute, None)
-        if path is None or hb.path_exists(path):
+        # The destination comes from the CSV's reference path under base_data, not from p. An
+        # input that resolves nowhere leaves its attribute unset, so reading p would skip exactly
+        # the file that needs fetching -- and get_path, asked not to raise, answers with the
+        # project dir, which puts a shared input somewhere no other project can see it.
+        path = str(ref_path) if os.path.isabs(str(ref_path)) else os.path.join(
+            p.base_data_dir, str(ref_path))
+        if hb.path_exists(path):
             continue
         name = attribute[:-len('_path')]
         if name not in urls:
@@ -685,7 +717,6 @@ def download_inputs_task(service):
 
         p.add_task(utilities.download_inputs_task('extractive_energy'))
     """
-    import hazelbean as hb
 
     def download_inputs(p):
         if not p.run_this:
@@ -767,12 +798,7 @@ def plot_gep_choropleth(df_by_country, value_column, countries_vector_path, out_
     Returns:
         str: out_png_path, or None if the table had no positive value to scale a log ramp on.
     """
-    import matplotlib
-    matplotlib.use('Agg')
-    import matplotlib as mpl
-    import matplotlib.pyplot as plt
-    import geopandas as gpd
-    import pandas as pd
+    mpl.use('Agg')
 
     gdf = gpd.read_file(countries_vector_path)
     join_column = 'iso3_r250_id' if 'iso3_r250_id' in gdf.columns else 'ee_r264_id'
@@ -798,18 +824,10 @@ def plot_gep_choropleth(df_by_country, value_column, countries_vector_path, out_
         mpl.ticker.FuncFormatter(lambda x, _: f'{int(x):,}'))
     axes.set_title(title)
     axes.set_axis_off()
-    hb_create_directories(out_png_path)
+    hb.create_directories(os.path.dirname(out_png_path))
     plt.savefig(out_png_path, bbox_inches='tight', dpi=CHOROPLETH_DPI)
     plt.close(figure)
     return out_png_path
-
-
-def hb_create_directories(path):
-    """The output directory for a file path, created if it is missing."""
-    import os
-    directory = os.path.dirname(path)
-    if directory and not os.path.exists(directory):
-        os.makedirs(directory, exist_ok=True)
 
 
 import numpy as np
@@ -893,7 +911,6 @@ def report_dir():
     Returns:
         str: the report's own directory.
     """
-    import os
 
     return os.getcwd()
 
@@ -916,8 +933,6 @@ def gep_summary_tables(df, value_column, out_dir, log=None):
     Returns:
         dict: 'country' plus one key per grouping present, each a DataFrame.
     """
-    import os
-    import hazelbean as hb
 
     tables = {'country': df[['iso3_r250_name', value_column]]}
     hb.df_write(tables['country'], os.path.join(out_dir, 'gep_by_country_base_year_table.csv'))
@@ -973,8 +988,6 @@ def begin_gep_calculation(p, service, extra_results=None, log=None):
         tuple: (service_results, already_done). When already_done is True the caller returns
         without doing anything, which is what makes a rerun cheap.
     """
-    import os
-    import hazelbean as hb
     log = log or hb.log
     service_results = p.results.setdefault(service, {})
     service_results['gep_by_country_base_year'] = os.path.join(
@@ -1006,4 +1019,832 @@ def country_attributes(p, columns=None):
     wanted = list(columns) if columns else list(GEP_COUNTRY_ATTRIBUTE_COLUMNS)
     return collapse_countries_to_r250(p.df_countries)[wanted]
 
+
+# =============================================================================
+# The imports the moved helpers need.
+import hashlib
+import os
+import warnings
+from typing import Any, Dict, Optional, Tuple
+
+import geopandas as gpd
+import hazelbean as hb
+import pandas as pd
+import rasterio
+from rasterio.windows import Window
+
+
+# Raster, table and figure helpers. Not service-specific: any service needing them
+# finds them here rather than keeping a copy.
+# =============================================================================
+
+
+# These four were module defaults for the plotting helpers, with a comment saying a
+# configure_maps(p) call overrode them at run time. That call was removed in the structural pass,
+# so the defaults became unconditional and the four es_parameters rows naming them went dead. They
+# are arguments now, supplied by the caller from the CSV.
+
+
+# -----------------------------------------------------------------------------
+# Existence / assertions
+# -----------------------------------------------------------------------------
+
+def service_data_dir(p, service):
+    """Where one service's inputs live under base data, from the ProjectFlow that knows.
+
+    Replication anchors sit here with everything else the service reads. They used to be a
+    `reference/` directory inside the repo, which made them a special kind of input; they are
+    not, they are inputs.
+
+    Args:
+        p: the ProjectFlow, for `base_data_dir`.
+        service (str): the service directory name.
+
+    Raises:
+        NameError: naming the directory, because reading the wrong one is worse than not reading.
+    """
+    path = os.path.join(p.base_data_dir, 'global_invest', service)
+    if not os.path.isdir(path):
+        raise NameError('%s has no data directory at %s' % (service, path))
+    return path
+
+
+# ---------------------------------------------------------------------------------------------
+# Rasterio read and write. Seven services open rasters by hand; hazelbean is GDAL-based and
+# its as_array returns a Dataset, a Band and an array rather than the rasterio profile these
+# writers need, so this pair is ours rather than a duplicate of hb.as_array.
+# ---------------------------------------------------------------------------------------------
+
+def read_raster(path: str) -> Tuple[np.ndarray, Dict[str, Any]]:
+    """
+    Read a single-band GeoTIFF.
+
+    Returns
+    -------
+    data : np.ndarray
+        2-D float32 array.
+    meta : dict
+        Rasterio profile (used to write matching outputs).
+    """
+    path = str(path)
+
+    with rasterio.open(path) as src:
+        data = src.read(1).astype(np.float32)
+        meta = src.meta.copy()
+
+    return data, meta
+
+
+def write_raster(path, data, meta, nodata=None):
+    """Write a single-band float32 GeoTIFF, creating the parent directory if needed.
+
+    Args:
+        path (Path): where to write.
+        data (np.ndarray): the 2-D array.
+        meta (dict): a rasterio profile, normally the one read_raster returned.
+        nodata (float): overrides the profile's nodata when given.
+
+    Returns:
+        Path: the path written.
+    """
+    path = str(path)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    profile = dict(meta)
+    profile.update(driver='GTiff', dtype='float32', count=1,
+                   compress='deflate', predictor=2, tiled=True, zlevel=6)
+    if nodata is not None:
+        profile['nodata'] = nodata
+    with rasterio.open(path, 'w', **profile) as dst:
+        dst.write(data.astype(np.float32), 1)
+    return path
+
+
+# The files, not their directories: get_path searches the task's own directory first, so a
+# directory reference resolved into intermediate/pollination/ rather than into base data.
+
+
+
+# The country attributes every GEP per-country CSV carries, in the order the CSV writes them. One
+# list rather than one per service, because a service that spells them differently produces a
+# table that will not stack with the others.
+GEP_COUNTRY_ATTR_COLS = ['iso3_r250_id', 'iso3_r250_label', 'iso3_r250_name',
+                         'continent', 'region_un', 'region_wb', 'income_grp', 'subregion']
+
+
+
+def read_column(path, column, cast=str):
+    """One column of a small reference table, as a list.
+
+    The tables these read used to be dictionaries and lists in the modules -- 38 ESA codes, 37
+    FLOPROS countries, 178 FAO crop names. A list of facts in a .py is a list nobody can open in a
+    spreadsheet, diff usefully, or correct without a commit.
+    """
+    return [cast(v) for v in hb.df_read(path)[column].dropna().tolist()]
+
+
+def read_lookup(path, key_column, value_column, key_cast=str, value_cast=str):
+    """A two-column reference table as a dict."""
+    df = hb.df_read(path)
+    return {key_cast(k): value_cast(v)
+            for k, v in zip(df[key_column], df[value_column]) if k == k}
+
+
+
+def read_lookup_of_sets(path, first_key_column, second_key_column, value_column, cast=int):
+    """A three-column reference table as {(first, second): set_of_values}.
+
+    The land-cover class sets are the shape this exists for: which ids count as agricultural and
+    which as natural, in each of two coding schemes. They were four module constants, and the two
+    ESA ones sat in a different file from the ESA codebook they belong with.
+    """
+    df = hb.df_read(path)
+    out = {}
+    for first, second, value in zip(df[first_key_column], df[second_key_column], df[value_column]):
+        out.setdefault((str(first), str(second)), set()).add(cast(value))
+    return out
+
+
+def assert_exists(path, hint: str = ""):
+    """Fail naming the missing file and what needed it, rather than where the read happened."""
+    if not hb.path_exists(path):
+        raise FileNotFoundError(f"Missing: {path}\n{hint}")
+
+
+def assert_same_grid(src_a, src_b, label_a: str = "A", label_b: str = "B", rtol: float = 1e-6):
+    """
+    Hard-lock the alignment principle used throughout the flood pipeline:
+    depth rasters, LULC and SDA must share CRS + transform + shape. We never
+    silently warp the accounting grid; if this fails, re-align the *input*
+    to the LULC grid first.
+    """
+    problems = []
+    if src_a.crs != src_b.crs:
+        problems.append(f"CRS differs: {label_a}={src_a.crs} vs {label_b}={src_b.crs}")
+    if (src_a.width, src_a.height) != (src_b.width, src_b.height):
+        problems.append(
+            f"Shape differs: {label_a}=({src_a.height},{src_a.width}) "
+            f"vs {label_b}=({src_b.height},{src_b.width})"
+        )
+    ta, tb = src_a.transform, src_b.transform
+    for name, va, vb in zip("abcdef", ta[:6], tb[:6]):
+        if not np.isclose(va, vb, rtol=rtol, atol=1e-9):
+            problems.append(f"Transform.{name} differs: {va} vs {vb}")
+    if problems:
+        raise ValueError(
+            f"Grid mismatch between {label_a} and {label_b}:\n  " + "\n  ".join(problems)
+        )
+    return True
+
+
+def raster_profile_string(ds) -> str:
+    return (
+        f"CRS: {ds.crs}\n"
+        f"Transform: {ds.transform}\n"
+        f"Width x Height: {ds.width} x {ds.height}\n"
+        f"Res (approx): {ds.transform.a:.4f} x {abs(ds.transform.e):.4f}\n"
+        f"Dtype: {ds.dtypes[0]}\n"
+        f"Nodata: {ds.nodata}\n"
+        f"Bounds: {ds.bounds}\n"
+    )
+
+
+def warn_if_geographic(ds, label: str = "raster"):
+    """Pixel area from an affine transform is only m^2 in a projected CRS."""
+    if ds.crs is not None and ds.crs.is_geographic:
+        warnings.warn(
+            f"[WARN] {label} CRS is geographic (degrees). Pixel area from the "
+            f"transform is NOT m^2. Reproject to a projected CRS aligned to the "
+            f"LULC grid before running valuation."
+        )
+        return True
+    return False
+
+
+def random_windows(width: int, height: int, n: int, wsize: int, seed: int = 7):
+    rng = np.random.default_rng(seed)
+    for _ in range(n):
+        col = int(rng.integers(0, max(1, width - wsize)))
+        row = int(rng.integers(0, max(1, height - wsize)))
+        yield Window(
+            col_off=col, row_off=row,
+            width=min(wsize, width - col), height=min(wsize, height - row),
+        )
+
+
+def save_raster_completely(final_path, profile: dict, array: np.ndarray, band: int = 1):
+    """
+    Write to <name>.tmp then rename, so a killed job never leaves a half-written GeoTIFF at the
+    final path for a later skip-existing run to mistake for complete.
+    """
+    final_path = str(final_path)
+    hb.create_directories(os.path.dirname(final_path))
+    tmp = final_path + ".tmp"
+    with rasterio.open(tmp, "w", **profile) as dst:
+        dst.write(array, band)
+    os.replace(tmp, final_path)          # os.replace, not str.replace: this is the rename
+    return final_path
+
+
+def raster_ok(path) -> bool:
+    """Cheap validity probe used by the smart-skip logic."""
+    path = str(path)
+    if not hb.path_exists(path) or os.path.getsize(path) == 0:
+        return False
+    try:
+        with rasterio.open(path) as ds:
+            _ = ds.profile
+        return True
+    except (OSError, rasterio.errors.RasterioIOError):
+        return False
+
+
+# -----------------------------------------------------------------------------
+# Fingerprinting (smart-skip / provenance)
+# -----------------------------------------------------------------------------
+def sha256_file(path, chunk_size: int = 1024 * 1024) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        while True:
+            b = f.read(chunk_size)
+            if not b:
+                break
+            h.update(b)
+    return h.hexdigest()
+
+
+def file_fingerprint(path) -> dict:
+    path = str(path)
+    if not hb.path_exists(path):
+        return {"path": path, "exists": False}
+    st = os.stat(path)
+    return {
+        "path": str(path),
+        "exists": True,
+        "size": st.st_size,
+        "mtime": st.st_mtime,
+    }
+
+
+# -----------------------------------------------------------------------------
+# Column detection (tolerant of underscore/space/case differences)
+# -----------------------------------------------------------------------------
+def norm_label(s: str) -> str:
+    s = str(s).strip().lower().replace("_", " ")
+    s = "".join(ch if ch.isalnum() or ch.isspace() else " " for ch in s)
+    return " ".join(s.split())
+
+
+def find_col(df: pd.DataFrame, candidates: Tuple[str, ...]) -> Optional[str]:
+    norm_map: Dict[str, str] = {norm_label(c): c for c in df.columns}
+    for cand in candidates:
+        k = norm_label(cand)
+        if k in norm_map:
+            return norm_map[k]
+    for cand in candidates:  # contains-match fallback
+        k = norm_label(cand)
+        for kk, orig in norm_map.items():
+            if k in kk:
+                return orig
+    return None
+
+
+def to_float(x) -> float:
+    try:
+        return float(x)
+    except (TypeError, ValueError):
+        return np.nan
+
+
+def write_csv(df: pd.DataFrame, path):
+    """hb.df_write, plus the parent directory, which it does not create."""
+    path = str(path)
+    hb.create_directories(os.path.dirname(path))
+    hb.df_write(df, path)
+    return path
+
+
+# -----------------------------------------------------------------------------
+# Numerics
+# -----------------------------------------------------------------------------
+def safe_mean(x: np.ndarray) -> float:
+    x = np.asarray(x)
+    return float(np.nanmean(x)) if x.size else float("nan")
+
+
+# -----------------------------------------------------------------------------
+# Formatting
+# -----------------------------------------------------------------------------
+def fmt_usd_millions(x: float) -> str:
+    if not np.isfinite(x):
+        return "NA"
+    if abs(x) >= 10:
+        return f"{x:,.0f}" if abs(x) >= 100 else f"{x:,.1f}"
+    if abs(x) >= 1:
+        return f"{x:,.1f}"
+    return f"{x:,.2f}"
+
+
+def fmt_percent(x: float) -> str:
+    if not np.isfinite(x):
+        return "NA"
+    if abs(x) >= 10:
+        return f"{x:.1f}"
+    if abs(x) >= 1:
+        return f"{x:.2f}"
+    return f"{x:.3f}"
+
+
+def fmt_usd(x: float) -> str:
+    if not np.isfinite(x):
+        return "NA"
+    return f"${x:,.0f}"
+
+
+def build_interval_labels(edges: np.ndarray, label_format: str = "usd_millions") -> list[str]:
+    labels = []
+    for i in range(len(edges) - 1):
+        lo, hi = edges[i], edges[i + 1]
+        if label_format == "usd_millions":
+            lo_txt, hi_txt = fmt_usd_millions(lo), fmt_usd_millions(hi)
+        else:
+            lo_txt, hi_txt = fmt_percent(lo), fmt_percent(hi)
+        labels.append(f"{lo_txt} \u2013 {hi_txt}")
+    return labels
+
+
+# -----------------------------------------------------------------------------
+# Plotting
+# -----------------------------------------------------------------------------
+def savefig(path, dpi: int = 300, **kwargs):
+    """Write the current figure, tightly cropped, and close it.
+
+    The call below is plt.savefig, not this function. Without the prefix it recurses, and the
+    recursion is invisible because the inner call passes bbox_inches, which a two-argument
+    signature does not take: the TypeError arrives before the RecursionError, and reads like a
+    matplotlib version problem rather than a name that resolves to the wrong thing.
+    """
+    hb.create_directories(os.path.dirname(str(path)))
+    plt.tight_layout()
+    plt.savefig(path, dpi=dpi, bbox_inches="tight")
+    plt.close()
+
+
+def top_n(df: pd.DataFrame, col: str, n: int) -> pd.DataFrame:
+    d = df[np.isfinite(pd.to_numeric(df[col], errors="coerce"))].copy()
+    return d.sort_values(col, ascending=False).head(n)
+
+
+def compute_classification(values: pd.Series, scheme: str = "fisher_jenks", k: int = 5):
+    s = pd.to_numeric(values, errors="coerce")
+    m = np.isfinite(s)
+    clean = s[m]
+
+    if clean.empty:
+        return pd.Series(index=values.index, dtype="float64"), np.array([0.0, 1.0])
+
+    try:
+
+        scheme = (scheme or "fisher_jenks").lower()
+        k_eff = max(min(k, int(clean.nunique())), 1)
+
+        if scheme == "equal_interval":
+            classifier = mapclassify.EqualInterval(clean.to_numpy(), k=k_eff)
+        elif scheme == "quantiles":
+            classifier = mapclassify.Quantiles(clean.to_numpy(), k=k_eff)
+        else:
+            classifier = mapclassify.FisherJenks(clean.to_numpy(), k=k_eff)
+
+        edges = np.concatenate(([clean.min()], np.asarray(classifier.bins, dtype=float)))
+        class_ids = pd.Series(np.nan, index=values.index)
+        class_ids.loc[m] = classifier.yb
+        return class_ids, edges
+
+    except Exception:
+        warnings.warn("mapclassify unavailable or failed; falling back to qcut quantiles.")
+        q = min(k, max(1, int(clean.nunique())))
+        cats = pd.qcut(clean, q=q, duplicates="drop")
+        codes = pd.Series(np.nan, index=values.index)
+        codes.loc[m] = cats.cat.codes.astype(float)
+        intervals = cats.cat.categories
+        edges = [intervals[0].left] + [iv.right for iv in intervals]
+        return codes, np.asarray(edges, dtype=float)
+
+
+def plot_publication_choropleth_categorical(
+    world_joined: gpd.GeoDataFrame,
+    value_col: str,
+    title: str,
+    out_png,
+    legend_title: str,
+    scheme: str = "fisher_jenks",
+    k: int = 5,
+    value_unit: str = "raw",
+    label_format: str = "usd_millions",
+    legend_loc: str = "lower left",
+    exclude_iso3=("ATA",),
+    robinson_crs: str = "+proj=robin",
+    usd_to_millions: float = 1e6,
+):
+    gdf = world_joined.copy()
+
+    if "iso3" in gdf.columns:
+        gdf = gdf[~gdf["iso3"].isin(set(exclude_iso3))].copy()
+    gdf = gdf[gdf.geometry.notna()].copy()
+
+    if value_col not in gdf.columns:
+        warnings.warn(f"Column not found for map: {value_col}")
+        fig, ax = plt.subplots(figsize=(14, 7))
+        ax.set_axis_off()
+        ax.set_title(f"{title}\n[missing column: {value_col}]", fontsize=16, pad=14)
+        savefig(out_png, dpi=300)
+        return
+
+    if value_unit == "usd_millions":
+        gdf["_plot_value"] = pd.to_numeric(gdf[value_col], errors="coerce") / usd_to_millions
+    else:
+        gdf["_plot_value"] = pd.to_numeric(gdf[value_col], errors="coerce")
+
+    try:
+        gdf = gdf.to_crs(robinson_crs)
+    except Exception as e:
+        warnings.warn(f"CRS transform failed ({e}). Plotting in native CRS.")
+
+    minx, miny, maxx, maxy = gdf.total_bounds
+    class_ids, edges = compute_classification(gdf["_plot_value"], scheme=scheme, k=k)
+
+    valid_codes = pd.Series(class_ids).dropna()
+    if valid_codes.empty:
+        warnings.warn(f"No valid data for map: {value_col}")
+        fig, ax = plt.subplots(figsize=(14, 7))
+        ax.set_axis_off()
+        ax.set_title(title, fontsize=16, pad=14)
+        savefig(out_png, dpi=300)
+        return
+
+    n_classes = int(valid_codes.max()) + 1
+    labels = build_interval_labels(edges[:n_classes + 1], label_format=label_format)
+
+    gdf["_class_id"] = pd.Series(class_ids, index=gdf.index)
+    gdf["_class_label"] = pd.Categorical(
+        [labels[int(x)] if np.isfinite(x) and int(x) < len(labels) else np.nan
+         for x in gdf["_class_id"]],
+        categories=labels, ordered=True,
+    )
+
+    try:
+        cmap = mpl.colormaps[mpl.rcParams["image.cmap"]].resampled(n_classes)
+    except Exception:  # matplotlib < 3.6
+        cmap = mpl.cm.get_cmap(mpl.rcParams["image.cmap"], n_classes)
+    color_list = [mpl.colors.to_hex(cmap(i)) for i in range(n_classes)]
+
+    fig, ax = plt.subplots(figsize=(14, 7))
+    ax.set_axis_off()
+    gdf.plot(
+        column="_class_label", ax=ax,
+        cmap=mpl.colors.ListedColormap(color_list),
+        legend=False, linewidth=0.35, edgecolor="white",
+        missing_kwds={"color": "lightgrey", "edgecolor": "white"},
+    )
+    ax.set_xlim(minx, maxx)
+    ax.set_ylim(miny, maxy)
+    ax.set_title(title, fontsize=16, pad=14)
+
+    handles = [Patch(facecolor=color_list[i], edgecolor="none", label=labels[i])
+               for i in range(n_classes)]
+    handles.append(Patch(facecolor="lightgrey", edgecolor="none", label="No data"))
+    leg = ax.legend(
+        handles=handles, title=legend_title, loc=legend_loc, frameon=True,
+        fontsize=10, title_fontsize=11, borderpad=0.8, labelspacing=0.5,
+        handlelength=1.6, handletextpad=0.6,
+    )
+    leg.get_frame().set_alpha(0.95)
+    savefig(out_png, dpi=300)
+
+
+# ---------------------------------------------------------------------------------------------
+# Country columns and raster geometry. Promoted here on their second caller: each of these existed
+# in both erosion and flood, and pick_iso3_column had already drifted -- flood tried ISO_A3 before
+# ADM0_A3 and erosion the reverse, so a boundary file carrying both was read differently by the two
+# services. ISO_A3 wins here: it is the official code, where ADM0_A3 is Natural Earth's own and
+# fills gaps with invented ones.
+# ---------------------------------------------------------------------------------------------
+def pick_iso3_column(gdf):
+    """The first ISO3-like column present, or None.
+
+    Args:
+        gdf (GeoDataFrame): any country layer.
+
+    Returns:
+        str or None: the column name.
+    """
+    for c in ("iso3", "ISO3", "iso_a3", "ISO_A3", "ADM0_A3", "adm0_a3", "iso3_r250_label"):
+        if c in gdf.columns:
+            return c
+    return None
+
+
+def pick_name_column(gdf):
+    """The first country-name column present, or None."""
+    for c in ("country_name", "NAME_EN", "ADMIN", "NAME_LONG", "NAME",
+              "COUNTRY", "NAME_0", "ADM0_NAME", "GEOUNIT", "iso3_r250_name"):
+        if c in gdf.columns:
+            return c
+    return None
+
+
+def to_num(df, columns):
+    """Coerce the named columns to numeric in place, leaving unparseable cells as NaN."""
+    for c in columns:
+        if c in df.columns:
+            df[c] = pd.to_numeric(df[c], errors="coerce")
+    return df
+
+
+def normalize_columns(df):
+    """A copy with column names stripped and lowercased."""
+    df = df.copy()
+    df.columns = [c.strip().lower() for c in df.columns]
+    return df
+
+
+def pixel_area_m2(transform) -> float:
+    """Nominal pixel area from an affine transform, in square metres.
+
+    ⚠ Nominal: in a conformal projection this is the equatorial value. See mercator_area_scale.
+    """
+    return abs(float(transform.a) * float(transform.e))
+
+
+def pixel_area_km2(transform) -> float:
+    """Nominal pixel area from an affine transform, in square kilometres."""
+    return pixel_area_m2(transform) / 1e6
+
+
+def attach_income_group(df, df_countries, iso3_column="iso3", column="income_group"):
+    """Join the World Bank income group from the shared country table.
+
+    Every service that reports by income group reads the same column, so one country cannot sit in
+    a different group in two accounts. Erosion used to carry a 115-country dict in code and drop
+    every country missing from it, which removed about 77 of its ~192 countries from those figures
+    without saying so.
+
+    Args:
+        df (DataFrame): rows carrying an ISO3 column.
+        df_countries (DataFrame): the shared country table, from initialize_country_paths.
+        iso3_column (str): the ISO3 column in `df`.
+        column (str): the column to write.
+
+    Returns:
+        tuple: (the frame with `column` added, the groups present ordered poorest first).
+
+    Raises:
+        NameError: if the country table carries no income column, rather than leaving every row
+            unlabelled and the figure quietly empty.
+    """
+    source = None
+    for candidate in ("income_grp", "income_group", "incomegrp"):
+        if candidate in df_countries.columns:
+            source = candidate
+            break
+    if source is None:
+        raise NameError(
+            "No income column in the country table; looked for income_grp, income_group, "
+            "incomegrp and found %s." % list(df_countries.columns))
+    key = pick_iso3_column(df_countries)
+    lookup = (df_countries[[key, source]].dropna()
+              .assign(**{key: lambda d: d[key].astype(str).str.upper().str.strip()})
+              .drop_duplicates(key).set_index(key)[source])
+    out = df.copy()
+    out[column] = out[iso3_column].astype(str).str.upper().str.strip().map(lookup)
+
+    groups = [g for g in out[column].dropna().unique()]
+    # Natural Earth prefixes each label with its rank ("1. High income: OECD" ... "5. Low income"),
+    # so descending order puts the poorest first, which is how these read on a chart. Labels
+    # without that prefix fall back to alphabetical.
+    ranked = all(str(g)[:1].isdigit() for g in groups)
+    return out, sorted(groups, reverse=ranked)
+
+
+def income_group_colors(groups):
+    """A red-to-green ramp over the income groups, poorest first."""
+    ramp = mpl.colormaps["RdYlGn"].resampled(max(len(groups), 2))
+    return {g: mpl.colors.to_hex(ramp(i)) for i, g in enumerate(groups)}
+
+
+# =============================================================================================
+# FAOSTAT Value of Production: the pipeline crop_provision, livestock_provision and
+# extractive_materials_provision share. Each of these existed once per service, with the service's
+# own name baked into the value column; the value column is a parameter here instead. Promoted on
+# the third caller. Livestock's versions were the supersets and are the ones kept: items select by
+# FAO item code as well as by name, and the value before the rental rate is carried alongside it.
+# =============================================================================================
+FAOSTAT_VALUE_UNIT = '1000 USD'
+FAOSTAT_GROSS_PRODUCTION_VALUE_ELEMENT = 57
+FAOSTAT_THOUSAND_USD = 1000.0
+FAOSTAT_FIRST_YEAR = 1961
+FAOSTAT_LAST_YEAR = 2022
+FAOSTAT_TURKIYE_AREA_CODE = 223
+CROP_ID_COLUMNS = ['area_code', 'area_code_M49', 'country', 'crop_code', 'crop']
+
+
+def clean_faostat_values(df_raw, items, value_column, aggregate_areas):
+    """One row per country-item-year of FAOSTAT gross production value, in thousand USD.
+
+    The bulk file is wide (one column per year, each with a flag column beside it) and mixes
+    elements, units, aggregate areas and items nobody asked for. This keeps the gross-production-
+    value rows in USD, keeps the requested items, drops the aggregate areas, and melts the year
+    columns into rows.
+
+    Args:
+        df_raw (pd.DataFrame): the FAOSTAT Value of Production bulk table as shipped.
+        items (iterable): the items to keep. Integer entries select by FAO item code, which is
+            robust to FAO's item-name revisions; strings select by name.
+        value_column (str): what to call the value, e.g. 'crop_provision_gep'.
+
+    Returns:
+        pd.DataFrame: area_code, area_code_M49, country, crop_code, crop, year, <value_column>.
+    """
+    years = range(FAOSTAT_FIRST_YEAR, FAOSTAT_LAST_YEAR + 1)
+    df = df_raw[(df_raw['Unit'] == FAOSTAT_VALUE_UNIT)
+                & (df_raw['Element Code'] == FAOSTAT_GROSS_PRODUCTION_VALUE_ELEMENT)].copy()
+    df = df.drop(columns=[col for col in df.columns if col.endswith('F')])
+
+    old_names = ['Area Code', 'Area Code (M49)', 'Area', 'Item Code', 'Item'] + [f'Y{y}' for y in years]
+    new_names = CROP_ID_COLUMNS + [str(y) for y in years]
+    df = df.rename(columns=dict(zip(old_names, new_names)))
+
+    codes = [i for i in items if isinstance(i, int)]
+    names = [i for i in items if isinstance(i, str)]
+    df = df[df['crop_code'].isin(codes) | df['crop'].isin(names)]
+    df = df[~df['country'].isin(aggregate_areas)]
+
+    df = pd.melt(df, id_vars=CROP_ID_COLUMNS, value_vars=[str(y) for y in years],
+                 var_name='year', value_name=value_column)
+    df['area_code'] = pd.to_numeric(df['area_code'], errors='coerce').astype(int)
+    df['year'] = pd.to_numeric(df['year'], errors='coerce').astype(int)
+    df.loc[df['area_code'] == FAOSTAT_TURKIYE_AREA_CODE, 'country'] = 'Turkey'
+    hb.log('FAOSTAT values cleaned and reshaped to long (%d rows).' % df.shape[0])
+    return df
+
+
+def apply_rental_rates(df_values, df_coefs, value_column):
+    """Production value attributed to land, country by country.
+
+    Each year takes the rental rate of the most recent decade that has started, which is a
+    backward as-of merge on year within a country. A country the CWoN table never covers keeps a
+    missing rate, so its value becomes missing rather than being attributed in full.
+
+    gross_production_value carries the value BEFORE the rate, because the attribution factor is
+    still an open decision and comparing the two needs the unattributed figure.
+
+    Args:
+        df_values (pd.DataFrame): long values, with area_code, year and <value_column>.
+        df_coefs (pd.DataFrame): the rental-rate lookup, with FAO, year and rental_rate.
+        value_column (str): the value column to attribute.
+
+    Returns:
+        pd.DataFrame: with rental_rate and gross_production_value attached and <value_column>
+        multiplied by the rate, sorted by country then year.
+    """
+    merged_parts = []
+    for code, df_group in df_values.groupby('area_code', sort=True):
+        lookup_sub = df_coefs[df_coefs['FAO'] == code]
+        if lookup_sub.empty:
+            df_group = df_group.copy()
+            df_group['rental_rate'] = pd.NA
+            merged_parts.append(df_group)
+            continue
+        merged = pd.merge_asof(
+            left=df_group.sort_values('year'),
+            right=lookup_sub.sort_values('year')[['year', 'rental_rate']],
+            on='year', direction='backward')
+        merged_parts.append(merged)
+
+    df = pd.concat(merged_parts, ignore_index=True)
+    df['gross_production_value'] = df[value_column]
+    df[value_column] = df[value_column] * df['rental_rate']
+    df = df.sort_values(by=['area_code', 'year'], ascending=[True, True])
+    hb.log('Values merged with rental rates (%d rows).' % df.shape[0])
+    return df
+
+
+def sum_items_to_country_year(df, value_column):
+    """Item rows summed to one row per country and year."""
+    agg_dict = {value_column: 'sum'}
+    if 'gross_production_value' in df.columns:
+        agg_dict['gross_production_value'] = 'sum'
+    out = hb.df_groupby(df, ['iso3_r250_id', 'year'], agg_dict=agg_dict,
+                        preserve='keep_all_valid')
+    out = out.sort_values(by=['iso3_r250_id', 'year'], ascending=[True, True])
+    out[value_column] = pd.to_numeric(out[value_column], errors='coerce')
+    hb.log('Grouped by country-year (%d rows).' % out.shape[0])
+    return out
+
+
+def sum_countries_to_year(df, value_column):
+    """Country-year rows summed to one global row per year."""
+    out = hb.df_groupby(df, groupby_cols='year', agg_cols=value_column,
+                        preserve='keep_all_valid')
+    out.sort_values('year', inplace=True)
+    hb.log('Grouped total by year (%d rows).' % out.shape[0])
+    return out
+
+
+# FAOSTAT keeps dissolved states under their own M49 codes. Each maps to the successor the
+# country correspondence uses, so their production joins to a country instead of dropping.
+M49_SUCCESSORS = {
+    159: 156,   # China (mainland) -> China
+    891: 688,   # Serbia and Montenegro -> Serbia
+    200: 203,   # Czechoslovakia -> Czechia
+    230: 231,   # Ethiopia PDR -> Ethiopia
+    736: 729,   # Sudan (former) -> Sudan
+}
+
+
+def build_rental_rate_lookup(df_raw):
+    """The CWoN rental rates as one row per country and decade start.
+
+    The workbook is one column per decade ("1961-1970", "1971-1980", ...) keyed on the FAO area
+    code. Melting it and keeping the decade's first year gives the lookup merge_crop_with_coefs
+    reads as-of. Columns that are not a decade (the ISO3 label) carry no leading year, so they
+    fall out with the rows whose decade start does not parse.
+
+    Args:
+        df_raw (pd.DataFrame): the CWoN coefficient table as shipped.
+
+    Returns:
+        pd.DataFrame: columns FAO, year, rental_rate.
+    """
+    df = df_raw.melt(id_vars=['Order', 'FAO', 'Country/territory'],
+                     var_name='Decade', value_name='rental_rate')
+    df['Decade_start'] = df['Decade'].str.extract(r'^(\d{4})').astype(float)
+    df = df.dropna(subset=['Decade_start', 'FAO'])
+
+    df = df[['FAO', 'Decade_start', 'rental_rate']].copy()
+    df['FAO'] = df['FAO'].astype(int)
+    df['Decade_start'] = df['Decade_start'].astype(int)
+    df = df.rename(columns={'Decade_start': 'year'})
+    hb.log(f'Prepared coef lookup ({df.shape[0]} rows).')
+    return df
+
+
+def normalize_m49_codes(df, column='area_code_M49', successors=None):
+    """FAOSTAT's M49 area codes as integers, with dissolved states mapped to their successor.
+
+    The codes arrive quoted ("'156"), so they are unquoted and cast before the mapping.
+
+    Args:
+        df (pd.DataFrame): a frame holding FAOSTAT area codes.
+        column (str): the code column.
+        successors (dict): code -> successor code, defaulting to M49_SUCCESSORS.
+
+    Returns:
+        pd.DataFrame: the frame with that column as integers, successors applied.
+    """
+    out = df.copy()
+    out[column] = out[column].astype(str).str.replace("'", '', regex=False).astype(int)
+    out[column] = out[column].replace(M49_SUCCESSORS if successors is None else successors)
+    return out
+
+
+def collapse_regions_to_countries(df_regions, attribute_columns, value_column, sum_column='total'):
+    """Per-region totals summed to one row per country and year, with the country attributes back on.
+
+    Summing the r264-expanded table as it stands would count a split country once per sub-region
+    (China spans 6 r264 rows, India 6, France, Turkey, the UK and Pakistan 2), so the sum is taken
+    on the r250 country id and the attributes are attached afterwards from one representative
+    sub-region each.
+
+    Args:
+        df_regions (pd.DataFrame): the per-region table, carrying iso3_r250_id, year and
+            `sum_column`.
+        attribute_columns (list): the country attribute columns to carry through.
+        value_column (str): what to call the summed value.
+        sum_column (str): the column to sum.
+
+    Returns:
+        pd.DataFrame: one row per country and year, with the attributes attached.
+    """
+    totals = (df_regions.groupby(['iso3_r250_id', 'year'], as_index=False)[sum_column].sum()
+              .rename(columns={sum_column: value_column}))
+    attributes = df_regions[attribute_columns].drop_duplicates('iso3_r250_id')
+    return totals.merge(attributes, how='left', on='iso3_r250_id')
+
+
+def expand_country_values_to_regions(df_regions, df_by_country, value_column):
+    """Each r264 region carrying its COUNTRY's value, for the map only.
+
+    ⚠ The result must never be summed: every sub-region of a split country carries the whole
+    country's value, so a sum counts China six times.
+
+    Args:
+        df_regions (pd.DataFrame): the r264 regions.
+        df_by_country (pd.DataFrame): one row per country, carrying iso3_r250_id and `value_column`.
+        value_column (str): the value to attach.
+
+    Returns:
+        pd.DataFrame: df_regions with `value_column` attached.
+    """
+    return df_regions.merge(df_by_country[['iso3_r250_id', value_column]],
+                            how='left', on='iso3_r250_id')
 

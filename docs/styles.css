@@ -1,7 +1,9 @@
 /* Slide overrides for the global_invest revealjs deck, on top of the `simple` theme.
  * House style: white slides, dark-green headers, full-sentence bullets, readable size. */
 .reveal h1, .reveal h2, .reveal h3 { color: #1b5e20; }   /* dark green */
-.reveal { color: #202020; font-size: 32px; }   /* 40px overflowed the denser slides */
+.reveal { color: #202020; font-size: 22px; }   /* 40px overflowed the denser slides; 32 still did
+                                                * once every bullet showed at once rather than one
+                                                * at a time, so the whole slide has to fit */
 .reveal .slides { text-align: left; }
 .reveal h1 { font-size: 2.1em; }
 .reveal h2 { font-size: 1.5em; }
@@ -26,5 +28,5 @@
 .reveal .smaller > ol,
 .reveal .smaller > ol > li,
 .reveal .smaller > p {
-  font-size: 32px;
+  font-size: 22px;   /* must track the base size above, or table slides read larger than the rest */
 }
