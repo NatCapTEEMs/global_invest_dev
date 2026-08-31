@@ -2365,10 +2365,12 @@ def pollination_value_raster_rebuilt(p):
 
     country_ids, _ = utilities.read_raster(str(p.pollination_cropgrids_country_raster_path))
     country_ids = country_ids.astype('int32')
-    coffee_by_country = pf.coffee_dependence_by_country(
-        hb.df_read(p.pollination_coffee_split_path))
-    hb.log('Coffee: blending arabica and robusta dependence over %d countries.'
-           % len(coffee_by_country))
+    coffee_split = hb.df_read(p.pollination_coffee_split_path)
+    coffee_by_country = pf.coffee_dependence_by_country(coffee_split)
+    coffee_fallback = pf.coffee_dependence_fallback(coffee_split)
+    hb.log('Coffee: blending arabica and robusta dependence over %d countries, and %.4f for the '
+           'rest, from the file\'s own world-average row.'
+           % (len(coffee_by_country), coffee_fallback))
 
     total_pollination_density = None
     total_crop_density = None
@@ -2401,7 +2403,7 @@ def pollination_value_raster_rebuilt(p):
             # arabica, which is what the source pipeline does and what a like-for-like comparison
             # against it needs; it is worth about $3bn on the world total.
             ratio = pf.dependence_raster_from_country_lookup(
-                country_ids, coffee_by_country, pf.COFFEE_DEPENDENCE['arabica'])
+                country_ids, coffee_by_country, coffee_fallback)
         pollination_density, crop_density = pf.crop_pollination_value_density(
             production_density, float(price) * deflator, ratio)
 

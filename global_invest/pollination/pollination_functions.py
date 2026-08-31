@@ -968,6 +968,12 @@ COFFEE_DEPENDENCE = {'arabica': 0.25, 'robusta': 0.65}
 # appears six times. This names the summary row, the way the fisheries reader names the CWoN
 # columns it needs: it is the source file's own label, not a setting anyone would tune.
 COFFEE_SPLIT_SUMMARY_YEAR = '2021_2025'
+# The file also carries a world-average row, labelled 'Other' under this code, for the coffee
+# countries it does not name individually -- 58 of the 78 that report the crop. The source
+# pipeline falls back to it; we fell back to pure arabica instead, which understated every one of
+# those countries, because arabica needs pollinators for a quarter of its yield where the world
+# blend needs 0.41.
+COFFEE_SPLIT_FALLBACK_CODE = 9999
 
 
 def coffee_dependence_by_country(df_arabica_robusta):
@@ -1013,7 +1019,43 @@ def coffee_dependence_by_country(df_arabica_robusta):
     blended = (df['prop_arabica'].astype(float) * COFFEE_DEPENDENCE['arabica']
                + df['prop_robusta'].astype(float) * COFFEE_DEPENDENCE['robusta'])
     codes = pd.to_numeric(df['area_code_m49'], errors='coerce').astype('Int64')
-    return dict(zip(codes, blended))
+    # The world-average row is not a country and must not be looked up as one.
+    return {code: value for code, value in zip(codes, blended)
+            if code != COFFEE_SPLIT_FALLBACK_CODE}
+
+
+def coffee_dependence_fallback(df_arabica_robusta):
+    """The blend for a coffee country the split file does not name individually.
+
+    The file carries a world-average row for exactly this, and the source pipeline uses it. We
+    used pure arabica instead, 0.25 against its 0.41, which understated 58 of the 78 countries
+    that report coffee -- every one the file does not name. Reading his file and then ignoring the
+    row he put in it for this purpose is the kind of difference that looks like agreement until
+    somebody compares the two.
+
+    Args:
+        df_arabica_robusta (pd.DataFrame): area_code_m49, year, prop_arabica and prop_robusta.
+
+    Returns:
+        float: the blended dependence ratio to use where a country has no row of its own.
+
+    Raises:
+        NameError: if the world-average row is absent, since falling back to a guess is what this
+            replaces.
+    """
+    import pandas as pd
+    df = df_arabica_robusta
+    codes = pd.to_numeric(df['area_code_m49'], errors='coerce')
+    row = df[(codes == COFFEE_SPLIT_FALLBACK_CODE)
+             & (df['year'].astype(str) == COFFEE_SPLIT_SUMMARY_YEAR)]
+    if len(row) != 1:
+        raise NameError(
+            'The coffee split file should carry exactly one world-average row, area_code_m49 %d '
+            'at %r, and carries %d. That row is what a country the file does not name is valued '
+            'at, and the alternative is to invent one.'
+            % (COFFEE_SPLIT_FALLBACK_CODE, COFFEE_SPLIT_SUMMARY_YEAR, len(row)))
+    return float(row['prop_arabica'].iloc[0] * COFFEE_DEPENDENCE['arabica']
+                 + row['prop_robusta'].iloc[0] * COFFEE_DEPENDENCE['robusta'])
 
 
 def value_weighted_by_sufficiency(value_array, sufficiency_array, value_nodata=None):

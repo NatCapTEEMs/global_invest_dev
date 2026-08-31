@@ -382,6 +382,23 @@ def test_coffee_dependence_follows_what_each_country_actually_grows():
     assert ratios[1, 1] == pytest.approx(0.25)                          # unknown -> the default
 
 
+def test_the_world_average_row_is_the_fallback_and_not_a_country():
+    """The file carries a world-average row under area_code_m49 9999 for the 58 of 78 coffee
+    countries it does not name. It is what those countries are valued at, and it is not itself a
+    country, so it must not appear in the per-country lookup."""
+    splits = pd.DataFrame({
+        'area_code_m49': [170, pf.COFFEE_SPLIT_FALLBACK_CODE],
+        'year': [pf.COFFEE_SPLIT_SUMMARY_YEAR, pf.COFFEE_SPLIT_SUMMARY_YEAR],
+        'prop_arabica': [1.0, 0.603917],
+        'prop_robusta': [0.0, 0.396083]})
+
+    by_country = pf.coffee_dependence_by_country(splits)
+    assert set(by_country) == {170}                       # 9999 is not a country
+    # 0.603917 x 0.25 + 0.396083 x 0.65, the source pipeline's own fallback rather than arabica.
+    assert pf.coffee_dependence_fallback(splits) == pytest.approx(0.4084, abs=1e-4)
+    assert pf.coffee_dependence_fallback(splits) != pytest.approx(0.25, abs=1e-3)
+
+
 def test_the_coffee_blend_refuses_a_file_with_no_multi_year_summary():
     # Selecting by position returned the summary only because the exporter writes it last. If a
     # re-export drops it, averaging the seasons here would report a different window than the
