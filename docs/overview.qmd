@@ -79,7 +79,7 @@ format:
         slide-number: true
         preview-links: auto
         css: styles.css
-        incremental: true
+        incremental: false
 ---
 
 # Motivation
