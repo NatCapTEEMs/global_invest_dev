@@ -74,7 +74,7 @@ format:
         embed-resources: true
         theme: simple
         margin: 0.08
-        scrollable: true
+        scrollable: false
         code-fold: show
         slide-number: true
         preview-links: auto
@@ -166,7 +166,7 @@ format:
 
 ## What the code does, service by service {.smaller}
 
-- The services differ in how much work stands between the input and the number. That is a separate question from whether the number is ours: a service can run a model here and still take its coefficients from someone else.
+- The services differ in how much work stands between input and number, which is separate from whether the number is ours: a service can run a model here and still take its coefficients from someone else.
 
 | What the code does | Accounts | Which |
 |---|---|---|
@@ -176,12 +176,9 @@ format:
 | Raster arithmetic | {{< meta cat_raster >}} | terrestrial carbon, coastal carbon, pollination, ntfp, timber, floods, stormwater |
 | Process model run here | {{< meta cat_model >}} | erosion, landslides, recreation |
 
-- Urban cooling reads a dollar column out of a committed file. The city-month valuations behind it are ours, but they are not what the sheet reports.
-- Mining production rescales a published rate, a World Bank rent share times GDP times {{< meta extractive_factor >}}.
-- Crop production is table arithmetic, FAOSTAT gross production times the CWoN land rental rate.
-- Pollination is raster arithmetic, 158 production grids times price times each crop's pollinator dependence, cell by cell.
-- The three process models have dynamics of their own. Erosion runs InVEST SDR with sediment routing, landslides computes slope stability twice for every pixel, and recreation runs a gravity model allocating visits into scored sites.
-- The ladder measures work, not confidence, and reading it as a quality ranking gets it backwards. The account without a usable number sits at the top: stormwater has no dollar total because its price is a placeholder. Crop production, down at table arithmetic, reproduces its reference exactly.
+- One of each, in order: urban cooling reads a dollar column out of a committed file, mining rescales a World Bank rent share times GDP, crop production multiplies FAOSTAT output by the CWoN land rental rate, and pollination multiplies 158 production grids by price and dependence cell by cell.
+- The three process models have dynamics of their own: erosion runs InVEST SDR with sediment routing, landslides computes slope stability twice per pixel, and recreation runs a gravity model allocating visits into scored sites.
+- The ladder measures work, not confidence. The account without a usable number sits at the top: stormwater has no dollar total because its price is a placeholder. Crop production, down at table arithmetic, reproduces its reference exactly.
 - One label per service also hides a split. Water quality computes its dollar figure and reads the one it reports, coastal protection computes mangroves and reads corals, and wildfires computes the valuation on coefficients it did not fit. The ours column carries that, the category cannot.
 
 ## Can the services be added into one total?
@@ -311,7 +308,7 @@ format:
 - **Q1:** was EEZ-only chosen to avoid double-counting the landward pixels with terrestrial carbon? Most of the mapped habitat sits landward of the shoreline (97.5 percent of mangrove area, 84 percent of salt marsh), so including it multiplies the total by 4.5.
 - **Q2:** which exact seagrass and salt marsh input versions produced the report's {{< meta coastal_report >}}? Our replication gives {{< meta coastal_eez >}} with the mangrove component matching, and the report's own seagrass area (62.21 Mha) exceeds the published range it cites (16 to 26.7 Mha).
 - **Q3:** if both sides count, a landward mask must prevent double-counting with terrestrial carbon. Does one exist?
-- **Q4:** should a habitat be credited with a cell its mapped extent only clips? Crediting every touched cell whole put the mangrove extent at roughly twice the area of the polygons themselves, and salt marsh near three times, because both are ribbons about as wide as a cell. Measuring the covered fraction instead brings mangrove back to the mapped extent, which independently matches Global Mangrove Watch's published figure. Both the EEZ-only and all-rows totals in Q1 sit on top of the inflated extent.
+- **Q4:** should a habitat be credited with a cell its mapped extent only clips? Crediting every touched cell whole doubles the mangrove extent and nearly triples salt marsh, because both are ribbons about as wide as a cell; both totals in Q1 sit on that inflated extent.
 
 ## marine_carbon
 
@@ -324,7 +321,7 @@ format:
 ## pollination
 
 - [Values the crop output that animal pollinators are responsible for. We build the value raster ourselves now. The old figure was 26 times too small, because the raster holds a value per km2 and the step that summed it treated it as a value per cell.]{.state}
-- **Q1:** which definition does the account want? The crop output at stake if pollinators vanished, {{< meta poll_raster >}}, or the service habitat currently delivers, {{< meta poll_with_sufficiency >}}. Both are on one grid at 2019 prices, from the author's raster; the second multiplies by 300 m habitat sufficiency. Only the second responds to land-use change, which is what makes it a service rather than a property of the crop mix.
+- **Q1:** which definition does the account want? The crop output at stake if pollinators vanished, {{< meta poll_raster >}}, or the service habitat currently delivers, {{< meta poll_with_sufficiency >}}. Both are on one grid at 2019 prices, from the author's raster; the second multiplies by 300 m habitat sufficiency. Only the second responds to land-use change; the first is a property of the crop mix.
 - **Q2:** does the account add pollination on top of crop_provision? Crop multiplies production value by the land rental rate, so both attribute part of the same output to nature.
 
 ## erosion
@@ -366,7 +363,7 @@ format:
 - [Values livestock production and attributes to nature the share of feed ecosystems provide. Both attributions now run: on $2.29T of gross production over the 65 FAO item codes, the CWoN land rental rate gives $519bn and the GLEAM feed share gives {{< meta livestock_world >}}, a factor of 2.6. India recovers from zero to {{< meta livestock_ind >}} on the item list alone.]{.state}
 - **Q1:** which factor does the account attribute with, the land rental rate or the feed share? They differ by 2.6 times. The rental rate belongs to the crop method, and this service's own method page defines it as the factor, but that page is the crop method page, referring to crop items throughout.
 - **Q2:** should milk and the other missing products count as livestock production? The library's old list covered meat and eggs only and captured 4 percent of India's FAO livestock value, while the method repo's list of 65 products includes milk.
-- **Q3:** can you share the GLEAM 3 intake extract (gleam3_dmi.xlsx) to check ours against, and a per-country output? We have harvested the intake from FAO's public dashboard for 231 countries, 205 matching a country in the account, and it does carry all eight feed categories, shown a different subset per species. So we compute the feed share; what we lack is anything to validate it against.
+- **Q3:** can you share the GLEAM 3 intake extract (gleam3_dmi.xlsx) and a per-country output? We harvest the intake from FAO's public dashboard, so we compute the feed share; what we lack is anything to validate it against.
 ## coastal_protection
 
 - [Values storm damage that mangroves and coral reefs prevent along coastlines. The {{< meta cp_total >}} is the sum of two halves that stand differently. Mangroves are ours: hectares times value per hectare reproduces the published table to within $5,291 on $30.4bn, which is its own per-row rounding. Corals are not: that file carries a finished benefit per country with nothing underneath it, $5.17bn at 2011, and we only carry it to the base year with a deflator, making it $6.32bn.]{.state}
@@ -393,10 +390,10 @@ format:
 
 ## water_supply
 
-- [Values hydropower rent and priced water withdrawal. Hydropower is computed from the CWoN wealth table for every country it values, {{< meta water_supply_total >}} across 97 countries, and reproduces the drive's committed output exactly on the 95 countries that output covers. Water use is computed in the library, agriculture {{< meta water_use_ag_total >}} across 123 countries and all-sector {{< meta water_use_all_total >}} across 149.]{.state}
+- [Values hydropower rent and priced water withdrawal. Hydropower comes from the CWoN wealth table, {{< meta water_supply_total >}} across 97 countries, reproducing the drive's committed output on the 95 it covers. Water use is computed here: agriculture {{< meta water_use_ag_total >}} across 123 countries, all-sector {{< meta water_use_all_total >}} across 149.]{.state}
 - **Q1:** which hydropower total is the account's, the manuscript's {{< meta hydro_manuscript >}} or our rent-based {{< meta water_supply_total >}}? The first follows a direct-use method, price times generation, the second the resource-rent method.
-- **Q2:** why does the reference leave 17 countries empty although the CWoN table values them? We now report 97, and carry the 95-country variant beside it as the comparison, so the {{< meta water_supply_anchor >}} anchor still checks out.
-- **Q3:** is the agriculture gap the missing water-stress attribution? Your Submission_WaterUse_Agriculture appendix defines a lambda per crop and country, the FAO yield response coefficients per growth stage weighted by the ratio of actual to maximum evapotranspiration, with production value split rainfed and irrigated by SPAM 2020. We do not implement it: our water use is withdrawal times AQUASTAT efficiency, which is the gross value of water used rather than the part attributable to ecosystems. That would explain why the agriculture pair is {{< meta water_use_ag_total >}} against your $554.5bn while the all-sector pair, which has no attribution on either side, agrees closely. Is that the whole of the difference, and should we implement the lambda?
+- **Q2:** why does the reference leave 17 countries empty although the CWoN table values them? We report 97 and carry the 95-country variant as the comparison, so the {{< meta water_supply_anchor >}} anchor still checks out.
+- **Q3:** is the agriculture gap the missing water-stress attribution? We compute withdrawal times AQUASTAT efficiency, the gross value of water used rather than the part attributable to ecosystems, which would explain why the agriculture pair is {{< meta water_use_ag_total >}} against $554.5bn while the all-sector pair agrees closely.
 - **Q4:** how do hydropower and the two water-use components combine into one water_supply value?
 
 ## air_filtration
@@ -423,8 +420,7 @@ format:
 
 - [Values flood damage avoided by ecosystems: flood depth by return period, JRC depth-damage curves and a per-country EUR/m2 damage value by land type give each country's expected annual damage. Our recompute reproduces the pipeline's table for 146 of 148 non-zero countries.]{.state}
 - **Q1:** should the service-flow fraction multiply into the valuation? The pipeline computes one but never applies it, so today's number is expected flood damage rather than damage ecosystems avoid.
-- [The current outputs are the v2_2024hazard pair the author named, `flood_gep_for_merge_v2_2024hazard.csv` to join against the other services and `flood_gep_country_results_v2_2024hazard.csv` for the full account, superseding FINAL_GEP_FLOOD.]{.state}
-- **Q2:** are the JRC depth-damage curves meant to be applied over true ground area? They are a damage per square metre of asset, and the damage pass gives every cell the same area, taken from a projection whose cells shrink away from the equator. Weighting each country's damage by its latitude moves the global total by about 28 percent, and the countries carrying most of the value sit far from the equator. The treatment is the pipeline's rather than ours, which is why our recompute reproduces its table.
+- **Q2:** are the JRC depth-damage curves meant to be applied over true ground area? They are a damage per square metre of asset, and the damage pass gives every cell the same area, taken from a projection whose cells shrink away from the equator. Weighting each country's damage by its latitude moves the global total by about 28 percent, and the countries carrying most of the value sit far from the equator. The treatment is the pipeline's rather than ours.
 
 ## local_climate_regulation
 
@@ -447,9 +443,9 @@ format:
 
 ## ntfp
 
-- [Values non-timber forest products over the forest that is within 10 km of a road or river and green enough to yield one. {{< meta ntfp_total >}} across 195 countries, over 1.48 billion reachable hectares. Every choice is the source module's: the land cover at its native 300 m in Mollweide, a five-year mean NDVI screen at 0.2, accessibility as the dissolved 10 km buffer of the road and river geometries rather than a raster dilation, and countries taken from the boundary polygons a cell's centre falls in.]{.state}
+- [Values non-timber forest products over forest within 10 km of a road or river and green enough to yield one. {{< meta ntfp_total >}} across 195 countries, over 1.48 billion reachable hectares. Every choice is the source module's: 300 m Mollweide land cover, a five-year mean NDVI screen at 0.2, accessibility as the dissolved 10 km buffer of the road and river geometries, and countries by the polygon a cell's centre falls in.]{.state}
 - **Q1:** is there a model behind CWoN's non-wood forest product value, or is it a published table? That is what stands between this service and a number we compute.
-- **Q2:** who multiplied three countries by five, and why? The rate file we read, `nontimber_price_iucn_edited.csv`, is identical to CWoN for 3,045 of its 3,108 country-year pairs and exactly five times CWoN for the other 63, which are Central African Republic, DR Congo and Mozambique in every one of 21 years. Surgical rather than corrupt, so somebody had a reason, and all three are Congo Basin or Miombo countries where most non-timber use never reaches a market, which would be one. Those three come to {{< meta ntfp_edit_three >}} of {{< meta ntfp_total >}}, DR Congo alone {{< meta ntfp_edit_cod >}}, and without the edit the service is {{< meta ntfp_no_edit >}}.
+- **Q2:** who multiplied three countries by five, and why? `nontimber_price_iucn_edited.csv` matches CWoN for 3,045 of 3,108 country-year pairs and is exactly five times CWoN for the other 63, all Central African Republic, DR Congo and Mozambique; they come to {{< meta ntfp_edit_three >}} of {{< meta ntfp_total >}}, DR Congo alone {{< meta ntfp_edit_cod >}}, and without the edit the service is {{< meta ntfp_no_edit >}}.
 - **Q3:** should a cell sitting exactly on the NDVI floor of 0.2 be kept or dropped? We keep it and the source module drops it, because scaling 2000 by 0.0001 gives 0.19999999 in float32, and that is 202,930 cells or 0.0099% of the valid grid.
 ## stormwater
 
