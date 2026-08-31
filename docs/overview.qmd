@@ -13,8 +13,8 @@ extractive_factor: "0.49"
 renewable_total: "$170.83bn"
 renewable_ref: "$134.6bn"
 poll_raster: "$387.49bn"
-poll_author_raster: "$384.56bn"
-poll_with_sufficiency: "$161.24bn"
+poll_william: "$163.45bn"
+poll_with_sufficiency: "$163.33bn"
 poll_fao: "$515bn"
 livestock_ind: "$136bn"
 livestock_world: "$1.37T"
@@ -322,7 +322,7 @@ format:
 ## pollination
 
 - [Values the crop output that animal pollinators are responsible for. We build the value raster ourselves now. The old figure was 26 times too small, because the raster holds a value per km2 and the step that summed it treated it as a value per cell.]{.state}
-- **Q1:** which definition does the account want? The crop output at stake if pollinators vanished, or the service habitat currently delivers. On the author's raster it comes to {{< meta poll_author_raster >}} without habitat sufficiency, and {{< meta poll_with_sufficiency >}} once the 300 m sufficiency is multiplied in, on one grid at 2019 prices. Only the second responds to land-use change; the first is a property of the crop mix. The account reports {{< meta poll_raster >}} on our own raster, and the sufficiency-weighted counterpart on that raster has not been run.
+- **Q1:** which definition does the account want? The crop output at stake if pollinators vanished, or the service habitat currently delivers. The account reports {{< meta poll_raster >}}; multiplying in the 300 m habitat sufficiency gives {{< meta poll_with_sufficiency >}}, on one grid at 2019 prices. Only the second responds to land-use change; the first is a property of the crop mix. The author now reports {{< meta poll_william >}} for the weighted figure, having split coffee into Arabica and Robusta after we raised it, so the two agree to within a tenth of a percent.
 - **Q2:** does the account add pollination on top of crop_provision? Crop multiplies production value by the land rental rate, so both attribute part of the same output to nature.
 
 ## erosion

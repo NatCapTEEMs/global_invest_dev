@@ -964,6 +964,10 @@ def local_pollination_share(pollination_value, crop_value):
 # different plants: arabica largely self-pollinates and robusta largely does not.
 COFFEE_ITEM_CODE_FAO = 656
 COFFEE_DEPENDENCE = {'arabica': 0.25, 'robusta': 0.65}
+# The split file carries one row per growing season plus a multi-year summary, so each country
+# appears six times. This names the summary row, the way the fisheries reader names the CWoN
+# columns it needs: it is the source file's own label, not a setting anyone would tune.
+COFFEE_SPLIT_SUMMARY_YEAR = '2021_2025'
 
 
 def coffee_dependence_by_country(df_arabica_robusta):
@@ -980,14 +984,32 @@ def coffee_dependence_by_country(df_arabica_robusta):
     average: Colombia is all arabica and Vietnam is 97 percent robusta, so one global ratio
     would be wrong in opposite directions for the two largest producers.
 
+    The file gives each country five seasons and a `2021_2025` summary, and the author averages
+    over that window. Taking the rows as they come and keeping the last one returns the summary
+    today, because the exporter happens to write it last for all 21 countries -- so the number is
+    right and nothing says why. Re-export the file in another order and a single season would be
+    substituted silently. The summary row is therefore selected by name.
+
     Args:
-        df_arabica_robusta (pd.DataFrame): area_code_m49 and prop_arabica, prop_robusta.
+        df_arabica_robusta (pd.DataFrame): area_code_m49, year, prop_arabica and prop_robusta.
 
     Returns:
         dict: M49 country code (int) to the blended dependence ratio.
+
+    Raises:
+        NameError: if no row carries the summary year, since the alternative is to average
+            whatever rows are present and quietly report a different window than the author.
     """
     import pandas as pd
     df = df_arabica_robusta.dropna(subset=['area_code_m49']).copy()
+    summary = df[df['year'].astype(str) == COFFEE_SPLIT_SUMMARY_YEAR]
+    if summary.empty:
+        raise NameError(
+            'No %r row in the coffee split file; it carries %s. That row is the multi-year '
+            'window the author blends over, so without it the seasons would have to be averaged '
+            'here and the two pipelines would silently differ.'
+            % (COFFEE_SPLIT_SUMMARY_YEAR, sorted(df['year'].astype(str).unique())))
+    df = summary
     blended = (df['prop_arabica'].astype(float) * COFFEE_DEPENDENCE['arabica']
                + df['prop_robusta'].astype(float) * COFFEE_DEPENDENCE['robusta'])
     codes = pd.to_numeric(df['area_code_m49'], errors='coerce').astype('Int64')

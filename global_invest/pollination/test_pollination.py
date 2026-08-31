@@ -358,13 +358,20 @@ def test_coffee_dependence_follows_what_each_country_actually_grows():
     # and 0.65. Collapsing on the item code keeps whichever row came first, which valued every
     # coffee country as pure arabica. Colombia really is pure arabica; Vietnam is nearly all
     # robusta, so one global ratio is wrong in opposite directions for two big producers.
-    splits = pd.DataFrame({'area_code_m49': [170, 704, 76],
-                           'prop_arabica': [1.0, 0.034832, 0.626506],
-                           'prop_robusta': [0.0, 0.965168, 0.373494]})
+    # The real file gives each country five seasons and a multi-year summary. Brazil's seasons
+    # bracket its summary, so a reader that took a row by position rather than by name would
+    # still return something plausible -- which is why the season rows are here.
+    splits = pd.DataFrame({
+        'area_code_m49': [170, 704, 76, 76, 76],
+        'year': [pf.COFFEE_SPLIT_SUMMARY_YEAR, pf.COFFEE_SPLIT_SUMMARY_YEAR,
+                 '2021_22', pf.COFFEE_SPLIT_SUMMARY_YEAR, 'Dec_2025_26'],
+        'prop_arabica': [1.0, 0.034832, 0.626506, 0.644762, 0.603175],
+        'prop_robusta': [0.0, 0.965168, 0.373494, 0.355238, 0.396825]})
     by_country = pf.coffee_dependence_by_country(splits)
     assert by_country[170] == pytest.approx(0.25)                      # Colombia, all arabica
     assert by_country[704] == pytest.approx(0.6361, abs=1e-3)          # Vietnam, mostly robusta
-    assert by_country[76] == pytest.approx(0.3994, abs=1e-3)           # Brazil, a real mix
+    # The summary row, not the last row: Brazil's final season would give 0.4087.
+    assert by_country[76] == pytest.approx(0.3921, abs=1e-3)
 
     # And the ratio reaches the pixels through the country raster, with a country we have no
     # split for falling back rather than dropping out.
@@ -373,6 +380,18 @@ def test_coffee_dependence_follows_what_each_country_actually_grows():
     assert ratios[0, 0] == pytest.approx(0.25)
     assert ratios[0, 1] == pytest.approx(0.6361, abs=1e-3)
     assert ratios[1, 1] == pytest.approx(0.25)                          # unknown -> the default
+
+
+def test_the_coffee_blend_refuses_a_file_with_no_multi_year_summary():
+    # Selecting by position returned the summary only because the exporter writes it last. If a
+    # re-export drops it, averaging the seasons here would report a different window than the
+    # author does, and the two pipelines would part by a fraction of a percent with nothing said.
+    seasons = pd.DataFrame({'area_code_m49': [76, 76],
+                            'year': ['2021_22', 'Dec_2025_26'],
+                            'prop_arabica': [0.626506, 0.603175],
+                            'prop_robusta': [0.373494, 0.396825]})
+    with pytest.raises(NameError, match='coffee split file'):
+        pf.coffee_dependence_by_country(seasons)
 
 
 def test_the_deflator_refuses_a_year_it_has_no_index_for():
