@@ -232,3 +232,7 @@ docs/runbook_*.md
 
 # Text drafted here to fill in a collaborator's document. Carries our reading of their work.
 docs/gep_issues_*.md
+
+# Notes written for the group but not sent yet, which read other people's services to say where
+# the account stands. Chiara decides what goes out and to whom.
+docs/note_*.md
