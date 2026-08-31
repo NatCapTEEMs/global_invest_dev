@@ -2304,34 +2304,62 @@ def read_old_signature(out_dir: str, iso3: str) -> dict | None:
         return None
 
 
-def outputs_complete_for_iso3(out_dir: str, iso3: str, rp_map: dict[int, str], write_depthbin: bool) -> bool:
+def first_missing_output(out_dir: str, iso3: str, rp_map: dict[int, str], write_depthbin: bool):
+    """The first output this country is missing, or None when the set is complete.
+
+    Returns the path rather than a bool so a caller can name the file that forced a rebuild.
+
+    Args:
+        out_dir (str): the per-country directory.
+        iso3 (str): the country.
+        rp_map (dict): return period -> depth raster path.
+        write_depthbin (bool): whether depth-bin rasters are part of a complete set.
+
+    Returns:
+        str | None: the missing or unreadable path, or None if every output is present.
+    """
     summary = os.path.join(out_dir, f"sda_summary_{iso3}.csv")
     if not hb.path_exists(summary):
-        return False
+        return summary
 
     for rp in rp_map.keys():
-        class_tif = os.path.join(out_dir, f"sda_class_{iso3}_rp{int(rp)}.tif")
-        mask_tif  = os.path.join(out_dir, f"sda_mask_{iso3}_rp{int(rp)}.tif")
-        if not hb.path_exists(class_tif) or not hb.path_exists(mask_tif):
-            return False
-        if not utilities.raster_ok(class_tif) or not utilities.raster_ok(mask_tif):
-            return False
-
+        names = [f"sda_class_{iso3}_rp{int(rp)}.tif", f"sda_mask_{iso3}_rp{int(rp)}.tif"]
         if write_depthbin:
-            db_tif = os.path.join(out_dir, f"sda_depthbin_idx_{iso3}_rp{int(rp)}.tif")
-            if not hb.path_exists(db_tif) or (not utilities.raster_ok(db_tif)):
-                return False
+            names.append(f"sda_depthbin_idx_{iso3}_rp{int(rp)}.tif")
+        for name in names:
+            path = os.path.join(out_dir, name)
+            if not hb.path_exists(path) or not utilities.raster_ok(path):
+                return path
 
-    return True
+    return None
 
 
 def should_skip_iso3(out_dir: str, iso3: str, new_sig: dict, rp_map: dict[int, str], write_depthbin: bool) -> bool:
+    """Whether this country's Section B outputs can be reused, saying why when they cannot.
+
+    Section B is the expensive step -- a rebuild is hours across 250 countries -- and there are
+    three separate reasons it can decide to redo one. Deciding silently means a run that rebuilds
+    everything looks exactly like a run that had to, so the reason is logged.
+    """
     old = read_old_signature(out_dir, iso3)
     if old is None:
+        hb.log(f'{iso3}: Section B rebuilds, no signature at {signature_path(out_dir, iso3)}')
         return False
+
     if old.get("signature_sha256") != new_sig.get("signature_sha256"):
+        ignored = ("created_utc", "signature_sha256")
+        changed = sorted(key for key in set(old) | set(new_sig)
+                         if key not in ignored and old.get(key) != new_sig.get(key))
+        hb.log(f'{iso3}: Section B rebuilds, the signature changed in '
+               f'{", ".join(changed) if changed else "a field neither signature names"}')
         return False
-    return outputs_complete_for_iso3(out_dir, iso3, rp_map=rp_map, write_depthbin=write_depthbin)
+
+    missing = first_missing_output(out_dir, iso3, rp_map=rp_map, write_depthbin=write_depthbin)
+    if missing is not None:
+        hb.log(f'{iso3}: Section B rebuilds, {os.path.basename(missing)} is missing or unreadable')
+        return False
+
+    return True
 
 
 def write_signature(out_dir: str, iso3: str, sig: dict):
