@@ -2735,6 +2735,74 @@ def task_compute_service_flow(p):
     return True
 
 
+# Section D's outputs depend on more than their own existence. The chain was gated on one file
+# being present, so a rerun after any change to the curves, the depths or the skip flag reused
+# whatever was there: job 17589055 reported COMPLETED in 2h15m and returned the previous run's
+# figures in every digit, because the previous run's expected_annual_damage_by_country file
+# existed. Section B has had a signature for this since the source pipeline; Section D had none.
+SECTION_D_CODE_VERSION = '2026-08-31_valuation_signature'
+
+
+def valuation_signature(p):
+    """What Section D's outputs were produced from, as a comparable dict.
+
+    The damage curves are hashed rather than fingerprinted, because that file is the one a person
+    repoints when a table turns out to be wrong, and a repoint that keeps the size and mtime would
+    otherwise pass.
+
+    Returns:
+        dict: the settings and input fingerprints the valuation depends on.
+    """
+    curves = str(p.flood_sda_damage_wide_path)
+    return {
+        'code_version': SECTION_D_CODE_VERSION,
+        'skip_damage_tables': bool(_required(p, 'flood_skip_damage_tables')),
+        'return_periods': sorted(int(rp) for rp in p.flood_return_periods),
+        'depth_mode': str(getattr(p, 'flood_damage_depth_mode', '')),
+        'depth_dir': str(p.flood_depth_aligned_path),
+        'sda_damage_curves': {
+            **utilities.file_fingerprint(curves),
+            'sha256': utilities.sha256_file(curves) if hb.path_exists(curves) else None,
+        },
+        'service_flow': utilities.file_fingerprint(str(p.flood_service_flow_path)),
+    }
+
+
+def valuation_signature_path(p):
+    return os.path.join(p.flood_global_export_dir, 'valuation_run_signature.json')
+
+
+def valuation_rebuild_reason(p, signature):
+    """Why Section D cannot reuse what is on disk, or None when it can.
+
+    Args:
+        p: the ProjectFlow object.
+        signature (dict): what this run would produce the outputs from.
+
+    Returns:
+        str | None: the reason, naming the fields that differ, or None to reuse.
+    """
+    if not hb.path_exists(p.flood_country_ead_path):
+        return 'there is no per-country expected annual damage to reuse'
+    path = valuation_signature_path(p)
+    if not hb.path_exists(path):
+        return ('the outputs carry no signature, so what produced them is unknown; they predate '
+                'this check')
+    try:
+        old = json.loads(open(path, encoding='utf-8').read())
+    except Exception:
+        return 'the signature beside the outputs cannot be read'
+    changed = sorted(k for k in set(old) | set(signature) if old.get(k) != signature.get(k))
+    if changed:
+        return 'the signature changed in %s' % ', '.join(changed)
+    return None
+
+
+def write_valuation_signature(p, signature):
+    hb.write_to_file(json.dumps(signature, indent=2, sort_keys=True, default=str),
+                     valuation_signature_path(p))
+
+
 def task_compute_flood_damages(p):
     """
     Task wrapper for Section D: the monetary chain 4A -> 4B -> 4C -> 4D.
@@ -2773,12 +2841,15 @@ def task_compute_flood_damages(p):
     service_results['country_ead_csv'] = p.flood_country_ead_path
     service_results['global_totals_csv'] = p.flood_global_totals_path
 
-    if hb.path_all_exist([service_results['country_ead_csv']]):
-        hb.log("%s already exists. Skipping the flood valuation chain."
-               % os.path.basename(service_results['country_ead_csv']))
-    else:
-        skip_tables = _required(p, 'flood_skip_damage_tables')
-        run_valuation_chain(p, p.df_countries, skip_damage_tables=skip_tables)
+    signature = valuation_signature(p)
+    reason = valuation_rebuild_reason(p, signature)
+    if reason is None:
+        hb.log('Section D reuses its outputs: the signature that produced them is unchanged.')
+        return True
+    hb.log('Section D recomputes, %s' % reason)
+    skip_tables = _required(p, 'flood_skip_damage_tables')
+    run_valuation_chain(p, p.df_countries, skip_damage_tables=skip_tables)
+    write_valuation_signature(p, signature)
 
     return True
 
