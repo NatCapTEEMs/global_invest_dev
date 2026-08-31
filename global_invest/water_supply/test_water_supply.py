@@ -170,16 +170,19 @@ def test_water_use_committed_anchors_join_and_total():
 # ---------------------------------------------------------------------------
 
 def _components(rows):
+    # The account's two reported columns, irrigation and domestic, alongside the agriculture and
+    # all-sector pair the table has always carried.
     return pd.DataFrame(rows, columns=['country', 'iso3_r250_id', 'iso3_r250_label', 'year',
-                                       'water_use_agriculture_gep', 'water_use_all_sector_gep'])
+                                       'water_use_agriculture_gep', 'water_use_irrigation_gep',
+                                       'water_use_domestic_gep', 'water_use_all_sector_gep'])
 
 
 def test_two_spellings_of_one_country_collapse_to_a_single_row():
     """The export names Russia twice. Left-merging both onto the country list counted it
     twice in every total, which is what inflated the reported hydropower number."""
     out = wf.one_row_per_country(_components([
-        ['Russian Federation', 643.0, 'RUS', 2015, np.nan, np.nan],
-        ['Russia', 643.0, 'RUS', 2000, 5.0, 7.0],
+        ['Russian Federation', 643.0, 'RUS', 2015, np.nan, np.nan, np.nan, np.nan],
+        ['Russia', 643.0, 'RUS', 2000, 5.0, 5.0, 2.0, 7.0],
     ]))
     assert len(out) == 1
     assert out.iloc[0]['iso3_r250_label'] == 'RUS'
@@ -191,8 +194,8 @@ def test_a_country_the_name_join_could_not_resolve_passes_through():
     """An unresolved name keeps its empty id rather than being dropped, so a name drift in
     the export stays visible instead of silently losing a country."""
     out = wf.one_row_per_country(_components([
-        ['Cape Verde', np.nan, np.nan, 2015, 9.0, 9.0],
-        ['Kenya', 404.0, 'KEN', 2015, 1.0, 2.0],
+        ['Cape Verde', np.nan, np.nan, 2015, 9.0, 9.0, 3.0, 12.0],
+        ['Kenya', 404.0, 'KEN', 2015, 1.0, 1.0, 1.0, 2.0],
     ]))
     assert len(out) == 2
     assert set(out['country']) == {'Cape Verde', 'Kenya'}
@@ -202,6 +205,6 @@ def test_two_spellings_that_disagree_on_a_value_raise():
     """Combining them would decide, silently, which number the country gets."""
     with pytest.raises(ValueError, match='disagree'):
         wf.one_row_per_country(_components([
-            ['Russian Federation', 643.0, 'RUS', 2015, 5.0, 7.0],
-            ['Russia', 643.0, 'RUS', 2000, 6.0, 7.0],
+            ['Russian Federation', 643.0, 'RUS', 2015, 5.0, 5.0, 2.0, 7.0],
+            ['Russia', 643.0, 'RUS', 2000, 6.0, 6.0, 1.0, 7.0],
         ]))

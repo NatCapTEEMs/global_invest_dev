@@ -33,21 +33,10 @@ FAOSTAT_VALUE_UNIT = '1000 USD'
 FAOSTAT_THOUSAND_USD = 1000.0
 FAOSTAT_GROSS_PRODUCTION_VALUE_ELEMENT = 57
 # The bulk file's year columns run Y1961 to Y2022, each shadowed by a Y<year>F data-quality flag.
-FAOSTAT_FIRST_YEAR = 1961
-FAOSTAT_LAST_YEAR = 2022
 # FAOSTAT area 223 is Turkiye, which recent releases spell several ways. The country join runs on
 # the M49 code, so the name is normalised only to keep the item-level table readable.
 FAOSTAT_TURKIYE_AREA_CODE = 223
 
-# FAOSTAT keeps dissolved states under their own M49 codes. Each maps to the successor the
-# country correspondence uses, so their production joins to a country instead of dropping.
-M49_SUCCESSORS = {
-    159: 156,   # China (mainland) -> China
-    891: 688,   # Serbia and Montenegro -> Serbia
-    200: 203,   # Czechoslovakia -> Czechia
-    230: 231,   # Ethiopia PDR -> Ethiopia
-    736: 729,   # Sudan (former) -> Sudan
-}
 
 # The columns an item-level row is identified by, before the year columns are melted down. The
 # item columns keep crop_provision's names because both services read the same FAOSTAT file.

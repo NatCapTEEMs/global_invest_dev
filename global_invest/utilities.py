@@ -1851,8 +1851,10 @@ def income_group_colors(groups):
 FAOSTAT_VALUE_UNIT = '1000 USD'
 FAOSTAT_GROSS_PRODUCTION_VALUE_ELEMENT = 57
 FAOSTAT_THOUSAND_USD = 1000.0
+# What the bulk file spanned when this was written. Kept for the test fixture to build a
+# realistic frame; the reader takes its years from the file it is handed, because these drift.
 FAOSTAT_FIRST_YEAR = 1961
-FAOSTAT_LAST_YEAR = 2022
+FAOSTAT_LAST_YEAR = 2023
 FAOSTAT_TURKIYE_AREA_CODE = 223
 CROP_ID_COLUMNS = ['area_code', 'area_code_M49', 'country', 'crop_code', 'crop']
 
@@ -1874,7 +1876,17 @@ def clean_faostat_values(df_raw, items, value_column, aggregate_areas):
     Returns:
         pd.DataFrame: area_code, area_code_M49, country, crop_code, crop, year, <value_column>.
     """
-    years = range(FAOSTAT_FIRST_YEAR, FAOSTAT_LAST_YEAR + 1)
+    # The years the file actually carries, not a span written down when it was last looked at.
+    # The constants said 1961 to 2022 while the staged file already ran to Y2023, so that year was
+    # never renamed and dropped out without a word. A FAO release adds a year routinely, and a
+    # service that silently ignores it is worse than one that fails.
+    years = sorted(int(c[1:]) for c in df_raw.columns
+                   if len(c) == 5 and c.startswith('Y') and c[1:].isdigit())
+    if not years:
+        raise NameError(
+            'No Y<year> columns in the FAOSTAT frame; it carries %s. The bulk file is wide by '
+            'year and this reads those columns, so a file without them is the wrong file.'
+            % list(df_raw.columns)[:10])
     df = df_raw[(df_raw['Unit'] == FAOSTAT_VALUE_UNIT)
                 & (df_raw['Element Code'] == FAOSTAT_GROSS_PRODUCTION_VALUE_ELEMENT)].copy()
     df = df.drop(columns=[col for col in df.columns if col.endswith('F')])

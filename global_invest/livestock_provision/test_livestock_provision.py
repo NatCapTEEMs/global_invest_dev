@@ -37,7 +37,7 @@ def _raw_faostat_frame():
     """Four FAOSTAT rows: one selected by item code, one by item name, one aggregate area, and
     one whose element is not gross production value. The year columns are the file's full
     Y1961..Y2022 span with a flag column beside each, because the melt reads all of them."""
-    years = range(lp.FAOSTAT_FIRST_YEAR, lp.FAOSTAT_LAST_YEAR + 1)
+    years = range(utilities.FAOSTAT_FIRST_YEAR, utilities.FAOSTAT_LAST_YEAR + 1)
     frame = pd.DataFrame({
         'Area Code': [1, 1, 2, 223],
         'Area Code (M49)': ["'010", "'010", "'020", "'223"],
@@ -66,7 +66,7 @@ def test_clean_crop_values_selects_items_by_code_or_by_name():
     assert set(out['country']) == {'Aaaland'}
     assert sorted(out['crop_code'].unique().tolist()) == [882, 1017]
     assert not [c for c in out.columns if c.endswith('F')]      # flag columns dropped
-    n_years = lp.FAOSTAT_LAST_YEAR - lp.FAOSTAT_FIRST_YEAR + 1
+    n_years = utilities.FAOSTAT_LAST_YEAR - utilities.FAOSTAT_FIRST_YEAR + 1
     assert len(out) == 2 * n_years
     values = out.set_index(['crop_code', 'year'])['livestock_provision_gep']
     assert values.loc[(1017, 1961)] == 1.0
@@ -186,9 +186,9 @@ def test_normalize_m49_codes_unquotes_casts_and_maps_successors():
 def test_every_successor_maps_to_a_different_live_code():
     """A successor mapping that pointed at itself, or at another dissolved state, would leave
     production stranded."""
-    for dissolved, successor in lp.M49_SUCCESSORS.items():
+    for dissolved, successor in utilities.M49_SUCCESSORS.items():
         assert dissolved != successor
-        assert successor not in lp.M49_SUCCESSORS
+        assert successor not in utilities.M49_SUCCESSORS
 
 
 def test_feed_lambda_is_ecosystem_share_of_total_intake():

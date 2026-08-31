@@ -588,7 +588,7 @@ hectare. `ours` is where that lives.
 - **run:** yes
 - **ours:** yes. The valuation is ported and runs here: `water_use_gep_by_country_year` multiplies AQUASTAT water-use efficiency in dollars per cubic metre by the withdrawal volume, for agriculture, industry and municipal alike, and the module cleans the AQUASTAT export itself on the way in. Their script (gep_wateruse_02_calc_gep_wateruse.R) sits in base data beside the inputs as the reference the port was written against. What is not settled is the attribution: the result is the gross economic value of water used, with no step turning it into nature's share.
 - **method:** Sector water withdrawal times sector efficiency, from the AQUASTAT export. No nature-attribution step yet, so this is the gross value of water use. The quantity comes from a CSV, the AQUASTAT withdrawal and efficiency export.
-- **total:** $1.07T agriculture. $36.61T all sectors.
+- **total:** $1.06T irrigation. $35.30T domestic. $36.36T all sectors.
 - **code:** Refactored onto the library template and hazelbean conventions. Translated from R to Python, with tests covering the sector arithmetic and the country name matching.
 - **grid:** No raster. The service works on country tables (it reads only CSV and Excel), so nothing multiplies a density by a cell area and the cell-area question does not arise. Verified 2026-08-26 by checking every read in the module.
 - **reference:** The committed anchor, $144.68bn over 95 countries, reproduced by the reference-matching variant. ⚠ Same lineage.
