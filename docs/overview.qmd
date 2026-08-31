@@ -3,8 +3,8 @@ title: "Global InVEST"
 subtitle: "The GEP service library: state and open questions."
 # The deck's numbers, one home: edit here and every slide referencing {{< meta ... >}} updates.
 terrestrial_total: "$5.365T"
-coastal_eez: "$22.84bn"
-coastal_all: "$102.18bn"
+coastal_eez: "$17.72bn"
+coastal_all: "$58.75bn"
 coastal_report: "$26.65bn"
 crop_total: "$678bn"
 extractive_total: "$99.54bn"
@@ -13,7 +13,8 @@ extractive_factor: "0.49"
 renewable_total: "$170.83bn"
 renewable_ref: "$134.6bn"
 poll_raster: "$387.49bn"
-poll_with_sufficiency: "$163.33bn"
+poll_author_raster: "$384.56bn"
+poll_with_sufficiency: "$161.24bn"
 poll_fao: "$515bn"
 livestock_ind: "$136bn"
 livestock_world: "$1.37T"
@@ -321,7 +322,7 @@ format:
 ## pollination
 
 - [Values the crop output that animal pollinators are responsible for. We build the value raster ourselves now. The old figure was 26 times too small, because the raster holds a value per km2 and the step that summed it treated it as a value per cell.]{.state}
-- **Q1:** which definition does the account want? The crop output at stake if pollinators vanished, {{< meta poll_raster >}}, or the service habitat currently delivers, {{< meta poll_with_sufficiency >}}. Both are on one grid at 2019 prices, from the author's raster; the second multiplies by 300 m habitat sufficiency. Only the second responds to land-use change; the first is a property of the crop mix.
+- **Q1:** which definition does the account want? The crop output at stake if pollinators vanished, or the service habitat currently delivers. On the author's raster it comes to {{< meta poll_author_raster >}} without habitat sufficiency, and {{< meta poll_with_sufficiency >}} once the 300 m sufficiency is multiplied in, on one grid at 2019 prices. Only the second responds to land-use change; the first is a property of the crop mix. The account reports {{< meta poll_raster >}} on our own raster, and the sufficiency-weighted counterpart on that raster has not been run.
 - **Q2:** does the account add pollination on top of crop_provision? Crop multiplies production value by the land rental rate, so both attribute part of the same output to nature.
 
 ## erosion

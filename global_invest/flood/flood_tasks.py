@@ -1510,7 +1510,10 @@ def compute_pixel_damages(p, iso3_list: Optional[List[str]] = None,
         raise ValueError(f"scenario must be one of {tuple(SCENARIO_SUFFIX)}")
     suffix = SCENARIO_SUFFIX[scenario]
 
-    utilities.assert_exists(p.flood_sda_damage_wide_path, "Run step 4A (build_damage_tables) first.")
+    utilities.assert_exists(
+        p.flood_sda_damage_wide_path,
+        "Run step 4A (build_damage_tables), or, if flood_skip_damage_tables is true because the "
+        "curves were built elsewhere, name that file in flood_sda_damage_wide_input_path.")
     utilities.assert_exists(p.flood_sda_raster_path, "Global SDA raster is required (Section A).")
 
     curves = load_damage_table_wide(p.flood_sda_damage_wide_path)
@@ -2248,12 +2251,16 @@ def compute_flood_gep(p) -> Optional[str]:
     return p.flood_gep_path
 
 
-def run_gep_chain(p, skip_damage_tables: bool = True,
+def run_gep_chain(p, skip_damage_tables: bool,
                   scenarios: Optional[List[str]] = None) -> dict:
     """
     Paired-scenario driver: run 4B/4C for current plus each degraded scenario,
     then difference. Roughly triples Step 4B cost with both degraded scenarios,
     so it is a deliberate separate task rather than part of run_valuation_chain().
+
+    `skip_damage_tables` has no default here, and none in `run_valuation_chain`, because the two
+    carried opposite ones -- True here, False there -- so which curves a run used depended on
+    which chain reached them first. Both callers read it from es_parameters, where it belongs.
     """
     out = {}
     if not skip_damage_tables:
@@ -2269,8 +2276,11 @@ def run_gep_chain(p, skip_damage_tables: bool = True,
     return out
 
 
-def run_valuation_chain(p, df_countries, skip_damage_tables: bool = False) -> dict:
-    """Section D driver: 4A -> 4B -> 4C -> 4D (+ attributed companion export)."""
+def run_valuation_chain(p, df_countries, skip_damage_tables: bool) -> dict:
+    """Section D driver: 4A -> 4B -> 4C -> 4D (+ attributed companion export).
+
+    `skip_damage_tables` is required, for the reason given on `run_gep_chain`.
+    """
     out = {}
     if not skip_damage_tables:
         out["damage_tables"] = build_damage_tables(p)
@@ -2832,7 +2842,15 @@ def task_compute_flood_damages(p):
     p.flood_damage_long_path = os.path.join(p.flood_global_export_dir, 'damage_by_landtype_usd2019_long.csv')
     p.flood_damage_wide_table_path = os.path.join(p.flood_global_export_dir, 'damage_by_landtype_usd2019_wide.csv')
     p.flood_sda_damage_long_path = os.path.join(p.flood_global_export_dir, 'damage_by_sda_usd2019_long.csv')
-    p.flood_sda_damage_wide_path = os.path.join(p.flood_global_export_dir, 'damage_by_sda_usd2019_wide.csv')
+    # The wide SDA table is the exception, because it is only an output while 4A runs.
+    # `flood_skip_damage_tables` says the curves were built elsewhere, which makes this an input.
+    # Assigning it unconditionally overwrote the file es_parameters had already named, so a run
+    # configured to skip 4A looked in 4A's own empty output directory and stopped with "Run step 4A
+    # first" -- the one thing the operator had deliberately not done. A blank row still hydrates to
+    # nothing and falls through to the default, which is what the three tables above rely on.
+    p.flood_sda_damage_wide_path = (getattr(p, 'flood_sda_damage_wide_path', None)
+                                    or os.path.join(p.flood_global_export_dir,
+                                                    'damage_by_sda_usd2019_wide.csv'))
     if not p.run_this:
         return True
     hb.create_directories([p.flood_global_export_dir, p.flood_currency_audit_dir])
