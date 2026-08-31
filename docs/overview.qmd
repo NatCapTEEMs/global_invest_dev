@@ -364,6 +364,7 @@ format:
 - **Q1:** which factor does the account attribute with, the land rental rate or the feed share? They differ by 2.6 times. The rental rate belongs to the crop method, and this service's own method page defines it as the factor, but that page is the crop method page, referring to crop items throughout.
 - **Q2:** should milk and the other missing products count as livestock production? The library's old list covered meat and eggs only and captured 4 percent of India's FAO livestock value, while the method repo's list of 65 products includes milk.
 - **Q3:** can you share the GLEAM 3 intake extract (gleam3_dmi.xlsx) and a per-country output? We harvest the intake from FAO's public dashboard, so we compute the feed share; what we lack is anything to validate it against.
+
 ## coastal_protection
 
 - [Values storm damage that mangroves and coral reefs prevent along coastlines. The {{< meta cp_total >}} is the sum of two halves that stand differently. Mangroves are ours: hectares times value per hectare reproduces the published table to within $5,291 on $30.4bn, which is its own per-row rounding. Corals are not: that file carries a finished benefit per country with nothing underneath it, $5.17bn at 2011, and we only carry it to the base year with a deflator, making it $6.32bn.]{.state}
@@ -447,6 +448,7 @@ format:
 - **Q1:** is there a model behind CWoN's non-wood forest product value, or is it a published table? That is what stands between this service and a number we compute.
 - **Q2:** who multiplied three countries by five, and why? `nontimber_price_iucn_edited.csv` matches CWoN for 3,045 of 3,108 country-year pairs and is exactly five times CWoN for the other 63, all Central African Republic, DR Congo and Mozambique; they come to {{< meta ntfp_edit_three >}} of {{< meta ntfp_total >}}, DR Congo alone {{< meta ntfp_edit_cod >}}, and without the edit the service is {{< meta ntfp_no_edit >}}.
 - **Q3:** should a cell sitting exactly on the NDVI floor of 0.2 be kept or dropped? We keep it and the source module drops it, because scaling 2000 by 0.0001 gives 0.19999999 in float32, and that is 202,930 cells or 0.0099% of the valid grid.
+
 ## stormwater
 
 - [Values stormwater retained by urban vegetation and soils. Our own retention run on the drive's configuration retains {{< meta stormwater_volume >}} per year across 104 countries, wall to wall rather than urban-masked, and the module prices that volume. The run and the country step sit beside the task tree rather than inside it.]{.state}
@@ -479,10 +481,9 @@ format:
 
 ## What a reference check can establish {.smaller}
 
-- Eleven service entries rest on reproducing an author's committed output. Where that output came from the code we ported, the two sides share every assumption, so agreement establishes that the port is faithful and cannot establish that the number is right.
-- Both services anyone has examined this way turned out to carry an assumption inherited from the source rather than introduced by us. Pollination summed a raster its own author documents as a density. Flood control measures every cell as the same size on a projection whose cells shrink away from the equator.
+- [Eleven service entries rest on reproducing an author's committed output. Where that output came from the code we ported, both sides share every assumption, so agreement establishes that the port is faithful and not that the number is right.]{.state}
 - **Q:** what should a service show beyond agreement with its author, before the account treats its number as verified?
-- **Q:** when a check finds something, it is a correction to the author's published number rather than to our port. Who takes it to them, and does the account wait for their answer?
+- **Q:** where a check finds something that belongs to the author's published number rather than to our port, who takes it to them, and does the account wait for their answer?
 
 ## How a service measures a cell {.smaller}
 
