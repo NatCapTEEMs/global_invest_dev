@@ -422,7 +422,7 @@ format:
 
 ## flood
 
-- [Values flood damage avoided by ecosystems: flood depth by return period, depth-damage functions and the asset map give each country's expected annual damage. Our recompute reproduces the pipeline's table for 146 of 148 non-zero countries.]{.state}
+- [Values flood damage avoided by ecosystems: flood depth by return period, JRC depth-damage curves and a per-country EUR/m2 damage value by land type give each country's expected annual damage. Our recompute reproduces the pipeline's table for 146 of 148 non-zero countries.]{.state}
 - **Q1:** should the service-flow fraction multiply into the valuation? The pipeline computes one but never applies it, so today's number is expected flood damage rather than damage ecosystems avoid.
 - **Q2:** are the FINAL_GEP_FLOOD outputs the current ones?
 - **Q3:** are the JRC depth-damage curves meant to be applied over true ground area? They are a damage per square metre of asset, and the damage pass gives every cell the same area, taken from a projection whose cells shrink away from the equator. Weighting each country's damage by its latitude moves the global total by about a third, and the countries carrying most of the value sit far from the equator. The treatment is the pipeline's rather than ours, which is why our recompute reproduces its table.
