@@ -1326,6 +1326,37 @@ def assert_every_landtype_is_priced(eur_long):
     return True
 
 
+def assert_every_sda_type_is_priced(curves, path):
+    """Every SDA class in a prepared damage table must price something at some depth.
+
+    The companion to `assert_every_landtype_is_priced`, on the other path into the valuation:
+    4A can be skipped, and then the table is read rather than built, so a prepared table that is
+    flat zero for a class is never seen by the builder's guard. Built-up is the class this
+    happened to and the one that dominates the account, so an unpriced class is worth stopping
+    for wherever the table came from.
+
+    Args:
+        curves (dict): {(iso3, sda_type): (depths, damages)}, from `load_damage_table_wide`.
+        path (str): the table read, named in the error.
+
+    Returns:
+        bool: True when every SDA class is priced somewhere.
+
+    Raises:
+        ValueError: naming the classes that are zero throughout.
+    """
+    highest = {}
+    for (_, sda_type), (_, damages) in curves.items():
+        value = float(np.nanmax(damages)) if len(damages) else 0.0
+        highest[sda_type] = max(highest.get(sda_type, 0.0), value)
+    unpriced = sorted(name for name, value in highest.items() if not value > 0)
+    if unpriced:
+        raise ValueError(
+            f"{path} prices {', '.join(unpriced)} at zero for every country and depth, so "
+            "anything standing on those classes would be valued at nothing")
+    return True
+
+
 def build_damage_tables(p):
     """Step 4A: the JRC EUR2010 curves as USD2019 sector and SDA tables.
 
@@ -1483,6 +1514,7 @@ def compute_pixel_damages(p, iso3_list: Optional[List[str]] = None,
     utilities.assert_exists(p.flood_sda_raster_path, "Global SDA raster is required (Section A).")
 
     curves = load_damage_table_wide(p.flood_sda_damage_wide_path)
+    assert_every_sda_type_is_priced(curves, p.flood_sda_damage_wide_path)
     admin0 = load_admin0(p.flood_country_vector_path)
 
     with rasterio.open(p.flood_sda_raster_path) as sda_ds:
