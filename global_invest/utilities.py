@@ -419,17 +419,33 @@ def write_reuse_signature(p, service, outputs, signature_name='run_signature.jso
 
 
 def add_rows_missing_from_template(local_path, template_path, key_columns, log=print):
-    """Append template rows whose key is absent from the project's copy. Local values always win.
+    """Bring the project's copy up to the template's schema. A value anyone has set always wins.
 
     A definitions CSV is a schema plus values: the template names every key the code may read,
     and the project's copy supplies this machine's values. Seeding copies the file only when it
     is absent, so a copy made before a key was added keeps shadowing the template forever, and
-    the key reaches the run as a missing attribute rather than as its documented value. Topping
-    up the absent keys keeps the schema current without touching a value anyone has set.
+    the key reaches the run as a missing attribute rather than as its documented value.
+
+    Three ways the template can be ahead, and all three are filled, because a template addition
+    that does not reach `input/` is indistinguishable from one nobody made:
+
+    - a row whose key the copy lacks, appended;
+    - a column the copy lacks, added with the template's values;
+    - a cell the copy leaves blank where the template has a value, filled.
+
+    What is never touched is a cell the copy has filled in. That is the machine's own answer --
+    an ssh host, a scratch path, a drive location -- and the template ships those blank precisely
+    so the copy can own them.
+
+    The third case is the one that bites without saying so. `gep_lulc_input_path` was added to
+    pollination's template row while the project's copy already had that row from an earlier run,
+    so the row was present, the key was present, and the cell was empty: the run reached
+    `p.gep_lulc_input_path` and raised AttributeError on a value the template had been carrying
+    for some time.
 
     Args:
-        local_path (str): the project's input/ copy, modified in place when rows are missing.
-        template_path (str): the tracked template to take absent rows from.
+        local_path (str): the project's input/ copy, modified in place when it is behind.
+        template_path (str): the tracked template to take absent rows, columns and values from.
         key_columns (list): columns that together identify a row, e.g. ['service', 'parameter'].
         log (callable): where to report what was added.
     """
@@ -442,14 +458,46 @@ def add_rows_missing_from_template(local_path, template_path, key_columns, log=p
     def keys_of(df):
         return list(zip(*[df[c].astype(str) for c in key_columns])) if len(df) else []
 
+    def is_blank(value):
+        return value is None or (isinstance(value, float) and pd.isna(value)) \
+            or (isinstance(value, str) and not value.strip()) or pd.isna(value)
+
+    added_columns = [c for c in template.columns if c not in local.columns]
+    for column in added_columns:
+        local[column] = None
+
     present = set(keys_of(local))
     missing = template[[k not in present for k in keys_of(template)]]
-    if missing.empty:
+    if not missing.empty:
+        local = pd.concat([local, missing], ignore_index=True)
+
+    by_key = {k: row for k, row in zip(keys_of(template), template.to_dict('records'))}
+    filled = []
+    for position, key in enumerate(keys_of(local)):
+        source = by_key.get(key)
+        if source is None:
+            continue
+        for column in template.columns:
+            if column in key_columns or column not in local.columns:
+                continue
+            if is_blank(local.at[local.index[position], column]) and not is_blank(source[column]):
+                local.at[local.index[position], column] = source[column]
+                filled.append('%s.%s' % (':'.join(key), column))
+
+    if missing.empty and not added_columns and not filled:
         return
-    hb.df_write(pd.concat([local, missing], ignore_index=True), local_path)
-    named = ', '.join(':'.join(k) for k in keys_of(missing)[:6])
-    log(f'{os.path.basename(local_path)}: added {len(missing)} row(s) the project copy did not '
-        f'have ({named}{", ..." if len(missing) > 6 else ""}).')
+    hb.df_write(local, local_path)
+    parts = []
+    if not missing.empty:
+        named = ', '.join(':'.join(k) for k in keys_of(missing)[:6])
+        parts.append(f'{len(missing)} row(s) ({named}{", ..." if len(missing) > 6 else ""})')
+    if added_columns:
+        parts.append(f'column(s) {", ".join(added_columns)}')
+    if filled:
+        parts.append(f'{len(filled)} blank cell(s) ({", ".join(filled[:6])}'
+                     f'{", ..." if len(filled) > 6 else ""})')
+    log(f'{os.path.basename(local_path)}: took {"; ".join(parts)} from the template, which the '
+        f'project copy was behind on. Values already set were left alone.')
 
 
 def seed_input_template(p, file_name, log=print, required=True, key_columns=None):

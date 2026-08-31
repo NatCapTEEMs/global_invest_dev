@@ -1016,6 +1016,36 @@ def coffee_dependence_by_country(df_arabica_robusta):
     return dict(zip(codes, blended))
 
 
+def value_weighted_by_sufficiency(value_array, sufficiency_array, value_nodata=None):
+    """The part of the pollination value that the habitat actually present delivers.
+
+    The account's headline is the crop output at stake if pollinators vanished, which is a property
+    of the crop mix and does not move when land use does. Multiplying it by habitat sufficiency
+    gives the other definition on the table: the service the landscape supplies today, which does
+    move. Both are wanted, so both are computed on one grid at one price year.
+
+    Sufficiency is NaN off cropland. That is not zero service, it is no cropland, and those cells
+    carry no value either, so treating it as zero drops them from both sums identically rather than
+    biasing one.
+
+    Args:
+        value_array (np.ndarray): pollination value per cell, at the base year's prices.
+        sufficiency_array (np.ndarray): habitat sufficiency on the same grid, 0 to 1.
+        value_nodata: the value raster's nodata, treated as no value rather than as a number.
+
+    Returns:
+        tuple: (weighted array, unweighted total, weighted total).
+    """
+    import numpy as np
+    value = np.where(np.isfinite(value_array), value_array, 0.0)
+    if value_nodata is not None:
+        value = np.where(value_array == value_nodata, 0.0, value)
+    sufficiency = np.where(np.isfinite(sufficiency_array),
+                           np.clip(sufficiency_array, 0.0, 1.0), 0.0)
+    weighted = value * sufficiency
+    return weighted, float(value.sum()), float(weighted.sum())
+
+
 def dependence_raster_from_country_lookup(country_id_array, dependence_by_country, default):
     """A per-pixel dependence ratio, looked up by which country the pixel is in.
 

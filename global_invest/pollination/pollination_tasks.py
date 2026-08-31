@@ -18,6 +18,7 @@ from rasterio.warp import reproject
 from rasterio.windows import Window
 from scipy.ndimage import convolve
 from tqdm import tqdm
+import dataclasses
 import glob
 import hashlib
 import numpy as np
@@ -1979,6 +1980,94 @@ def pollination_value_by_region(p):
     df_regions = hb.df_read(p.pollination_value_by_region_path)
     utilities.assert_zonal_conservation(df_regions['total'].sum(),
                                         p.pollination_value_raster_rebuilt_path, 'pollination')
+    return True
+
+
+def pollination_sufficiency_weighted(p):
+    """Both definitions of the pollination number, on one grid at one price year.
+
+    The account reports the crop output at stake if pollinators vanished. The other definition on
+    the table is the service the habitat currently delivers, which is that value multiplied by
+    300 m habitat sufficiency, and only the second responds to land-use change.
+
+    This exists because we published the second figure while no task computed it. The sufficiency
+    steps were reachable only from `pollination_shock`, so the weighted total came from a script in
+    the project directory that the repository does not carry, and a reader following this repo could
+    reproduce one of the two figures the deck quotes. That is the same defect as reading the
+    author's staged raster, which condition 1 was written for and which this service had already
+    fixed once for the unweighted number.
+
+    The settings come from `configure_sufficiency` so the tile height and worker count are the ones
+    es_parameters sets for the shock side too -- the tile height sets the latitude the foraging
+    kernel uses, so a second copy of it would be a second answer. Two fields are overridden: the
+    output goes to this task's own directory, and the 5 km grid template is our own rebuilt value
+    raster rather than the author's staged one, because the account reads ours and the two must be
+    weighted on the grid they are reported on.
+    """
+    publish_inputs(p)
+    year = int(p.gep_base_year)
+    p.pollination_sufficiency_weighted_raster_path = os.path.join(
+        p.cur_dir, 'poll_value_per_cell_%dusd_x_sufficiency.tif' % year)
+    p.pollination_sufficiency_totals_path = os.path.join(
+        p.cur_dir, 'pollination_totals_with_and_without_sufficiency.csv')
+    if not p.run_this:
+        return True
+
+    value_raster = getattr(p, 'pollination_value_raster_rebuilt_path', None)
+    if not hb.path_exists(value_raster):
+        raise NameError(
+            'No rebuilt value raster at %r, so there is nothing to weight. The account reads the '
+            'raster our own chain builds, and the sufficiency step weights that same raster so the '
+            'two definitions are reported on one grid.' % value_raster)
+    if hb.path_all_exist([p.pollination_sufficiency_weighted_raster_path,
+                          p.pollination_sufficiency_totals_path]):
+        hb.log('Sufficiency-weighted value already built. Skipping.')
+        return True
+
+    settings = dataclasses.replace(pf.configure_sufficiency(p, year),
+                                   output_dir=str(p.cur_dir),
+                                   country_raster_path=str(value_raster))
+    # The scenario string names the output rasters and nothing else; `lulc_scheme` chooses the
+    # class scheme. They were one argument until 2026-08-30, which is how a sufficiency raster
+    # built from the 2019 map once came out labelled 2020 and was compared against the wrong year.
+    scenario = str(year)
+    hb.log('Sufficiency at 300 m from %s' % os.path.basename(str(p.gep_lulc_input_path)))
+    run_pollination_sufficiency_300m(settings, lulc_path=str(p.gep_lulc_input_path),
+                                     scenario=scenario, lulc_scheme='esa')
+    hb.log('Resampling sufficiency onto the %d value grid' % year)
+    sufficiency_5km = run_pollination_sufficiency_5km(settings, scenario=scenario)
+
+    with rasterio.open(str(value_raster)) as value_source, \
+            rasterio.open(str(sufficiency_5km)) as sufficiency_source:
+        value = value_source.read(1).astype('float64')
+        sufficiency = sufficiency_source.read(1).astype('float64')
+        if sufficiency.shape != value.shape:
+            resampled = np.empty(value.shape, dtype='float64')
+            reproject(source=sufficiency, destination=resampled,
+                      src_transform=sufficiency_source.transform, src_crs=sufficiency_source.crs,
+                      dst_transform=value_source.transform, dst_crs=value_source.crs,
+                      resampling=Resampling.average)
+            sufficiency = resampled
+        weighted, unweighted_total, weighted_total = pf.value_weighted_by_sufficiency(
+            value, sufficiency, value_source.nodata)
+        profile = value_source.profile | {'dtype': 'float32', 'compress': 'lzw'}
+        with rasterio.open(p.pollination_sufficiency_weighted_raster_path, 'w', **profile) as dst:
+            dst.write(weighted.astype('float32'), 1)
+
+    # Both the billions the author reports in and the dollars every other service writes. The
+    # billions are for reading; the dollars are what a check can compare against a run without
+    # having to know which unit this particular file chose.
+    utilities.write_csv(pd.DataFrame([
+        {'variant': 'production x price x dependence', 'sufficiency_applied': False,
+         'total_usd_%d_bn' % year: round(unweighted_total / 1e9, 4),
+         'total_usd': unweighted_total},
+        {'variant': 'production x price x dependence x habitat sufficiency',
+         'sufficiency_applied': True,
+         'total_usd_%d_bn' % year: round(weighted_total / 1e9, 4),
+         'total_usd': weighted_total}]),
+        p.pollination_sufficiency_totals_path)
+    hb.log('Pollination without habitat sufficiency %.4g, with it %.4g, a ratio of %.4f.'
+           % (unweighted_total, weighted_total, weighted_total / unweighted_total))
     return True
 
 
