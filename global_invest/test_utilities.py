@@ -73,3 +73,34 @@ def test_a_missing_file_on_either_side_is_left_alone(tmp_path):
     utilities.add_rows_missing_from_template(str(absent), str(template),
                                              ['service', 'parameter'], log=lambda *a: None)
     assert not os.path.exists(absent)
+
+
+def test_writing_identical_content_does_not_touch_the_file(tmp_path):
+    """Reuse downstream is decided on size and mtime, so a task that rewrites an unchanged file
+    tells everything after it that its input moved. Flood's Section C did exactly that and cost
+    Section D a full recompute of 250 countries on every run."""
+    import time
+
+    path = tmp_path / 'x.csv'
+    frame = pd.DataFrame([{'a': 1, 'b': 'x'}, {'a': 2, 'b': 'y'}])
+
+    utilities.write_csv(frame, str(path))
+    first = os.stat(path).st_mtime_ns
+    time.sleep(1.1)
+    utilities.write_csv(frame, str(path))
+
+    assert os.stat(path).st_mtime_ns == first          # same bytes, file untouched
+
+
+def test_writing_changed_content_still_writes(tmp_path):
+    """The skip must not swallow a real change, which would be far worse than a needless rerun."""
+    import time
+
+    path = tmp_path / 'x.csv'
+    utilities.write_csv(pd.DataFrame([{'a': 1}]), str(path))
+    before = os.stat(path).st_mtime_ns
+    time.sleep(1.1)
+    utilities.write_csv(pd.DataFrame([{'a': 9}]), str(path))
+
+    assert os.stat(path).st_mtime_ns != before
+    assert pd.read_csv(path)['a'].tolist() == [9]

@@ -12,6 +12,7 @@ and the four 2-way splits. A gap of any other shape is a legitimate sum, not thi
 reached terrestrial_carbon + coastal_carbon and not the other five GEP services.
 """
 from osgeo import gdal
+import filecmp
 import json
 import mapclassify
 import matplotlib as mpl
@@ -19,6 +20,7 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Patch
 import shutil
 import subprocess
+import tempfile
 import sys
 import urllib.request
 import zipfile
@@ -1434,9 +1436,31 @@ def to_float(x) -> float:
 
 
 def write_csv(df: pd.DataFrame, path):
-    """hb.df_write, plus the parent directory, which it does not create."""
+    """hb.df_write, plus the parent directory, which it does not create.
+
+    A write that would produce the bytes already on disk leaves the file alone, mtime included.
+    Downstream reuse is decided by `file_fingerprint`, which keys on size and mtime, so a task that
+    rewrites an identical file tells everything after it that its input changed. Flood's Section C
+    does exactly that: it skips all 1500 units, rewrites the same global summary, and Section D
+    then recomputes 250 countries because the mtime moved -- about two and a half hours, every run,
+    to arrive at the file it already had.
+
+    Rewriting unchanged output is never what a caller wants, so this is fixed here rather than at
+    the eight places that fingerprint a file.
+    """
     path = str(path)
     hb.create_directories(os.path.dirname(path))
+    if os.path.exists(path):
+        existing = tempfile.mktemp(suffix='.csv')
+        hb.df_write(df, existing)
+        try:
+            if filecmp.cmp(existing, path, shallow=False):
+                return path
+            shutil.move(existing, path)
+            return path
+        finally:
+            if os.path.exists(existing):
+                os.remove(existing)
     hb.df_write(df, path)
     return path
 
