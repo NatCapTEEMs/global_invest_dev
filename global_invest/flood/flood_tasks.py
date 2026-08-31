@@ -1300,17 +1300,53 @@ def build_canonical_from_components(
     return eur_long
 
 
+def assert_every_landtype_is_priced(eur_long):
+    """Every land type must carry a damage above zero at some depth, or say which does not.
+
+    A land type whose whole curve is zero is priced at nothing in every country and at every
+    depth, and the run still writes a complete table for all 250 countries. That is what makes
+    it worth checking rather than assuming: a `Residential` curve of zeros produced a global
+    expected annual damage of $17.6bn against $887.8bn, with no error and no empty output.
+
+    Args:
+        eur_long (pandas.DataFrame): `landtype` and `damage_per_m2`, in EUR2010 per m2.
+
+    Returns:
+        bool: True when every land type is priced somewhere.
+
+    Raises:
+        ValueError: naming the land types that are zero throughout.
+    """
+    highest = eur_long.groupby("landtype")["damage_per_m2"].max()
+    unpriced = sorted(str(name) for name in highest[highest <= 0].index)
+    if unpriced:
+        raise ValueError(
+            "the EUR2010 damage curves are zero at every depth and in every country for "
+            f"{', '.join(unpriced)}, so anything standing on them would be valued at nothing")
+    return True
+
+
 def build_damage_tables(p):
-    """Step 4A: the canonical JRC EUR2010 table as USD2019 sector and SDA tables.
+    """Step 4A: the JRC EUR2010 curves as USD2019 sector and SDA tables.
 
     Every value is multiplied by one combined factor, FX at 2010 times the US inflator to 2019.
     Cropland's curve is copied to pasture when `flood_set_pasture_equal_crop` is set, which is the
     JRC default: pasture has no curve of its own.
+
+    ⚠ The staged inputs cannot currently price buildings, and the guard below stops the run rather
+    than letting it report the shortfall as a number. `jrc_fractional_curves_long.csv` holds a
+    zero at all nine depths for `GLOBAL` crossed with `Residential buildings` while every other
+    region carries a real curve, and `country_landtype_flood_damage_JRC_EUR_m2.csv` puts all 214
+    countries in `GLOBAL`. Building from the components instead does not avoid it, since that is
+    where the hole is. Until the region assignment or that curve is corrected, 4A must read a
+    table built some other way -- which is how the run that matched the published $887.8bn got
+    its built-up damages.
     """
     multiplier = load_combined_multiplier(factors_csv=p.flood_currency_factors_path, factors_json=None)
     eur_long = load_canonical_eur_table(p.flood_canonical_eur_path,
                                         audit_dir=p.flood_currency_audit_dir)
     eur_long["landtype"] = eur_long["landtype"].apply(ff.normalize_landtype_label)
+    assert_every_landtype_is_priced(eur_long)
 
     usd = eur_long.copy()
     usd["damage_per_m2"] = usd["damage_per_m2"] * float(multiplier)
