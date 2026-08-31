@@ -250,7 +250,21 @@ def test_pollination_gep_sums_split_country_once(tmp_path):
     p = SimpleNamespace(run_this=True, cur_dir=str(tmp_path), results={}, gep_base_year=2023,
                         input_dir=str(tmp_path / 'input'),
                         get_path=lambda *a, **k: '/resolved/' + '/'.join(a),
-                        df_countries=pd.DataFrame({'placeholder': [1]}),   # trips the caller-wins guard
+                        # A real country frame, because the published table is now put on the
+                        # account's r250 list: every country appears, and one the service has no
+                        # value for is NA rather than absent. A placeholder cannot express that.
+                        # Shaped like the real correspondence: a split country carries its
+                        # sub-region rows plus the canonical one whose r264 label equals its r250
+                        # label, and that canonical row is the one a country join keeps.
+                        df_countries=pd.DataFrame({
+                            'ee_r264_id': [1, 2, 156, 528],
+                            'ee_r264_label': ['chn_a', 'chn_b', 'CHN', 'NLD'],
+                            'ee_r264_name': ['China A', 'China B', 'China', 'Netherlands'],
+                            'iso3_r250_id': [156, 156, 156, 528],
+                            'iso3_r250_label': ['CHN', 'CHN', 'CHN', 'NLD'],
+                            'iso3_r250_name': ['China', 'China', 'China', 'Netherlands'],
+                            **{c: [m[i] for i in [156, 156, 156, 528]] for c, m in ATTRS.items()
+                               if c not in ('iso3_r250_label', 'iso3_r250_name')}}),
                         # our own raster now, in USD per cell rather than a density from elsewhere
                         pollination_value_raster_path=str(tmp_path / 'poll_value.tif'),
                             pollination_value_raster_rebuilt_path=str(tmp_path / 'poll_value.tif'),

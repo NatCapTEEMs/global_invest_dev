@@ -99,8 +99,9 @@ def gep_calculation(p):
     # Write to CSVs
     hb.df_write(df_gep_by_country_year_mineral, service_results['gep_by_country_year_mineral'])
     hb.df_write(df_gep_by_country_year, service_results['gep_by_country_year'])
-    hb.df_write(df_gep_by_country_base_year[utilities.published_country_columns(
-        df_gep_by_country_base_year, 'extractive_materials_provision')],
+    utilities.write_gep_by_country(
+        p, df_gep_by_country_base_year[utilities.published_country_columns(
+            df_gep_by_country_base_year, 'extractive_materials_provision')],
         service_results['gep_by_country_base_year'])
     hb.df_write(df_gep_by_year, service_results['gep_by_year'], handle_quotes='all')
     hb.df_write(df_gep_by_year, hb.replace_ext(service_results['gep_by_year'], 'xlsx'), handle_quotes='all')

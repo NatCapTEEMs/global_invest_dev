@@ -137,7 +137,7 @@ def gep_calculation(p):
     df_gep['fire_protection_gep'] = df_gep[f'GEP_wildfire_2019_{FIRE_GEP_PROVISIONAL_VARIANT}']
     keep_cols = attr_cols + ['year', 'GEP_wildfire_2019_baseline', 'GEP_wildfire_2019_nn_hh',
                              'GEP_wildfire_2019_ttn_tth', 'fire_protection_gep']
-    hb.df_write(df_gep[keep_cols], service_results['gep_by_country_base_year'])
+    utilities.write_gep_by_country(p, df_gep[keep_cols], service_results['gep_by_country_base_year'])
 
     for variant in ('baseline', 'nn_hh', 'ttn_tth'):
         hb.log(f'fire_protection GEP {variant}: '

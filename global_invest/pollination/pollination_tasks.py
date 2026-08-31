@@ -2083,7 +2083,7 @@ def gep_calculation(p):
     #    double-count split countries (see utilities docstring).
     df_q264 = hb.df_read(p.pollination_value_by_region_path)
     df_gep = pf.collapse_regions_to_countries(df_q264)
-    hb.df_write(df_gep, service_results['gep_by_country_base_year'])
+    utilities.write_gep_by_country(p, df_gep, service_results['gep_by_country_base_year'])
 
     # 2. Map only: r264-expanded, each sub-region carries its country's value, never summed
     #    (carbon template; the repo-wide map convention is the open flag-3 decision).

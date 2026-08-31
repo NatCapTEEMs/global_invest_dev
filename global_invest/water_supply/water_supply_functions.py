@@ -125,6 +125,15 @@ WATER_USE_ISO_LOOKUP = {
     'United States of America': 'USA',
     'Venezuela (Bolivarian Republic of)': 'VEN',
     'Viet Nam': 'VNM',
+    # The spellings WATER_USE_COUNTRY_RENAMES produces. That map exists to make the efficiency and
+    # withdrawal tables agree with each other, and the names it settles on are not the ones the
+    # r250 list uses, so these six resolved to nothing until they were named here too.
+    'Cape Verde': 'CPV',
+    'Congo': 'COG',
+    "Cote d'Ivoire": 'CIV',
+    'Democratic Republic of Congo': 'COD',
+    'East Timor': 'TLS',
+    'Eswatini': 'SWZ',
 }
 WATER_USE_REGIONS_DROPPED = (
     'Australia and New Zealand', 'Central Asia', 'Central and Southern Asia', 'Eastern Asia',
@@ -216,7 +225,14 @@ def water_use_components_from_chain(gep_by_country_year_df, countries_df):
     by_name = countries_df.drop_duplicates('iso3_r250_name').set_index('iso3_r250_name')['iso3_r250_label']
     by_long = (countries_df.drop_duplicates('name_long').set_index('name_long')['iso3_r250_label']
                if 'name_long' in countries_df.columns else by_name.iloc[0:0])
-    latest['iso3_r250_label'] = latest['country'].map(by_name).fillna(latest['country'].map(by_long))
+    # Exact name, then the long name, then the AQUASTAT spellings the module already lists. That
+    # last fallback existed for the efficiency table and not for this one, so 19 countries the
+    # lookup names -- the United States, Turkiye, Viet Nam, the United Kingdom, Iran, Tanzania,
+    # Cote d'Ivoire among them -- resolved to nothing and dropped out of the account with their
+    # water use, Cote d'Ivoire alone carrying $77.5M of agricultural value that reached no country.
+    latest['iso3_r250_label'] = (latest['country'].map(by_name)
+                                 .fillna(latest['country'].map(by_long))
+                                 .fillna(latest['country'].map(WATER_USE_ISO_LOOKUP)))
     latest = latest.merge(countries_df[['iso3_r250_label', 'iso3_r250_id']].drop_duplicates('iso3_r250_label'),
                           on='iso3_r250_label', how='left')
     return one_row_per_country(latest[['country', 'iso3_r250_id', 'iso3_r250_label', 'year',

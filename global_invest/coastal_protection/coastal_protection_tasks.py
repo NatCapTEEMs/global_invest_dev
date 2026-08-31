@@ -101,8 +101,9 @@ def gep_calculation(p):
     df_gep_by_country_base_year = df_gep_by_country_base_year.drop(columns=['Value'], errors='ignore')
 
     # The frame keeps its r264 columns for the map merge below; the published table does not.
-    hb.df_write(df_gep_by_country_base_year[utilities.published_country_columns(
-        df_gep_by_country_base_year, 'coastal_protection')],
+    utilities.write_gep_by_country(
+        p, df_gep_by_country_base_year[utilities.published_country_columns(
+            df_gep_by_country_base_year, 'coastal_protection')],
         p.results['coastal_protection']['gep_by_country_base_year'])
 
     # Map only: the r264-expanded boundaries, each sub-region carrying its country's value.

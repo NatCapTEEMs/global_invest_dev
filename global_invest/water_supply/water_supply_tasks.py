@@ -61,10 +61,11 @@ def gep_calculation(p):
     # water_supply_gep stays the hydropower component alone: how (and whether) the water-use
     # components combine with it is the account's subgroup question, flagged on the deck.
     df_gep['water_supply_gep'] = df_gep['hydropower_gep']
-    hb.df_write(df_gep[attr_cols + ['year', 'hydropower_gep', 'hydropower_gep_reference_variant',
-                                    'water_use_agriculture_gep', 'water_use_all_sector_gep',
-                                    'water_supply_gep']],
-                service_results['gep_by_country_base_year'])
+    utilities.write_gep_by_country(
+        p, df_gep[attr_cols + ['year', 'hydropower_gep', 'hydropower_gep_reference_variant',
+                               'water_use_agriculture_gep', 'water_use_all_sector_gep',
+                               'water_supply_gep']],
+        service_results['gep_by_country_base_year'])
 
     ours = df_gep['hydropower_gep'].sum()
     reference = df_gep['hydropower_gep_reference_variant'].sum()

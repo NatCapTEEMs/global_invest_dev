@@ -104,8 +104,9 @@ def gep_calculation(p):
     # Write to CSVs
     hb.df_write(df_gep_by_country_year_crop, p.results['livestock_provision']['gep_by_country_year_crop'])
     hb.df_write(df_gep_by_country_year, p.results['livestock_provision']['gep_by_country_year'])
-    hb.df_write(df_gep_by_country_base_year[utilities.published_country_columns(
-        df_gep_by_country_base_year, 'livestock_provision')],
+    utilities.write_gep_by_country(
+        p, df_gep_by_country_base_year[utilities.published_country_columns(
+            df_gep_by_country_base_year, 'livestock_provision')],
         p.results['livestock_provision']['gep_by_country_base_year'])
     hb.df_write(df_gep_by_year, p.results['livestock_provision']['gep_by_year'], handle_quotes='all')
     hb.df_write(df_gep_by_year, hb.replace_ext(p.results['livestock_provision']['gep_by_year'], 'xlsx'), handle_quotes='all')

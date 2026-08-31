@@ -1095,6 +1095,50 @@ def published_country_columns(df, service):
     return attributes + (['year'] if 'year' in df.columns else []) + value_columns + supporting
 
 
+def write_gep_by_country(p, df, path, log=None):
+    """Write a service's per-country table on the account's country list, one row per country.
+
+    Every country appears. A country the service produced no value for gets NA, not a missing row,
+    because those say different things: NA is "we do not know", an absent row is nothing at all,
+    and a reader summing the column cannot tell which countries were considered. It is the
+    authors' items 1 and 4 in one place -- the r250 list, and true zero against missing.
+
+    Eight services were short: wildfire 159 rows, crop 177, livestock 178, pollination 193,
+    extractive materials 216, coastal protection 225, water supply 253. Each had joined its own
+    data against the country list rather than the country list against its data, so a country its
+    source never mentions simply fell out. None of them carried a single NA, which is the tell.
+
+    A true zero is the service's own business and is left alone: coastal protection writing 0 for
+    a landlocked country is correct and must not become NA here.
+
+    Args:
+        p (ProjectFlow): the project, for `df_countries`.
+        df (pd.DataFrame): the service's table, keyed on iso3_r250_label.
+        path: where to write it.
+        log (callable): where to report the reindex.
+
+    Returns:
+        str: the path written.
+    """
+    log = log or hb.log
+    countries = collapse_countries_to_r250(p.df_countries)
+    attributes = [c for c in ('iso3_r250_id', 'iso3_r250_label', 'iso3_r250_name', 'continent',
+                              'region_un', 'region_wb', 'income_grp', 'subregion')
+                  if c in countries.columns]
+    countries = countries[attributes].drop_duplicates('iso3_r250_label')
+    if 'iso3_r250_label' not in df.columns:
+        raise NameError(
+            'The per-country table has no iso3_r250_label, so it cannot be put on the account '
+            'country list; it carries %s.' % list(df.columns)[:12])
+    values = df[[c for c in df.columns if c not in attributes or c == 'iso3_r250_label']]
+    full = countries.merge(values, on='iso3_r250_label', how='left')
+    added = len(full) - df['iso3_r250_label'].nunique()
+    if added:
+        log('Country list: %d rows, %d added as NA that the service produced no value for.'
+            % (len(full), added))
+    return write_csv(full, path)
+
+
 def begin_gep_calculation(p, service, extra_results=None, log=None):
     """Register a service's results and say whether the work is already done.
 
