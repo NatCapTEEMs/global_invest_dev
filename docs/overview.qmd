@@ -330,7 +330,7 @@ format:
 ## erosion
 
 - [Values soil the land cover keeps in place: prevented erosion mapped by running the sediment-delivery model, valued through crop productivity. {{< meta erosion_total >}} across 185 countries, of which 26 compute an exact zero. The author reports {{< meta erosion_author_ses11 >}} across 164 for the same baseline scenario.]{.state}
-- **Q1:** should the EPS-5 sensitivity be reported beside the baseline? It relaxes the severity threshold from 11 t/ha/yr to 5 and takes the reported figure from {{< meta erosion_author_ses11 >}} to {{< meta erosion_author_eps5 >}}.
+- [EPS-5 is carried as the sensitivity beside the SES-11 baseline, settled by the author on 2026-08-30. It relaxes the severity threshold from 11 t/ha/yr to 5 and takes the reported figure from {{< meta erosion_author_ses11 >}} to {{< meta erosion_author_eps5 >}}.]{.state}
 - [A border cell now goes to the country covering its centre rather than to whichever country the rasteriser reached last, so a country's value no longer moves with its row order in the boundary file. The move to ee_r250 changes nothing, measured.]{.state}
 - [South Sudan drops out of the join and we think we know why: the dependency table spells it SDS where the country table uses the ISO code SSD. Its value is zero today, so nothing is lost yet.]{.state}
 
@@ -389,13 +389,13 @@ format:
 
 - [Values wildfire damage avoided by nature's fire regulation: a per-country fire-persistence coefficient times the country's 2018 burned area gives avoided acres in 2019, valued at EM-DAT damage per burned acre. Our run reproduces the source repo's committed output for all 161 countries.]{.state}
 - **Q1:** which of the three coefficients is the account's value? They disagree in sign: baseline persistence gives {{< meta fire_baseline_total >}}, the nature-versus-human cause difference {{< meta fire_cause_total >}}, and the nature-versus-human area difference {{< meta fire_area_total >}}.
-- **Q2:** should the 89 countries the regressions do not cover stay unvalued? No data is not zero avoided damage.
+- **Q2:** should the 13 countries the regressions do not cover stay unvalued? No data is not zero avoided damage.
 
 ## water_supply
 
 - [Values hydropower rent and priced water withdrawal. Hydropower is computed from the CWoN wealth table for every country it values, {{< meta water_supply_total >}} across 97 countries, and reproduces the drive's committed output exactly on the 95 countries that output covers. Water use is computed in the library, agriculture {{< meta water_use_ag_total >}} across 123 countries and all-sector {{< meta water_use_all_total >}} across 149.]{.state}
 - **Q1:** which hydropower total is the account's, the manuscript's {{< meta hydro_manuscript >}} or our rent-based {{< meta water_supply_total >}}? The first follows a direct-use method, price times generation, the second the resource-rent method.
-- **Q2:** why does the reference leave 17 countries empty although the CWoN table values them? We now report all 112, and carry the 95-country variant beside it as the comparison, so the {{< meta water_supply_anchor >}} anchor still checks out.
+- **Q2:** why does the reference leave 17 countries empty although the CWoN table values them? We now report 97, and carry the 95-country variant beside it as the comparison, so the {{< meta water_supply_anchor >}} anchor still checks out.
 - **Q3:** is the agriculture gap the missing water-stress attribution? Your Submission_WaterUse_Agriculture appendix defines a lambda per crop and country, the FAO yield response coefficients per growth stage weighted by the ratio of actual to maximum evapotranspiration, with production value split rainfed and irrigated by SPAM 2020. We do not implement it: our water use is withdrawal times AQUASTAT efficiency, which is the gross value of water used rather than the part attributable to ecosystems. That would explain why the agriculture pair is {{< meta water_use_ag_total >}} against your $554.5bn while the all-sector pair, which has no attribution on either side, agrees closely. Is that the whole of the difference, and should we implement the lambda?
 - **Q4:** how do hydropower and the two water-use components combine into one water_supply value?
 
@@ -423,7 +423,7 @@ format:
 
 - [Values flood damage avoided by ecosystems: flood depth by return period, JRC depth-damage curves and a per-country EUR/m2 damage value by land type give each country's expected annual damage. Our recompute reproduces the pipeline's table for 146 of 148 non-zero countries.]{.state}
 - **Q1:** should the service-flow fraction multiply into the valuation? The pipeline computes one but never applies it, so today's number is expected flood damage rather than damage ecosystems avoid.
-- **Q2:** are the FINAL_GEP_FLOOD outputs the current ones?
+- [The current outputs are the v2_2024hazard pair the author named, `flood_gep_for_merge_v2_2024hazard.csv` to join against the other services and `flood_gep_country_results_v2_2024hazard.csv` for the full account, superseding FINAL_GEP_FLOOD.]{.state}
 - **Q3:** are the JRC depth-damage curves meant to be applied over true ground area? They are a damage per square metre of asset, and the damage pass gives every cell the same area, taken from a projection whose cells shrink away from the equator. Weighting each country's damage by its latitude moves the global total by about a third, and the countries carrying most of the value sit far from the equator. The treatment is the pipeline's rather than ours, which is why our recompute reproduces its table.
 
 ## local_climate_regulation
