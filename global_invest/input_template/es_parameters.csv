@@ -119,7 +119,7 @@ flood,flood_apply_service_flow,true
 flood,flood_return_periods,"[10, 20, 50, 100, 200, 500]"
 flood,flood_compute_ead_rasters,false
 flood,flood_damage_depth_mode,interpolated
-flood,flood_lulc_path,
+flood,flood_lulc_path,global_invest/flood/lulc/lulc_esa_2019_int_reproj.tif
 flood,flood_roads_path,
 flood,flood_pop_path,
 flood,flood_depth_aligned_path,
