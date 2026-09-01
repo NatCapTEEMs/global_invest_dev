@@ -6,7 +6,7 @@ terrestrial_total: "$5.365T"
 coastal_eez: "$17.72bn"
 coastal_all: "$58.75bn"
 coastal_report: "$26.65bn"
-crop_total: "$623bn"
+crop_total: "$511.5bn"
 crop_subsistence_total: "$24.93bn"
 crop_subsistence_reference: "$1.83bn"
 extractive_total: "$99.54bn"
@@ -19,7 +19,7 @@ poll_william: "$163.45bn"
 poll_with_sufficiency: "$163.45bn"
 poll_fao: "$515bn"
 livestock_ind: "$136bn"
-livestock_world: "$1.37T"
+livestock_world: "$653bn"
 n_services: "22"
 n_accounts: "25"
 n_replicating: "9"
@@ -260,7 +260,7 @@ format:
 | terrestrial_carbon | {{< meta terrestrial_total >}} | yes. |
 | coastal_carbon | {{< meta coastal_eez >}} EEZ-only, {{< meta coastal_all >}} all rows | yes. |
 | crop_provision | {{< meta crop_total >}} | yes. |
-| livestock_provision | $519bn rental rate, {{< meta livestock_world >}} feed share | no. Both attributions run; which one the account uses is the open decision, and there is no reference output |
+| livestock_provision | $246bn rental rate, {{< meta livestock_world >}} feed share | no. Both attributions run; which one the account uses is the open decision, and there is no reference output |
 | coastal_protection | {{< meta cp_total >}} | partially. Mangroves are replicated, $30.40bn against their $30.40bn; the coral half, $6.32bn deflated, is read through |
 | extractive_materials | {{< meta extractive_total >}} | yes. |
 | renewable_energy | {{< meta renewable_total >}} | partially. The code and the drive's reference CSVs give different values, and which one is current is the open question |

@@ -81,6 +81,14 @@ def gep_calculation(p):
     df_crop_value = read_crop_values(
         p.fao_input_path, p.commercial_attribute_subservices,
         utilities.read_column(p.faostat_aggregate_areas_path, 'area_fao'))
+    # FAOSTAT publishes both the individual crop and the group total that adds those crops up.
+    # The item list carries both, so a group total is kept only where no individual item is. The
+    # frame before that rule is kept, because valuing it is what reproduces the reference and a
+    # reproduction nobody can re-run is a claim rather than a check (condition 12).
+    df_crop_value_with_group_totals = df_crop_value.copy()
+    df_crop_value = utilities.drop_aggregates_where_components_exist(
+        df_crop_value, utilities.read_column(p.faostat_aggregate_items_path, 'item_fao'),
+        'crop_provision_gep')
     df_crop_coefs = read_crop_coefs(p.cwon_crop_coefficients_path)
 
     df_gep_by_country_year_crop = utilities.apply_rental_rates(
@@ -94,9 +102,21 @@ def gep_calculation(p):
 
     df_gep_by_year = utilities.sum_countries_to_year(df_gep_by_country_year, 'crop_provision_gep')
 
+    # The reference's own selection, valued the same way, as the column that proves the port.
+    df_reference = utilities.apply_rental_rates(
+        df_crop_value_with_group_totals, df_crop_coefs, 'crop_provision_gep')
+    df_reference = utilities.normalize_m49_codes(df_reference)
+    df_reference = crop_provision_functions.attach_countries_in_usd(df_reference, p.df_countries)
+    df_reference = utilities.sum_items_to_country_year(df_reference, 'crop_provision_gep')
+
     base_year = int(p.gep_base_year)
     df_gep_by_country_base_year = df_gep_by_country_year.loc[
         df_gep_by_country_year['year'] == base_year].copy()
+    reference_base_year = df_reference.loc[df_reference['year'] == base_year,
+                                           ['iso3_r250_id', 'crop_provision_gep']].rename(
+        columns={'crop_provision_gep': 'crop_provision_gep_reference'})
+    df_gep_by_country_base_year = df_gep_by_country_base_year.merge(
+        reference_base_year, on='iso3_r250_id', how='left')
 
     # Write to CSVs
     hb.df_write(df_gep_by_country_year_crop, p.results['crop_provision']['gep_by_country_year_crop'])

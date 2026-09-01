@@ -363,13 +363,16 @@ def test_the_commercial_figure_matches_the_reference_output_country_by_country()
 
     checked = 0
     for run in _crop_provision_runs():
-        project_path = os.path.join(run, 'gep_calculation', 'gep_by_country_year.csv')
+        project_path = os.path.join(run, 'gep_calculation', 'gep_by_country_base_year.csv')
         if not os.path.exists(project_path):
             continue
         ours = pd.read_csv(project_path)
-        ours = ours[ours['year'] == 2019]
-        joined = reference.merge(ours[['iso3_r250_id', 'crop_provision_gep']],
-                                 left_on='area_code_M49', right_on='iso3_r250_id', how='inner')
+        if 'crop_provision_gep_reference' not in ours.columns:
+            continue                      # a run from before the reproduction was published
+        joined = reference.merge(
+            ours[['iso3_r250_id', 'crop_provision_gep_reference']].rename(
+                columns={'crop_provision_gep_reference': 'crop_provision_gep'}),
+            left_on='area_code_M49', right_on='iso3_r250_id', how='inner')
         assert len(joined) == len(reference), run
         relative = ((joined['crop_provision_gep'] - joined['crop_provision_gep_reference']).abs()
                     / joined['crop_provision_gep_reference'].abs().replace(0, np.nan))

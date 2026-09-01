@@ -2070,3 +2070,56 @@ def expand_country_values_to_regions(df_regions, df_by_country, value_column):
     return df_regions.merge(df_by_country[['iso3_r250_id', value_column]],
                             how='left', on='iso3_r250_id')
 
+
+
+def drop_aggregates_where_components_exist(df, aggregate_items, value_column,
+                                           country_column='area_code', log=None):
+    """FAOSTAT group totals kept only where the items beneath them are missing.
+
+    FAOSTAT publishes crop and livestock value at two levels: the individual item, and the group
+    total that adds those items up for you. "Oilcrops Primary" is oil palm plus coconuts plus the
+    rest; "Livestock" is every animal product. A list holding both counts the same production
+    twice, and it does so invisibly, because the result is a plausible number in the right units.
+
+    Malaysia 2019 is the clearest case: oil palm $10.09bn plus coconuts $0.16bn is exactly
+    Oilcrops Primary at $10.25bn, and counting both put Malaysia at 179% of its own total crop
+    production. Across all countries, 87 of 156 exceeded 100% of what FAOSTAT says they grow;
+    livestock was worse, at 106 of 152.
+
+    Deleting the group totals is not the fix, because this release stopped publishing individual
+    items for many countries -- Argentina and India have no individual crop values at all in 2019,
+    only group totals. So a group total is dropped for a country-year that has any individual item
+    and kept for one that has none, which is the only rule that both avoids the double count and
+    keeps those countries in the account.
+
+    Args:
+        df (pd.DataFrame): the long cleaned FAOSTAT frame.
+        aggregate_items (iterable): the group-total item names.
+        value_column (str): the value column.
+        country_column (str): the column identifying the country.
+        log (callable): where to report what was dropped.
+
+    Returns:
+        pd.DataFrame: the frame with redundant group totals removed.
+    """
+    log = log or hb.log
+    aggregates = set(aggregate_items)
+    if 'crop' not in df.columns:
+        raise NameError('The frame has no item column to identify group totals by; it carries %s.'
+                        % list(df.columns)[:10])
+    is_aggregate = df['crop'].isin(aggregates)
+    if not is_aggregate.any():
+        return df
+
+    valued = df[value_column].notna()
+    has_components = (df[~is_aggregate & valued]
+                      .groupby([country_column, 'year']).size().rename('n').reset_index())
+    marked = df.merge(has_components, on=[country_column, 'year'], how='left')
+    redundant = marked['crop'].isin(aggregates) & marked['n'].notna()
+
+    dropped_value = marked.loc[redundant & marked[value_column].notna(), value_column].sum()
+    kept = marked.loc[marked['crop'].isin(aggregates) & marked['n'].isna(), country_column].nunique()
+    log('Group totals: %d rows dropped where the individual items are present (%.6g in the value '
+        'column), and kept for %d countries that have no individual items at all.'
+        % (int(redundant.sum()), dropped_value, kept))
+    return marked[~redundant].drop(columns='n')
