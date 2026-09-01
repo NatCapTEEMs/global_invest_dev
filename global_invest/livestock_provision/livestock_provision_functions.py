@@ -6,11 +6,18 @@ FAOSTAT Value of Production file: gross production value per country, item and y
 to land by the Changing Wealth of Nations 2024 rental rate, which varies by decade and is applied
 by a backward as-of merge on year.
 
-Two differences from crop_provision are deliberate and load-bearing. The item selection is by FAO
-item CODE rather than name (the service owner's convention, robust to FAO renaming items), and
-the values are NOT converted out of FAOSTAT's thousand USD, so this service's totals are in
-thousand USD where every other service reports plain USD. That second one is an open item flagged
-in the tracker, not a decision: see attach_countries.
+One difference from crop_provision is deliberate and load-bearing: the item selection is by FAO
+item CODE rather than name, which is the service owner's convention and is robust to FAO renaming
+items. The values ARE converted out of FAOSTAT's thousand USD, at the same point crop_provision
+converts, so this service reports plain USD like the rest of the library -- see attach_countries.
+(This paragraph said the opposite until 2026-09-01, and called it an open item, long after the
+conversion had been added. A reader who believed it would have multiplied the totals by a
+thousand.)
+
+Both value columns are in current US dollars, which for a 2019 run is already 2019 dollars, so
+nothing here needs a currency conversion. The reference implementation reads FAOSTAT element 152
+instead, constant 2014-2016 international dollars, which is neither the account's currency nor its
+price base.
 
 Step two of the port, feed_lambda_by_country, computes the ecosystem-provided share of livestock
 feed from GLEAM 3, wired through the task layer beside the rental-rate attribution.
