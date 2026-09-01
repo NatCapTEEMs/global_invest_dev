@@ -259,28 +259,6 @@ def _required_path(p, attribute, constant_name):
                         % (attribute, constant_name))
     return str(value)
 
-def _output_path(p, attribute, default_name):
-    """Where the run writes something, from the project or under the task's own directory.
-
-    An output is not an input: the project need not be told where to put it, only where to find
-    what it reads. So this defaults into the task directory rather than raising the way
-    _required_path does, and a project that wants the file somewhere else still sets the
-    attribute. Before this, the defaults were absolute paths on the machines the source scripts
-    came from, so outputs of a run here were addressed to a cluster.
-
-    Args:
-        p (ProjectFlow): the project.
-        attribute (str): the attribute a project may set to override the default.
-        default_name (str): the file or directory name under the task directory.
-
-    Returns:
-        str: where to write.
-    """
-    value = getattr(p, attribute, None)
-    if value is not None:
-        return str(value)
-    directory = getattr(p, 'cur_dir', None) or getattr(p, 'project_dir', None) or '.'
-    return os.path.join(str(directory), default_name)
 
 
 
@@ -435,9 +413,6 @@ def build_args(p, watersheds_path) -> dict:
 # Shock floor (applied only to (0 < shock < floor))
 
 
-# World Bank API toggles
-_HTTP_TIMEOUT = 60
-_RETRY = 4
 
 # Rasterization behavior. False is the centre rule, and configure_prevention_shares defaults to
 # the same thing, so a task that reads this before the run is configured gets the same rule.

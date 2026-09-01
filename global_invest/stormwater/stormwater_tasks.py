@@ -26,7 +26,6 @@ def publish_inputs(p):
 
 
 
-PROJECT_NAME = 'gep_stormwater'
 INVEST_WORKSPACE_DIR_NAME = 'stormwater_invest'
 RETENTION_VOLUME_FILE_NAME = 'retention_volume_urbanstorm_water.tif'
 ZONE_ID_FIELD = 'iso3_r250_id'

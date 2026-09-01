@@ -678,12 +678,6 @@ def load_fao_gpv_iso3_const2019_with_fallback(p, paths,
     return out[["iso3","crop_gpv_const2019_2019"]]
 
 
-# ------------------------------------------------------
-# 6) World Bank GDP loader
-# ------------------------------------------------------
-def _write_csv(df: pd.DataFrame, path: str):
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    df.to_csv(path, index=False)
 
 
 def load_wb_gdp_current_2019(gdp_csv: str) -> pd.DataFrame:

@@ -318,16 +318,6 @@ def build_area_km2_raster(meta: dict) -> np.ndarray:
     return np.repeat(area_per_row[:, None], ncols, axis=1).astype(np.float32)
 
 
-def convert_density_to_mass(density_raster: np.ndarray, area_km2_raster: np.ndarray) -> np.ndarray:
-    """
-    Convert density (e.g. tonnes/km²) to mass (e.g. tonnes).
-    
-    mass = density * area
-    """
-    mass = np.full_like(density_raster, np.nan, dtype=np.float32)
-    valid = np.isfinite(density_raster) & (area_km2_raster > 0)
-    mass[valid] = density_raster[valid] * area_km2_raster[valid]
-    return mass
 
 
 def get_compression_profile(
@@ -760,23 +750,8 @@ def _compute_annual_prices(prices: pd.DataFrame, cw: pd.DataFrame) -> tuple[pd.D
     return price_country, price_subregion, price_region, price_world
 
 
-# The CropGrids and yield grid, half a degree at 0.05, which pixel_area_km2 is written for.
-PIXEL_RES_DEG = 0.05
 
 
-def pixel_area_km2_spherical(lat_deg: np.ndarray, res_deg: float = PIXEL_RES_DEG) -> np.ndarray:
-    """Pixel area in km2 on a 6371 km sphere, the convention the source pipeline uses.
-
-    Kept so the replication check against crop_benefits can be run on its own terms. Production
-    calls hazelbean directly, which is WGS84 and agrees with the rest of the account.
-    """
-    R = 6371.0  # Earth radius, km
-    lat_rad = np.deg2rad(lat_deg)
-    dlat = np.deg2rad(res_deg)
-    dlon = np.deg2rad(res_deg)
-    return (R ** 2) * dlon * (
-        np.sin(lat_rad + dlat / 2.0) - np.sin(lat_rad - dlat / 2.0)
-    )
 
 
 # =============================================================================

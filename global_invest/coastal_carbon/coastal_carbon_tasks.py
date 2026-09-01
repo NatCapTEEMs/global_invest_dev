@@ -26,8 +26,6 @@ from tqdm import tqdm
 from global_invest import utilities
 from global_invest.coastal_carbon import coastal_carbon_functions as ccf
 
-# The ha_per_cell pyramid every raster stage is gridded on carries this no-data value.
-HA_PER_CELL_NDV = -9999.0
 # Region-id raster: uint16 spans the eemarine_r566 ids, and 0 means "outside every region".
 # Types are GDAL codes because that is the currency hazelbean's raster writers take.
 REGION_ID_GDAL_TYPE = 2   # UInt16

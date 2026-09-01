@@ -99,7 +99,6 @@ RULIS_SETTLEMENT_DISAGGREGATIONS = ('Rural', 'Urban')
 # name carries an en dash, which is what the published table uses.
 LOWDER_AREA_SHARE_ROW = 'share of agricultural area (%)'
 LOWDER_SMALLHOLDER_COLUMNS = ('< 1 ha', '1–2 ha')
-LOWDER_REGION_COLUMN = 'Region'
 
 # FAOSTAT's Land Use domain, which carries both areas and the production intensity.
 LAND_USE_VALUE_PER_AREA_ELEMENT = 'Value of agricultural production (Int. $) per Area'
@@ -662,7 +661,7 @@ def subsistence_value_from_shares(df_area_value, df_lowder, df_income, df_wb_his
     intensity = intensity[intensity['Year'] == year][['Country', PER_AREA_COLUMN]]
 
     rows = smallholder_area_shares(df_lowder)
-    smallholder = rows[[LOWDER_REGION_COLUMN]].copy()
+    smallholder = rows[['Region']].copy()
     smallholder['smallholder_area_share'] = sum(
         pd.to_numeric(rows[c], errors='coerce') for c in LOWDER_SMALLHOLDER_COLUMNS) / 100.0
 

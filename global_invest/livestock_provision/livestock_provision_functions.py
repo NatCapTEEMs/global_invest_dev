@@ -133,11 +133,6 @@ def feed_lambda_by_country(gleam_dmi_df):
     return grouped[['iso3_r250_id', 'iso3_r250_label', 'lambda', 'lambda_is_upper_bound']]
 
 
-# The dashboard harvest arrives one row per country, species and production system, with the
-# feed columns formatted for display: thousands separated by commas, and an empty cell where a
-# system does not occur. The country column is the dashboard's own code, which is ISO3 for
-# nearly every entry but carries a few territories GLEAM models separately.
-GLEAM_DASHBOARD_ID_COLUMNS = ('country_code', 'species', 'Area', 'Animal', 'LPS')
 
 
 def clean_gleam_dashboard_intake(df_raw, df_countries):

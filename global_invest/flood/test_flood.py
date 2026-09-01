@@ -18,6 +18,8 @@ import numpy as np
 import pandas as pd
 import re
 
+import tempfile
+import hazelbean as hb
 import pytest
 
 from global_invest import utilities
@@ -567,3 +569,26 @@ def test_the_water_variant_more_than_doubles_the_flood_headline():
     assert 1.1e10 < a < 1.2e10, a                              # the delivered variant, ~$11.40bn
     assert 2.4e10 < b < 2.5e10, b                              # water kept, ~$24.54bn
     assert b / a > 2.0, b / a
+
+
+def test_every_flood_tree_builder_assembles():
+    """H23 flagged `build_flood_calculation_task_tree` and `build_flood_valuation_task_tree` as
+    defined and never used, which they were: flood publishes a family of composable partial trees
+    and only some of them are reached from the run file.
+
+    They are deliberate API rather than leftovers, so the answer is to exercise them rather than
+    delete them -- an entry point nothing calls and nothing tests is indistinguishable from dead,
+    and this makes the difference visible. Building each tree also proves it assembles, which
+    nothing checked before: a builder naming a task that no longer exists would have failed only
+    when somebody chose that tree.
+    """
+    from global_invest.flood import flood_initialize
+
+    builders = [name for name in dir(flood_initialize)
+                if name.startswith('build_') and name.endswith('_task_tree')]
+    assert len(builders) >= 6, builders
+
+    for name in builders:
+        p = hb.ProjectFlow(project_dir=tempfile.mkdtemp())
+        getattr(flood_initialize, name)(p)
+        assert p.task_names_defined, name
