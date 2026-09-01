@@ -177,6 +177,8 @@ flood,flood_gep_for_merge_source_url,https://github.com/nkdampha/global_flood_ge
 flood,flood_avoided_damage_path,global_invest/flood/country_avoided_damage_usd2019.csv
 flood,flood_country_vector_path,
 flood,flood_sda_raster_path,
+flood,flood_reference_gep_ours_path,global_invest/flood/reference/step4e_flood_gep_USD2019_ours_20260831.csv
+flood,flood_reference_gep_waterkept_path,global_invest/flood/reference/step4e_flood_gep_USD2019_waterkept_20260831.csv
 local_climate_regulation,local_climate_regulation_final_path,global_invest/local_climate_regulation/local_climate_regulation_gep.csv
 local_climate_regulation,local_climate_regulation_city_savings_path,global_invest/local_climate_regulation/merged
 extractive_energy,extractive_energy_gas_path,global_invest/extractive_energy/gep-gas.csv
@@ -297,3 +299,4 @@ pollination,pollination_yield_method,"target"
 pollination,pollination_yield_early_years,"[1998, 1999, 2000, 2001, 2002]"
 pollination,pollination_yield_late_years,"[2017, 2018, 2019, 2020, 2021]"
 erosion,erosion_gdp_csv_source_url,https://api.worldbank.org/v2/country/all/indicator/NY.GDP.MKTP.CD?format=json&per_page=20000
+erosion,erosion_reference_country_gep_path,global_invest/erosion/reference/integrated_country_gep_corrected_20260829.csv

@@ -225,3 +225,47 @@ def test_static_shock_raises_when_the_dependency_table_is_absent(tmp_path):
         erosion_tasks.erosion_shock_static(p)
     assert not os.path.exists(p.erosion_shock_output_path)
 
+
+
+def test_the_country_table_matches_the_authors_corrected_run_where_the_border_rule_allows():
+    """Condition 12. The entry claimed 25% disagreement against his March table for weeks, which two
+    things had already superseded: the elasticity crop-name bug he found, and his corrected run.
+
+    His corrected output is staged now, so this compares against it. The two differ by the border
+    rule alone -- his notebook sets RASTERIZE_ALL_TOUCHED, ours takes the cell whose centre the
+    polygon covers -- so the test pins the global agreement and the two countries the rule explains,
+    rather than demanding an equality it should not get."""
+    import os
+    reference_path = os.path.join(
+        os.path.expanduser('~'), 'Files', 'base_data', 'global_invest', 'erosion', 'reference',
+        'integrated_country_gep_corrected_20260829.csv')
+    ours_path = os.path.join(
+        os.path.expanduser('~'), 'Files', 'global_invest', 'projects', 'gep_erosion',
+        'intermediate', 'prevention_shares', 'integrated_country_gep.csv')
+    if not (os.path.exists(reference_path) and os.path.exists(ours_path)):
+        pytest.skip('the staged reference or an erosion run is not on this machine')
+
+    column = 'gep_const2019_usd_combined'
+    theirs = pd.read_csv(reference_path)
+    ours = pd.read_csv(ours_path)
+
+    # Global agreement. The border rule moves this by about 0.8 percent and nothing else should.
+    ratio = ours[column].sum() / theirs[column].sum()
+    assert 1.0 < ratio < 1.02, ratio
+
+    joined = theirs[['iso3', column]].merge(ours[['iso3', column]], on='iso3',
+                                            suffixes=('_theirs', '_ours'))
+    # The two countries the rule explains, named so that a change in either is noticed.
+    vat = joined[joined['iso3'] == 'VAT']
+    assert vat[column + '_theirs'].notna().all()          # all-touched maps the Vatican
+    assert vat[column + '_ours'].isna().all()             # no cell centre falls inside it
+    swe = joined[joined['iso3'] == 'SWE']
+    assert (swe[column + '_theirs'] > 0).all()            # all-touched finds one severe cell
+    assert (swe[column + '_ours'].fillna(0) == 0).all()   # the centre rule finds none
+
+    # And most countries agree far better than the headline does.
+    both = joined.dropna()
+    both = both[both[column + '_theirs'] > 0]
+    within = ((both[column + '_ours'] - both[column + '_theirs']).abs()
+              / both[column + '_theirs'] < 0.01).mean()
+    assert within > 0.4, within
