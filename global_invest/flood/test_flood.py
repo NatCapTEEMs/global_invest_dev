@@ -507,3 +507,63 @@ def test_the_account_country_layer_works_as_the_flood_admin0():
     region = countries[['iso3_r250_label', 'region_wb']]
     joined = admin0[[iso_col]].merge(region, left_on=iso_col, right_on='iso3_r250_label', how='left')
     assert joined['region_wb'].notna().sum() > 200
+
+
+def test_our_flood_gep_reproduces_the_authors_committed_table():
+    """Condition 12. The account's flood GEP is $11,403,596,548 and the author publishes $11.40bn,
+    which is his rounding. Quoting that agreement is not a check; this recomputes it.
+
+    His `flood_gep_for_merge_v2_2024hazard.csv` is the table he named as the one to join against the
+    other services, staged in base_data beside our own run's output so the comparison survives.
+
+    ⚠ What it proves is narrow, and the entry says so: the module is his pipeline with our path
+    handling and ProjectFlow wiring, so agreement was close to guaranteed. This is a build test --
+    it catches our refactor breaking his arithmetic, and nothing about whether the arithmetic is
+    right."""
+    import os
+    base = os.path.join(os.path.expanduser('~'), 'Files', 'base_data', 'global_invest', 'flood',
+                        'reference')
+    his_path = os.path.join(base, 'flood_gep_for_merge_v2_2024hazard.csv')
+    ours_path = os.path.join(base, 'step4e_flood_gep_USD2019_ours_20260831.csv')
+    if not (os.path.exists(his_path) and os.path.exists(ours_path)):
+        pytest.skip('the staged flood reference or our run output is not on this machine')
+
+    his = pd.read_csv(his_path)
+    ours = pd.read_csv(ours_path)
+    joined = his.merge(ours[['iso3', 'gep_flood_bare_usd2019']],
+                       left_on='iso3_r250_label', right_on='iso3', how='outer', indicator=True)
+    assert (joined['_merge'] == 'both').all()                  # same 250 countries, no strays
+    assert len(joined) == 250
+
+    both = joined[joined['gep_const2019_usd'].notna()]
+    difference = (both['gep_flood_bare_usd2019'] - both['gep_const2019_usd']).abs()
+    assert difference.max() < 0.01, difference.max()           # agrees to the cent, country by country
+    assert ours['gep_flood_bare_usd2019'].sum() == pytest.approx(
+        his['gep_const2019_usd'].sum(), abs=1.0)
+
+    # The one country that differs, named so a change in it is noticed rather than absorbed into a
+    # tolerance: Iceland is NaN in his table and 2.1 cents in ours, which is the whole of the
+    # 162-against-163 positive-country count.
+    iceland = joined[joined['iso3_r250_label'] == 'ISL']
+    assert iceland['gep_const2019_usd'].isna().all()
+    assert (iceland['gep_flood_bare_usd2019'] < 1.0).all()
+
+
+def test_the_water_variant_more_than_doubles_the_flood_headline():
+    """The largest open question in the account, pinned so it cannot drift unnoticed. The run writes
+    four variants and the delivered one removes permanent water; keeping it more than doubles the
+    figure. Which the account intends is not written down anywhere we have found, so this asserts
+    the gap exists rather than which side is right."""
+    import os
+    base = os.path.join(os.path.expanduser('~'), 'Files', 'base_data', 'global_invest', 'flood',
+                        'reference')
+    delivered = os.path.join(base, 'step4e_flood_gep_USD2019_ours_20260831.csv')
+    waterkept = os.path.join(base, 'step4e_flood_gep_USD2019_waterkept_20260831.csv')
+    if not (os.path.exists(delivered) and os.path.exists(waterkept)):
+        pytest.skip('the staged flood variants are not on this machine')
+
+    a = pd.read_csv(delivered)['gep_flood_bare_usd2019'].sum()
+    b = pd.read_csv(waterkept)['gep_flood_bare_usd2019'].sum()
+    assert 1.1e10 < a < 1.2e10, a                              # the delivered variant, ~$11.40bn
+    assert 2.4e10 < b < 2.5e10, b                              # water kept, ~$24.54bn
+    assert b / a > 2.0, b / a
