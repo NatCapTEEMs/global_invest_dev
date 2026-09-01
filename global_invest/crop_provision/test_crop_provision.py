@@ -9,6 +9,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from global_invest import utilities
 from global_invest.crop_provision import crop_provision_functions as cp
@@ -220,3 +221,105 @@ def test_es_config_row_hydrates_crop_provision(tmp_path):
     p.get_path = lambda *a, **k: '/resolved/' + '/'.join(a)
     utilities.hydrate_es_config(p, 'crop_provision', log=lambda *a: None)
     assert p.sheet_label == 'crop_provision'
+
+
+# =================================================================================================
+# The subsistence component: a port, so the tests pin the reproduction and the two findings.
+# =================================================================================================
+
+def _rulis_rows():
+    """A RuLIS export in miniature: the indicator this reads and the one beside it."""
+    own = cp.RULIS_OWN_CONSUMPTION_INDICATOR
+    return pd.DataFrame([
+        {'Indicator': own, 'Country': 'Kenya', 'Disaggregation': 'National', 'Year': 2005,
+         'Value': 54.8, cp.PER_AREA_COLUMN: 500.0, 'Standard Deviation': 1.0,
+         'Number of observations': 10, 'Income Classification': 'L'},
+        {'Indicator': own, 'Country': 'Georgia', 'Disaggregation': 'Rural', 'Year': 2013,
+         'Value': 60.0, cp.PER_AREA_COLUMN: 900.0, 'Standard Deviation': 1.0,
+         'Number of observations': 5, 'Income Classification': 'LM'},
+        {'Indicator': own, 'Country': 'Georgia', 'Disaggregation': 'Urban', 'Year': 2013,
+         'Value': 40.0, cp.PER_AREA_COLUMN: 900.0, 'Standard Deviation': 1.0,
+         'Number of observations': 5, 'Income Classification': 'LM'},
+        {'Indicator': cp.RULIS_SOLD_AT_MARKET_INDICATOR, 'Country': 'Kenya',
+         'Disaggregation': 'National', 'Year': 2005, 'Value': 88.0,
+         cp.PER_AREA_COLUMN: 500.0, 'Standard Deviation': 1.0,
+         'Number of observations': 10, 'Income Classification': 'L'},
+    ])
+
+
+def test_the_sold_at_market_indicator_is_dropped():
+    """It sits in the same export and is close to this indicator's complement, so reading it would
+    value the commercial half as subsistence."""
+    out = cp.national_own_consumption_shares(_rulis_rows())
+    assert cp.RULIS_SOLD_AT_MARKET_INDICATOR not in set(out['Indicator'])
+    assert len(out) == 3
+
+
+def test_a_country_with_no_national_row_takes_the_mean_of_rural_and_urban():
+    """Georgia is surveyed but never reported nationally. Dropping it would be a silent loss."""
+    out = cp.add_constructed_national_rows(cp.national_own_consumption_shares(_rulis_rows()))
+    georgia = out[out['Country'] == 'Georgia']
+    assert len(georgia) == 1
+    assert georgia['Value'].iloc[0] == pytest.approx(50.0)
+    assert georgia['Disaggregation'].iloc[0] == cp.RULIS_NATIONAL
+
+
+def test_a_country_reported_nationally_keeps_only_its_national_row():
+    """Kenya has a national figure, so averaging its settlement rows in would pull the share
+    towards the households most likely to eat what they grow."""
+    out = cp.add_constructed_national_rows(cp.national_own_consumption_shares(_rulis_rows()))
+    assert out[out['Country'] == 'Kenya']['Value'].tolist() == [pytest.approx(54.8)]
+
+
+def test_the_share_of_agricultural_area_is_read_not_the_share_of_farms():
+    """Both rows sit in the same Lowder table under the same region. The share of farms is about
+    seven times the share of area."""
+    lowder = pd.DataFrame([
+        {'Region': 'South Asia', 'Number or share of farms / agricultural area': 'share of farms (%)',
+         '< 1 ha': 70.4, '1–2 ha': 13.8},
+        {'Region': 'South Asia',
+         'Number or share of farms / agricultural area': cp.LOWDER_AREA_SHARE_ROW,
+         '< 1 ha': 23.9, '1–2 ha': 21.5}])
+    out = cp.smallholder_area_shares(lowder)
+    assert len(out) == 1 and out['< 1 ha'].iloc[0] == 23.9
+
+
+def test_reading_the_wrong_lowder_row_raises_rather_than_returning_nothing():
+    lowder = pd.DataFrame([
+        {'Region': 'South Asia', 'Number or share of farms / agricultural area': 'share of farms (%)',
+         '< 1 ha': 70.4, '1–2 ha': 13.8}])
+    with pytest.raises(NameError, match='share of agricultural area'):
+        cp.smallholder_area_shares(lowder)
+
+
+def test_the_unit_correction_is_exactly_a_factor_of_ten():
+    """The finding, pinned. FAOSTAT reports cropland in THOUSANDS of hectares against an intensity
+    per SINGLE hectare, and the Lowder share is a PERCENTAGE the reference never divides by 100.
+    The two compound to THOUSAND_HECTARES / PERCENT, and if either constant is ever edited to
+    'fix' the other this fails."""
+    assert cp.THOUSAND_HECTARES / cp.PERCENT == 10.0
+
+
+def test_a_country_that_does_not_land_on_the_account_list_raises():
+    """The reference joins its panel against the correspondence on a Natural Earth name column and
+    delivers 16 of its own 66 valued countries -- 250 rows and a populated column, so the loss is
+    invisible. Here it is an error."""
+    countries = pd.DataFrame([
+        {'ee_r264_label': 'KEN', 'iso3_r250_label': 'KEN', 'iso3_r250_id': 404,
+         'iso3_r250_name': 'Kenya'}])
+    panel = pd.DataFrame([
+        {'alpha-3': 'KEN', 'Year': 2019, 'own_con': 1.0, 'own_con2': 1.0,
+         'own_con_source': 'observed', 'rental_rate': 0.3, 'crop_subsistence_gep': 1.0},
+        {'alpha-3': 'ATL', 'Year': 2019, 'own_con': 5.0, 'own_con2': 5.0,
+         'own_con_source': 'observed', 'rental_rate': 0.3, 'crop_subsistence_gep': 5.0}])
+    with pytest.raises(ValueError, match='did not land on the account country list'):
+        cp.subsistence_on_country_list(panel, countries, 2019)
+
+
+def test_a_year_takes_the_rate_of_the_decade_it_falls_in():
+    coefs = pd.DataFrame([{'Order': 1, 'FAO': 159, 'ISO3': 'KEN', 'Country/territory': 'Kenya',
+                           '2001-2010': 0.2, '2011-2020': 0.3}])
+    panel = pd.DataFrame([{'alpha-3': 'KEN', 'Year': 2019, 'own_con2': 100.0}])
+    out = cp.apply_subsistence_rental_rate(panel, coefs)
+    assert out['rental_rate'].iloc[0] == 0.3
+    assert out['gep_value'].iloc[0] == pytest.approx(30.0)

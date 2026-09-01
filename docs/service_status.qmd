@@ -348,7 +348,7 @@ hectare. `ours` is where that lives.
 - **run:** yes
 - **ours:** yes, on the same footing as energy production rather than mining. FAOSTAT publishes the market value of the crop, not the part of it that belongs to nature, so no published figure is being relabelled. What is adopted is the CWoN land rental rate, and it is the entire attribution.
 - **method:** FAOSTAT gross production value (element 57, current USD) times the CWoN land rental rate, the share of crop value that accrues to land rather than to labour, capital or inputs. The rate is a per-country decade constant between 0.008 and 0.661, median 0.306 over 179 countries, applied by a backward as-of merge so each year takes the most recent decade that has started. The quantity comes from a CSV, FAOSTAT gross production value.
-- **total:** $678bn
+- **total:** $623bn
 - **code:** Refactored onto the library template and hazelbean conventions. Two fixes: FAOSTAT still lists countries that no longer exist, the USSR and Yugoslavia among them, so production was being stranded on codes matching no present-day country; those now map to their successor states. The reporting year was also written into the code as a fixed number and now comes from the shared configuration.
 - **grid:** No raster. The service works on country tables (it reads only CSV and Excel), so nothing multiplies a density by a cell area and the cell-area question does not arise. Verified 2026-08-26 by checking every read in the module.
 - **reference:** The reference table, reproduced. ⚠ Same lineage, so it tests the port. The reference is not in the repo and no test pins it, which is why the 32 zero countries are still open.
@@ -359,6 +359,26 @@ hectare. `ours` is where that lives.
 
 
 - **signed off:** amber: examined, and at least one of the ten conditions is not yet verified. ⚠ **10 is unmet here and everywhere**: no service in this library has been built from an empty project directory, so every claim that a clone reproduces it rests on the input paths resolving rather than on a run. ⚠ **11 is unverified**: the base year is 2019 across every service, but the country list, the true-zero-against-missing rule and the shared parameters have not been checked service by service **11 is met as of 2026-09-01**: the published table is 250 rows on the account's list, with the countries the service has no value for recorded as NA rather than absent. It carried 177 rows before, and the total is unchanged.
+## Crop Production
+
+- **subgroup:** subsistence
+- **module:** crop_provision
+- **category:** table arithmetic
+- **in the library:** yes
+- **run:** yes
+- **ours:** yes
+- **method:** Cropland area times the regional share of agricultural area in farms under two hectares (Lowder et al. 2021) times FAOSTAT's value of agricultural production per hectare times the share of crop production value a household consumes rather than sells (FAO RuLIS national surveys), attributed by the CWoN land rental rate and deflated to the base year by each country's own CPI. A surveyed country's missing years are filled from a per-country regression on year, GDP per capita and commercial production; an unsurveyed country is filled from a global regression on cropland area.
+- **total:** $1.83bn
+- **code:** The reference pipeline ported stage for stage, so the library produces the figure rather than quoting it. Two departures, both deliberate and both reported beside the reproduction rather than replacing it: the delivered table is put on the account's country list by the house collapse, and the arithmetic is also run with FAOSTAT's thousands of hectares and Lowder's percentage read as their sources label them.
+- **grid:** No raster. The component works on country tables (it reads only CSV), so nothing multiplies a density by a cell area and the cell-area question does not arise. Verified 2026-09-01 by checking every read in the task.
+- **reference:** The reference panel, reproduced. $1,832,260,428.28 against $1,832,260,428.28 across 66 countries, largest per-country relative difference 2.3e-14. Each stage was checked separately on the way: 73 own-consumption rows to 1.3e-16, 63 interpolated rows to 1.9e-16, and the extrapolation choosing the same regressor and the same 49 observed / 1,339 predicted / 222 missing split. ⚠ Same lineage, so it tests the port and cannot see an error the reference's code also makes.
+- **replicated:** Yes, exactly. ⚠ Same lineage, so it tests our port rather than the science.
+- **decided:** -
+- **number:** $1,832,260,428 across 66 countries, reproducing the reference. ⚠ Two things a reader needs with it. The units do not agree with the sources: FAOSTAT reports cropland in thousands of hectares against an intensity per single hectare, and the Lowder share is a percentage that is never divided by 100, so the same chain with the units read as labelled gives **$18,322,604,283**, exactly ten times. And only 49 of the 1,610 panel rows are observed survey values against 1,339 filled by a regression of the own-consumption level on cropland area, which is also the largest term in the formula that produced the target.
+- **need:** Three findings to put to the authors, none of which our own figure now depends on: the factor of ten above; the delivered file, which joins the panel against the correspondence on a Natural Earth name column and carries 16 of its own 66 valued countries at $398,356,097; and eleven countries whose observed survey values leave the panel at the interpolation step, Ethiopia among them, because a row missing GDP per capita or commercial production is dropped and its observation goes with it. Separately, and for the account rather than the authors: whether subsistence is added to commercial at all, given RuLIS reports own consumption as a share of crop production value that FAOSTAT's production figures already include.
+
+
+- **signed off:** amber: examined, and at least one of the ten conditions is not yet verified. ⚠ **9 is open**: the three findings above have not been put to the authors, and the condition counts an unasked question as open. ⚠ **10 is unmet here and everywhere**: no service in this library has been built from an empty project directory, so every claim that a clone reproduces it rests on the input paths resolving rather than on a run.
 ## Livestock Production
 
 - **subgroup:** commercial
