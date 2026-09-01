@@ -325,38 +325,88 @@ def test_a_year_takes_the_rate_of_the_decade_it_falls_in():
     assert out['gep_value'].iloc[0] == pytest.approx(30.0)
 
 
+def _crop_provision_runs():
+    """Every crop_provision project directory on this machine, cold starts included.
+
+    Checking one named directory lets a stale warm run stand in for a fresh one, which is the
+    failure condition 10 exists for. Every run that exists has to agree.
+    """
+    import glob
+    import os
+    pattern = os.path.join(os.path.expanduser('~'), 'Files', 'global_invest', 'projects',
+                           'gep_crop_provision*', 'intermediate')
+    return sorted(p for p in glob.glob(pattern) if os.path.isdir(p))
+
+
 def test_the_commercial_figure_matches_the_reference_output_country_by_country():
     """The claim that crop_provision reproduces its reference was carried in the status table for
     weeks while the reference sat in nobody's repository and no test looked at it. It is staged
-    now, so this compares against it rather than asserting agreement.
+    now, so this compares against it -- for every run on the machine, not one chosen directory.
 
-    Skips rather than fails when base_data is absent, because a machine without it is not a machine
-    this can speak about."""
+    Skips rather than fails when base_data or a run is absent, because a machine without either is
+    not a machine this can speak about."""
     import os
     reference_path = os.path.join(
         os.path.expanduser('~'), 'Files', 'base_data', 'global_invest', 'crop_provision',
         'reference', 'gep_by_country_2019_reference.csv')
-    project_path = os.path.join(
-        os.path.expanduser('~'), 'Files', 'global_invest', 'projects', 'gep_crop_provision',
-        'intermediate', 'gep_calculation', 'gep_by_country_year.csv')
-    if not (os.path.exists(reference_path) and os.path.exists(project_path)):
-        pytest.skip('base_data reference or a crop_provision run is not on this machine')
+    if not os.path.exists(reference_path):
+        pytest.skip('the staged reference is not on this machine')
 
     # FAOSTAT carries dissolved states beside their successors -- "Ethiopia PDR" next to Ethiopia,
     # "Serbia and Montenegro" next to Serbia -- under one M49 code each. The reference leaves those
     # rows stranded at zero; this library maps them to the successor, which is one of the two fixes
     # crop_provision documents. So the reference is summed onto the M49 code before comparing,
-    # which is the same collapse, and comparing row for row instead would count Ethiopia twice.
+    # which is the same collapse, and comparing row for row would count Ethiopia twice.
     reference = pd.read_csv(reference_path, encoding='utf-8-sig')
     reference = reference.groupby('area_code_M49', as_index=False).agg(
         crop_provision_gep_reference=('crop_provision_gep_reference', 'sum'))
-    ours = pd.read_csv(project_path)
-    ours = ours[ours['year'] == 2019]
-    joined = reference.merge(ours[['iso3_r250_id', 'crop_provision_gep']],
-                             left_on='area_code_M49', right_on='iso3_r250_id', how='inner')
-    assert len(joined) == len(reference)
-    relative = ((joined['crop_provision_gep'] - joined['crop_provision_gep_reference']).abs()
-                / joined['crop_provision_gep_reference'].abs().replace(0, np.nan))
-    assert relative.max() < 1e-12
-    assert joined['crop_provision_gep'].sum() == pytest.approx(
-        joined['crop_provision_gep_reference'].sum(), rel=1e-12)
+
+    checked = 0
+    for run in _crop_provision_runs():
+        project_path = os.path.join(run, 'gep_calculation', 'gep_by_country_year.csv')
+        if not os.path.exists(project_path):
+            continue
+        ours = pd.read_csv(project_path)
+        ours = ours[ours['year'] == 2019]
+        joined = reference.merge(ours[['iso3_r250_id', 'crop_provision_gep']],
+                                 left_on='area_code_M49', right_on='iso3_r250_id', how='inner')
+        assert len(joined) == len(reference), run
+        relative = ((joined['crop_provision_gep'] - joined['crop_provision_gep_reference']).abs()
+                    / joined['crop_provision_gep_reference'].abs().replace(0, np.nan))
+        assert relative.max() < 1e-12, run
+        assert joined['crop_provision_gep'].sum() == pytest.approx(
+            joined['crop_provision_gep_reference'].sum(), rel=1e-12), run
+        checked += 1
+    if not checked:
+        pytest.skip('no crop_provision run on this machine')
+
+
+def test_the_subsistence_reference_column_reproduces_their_published_panel():
+    """The published figure is ours; this is the column beside it that proves the port is faithful.
+    Same rule: every run on the machine, cold starts included."""
+    import os
+    reference_path = os.path.join(
+        os.path.expanduser('~'), 'Files', 'base_data', 'global_invest', 'crop_provision',
+        'subsistence', 'reference', 'agr_subsistence_adjusted_2020.csv')
+    if not os.path.exists(reference_path):
+        pytest.skip('the staged reference is not on this machine')
+    theirs = pd.read_csv(reference_path)
+    theirs = theirs[theirs['Year'] == 2019][['alpha-3', 'gep_value_2019']].dropna()
+
+    checked = 0
+    for run in _crop_provision_runs():
+        path = os.path.join(run, 'crop_subsistence_gep', 'subsistence_gep_by_country.csv')
+        if not os.path.exists(path):
+            continue
+        ours = pd.read_csv(path).dropna(subset=['crop_subsistence_gep_reference'])
+        joined = ours.merge(theirs, left_on='iso3_r250_label', right_on='alpha-3', how='inner')
+        assert len(joined) == len(theirs), run
+        relative = ((joined['crop_subsistence_gep_reference'] - joined['gep_value_2019']).abs()
+                    / joined['gep_value_2019'].abs().replace(0, np.nan))
+        assert relative.max() < 1e-10, run
+        # And the published figure is exactly ten times it, which is the whole finding.
+        assert (ours['crop_subsistence_gep'].sum()
+                == pytest.approx(10 * ours['crop_subsistence_gep_reference'].sum(), rel=1e-12)), run
+        checked += 1
+    if not checked:
+        pytest.skip('no crop_provision run on this machine')
