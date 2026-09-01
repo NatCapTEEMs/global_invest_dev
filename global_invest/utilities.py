@@ -1056,14 +1056,39 @@ def service_data_dir(p, service):
     `reference/` directory inside the repo, which made them a special kind of input; they are
     not, they are inputs.
 
+    A missing local directory is seeded once from the machine's shared data roots
+    (p.shared_data_dirs, the same tier get_path searches), which mirror base_data's layout.
+    get_path caches one file per ref_path; this is the directory-shaped counterpart, because
+    the callers ask for the directory. Only the shared directory's top-level files are
+    copied: the anchors live flat, and the shared dirs also hold working subtrees
+    (Archive/, Results/, ...) that are not inputs and can be large. The raise survives: no
+    local copy and no shared copy still fails loudly, and a shared directory holding
+    nothing copyable seeds nothing.
+
     Args:
-        p: the ProjectFlow, for `base_data_dir`.
+        p: the ProjectFlow, for `base_data_dir` and `shared_data_dirs`.
         service (str): the service directory name.
 
     Raises:
         NameError: naming the directory, because reading the wrong one is worse than not reading.
     """
     path = os.path.join(p.base_data_dir, 'global_invest', service)
+    if not os.path.isdir(path):
+        for shared_root in getattr(p, 'shared_data_dirs', []):
+            shared_dir = os.path.join(shared_root, 'global_invest', service)
+            if not os.path.isdir(shared_dir):
+                continue
+            for filename in sorted(os.listdir(shared_dir)):
+                shared_path = os.path.join(shared_dir, filename)
+                if not os.path.isfile(shared_path):
+                    continue
+                if hb.is_google_native_file(shared_path):
+                    # A Drive .gsheet/.gdoc is a ~100-byte JSON pointer, not data.
+                    continue
+                hb.cache_file_from_shared_root(shared_path, os.path.join(path, filename))
+            if os.path.isdir(path):
+                hb.log('service_data_dir: seeded %s from shared root %s' % (path, shared_root))
+                break
     if not os.path.isdir(path):
         raise NameError('%s has no data directory at %s' % (service, path))
     return path
