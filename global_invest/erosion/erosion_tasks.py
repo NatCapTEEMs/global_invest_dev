@@ -2343,7 +2343,7 @@ def erosion_shock(p):
     _MISS = object()
 
     def _table_alpha(crop):
-        for key in [crop] + list(ef.SPAM_ALIAS_MAP.get(crop, [])):
+        for key in [crop] + list(spam_aliases.get(crop, [])):
             if str(key).strip().lower() in coef_map:
                 return ef.get_erosion_yield_coefficient(crop, coef_map, alpha, spam_aliases)
         return _MISS

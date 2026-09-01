@@ -74,13 +74,13 @@ def test_download_missing_inputs_fetches_only_what_is_absent(tmp_path, monkeypat
         {'service': 'demo', 'parameter': 'demo_unsourced_path', 'value': 'demo/unsourced.csv'},
     ]).to_csv(template, index=False)
 
-    present = tmp_path / 'present.csv'
+    # Destinations resolve from the CSV refs under p.base_data_dir, not from p attributes.
+    (tmp_path / 'demo').mkdir()
+    present = tmp_path / 'demo' / 'present.csv'
     present.write_text('kept')
-    absent = tmp_path / 'absent.csv'
-    unsourced = tmp_path / 'unsourced.csv'
+    absent = tmp_path / 'demo' / 'absent.csv'
 
-    p = SimpleNamespace(demo_present_path=str(present), demo_absent_path=str(absent),
-                        demo_unsourced_path=str(unsourced))
+    p = SimpleNamespace(base_data_dir=str(tmp_path))
     monkeypatch.setattr(utilities, 'seed_input_template', lambda *a, **k: str(template))
     fetched = []
     monkeypatch.setattr('urllib.request.urlretrieve',
@@ -115,9 +115,9 @@ def test_download_missing_inputs_extracts_an_archive_member_and_reports_notes(tm
         zf.writestr('inner/wanted.csv', 'the wanted member')
         zf.writestr('inner/other.csv', 'not this one')
 
-    member = tmp_path / 'member.csv'
-    noted = tmp_path / 'noted.csv'
-    p = SimpleNamespace(demo_member_path=str(member), demo_noted_path=str(noted))
+    member = tmp_path / 'demo' / 'member.csv'
+    noted = tmp_path / 'demo' / 'noted.csv'
+    p = SimpleNamespace(base_data_dir=str(tmp_path))
     monkeypatch.setattr(utilities, 'seed_input_template', lambda *a, **k: str(template))
     monkeypatch.setattr('urllib.request.urlretrieve',
                         lambda url, path: __import__('shutil').copyfile(archive, path))
