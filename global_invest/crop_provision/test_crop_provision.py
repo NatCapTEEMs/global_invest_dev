@@ -404,9 +404,50 @@ def test_the_subsistence_reference_column_reproduces_their_published_panel():
         relative = ((joined['crop_subsistence_gep_reference'] - joined['gep_value_2019']).abs()
                     / joined['gep_value_2019'].abs().replace(0, np.nan))
         assert relative.max() < 1e-10, run
-        # And the published figure is exactly ten times it, which is the whole finding.
-        assert (ours['crop_subsistence_gep'].sum()
+        # Correcting the units alone is exactly ten times their arithmetic, which is the finding.
+        # The published figure departs further, because it also imputes the survey SHARE for an
+        # unsurveyed country rather than predicting the LEVEL from cropland area, so it is compared
+        # on being larger and on the same order rather than on a fixed ratio.
+        assert (ours['crop_subsistence_gep_units_only'].sum()
                 == pytest.approx(10 * ours['crop_subsistence_gep_reference'].sum(), rel=1e-12)), run
+        published = ours['crop_subsistence_gep'].sum()
+        assert published > ours['crop_subsistence_gep_units_only'].sum(), run
+        assert published < 4 * ours['crop_subsistence_gep_units_only'].sum(), run
         checked += 1
     if not checked:
         pytest.skip('no crop_provision run on this machine')
+
+
+def test_an_unsurveyed_country_takes_a_regional_share_only_where_the_region_has_enough_surveys():
+    """The imputation the account uses in place of the reference's regression. A region with too
+    few surveys behind it falls back to the global median rather than passing off two observations
+    as a regional pattern, and every row records which it used."""
+    observed = pd.DataFrame([
+        {'Country': 'Kenya', 'Value': 50.0}, {'Country': 'Malawi', 'Value': 60.0},
+        {'Country': 'Ghana', 'Value': 40.0}, {'Country': 'Peru', 'Value': 20.0}])
+    income = pd.DataFrame([
+        {'Country': 'Kenya', 'Region': 'Sub-Saharan Africa', 'Code': 'KEN'},
+        {'Country': 'Malawi', 'Region': 'Sub-Saharan Africa', 'Code': 'MWI'},
+        {'Country': 'Ghana', 'Region': 'Sub-Saharan Africa', 'Code': 'GHA'},
+        {'Country': 'Peru', 'Region': 'Latin America & Caribbean', 'Code': 'PER'},
+        {'Country': 'Uganda', 'Region': 'Sub-Saharan Africa', 'Code': 'UGA'},
+        {'Country': 'Bolivia', 'Region': 'Latin America & Caribbean', 'Code': 'BOL'}])
+    out = cp.impute_own_consumption_shares(observed, income, minimum_per_region=3).set_index('Country')
+
+    assert out.at['Kenya', 'own_consumption_share'] == pytest.approx(0.50)
+    assert out.at['Kenya', 'share_source'] == 'observed'
+    # Sub-Saharan Africa has three surveys, so Uganda takes their median.
+    assert out.at['Uganda', 'own_consumption_share'] == pytest.approx(0.50)
+    assert out.at['Uganda', 'share_source'].startswith('regional median')
+    # Latin America has one, so Bolivia takes the global median of all four.
+    assert out.at['Bolivia', 'own_consumption_share'] == pytest.approx(0.45)
+    assert out.at['Bolivia', 'share_source'] == 'global median'
+
+
+def test_the_imputation_never_reaches_above_lower_middle_income():
+    """The reference scopes its panel to the low and lower-middle-income classes and that scope is
+    kept, so a high-income country never acquires a subsistence estimate from a regional median."""
+    wb = pd.DataFrame([{'Country': 'Kenya', '2019': 'L'}, {'Country': 'France', '2019': 'H'},
+                       {'Country': 'Ghana', '2019': 'LM'}, {'Country': 'Chile', '2019': 'UM'}])
+    eligible = cp.low_and_lower_middle_income_countries(wb, 2019)
+    assert sorted(eligible['Country']) == ['Ghana', 'Kenya']

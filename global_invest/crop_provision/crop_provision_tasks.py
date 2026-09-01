@@ -151,6 +151,14 @@ def crop_subsistence_gep(p):
 
     # Step 01: own consumption per country and survey year, the reference's arithmetic and the
     # unit-corrected one side by side.
+    # The observed national shares, latest survey per country, as the imputation's evidence base.
+    rulis = read(p.crop_subsistence_rulis_path, delimiter=';')
+    observed_shares = rulis[
+        (rulis['Indicator'] == crop_provision_functions.RULIS_OWN_CONSUMPTION_INDICATOR)
+        & (rulis['Disaggregation'] == crop_provision_functions.RULIS_NATIONAL)]
+    observed_shares = observed_shares.sort_values('Year').groupby(
+        'Country', as_index=False).last()[['Country', 'Value']]
+
     df_own = crop_provision_functions.subsistence_own_consumption(
         read(p.crop_subsistence_rulis_path, delimiter=';'),
         read(p.crop_subsistence_wb_income_history_path, delimiter=';'),
@@ -196,9 +204,35 @@ def crop_subsistence_gep(p):
             crop_provision_functions.subsistence_on_country_list(
                 df_deflated, p.df_countries, base_year))
 
-    df_panel_published, df_by_country = delivered['own_con_corrected']
-    df_by_country['crop_subsistence_gep_reference'] = (
-        delivered['own_con'][1]['crop_subsistence_gep'].values)
+    # The account's own method: the same corrected units, but the own-consumption SHARE imputed
+    # where no survey reached a country, rather than the own-consumption LEVEL regressed on cropland
+    # area. Three of the four factors are then the country's own. Built directly at the base year,
+    # so no CPI step applies -- the intensity is already in that year's money.
+    df_ours = crop_provision_functions.subsistence_value_from_shares(
+        read(p.crop_subsistence_area_value_path, delimiter=';'),
+        read(p.crop_subsistence_lowder_path, delimiter=';'),
+        read(p.crop_subsistence_wb_income_group_path, delimiter=';'),
+        read(p.crop_subsistence_wb_income_history_path, delimiter=';'),
+        crop_provision_functions.impute_own_consumption_shares(
+            observed_shares, read(p.crop_subsistence_wb_income_group_path, delimiter=';')),
+        base_year)
+    df_ours = df_ours.rename(columns={'own_con': 'own_con2'})
+    df_ours = crop_provision_functions.apply_subsistence_rental_rate(
+        df_ours, read_crop_coefs_raw(p.cwon_crop_coefficients_path))
+    df_ours['crop_subsistence_gep'] = df_ours['gep_value']
+    df_ours['own_con_source'] = df_ours['share_source']
+    df_ours['own_con'] = df_ours['own_con2']
+    df_by_country = crop_provision_functions.subsistence_on_country_list(
+        df_ours, p.df_countries, base_year)
+    df_panel_published = df_ours
+
+    # The reference's two figures, joined on so each change is separable: the units alone, and the
+    # units plus its own extrapolation.
+    for column, source in (('crop_subsistence_gep_units_only', 'own_con_corrected'),
+                           ('crop_subsistence_gep_reference', 'own_con')):
+        theirs = delivered[source][1][['iso3_r250_label', 'crop_subsistence_gep']].rename(
+            columns={'crop_subsistence_gep': column})
+        df_by_country = df_by_country.merge(theirs, on='iso3_r250_label', how='left')
 
     hb.df_write(df_panel_published, p.crop_subsistence_panel_path)
     utilities.write_gep_by_country(

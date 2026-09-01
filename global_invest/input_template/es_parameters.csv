@@ -166,11 +166,11 @@ flood,flood_with_pop,false
 flood,flood_write_damage_rasters,true
 flood,flood_write_depthbin,false
 flood,flood_write_service_flow_rasters,true
-flood,flood_msi_shared_dir,/projects/standard/jajohns/shared/flood_gep
-flood,flood_msi_inputs_dir,/projects/standard/jajohns/shared/flood_gep/inputs
-flood,flood_msi_mosaic_dir,/projects/standard/jajohns/shared/flood_gep/inputs/counterfactual_mosaic
-flood,flood_msi_results_v2_dir,/projects/standard/jajohns/shared/flood_gep/results_v2_2024hazard
-flood,flood_msi_code_dir,/projects/standard/jajohns/shared/flood_gep/code/global_invest/flood
+flood,flood_msi_shared_dir,
+flood,flood_msi_inputs_dir,
+flood,flood_msi_mosaic_dir,
+flood,flood_msi_results_v2_dir,
+flood,flood_msi_code_dir,
 flood,flood_msi_conda_env,/users/4/coles081/envs/earth_econ
 flood,flood_gep_for_merge_path,global_invest/flood/flood_gep_for_merge_v2_2024hazard.csv
 flood,flood_gep_for_merge_source_url,https://github.com/nkdampha/global_flood_gep

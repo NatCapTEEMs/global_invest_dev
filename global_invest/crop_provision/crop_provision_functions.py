@@ -111,6 +111,7 @@ RULIS_SETTLEMENT_DISAGGREGATIONS = ('Rural', 'Urban')
 # name carries an en dash, which is what the published table uses.
 LOWDER_AREA_SHARE_ROW = 'share of agricultural area (%)'
 LOWDER_SMALLHOLDER_COLUMNS = ('< 1 ha', '1–2 ha')
+LOWDER_REGION_COLUMN = 'Region'
 
 # FAOSTAT's Land Use domain, which carries both areas and the production intensity.
 LAND_USE_VALUE_PER_AREA_ELEMENT = 'Value of agricultural production (Int. $) per Area'
@@ -571,3 +572,123 @@ def subsistence_on_country_list(df_deflated, df_countries, base_year):
             % (valued_in - valued_out, valued_in))
     joined['year'] = base_year
     return joined
+
+
+# The regional median needs enough observations behind it to mean anything. Middle East and North
+# Africa has one survey and East Asia and Pacific two, so those fall back to the global median and
+# every row records which it used.
+SUBSISTENCE_MINIMUM_SURVEYS_PER_REGION = 3
+
+
+def impute_own_consumption_shares(df_observed, df_income,
+                                  minimum_per_region=SUBSISTENCE_MINIMUM_SURVEYS_PER_REGION):
+    """An own-consumption share for every country, observed where a survey exists and imputed where
+    it does not, with the source of each recorded.
+
+    This is the correction to the reference's extrapolation, and the reason for it is that the two
+    approaches impute different things. The reference regresses the own-consumption *level* on
+    cropland area across countries, which fills 1,339 of its 1,610 rows -- and cropland area is the
+    largest term in the formula that produced the level being fitted, so the fit is close to
+    circular and the fitted rows swamp the 49 observed ones. What the survey actually measures is a
+    *share*: a ratio of two quantities that move together, bounded between nothing and everything,
+    and far more portable across countries than a total is. So the share is what gets imputed here,
+    and the country's own cropland, own production intensity and own regional farm-size structure
+    supply everything else. An unsurveyed country's estimate is then built from four numbers of
+    which three are its own.
+
+    Args:
+        df_observed (pd.DataFrame): Country and Value, the observed national shares as percentages.
+        df_income (pd.DataFrame): the World Bank table carrying Country and Region.
+        minimum_per_region (int): surveys a region needs before its median is used.
+
+    Returns:
+        pd.DataFrame: Country, own_consumption_share (a fraction), share_source.
+    """
+    observed = df_observed.merge(df_income[['Country', 'Region']], on='Country', how='left')
+    counts = observed.groupby('Region')['Value'].count()
+    medians = observed.groupby('Region')['Value'].median()
+    usable = {region: medians[region] for region in medians.index
+              if counts[region] >= minimum_per_region}
+    global_median = observed['Value'].median()
+
+    rows = []
+    for _, row in df_income.iterrows():
+        country, region = row['Country'], row.get('Region')
+        match = observed[observed['Country'] == country]
+        if len(match):
+            rows.append((country, match['Value'].iloc[0] / PERCENT, 'observed'))
+        elif region in usable:
+            rows.append((country, usable[region] / PERCENT,
+                         'regional median (%s, n=%d)' % (region, counts[region])))
+        elif pd.notna(global_median):
+            rows.append((country, global_median / PERCENT, 'global median'))
+    out = pd.DataFrame(rows, columns=['Country', 'own_consumption_share', 'share_source'])
+    hb.log('Own-consumption shares: %d observed, %d regional median, %d global median.'
+           % ((out['share_source'] == 'observed').sum(),
+              out['share_source'].str.startswith('regional').sum(),
+              (out['share_source'] == 'global median').sum()))
+    return out.drop_duplicates('Country')
+
+
+def low_and_lower_middle_income_countries(df_wb_hist, year):
+    """The countries the account estimates subsistence for in a given year.
+
+    The reference restricts its panel to the World Bank's low and lower-middle-income classes and
+    that scope is kept, both because subsistence cropping is negligible above it and because
+    changing the scope at the same time as the method would leave the two changes confounded.
+    """
+    long = df_wb_hist.melt(id_vars=['Country'], var_name='Year', value_name='wb_income')
+    long = long[long['Year'].str.isdigit()]
+    long['Year'] = long['Year'].astype(int)
+    in_year = long[(long['Year'] == year) & (long['wb_income'].isin(EXTRAPOLATION_INCOME_CLASSES))]
+    return in_year[['Country', 'wb_income']].drop_duplicates('Country')
+
+
+def subsistence_value_from_shares(df_area_value, df_lowder, df_income, df_wb_hist, df_shares,
+                                  year):
+    """Subsistence crop production, built for every eligible country from its own structural data.
+
+    Four factors, of which three are the country's own: its cropland area, its production intensity
+    and its region's farm-size structure, with only the own-consumption share imputed where no
+    survey reached it. Every unit is read as its source labels it -- cropland out of thousands of
+    hectares, both survey figures out of percentages.
+
+    Args:
+        df_area_value (pd.DataFrame): the FAOSTAT Land Use extract.
+        df_lowder (pd.DataFrame): the Lowder et al. (2021) farm-size table.
+        df_income (pd.DataFrame): the World Bank region and income group table.
+        df_wb_hist (pd.DataFrame): the World Bank historical income classification.
+        df_shares (pd.DataFrame): Country, own_consumption_share, share_source.
+        year (int): the year to build.
+
+    Returns:
+        pd.DataFrame: Country, alpha-3, Year, and own_con with the shares and terms behind it.
+    """
+    cropland = cropland_area(df_area_value)
+    cropland = cropland[cropland['Year'] == year][['Country', 'Value']].rename(
+        columns={'Value': 'cropland_1000_ha'})
+    intensity = production_intensity(df_area_value)
+    intensity = intensity[intensity['Year'] == year][['Country', PER_AREA_COLUMN]]
+
+    rows = smallholder_area_shares(df_lowder)
+    smallholder = rows[[LOWDER_REGION_COLUMN]].copy()
+    smallholder['smallholder_area_share'] = sum(
+        pd.to_numeric(rows[c], errors='coerce') for c in LOWDER_SMALLHOLDER_COLUMNS) / PERCENT
+
+    df = low_and_lower_middle_income_countries(df_wb_hist, year)
+    df = df.merge(df_income[['Country', 'Region', 'Code']].rename(columns={'Code': 'alpha-3'}),
+                  on='Country', how='left')
+    df = df.merge(smallholder, on='Region', how='left')
+    df = df.merge(cropland, on='Country', how='left')
+    df = df.merge(intensity, on='Country', how='left')
+    df = df.merge(df_shares, on='Country', how='left')
+
+    df['Year'] = year
+    df['own_con'] = (df['cropland_1000_ha'] * THOUSAND_HECTARES
+                     * df['smallholder_area_share']
+                     * df[PER_AREA_COLUMN]
+                     * df['own_consumption_share'])
+    complete = df['own_con'].notna()
+    hb.log('Subsistence from shares, %d: %d eligible countries, %d with every term present.'
+           % (year, len(df), int(complete.sum())))
+    return df[complete].copy()

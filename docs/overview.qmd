@@ -7,7 +7,7 @@ coastal_eez: "$17.72bn"
 coastal_all: "$58.75bn"
 coastal_report: "$26.65bn"
 crop_total: "$623bn"
-crop_subsistence_total: "$18.32bn"
+crop_subsistence_total: "$24.93bn"
 crop_subsistence_reference: "$1.83bn"
 extractive_total: "$99.54bn"
 extractive_alt: "$203bn"
@@ -359,7 +359,7 @@ format:
 
 - [Values crop production from FAOSTAT production values, quantity times producer price per country, times the land rental rate. We run it ourselves and it replicates, validated against the reference table.]{.state}
 - **Q1:** does the account add crop_provision and pollination? The reasoning is on the pollination slide.
-- **Q2:** is subsistence in scope as a separate crop subgroup? Adding it would double-count, because FAOSTAT's production values already include part of what households grow and eat themselves. The reference pipeline is now ported. Its units disagree with its sources (cropland in thousands of hectares against an intensity per hectare), so we publish {{< meta crop_subsistence_total >}} across 66 countries and its own arithmetic, {{< meta crop_subsistence_reference >}}, beside it as proof the port is faithful.
+- **Q2:** is subsistence in scope as a separate crop subgroup? Adding it would double-count, because FAOSTAT's production values already include part of what households grow and eat themselves. The reference pipeline is now ported and its own arithmetic, {{< meta crop_subsistence_reference >}}, reproduces beside ours as proof the port is faithful. We publish {{< meta crop_subsistence_total >}}: its units disagree with its sources, and it predicts the own-consumption level from cropland area where the survey measures a share.
 - **Q3:** should 32 countries with no FAOSTAT production value be reported as zero, as they are now, or left unvalued? Uganda, Uzbekistan and Guatemala have no gross production value in any year from 2014 to 2021, and Zimbabwe has 2018 and 2021 but not 2019, so a zero says they grew nothing. Whether the reference table we reproduce carries zeros there decides it.
 
 ## livestock_provision
