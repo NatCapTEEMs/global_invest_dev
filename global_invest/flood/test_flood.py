@@ -20,6 +20,7 @@ import re
 
 import pytest
 
+from global_invest import utilities
 from global_invest.flood import flood_functions as ff
 
 
@@ -466,3 +467,43 @@ def test_a_missing_amplification_raster_stops_the_run_rather_than_zeroing_the_ge
         ft._open_amplification_raster(p, 'degraded_bare', 100)
     assert 'degraded_bare' in str(raised.value)
     assert 'exactly zero' in str(raised.value)
+
+
+def test_the_account_country_layer_works_as_the_flood_admin0():
+    """Condition 2. Flood read its country boundary from the author's staged
+    `country_boundary_r250_with_iso3.gpkg`, and the thing stopping the switch was step4D taking
+    `region_wb` off the geometry: the account's layer carries iso3 id, label and name, and no region.
+
+    Step4D now takes the region from the shared country table, so the account's own layer is usable.
+    This checks the three things that have to hold for that, because each has bitten once: the layer
+    resolves one row per country, the ISO3 detector picks the right column out of it, and the region
+    the export needs is available from the table rather than the geometry.
+    """
+    import os
+    import geopandas as gpd
+
+    layer = os.path.join(os.path.expanduser('~'), 'Files', 'base_data', 'cartographic', 'ee',
+                         'ee_r250.gpkg')
+    correspondence = os.path.join(os.path.expanduser('~'), 'Files', 'base_data', 'cartographic',
+                                  'ee', 'ee_r264_correspondence.csv')
+    if not (os.path.exists(layer) and os.path.exists(correspondence)):
+        pytest.skip('the account country layer is not on this machine')
+
+    admin0 = gpd.read_file(layer)
+    assert len(admin0) == 250                                  # one row per country, not 264
+    assert admin0.crs is not None
+
+    # The detector must find the account's own label, not Natural Earth's adm0_a3. Against the r264
+    # correspondence it picks adm0_a3 and would silently key the export on a different vocabulary.
+    iso_col = utilities.pick_iso3_column(admin0)
+    assert iso_col == 'iso3_r250_label', iso_col
+    assert admin0[iso_col].nunique() == 250
+
+    # And the region step4D needs is absent from the geometry and present in the table, which is
+    # the whole reason the export had to stop reading it off the boundary.
+    assert 'region_wb' not in admin0.columns
+    countries = utilities.collapse_countries_to_r250(pd.read_csv(correspondence))
+    assert 'region_wb' in countries.columns
+    region = countries[['iso3_r250_label', 'region_wb']]
+    joined = admin0[[iso_col]].merge(region, left_on=iso_col, right_on='iso3_r250_label', how='left')
+    assert joined['region_wb'].notna().sum() > 200

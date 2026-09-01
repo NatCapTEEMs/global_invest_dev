@@ -175,7 +175,7 @@ flood,flood_msi_conda_env,/users/4/coles081/envs/earth_econ
 flood,flood_gep_for_merge_path,global_invest/flood/flood_gep_for_merge_v2_2024hazard.csv
 flood,flood_gep_for_merge_source_url,https://github.com/nkdampha/global_flood_gep
 flood,flood_avoided_damage_path,global_invest/flood/country_avoided_damage_usd2019.csv
-flood,flood_country_vector_path,
+flood,flood_country_vector_path,cartographic/ee/ee_r250.gpkg
 flood,flood_sda_raster_path,
 flood,flood_reference_gep_ours_path,global_invest/flood/reference/step4e_flood_gep_USD2019_ours_20260831.csv
 flood,flood_reference_gep_waterkept_path,global_invest/flood/reference/step4e_flood_gep_USD2019_waterkept_20260831.csv
