@@ -136,32 +136,40 @@ prints ALL MATCH or the quantity that differs.
 
 ### The account should compute this itself
 
-⚠ **Reading the author's per-country export is an interim, not the destination.**
+**The account computes this figure rather than reading it.** That was not true until 2026-09-01
+and this page said so; it is true now.
 
-Not because every service computes its own — about a third do not, and for some that is right: the
-account does not recompute the World Bank's CWON resource rents for extractive materials or energy,
-because the published rent *is* the source. The distinction is whether we hold a model we could run.
+Four of the six tasks run here: `task_compute_service_flow`, `task_compute_flood_damages`,
+`task_compute_flood_gep` and `task_generate_maps_and_figures`. The GEP chain with the
+counterfactuals gives **$11,403,596,548** across 250 rows, positive in 163, against the author's
+published $11.40bn -- his rounding to one decimal, and his committed table agrees with ours to the
+cent, 250 of 250 countries, largest per-country difference $0.000000. `gep = ead_bare - ead_current`
+holds to 1.2e-07 on every row, and the damage side reproduces at $887,827,659,820 /
+$194,256,309,530 / $551,051,565,602.
 
-Flood's peers are stormwater and air filtration, both recorded as "not yet": a model that exists,
-that we have, and that has not been run here. Erosion is the case to follow — it has no scenario
-shock either, and it still runs the sediment model here and reports $13.96bn against the author's
-$14.59bn.
+The two tasks that do not run here are `task_prepare_flood_inputs` and `task_build_sda`, which are
+Sections A and B. That is deliberate on the author's part rather than a gap: his RUN.md tells a
+reader to copy the staged Sections B and C across because rebuilding them turns a three-hour run
+into an eleven-hour one. A cold start of those two began on 2026-09-01, once the inputs they need
+were staged into base_data -- the aligned JRC depths at 1.3 GB and the service-providing-area raster
+at 144 MB.
 
-The distinction worth keeping: **producing our own number** is what the library is for, and it is
-what makes the figure reproducible, auditable and rerunnable here. **Comparing it to the author's**
-is a fidelity check and not a correctness one. The second does not argue against the first.
+⚠ **What reproducing him does and does not establish.** The module is his pipeline with our path
+handling and ProjectFlow wiring, so agreement was close to guaranteed. It is a build test: it
+catches our refactor breaking his arithmetic, and says nothing about whether the arithmetic is
+right.
 
-Until then, `gep_calculation` reads `flood_gep_for_merge_v2_2024hazard.csv` and the account carries
-his $11.40bn. That is honest and it is not finished.
+⚠ **The water variant moves this figure more than anything else in it.** The run writes four, and
+`gep_flood_bare` is $6.29bn on 4rp, $7.34bn on v1_2016, $11.40bn on v2_2024_waterremoved -- the
+delivered one -- and $24.54bn on v2_2024_waterkept. Keeping permanent water more than doubles the
+headline. The author has reported about $11.4bn consistently, in correspondence and in his committed
+table, so waterremoved is the account's variant; the gap is pinned by a test so it cannot drift
+unnoticed.
 
-### What running it needs
+### What running the remaining two needs
 
-
-
-The inputs are on MSI at `/projects/standard/jajohns/shared/flood_gep`, read-only, so a run needs a
-writable root with those inputs linked in and the Sections B and C rasters copied across — about
-1 GB, without which a run rebuilds them and takes eleven hours rather than three. In this library
-the root is `flood_root_dir` in `es_parameters.csv` rather than the source repo's `GEP_FLOOD_ROOT`
-environment variable, so only the linking and copying carry over.
-
-⚠ **Not done as of 2026-08-28.** Nothing here has been run; the account reads his export.
+The inputs live on MSI at `/projects/standard/jajohns/shared/flood_gep`, read-only. What Sections A
+and B actually need from it is small -- `flood_depth_aligned_path` and `flood_spa_path`, 1.5 GB with
+the optional population grid -- and both are staged in base_data now with the template carrying the
+references. The 129 GB of counterfactual amplification rasters in that tree feed
+`task_compute_flood_gep`, which already runs, so they are not part of this.
