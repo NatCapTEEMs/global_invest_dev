@@ -89,8 +89,9 @@ def attach_countries_in_usd(df_crop_value, df_countries, value_column='crop_prov
 #
 # Reproducing the reference is what makes a disagreement with it worth stating, which is the lesson
 # pollination taught: the coffee split was only actionable because both sides ran the same numbers.
-# What the reproduction cannot test is stated in the status entry -- an error the reference makes,
-# this makes too, and `subsistence_own_consumption_corrected` is where the one we found is undone.
+# What the reproduction cannot test is an error the reference makes that this makes too -- so where
+# we found one, the account publishes our arithmetic and the reference's is published beside it.
+# `subsistence_own_consumption` computes both in one pass for exactly that reason.
 # =================================================================================================
 
 # FAO RuLIS stacks four indicators in one export. The one beside this is the share of agricultural

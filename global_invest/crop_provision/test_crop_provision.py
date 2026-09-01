@@ -323,3 +323,40 @@ def test_a_year_takes_the_rate_of_the_decade_it_falls_in():
     out = cp.apply_subsistence_rental_rate(panel, coefs)
     assert out['rental_rate'].iloc[0] == 0.3
     assert out['gep_value'].iloc[0] == pytest.approx(30.0)
+
+
+def test_the_commercial_figure_matches_the_reference_output_country_by_country():
+    """The claim that crop_provision reproduces its reference was carried in the status table for
+    weeks while the reference sat in nobody's repository and no test looked at it. It is staged
+    now, so this compares against it rather than asserting agreement.
+
+    Skips rather than fails when base_data is absent, because a machine without it is not a machine
+    this can speak about."""
+    import os
+    reference_path = os.path.join(
+        os.path.expanduser('~'), 'Files', 'base_data', 'global_invest', 'crop_provision',
+        'reference', 'gep_by_country_2019_reference.csv')
+    project_path = os.path.join(
+        os.path.expanduser('~'), 'Files', 'global_invest', 'projects', 'gep_crop_provision',
+        'intermediate', 'gep_calculation', 'gep_by_country_year.csv')
+    if not (os.path.exists(reference_path) and os.path.exists(project_path)):
+        pytest.skip('base_data reference or a crop_provision run is not on this machine')
+
+    # FAOSTAT carries dissolved states beside their successors -- "Ethiopia PDR" next to Ethiopia,
+    # "Serbia and Montenegro" next to Serbia -- under one M49 code each. The reference leaves those
+    # rows stranded at zero; this library maps them to the successor, which is one of the two fixes
+    # crop_provision documents. So the reference is summed onto the M49 code before comparing,
+    # which is the same collapse, and comparing row for row instead would count Ethiopia twice.
+    reference = pd.read_csv(reference_path, encoding='utf-8-sig')
+    reference = reference.groupby('area_code_M49', as_index=False).agg(
+        crop_provision_gep_reference=('crop_provision_gep_reference', 'sum'))
+    ours = pd.read_csv(project_path)
+    ours = ours[ours['year'] == 2019]
+    joined = reference.merge(ours[['iso3_r250_id', 'crop_provision_gep']],
+                             left_on='area_code_M49', right_on='iso3_r250_id', how='inner')
+    assert len(joined) == len(reference)
+    relative = ((joined['crop_provision_gep'] - joined['crop_provision_gep_reference']).abs()
+                / joined['crop_provision_gep_reference'].abs().replace(0, np.nan))
+    assert relative.max() < 1e-12
+    assert joined['crop_provision_gep'].sum() == pytest.approx(
+        joined['crop_provision_gep_reference'].sum(), rel=1e-12)

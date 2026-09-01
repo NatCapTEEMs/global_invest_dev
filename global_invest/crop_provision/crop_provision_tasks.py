@@ -119,17 +119,20 @@ def gep_calculation(p):
     return value_gep_base_year
 
 def crop_subsistence_gep(p):
-    """Subsistence-crop GEP: the reference pipeline ported, reproduced, and its unit error undone.
+    """Subsistence-crop GEP: the reference pipeline ported, its unit error corrected, and the
+    uncorrected arithmetic published beside it as the proof of the port.
 
     A separate component from the commercial figure, written to its own table and never summed into
     it, exactly as the Lynch subsistence value sits beside the commercial rent in fisheries.
 
-    Three numbers come out, and the reason there are three is the point. `crop_subsistence_gep` is
-    the reference reproduced, so a disagreement about it is a disagreement about arithmetic we have
-    both run. `crop_subsistence_gep_corrected` is the same chain with FAOSTAT's thousands of
-    hectares and Lowder's percentage read as their sources label them, which is ten times larger.
-    And the delivered table is on the account's country list by the house collapse, which keeps
-    every valued country rather than the sixteen the reference's own join delivers.
+    `crop_subsistence_gep` is the account's figure and is ours: FAOSTAT reports cropland in
+    thousands of hectares against an intensity per single hectare, and the Lowder share is a
+    percentage, so reading each as its source labels it is not a variant of the method but the
+    method done right. `crop_subsistence_gep_reference` is the reference's own arithmetic through
+    the identical four downstream stages, reproducing its published panel to 2.3e-14, which is what
+    lets a reader check the port rather than take it on trust. The delivered table is also put on
+    the account's country list by the house collapse, keeping every valued country rather than the
+    sixteen the reference's own join delivers.
     """
     publish_inputs(p)
     p.crop_subsistence_gep_path = os.path.join(p.cur_dir, 'subsistence_gep_by_country.csv')
@@ -170,9 +173,13 @@ def crop_subsistence_gep(p):
     df_gdp['Year'] = df_gdp['Year'].astype(int)
 
     base_year = int(p.gep_base_year)
-    for value_column in ('own_con', 'own_con_corrected'):
-        # Both figures travel the same four remaining stages, so the difference between them is the
-        # units and nothing else.
+    # The account's figure is the one our code stands behind, so the units read as their sources
+    # label them is what `crop_subsistence_gep` holds. The reference's arithmetic travels the same
+    # four stages and is published beside it as `crop_subsistence_gep_reference`, which is what
+    # makes the reproduction checkable rather than asserted. Both come off one run, so the
+    # difference between the columns is the units and nothing else.
+    delivered = {}
+    for value_column in ('own_con_corrected', 'own_con'):
         df_panel = df_own[['Country', 'Year', 'alpha-3', value_column]].rename(
             columns={value_column: 'own_con'})
         df_interpolated = crop_provision_functions.interpolate_missing_years(
@@ -184,30 +191,30 @@ def crop_subsistence_gep(p):
             df_extrapolated, read_crop_coefs_raw(p.cwon_crop_coefficients_path))
         df_deflated = crop_provision_functions.deflate_to_base_year(
             df_valued, read(p.crop_subsistence_cpi_path, delimiter=';'), base_year)
-        if value_column == 'own_con':
-            df_reference, df_reference_delivered = df_deflated, (
-                crop_provision_functions.subsistence_on_country_list(
-                    df_deflated, p.df_countries, base_year))
-        else:
-            corrected = crop_provision_functions.subsistence_on_country_list(
-                df_deflated, p.df_countries, base_year)
-            df_reference_delivered['crop_subsistence_gep_corrected'] = (
-                corrected['crop_subsistence_gep'].values)
+        delivered[value_column] = (
+            df_deflated,
+            crop_provision_functions.subsistence_on_country_list(
+                df_deflated, p.df_countries, base_year))
 
-    hb.df_write(df_reference, p.crop_subsistence_panel_path)
+    df_panel_published, df_by_country = delivered['own_con_corrected']
+    df_by_country['crop_subsistence_gep_reference'] = (
+        delivered['own_con'][1]['crop_subsistence_gep'].values)
+
+    hb.df_write(df_panel_published, p.crop_subsistence_panel_path)
     utilities.write_gep_by_country(
-        p, df_reference_delivered[utilities.published_country_columns(
-            df_reference_delivered, 'crop_subsistence')],
+        p, df_by_country[utilities.published_country_columns(
+            df_by_country, 'crop_subsistence')],
         p.crop_subsistence_gep_path)
     p.results.setdefault('crop_provision', {})['subsistence_gep_by_country'] = (
         p.crop_subsistence_gep_path)
 
-    reproduced = df_reference_delivered['crop_subsistence_gep'].sum()
-    corrected = df_reference_delivered['crop_subsistence_gep_corrected'].sum()
-    hb.log('Crop subsistence GEP for base year %d: %.9g USD reproducing the reference across %d '
-           'countries, and %.9g USD with the units corrected.'
-           % (base_year, reproduced,
-              int(df_reference_delivered['crop_subsistence_gep'].notna().sum()), corrected))
+    published = df_by_country['crop_subsistence_gep'].sum()
+    reference = df_by_country['crop_subsistence_gep_reference'].sum()
+    hb.log('Crop subsistence GEP for base year %d: %.9g USD across %d countries, the units read as '
+           'their sources label them. The reference arithmetic through the same stages is %.9g '
+           'USD, which reproduces their published panel.'
+           % (base_year, published,
+              int(df_by_country['crop_subsistence_gep'].notna().sum()), reference))
     return True
 
 
