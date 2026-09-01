@@ -122,10 +122,9 @@ COVARIATE_COLUMNS = ('GDP_capita', 'Value', 'cropland_ha_1000', 'agricultural_la
                      'is_low_income', 'is_lower_middle_income')
 
 # Both survey shares are published as percentages, and FAOSTAT publishes both areas in thousands of
-# hectares against an intensity per single hectare. Keeping the three constants separate is what
-# makes the unit finding below legible rather than a magic factor of ten.
-PERCENT = 100.0
-THOUSAND_HECTARES = 1000.0
+# hectares against an intensity per single hectare. Those three facts are what the reference's
+# arithmetic gets wrong, and each conversion is written out at the point it happens rather than
+# hidden behind a named constant.
 
 # The reference resolves countries by name and needs one alias to do it.
 SUBSISTENCE_COUNTRY_ALIASES = {'United Republic of Tanzania': 'Tanzania, United Republic of'}
@@ -223,7 +222,7 @@ def cropland_area(df_area_value):
 
 
 def smallholder_area_shares(df_lowder):
-    """The share of agricultural area held in farms under two hectares, by region, as PERCENT.
+    """The share of agricultural area held in farms under two hectares, by region, as a percentage.
 
     The percentage is left as the source publishes it, because the reference's arithmetic consumes
     it that way and the port has to reproduce the reference before it corrects it.
@@ -287,13 +286,14 @@ def subsistence_own_consumption(df_rulis, df_wb_hist, df_area_value, df_income, 
 
     # The reference's arithmetic, reproduced.
     df['own_con'] = (df['Value_x'] * smallholder_percent * df[PER_AREA_COLUMN]
-                     * own_share_percent / PERCENT)
+                     * own_share_percent / 100.0)
     # The same chain with every unit read as its source labels it: cropland out of thousands of
-    # hectares, and both survey percentages out of 100. Larger by THOUSAND_HECTARES / PERCENT.
-    df['own_con_corrected'] = (df['Value_x'] * THOUSAND_HECTARES
-                               * (smallholder_percent / PERCENT)
+    # hectares into hectares, and both survey percentages out of 100 into fractions. That is
+    # 1000 times larger and 100 times smaller, so ten times the line above.
+    df['own_con_corrected'] = (df['Value_x'] * 1000.0
+                               * (smallholder_percent / 100.0)
                                * df[PER_AREA_COLUMN]
-                               * (own_share_percent / PERCENT))
+                               * (own_share_percent / 100.0))
     return df[['Country', 'Year', 'alpha-3', 'Region', 'Income group',
                'own_con', 'own_con_corrected']]
 
@@ -519,10 +519,10 @@ def consumer_price_index(df_cpi, base_year):
         group.loc[base, 'CPI'] = 100
         for i in range(base + 1, len(group)):
             group.loc[i, 'CPI'] = group.loc[i - 1, 'CPI'] * (
-                1 + group.loc[i, 'Inflation_Rate'] / PERCENT)
+                1 + group.loc[i, 'Inflation_Rate'] / 100.0)
         for i in range(base - 1, -1, -1):
             group.loc[i, 'CPI'] = group.loc[i + 1, 'CPI'] / (
-                1 + group.loc[i + 1, 'Inflation_Rate'] / PERCENT)
+                1 + group.loc[i + 1, 'Inflation_Rate'] / 100.0)
         parts.append(group)
     if not parts:
         raise ValueError('No country in the CPI table has a %d row to index on.' % base_year)
@@ -607,12 +607,12 @@ def impute_own_consumption_shares(df_observed, df_income,
         country, region = row['Country'], row.get('Region')
         match = observed[observed['Country'] == country]
         if len(match):
-            rows.append((country, match['Value'].iloc[0] / PERCENT, 'observed'))
+            rows.append((country, match['Value'].iloc[0] / 100.0, 'observed'))
         elif region in usable:
-            rows.append((country, usable[region] / PERCENT,
+            rows.append((country, usable[region] / 100.0,
                          'regional median (%s, n=%d)' % (region, counts[region])))
         elif pd.notna(global_median):
-            rows.append((country, global_median / PERCENT, 'global median'))
+            rows.append((country, global_median / 100.0, 'global median'))
     out = pd.DataFrame(rows, columns=['Country', 'own_consumption_share', 'share_source'])
     hb.log('Own-consumption shares: %d observed, %d regional median, %d global median.'
            % ((out['share_source'] == 'observed').sum(),
@@ -664,7 +664,7 @@ def subsistence_value_from_shares(df_area_value, df_lowder, df_income, df_wb_his
     rows = smallholder_area_shares(df_lowder)
     smallholder = rows[[LOWDER_REGION_COLUMN]].copy()
     smallholder['smallholder_area_share'] = sum(
-        pd.to_numeric(rows[c], errors='coerce') for c in LOWDER_SMALLHOLDER_COLUMNS) / PERCENT
+        pd.to_numeric(rows[c], errors='coerce') for c in LOWDER_SMALLHOLDER_COLUMNS) / 100.0
 
     df = low_and_lower_middle_income_countries(df_wb_hist, year)
     df = df.merge(df_income[['Country', 'Region', 'Code']].rename(columns={'Code': 'alpha-3'}),
@@ -675,7 +675,7 @@ def subsistence_value_from_shares(df_area_value, df_lowder, df_income, df_wb_his
     df = df.merge(df_shares, on='Country', how='left')
 
     df['Year'] = year
-    df['own_con'] = (df['cropland_1000_ha'] * THOUSAND_HECTARES
+    df['own_con'] = (df['cropland_1000_ha'] * 1000.0
                      * df['smallholder_area_share']
                      * df[PER_AREA_COLUMN]
                      * df['own_consumption_share'])
@@ -736,7 +736,7 @@ def agricultural_ppp_factors(df_area_value, df_value_of_production, df_income, y
     df = land.merge(intensity, on='Country').merge(value, on='Country')
     df = df[(df['agricultural_usd'] > 0) & df['int_per_ha'].notna()
             & df['agricultural_1000_ha'].notna()]
-    df['ppp_factor'] = (df['agricultural_1000_ha'] * THOUSAND_HECTARES * df['int_per_ha']
+    df['ppp_factor'] = (df['agricultural_1000_ha'] * 1000.0 * df['int_per_ha']
                         / df['agricultural_usd'])
     observed = df[['Country', 'ppp_factor']].merge(df_income[['Country', 'Region']],
                                                    on='Country', how='left')

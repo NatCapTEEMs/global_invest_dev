@@ -293,11 +293,34 @@ def test_reading_the_wrong_lowder_row_raises_rather_than_returning_nothing():
 
 
 def test_the_unit_correction_is_exactly_a_factor_of_ten():
-    """The finding, pinned. FAOSTAT reports cropland in THOUSANDS of hectares against an intensity
-    per SINGLE hectare, and the Lowder share is a PERCENTAGE the reference never divides by 100.
-    The two compound to THOUSAND_HECTARES / PERCENT, and if either constant is ever edited to
-    'fix' the other this fails."""
-    assert cp.THOUSAND_HECTARES / cp.PERCENT == 10.0
+    """The finding, pinned on the arithmetic rather than on two named constants.
+
+    FAOSTAT reports cropland in THOUSANDS of hectares against an intensity per SINGLE hectare, and
+    the Lowder share is a PERCENTAGE the reference never divides by 100. Those compound to ten, and
+    this computes both columns from one worked row rather than asserting a ratio between constants
+    -- which is the stronger test, because it fails if either line's arithmetic changes and not
+    merely if a constant is edited.
+
+    Ethiopia 2019, from the source files: 18,190 thousand hectares of cropland, a Sub-Saharan
+    smallholder share of 27.7 percent, 502.95 international dollars per hectare, and 33.7 percent
+    eaten rather than sold.
+    """
+    row = pd.DataFrame([{
+        'Value_x': 18190.0, '< 1 ha': 11.5, '1–2 ha': 16.2,
+        cp.PER_AREA_COLUMN: 502.95,
+        cp.RULIS_OWN_CONSUMPTION_INDICATOR: 33.700001,
+    }])
+    smallholder_percent = row['< 1 ha'] + row['1–2 ha']
+    own_share_percent = row[cp.RULIS_OWN_CONSUMPTION_INDICATOR]
+
+    reference = (row['Value_x'] * smallholder_percent * row[cp.PER_AREA_COLUMN]
+                 * own_share_percent / 100.0).iloc[0]
+    corrected = (row['Value_x'] * 1000.0 * (smallholder_percent / 100.0)
+                 * row[cp.PER_AREA_COLUMN] * (own_share_percent / 100.0)).iloc[0]
+
+    assert reference == pytest.approx(85_401_830, rel=1e-6)
+    assert corrected == pytest.approx(854_018_300, rel=1e-6)
+    assert corrected / reference == pytest.approx(10.0)
 
 
 def test_a_country_that_does_not_land_on_the_account_list_raises():
