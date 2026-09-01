@@ -42,14 +42,12 @@ def build_flood_task_tree(p):
     p.compute_service_flow_task = p.add_task(flood_tasks.task_compute_service_flow)
     p.compute_flood_damages_task = p.add_task(flood_tasks.task_compute_flood_damages)
     p.compute_flood_gep_task = p.add_task(flood_tasks.task_compute_flood_gep)
-    p.generate_maps_and_figures_task = p.add_task(flood_tasks.task_generate_maps_and_figures)
     return p
 
 
 def build_flood_calculation_task_tree(p):
-    """Calculation only: everything except maps and figures."""
+    """Calculation only: the whole chain, which no longer draws anything."""
     build_flood_task_tree(p)
-    p.generate_maps_and_figures_task.run = 0
     return p
 
 
@@ -59,7 +57,6 @@ def build_flood_accounting_task_tree(p):
     build_flood_task_tree(p)
     p.compute_flood_damages_task.run = 0
     p.compute_flood_gep_task.run = 0
-    p.generate_maps_and_figures_task.run = 0
     return p
 
 
@@ -70,13 +67,12 @@ def build_flood_valuation_task_tree(p):
     p.build_sda_task.run = 0
     p.compute_service_flow_task.run = 0
     p.compute_flood_gep_task.run = 0
-    p.generate_maps_and_figures_task.run = 0
     return p
 
 
 def build_flood_gep_task_tree(p):
     """The paired counterfactual, the only tree that produces a service value rather than gross
-    exposure: gep_flood = ead_bare - ead_current, plus the maps."""
+    exposure: gep_flood = ead_bare - ead_current."""
     build_flood_task_tree(p)
     p.prepare_flood_inputs_task.run = 0
     p.build_sda_task.run = 0
@@ -86,13 +82,13 @@ def build_flood_gep_task_tree(p):
 
 
 def build_flood_results_task_tree(p):
-    """Maps and figures from an existing run."""
-    build_flood_task_tree(p)
-    p.prepare_flood_inputs_task.run = 0
-    p.build_sda_task.run = 0
-    p.compute_service_flow_task.run = 0
-    p.compute_flood_damages_task.run = 0
-    p.compute_flood_gep_task.run = 0
+    """Render the report from an existing run, the way every other service's results tree does.
+
+    It used to mean the four publication figures, which nothing read. gep_result was defined all
+    along and wired into no tree, so flood was the one service whose results tree did not render
+    its results page.
+    """
+    p.flood_gep_result_task = p.add_task(flood_tasks.gep_result)
     return p
 
 
@@ -109,10 +105,10 @@ def build_gep_service_calculation_task_tree(p):
 
 
 def build_gep_service_results_task_tree(p):
-    """Results-only: render maps and figures from an existing valuation run."""
+    """Results-only: render the results page from an existing valuation run."""
     return build_flood_results_task_tree(p)
 
 
 def build_gep_service_task_tree(p):
-    """Full GEP run: calculation, then maps and figures."""
+    """Full GEP run: the whole calculation chain."""
     return build_flood_task_tree(p)

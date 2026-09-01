@@ -2507,93 +2507,7 @@ def publish_inputs(p):
 
 
 
-def _load_country_ead(p) -> pd.DataFrame:
-    utilities.assert_exists(p.flood_country_ead_path, "Run Section D (step 4D) before Section E.")
-    df = pd.read_csv(p.flood_country_ead_path)
-    df["iso3"] = df["iso3"].astype(str).str.upper().str.strip()
-    ead_col = utilities.find_col(df, ("ead_usd2019", "ead usd2019", "ead"))
-    if ead_col is None:
-        raise ValueError(f"No EAD column found in {p.flood_country_ead_path}: {list(df.columns)}")
-    df = df.rename(columns={ead_col: "ead_usd2019"})
-    df["ead_usd2019"] = pd.to_numeric(df["ead_usd2019"], errors="coerce")
-    return df
 
-
-def generate_all_maps_and_figures(p) -> dict:
-    """
-    Section E driver: publication figures from Section D's country table --
-    a global EAD choropleth (Fisher-Jenks), a top-N country bar chart, a
-    regional breakdown, and the mean SPA->SDA service-flow map if Section C ran.
-    """
-    hb.create_directories(p.flood_figures_dir)
-    outputs = {}
-
-    country = _load_country_ead(p)
-    admin0 = load_admin0(p.flood_country_vector_path)
-
-    joined = admin0.merge(country, on="iso3", how="left")
-
-    # 1) Global choropleth of Expected Annual Damage
-    png = os.path.join(p.flood_figures_dir, "map_country_ead_USD2019.png")
-    utilities.plot_publication_choropleth_categorical(
-        joined, value_col="ead_usd2019",
-        title="Expected Annual Flood Damage to Service Demanding Areas",
-        out_png=png, legend_title=p.flood_money_unit_label,
-        scheme="fisher_jenks", k=p.flood_map_k_classes,
-        value_unit="usd_millions", label_format="usd_millions",
-    )
-    outputs["map_country_ead"] = png
-    hb.log(f"[OK] Wrote {png}")
-
-    # 2) Top-N countries by EAD
-    top = utilities.top_n(country, "ead_usd2019", p.flood_top_n).copy()
-    if not top.empty:
-        top["_m"] = top["ead_usd2019"] / p.flood_usd_to_millions
-        fig, ax = plt.subplots(figsize=(10, 8))
-        ax.barh(top["iso3"][::-1], top["_m"][::-1])
-        ax.set_xlabel(p.flood_money_unit_label)
-        ax.set_title(f"Top {p.flood_top_n} countries by Expected Annual Flood Damage")
-        png = os.path.join(p.flood_figures_dir, "bar_top_countries_ead.png")
-        utilities.savefig(png)
-        outputs["bar_top_countries"] = png
-        hb.log(f"[OK] Wrote {png}")
-
-    # 3) Regional breakdown, if Step 4D enriched with a region column
-    if "region_wb" in country.columns:
-        reg = (country.groupby("region_wb", dropna=True)["ead_usd2019"]
-               .sum().sort_values(ascending=False) / p.flood_usd_to_millions)
-        if not reg.empty:
-            fig, ax = plt.subplots(figsize=(10, 6))
-            ax.barh(reg.index[::-1], reg.values[::-1])
-            ax.set_xlabel(p.flood_money_unit_label)
-            ax.set_title("Expected Annual Flood Damage by World Bank region")
-            png = os.path.join(p.flood_figures_dir, "bar_region_ead.png")
-            utilities.savefig(png)
-            outputs["bar_region"] = png
-            hb.log(f"[OK] Wrote {png}")
-
-    # 4) Mean SPA -> SDA service flow by country (Section C output)
-    if hb.path_exists(p.flood_service_flow_path):
-        flow = pd.read_csv(p.flood_service_flow_path)
-        if {"iso3", "mean_spa_ratio_on_sda"}.issubset(flow.columns):
-            agg = (flow.groupby("iso3", as_index=False)["mean_spa_ratio_on_sda"].mean())
-            agg["iso3"] = agg["iso3"].astype(str).str.upper()
-            j2 = admin0.merge(agg, on="iso3", how="left")
-            png = os.path.join(p.flood_figures_dir, "map_mean_service_flow_frac.png")
-            utilities.plot_publication_choropleth_categorical(
-                j2, value_col="mean_spa_ratio_on_sda",
-                title="Mean upstream SPA share serving flood-exposed SDA",
-                out_png=png, legend_title="Service flow fraction (0-1)",
-                scheme="quantiles", k=p.flood_map_k_classes,
-                value_unit="raw", label_format="percent",
-            )
-            outputs["map_service_flow"] = png
-            hb.log(f"[OK] Wrote {png}")
-    else:
-        warnings.warn(f"[WARN] No service-flow summary at {p.flood_service_flow_path}; "
-                      "skipping the service-flow map.")
-
-    return outputs
 
 
 # ---------------------------------------------------------------------------------------------
@@ -2896,21 +2810,6 @@ def task_compute_flood_gep(p):
             p, skip_damage_tables=_required(p, 'flood_skip_damage_tables'),
             scenarios=p.flood_gep_scenarios)
 
-    return True
-
-
-def task_generate_maps_and_figures(p):
-    """
-    Task wrapper for Section E: publication-ready choropleths and charts built
-    from task_compute_flood_damages()'s and task_compute_service_flow()'s
-    outputs. Originally analyze_step4d_global_results.py.
-    """
-    publish_inputs(p)
-    p.flood_figures_dir = p.cur_dir
-    if not p.run_this:
-        return True
-
-    generate_all_maps_and_figures(p)
     return True
 
 

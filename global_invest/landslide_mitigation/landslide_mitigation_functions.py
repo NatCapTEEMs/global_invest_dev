@@ -165,11 +165,8 @@ USD_PER_MILLION = 1e6
 # --- Reporting --------------------------------------------------------------------------
 SIGNIFICANCE_LEVELS = ((0.001, '***'), (0.01, '**'), (0.05, '*'))
 TOP_COUNTRY_COUNT = 15                  # rows in the top-countries results table
-CHOROPLETH_BUCKET_EDGES = [0, 1, 5, 15, 50, 100, float('inf')]
 # UGLC event map: deaths per event, open-ended at the top.
 FATALITY_BINS = (('1-5', 1, 5), ('5-25', 5, 25), ('25-100', 25, 100), ('100+', 100, None))
-PLOT_RASTER_MAX_DIM = 4096              # decimate a global raster to this before plotting
-PLOT_PERCENTILES = (2, 98)              # colour-scale range, robust to the long right tail
 
 
 # ============================================================================ #

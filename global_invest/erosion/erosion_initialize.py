@@ -28,15 +28,18 @@ def build_gep_service_calculation_task_tree(p):
 
 
 def build_gep_service_results_task_tree(p):
-    """Results-only: render maps/figures from an existing prevention-share run."""
-    p.maps_and_figures_task = p.add_task(erosion_tasks.maps_and_figures, skip_existing=1)
+    """Results-only run: render the report from a PRIOR calculation's results (does NOT recompute).
+
+    The manuscript figures are no longer a task: nothing downstream read them and the pipeline
+    redrew all thirty-four on every pass. They are `make_erosion_figures.py`, run when wanted.
+    """
+    p.erosion_gep_result_task = p.add_task(erosion_tasks.gep_result)
     return p
 
 
 def build_gep_service_task_tree(p):
-    """Full GEP run: SDR + valuation + maps/figures + the results report."""
+    """Full GEP run: SDR + valuation + the results report."""
     p = build_gep_service_calculation_task_tree(p)
-    p.maps_and_figures_task = p.add_task(erosion_tasks.maps_and_figures, skip_existing=1)
     p.erosion_gep_result_task = p.add_task(erosion_tasks.gep_result)
     return p
 
