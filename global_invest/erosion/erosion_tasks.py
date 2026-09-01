@@ -94,7 +94,7 @@ CROPLAND_SEALS7_CLASS = 2
 # =============================================================================
 # SDR RUN
 # =============================================================================
-def run_invest_sdr(paths):
+def run_invest_sdr(p, paths):
     _setup_sdr_environment()
     ef._assert_exists(paths.input.biophysical_table, "biophysical_table_path")
     ef._assert_exists(paths.input.dem, "dem_path")
@@ -137,7 +137,7 @@ def run_invest_sdr(paths):
     return args, file_registry
 
 
-def compute_country_mean_elevation(
+def compute_country_mean_elevation(p, 
     usle_like_da: xr.DataArray,
     iso_id_raster: np.ndarray,
     iso_lut: pd.DataFrame,
@@ -181,7 +181,7 @@ def compute_country_mean_elevation(
 # ==========================================================
 # 8) Valuation: elasticity-weighted shock + GEP (Option A)
 # ==========================================================
-def compute_country_gep_from_country_crop(
+def compute_country_gep_from_country_crop(p, 
     paths,
     df_country_crop_component: pd.DataFrame,
     fao_iso3_csv: str,
@@ -196,7 +196,7 @@ def compute_country_gep_from_country_crop(
     `erosion_functions`, which holds the arithmetic.
     """
     df_shock = ef.country_erosion_shock(df_country_crop_component, p.erosion_min_shock_floor)
-    df_crop_gpv = load_fao_gpv_iso3_const2019_with_fallback(
+    df_crop_gpv = load_fao_gpv_iso3_const2019_with_fallback(p, 
         paths, fao_iso3_csv, prices_full_csv, base_year=base_year)
     df_gdp = load_wb_gdp_current_2019(gdp_current_2019_csv)
     return ef.country_gep(df_shock, df_crop_gpv, df_gdp, component)
@@ -523,7 +523,7 @@ def load_elasticity_map(elasticity_csv: str, fallback_value: float) -> tuple[dic
 # ==============================
 # 4) Countries utilities
 # ==============================
-def load_countries_iso3_alpha(paths, in_crs: rioCRS):
+def load_countries_iso3_alpha(p, paths, in_crs: rioCRS):
     utilities.assert_exists(paths.input.country_boundary, "Provide boundary with ISO3 column.")
     gdf = gpd.read_file(str(paths.input.country_boundary))
     gdf = gdf[gdf.geometry.notnull()].copy()
@@ -573,7 +573,7 @@ def load_countries_iso3_alpha(paths, in_crs: rioCRS):
     return gdf[["ISO3","country_name","geometry"]]
 
 
-def rasterize_iso3(gdf: gpd.GeoDataFrame, like_da: xr.DataArray):
+def rasterize_iso3(p, gdf: gpd.GeoDataFrame, like_da: xr.DataArray):
     gdf = gdf.copy()
     gdf["ISO3"] = gdf["ISO3"].astype(str).str.upper()
     lut = (
@@ -615,7 +615,7 @@ def load_fao_prices_full(path: str) -> pd.DataFrame:
     return df
 
 
-def load_fao_gpv_iso3_const2019_with_fallback(paths, 
+def load_fao_gpv_iso3_const2019_with_fallback(p, paths, 
     fao_csv_iso3: str,
     prices_full_csv: str,
     base_year: int = 2019
@@ -715,7 +715,7 @@ def load_wb_gdp_current_2019(gdp_csv: str) -> pd.DataFrame:
 # ==========================================================
 # 7) CORE: SPAM production aggregation given a PS raster
 # ==========================================================
-def aggregate_country_crop_production(paths, spam_aliases,
+def aggregate_country_crop_production(p, paths, spam_aliases,
     ps_arr01: np.ndarray,                        # 2D array aligned to USLE grid
     usle_like: xr.DataArray,                     # template for coords/dims
     iso_id_raster: np.ndarray,                   # int32 country ids aligned to grid
@@ -793,7 +793,7 @@ def aggregate_country_crop_production(paths, spam_aliases,
 # 9) BIOPHYSICAL — compute PS_onfarm, load UPS, build PS_eff
 #     then compute onfarm/upstream/combined in parallel
 # ==========================================================
-def run_biophysical_decomposed(paths):
+def run_biophysical_decomposed(p, paths):
     # ---- Required inputs
     utilities.assert_exists(paths.input.usle,  "Expected USLE raster.")
     utilities.assert_exists(paths.input.avoided_erosion, "Expected avoided_erosion raster.")
@@ -829,15 +829,15 @@ def run_biophysical_decomposed(paths):
     ups_vals = ef._clip01_arr(ups.values)
 
     # ---- Countries raster
-    gdf_countries = load_countries_iso3_alpha(paths, usle.rio.crs)
+    gdf_countries = load_countries_iso3_alpha(p, paths, usle.rio.crs)
     gdf_countries["area_km2"] = ef.compute_country_areas_km2(gdf_countries)
-    iso_id_raster, iso_lut = rasterize_iso3(gdf_countries, usle)
+    iso_id_raster, iso_lut = rasterize_iso3(p, gdf_countries, usle)
     max_id = int(iso_lut["iso_id"].max())
     id2iso = dict(zip(iso_lut["iso_id"].to_numpy(), iso_lut["ISO3"].to_numpy()))
     name_by_iso = dict(zip(gdf_countries["ISO3"], gdf_countries["country_name"]))
 
     # ---- Threshold policy (optional DEM)
-    mean_elev_by_id = compute_country_mean_elevation(
+    mean_elev_by_id = compute_country_mean_elevation(p, 
         usle, iso_id_raster, iso_lut,
         paths.input.dem if (paths.input.dem and hb.path_exists(paths.input.dem)) else None
     )
@@ -991,9 +991,9 @@ def run_biophysical_decomposed(paths):
     spam_aliases = {k: v.split(';') for k, v in
                     utilities.read_lookup(p.erosion_spam_alias_path,
                                           'spam_label', 'aliases').items()}
-    df_cc_onfarm   = aggregate_country_crop_production(paths, spam_aliases, ps_onfarm,   usle, iso_id_raster, id2iso, bandmap, elast_map, max_id, "onfarm")
-    df_cc_upstream = aggregate_country_crop_production(paths, spam_aliases, ps_upstream, usle, iso_id_raster, id2iso, bandmap, elast_map, max_id, "upstream")
-    df_cc_combined = aggregate_country_crop_production(paths, spam_aliases, ps_combined, usle, iso_id_raster, id2iso, bandmap, elast_map, max_id, "combined")
+    df_cc_onfarm   = aggregate_country_crop_production(p, paths, spam_aliases, ps_onfarm,   usle, iso_id_raster, id2iso, bandmap, elast_map, max_id, "onfarm")
+    df_cc_upstream = aggregate_country_crop_production(p, paths, spam_aliases, ps_upstream, usle, iso_id_raster, id2iso, bandmap, elast_map, max_id, "upstream")
+    df_cc_combined = aggregate_country_crop_production(p, paths, spam_aliases, ps_combined, usle, iso_id_raster, id2iso, bandmap, elast_map, max_id, "combined")
 
     # ---- Save per-country-crop (long form; publication transparency)
     df_country_crop_long = pd.concat([df_cc_onfarm, df_cc_upstream, df_cc_combined], ignore_index=True)
@@ -1026,24 +1026,24 @@ def run_biophysical_decomposed(paths):
 # ==============================================
 # 10) INTEGRATE + WRITE (decomposed outputs)
 # ==============================================
-def integrate_and_write(paths):
+def integrate_and_write(p, paths):
     t0 = time.time()
 
     # ---- Run biophysical + produce country-crop tables per component
-    pack = run_biophysical_decomposed(paths)
+    pack = run_biophysical_decomposed(p, paths)
     country_master = pack["country_master"]
     df_soil = pack["df_soil"]
     df_diag = pack["df_diag"]
     dcc = pack["df_country_crop"]
 
     # ---- Compute valuation per component
-    df_gep_onfarm = compute_country_gep_from_country_crop(
+    df_gep_onfarm = compute_country_gep_from_country_crop(p, 
         paths, dcc["onfarm"], paths.input.fao_gpv, paths.input.fao_prices, p.erosion_base_year, paths.input.gdp, "onfarm"
     )
-    df_gep_upstream = compute_country_gep_from_country_crop(
+    df_gep_upstream = compute_country_gep_from_country_crop(p, 
         paths, dcc["upstream"], paths.input.fao_gpv, paths.input.fao_prices, p.erosion_base_year, paths.input.gdp, "upstream"
     )
-    df_gep_combined = compute_country_gep_from_country_crop(
+    df_gep_combined = compute_country_gep_from_country_crop(p, 
         paths, dcc["combined"], paths.input.fao_gpv, paths.input.fao_prices, p.erosion_base_year, paths.input.gdp, "combined"
     )
 
@@ -1212,7 +1212,7 @@ def load_world_boundary_prefer_run(paths) -> gpd.GeoDataFrame:
     raise FileNotFoundError(f"Boundary GPKG not found: {paths.input.country_boundary}")
 
 
-def generate_all_maps_and_figures(paths):
+def generate_all_maps_and_figures(p, paths):
     """Driver that produces every map/figure/CSV described in the module docstring below (originally a flat script)."""
     # =============================================================================
     # 2) LOAD DATA
@@ -2699,7 +2699,7 @@ def invest_sdr(p):
         return
     hb.create_directories(p.erosion_sdr_output_dir)
     paths = erosion_paths(p)
-    p.erosion_sdr_args, p.erosion_sdr_file_registry = run_invest_sdr(paths)
+    p.erosion_sdr_args, p.erosion_sdr_file_registry = run_invest_sdr(p, paths)
     return True
 
 
@@ -2786,7 +2786,7 @@ def prevention_shares(p):
     hb.log('erosion recomputes the prevention shares, %s' % reason)
     hb.create_directories(p.erosion_gep_output_dir)
     paths = erosion_paths(p)
-    integrate_and_write(paths)
+    integrate_and_write(p, paths)
     utilities.write_reuse_signature(p, 'erosion', list(service_results.values()))
     return True
 
@@ -2808,7 +2808,7 @@ def maps_and_figures(p):
         return
     hb.create_directories(p.erosion_figures_dir)
     paths = erosion_paths(p)
-    generate_all_maps_and_figures(paths)
+    generate_all_maps_and_figures(p, paths)
     return True
 
 
