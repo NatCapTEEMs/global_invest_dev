@@ -75,7 +75,7 @@ def test_clean_crop_values_keeps_gross_production_value_and_melts_the_years():
 
 def test_clean_crop_values_renames_area_223_to_turkey():
     raw = _raw_faostat_frame()
-    raw.loc[3, 'Element Code'] = cp.FAOSTAT_GROSS_PRODUCTION_VALUE_ELEMENT
+    raw.loc[3, 'Element Code'] = utilities.FAOSTAT_GROSS_PRODUCTION_VALUE_ELEMENT
     out = utilities.clean_faostat_values(raw, items=['Wheat'], value_column='crop_provision_gep', aggregate_areas=['World'])
     assert set(out.loc[out['area_code'] == 223, 'country']) == {'Turkey'}
 
@@ -188,8 +188,8 @@ def test_every_successor_maps_to_a_different_live_code():
 
 
 def test_the_faostat_unit_factor_is_the_thousand_usd_conversion():
-    assert cp.FAOSTAT_THOUSAND_USD == 1000.0
-    assert cp.FAOSTAT_VALUE_UNIT == '1000 USD'
+    assert utilities.FAOSTAT_THOUSAND_USD == 1000.0
+    assert utilities.FAOSTAT_VALUE_UNIT == '1000 USD'
 
 
 def test_task_reader_cleans_the_faostat_bulk_file(tmp_path):

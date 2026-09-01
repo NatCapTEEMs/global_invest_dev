@@ -28,19 +28,7 @@ from global_invest import utilities
 # FAOSTAT's Value of Production table stacks several elements and units in one file. The
 # valuation reads gross production value in current USD, which the file reports as element 57
 # with unit "1000 USD".
-FAOSTAT_VALUE_UNIT = '1000 USD'
 # FAOSTAT ships value in thousand USD; the library reports plain USD, as crop_provision does.
-FAOSTAT_THOUSAND_USD = 1000.0
-FAOSTAT_GROSS_PRODUCTION_VALUE_ELEMENT = 57
-# The bulk file's year columns run Y1961 to Y2022, each shadowed by a Y<year>F data-quality flag.
-# FAOSTAT area 223 is Turkiye, which recent releases spell several ways. The country join runs on
-# the M49 code, so the name is normalised only to keep the item-level table readable.
-FAOSTAT_TURKIYE_AREA_CODE = 223
-
-
-# The columns an item-level row is identified by, before the year columns are melted down. The
-# item columns keep crop_provision's names because both services read the same FAOSTAT file.
-CROP_ID_COLUMNS = ['area_code', 'area_code_M49', 'country', 'crop_code', 'crop']
 
 
 
@@ -71,11 +59,11 @@ def attach_countries(df_crop_value, df_countries):
                       'rental_rate', 'livestock_provision_gep'])
     df = hb.df_merge(ee_r264_to_250, df_crop_value, how='right',
                      left_on='iso3_r250_id', right_on='area_code_M49')
-    df['livestock_provision_gep'] = df['livestock_provision_gep'] * FAOSTAT_THOUSAND_USD
+    df['livestock_provision_gep'] = df['livestock_provision_gep'] * utilities.FAOSTAT_THOUSAND_USD
     if 'gross_production_value' in df.columns:
         # The same conversion, or the feed-share attribution downstream would multiply a share by
         # a figure still in thousands and come out a thousand times too small.
-        df['gross_production_value'] = df['gross_production_value'] * FAOSTAT_THOUSAND_USD
+        df['gross_production_value'] = df['gross_production_value'] * utilities.FAOSTAT_THOUSAND_USD
     return df
 
 

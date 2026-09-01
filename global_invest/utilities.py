@@ -2123,3 +2123,24 @@ def drop_aggregates_where_components_exist(df, aggregate_items, value_column,
         'column), and kept for %d countries that have no individual items at all.'
         % (int(redundant.sum()), dropped_value, kept))
     return marked[~redundant].drop(columns='n')
+
+
+def distribute_results(p, service, log=None):
+    """Copy a service's registered results into the project's output directory.
+
+    Five services carried this loop verbatim, differing only in the service key they looked up --
+    which is the shape that goes wrong when a service is renamed and one copy is missed, because
+    `p.results[<wrong key>]` raises in a task that runs last and only on a full tree.
+
+    Args:
+        p (ProjectFlow): the project, inside gep_results_distribution.
+        service (str): the service's key in p.results.
+        log (callable): where to report; hazelbean's log by default.
+    """
+    log = log or hb.log
+    log('Distributing GEP results...')
+    for name, path in p.results.get(service, {}).items():
+        output_path = os.path.join(p.output_dir, name)
+        hb.path_copy(path, output_path)
+        log('Distributed %s to %s' % (name, output_path))
+    log('GEP results distribution complete.')

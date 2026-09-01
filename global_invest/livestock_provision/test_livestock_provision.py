@@ -82,7 +82,7 @@ def test_clean_crop_values_drops_an_item_matched_by_neither_code_nor_name():
 
 def test_clean_crop_values_renames_area_223_to_turkey():
     raw = _raw_faostat_frame()
-    raw.loc[3, 'Element Code'] = lp.FAOSTAT_GROSS_PRODUCTION_VALUE_ELEMENT
+    raw.loc[3, 'Element Code'] = utilities.FAOSTAT_GROSS_PRODUCTION_VALUE_ELEMENT
     out = utilities.clean_faostat_values(raw, items=[1017], value_column='livestock_provision_gep', aggregate_areas=['World'])
     assert set(out.loc[out['area_code'] == 223, 'country']) == {'Turkey'}
 

@@ -278,14 +278,7 @@ def gep_result(p):
     utilities.render_service_results(p)
 
 def gep_results_distribution(p):
-    """Distribute the results of the GEP calculation."""
+    """Copy this service's results into the output directory. Shared implementation in
+    utilities, which is also where the service key stops being written out by hand."""
     publish_inputs(p)
-    # This task is intended to copy the results to the output directory.
-    hb.log("Distributing GEP results...")
-    
-    for key, value in p.results['crop_provision'].items():
-        output_path = os.path.join(p.output_dir, key)
-        hb.path_copy(value, output_path)
-        hb.log(f"Distributed {key} to {output_path}")
-    
-    hb.log("GEP results distribution complete.")
+    utilities.distribute_results(p, 'crop_provision')
