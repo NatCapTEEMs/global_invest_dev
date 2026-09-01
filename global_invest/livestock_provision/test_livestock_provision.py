@@ -349,3 +349,37 @@ def test_both_value_columns_leave_the_country_join_in_dollars():
     out = lp.attach_countries(df_crop_value, COUNTRIES)
     assert out['livestock_provision_gep'].iloc[0] == pytest.approx(1_000_000.0)
     assert out['gross_production_value'].iloc[0] == pytest.approx(5_000_000.0)
+
+
+def test_the_feed_share_reproduces_the_reference_lambda():
+    """Condition 12 for this service. The reference repository commits no output -- two scripts with
+    hardcoded D: paths and no data -- so there is no table to stage. What it does commit is the
+    formula, in `lambda.py`, and that is short enough to state here and recompute from the same
+    staged GLEAM file. Recomputing it is a check; quoting agreement would not be.
+
+    Their lambda is the share of dry-matter intake that ecosystems grew rather than people:
+    by-products, crop residues, fodder crop and grass and leaves, over that plus grains, oil seed
+    cakes and the two other categories.
+    """
+    import os
+    gleam_path = os.path.join(
+        os.path.expanduser('~'), 'Files', 'base_data', 'global_invest', 'livestock_provision',
+        'gleam3_dmi_dashboard.psv')
+    run_path = os.path.join(
+        os.path.expanduser('~'), 'Files', 'global_invest', 'projects', 'gep_livestock_provision',
+        'intermediate', 'gep_calculation', 'gep_by_country_year.csv')
+    if not (os.path.exists(gleam_path) and os.path.exists(run_path)):
+        pytest.skip('the GLEAM table or a livestock run is not on this machine')
+
+    ecosystem = ['By-products', 'Crop residues', 'Fodder crop', 'Grass and leaves']
+    everything = ecosystem + ['Grains', 'Oil seed cakes', 'Other edible', 'Other non-edible']
+    raw = pd.read_csv(gleam_path, sep='|')
+    theirs = raw.groupby('country_code', dropna=False)[everything].sum().reset_index()
+    theirs['reference_lambda'] = theirs[ecosystem].sum(axis=1) / theirs[everything].sum(axis=1)
+
+    run = pd.read_csv(run_path)
+    ours = run[run['year'] == 2019][['iso3_r250_label', 'feed_share']].dropna()
+    joined = ours.merge(theirs[['country_code', 'reference_lambda']],
+                        left_on='iso3_r250_label', right_on='country_code', how='inner')
+    assert len(joined) > 150
+    assert (joined['feed_share'] - joined['reference_lambda']).abs().max() < 1e-12
