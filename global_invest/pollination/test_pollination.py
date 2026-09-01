@@ -499,3 +499,88 @@ def test_the_latest_vintage_wins_when_the_base_year_is_unpublished(tmp_path):
     (tmp_path / 'poll_value_global_2019usd.tif').write_bytes(b'x')
     path, year = pf.find_source_value_raster(FakeProject(), 2019)
     assert year == 2019, 'the exact base year must win when it exists'
+
+
+# =================================================================================================
+# Condition 12: the two reproduction claims, checked rather than asserted.
+#
+# The status entry carried "reproduced to 1.8e-08" and "byte-equal to his csv, 5.6e-17" for weeks.
+# Both were measured once, by hand, and neither survived a change: nothing recomputed them, and the
+# 1.8e-08 comparison had stopped running altogether once the library began building its own raster.
+# These pin what the pipeline can actually re-derive, and they run against every pollination project
+# on the machine so a stale directory cannot stand in for a fresh one.
+# =================================================================================================
+
+def _pollination_runs():
+    """Every pollination project directory on this machine, cold starts included."""
+    import glob
+    pattern = os.path.join(os.path.expanduser('~'), 'Files', 'global_invest', 'projects',
+                           'gep_pollination*', 'intermediate')
+    return sorted(p for p in glob.glob(pattern) if os.path.isdir(p))
+
+
+def test_our_dependence_panel_reproduces_the_authors_published_table():
+    """Our `pollination_1993_2024.parquet` against the author's csv, column by column.
+
+    This is the adoption the entry has to be honest about: reproducing it proves the port carries
+    his FAO-item crosswalk and his blend weights faithfully, and proves nothing about whether those
+    are right. Pinning it is what stops the agreement quietly lapsing the next time either side
+    regenerates.
+    """
+    base = os.path.join(os.path.expanduser('~'), 'Files', 'base_data', 'global_invest', 'pollination')
+    ours_path = os.path.join(base, 'fao', 'pollination', 'pollination_1993_2024.parquet')
+    his_path = os.path.join(base, 'pollination_1993_2024.csv')
+    if not (os.path.exists(ours_path) and os.path.exists(his_path)):
+        pytest.skip('the dependence panel or the author table is not on this machine')
+
+    ours = pd.read_parquet(ours_path)
+    his = pd.read_csv(his_path)
+    assert len(ours) == len(his) == 287285
+
+    for frame in (ours, his):
+        frame['area_code_m49'] = frame['area_code_m49'].astype('int64')
+    shared = [c for c in his.columns if c in ours.columns]
+    assert len(shared) == len(his.columns), 'the author table has a column ours does not carry'
+
+    # The key repeats on 2,477 rows in both files, so ordering on the key alone is not stable
+    # enough to compare row against row. Sorting on every shared column is.
+    o = ours[shared].sort_values(shared).reset_index(drop=True)
+    h = his[shared].sort_values(shared).reset_index(drop=True)
+
+    for column in shared:
+        if pd.api.types.is_numeric_dtype(h[column]):
+            a, b = o[column].astype(float), h[column].astype(float)
+            both = a.notna() & b.notna()
+            relative = ((a[both] - b[both]).abs() / b[both].abs().replace(0, np.nan)).max()
+            assert pd.isna(relative) or relative < 1e-12, column
+            assert (a.isna() == b.isna()).all(), column
+        else:
+            # A missing label reads as None out of parquet and as nan out of csv, which is the file
+            # format and not a difference; every other text value must match exactly.
+            a = o[column].where(o[column].notna(), None).astype(str).replace('None', '')
+            b = h[column].where(h[column].notna(), None).astype(str).replace('None', '')
+            assert (a == b).all(), column
+
+
+def test_our_rebuilt_raster_stays_close_to_the_authors_staged_one():
+    """The independence check, pinned. Ours is built from FAO, CropGrids and Monfreda rather than
+    read from his file, so this is two pipelines meeting rather than one reproducing the other, and
+    the tolerance is set where a real divergence would show without the ordinary difference between
+    two builds tripping it. A drift past a percent and a half, or a correlation falling off, means
+    something moved that nobody decided to move."""
+    checked = 0
+    for run in _pollination_runs():
+        path = os.path.join(run, 'pollination_value_independence_check',
+                            'value_raster_independence.csv')
+        if not os.path.exists(path):
+            continue
+        row = pd.read_csv(path).iloc[0]
+        assert abs(row['pct_difference']) < 1.5, (run, row['pct_difference'])
+        assert row['correlation_where_both'] > 0.99, (run, row['correlation_where_both'])
+        assert row['cells_in_both'] > 2_000_000, (run, row['cells_in_both'])
+        # Both totals are the account's own headline figure and must stay in its neighbourhood.
+        assert 3.5e11 < row['ours_independent_usd'] < 4.2e11, run
+        assert 3.5e11 < row['author_raster_usd'] < 4.2e11, run
+        checked += 1
+    if not checked:
+        pytest.skip('no pollination run with an independence check on this machine')
