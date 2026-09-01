@@ -104,6 +104,9 @@ LOWDER_REGION_COLUMN = 'Region'
 # FAOSTAT's Land Use domain, which carries both areas and the production intensity.
 LAND_USE_VALUE_PER_AREA_ELEMENT = 'Value of agricultural production (Int. $) per Area'
 LAND_USE_CROPLAND_ITEM = 'Cropland'
+# The intensity FAOSTAT publishes is per hectare of agricultural land, not of cropland, which
+# is what makes agricultural land the right denominator when deriving the PPP factor below.
+LAND_USE_AGRICULTURAL_LAND_ITEM = 'Agricultural land'
 PER_AREA_COLUMN = 'Agricultural Production per Area (USD_PPP/ha)'
 
 # The panel's span, and the World Bank income classes the extrapolation is built over.
@@ -680,3 +683,81 @@ def subsistence_value_from_shares(df_area_value, df_lowder, df_income, df_wb_his
     hb.log('Subsistence from shares, %d: %d eligible countries, %d with every term present.'
            % (year, len(df), int(complete.sum())))
     return df[complete].copy()
+
+
+def agricultural_ppp_factors(df_area_value, df_value_of_production, df_income, year,
+                             minimum_per_region=SUBSISTENCE_MINIMUM_SURVEYS_PER_REGION):
+    """International dollars per market US dollar of agricultural output, from FAOSTAT itself.
+
+    The account reports 2019 US dollars and takes FAOSTAT's current-year values as already being
+    that, which holds for the Value of Production table. It does not hold for the production
+    intensity this component multiplies by: FAOSTAT publishes `Value of agricultural production
+    (Int. $) per Area` only in international dollars, so there is no current-US$ version to read
+    instead and the subsistence estimate came out in the wrong currency.
+
+    No external conversion table is needed, because FAOSTAT publishes the same quantity both ways.
+    Agricultural land times the intensity is total agricultural output in international dollars;
+    the Value of Production table reports that same output in current US dollars. Their ratio is
+    the agricultural PPP factor for that country and year, derived from the one source the rest of
+    the component already reads. Across 156 countries in 2019 it has a median of 0.995.
+
+    A country FAOSTAT gives no aggregate value for takes its region's median, and failing that the
+    global median, recorded the same way the own-consumption share is.
+
+    Args:
+        df_area_value (pd.DataFrame): the FAOSTAT Land Use extract.
+        df_value_of_production (pd.DataFrame): the FAOSTAT Value of Production bulk.
+        df_income (pd.DataFrame): the World Bank table carrying Country and Region.
+        year (int): the year to build factors for.
+        minimum_per_region (int): countries a region needs before its median is used.
+
+    Returns:
+        pd.DataFrame: Country, ppp_factor, ppp_factor_source.
+    """
+    areas = df_area_value.rename(columns={'Area': 'Country'})
+    land = areas[(areas['Item'] == LAND_USE_AGRICULTURAL_LAND_ITEM)
+                 & (areas['Element'] == 'Area') & (areas['Year'] == year)]
+    land = land[['Country', 'Value']].rename(columns={'Value': 'agricultural_1000_ha'})
+    intensity = areas[(areas['Element'] == LAND_USE_VALUE_PER_AREA_ELEMENT)
+                      & (areas['Year'] == year)][['Country', 'Value']].rename(
+        columns={'Value': 'int_per_ha'})
+
+    value = df_value_of_production
+    value = value[(value['Element Code'] == utilities.FAOSTAT_GROSS_PRODUCTION_VALUE_ELEMENT)
+                  & (value['Unit'] == utilities.FAOSTAT_VALUE_UNIT)
+                  & (value['Item'] == 'Agriculture')]
+    column = 'Y%d' % year
+    if column not in value.columns:
+        raise NameError('The Value of Production bulk has no %s column, so no PPP factor can be '
+                        'derived for %d.' % (column, year))
+    value = value[['Area', column]].rename(columns={'Area': 'Country', column: 'agricultural_usd'})
+    value['agricultural_usd'] = value['agricultural_usd'] * utilities.FAOSTAT_THOUSAND_USD
+
+    df = land.merge(intensity, on='Country').merge(value, on='Country')
+    df = df[(df['agricultural_usd'] > 0) & df['int_per_ha'].notna()
+            & df['agricultural_1000_ha'].notna()]
+    df['ppp_factor'] = (df['agricultural_1000_ha'] * THOUSAND_HECTARES * df['int_per_ha']
+                        / df['agricultural_usd'])
+    observed = df[['Country', 'ppp_factor']].merge(df_income[['Country', 'Region']],
+                                                   on='Country', how='left')
+    counts = observed.groupby('Region')['ppp_factor'].count()
+    medians = observed.groupby('Region')['ppp_factor'].median()
+    usable = {r: medians[r] for r in medians.index if counts[r] >= minimum_per_region}
+    global_median = observed['ppp_factor'].median()
+
+    rows = []
+    for _, row in df_income.iterrows():
+        country, region = row['Country'], row.get('Region')
+        match = observed[observed['Country'] == country]
+        if len(match):
+            rows.append((country, float(match['ppp_factor'].iloc[0]), 'FAOSTAT, this country'))
+        elif region in usable:
+            rows.append((country, float(usable[region]), 'regional median (%s)' % region))
+        elif pd.notna(global_median):
+            rows.append((country, float(global_median), 'global median'))
+    out = pd.DataFrame(rows, columns=['Country', 'ppp_factor', 'ppp_factor_source'])
+    hb.log('Agricultural PPP factors for %d: %d from the country itself, %d regional, %d global.'
+           % (year, (out['ppp_factor_source'] == 'FAOSTAT, this country').sum(),
+              out['ppp_factor_source'].str.startswith('regional').sum(),
+              (out['ppp_factor_source'] == 'global median').sum()))
+    return out.drop_duplicates('Country')

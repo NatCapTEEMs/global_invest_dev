@@ -239,6 +239,19 @@ def crop_subsistence_gep(p):
     df_ours = df_ours.rename(columns={'own_con': 'own_con2'})
     df_ours = crop_provision_functions.apply_subsistence_rental_rate(
         df_ours, read_crop_coefs_raw(p.cwon_crop_coefficients_path))
+
+    # The account reports 2019 US dollars and reads FAOSTAT's current-year values as already being
+    # that, which holds for the Value of Production table and not for the production intensity this
+    # component multiplies by: FAOSTAT publishes that one only in international dollars. So the
+    # estimate is converted, using the factor FAOSTAT's own two publications of the same output
+    # imply rather than an external conversion table.
+    df_ppp = crop_provision_functions.agricultural_ppp_factors(
+        read(p.crop_subsistence_area_value_path, delimiter=';'),
+        pd.read_csv(p.fao_input_path, encoding='ISO-8859-1', low_memory=False),
+        read(p.crop_subsistence_wb_income_group_path, delimiter=';'), base_year)
+    df_ours = df_ours.merge(df_ppp, on='Country', how='left')
+    df_ours['gep_value_int_usd'] = df_ours['gep_value']
+    df_ours['gep_value'] = df_ours['gep_value'] / df_ours['ppp_factor']
     df_ours['crop_subsistence_gep'] = df_ours['gep_value']
     df_ours['own_con_source'] = df_ours['share_source']
     df_ours['own_con'] = df_ours['own_con2']
@@ -264,9 +277,9 @@ def crop_subsistence_gep(p):
 
     published = df_by_country['crop_subsistence_gep'].sum()
     reference = df_by_country['crop_subsistence_gep_reference'].sum()
-    hb.log('Crop subsistence GEP for base year %d: %.9g USD across %d countries, the units read as '
-           'their sources label them. The reference arithmetic through the same stages is %.9g '
-           'USD, which reproduces their published panel.'
+    hb.log('Crop subsistence GEP for base year %d: %.9g USD across %d countries, in 2019 US dollars, '
+           'with every unit read as its source labels it. The reference arithmetic through the same '
+           'stages is %.9g USD, which reproduces their published panel.'
            % (base_year, published,
               int(df_by_country['crop_subsistence_gep'].notna().sum()), reference))
     return True

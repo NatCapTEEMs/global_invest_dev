@@ -454,3 +454,53 @@ def test_the_imputation_never_reaches_above_lower_middle_income():
                        {'Country': 'Ghana', '2019': 'LM'}, {'Country': 'Chile', '2019': 'UM'}])
     eligible = cp.low_and_lower_middle_income_countries(wb, 2019)
     assert sorted(eligible['Country']) == ['Ghana', 'Kenya']
+
+
+def test_the_ppp_factor_is_faostats_own_two_publications_of_the_same_output():
+    """The account reports 2019 US dollars and reads FAOSTAT's current-year values as already being
+    that. It holds for the Value of Production table and not for the production intensity, which
+    FAOSTAT publishes only in international dollars -- so that one component was in the wrong
+    currency and no current-US$ version exists to read instead.
+
+    The conversion needs no external table: agricultural land times the intensity is total
+    agricultural output in international dollars, and Value of Production reports the same output
+    in current US dollars, so their ratio is the factor. This pins that identity."""
+    area_value = pd.DataFrame([
+        {'Area': 'Testland', 'Item': 'Agricultural land', 'Element': 'Area', 'Year': 2019,
+         'Value': 1000.0},                                   # 1,000 thousand ha = 1,000,000 ha
+        {'Area': 'Testland', 'Item': 'Agricultural land',
+         'Element': cp.LAND_USE_VALUE_PER_AREA_ELEMENT, 'Year': 2019, 'Value': 200.0}])
+    # 1,000,000 ha x 200 Int$/ha = 200,000,000 Int$ against 100,000,000 US$ -> a factor of 2.
+    value = pd.DataFrame([
+        {'Area': 'Testland', 'Item': 'Agriculture', 'Element Code': 57, 'Unit': '1000 USD',
+         'Y2019': 100000.0}])
+    income = pd.DataFrame([{'Country': 'Testland', 'Region': 'Sub-Saharan Africa'}])
+
+    out = cp.agricultural_ppp_factors(area_value, value, income, 2019).set_index('Country')
+    assert out.at['Testland', 'ppp_factor'] == pytest.approx(2.0)
+    assert out.at['Testland', 'ppp_factor_source'] == 'FAOSTAT, this country'
+
+
+def test_a_country_faostat_gives_no_aggregate_for_takes_its_regions_factor():
+    """18 of the 66 subsistence countries have no FAOSTAT "Agriculture" value, the same coverage
+    gap that put group totals in the item lists. They take a regional median rather than 1.0,
+    because assuming no conversion is itself a conversion."""
+    area_value = pd.DataFrame([
+        {'Area': 'Alpha', 'Item': 'Agricultural land', 'Element': 'Area', 'Year': 2019, 'Value': 1000.0},
+        {'Area': 'Alpha', 'Item': 'Agricultural land',
+         'Element': cp.LAND_USE_VALUE_PER_AREA_ELEMENT, 'Year': 2019, 'Value': 200.0},
+        {'Area': 'Beta', 'Item': 'Agricultural land', 'Element': 'Area', 'Year': 2019, 'Value': 500.0},
+        {'Area': 'Beta', 'Item': 'Agricultural land',
+         'Element': cp.LAND_USE_VALUE_PER_AREA_ELEMENT, 'Year': 2019, 'Value': 200.0},
+        {'Area': 'Gamma', 'Item': 'Agricultural land', 'Element': 'Area', 'Year': 2019, 'Value': 900.0},
+        {'Area': 'Gamma', 'Item': 'Agricultural land',
+         'Element': cp.LAND_USE_VALUE_PER_AREA_ELEMENT, 'Year': 2019, 'Value': 200.0}])
+    value = pd.DataFrame([
+        {'Area': a, 'Item': 'Agriculture', 'Element Code': 57, 'Unit': '1000 USD', 'Y2019': v}
+        for a, v in (('Alpha', 100000.0), ('Beta', 50000.0), ('Gamma', 90000.0))])
+    income = pd.DataFrame([{'Country': c, 'Region': 'Sub-Saharan Africa'}
+                           for c in ('Alpha', 'Beta', 'Gamma', 'Delta')])
+
+    out = cp.agricultural_ppp_factors(area_value, value, income, 2019).set_index('Country')
+    assert out.at['Delta', 'ppp_factor'] == pytest.approx(2.0)
+    assert out.at['Delta', 'ppp_factor_source'].startswith('regional median')
