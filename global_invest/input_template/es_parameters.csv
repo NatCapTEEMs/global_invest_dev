@@ -121,11 +121,11 @@ flood,flood_compute_ead_rasters,false
 flood,flood_damage_depth_mode,interpolated
 flood,flood_lulc_path,global_invest/flood/lulc/lulc_esa_2019_int_reproj.tif
 flood,flood_roads_path,
-flood,flood_pop_path,
-flood,flood_depth_aligned_path,
+flood,flood_pop_path,global_invest/flood/pop/GlobPOP_Count_30arc_2020_I32.tif
+flood,flood_depth_aligned_path,global_invest/flood/floodplain_depth/aligned_to_lulc
 flood,flood_sda_mapping_path,
 flood,flood_sda_legend_path,
-flood,flood_spa_path,
+flood,flood_spa_path,global_invest/flood/spa/global_prr_spa.tif
 flood,flood_spa_ratio_path,
 flood,flood_canonical_eur_path,
 flood,flood_sda_damage_wide_path,
