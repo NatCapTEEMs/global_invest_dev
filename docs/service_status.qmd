@@ -162,7 +162,29 @@ somewhere and been caught:
    so an anchor moved into a subfolder stops being found on a machine that has not staged it by
    hand.
 
-Green means all fifteen. **amber** means the number is usable and at least one condition is open, with
+16. **Every raster a service publishes is a POG.** A pyramidal COG: on the account's own grid,
+   with overview levels [3, 15, 30, 90, 180, 360] and exact statistics stored internally, tiled
+   and COG-valid, so `hb.is_path_pog` passes. A result somebody opens should be readable without
+   downloading all of it and should sit on the same grid as every other result.
+
+   ⚠ Measured 2026-09-02: what is missing is almost never the grid. Across every raster the runs
+   had written, they sit on the right geotransform and fail on **overviews and statistics** --
+   which `hb.make_path_pog` adds in a fraction of a second on a small raster.
+   `base_data/pyramids/ha_per_cell_10sec.tif` failed the same way, so this was a library-wide gap
+   rather than any one service's, and it is why the condition is about publishing rather than
+   about reprojecting.
+
+   ⚠ It applies to the RESULTS a service distributes, not to its intermediates -- 480 rasters over
+   a megabyte sit under `intermediate/`, and converting those would cost a great deal to make
+   files nobody opens readable. `utilities.distribute_results` does the conversion once, for every
+   service, as results reach the output directory.
+
+   ⚠⚠ **`gdalinfo` must be on PATH** or the conversion fails with `'int' object has no attribute
+   'info'`, which says nothing about the cause: hazelbean's fallback then builds `<env>/bin/bin/
+   gdalinfo`, a doubled path. Activating the environment is enough; invoking its python by
+   absolute path is not.
+
+Green means all sixteen. **amber** means the number is usable and at least one condition is open, with
 the entry saying which. **red** means the number should not be quoted yet.
 
 ⚠⚠ **A fidelity-only check no longer passes.** This used to read that a service could be green
@@ -417,12 +439,15 @@ hectare. `ours` is where that lives.
 - **run:** yes
 - **ours:** yes, and by a shorter route than the source's. The value is FAO's, the share is GTAP's, and the arithmetic between them is one multiply.
 - **method:** FAO FishStatJ aquaculture production value by country in the base year, times the natural-resource share of fishing value added for that country's GTAP region. The source computes capture and aquaculture as one figure -- `GEP_fish := (total_aqua_value_usd1000 + total_cap_value_usd1000) * NatRes_Share` in `gep_fisheries_02_calc_gep_fish.R` -- so aquaculture is the first term of that sum times the same share, and no new method is invented. ⚠ Aquaculture is farmed, so what the share values is the natural resource input to farmed production rather than a wild stock; whether that belongs in the account beside capture is a scope question for the paper, not a computation.
-- **total:** $110.50bn
+- **total:** $63.13bn
 - **code:** `fisheries_aquaculture_gep`, one task in the fisheries module beside `fisheries_subsistence_gep` -- not a new service, because fisheries already carried two subgroups and this is the third. The share comes off the GTAP header by set element NAME rather than by position, so an aggregation with different regions or a renamed sector fails loudly instead of silently indexing the wrong row, and a region with no fishing factor payments raises rather than publishing a zero share.
 - **grid:** No raster. Country tables only, so no cell area and no zonal statistics; condition 11's clause 3 does not arise.
 - **reference:** The GEP table's $110.68bn. Ours is $110,496,827,614 from 206 countries once aquatic plants are excluded for the reason in `decided`. The difference is **-$183,172,386, or -0.17 percent** of the table's figure, against +5.4 percent with plants in. ⚠⚠ **We make no split, and that is the point.** FAO publishes aquaculture as its own dataset -- `Aquaculture_Value.csv`, a separate release from `Global_production_quantity.csv`, whose rows are aquaculture by construction -- so this figure is read directly rather than derived by subtracting capture from a combined total. Nothing here depends on a split being right. The source's pipeline is the one that combines them, `GEP_fish := (aqua + capture) * NatRes_Share`, so a figure for aquaculture alone did not come from it.
   ⚠ **Where $110.68bn came from is still unknown, and it was looked for.** Not in the source repository: its two scripts are the FishStatJ chain, which reports one combined figure, and `scripts/2026/gep_commcapturefisheries_cwonmethod_20260720.R`, which is capture only and writes `fish_provision_gep_20260720.csv`. Not in `GEP Project: ES Status`, which carries no such number. Not in the `gep_by_country_base_year` master sheet, which holds terrestrial carbon columns only. So it exists, for us, as a cell in the issues document and nowhere else. That does not make our figure provisional -- ours is derived end to end from public FAO data and our own GTAP base data -- but it does mean the agreement cannot be called a reproduction.
 - **replicated:** Approximately, and the gap is explained rather than tuned. See `decided`.
+- **decided 2026-09-02: lambda is a share of REVENUE, so the account's figure is $63,134,099,412.** FAO's aquaculture value is revenue; GTAP's natural-resource share of fishing is a share of VALUE ADDED, which is revenue less what the sector buys from other sectors. Multiplying the two inflates by 1 over value-added-per-revenue, which for fishing is 0.596 and as low as 0.265 in some regions, so the conversion is applied per GTAP region rather than once. The superseded figure, $110,496,827,614, stays beside it as `aquaculture_gep_on_value_added_share`.
+  ⚠ The check that this is arithmetic and not a preference is forestry, where two unrelated sources meet: GTAP's land share of forestry value added is 0.589, which on revenue is 0.380, against CWoN's separately-built forest rental ratio of 0.376. One percent apart.
+  ⚠⚠ **Which means the -0.17 percent agreement with the GEP table's $110.68bn was probably agreement on a shared mistake.** Whoever produced that figure almost certainly multiplied revenue by the same value-added share. The account now differs from the table by 43 percent and the entry says why, rather than keeping a match it cannot explain. ⚠ GTAP's `fsh` sector follows ISIC 05, which covers fish farms as well as capture, so its share is a legitimate multiplier here and not a capture-only number borrowed by analogy.
 - **decided:** **Aquatic plants are excluded**, and there are now two independent reasons, neither of them the reference. The account's own service definition, in `GEP Project: ES Status`, is **"Biomass provisioning services: Cultivated Aquatic ANIMAL Nutritional"** -- seaweed is not an animal, so the exclusion is what the service says it is. And the multiplier is GTAP's natural-resource share of the FISHING sector, which does not contain seaweed farming. The multiplier is GTAP's natural-resource share of the FISHING sector, and GTAP does not put seaweed farming in fishing; applying a fishing-sector share to seaweed value prices one sector's output with another's factor structure. Seaweed is 5.4 percent of world aquaculture value ($15.9bn of $292.4bn), so the switch moves the account from $116.69bn to **$110.50bn**. Both figures are logged on every run and the choice is `fisheries_aquaculture_exclude_aquatic_plants`, so nothing here is hidden in a default.
   ⚠⚠ **This, and not the aggregation or the data vintage, is what explains the reference.** $110,496,827,614 against the table's $110,680,000,000 is a difference of $183,172,386, or -0.17 percent. Two earlier explanations in this entry were wrong and are withdrawn: the r50-against-r141 aggregation cannot account for it, because 92.8 percent of the total comes from countries whose GTAP region holds one or two countries and only 7.0 percent sits in genuinely pooled regions; and the FAO vintage cannot be tested at all, because the source records no version, no release and no download date anywhere in its repository.
   ⚠ **The source's own code does NOT drop plants** -- its ISSCAAP mapping keeps division 9, groups 91 to 94, at `gep_fisheries_01_clean_fishstatj.R:708`. Its published number behaves as though they were dropped, which means the exclusion was made when the FishStatJ export was taken rather than in any script. A filter applied in a desktop GUI leaves no trace in the repository and cannot be reviewed; ours is a row in `es_parameters` and a test.

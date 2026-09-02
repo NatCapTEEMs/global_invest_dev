@@ -203,6 +203,14 @@ def fisheries_aquaculture_gep(p):
             [str(name).strip() for name in axis] for axis in evfp.sets.setElements]
         share = ff.natural_resource_share_of_fishing(
             evfp.array, endowments, activities, regions)
+        # ⚠ CWoN has no aquaculture rent, so aquaculture cannot take CWoN's lambda the way timber,
+        # crop, livestock and the extractives do. What it CAN do is use GTAP's share on CWoN's
+        # denominator, so the figure is at least commensurable with the rest of the account. Same
+        # denominator, different source: that is the best available and the entry says so.
+        share = share.merge(
+            ff.natural_resource_share_of_fishing_gross_output(
+                evfp.array, har['MAKS'].array, endowments, activities, regions),
+            on='gtap_region_label', how='left')
 
         # The account's own correspondence carries the country-to-GTAP mapping, so the source's
         # iso3_gtap141_mapping.xlsx is not needed either.
@@ -226,9 +234,25 @@ def fisheries_aquaculture_gep(p):
             value, share, countries, int(p.gep_base_year), exclude_aquatic_plants=False)
         hb.log('aquaculture GEP excluding aquatic plants: %.6g USD; including them: %.6g USD'
                % (out['aquaculture_gep'].sum(), with_plants['aquaculture_gep'].sum()))
+        # The same natural-resource payments on GTAP's OTHER denominator. FAO's aquaculture value
+        # is a revenue, so multiplying it by a share of VALUE ADDED overstates it by value added
+        # over gross output -- 0.585 on average for fishing and as low as 0.265. Both are published
+        # because the account has not decided which denominator lambda is a share of, and the
+        # difference is $44.6bn. Forestry is the check: GTAP's land share of forestry value added
+        # is 0.589, which on gross output is 0.380, against CWoN's separate rental ratio of 0.376.
+        # ⚠ The account's aquaculture value is the REVENUE share as of 2026-09-02 (Chiara's
+        # decision). FAO gives revenue, so the share applied to it must be a share of revenue;
+        # the value-added share inflates it by 1/0.596. `aquaculture_gep` is therefore the revenue
+        # share, and the superseded value-added figure stays beside it under its own name.
+        out['aquaculture_gep_on_value_added_share'] = out['aquaculture_gep']
+        out['aquaculture_gep'] = (
+            out['aquaculture_value_usd'] * out['natural_resource_share_of_gross_output'])
         out['year'] = int(p.gep_base_year)
-        hb.df_write(out[utilities.GEP_COUNTRY_ATTR_COLS + ['year', 'aquaculture_gep']],
+        hb.df_write(out[utilities.GEP_COUNTRY_ATTR_COLS +
+                        ['year', 'aquaculture_gep', 'aquaculture_gep_on_value_added_share']],
                     p.fisheries_aquaculture_gep_path, index=False)
+        hb.log('  the superseded value-added-share figure: %.6g USD'
+               % out['aquaculture_gep_on_value_added_share'].sum())
         hb.log('fisheries aquaculture GEP (FAO FishStatJ value x GTAP natural-resource share, '
                'aquatic plants %s): %d countries with values, total %.4g USD'
                % ('excluded' if exclude_plants else 'included',

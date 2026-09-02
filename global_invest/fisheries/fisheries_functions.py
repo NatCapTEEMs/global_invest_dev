@@ -382,3 +382,40 @@ def aquaculture_gep_by_country(value_df, share_df, countries_df, year,
     df = df.merge(share_df, left_on='gtap_region_label', right_on='gtap_region_label', how='left')
     df['aquaculture_gep'] = df['aquaculture_value_usd'] * df['natural_resource_share']
     return df
+
+
+def natural_resource_share_of_fishing_gross_output(evfp_array, maks_array, endowments,
+                                                   activities, regions,
+                                                   sector=GTAP_FISHING_SECTOR,
+                                                   endowment=GTAP_NATURAL_RESOURCE_ENDOWMENT):
+    """The same natural-resource payments as a share of GROSS OUTPUT, not of value added.
+
+    ⚠ Why both exist. `natural_resource_share_of_fishing` divides the natural-resource payment by
+    the sector's total FACTOR payments -- its value added. FAO's aquaculture figure is a REVENUE,
+    which is gross output. Multiplying a revenue by a share of value added overstates it by the
+    ratio between the two, and for fishing that ratio is 0.585 on average and as low as 0.265.
+
+    The check that this is right rather than a preference is forestry, where two independent
+    sources meet: GTAP's land share of forestry value added is 0.589, and 0.589 x 0.644 = 0.380 on
+    gross output, against CWoN's separately-derived forest rental ratio of 0.376. One percent apart.
+
+    ⚠ The conversion is per region and cannot be a single factor: value added over gross output
+    runs 0.265 to 0.928 across the 50 GTAP regions, so a world average would move small fishing
+    economies by more than the correction itself.
+
+    Returns:
+        pandas.DataFrame: gtap_region_label and natural_resource_share_of_gross_output.
+    """
+    import numpy as np
+    import pandas as pd
+    e = endowments.index(endowment)
+    a = activities.index(sector)
+    evfp = np.asarray(evfp_array)
+    value_added = evfp[:, a, :].sum(axis=0)
+    gross_output = np.asarray(maks_array)[:, a, :].sum(axis=0)
+    if (gross_output <= 0).any():
+        empty = [regions[i] for i, g in enumerate(gross_output) if g <= 0]
+        raise ValueError('GTAP regions with no %s gross output, so the share is undefined rather '
+                         'than zero: %s' % (sector, ', '.join(empty)))
+    return pd.DataFrame({'gtap_region_label': regions,
+                         'natural_resource_share_of_gross_output': evfp[e, a, :] / gross_output})

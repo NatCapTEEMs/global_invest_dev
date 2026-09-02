@@ -2150,6 +2150,47 @@ def drop_aggregates_where_components_exist(df, aggregate_items, value_column,
     return marked[~redundant].drop(columns='n')
 
 
+def publish_raster_as_pog(path, log=None):
+    """Rewrite a published raster as a POG: a pyramidal COG.
+
+    A result somebody opens should be readable without downloading all of it and should sit on the
+    account's own grid. `hb.is_path_pog` is both of those in one call -- a pyramidal geotransform
+    at a pyramid resolution, with overview levels [3, 15, 30, 90, 180, 360] and exact statistics
+    stored internally, tiled and COG-valid.
+
+    ⚠ What is usually missing is NOT the grid. Measured 2026-09-02 across every raster the runs
+    had written: they sit on the right geotransform and fail on overviews and statistics, which is
+    what `hb.make_path_pog` adds. `base_data/pyramids/ha_per_cell_10sec.tif` failed the same way,
+    so this was a library-wide gap rather than any one service's.
+
+    Rewrites in place and is idempotent: a raster already a POG is left alone, so distributing
+    twice costs nothing.
+
+    Args:
+        path (str): the raster to convert, already copied into the output directory.
+        log (callable): where to report; hazelbean's log by default.
+
+    Returns:
+        bool: True if the file is a POG when this returns, False if it could not be made one --
+        a raster off the pyramid entirely cannot be fixed by adding overviews, and saying so is
+        more useful than raising inside a distribution step that runs last.
+    """
+    log = log or hb.log
+    if hb.is_path_pog(path):
+        return True
+    try:
+        hb.make_path_pog(path, output_raster_path=path)
+    except Exception as error:
+        log('  could not make %s a POG: %s' % (os.path.basename(path), error))
+        return False
+    if hb.is_path_pog(path):
+        log('  wrote %s as a POG' % os.path.basename(path))
+        return True
+    log('  %s is still not a POG: it is not on the pyramid, which overviews cannot fix'
+        % os.path.basename(path))
+    return False
+
+
 def distribute_results(p, service, log=None):
     """Copy a service's registered results into the project's output directory.
 
@@ -2168,4 +2209,8 @@ def distribute_results(p, service, log=None):
         output_path = os.path.join(p.output_dir, name)
         hb.path_copy(path, output_path)
         log('Distributed %s to %s' % (name, output_path))
+        # Every raster that leaves as a result leaves as a POG, once, here -- rather than each
+        # service remembering to do it.
+        if str(output_path).lower().endswith(('.tif', '.tiff')):
+            publish_raster_as_pog(output_path, log=log)
     log('GEP results distribution complete.')
