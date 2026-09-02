@@ -38,7 +38,7 @@ fisheries,fisheries_aquaculture_species_groups_source_url,https://www.fao.org/fi
 fisheries,fisheries_aquaculture_species_groups_source_archive_member,CL_FI_SPECIES_GROUPS.csv
 fisheries,fisheries_aquaculture_exclude_aquatic_plants,true
 fisheries,fisheries_gtap_basedata_path,gtappy/cge_releases/gtapv7-aez-rd/data/v12-s26-r50/basedata.har
-fisheries,fisheries_subsistence_lynch_path,global_invest/fisheries/subsistence/Rec fish food_20230509_for USGS data release.xlsx
+fisheries,fisheries_subsistence_lynch_path,global_invest/fisheries/Rec fish food_20230509_for USGS data release.xlsx
 erosion,erosion_dem_path,global_invest/erosion/global_dem_reproj.tif
 erosion,erosion_lulc_path,global_invest/erosion/lulc_esa_2019_reproj_6p45km.tif
 erosion,erosion_biophysical_table_path,global_invest/erosion/expanded_biophysical_table_gura.csv

@@ -147,7 +147,22 @@ somewhere and been caught:
    two of them were called by nothing; they are deliberate API, so the fix was a test that builds
    every tree, which also proves each one assembles -- something nothing had checked.
 
-Green means all fourteen. **amber** means the number is usable and at least one condition is open, with
+15. **The service's data in base_data is organised, and every file in it is read by something.**
+   An input directory is part of the service, not a drawer beside it. Three things have to hold.
+   Inputs sit under a subfolder that names what they are -- the subgroup where a service has
+   subgroups, so fisheries reads `commercial/`, `subsistence/` and `aquaculture/` rather than one
+   flat pile in which nobody can tell which of three lineages a file belongs to. Nothing is
+   duplicated: the same bytes in two places means two things can drift apart while both look
+   current, and one of them is being read. And every file present is read by the pipeline, a test
+   or the entry, because a file nobody reads is indistinguishable from an input until someone
+   deletes it.
+
+   ⚠ The reference anchors are the exception and stay FLAT at the top of the service directory.
+   That is `service_data_dir`'s contract rather than an oversight: it seeds top-level files only,
+   so an anchor moved into a subfolder stops being found on a machine that has not staged it by
+   hand.
+
+Green means all fifteen. **amber** means the number is usable and at least one condition is open, with
 the entry saying which. **red** means the number should not be quoted yet.
 
 ⚠⚠ **A fidelity-only check no longer passes.** This used to read that a service could be green
@@ -402,7 +417,23 @@ hectare. `ours` is where that lives.
   ⚠ **The source's own code does NOT drop plants** -- its ISSCAAP mapping keeps division 9, groups 91 to 94, at `gep_fisheries_01_clean_fishstatj.R:708`. Its published number behaves as though they were dropped, which means the exclusion was made when the FishStatJ export was taken rather than in any script. A filter applied in a desktop GUI leaves no trace in the repository and cannot be reviewed; ours is a row in `es_parameters` and a test.
   On regions: the share is read at GTAP **r50** and the source read it at **r141**. ⚠ r250 is not available for the share in any GTAP release, because GTAP regions are aggregates -- `xsmc` pools 41 countries -- so there is no country-level natural-resource share for Ecuador or Fiji anywhere. What IS at r250 is the output: the value is FAO's and country-level, and only the share is regional, which is exactly what the source does too. ⚠ This is the ONLY fisheries subgroup whose valuation depends on GTAP: commercial reads CWoN's economic-rent table and subsistence reads Lynch et al., so aquaculture rests on a modelled factor-payment split where its siblings rest on observed rents and survey data.
 - **number:** $110.50bn across 206 countries, aquatic plants excluded ($116.69bn including them). World aquaculture value in 2019 is $292.4bn and the natural-resource share of fishing value added runs 29 to 59 percent by region, mean 41. China $68.02bn, Vietnam $7.12bn, Chile $5.81bn, India $5.66bn.
-- **signed off:** amber as of 2026-09-02. The task exists and has run: `gep_fisheries/intermediate/fisheries_aquaculture_gep/aquaculture_gep_by_country.csv`, 250 rows on the account's list, 206 valued, $110,497,000,000 -- and the throwaway script's $116.69bn is still logged beside it as the including-plants variant, which is the point of moving it into the module rather than the check on it. ⚠ It was red until the task existed, deliberately: a figure computed beside the library is not a figure the library produces, and `total` stayed blank while that was true.
+- **signed off:** amber as of 2026-09-02. The task exists and has run: `gep_fisheries/intermediate/fisheries_aquaculture_gep/aquaculture_gep_by_country.csv`, 250 rows on the account's list, 206 valued, $110,497,000,000 -- and the throwaway script's $116.69bn is still logged beside it as the including-plants variant, which is the point of moving it into the module rather than the check on it.
+  **Three conditions are open and they are named rather than counted.** ⚠⚠ **12 is open and is the
+  one that matters**: the reference is a figure in a document, not a file. $110,680,000,000 is the
+  GEP Table cell in the issues document's Aquaculture row, and **we do not know what produced it**.
+  It cannot be the source pipeline, which reports capture and aquaculture as one number, so an
+  aquaculture-only figure was derived somewhere nobody has shown us. Condition 12 wants the
+  reference staged in base_data, a test comparing against it, and the comparison made against a
+  cold start; none of the three is possible against a number in a table. So "agrees to -0.17
+  percent" is **suggestive, not a verification** -- our figure is computed from FAO's public data
+  and our own GTAP share, independently of whatever produced theirs, and landing within $183m of it
+  is evidence the two are the same quantity, not proof either is right. ⚠ **10 is open**: no cold
+  start, so the claim that a clone reproduces this rests on paths resolving rather than on a run.
+  ⚠ **9 is open**: two asks, neither sent -- confirm the FishStatJ export excluded aquatic plants,
+  and say what produced $110.68bn. **15 is met**: `base_data/global_invest/fisheries` is organised by subgroup -- `commercial/`, `aquaculture/` -- with the reference anchors flat where `service_data_dir` needs them, and C21 finds no duplicate in it. It found one on 2026-09-02, the Lynch workbook present twice because it is both the subsistence input and a reference anchor; it is one file now and the input path points at the anchor. C21 names 25 duplicates across eight other services, so this condition is newly unmet in most of the account rather than newly satisfied. **5 is met and is unusually strong here**, which is worth saying
+  because it is rare in this account: the inputs are FAO's public release and our own GTAP base
+  data, so this is not a port of somebody's code checked against its own output. If it is wrong, it
+  is wrong in a way somebody can find. ⚠ It was red until the task existed, deliberately: a figure computed beside the library is not a figure the library produces, and `total` stayed blank while that was true.
 - **need:** Nothing external. All four inputs the source names were resolved on 2026-09-02 without asking anyone: `aqua_prod_quant.csv` and `aqua_prod_value.csv` are `Aquaculture_Quantity.csv` and `Aquaculture_Value.csv` inside FAO's public `Aquaculture_2025.1.0.zip` (2.1 MB, and its `MEASURE` codes `Q_tlw` and `V_USD_1000` are literally the source's column names); `fsh_endowment_gtap.xlsx` is computed here from `basedata.har` as `EVFP[NatRes, fsh, r] / EVFP[:, fsh, r]`; and `iso3_gtap141_mapping.xlsx` is the account's own `ee_r264_correspondence.csv`, which maps all 250 countries onto the 50 GTAP regions with none left over. None of the four existed anywhere in base_data beforehand -- searched the whole tree, not just the fisheries folder.
 
 
