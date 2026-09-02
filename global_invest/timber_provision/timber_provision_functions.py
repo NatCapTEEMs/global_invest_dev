@@ -91,3 +91,43 @@ def timber_gep_from_zone_sums(zone_sums, countries_df):
     df = countries_df.copy()
     df["timber_provision_gep"] = zone_sums[df["iso3_r250_id"].to_numpy(dtype=int)]
     return df
+
+
+# The CWoN rental alternative. The issues document recommends valuing this service from FAOSTAT and
+# CWoN rather than from the staged value raster, and CWoN publishes the answer rather than the
+# ingredients: `Forest, rents (current US$)`, the same reproducibility package the gas, oil, coal
+# and hydropower rents come from. Both figures are published side by side because the choice
+# between them is live: the raster is spatial and cannot be rebuilt here, the rent is a country
+# table with no spatial detail and is the source every other rent-based service already uses.
+CWON_FOREST_RENT_SERIES = 'Forest, rents (current US$)'
+
+
+def cwon_forest_rent_by_country(rent_df, countries_df, year):
+    """CWoN's published forest rent for one year, on the account's country rows.
+
+    Args:
+        rent_df (pd.DataFrame): forest_timber_rent_cd, wide by year (countrycode + YR<year>).
+        countries_df (pd.DataFrame): the r250 country rows, carrying iso3_r250_label.
+        year (int): the base year.
+
+    Returns:
+        pd.DataFrame: countries_df with timber_provision_gep_cwon_rent added. A country CWoN does
+        not value stays NaN rather than zero, because no rent published is not a rent of nothing.
+
+    Raises:
+        ValueError: if the file does not carry the expected series, since a silently different
+            series would publish some other quantity under this name.
+    """
+    import pandas as pd
+    if 'series' in rent_df.columns:
+        series = set(str(v) for v in rent_df['series'].dropna().unique())
+        if CWON_FOREST_RENT_SERIES not in series:
+            raise ValueError('%s does not carry %r; it carries %r'
+                             % ('the CWoN rent table', CWON_FOREST_RENT_SERIES, sorted(series)[:3]))
+        rent_df = rent_df[rent_df['series'] == CWON_FOREST_RENT_SERIES]
+    column = 'YR%d' % int(year)
+    rent = rent_df[['countrycode', column]].copy()
+    rent['timber_provision_gep_cwon_rent'] = pd.to_numeric(rent[column], errors='coerce')
+    return countries_df.merge(
+        rent[['countrycode', 'timber_provision_gep_cwon_rent']],
+        left_on='iso3_r250_label', right_on='countrycode', how='left').drop(columns=['countrycode'])

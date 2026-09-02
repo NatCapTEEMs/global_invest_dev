@@ -124,3 +124,48 @@ def test_the_flat_sum_is_the_only_reading_the_roundwood_market_can_support():
     assert per_hectare > 3 * gross, (
         'the $/ha reading must be impossible, not merely large: it is %.0f%% of gross'
         % (100 * per_hectare / gross))
+
+
+def test_the_cwon_rent_is_read_from_its_named_series_and_missing_stays_missing():
+    """The rental alternative the issues document recommends, published beside ours.
+
+    CWoN's file is wide by year and carries a `series` label. Reading the year column without
+    checking the label would publish whatever series happened to be in the file under the name
+    `timber_provision_gep_cwon_rent`, which is the failure this guards.
+    """
+    rent = pd.DataFrame({
+        'countrycode': ['AAA', 'BBB'],
+        'series': ['Forest, rents (current US$)'] * 2,
+        'YR2019': [100.0, 250.0],
+    })
+    countries = pd.DataFrame({'iso3_r250_label': ['AAA', 'BBB', 'CCC']})
+    out = tp.cwon_forest_rent_by_country(rent, countries, 2019).set_index('iso3_r250_label')
+    assert out.loc['AAA', 'timber_provision_gep_cwon_rent'] == pytest.approx(100.0)
+    # CWoN does not value CCC; no rent published is not a rent of nothing.
+    assert pd.isna(out.loc['CCC', 'timber_provision_gep_cwon_rent'])
+
+    wrong = rent.assign(series='Coal rents (current US$)')
+    with pytest.raises(ValueError, match='Forest, rents'):
+        tp.cwon_forest_rent_by_country(wrong, countries, 2019)
+
+
+def test_both_timber_valuations_are_published_and_differ_by_the_recorded_ratio():
+    """Publishing one silently would hide a $43bn choice, so every run writes both."""
+    import glob
+    import os
+    pattern = os.path.join(os.path.expanduser('~'), 'Files', 'global_invest', 'projects',
+                           'gep_timber_provision*', '**', 'gep_by_country_base_year.csv')
+    produced = [f for f in glob.glob(pattern, recursive=True)]
+    if not produced:
+        pytest.skip('no timber_provision run on this machine')
+    for path in produced:
+        df = pd.read_csv(path)
+        assert 'timber_provision_gep' in df.columns
+        assert 'timber_provision_gep_cwon_rent' in df.columns, (
+            '%s publishes only one valuation' % path)
+        spatial = df['timber_provision_gep'].sum()
+        rental = df['timber_provision_gep_cwon_rent'].sum()
+        # 1.49 as measured on 2026-09-02. A wide band, because this pins that the two are the
+        # same order and neither column has silently become the other, not the ratio itself.
+        assert 1.3 < rental / spatial < 1.7, (
+            '%s: rental/spatial is %.2f, not the recorded 1.49' % (path, rental / spatial))

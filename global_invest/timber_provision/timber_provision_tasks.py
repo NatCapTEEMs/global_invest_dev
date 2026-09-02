@@ -6,6 +6,7 @@ the 10-arcsecond country-id raster. The committed Forestry CSV stays as the test
 the run is compared against, never as the output."""
 
 import numpy as np
+import pandas as pd
 import rasterio
 import hazelbean as hb
 from global_invest import utilities
@@ -46,11 +47,26 @@ def gep_calculation(p):
     countries = utilities.collapse_countries_to_r250(p.df_countries)[attr_cols]
     df_gep = tp.timber_gep_from_zone_sums(zone_sums, countries)
     df_gep['year'] = int(p.gep_base_year)
-    hb.df_write(df_gep[attr_cols + ['year', 'timber_provision_gep']],
+
+    # Both valuations, side by side, because the choice between them is live and the issues
+    # document recommends the second. Publishing one silently would hide a $43bn decision.
+    df_gep = tp.cwon_forest_rent_by_country(
+        # pd.read_stata, like extractive_energy and fisheries: hb.df_read is csv-only and a
+        # .dta reaches it as a malformed csv rather than as the wrong reader.
+        pd.read_stata(str(p.get_path(p.timber_provision_cwon_forest_rent_path))),
+        df_gep, int(p.gep_base_year))
+    hb.df_write(df_gep[attr_cols + ['year', 'timber_provision_gep',
+                                    'timber_provision_gep_cwon_rent']],
                 service_results['gep_by_country_base_year'])
 
-    hb.log(f'Total timber_provision GEP for base year {p.gep_base_year}: '
-           f'{df_gep["timber_provision_gep"].sum():,.2f}')
+    spatial = df_gep['timber_provision_gep'].sum()
+    rental = df_gep['timber_provision_gep_cwon_rent'].sum()
+    hb.log(f'Total timber_provision GEP for base year {p.gep_base_year}: {spatial:,.2f}')
+    hb.log(f'  the value raster x GTAP land share : {spatial:,.2f} '
+           f'({int(df_gep["timber_provision_gep"].gt(0).sum())} countries)')
+    hb.log(f'  CWoN "Forest, rents (current US$)" : {rental:,.2f} '
+           f'({int(df_gep["timber_provision_gep_cwon_rent"].notna().sum())} countries), '
+           f'ratio {rental / spatial:.2f}')
     committed = hb.df_read(p.timber_provision_gep_path)
     hb.log(f'Committed Forestry table total: {committed.select_dtypes("number").iloc[:, -1].sum():,.2f} (the test anchor).')
     return True
