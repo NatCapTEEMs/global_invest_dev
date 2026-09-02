@@ -18,14 +18,8 @@ built anywhere we have seen; the module is laid out to receive them beside hydro
 import numpy as np
 import pandas as pd
 
-# The capitalization rate is `water_supply_hydropower_capitalization_rate` in es_parameters and is
-# NOT duplicated here: a module constant beside a CSV row wins over it silently, which is what H19
-# exists to catch and did catch when this was written both ways.
-#
-# ⚠ It is not the account's social discount rate, which is 2 percent with sensitivity at 1 and 3.
-# It is the rate CWoN CAPITALIZED hydropower wealth with, and this module runs that capitalization
-# backwards to recover the annual rent inside it, so inverting with any other rate returns a rent
-# CWoN never capitalized. The two share a word and nothing else.
+# The capitalization rate is `water_supply_hydropower_capitalization_rate` in es_parameters. It is
+# CWoN's, not the account's discount rate; the method page says why.
 HYDROPOWER_HORIZON_YEARS = 100    # the CWoN capitalization horizon
 HYDROPOWER_GEP_YEAR = 2019
 # Countries the reference output leaves EMPTY although the CWoN wealth table values them.

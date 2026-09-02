@@ -88,8 +88,15 @@ From `es_parameters.csv`, scoped to the `water_supply` service:
 ## Method constants
 
 - `water_supply_hydropower_capitalization_rate = 0.04` in `es_parameters`, the rate CWoN
-  capitalized their wealth figure with. ⚠ Not the account's 2 percent social discount rate:
-  this module inverts CWoN's capitalization, so it must use the rate they capitalized with.
+  capitalized their wealth figure with.
+
+  ⚠ **This is not the account's discount rate and must not be harmonized onto it.** The account
+  discounts future benefits at 2 percent, with sensitivity at 1 and 3. This rate is doing the
+  opposite job: CWoN published a *capitalized* wealth figure, and hydropower GEP is the annual
+  rent inside it, so the module runs their capitalization backwards. Inverting with any rate but
+  the one they capitalized with returns a rent CWoN never capitalized — the number would become
+  wrong in the act of making it look consistent. The two quantities share a word and nothing else.
+  The consistency gate knows the difference and reports both.
 - `HYDROPOWER_HORIZON_YEARS = 100`, the CWoN capitalisation horizon.
 - `HYDROPOWER_GEP_YEAR = 2019`, the wealth column the rent is read from. Current USD equals real
   2019 USD in the 2019 base year, and this is the only variant that covers Venezuela.
