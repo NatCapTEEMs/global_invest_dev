@@ -300,6 +300,11 @@ def subsistence_fisheries_by_country(lynch_df, countries_df):
 # beside capture is a scope question for the paper rather than a computation.
 # =============================================================================
 AQUACULTURE_VALUE_MEASURE = 'V_USD_1000'   # FAO's own code: value in thousand USD
+# FAO's Major_Group for seaweeds and other aquatic plants. Excluded by default, and the reason is
+# the share rather than the reference: the multiplier is GTAP's natural-resource share of the
+# FISHING sector, and GTAP does not put seaweed farming in fishing. Applying a fishing-sector
+# share to seaweed value prices one sector's output with another's factor structure.
+AQUATIC_PLANTS_MAJOR_GROUP = 'PLANTAE AQUATICAE'
 GTAP_FISHING_SECTOR = 'fsh'
 GTAP_NATURAL_RESOURCE_ENDOWMENT = 'NatRes'
 
@@ -341,7 +346,8 @@ def natural_resource_share_of_fishing(evfp_array, endowments, activities, region
                          'natural_resource_share': natural_resource / total})
 
 
-def aquaculture_value_by_country(value_df, year):
+def aquaculture_value_by_country(value_df, year, species_groups_df=None,
+                                 exclude_aquatic_plants=True):
     """FAO FishStatJ aquaculture value for one year, summed over species, area and environment.
 
     The export is long: one row per country-species-area-environment-year, `VALUE` in thousand
@@ -351,18 +357,27 @@ def aquaculture_value_by_country(value_df, year):
     df = value_df[value_df['PERIOD'] == int(year)]
     if 'MEASURE' in df.columns:
         df = df[df['MEASURE'] == AQUACULTURE_VALUE_MEASURE]
+    if exclude_aquatic_plants:
+        if species_groups_df is None:
+            raise ValueError('excluding aquatic plants needs the species-group table, so that '
+                             'which species were dropped is readable rather than assumed')
+        plants = set(species_groups_df.loc[
+            species_groups_df['Major_Group'] == AQUATIC_PLANTS_MAJOR_GROUP, '3A_Code'])
+        df = df[~df['SPECIES.ALPHA_3_CODE'].isin(plants)]
     out = df.groupby('COUNTRY.UN_CODE', as_index=False)['VALUE'].sum()
     out['aquaculture_value_usd'] = out['VALUE'] * 1000.0
     return out.rename(columns={'COUNTRY.UN_CODE': 'iso3_r250_id'})[
         ['iso3_r250_id', 'aquaculture_value_usd']]
 
 
-def aquaculture_gep_by_country(value_df, share_df, countries_df, year):
+def aquaculture_gep_by_country(value_df, share_df, countries_df, year,
+                               species_groups_df=None, exclude_aquatic_plants=True):
     """Aquaculture GEP: FAO value times the natural-resource share of the country's GTAP region.
 
     A country FAO does not value stays NaN rather than zero: no data is not no aquaculture.
     """
-    values = aquaculture_value_by_country(value_df, year)
+    values = aquaculture_value_by_country(value_df, year, species_groups_df,
+                                          exclude_aquatic_plants)
     df = countries_df.merge(values, on='iso3_r250_id', how='left')
     df = df.merge(share_df, left_on='gtap_region_label', right_on='gtap_region_label', how='left')
     df['aquaculture_gep'] = df['aquaculture_value_usd'] * df['natural_resource_share']

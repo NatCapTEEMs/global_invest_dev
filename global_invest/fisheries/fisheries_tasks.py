@@ -215,11 +215,22 @@ def fisheries_aquaculture_gep(p):
             countries['gtapv7_r50_label'].astype(str).str.strip().str.lower())
 
         value = hb.df_read(str(p.get_path(p.fisheries_aquaculture_value_path)))
-        out = ff.aquaculture_gep_by_country(value, share, countries, int(p.gep_base_year))
+        species = hb.df_read(str(p.get_path(p.fisheries_aquaculture_species_groups_path)))
+        exclude_plants = bool(p.fisheries_aquaculture_exclude_aquatic_plants)
+        out = ff.aquaculture_gep_by_country(
+            value, share, countries, int(p.gep_base_year),
+            species_groups_df=species, exclude_aquatic_plants=exclude_plants)
+        # Both figures, always, so the scope choice is visible in the output rather than only in
+        # the configuration: the plants are 5.4 percent of the account and somebody will ask.
+        with_plants = ff.aquaculture_gep_by_country(
+            value, share, countries, int(p.gep_base_year), exclude_aquatic_plants=False)
+        hb.log('aquaculture GEP excluding aquatic plants: %.6g USD; including them: %.6g USD'
+               % (out['aquaculture_gep'].sum(), with_plants['aquaculture_gep'].sum()))
         out['year'] = int(p.gep_base_year)
         hb.df_write(out[utilities.GEP_COUNTRY_ATTR_COLS + ['year', 'aquaculture_gep']],
                     p.fisheries_aquaculture_gep_path, index=False)
-        hb.log('fisheries aquaculture GEP (FAO FishStatJ value x GTAP natural-resource share): '
-               '%d countries with values, total %.4g USD'
-               % (out['aquaculture_gep'].notna().sum(), out['aquaculture_gep'].sum()))
+        hb.log('fisheries aquaculture GEP (FAO FishStatJ value x GTAP natural-resource share, '
+               'aquatic plants %s): %d countries with values, total %.4g USD'
+               % ('excluded' if exclude_plants else 'included',
+                  out['aquaculture_gep'].notna().sum(), out['aquaculture_gep'].sum()))
     return True

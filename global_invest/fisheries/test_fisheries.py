@@ -309,7 +309,8 @@ def test_aquaculture_gep_is_value_times_the_region_share_and_missing_stays_missi
         'iso3_r250_label': ['AAA', 'BBB', 'CCC'],
         'gtap_region_label': ['aaa', 'bbb', 'aaa'],
     })
-    out = ff.aquaculture_gep_by_country(value, share, countries, 2019).set_index('iso3_r250_label')
+    out = ff.aquaculture_gep_by_country(value, share, countries, 2019,
+                                        exclude_aquatic_plants=False).set_index('iso3_r250_label')
     # 150 thousand USD -> 150,000 dollars, halved by the share.
     assert out.loc['AAA', 'aquaculture_gep'] == pytest.approx(75_000.0)
     assert out.loc['BBB', 'aquaculture_gep'] == pytest.approx(5_000.0)
@@ -324,6 +325,34 @@ def test_only_the_base_year_and_only_the_value_measure_are_summed():
         'PERIOD': [2019, 2018, 2019],
         'VALUE': [100.0, 999.0, 888.0],
     })
-    out = ff.aquaculture_value_by_country(value, 2019)
+    out = ff.aquaculture_value_by_country(value, 2019, exclude_aquatic_plants=False)
     assert len(out) == 1
     assert out['aquaculture_value_usd'].iloc[0] == pytest.approx(100_000.0)
+
+
+def test_aquatic_plants_are_dropped_and_dropping_them_needs_the_species_table():
+    """The scope choice that reconciles us with the reference, pinned so it cannot drift silently.
+
+    Seaweed is 5.4 percent of world aquaculture value. Including it gives $116.69bn and excluding
+    it $110.50bn against the reference's $110.68bn -- so this one switch is the whole difference,
+    and it was invisible in the source, whose ISSCAAP mapping keeps division 9 while its exported
+    data evidently did not.
+    """
+    value = pd.DataFrame({
+        'COUNTRY.UN_CODE': [4, 4],
+        'SPECIES.ALPHA_3_CODE': ['FCY', 'SWX'],
+        'MEASURE': ['V_USD_1000'] * 2,
+        'PERIOD': [2019, 2019],
+        'VALUE': [100.0, 40.0],
+    })
+    species = pd.DataFrame({'3A_Code': ['FCY', 'SWX'],
+                            'Major_Group': ['PISCES', 'PLANTAE AQUATICAE']})
+    kept = ff.aquaculture_value_by_country(value, 2019, species, exclude_aquatic_plants=True)
+    assert kept['aquaculture_value_usd'].iloc[0] == pytest.approx(100_000.0)
+    both = ff.aquaculture_value_by_country(value, 2019, species, exclude_aquatic_plants=False)
+    assert both['aquaculture_value_usd'].iloc[0] == pytest.approx(140_000.0)
+
+    # Dropping a species group without the table that says which species they are would be a
+    # silent filter, so it raises instead.
+    with pytest.raises(ValueError, match='species-group table'):
+        ff.aquaculture_value_by_country(value, 2019, None, exclude_aquatic_plants=True)
