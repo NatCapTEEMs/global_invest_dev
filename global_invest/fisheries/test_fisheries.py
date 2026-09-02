@@ -104,8 +104,13 @@ def test_es_config_and_parameters_rows_hydrate_the_fisheries_gep(tmp_path):
     utilities.hydrate_es_config(p, 'fisheries', log=lambda *a: None)
     assert p.gep_base_year == 2019
     utilities.hydrate_es_parameters(p, 'fisheries', log=lambda *a: None)
-    assert p.fisheries_cwon_cpi_path.endswith('cwon/cpi2019.dta')
-    assert p.fisheries_cwon_econ_rent_path.endswith('cwon/EconRent_Analysis_AllYears.dta')
+    # base_data/global_invest/fisheries is organised by SUBGROUP -- commercial, subsistence,
+    # aquaculture -- because the three read different lineages (CWoN, Lynch, FAO+GTAP) and the
+    # account reasons per subgroup. The reference anchors stay flat at the top of the service
+    # directory, which is service_data_dir's contract: it seeds top-level files only.
+    assert p.fisheries_cwon_cpi_path.endswith('commercial/cpi2019.dta')
+    assert p.fisheries_cwon_econ_rent_path.endswith('commercial/EconRent_Analysis_AllYears.dta')
+    assert p.fisheries_aquaculture_value_path.endswith('aquaculture/Aquaculture_Value.csv')
 
 
 # --- Subsistence component (Lynch et al. 2024) ---
