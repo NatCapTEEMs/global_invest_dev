@@ -4,8 +4,10 @@ The consortium drive's Hydropower folder carries the committed 2019 output
 (gep_hydro_directuse_CWONresrent_20260720.csv) but not the script behind it; the method was
 identified by reverse-engineering against that anchor and is exact across all 94 valued
 countries (ratio constant to 1e-10): the 2019 GEP is CWoN 2024's capitalized hydropower
-wealth divided by the annuity factor at the CWoN-standard 4 percent discount over a 100-year
-horizon — the constant annual rent the capitalized value implies. The test suite asserts both
+wealth divided by the annuity factor at the CWoN-standard 4 percent CAPITALIZATION rate over a
+100-year horizon — the constant annual rent the capitalized value implies. That rate is CWoN's
+and is not the account's 2 percent social discount rate; inverting their capitalization with any
+other rate returns a rent they never capitalized. The test suite asserts both
 the annuity identity and the exact replication. An earlier direct-use script on the drive
 (price x quantity from EIA/World Bank series, Nov 2024) is superseded by this method and not
 ported.
@@ -16,7 +18,14 @@ built anywhere we have seen; the module is laid out to receive them beside hydro
 import numpy as np
 import pandas as pd
 
-HYDROPOWER_DISCOUNT_RATE = 0.04   # the CWoN standard discount
+# The capitalization rate is `water_supply_hydropower_capitalization_rate` in es_parameters and is
+# NOT duplicated here: a module constant beside a CSV row wins over it silently, which is what H19
+# exists to catch and did catch when this was written both ways.
+#
+# ⚠ It is not the account's social discount rate, which is 2 percent with sensitivity at 1 and 3.
+# It is the rate CWoN CAPITALIZED hydropower wealth with, and this module runs that capitalization
+# backwards to recover the annual rent inside it, so inverting with any other rate returns a rent
+# CWoN never capitalized. The two share a word and nothing else.
 HYDROPOWER_HORIZON_YEARS = 100    # the CWoN capitalization horizon
 HYDROPOWER_GEP_YEAR = 2019
 # Countries the reference output leaves EMPTY although the CWoN wealth table values them.
@@ -32,12 +41,12 @@ HYDROPOWER_REFERENCE_EXCLUDED = ('AZE', 'BGR', 'DOM', 'GRC', 'GTM', 'HTI', 'KAZ'
                                  'MAR', 'MKD', 'NIC', 'POL', 'PRT', 'SLV', 'TJK', 'UKR', 'ZAF')
 
 
-def annuity_factor(rate=HYDROPOWER_DISCOUNT_RATE, years=HYDROPOWER_HORIZON_YEARS):
+def annuity_factor(rate, years=HYDROPOWER_HORIZON_YEARS):
     """Present value of one dollar per year for the horizon: sum of 1/(1+r)^t, t = 1..years."""
     return float(np.sum(1.0 / (1.0 + rate) ** np.arange(1, years + 1)))
 
 
-def hydropower_rent_from_wealth(wealth_df, year=HYDROPOWER_GEP_YEAR):
+def hydropower_rent_from_wealth(wealth_df, capitalization_rate, year=HYDROPOWER_GEP_YEAR):
     """CWoN capitalized hydropower wealth -> the implied constant annual rent per country.
 
     wealth_df: the CWoN hydro_wealth_cd table (countrycode + YR<year> columns, current USD --
@@ -51,7 +60,7 @@ def hydropower_rent_from_wealth(wealth_df, year=HYDROPOWER_GEP_YEAR):
     df = wealth_df[['countrycode', f'YR{year}']].rename(
         columns={'countrycode': 'iso3_r250_label',
                  f'YR{year}': 'hydropower_wealth_usd'})
-    df['hydropower_gep'] = df['hydropower_wealth_usd'] / annuity_factor()
+    df['hydropower_gep'] = df['hydropower_wealth_usd'] / annuity_factor(capitalization_rate)
     df['hydropower_gep_reference_variant'] = df['hydropower_gep'].mask(
         df['iso3_r250_label'].isin(HYDROPOWER_REFERENCE_EXCLUDED))
     return df

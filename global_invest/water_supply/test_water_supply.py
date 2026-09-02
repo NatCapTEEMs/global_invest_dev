@@ -19,6 +19,11 @@ from global_invest import utilities
 from global_invest.water_supply import water_supply_functions as wf
 
 
+# CWoN's capitalization rate, which is es_parameters configuration rather than a module
+# constant now, so the tests name it here instead of importing one that no longer exists.
+CWON_CAPITALIZATION_RATE = 0.04
+
+
 def _base_data_project():
     """A bare ProjectFlow, only for its base_data_dir.
 
@@ -34,7 +39,7 @@ REFERENCE_DIR = utilities.service_data_dir(_base_data_project(), 'water_supply')
 
 
 def test_annuity_identity_matches_the_observed_anchor_ratio():
-    factor = wf.annuity_factor()
+    factor = wf.annuity_factor(0.04)   # CWoN's capitalization rate, now an es_parameters row
     assert np.isclose(factor, 24.504998997, rtol=1e-9)      # sum of 1/1.04^t, t=1..100
     assert np.isclose(1.0 / factor, 0.040808, atol=1e-6)    # the ratio observed in the anchor
 
@@ -43,7 +48,7 @@ def test_exact_replication_of_the_committed_anchor():
     wealth = pd.read_stata(os.path.join(REFERENCE_DIR, 'hydro_wealth_cd.dta'))
     anchor = pd.read_csv(os.path.join(REFERENCE_DIR, 'gep_hydro_directuse_CWONresrent_20260720.csv'))
 
-    rent = wf.hydropower_rent_from_wealth(wealth)
+    rent = wf.hydropower_rent_from_wealth(wealth, CWON_CAPITALIZATION_RATE)
     merged = anchor.merge(rent, on='iso3_r250_label', how='left')
     variant, ref = merged['hydropower_gep_reference_variant'], merged['gep_hydro_cwonresrent_2019usd']
     both = variant.notna() & ref.notna()
@@ -62,7 +67,7 @@ def test_the_reported_value_covers_the_countries_the_reference_drops():
     """The reported column must NOT reproduce the reference's unexplained exclusions. Blanking
     them would fit our number to the anchor, and the discrepancy could never surface."""
     wealth = pd.read_stata(os.path.join(REFERENCE_DIR, 'hydro_wealth_cd.dta'))
-    rent = wf.hydropower_rent_from_wealth(wealth).set_index('iso3_r250_label')
+    rent = wf.hydropower_rent_from_wealth(wealth, CWON_CAPITALIZATION_RATE).set_index('iso3_r250_label')
 
     for label in wf.HYDROPOWER_REFERENCE_EXCLUDED:
         assert pd.notna(rent.loc[label, 'hydropower_gep']), label
@@ -75,7 +80,7 @@ def test_the_reported_value_covers_the_countries_the_reference_drops():
 
 def test_no_wealth_stays_nan_and_the_join_keeps_all_countries():
     wealth = pd.DataFrame({'countrycode': ['AAA'], 'YR2019': [245.05]})
-    hydropower = wf.hydropower_rent_from_wealth(wealth)
+    hydropower = wf.hydropower_rent_from_wealth(wealth, CWON_CAPITALIZATION_RATE)
     countries = pd.DataFrame({'iso3_r250_label': ['AAA', 'BBB'], 'iso3_r250_id': [1, 2]})
     out = wf.water_supply_gep_by_country(hydropower, countries)
     assert len(out) == 2

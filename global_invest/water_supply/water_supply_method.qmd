@@ -87,7 +87,9 @@ From `es_parameters.csv`, scoped to the `water_supply` service:
 
 ## Method constants
 
-- `HYDROPOWER_DISCOUNT_RATE = 0.04`, the CWoN standard discount.
+- `water_supply_hydropower_capitalization_rate = 0.04` in `es_parameters`, the rate CWoN
+  capitalized their wealth figure with. ⚠ Not the account's 2 percent social discount rate:
+  this module inverts CWoN's capitalization, so it must use the rate they capitalized with.
 - `HYDROPOWER_HORIZON_YEARS = 100`, the CWoN capitalisation horizon.
 - `HYDROPOWER_GEP_YEAR = 2019`, the wealth column the rent is read from. Current USD equals real
   2019 USD in the 2019 base year, and this is the only variant that covers Venezuela.

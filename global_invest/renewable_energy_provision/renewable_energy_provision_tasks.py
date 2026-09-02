@@ -70,12 +70,27 @@ def gep_calculation(p):
     # Renaming on the way out only: the frame keeps the source's `Year` because the split and the
     # map merge below read it, while the published table uses the lowercase `year` every other
     # service writes.
-    def write_published(df, path):
+    def write_published(df, path, one_row_per_country=False):
         published = df.rename(columns={'Year': 'year'})
-        hb.df_write(published[utilities.published_country_columns(
-            published, 'renewable_energy_provision')], path, index=False)
+        published = published[utilities.published_country_columns(
+            published, 'renewable_energy_provision')]
+        if one_row_per_country:
+            # The combined table carried one row per country PER TECHNOLOGY: 335 rows with 85
+            # countries repeated. The total was right, being the three technologies summed, but
+            # any downstream join on iso3 multiplies the country it lands on.
+            #
+            # Summing on every column it carries does not fix it, because it also carries the
+            # technology, its price and its generation -- which differ per row by construction, so
+            # each group stays a single row. The account's shape is the country, the year and the
+            # value; the per-technology detail is what the three subservice tables are for.
+            keys = [c for c in utilities.GEP_COUNTRY_ATTR_COLS + ['year']
+                    if c in published.columns]
+            published = (published.groupby(keys, dropna=False, as_index=False)
+                         ['renewable_energy_provision_gep'].sum())
+        hb.df_write(published, path, index=False)
 
-    write_published(df_gep, service_results['gep_by_country_base_year'])
+    write_published(df_gep, service_results['gep_by_country_base_year'],
+                    one_row_per_country=True)
     by_resource = rf.split_by_resource(df_gep)
     for subservice, technology in rf.SUBSERVICE_TECHNOLOGIES.items():
         write_published(by_resource[technology],

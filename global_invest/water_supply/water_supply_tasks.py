@@ -32,7 +32,12 @@ def hydropower_rent(p):
         return
     if not hb.path_exists(p.hydropower_rent_path):
         wealth = pd.read_stata(p.water_supply_cwon_hydro_wealth_path)
-        wf.hydropower_rent_from_wealth(wealth).to_csv(p.hydropower_rent_path, index=False)
+        # The rate is configuration rather than a module constant, so the one number the
+        # hydropower figure turns on is visible beside every other service's parameters.
+        wf.hydropower_rent_from_wealth(
+            wealth,
+            capitalization_rate=float(p.water_supply_hydropower_capitalization_rate),
+        ).to_csv(p.hydropower_rent_path, index=False)
     return True
 
 
