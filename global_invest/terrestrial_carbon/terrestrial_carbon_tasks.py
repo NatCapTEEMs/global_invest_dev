@@ -138,9 +138,19 @@ def carbon_density_raster_base_year(p):
 
 
 def carbon_density_raster_per_cell_base_year(p):
+    """Carbon per cell in the base year: the density map times the cell's own hectares.
+
+    This is the service's MAP, and it is registered as a result here, where it is written, rather
+    than in gep_calculation, which does not write it. Registering is what makes condition 16 reach
+    it: `distribute_results` converts every raster it copies into a POG, and it copies what the
+    results registry names and nothing else. An unregistered map never leaves `intermediate/`, so
+    nobody outside a run can open it and the condition has nothing to check.
+    """
     publish_inputs(p)
     utilities.initialize_pyramid_paths(p)
-    p.carbon_density_per_cell_base_year_path = os.path.join(p.cur_dir, f'projected_carbon_density_{p.gep_base_year}_per_cell.tif')
+    p.carbon_density_per_cell_base_year_path = utilities.register_result(
+        p, 'terrestrial_carbon', f'terrestrial_carbon_per_cell_{p.gep_base_year}.tif',
+        os.path.join(p.cur_dir, f'projected_carbon_density_{p.gep_base_year}_per_cell.tif'))
     if not p.run_this:
         return True
     hb.multiply(p.carbon_density_raster_base_year_path, p.ha_per_cell_10sec_path, p.carbon_density_per_cell_base_year_path)

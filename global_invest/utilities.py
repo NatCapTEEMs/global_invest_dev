@@ -1139,6 +1139,35 @@ def write_gep_by_country(p, df, path, log=None):
     return write_csv(full, path)
 
 
+def register_result(p, service, name, path):
+    """Register one output as a result of `service`, from whatever task writes it.
+
+    `begin_gep_calculation`'s `extra_results` covers what `gep_calculation` writes itself. This
+    covers the rest: a map is usually built in its own earlier task, and registering it there --
+    beside the line that writes it -- is what keeps the two from drifting apart.
+
+    ⚠⚠ Registration is not bookkeeping. `distribute_results` copies what this registry names and
+    nothing else, and it is the only place a raster is converted into a POG. A map that is never
+    registered never leaves `intermediate/`, so nobody outside a run can open it and condition 16
+    has nothing to check -- which is why the library reported clean on the POG condition while
+    six services were each writing a map that went nowhere.
+
+    Args:
+        p (ProjectFlow): the project.
+        service (str): the service's key in p.results.
+        name (str): the file name the result takes in the output directory, extension included.
+        path (str): where the task writes it.
+
+    Returns:
+        str: path, so a caller can register and assign in one line.
+    """
+    if not hasattr(p, 'results'):
+        p.results = {}
+    service_results = p.results.setdefault(service, {})
+    service_results[name] = path
+    return path
+
+
 def begin_gep_calculation(p, service, extra_results=None, log=None):
     """Register a service's results and say whether the work is already done.
 
