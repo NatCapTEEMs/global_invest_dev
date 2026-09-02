@@ -32,7 +32,10 @@
 # ⚠⚠ DISK, not memory, is what this job actually needs. The intermediates it writes are about
 # 84 GB uncompressed -- land cover and NDVI at 16.8 GB each as Int16, country ids at 33.6 GB as
 # Int32, the burned lines and the reach at 8.4 GB each as Byte -- which DEFLATE takes to roughly
-# 20 GB. Point the project at scratch, not at home.
+# 20 GB. ⚠ On MSI that means /scratch.global/$USER, not home: the flood cold starts write to
+# ~/Files/global_invest/projects and that is fine for their size, but 84 GB of NTFP intermediates
+# is not what a home directory is for. Set the project dir explicitly if home is where
+# ProjectFlow would otherwise infer it.
 #
 # Time is a guess above the measured 9 minutes: the warps of a 3.1 GB NDVI and a 4.3 GB roads
 # shapefile have not been timed on MSI, and they are the rest of the job. Set --time from the
@@ -86,6 +89,8 @@ command -v gdalinfo >/dev/null || { echo "gdalinfo is not on PATH: make_path_pog
 # Preflight: every input this run reads, resolved through get_path before any work starts.
 "$PYTHON" global_invest/ntfp/preflight_ntfp_inputs.py
 
+# GDAL's block cache, where the warps spend their time. The default is a small share of RAM and
+# this job is given far more than that.
 export GDAL_CACHEMAX=8192
 export GDAL_NUM_THREADS=ALL_CPUS
 
