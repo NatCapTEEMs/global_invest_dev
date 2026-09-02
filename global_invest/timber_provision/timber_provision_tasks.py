@@ -55,9 +55,24 @@ def gep_calculation(p):
         # .dta reaches it as a malformed csv rather than as the wrong reader.
         pd.read_stata(str(p.get_path(p.timber_provision_cwon_forest_rent_path))),
         df_gep, int(p.gep_base_year))
+    # And the bound: FAOSTAT roundwood priced at each country's own export unit value. Not a
+    # third estimate -- a land share is a fraction of the gross value of the wood it comes from,
+    # so a country whose GEP exceeds its own gross is saying something impossible, and that is
+    # visible per country here rather than argued globally.
+    df_gep = tp.roundwood_gross_value_by_country(
+        hb.df_read(str(p.get_path(p.timber_provision_faostat_roundwood_path))),
+        df_gep, int(p.gep_base_year))
     hb.df_write(df_gep[attr_cols + ['year', 'timber_provision_gep',
-                                    'timber_provision_gep_cwon_rent']],
+                                    'timber_provision_gep_cwon_rent',
+                                    'timber_roundwood_gross_value']],
                 service_results['gep_by_country_base_year'])
+    for column, label in (('timber_provision_gep', 'spatial'),
+                          ('timber_provision_gep_cwon_rent', 'CWoN rent')):
+        priced = df_gep[df_gep['timber_roundwood_gross_value'].gt(0) & df_gep[column].gt(0)]
+        over = priced[priced[column] > priced['timber_roundwood_gross_value']]
+        if len(over):
+            hb.log('  ⚠ %s exceeds its own gross roundwood value in %d countries: %s'
+                   % (label, len(over), ', '.join(over['iso3_r250_label'].head(6))))
 
     spatial = df_gep['timber_provision_gep'].sum()
     rental = df_gep['timber_provision_gep_cwon_rent'].sum()

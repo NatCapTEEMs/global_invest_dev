@@ -131,3 +131,51 @@ def cwon_forest_rent_by_country(rent_df, countries_df, year):
     return countries_df.merge(
         rent[['countrycode', 'timber_provision_gep_cwon_rent']],
         left_on='iso3_r250_label', right_on='countrycode', how='left').drop(columns=['countrycode'])
+
+
+def roundwood_gross_value_by_country(fao_df, countries_df, year):
+    """FAOSTAT roundwood production priced at each country's own export unit value.
+
+    Not a third estimate of the service: a BOUND. A land factor share, however derived, is a
+    fraction of the gross value of the wood it comes from, so a country whose timber GEP exceeds
+    the gross value of all the roundwood it produced is saying something impossible. Publishing
+    the bound beside the two valuations lets that be seen per country rather than argued globally.
+
+    The price is the country's own industrial-roundwood export unit value where FAOSTAT reports
+    one, and the world export unit value otherwise. A country's own price matters: the world value
+    is about $111/m3 and tropical hardwood exporters are several times that, so a single global
+    price manufactures exceedances that are only a price error.
+
+    Args:
+        fao_df (pd.DataFrame): the staged FAOSTAT forestry slice, normalized long.
+        countries_df (pd.DataFrame): the r250 country rows, carrying iso3_r250_id (the M49 code).
+        year (int): the base year.
+
+    Returns:
+        pd.DataFrame: countries_df with roundwood_m3 and timber_roundwood_gross_value added.
+    """
+    import numpy as np
+    import pandas as pd
+    d = fao_df[fao_df['Year'] == int(year)].copy()
+    d['iso3_r250_id'] = (d['Area Code (M49)'].astype(str)
+                         .str.replace("'", '', regex=False).astype(int))
+    world = d[(d['Area'] == 'World') & (d['Item'] == 'Industrial roundwood')]
+    world_price = (float(world[world['Element'] == 'Export value']['Value'].iloc[0]) * 1000.0
+                   / float(world[world['Element'] == 'Export quantity']['Value'].iloc[0]))
+
+    countries = d[d['Area'] != 'World']
+    industrial = countries[countries['Item'] == 'Industrial roundwood']
+    quantity = industrial[industrial['Element'] == 'Export quantity'].groupby('iso3_r250_id')['Value'].sum()
+    value = industrial[industrial['Element'] == 'Export value'].groupby('iso3_r250_id')['Value'].sum() * 1000.0
+    own = (value / quantity).replace([np.inf, -np.inf], np.nan).dropna()
+    # A unit value outside this band is a reporting artifact rather than a price, and using it
+    # would move the bound further than the thing it is meant to catch.
+    own = own[(own > 5) & (own < 3000)]
+
+    produced = (countries[(countries['Element'] == 'Production') & (countries['Item'] == 'Roundwood')]
+                .groupby('iso3_r250_id')['Value'].sum().rename('roundwood_m3'))
+    out = pd.DataFrame(produced).join(own.rename('price'))
+    out['price'] = out['price'].fillna(world_price)
+    out['timber_roundwood_gross_value'] = out['roundwood_m3'] * out['price']
+    return countries_df.merge(out[['roundwood_m3', 'timber_roundwood_gross_value']].reset_index(),
+                              on='iso3_r250_id', how='left')

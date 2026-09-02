@@ -169,3 +169,31 @@ def test_both_timber_valuations_are_published_and_differ_by_the_recorded_ratio()
         # same order and neither column has silently become the other, not the ratio itself.
         assert 1.3 < rental / spatial < 1.7, (
             '%s: rental/spatial is %.2f, not the recorded 1.49' % (path, rental / spatial))
+
+
+def test_the_faostat_bound_is_published_and_neither_valuation_breaks_it_wholesale():
+    """The bound is a third column, not a third estimate.
+
+    A land factor share is a fraction of the gross value of the wood it comes from, so a country
+    whose timber GEP exceeds the gross value of all the roundwood it produced is impossible. A
+    handful of countries do exceed it and are named in the entry: an export unit value is a proxy
+    for a domestic price, so a ratio near 1 is noise. What this asserts is that neither valuation
+    breaks the bound WHOLESALE, which is what would indicate a units error rather than a price one.
+    """
+    import glob
+    import os
+    pattern = os.path.join(os.path.expanduser('~'), 'Files', 'global_invest', 'projects',
+                           'gep_timber_provision*', '**', 'gep_by_country_base_year.csv')
+    produced = glob.glob(pattern, recursive=True)
+    if not produced:
+        pytest.skip('no timber_provision run on this machine')
+    for path in produced:
+        df = pd.read_csv(path)
+        assert 'timber_roundwood_gross_value' in df.columns, '%s lacks the bound' % path
+        priced = df[df['timber_roundwood_gross_value'] > 0]
+        for column in ('timber_provision_gep', 'timber_provision_gep_cwon_rent'):
+            valued = priced[priced[column] > 0]
+            over = valued[valued[column] > valued['timber_roundwood_gross_value']]
+            assert len(over) < 0.1 * len(valued), (
+                '%s: %s exceeds its own gross roundwood value in %d of %d countries, which is a '
+                'units error rather than a price proxy' % (path, column, len(over), len(valued)))
