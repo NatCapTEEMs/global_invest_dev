@@ -160,11 +160,13 @@ def test_both_timber_valuations_are_published_and_differ_by_the_recorded_ratio()
         pytest.skip('no timber_provision run on this machine')
     for path in produced:
         df = pd.read_csv(path)
+        # timber_provision_gep IS the CWoN rent since 2026-09-02; the spatial estimate is kept
+        # beside it under its own name rather than deleted.
         assert 'timber_provision_gep' in df.columns
-        assert 'timber_provision_gep_cwon_rent' in df.columns, (
+        assert 'timber_provision_gep_spatial' in df.columns, (
             '%s publishes only one valuation' % path)
-        spatial = df['timber_provision_gep'].sum()
-        rental = df['timber_provision_gep_cwon_rent'].sum()
+        spatial = df['timber_provision_gep_spatial'].sum()
+        rental = df['timber_provision_gep'].sum()
         # 1.49 as measured on 2026-09-02. A wide band, because this pins that the two are the
         # same order and neither column has silently become the other, not the ratio itself.
         assert 1.3 < rental / spatial < 1.7, (
@@ -191,7 +193,7 @@ def test_the_faostat_bound_is_published_and_neither_valuation_breaks_it_wholesal
         df = pd.read_csv(path)
         assert 'timber_roundwood_gross_value' in df.columns, '%s lacks the bound' % path
         priced = df[df['timber_roundwood_gross_value'] > 0]
-        for column in ('timber_provision_gep', 'timber_provision_gep_cwon_rent'):
+        for column in ('timber_provision_gep', 'timber_provision_gep_spatial'):
             valued = priced[priced[column] > 0]
             over = valued[valued[column] > valued['timber_roundwood_gross_value']]
             assert len(over) < 0.1 * len(valued), (
@@ -222,9 +224,9 @@ def test_every_timber_run_reproduces_the_committed_anchor():
     for path in produced:
         df = pd.read_csv(path)
         # 1e-7: the raster is float32 and the anchor was written from a separate sum of it.
-        assert df['timber_provision_gep'].sum() == pytest.approx(anchor, rel=1e-7), (
+        assert df['timber_provision_gep_spatial'].sum() == pytest.approx(anchor, rel=1e-7), (
             '%s totals %r against the committed anchor %r'
-            % (path, df['timber_provision_gep'].sum(), anchor))
-        assert int(df['timber_provision_gep'].gt(0).sum()) == 166, (
+            % (path, df['timber_provision_gep_spatial'].sum(), anchor))
+        assert int(df['timber_provision_gep_spatial'].gt(0).sum()) == 166, (
             '%s values %d countries, not the anchor\'s 166'
-            % (path, int(df['timber_provision_gep'].gt(0).sum())))
+            % (path, int(df['timber_provision_gep_spatial'].gt(0).sum())))
