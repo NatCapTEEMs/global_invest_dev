@@ -179,3 +179,91 @@ def roundwood_gross_value_by_country(fao_df, countries_df, year):
     out['timber_roundwood_gross_value'] = out['roundwood_m3'] * out['price']
     return countries_df.merge(out[['roundwood_m3', 'timber_roundwood_gross_value']].reset_index(),
                               on='iso3_r250_id', how='left')
+
+
+def fuelwood_share_of_forest_rent(fao_df, countries_df, year):
+    """How much of CWoN's forest rent is fuelwood rather than industrial roundwood.
+
+    ⚠ This is a DECOMPOSITION, not a second service. CWoN's `Forest, rents (current US$)` --
+    published here as `timber_provision_gep` -- is built in `forest_timber_depletion.do` from three
+    FAOSTAT items and summed before the rental ratio is applied:
+
+        keep if itemcode == 1864 | 1866 | 1867      1864 is Wood Fuel
+        tot_rev  = rowtotal(wf_rev, irwc_rev, irwnc_rev)
+        tot_rent = tot_rev x ratio
+
+    So fuelwood is already inside the timber figure, and a separate fuelwood service added on top
+    of it would count the same rent twice. Rather than remove it, this splits it: because the rent
+    is a single ratio applied to a sum of revenues, the fuelwood part of the rent is the fuelwood
+    share of the revenue, and the ratio cancels.
+
+        fuelwood_part = timber_gep x (wf_rev / (wf_rev + irw_rev))
+
+    Revenue is production times the country's own export unit value, the world value where FAOSTAT
+    reports none -- the same pricing the gross-value bound uses, and for the same reason: wood fuel
+    is about $67/m3 against industrial roundwood's $111, so a single price would misallocate the
+    split rather than merely blur it.
+
+    Returns:
+        pd.DataFrame: countries_df with fuelwood_share_of_rent added, NaN where FAOSTAT prices
+        neither product for that country.
+    """
+    import numpy as np
+    import pandas as pd
+    d = fao_df[fao_df['Year'] == int(year)].copy()
+    d['iso3_r250_id'] = (d['Area Code (M49)'].astype(str)
+                         .str.replace("'", '', regex=False).astype(int))
+    world = d[d['Area'] == 'World']
+    countries = d[d['Area'] != 'World']
+
+    def revenue(item):
+        sub = countries[countries['Item'] == item]
+        produced = sub[sub['Element'] == 'Production'].groupby('iso3_r250_id')['Value'].sum()
+        quantity = sub[sub['Element'] == 'Export quantity'].groupby('iso3_r250_id')['Value'].sum()
+        value = sub[sub['Element'] == 'Export value'].groupby('iso3_r250_id')['Value'].sum() * 1000.0
+        own = (value / quantity).replace([np.inf, -np.inf], np.nan).dropna()
+        own = own[(own > 5) & (own < 3000)]
+        w = world[world['Item'] == item]
+        world_price = (float(w[w['Element'] == 'Export value']['Value'].iloc[0]) * 1000.0
+                       / float(w[w['Element'] == 'Export quantity']['Value'].iloc[0]))
+        price = own.reindex(produced.index).fillna(world_price)
+        return produced * price
+
+    fuel = revenue('Wood fuel').rename('wood_fuel_revenue')
+    industrial = revenue('Industrial roundwood').rename('industrial_revenue')
+    both = pd.concat([fuel, industrial], axis=1).fillna(0.0)
+    total = both['wood_fuel_revenue'] + both['industrial_revenue']
+    both['fuelwood_share_of_rent'] = np.where(total > 0, both['wood_fuel_revenue'] / total, np.nan)
+    return countries_df.merge(both[['fuelwood_share_of_rent']].reset_index(),
+                              on='iso3_r250_id', how='left')
+
+
+def wood_fuel_gross_value_by_country(fao_df, countries_df, year):
+    """FAOSTAT wood fuel production priced at each country's own WOOD FUEL export unit value.
+
+    ⚠ Not the fuelwood share of roundwood gross, which was the first attempt and was wrong by
+    almost three times: roundwood gross uses each country's roundwood price, which is dominated by
+    industrial timber at about $111/m3 against wood fuel's $67, so scaling it by a revenue share
+    prices fuelwood as though it were sawlogs. Wood fuel has its own production and its own export
+    unit value in the same table, so it is priced directly here.
+    """
+    import numpy as np
+    import pandas as pd
+    d = fao_df[fao_df['Year'] == int(year)].copy()
+    d['iso3_r250_id'] = (d['Area Code (M49)'].astype(str)
+                         .str.replace("'", '', regex=False).astype(int))
+    world = d[(d['Area'] == 'World') & (d['Item'] == 'Wood fuel')]
+    world_price = (float(world[world['Element'] == 'Export value']['Value'].iloc[0]) * 1000.0
+                   / float(world[world['Element'] == 'Export quantity']['Value'].iloc[0]))
+    fuel = d[(d['Area'] != 'World') & (d['Item'] == 'Wood fuel')]
+    produced = fuel[fuel['Element'] == 'Production'].groupby('iso3_r250_id')['Value'].sum()
+    # ⚠ ONE world price for every country, which is the opposite of what the industrial-roundwood
+    # bound does, and deliberately. Fuelwood is overwhelmingly NOT traded: it is collected and
+    # burned where it grows, so a country's export unit value is set by a tiny specialty flow and
+    # says nothing about the price of the rest. Using own prices here gave $368bn against a world
+    # export-priced $131bn, because a country exporting a hundred cubic metres at a high unit value
+    # had that price applied to fifty million cubic metres of domestic burning. Industrial
+    # roundwood is genuinely traded and its own prices are informative; this is not.
+    out = pd.DataFrame({'wood_fuel_m3': produced,
+                        'wood_fuel_gross_value': produced * world_price})
+    return countries_df.merge(out.reset_index(), on='iso3_r250_id', how='left')

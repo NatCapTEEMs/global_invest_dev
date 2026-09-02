@@ -5,6 +5,7 @@ from global_invest.timber_provision import timber_provision_tasks
 def build_gep_service_calculation_task_tree(p):
     """GEP calculation tree: the committed timber table -> r250 one-row-per-country."""
     p.gep_calculation_task = p.add_task(timber_provision_tasks.gep_calculation)
+    p.fuelwood_gep_task = p.add_task(timber_provision_tasks.fuelwood_gep)
     return p
 
 
