@@ -184,6 +184,14 @@ somewhere and been caught:
    gdalinfo`, a doubled path. Activating the environment is enough; invoking its python by
    absolute path is not.
 
+   ⚠⚠ **A raster only reaches the output directory if a result registers it, and six services do
+   not register theirs**: coastal carbon, landslide mitigation, NTFP, recreation, stormwater and
+   terrestrial carbon each write a GeoTIFF that stops at `intermediate/`. Checking the output
+   directory alone therefore reported the library clean on the day the condition was written --
+   silence that read as compliance and was absence. The gate now reports both halves, so a service
+   whose map never leaves is named rather than passed over, and registering that map is part of
+   closing the condition for it.
+
 Green means all sixteen. **amber** means the number is usable and at least one condition is open, with
 the entry saying which. **red** means the number should not be quoted yet.
 
