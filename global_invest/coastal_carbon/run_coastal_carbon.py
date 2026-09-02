@@ -1,5 +1,4 @@
 import os
-import pandas as pd
 import hazelbean as hb
 
 from global_invest.coastal_carbon import coastal_carbon_initialization
@@ -19,28 +18,19 @@ if __name__ == '__main__':
     p.set_project_dir(p.project_dir)
 
     # Task tree - build complete workflow with results
-    coastal_carbon_initialization.build_gep_service_task_tree(p, include_seagrass=True)
+    coastal_carbon_initialization.build_gep_service_task_tree(p)
 
     # Project level attributes - Data Paths
 
-    # Country boundaries (marine EEZ)
-    p.df_countries_marine_csv_path = p.get_path(
+    # Marine EEZ boundaries
+    p.df_eez_csv_path = p.get_path(
         'cartographic', 'ee', 'eemarine_r566_correspondence.csv'
     )
-    p.gdf_countries_marine_vector_path = p.get_path(
+    p.gdf_eez_vector_path = p.get_path(
         'cartographic', 'ee', 'eemarine_r566_correspondence.gpkg'
     )
-
-    # Country boundaries (terrestrial r264). The CSV is consumed by
-    # gep_calculation to collapse the r566 _EEZ Totals down to iso3_r250.
     p.df_countries_csv_path = p.get_path(
         'cartographic', 'ee', 'ee_r264_correspondence.csv'
-    )
-    p.gdf_countries_vector_path = p.get_path(
-        'cartographic', 'ee', 'ee_r264_correspondence.gpkg'
-    )
-    p.gdf_countries_vector_simplified_path = p.get_path(
-        'cartographic', 'ee', 'ee_r264_simplified30sec.gpkg'
     )
 
     # Mangrove data (Global Mangrove Watch v3)
@@ -53,13 +43,9 @@ if __name__ == '__main__':
         p.base_data_dir, 'coastal_carbon', 'global_salt_marsh2019.gpkg'
     )
 
-    # Seagrass extent (UNEP-WCMC013-014 SeagrassPtPy v7.1, polygon shapefile).
-    # Carries a GENUS attribute consumed by task_calculate_seagrass_carbon_stock
-    # for genus-aware Gomis 2025 density lookups.
-    p.seagrass_vector_path = os.path.join(
-        p.base_data_dir, 'coastal_carbon',
-        '014_001_WCMC013-014_SeagrassPtPy2021_v7_1', '01_Data',
-        'WCMC013_014_Seagrasses_Py_v7_1.shp'
+    # GlobalSeagrass2019_2020 raster tiles.
+    p.seagrass_raster_dir = os.path.join(
+        p.base_data_dir, 'coastal_carbon', 'GlobalSeagrass2019_2020'
     )
 
     # Sanderman et al. 2018 mangrove SOC raster (top 1 m, Mg C/ha).
@@ -74,6 +60,11 @@ if __name__ == '__main__':
     # missing, all tropics treated as wet (BGB:AGB = 0.49).
     p.precipitation_path = os.path.join(
         p.base_data_dir, 'coastal_carbon', 'mean_annual_precipitation_mm.tif'
+    )
+
+    # Maxwell et al. 2024 tidal-marsh SOC raster (top 1 m, Mg C/ha).
+    p.salt_marsh_soc_path = os.path.join(
+        p.base_data_dir, 'coastal_carbon', 'maxwell_2024_marsoc_0_100cm.tif'
     )
 
     # Reference raster for area calculation (ha per cell)
