@@ -44,6 +44,7 @@ n_not_wired: "3"
 n_reads_a_value: "3"
 fisheries_total: "$29.00bn"
 fisheries_subsistence_total: "$7.92bn"
+fisheries_aquaculture_total: "$116.69bn"
 water_supply_total: "$146.08bn"
 water_supply_anchor: "$144.68bn"
 water_use_ag_total: "$1.06T"
@@ -274,7 +275,7 @@ format:
 | pollination | {{< meta poll_raster >}} at 2019, the author's raster. {{< meta poll_fao >}} FAO side | yes. |
 | erosion | not reported | no. The run is ongoing. |
 | landslide_mitigation | {{< meta landslide_total >}} ({{< meta landslide_deaths >}} avoided deaths) | no. No reference output exists |
-| fisheries | shock + commercial GEP {{< meta fisheries_total >}} provisional + subsistence {{< meta fisheries_subsistence_total >}} | partially. Subsistence reproduces its committed output, and the commercial run has no reference output yet |
+| fisheries | shock + commercial GEP {{< meta fisheries_total >}} provisional + subsistence {{< meta fisheries_subsistence_total >}} + aquaculture {{< meta fisheries_aquaculture_total >}} | partially. Subsistence reproduces its committed output, and the commercial run has no reference output yet |
 | recreation | {{< meta recreation_total >}} provisional | no. The author's output table is not reachable |
 | fire_protection | {{< meta fire_cause_total >}} provisional, one of three coefficients | partially. Reproduces the committed output, but reads the committed regression coefficients rather than refitting them. Kosovo and two Indian sub-regions now reach a country instead of no country |
 | water_supply | hydropower component {{< meta water_supply_total >}} | yes. |

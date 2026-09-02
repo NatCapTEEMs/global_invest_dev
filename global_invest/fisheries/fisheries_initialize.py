@@ -28,6 +28,7 @@ def build_gep_service_calculation_task_tree(p):
     p.fisheries_rent_trends_task = p.add_task(fisheries_tasks.fisheries_rent_trends)
     p.gep_calculation_task = p.add_task(fisheries_tasks.gep_calculation)
     p.fisheries_subsistence_gep_task = p.add_task(fisheries_tasks.fisheries_subsistence_gep)
+    p.fisheries_aquaculture_gep_task = p.add_task(fisheries_tasks.fisheries_aquaculture_gep)
     return p
 
 

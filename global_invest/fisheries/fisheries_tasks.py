@@ -177,3 +177,49 @@ def fisheries_subsistence_gep(p):
                'total %.4g USD' % (out['subsistence_fisheries_gep'].notna().sum(),
                                    out['subsistence_fisheries_gep'].sum()))
     return True
+
+
+def fisheries_aquaculture_gep(p):
+    """Aquaculture GEP: FAO FishStatJ aquaculture value times GTAP's natural-resource share.
+
+    The third fisheries subgroup. A separate component from commercial capture and from
+    subsistence, and the only one of the three whose valuation rests on GTAP -- commercial reads
+    CWoN's economic-rent table and subsistence reads Lynch et al., so this one rests on a modelled
+    factor-payment split where its siblings rest on observed rents and survey data.
+    """
+    publish_inputs(p)
+    p.fisheries_aquaculture_gep_path = os.path.join(p.cur_dir, 'aquaculture_gep_by_country.csv')
+    if not p.run_this:
+        return
+    if not hb.path_exists(p.fisheries_aquaculture_gep_path):
+        from gtappy.harpy.har_file import HarFileObj
+
+        # The share, from the GTAP base data rather than from the source's workbook. The set
+        # element names come off the header, so an aggregation with different regions or a
+        # renamed sector fails here rather than silently indexing the wrong row.
+        har = HarFileObj(filename=str(p.get_path(p.fisheries_gtap_basedata_path)))
+        evfp = har['EVFP']
+        endowments, activities, regions = [
+            [str(name).strip() for name in axis] for axis in evfp.sets.setElements]
+        share = ff.natural_resource_share_of_fishing(
+            evfp.array, endowments, activities, regions)
+
+        # The account's own correspondence carries the country-to-GTAP mapping, so the source's
+        # iso3_gtap141_mapping.xlsx is not needed either.
+        # keep_columns, because the GTAP region is not one of the standard attributes and
+        # collapse_countries_to_r250 drops what it is not asked to carry.
+        countries = utilities.collapse_countries_to_r250(
+            p.df_countries, keep_columns=['gtapv7_r50_label'])
+        countries = countries[utilities.GEP_COUNTRY_ATTR_COLS + ['gtapv7_r50_label']].copy()
+        countries['gtap_region_label'] = (
+            countries['gtapv7_r50_label'].astype(str).str.strip().str.lower())
+
+        value = hb.df_read(str(p.get_path(p.fisheries_aquaculture_value_path)))
+        out = ff.aquaculture_gep_by_country(value, share, countries, int(p.gep_base_year))
+        out['year'] = int(p.gep_base_year)
+        hb.df_write(out[utilities.GEP_COUNTRY_ATTR_COLS + ['year', 'aquaculture_gep']],
+                    p.fisheries_aquaculture_gep_path, index=False)
+        hb.log('fisheries aquaculture GEP (FAO FishStatJ value x GTAP natural-resource share): '
+               '%d countries with values, total %.4g USD'
+               % (out['aquaculture_gep'].notna().sum(), out['aquaculture_gep'].sum()))
+    return True

@@ -262,3 +262,63 @@ def test_a_missing_catch_or_cost_leaves_the_rent_undefined_rather_than_zero():
         'FAOFixCost': [50.0, 50.0], 'SubsidyUSD2018': [0.0, 0.0]})
     out = ff.compute_econ_rent(raw)
     assert out['econ_rent'].isna().all()
+
+
+def test_the_natural_resource_share_is_the_fishing_column_not_the_whole_table():
+    """The share is NatRes over the fishing column's total, and a zero column raises.
+
+    Indexing the wrong endowment or the wrong activity gives a plausible number and no error,
+    which is why the set element names are read off the header rather than assumed.
+    """
+    import numpy as np
+    endowments = ['Capital', 'NatRes']
+    activities = ['frs', 'fsh']
+    regions = ['aaa', 'bbb']
+    # (endowment, activity, region): fishing in aaa is 30 capital + 70 natres.
+    evfp = np.zeros((2, 2, 2))
+    evfp[0, 1, 0], evfp[1, 1, 0] = 30.0, 70.0
+    evfp[0, 1, 1], evfp[1, 1, 1] = 90.0, 10.0
+    evfp[0, 0, :], evfp[1, 0, :] = 999.0, 999.0      # forestry, must not enter
+    share = ff.natural_resource_share_of_fishing(evfp, endowments, activities, regions)
+    assert share.set_index('gtap_region_label')['natural_resource_share']['aaa'] == pytest.approx(0.7)
+    assert share.set_index('gtap_region_label')['natural_resource_share']['bbb'] == pytest.approx(0.1)
+
+    evfp[:, 1, 1] = 0.0
+    with pytest.raises(ValueError, match='undefined'):
+        ff.natural_resource_share_of_fishing(evfp, endowments, activities, regions)
+
+
+def test_aquaculture_gep_is_value_times_the_region_share_and_missing_stays_missing():
+    """A country FAO does not value stays NaN, because no data is not no aquaculture."""
+    value = pd.DataFrame({
+        'COUNTRY.UN_CODE': [4, 4, 8],
+        'SPECIES.ALPHA_3_CODE': ['FCY', 'SCN', 'FCY'],
+        'MEASURE': ['V_USD_1000'] * 3,
+        'PERIOD': [2019, 2019, 2019],
+        'VALUE': [100.0, 50.0, 20.0],
+    })
+    share = pd.DataFrame({'gtap_region_label': ['aaa', 'bbb'],
+                          'natural_resource_share': [0.5, 0.25]})
+    countries = pd.DataFrame({
+        'iso3_r250_id': [4, 8, 12],
+        'iso3_r250_label': ['AAA', 'BBB', 'CCC'],
+        'gtap_region_label': ['aaa', 'bbb', 'aaa'],
+    })
+    out = ff.aquaculture_gep_by_country(value, share, countries, 2019).set_index('iso3_r250_label')
+    # 150 thousand USD -> 150,000 dollars, halved by the share.
+    assert out.loc['AAA', 'aquaculture_gep'] == pytest.approx(75_000.0)
+    assert out.loc['BBB', 'aquaculture_gep'] == pytest.approx(5_000.0)
+    assert pd.isna(out.loc['CCC', 'aquaculture_gep'])
+
+
+def test_only_the_base_year_and_only_the_value_measure_are_summed():
+    """The export is long over species AND years, and carries quantity rows in the same shape."""
+    value = pd.DataFrame({
+        'COUNTRY.UN_CODE': [4, 4, 4],
+        'MEASURE': ['V_USD_1000', 'V_USD_1000', 'Q_tlw'],
+        'PERIOD': [2019, 2018, 2019],
+        'VALUE': [100.0, 999.0, 888.0],
+    })
+    out = ff.aquaculture_value_by_country(value, 2019)
+    assert len(out) == 1
+    assert out['aquaculture_value_usd'].iloc[0] == pytest.approx(100_000.0)

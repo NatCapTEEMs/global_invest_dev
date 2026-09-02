@@ -27,6 +27,13 @@ fisheries,fisheries_shock_acts,"[""FSH""]"
 fisheries,cwon_shocks_path_template,gtappy/cge_releases/gtapv7-aez-rd/data/{aggregation_label}/cwon_shocks.har
 fisheries,fisheries_cwon_cpi_path,global_invest/fisheries/cwon/cpi2019.dta
 fisheries,fisheries_cwon_econ_rent_path,global_invest/fisheries/cwon/EconRent_Analysis_AllYears.dta
+fisheries,fisheries_aquaculture_value_path,global_invest/fisheries/fishstatj/Aquaculture_Value.csv
+fisheries,fisheries_aquaculture_value_source_url,https://www.fao.org/fishery/static/Data/Aquaculture_2025.1.0.zip
+fisheries,fisheries_aquaculture_value_source_archive_member,Aquaculture_Value.csv
+fisheries,fisheries_aquaculture_quantity_path,global_invest/fisheries/fishstatj/Aquaculture_Quantity.csv
+fisheries,fisheries_aquaculture_quantity_source_url,https://www.fao.org/fishery/static/Data/Aquaculture_2025.1.0.zip
+fisheries,fisheries_aquaculture_quantity_source_archive_member,Aquaculture_Quantity.csv
+fisheries,fisheries_gtap_basedata_path,gtappy/cge_releases/gtapv7-aez-rd/data/v12-s26-r50/basedata.har
 fisheries,fisheries_subsistence_lynch_path,global_invest/fisheries/subsistence/Rec fish food_20230509_for USGS data release.xlsx
 erosion,erosion_dem_path,global_invest/erosion/global_dem_reproj.tif
 erosion,erosion_lulc_path,global_invest/erosion/lulc_esa_2019_reproj_6p45km.tif

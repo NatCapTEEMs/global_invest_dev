@@ -284,3 +284,86 @@ def subsistence_fisheries_by_country(lynch_df, countries_df):
     data = subsistence_value_by_admin(lynch_df)
     df = countries_df.merge(data, how='left', left_on='brk_name', right_on='admin')
     return df.drop(columns=['admin'])
+
+
+# =============================================================================
+# Aquaculture. The third fisheries subgroup, beside commercial capture and
+# subsistence.
+#
+# The source values capture and aquaculture as one figure:
+#   GEP_fish := (total_aqua_value_usd1000 + total_cap_value_usd1000) * NatRes_Share
+# (gep_fisheries_02_calc_gep_fish.R). Aquaculture is the first term times the
+# same share, so nothing new is invented here -- one term of a sum is separated.
+#
+# ⚠ Aquaculture is farmed. What the share values is the natural-resource input to
+# farmed production, not a wild stock, and whether that belongs in the account
+# beside capture is a scope question for the paper rather than a computation.
+# =============================================================================
+AQUACULTURE_VALUE_MEASURE = 'V_USD_1000'   # FAO's own code: value in thousand USD
+GTAP_FISHING_SECTOR = 'fsh'
+GTAP_NATURAL_RESOURCE_ENDOWMENT = 'NatRes'
+
+
+def natural_resource_share_of_fishing(evfp_array, endowments, activities, regions,
+                                      sector=GTAP_FISHING_SECTOR,
+                                      endowment=GTAP_NATURAL_RESOURCE_ENDOWMENT):
+    """The natural-resource share of fishing value added, one value per GTAP region.
+
+    GTAP's EVFP is primary factor purchases at purchasers' prices, dimensioned endowment by
+    activity by region, so the share is the natural-resource row over the column's total. This
+    replaces the source's `fsh_endowment_gtap.xlsx`, which is the same quantity read from a
+    workbook nobody sent us; computing it from the base data we already hold means the service
+    does not rest on a file only one machine has.
+
+    Args:
+        evfp_array: the EVFP array, (endowment, activity, region).
+        endowments, activities, regions (list[str]): its set element names, in order.
+
+    Returns:
+        pandas.DataFrame: gtap_region_label and natural_resource_share.
+
+    Raises:
+        ValueError: if a region's fishing sector has no factor payments at all, because a zero
+            denominator would otherwise publish a silent zero share and value the whole sector
+            at nothing.
+    """
+    import numpy as np
+    import pandas as pd
+    e = endowments.index(endowment)
+    a = activities.index(sector)
+    natural_resource = np.asarray(evfp_array)[e, a, :]
+    total = np.asarray(evfp_array)[:, a, :].sum(axis=0)
+    if (total <= 0).any():
+        empty = [regions[i] for i, t in enumerate(total) if t <= 0]
+        raise ValueError('GTAP regions with no %s factor payments, so the share is undefined '
+                         'rather than zero: %s' % (sector, ', '.join(empty)))
+    return pd.DataFrame({'gtap_region_label': regions,
+                         'natural_resource_share': natural_resource / total})
+
+
+def aquaculture_value_by_country(value_df, year):
+    """FAO FishStatJ aquaculture value for one year, summed over species, area and environment.
+
+    The export is long: one row per country-species-area-environment-year, `VALUE` in thousand
+    USD under the MEASURE code V_USD_1000. Returns whole dollars on the account's country key,
+    since FAO's COUNTRY.UN_CODE is the M49 code that `iso3_r250_id` carries.
+    """
+    df = value_df[value_df['PERIOD'] == int(year)]
+    if 'MEASURE' in df.columns:
+        df = df[df['MEASURE'] == AQUACULTURE_VALUE_MEASURE]
+    out = df.groupby('COUNTRY.UN_CODE', as_index=False)['VALUE'].sum()
+    out['aquaculture_value_usd'] = out['VALUE'] * 1000.0
+    return out.rename(columns={'COUNTRY.UN_CODE': 'iso3_r250_id'})[
+        ['iso3_r250_id', 'aquaculture_value_usd']]
+
+
+def aquaculture_gep_by_country(value_df, share_df, countries_df, year):
+    """Aquaculture GEP: FAO value times the natural-resource share of the country's GTAP region.
+
+    A country FAO does not value stays NaN rather than zero: no data is not no aquaculture.
+    """
+    values = aquaculture_value_by_country(value_df, year)
+    df = countries_df.merge(values, on='iso3_r250_id', how='left')
+    df = df.merge(share_df, left_on='gtap_region_label', right_on='gtap_region_label', how='left')
+    df['aquaculture_gep'] = df['aquaculture_value_usd'] * df['natural_resource_share']
+    return df
