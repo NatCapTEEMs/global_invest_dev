@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from global_invest import utilities
 from global_invest.timber_provision import timber_provision_functions as tp
@@ -90,3 +91,36 @@ def test_es_config_and_parameters_rows_hydrate_timber_provision(tmp_path):
     assert p.gep_base_year == 2019
     utilities.hydrate_es_parameters(p, 'timber_provision', log=lambda *a: None)
     assert p.timber_provision_gep_path.endswith('timber_provision_gep.csv')
+
+
+def test_the_flat_sum_is_the_only_reading_the_roundwood_market_can_support():
+    """The units question, settled from outside the pipeline rather than from its own output.
+
+    The value raster is EPSG:4326 at 10 arc-second and carries NO unit metadata, so whether a cell
+    holds a value or a per-hectare density cannot be read off the file. The committed output cannot
+    settle it either, because it was produced by summing the same raster the same way.
+
+    FAOSTAT settles it. World industrial roundwood production in 2019 was 1.985 billion m3, and the
+    world export unit value was $111.01/m3, so the gross value of all industrial roundwood produced
+    on earth was about $220bn. The pipeline's flat sum, $88.74bn, is 40 percent of that -- a high
+    but possible land factor share. Reading the raster as $/ha gives $708bn, which is 321 percent
+    of gross. A land share cannot exceed the gross value it is a share of, so the flat sum is the
+    only reading the market supports.
+    """
+    import os
+    path = os.path.join(os.path.expanduser('~'), 'Files', 'base_data', 'global_invest',
+                        'timber_provision', 'input', 'faostat_forestry_roundwood_2019.csv')
+    if not os.path.exists(path):
+        pytest.skip('the staged FAOSTAT roundwood slice is not on this machine')
+    fao = pd.read_csv(path, encoding='utf-8-sig')
+    world = fao[(fao['Area'] == 'World') & (fao['Item'] == 'Industrial roundwood')]
+    produced = float(world[world['Element'] == 'Production']['Value'].iloc[0])
+    export_q = float(world[world['Element'] == 'Export quantity']['Value'].iloc[0])
+    export_v = float(world[world['Element'] == 'Export value']['Value'].iloc[0]) * 1000.0
+    gross = produced * (export_v / export_q)
+
+    flat, per_hectare = 88_743_966_326.0, 708_472_545_086.0
+    assert flat < gross, 'the flat reading must be a fraction of gross roundwood value'
+    assert per_hectare > 3 * gross, (
+        'the $/ha reading must be impossible, not merely large: it is %.0f%% of gross'
+        % (100 * per_hectare / gross))
