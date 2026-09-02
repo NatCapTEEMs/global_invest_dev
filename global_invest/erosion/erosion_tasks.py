@@ -968,7 +968,7 @@ def run_biophysical_decomposed(p, paths):
 
     # ---- Save per-country-crop (long form; publication transparency)
     df_country_crop_long = pd.concat([df_cc_onfarm, df_cc_upstream, df_cc_combined], ignore_index=True)
-    df_country_crop_long.to_csv(paths.output.country_crop_protected_production_long, index=False)
+    df_country_crop_long.to_csv(paths.output.country_crop_long, index=False)
 
     # Optional: also write 3 separate files (handy for reviewers)
     df_cc_onfarm.to_csv(os.path.join(paths.output.directory, "country_crop_protected_production_onfarm.csv"), index=False)
@@ -1104,7 +1104,7 @@ def integrate_and_write(p, paths):
         },
         "outputs": {
             "integrated_country_gep": str(paths.output.integrated_country_gep),
-            "country_crop_protected_production_long": str(paths.output.country_crop_protected_production_long),
+            "country_crop_protected_production_long": str(paths.output.country_crop_long),
             "country_gep_decomposition_long": str(paths.output.country_gep_decomposition_long),
             "country_ps_diagnostics": str(paths.output.country_ps_diagnostics),
             "ps_onfarm_raster": str(paths.output.prevention_share_onfarm),
