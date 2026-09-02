@@ -1,9 +1,14 @@
 """NTFP GEP tasks: accessible forest hectares per country, then the CWoN NWFP value per hectare.
 
-The stage reproduces the source module rather than approximating it. Everything is on one
-Mollweide grid at 300 m, the land cover's own resolution; accessibility is the dissolved 10 km
-buffer of the road and river geometries; and the forest mask is screened by a five-year mean
-NDVI. The roads and rivers are the source module's own layers.
+Everything is on the account's own grid, WGS84 at 10 arcsec, the grid `ha_per_cell_10sec.tif`
+defines. Accessibility is the reach grown 10 km from the road and river lines, and the forest
+mask is screened by a five-year mean NDVI. The roads and rivers are the source module's own
+layers, and the screens, thresholds and class ranges are its choices, pinned by tests.
+
+⚠ The source module worked on a second grid, Mollweide at 300 m, because equal-area made a cell
+a flat 9.0 hectares. The area that bought is already exact on the pyramid, read from ha_per_cell,
+and the projection cost the map: `hb.make_path_pog` refuses a Mollweide raster, so nothing this
+service produced could be published or compared with another service cell for cell.
 """
 import os
 from osgeo import gdal, ogr
@@ -20,88 +25,139 @@ COUNTRY_ID_MAX = 900
 
 
 
-# The analysis grid, taken from the source module so the two produce the same thing. Mollweide
-# is equal-area, so a cell is a fixed number of hectares anywhere on it, and 300 m is the ESA
-# land cover's own resolution: at 309 m per pixel at the equator, a coarser grid throws the
-# land-cover detail away before the accessibility and NDVI screens ever see it.
-MOLLWEIDE_WKT = (
-    'PROJCS["World_Mollweide",'
-    'GEOGCS["GCS_WGS_1984",'
-    'DATUM["WGS_1984",'
-    'SPHEROID["WGS_84",6378137,298.257223563]],'
-    'PRIMEM["Greenwich",0],'
-    'UNIT["Degree",0.017453292519943295]],'
-    'PROJECTION["Mollweide"],'
-    'PARAMETER["False_Easting",0],'
-    'PARAMETER["False_Northing",0],'
-    'PARAMETER["Central_Meridian",0],'
-    'UNIT["Meter",1]]'
-)
-ACCESSIBILITY_CELL_SIZE_M = 300.0
-HECTARES_PER_CELL = (ACCESSIBILITY_CELL_SIZE_M / 100.0) ** 2
-# A fixed world extent rather than one derived from each input. Transforming 90 degrees north
-# into Mollweide is undefined, so the poles are trimmed, and pinning the extent is also what
-# keeps every input on one grid.
-MOLLWEIDE_BBOX = (-17_900_000.0, -8_900_000.0, 17_900_000.0, 8_900_000.0)
+# The analysis grid is the account's own: WGS84 at 10 arcsec, the grid `ha_per_cell_10sec.tif`
+# defines and every other service works on. A cell is about 309 m tall everywhere and
+# 309*cos(latitude) m wide, so its area is not a constant and is read from `ha_per_cell` rather
+# than assumed -- which is the house rule, and is exact where a fixed hectares-per-cell is not.
+#
+# ⚠⚠ This replaced a second grid, Mollweide at 300 m, carried over from the source module.
+# Equal-area made the hectares a constant 9.0, which is why it was chosen, and it cost the map:
+# `hb.make_path_pog` refuses a Mollweide raster outright, because the account's pyramid is
+# defined in degrees. Nothing this service produced could be published, and its cells could not
+# be compared with any other service's. The area a projection was buying is already exact on the
+# pyramid, so there was nothing left on the other side of the trade.
 GTIFF_CREATION_OPTIONS = ('TILED=YES', 'COMPRESS=DEFLATE', 'BIGTIFF=YES')
+# How far to grow the reach in one pass. A band takes the cell width of its own middle latitude,
+# so what has to stay small is the LATITUDE the band spans, not the number of rows: half a degree
+# changes cos(latitude) by under a percent below 60 degrees, and the row count that comes to
+# depends on the grid. Bounding the rows as well keeps the working array a sane size.
+REACHABLE_BAND_MAX_DEGREES = 0.5
+REACHABLE_BAND_ROWS = 256
+# Above this latitude the reach in cells runs away as cos(latitude) goes to zero, and there is
+# no forest there to reach. The growth stops rather than widening without bound.
+REACHABLE_MAX_LATITUDE = 84.0
 
 
-def reproject_vector(src_path, out_path, target_wkt=MOLLWEIDE_WKT):
-    """One vector on the analysis grid's projection, so a metre buffer means metres."""
-    import geopandas as gpd
+def reachable_mask_on_pyramid(vector_paths, template_path, out_path, distance_m,
+                              log=None):
+    """The reachable area, grown from the road and river lines on the account's own grid.
 
-    gpd.read_file(src_path).to_crs(target_wkt).to_file(out_path, driver='GPKG')
-    return out_path
+    The source module buffered the geometries in Mollweide and burned the dissolved polygon.
+    That buffer is only as round as the projection is conformal, and Mollweide is not: it holds
+    area, not distance, so a nominal 10 km stretched further the further it sat from the central
+    meridian. Growing the reach on the pyramid instead makes the distance explicit -- the cell
+    is 309 m tall everywhere and 309*cos(latitude) m wide -- and removes the second grid.
 
+    The growth runs a band of rows at a time, because the exact transform over the whole world
+    at 10 arcsec is 8.4 billion cells. Each band takes the cell width of its own middle latitude,
+    and is read with a halo deep enough to see every line that could reach into it. The world
+    wraps at the antimeridian, so the halo wraps too: a road in Chukotka reaches Alaska.
 
-def buffer_and_union_access(source_vector_paths, out_path, buffer_distance_m):
-    """The reachable area, as one dissolved polygon.
-
-    Accessibility is built from the road and river geometries rather than by dilating a raster.
-    Buffering the lines and dissolving them is exact at any distance and costs nothing per cell,
-    where a raster dilation over seven billion cells would dominate the run and would round the
-    distance to whole cells.
+    ⚠ `hb.distance_transform_edt` is pygeoprocessing's, which takes one sampling distance for a
+    whole raster and writes a file. The cell width here changes with latitude, so the sampling
+    has to change with it, which that signature cannot express. This calls scipy's array form,
+    the same transform underneath.
 
     Args:
-        source_vector_paths (list): the road and river vectors, already in the target projection.
-        out_path (str): where the single dissolved polygon is written.
-        buffer_distance_m (float): how far from a road or river counts as reachable.
+        vector_paths (list): the road and river line layers, in the template's own CRS.
+        template_path (str): a raster on the account's grid, for shape, transform and projection.
+        out_path (str): where the 0/1 reachable mask is written.
+        distance_m (float): how far from a road or river counts as reachable.
+        log (callable): where progress goes.
 
     Returns:
         str: out_path.
     """
-    import geopandas as gpd
-    from shapely.ops import unary_union
+    import math
+    from scipy import ndimage
 
-    geometries, crs = [], None
-    for path in source_vector_paths:
-        gdf = gpd.read_file(path)
-        crs = crs or gdf.crs
-        geometries.extend(gdf.buffer(buffer_distance_m).tolist())
-    gpd.GeoDataFrame(geometry=[unary_union(geometries)], crs=crs).to_file(out_path, driver='GPKG')
+    log = log or hb.log
+    lines_path = hb.suri(out_path, 'lines')
+    if not hb.path_exists(lines_path):
+        # all_touched, because a road is narrower than a cell everywhere. Burning on the centre
+        # rule would drop most of the network before anything was grown from it.
+        log('  burning the road and river lines onto the grid')
+        for index, vector_path in enumerate(vector_paths):
+            rasterize_polygon_to_grid(vector_path, template_path, lines_path,
+                                      all_touched=True, append=index > 0)
+
+    template = gdal.Open(template_path)
+    width, height = template.RasterXSize, template.RasterYSize
+    origin_y, cell_degrees = template.GetGeoTransform()[3], -template.GetGeoTransform()[5]
+    metres_per_degree = 111_320.0
+    cell_height_m = cell_degrees * metres_per_degree
+    halo_rows = int(math.ceil(distance_m / cell_height_m))
+
+    lines = gdal.Open(lines_path)
+    target = gdal.GetDriverByName('GTiff').Create(
+        out_path, width, height, 1, gdal.GDT_Byte, options=list(GTIFF_CREATION_OPTIONS))
+    target.SetGeoTransform(template.GetGeoTransform())
+    target.SetProjection(template.GetProjection())
+    band = target.GetRasterBand(1)
+
+    band_rows = max(1, min(REACHABLE_BAND_ROWS,
+                           int(REACHABLE_BAND_MAX_DEGREES / cell_degrees)))
+    for row in range(0, height, band_rows):
+        rows = min(band_rows, height - row)
+        top = max(0, row - halo_rows)
+        bottom = min(height, row + rows + halo_rows)
+        latitude = origin_y - (row + rows / 2.0) * cell_degrees
+        cell_width_m = cell_height_m * max(math.cos(math.radians(
+            min(abs(latitude), REACHABLE_MAX_LATITUDE))), 1e-6)
+        halo_cols = min(int(math.ceil(distance_m / cell_width_m)), width // 2)
+
+        block = lines.GetRasterBand(1).ReadAsArray(0, top, width, bottom - top) > 0
+        # The world wraps, so the halo is taken from the far edge rather than padded with
+        # emptiness, which would make every cell near the antimeridian unreachable.
+        wrapped = np.concatenate(
+            [block[:, width - halo_cols:], block, block[:, :halo_cols]], axis=1)
+        distance = ndimage.distance_transform_edt(
+            ~wrapped, sampling=(cell_height_m, cell_width_m))
+        reachable = (distance <= distance_m)[:, halo_cols:halo_cols + width]
+        band.WriteArray(reachable[row - top:row - top + rows].astype('uint8'), 0, row)
+        if row % (band_rows * 32) == 0:
+            log('  grown to row %d of %d' % (row, height))
+    band.FlushCache()
+    target = None
     return out_path
 
 
 def rasterize_polygon_to_grid(vector_path, reference_raster_path, out_path,
-                              attribute=None, output_type=gdal.GDT_Byte, all_touched=False):
-    """Burn a polygon layer onto the reference grid, as a 0/1 mask or as one attribute's value.
+                              attribute=None, output_type=gdal.GDT_Byte, all_touched=False,
+                              append=False):
+    """Burn a vector layer onto the reference grid, as a 0/1 mask or as one attribute's value.
 
     Args:
-        vector_path (str): the polygons, already in the grid's projection.
+        vector_path (str): the geometries, in the grid's own CRS.
         reference_raster_path (str): a raster on the analysis grid, for shape and geotransform.
         out_path (str): where the burned raster is written.
-        attribute (str): the field whose value is burned. None burns 1 everywhere a polygon covers.
+        attribute (str): the field whose value is burned. None burns 1 everywhere a geometry covers.
         output_type: the GDAL type, wide enough to hold the attribute.
-        all_touched (bool): whether a cell any part of the polygon touches is burned, or only one
-            whose centre the polygon covers. Passed explicitly at every call rather than left to
+        all_touched (bool): whether a cell any part of the geometry touches is burned, or only one
+            whose centre it covers. Passed explicitly at every call rather than left to
             the GDAL default, because it is the rule that decides what a boundary cell counts as.
+        append (bool): burn into the existing raster instead of creating one, so several layers
+            land in a single mask.
     """
-    reference = gdal.Open(reference_raster_path)
-    target = gdal.GetDriverByName('GTiff').Create(
-        out_path, reference.RasterXSize, reference.RasterYSize, 1, output_type,
-        options=list(GTIFF_CREATION_OPTIONS))
-    target.SetGeoTransform(reference.GetGeoTransform())
-    target.SetProjection(reference.GetProjection())
+    if append:
+        target = gdal.Open(out_path, gdal.GA_Update)
+    else:
+        reference = gdal.Open(reference_raster_path)
+        target = gdal.GetDriverByName('GTiff').Create(
+            out_path, reference.RasterXSize, reference.RasterYSize, 1, output_type,
+            options=list(GTIFF_CREATION_OPTIONS))
+        target.SetGeoTransform(reference.GetGeoTransform())
+        target.SetProjection(reference.GetProjection())
     source = ogr.Open(vector_path)
     options = ['ALL_TOUCHED=%s' % ('TRUE' if all_touched else 'FALSE')]
     if attribute is None:
@@ -113,19 +169,23 @@ def rasterize_polygon_to_grid(vector_path, reference_raster_path, out_path,
     return out_path
 
 
-def warp_to_analysis_grid(src_path, out_path, resample_algorithm, output_type=gdal.GDT_Float32,
-                          src_nodata=None, dst_nodata=None):
-    """One raster on the analysis grid: Mollweide, 300 m, the fixed world extent.
+def warp_to_analysis_grid(src_path, out_path, template_path, resample_algorithm,
+                          output_type=gdal.GDT_Float32, src_nodata=None, dst_nodata=None):
+    """One raster on the account's grid, taking its projection, extent and cell size from
+    `ha_per_cell_10sec.tif` rather than from the input.
 
-    The extent and cell size are given rather than derived from the input, so every raster comes
-    out the same shape and the arrays can be combined cell by cell. Deriving them per input is
-    what produced a country raster of all zeros and an NDVI raster 56 rows short of the land
-    cover, neither of which announced itself.
+    Reading them off the template is what keeps every raster the same shape so the arrays can be
+    combined cell by cell. Deriving them per input is what produced a country raster of all zeros
+    and an NDVI raster 56 rows short of the land cover, neither of which announced itself.
     """
+    template = gdal.Open(template_path)
+    transform = template.GetGeoTransform()
+    bounds = (transform[0], transform[3] + transform[5] * template.RasterYSize,
+              transform[0] + transform[1] * template.RasterXSize, transform[3])
     gdal.Warp(out_path, src_path,
-              dstSRS=MOLLWEIDE_WKT,
-              xRes=ACCESSIBILITY_CELL_SIZE_M, yRes=ACCESSIBILITY_CELL_SIZE_M,
-              outputBounds=MOLLWEIDE_BBOX,
+              dstSRS=template.GetProjection(),
+              xRes=transform[1], yRes=-transform[5],
+              outputBounds=bounds,
               resampleAlg=resample_algorithm, outputType=output_type,
               srcNodata=src_nodata, dstNodata=dst_nodata,
               multithread=True, creationOptions=list(GTIFF_CREATION_OPTIONS))
@@ -136,28 +196,33 @@ ROWS_PER_BLOCK = 512
 
 
 def accessible_forest_hectares_by_country(lulc_path, access_path, country_id_path,
-                                          n_countries, ndvi_path=None):
+                                          ha_per_cell_path, n_countries, ndvi_path=None):
     """Accessible forest hectares summed per country id, read in blocks.
 
-    A cell counts when the land cover calls it forest, the reachable polygon covers it, and,
-    where an NDVI raster is given, it carries enough live vegetation to yield a product. A cell
-    is a fixed 9 hectares because the grid is equal-area.
+    A cell counts when the land cover calls it forest, the reachable mask covers it, and, where
+    an NDVI raster is given, it carries enough live vegetation to yield a product.
 
-    The rasters are read a few hundred rows at a time. On the 300 m grid a single band is 14 GB,
-    so the four this needs cannot be held at once, and the totals accumulate across blocks
+    ⚠ A cell's area is READ, from `ha_per_cell_10sec.tif`, not assumed. On the account's grid it
+    runs from about 9.5 hectares at the equator to nearly nothing at the poles, where the old
+    equal-area grid made it a flat 9.0 everywhere.
+
+    The rasters are read a few hundred rows at a time. A single band on this grid is 8.4 billion
+    cells, so the five this needs cannot be held at once, and the totals accumulate across blocks
     instead.
 
     Args:
         lulc_path (str): land cover on the analysis grid.
         access_path (str): the reachable mask on the same grid.
         country_id_path (str): country ids on the same grid.
+        ha_per_cell_path (str): the account's hectares-per-cell grid.
         n_countries (int): the highest country id, so the accumulator is long enough.
         ndvi_path (str): the NDVI on the same grid, or None to skip that screen.
 
     Returns:
         np.ndarray: hectares per country id, length n_countries + 1.
     """
-    sources = [gdal.Open(lulc_path), gdal.Open(access_path), gdal.Open(country_id_path)]
+    sources = [gdal.Open(lulc_path), gdal.Open(access_path), gdal.Open(country_id_path),
+               gdal.Open(ha_per_cell_path)]
     if ndvi_path is not None:
         sources.append(gdal.Open(ndvi_path))
     shapes = {(s.RasterXSize, s.RasterYSize) for s in sources}
@@ -171,10 +236,8 @@ def accessible_forest_hectares_by_country(lulc_path, access_path, country_id_pat
         blocks = [s.GetRasterBand(1).ReadAsArray(0, row, width, rows) for s in sources]
         forest = nf.forest_mask(blocks[0])
         if ndvi_path is not None:
-            forest = nf.vegetated_forest_mask(forest, blocks[3])
-        per_cell = nf.accessible_forest_hectares(
-            forest, blocks[1] > 0,
-            np.full(forest.shape, HECTARES_PER_CELL, dtype=np.float32))
+            forest = nf.vegetated_forest_mask(forest, blocks[4])
+        per_cell = nf.accessible_forest_hectares(forest, blocks[1] > 0, blocks[3])
         totals += nf.hectares_by_zone(per_cell, blocks[2], n_countries)
     return totals
 
@@ -213,34 +276,32 @@ def accessible_forest(p):
     import numpy as np
     from osgeo import gdal
 
-    # The land cover, on the analysis grid. Nearest neighbour rather than dominant class: at
-    # 300 m the grid is the source's own resolution, so there is no majority to take, and
-    # classifying before or after a nearest-neighbour resample gives the same cells either way.
-    lulc_path = os.path.join(p.cur_dir, 'lulc_mollweide_300m.tif')
+    # Every raster here lands on the account's own grid, whose projection, extent and cell size
+    # are read off ha_per_cell rather than declared. Nothing is reprojected into a second CRS,
+    # so no vector needs reprojecting either: the boundaries, roads and rivers are already in
+    # the grid's CRS and burn onto it directly.
+    template_path = p.ha_per_cell_10sec_path
+
+    # Nearest neighbour rather than dominant class: 10 arcsec is about 309 m at the equator,
+    # near enough the land cover's own 300 m that there is no majority to take, and classifying
+    # before or after a nearest-neighbour resample gives the same cells either way.
+    lulc_path = os.path.join(p.cur_dir, 'lulc_10sec.tif')
     if not hb.path_exists(lulc_path):
-        hb.log('ntfp: putting the land cover on the 300 m Mollweide grid')
-        warp_to_analysis_grid(p.gep_lulc_input_path, lulc_path, 'near',
+        hb.log('ntfp: putting the land cover on the account grid')
+        warp_to_analysis_grid(p.gep_lulc_input_path, lulc_path, template_path, 'near',
                               output_type=gdal.GDT_Int16)
 
-    # Countries come from the boundary polygons, reprojected and then burned onto the analysis
-    # grid, which is the order the source module uses: it reprojects the same vector and takes
-    # zonal statistics over it. Burning the id is that zonal step done once for every country at
-    # once, and it assigns a cell on the same rule, by which polygon covers the cell centre.
-    # Reprojecting a ready-made id raster instead would assign border and coastal cells by
-    # nearest neighbour from a 10 arcsec grid, which is a different rule.
-    countries_path = os.path.join(p.cur_dir, 'countries_mollweide_300m.tif')
+    # Countries come from the boundary polygons burned onto the grid, which is the zonal step the
+    # source module takes, done once for every country at once. A cell goes to whichever polygon
+    # covers its centre. Reprojecting a ready-made id raster instead would assign border and
+    # coastal cells by nearest neighbour, which is a different rule.
+    countries_path = os.path.join(p.cur_dir, 'country_id_10sec.tif')
     if not hb.path_exists(countries_path):
-        countries_vector = os.path.join(p.cur_dir, 'countries_mollweide.gpkg')
-        if not hb.path_exists(countries_vector):
-            hb.log('ntfp: reprojecting the country boundaries to Mollweide')
-            # initialize_country_paths publishes this in publish_inputs, so the file is named once
-            # for the whole library rather than again per service.
-            reproject_vector(p.gdf_countries_vector_path, countries_vector)
-        hb.log('ntfp: burning the country ids onto the same grid')
+        hb.log('ntfp: burning the country ids onto the account grid')
         # Centre rule, so a cell belongs to exactly one country. Burning every country a cell
         # touches would give a border cell to whichever country happens to be drawn last.
         # coastal_carbon builds its country id raster on the same rule.
-        rasterize_polygon_to_grid(countries_vector, lulc_path, countries_path,
+        rasterize_polygon_to_grid(p.gdf_countries_vector_path, template_path, countries_path,
                                   attribute='iso3_r250_id', output_type=gdal.GDT_Int32,
                                   all_touched=False)
 
@@ -248,40 +309,26 @@ def accessible_forest(p):
     # compared in the raster's own units rather than on scaled floats.
     ndvi_path = None
     if hb.path_exists(getattr(p, 'ntfp_ndvi_mean_path', None)):
-        ndvi_path = os.path.join(p.cur_dir, 'ndvi_mollweide_300m.tif')
+        ndvi_path = os.path.join(p.cur_dir, 'ndvi_10sec.tif')
         if not hb.path_exists(ndvi_path):
-            hb.log('ntfp: putting the five-year mean NDVI on the same grid')
-            warp_to_analysis_grid(p.ntfp_ndvi_mean_path, ndvi_path, 'bilinear',
+            hb.log('ntfp: putting the five-year mean NDVI on the account grid')
+            warp_to_analysis_grid(p.ntfp_ndvi_mean_path, ndvi_path, template_path, 'bilinear',
                                   output_type=gdal.GDT_Int16,
                                   src_nodata=nf.NDVI_NODATA, dst_nodata=nf.NDVI_NODATA)
     else:
         hb.log('ntfp: no NDVI raster staged, so the forest mask is the land-cover class alone.')
 
-    # Accessibility, built from the geometries rather than by dilating a raster.
-    union_path = os.path.join(p.cur_dir, 'reachable_from_road_or_river.gpkg')
-    if not hb.path_exists(union_path):
-        reprojected = []
-        for name, src in (('roads', p.ntfp_roads_vector_path), ('rivers', p.ntfp_rivers_path)):
-            out = os.path.join(p.cur_dir, f'{name}_mollweide.gpkg')
-            if not hb.path_exists(out):
-                hb.log(f'ntfp: reprojecting the {name} to Mollweide')
-                reproject_vector(src, out)
-            reprojected.append(out)
-        hb.log(f'ntfp: buffering roads and rivers by {nf.NTFP_ACCESS_BUFFER_M / 1000:.0f} km '
-               f'and dissolving them into one polygon')
-        buffer_and_union_access(reprojected, union_path, nf.NTFP_ACCESS_BUFFER_M)
-
-    access_path = os.path.join(p.cur_dir, 'reachable_mollweide_300m.tif')
+    access_path = os.path.join(p.cur_dir, 'reachable_10sec.tif')
     if not hb.path_exists(access_path):
-        hb.log('ntfp: burning the reachable polygon onto the grid')
-        # Centre rule again, matching the source module. An extent mask elsewhere in the library
-        # burns every cell it touches, because a habitat sliver narrower than a cell would
-        # otherwise vanish; a dissolved 10 km buffer is nowhere near that, so the choice only
-        # moves single cells along its perimeter.
-        rasterize_polygon_to_grid(union_path, lulc_path, access_path, all_touched=False)
+        hb.log('ntfp: growing the reach %d km from the roads and rivers'
+               % (nf.NTFP_ACCESS_BUFFER_M / 1000))
+        reachable_mask_on_pyramid(
+            [p.ntfp_roads_vector_path, p.ntfp_rivers_path],
+            template_path, access_path, nf.NTFP_ACCESS_BUFFER_M, log=hb.log)
 
     hectares = accessible_forest_hectares_by_country(
-        lulc_path, access_path, countries_path, COUNTRY_ID_MAX, ndvi_path=ndvi_path)
+        lulc_path, access_path, countries_path, template_path, COUNTRY_ID_MAX,
+        ndvi_path=ndvi_path)
 
     countries = p.df_countries[['iso3_r250_id', 'iso3_r250_label']].drop_duplicates('iso3_r250_id')
     countries = countries[countries['iso3_r250_id'].notna()]

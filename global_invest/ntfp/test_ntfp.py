@@ -1,4 +1,5 @@
 """Unit tests for the NTFP skeleton (valuation function + configuration rows)."""
+import inspect
 from types import SimpleNamespace
 
 import numpy as np
@@ -40,12 +41,15 @@ def test_source_script_constants_are_pinned():
     assert ntfp_functions.NDVI_SCALE_FACTOR == 0.0001
     assert ntfp_functions.NDVI_NODATA == -9999
 
-    # ntfp_tasks.py: the analysis grid, which fixes the cell size and the world extent so every
-    # raster comes out the same shape rather than each deriving its own bounds.
-    assert ntfp_tasks.ACCESSIBILITY_CELL_SIZE_M == 300.0
-    assert ntfp_tasks.MOLLWEIDE_BBOX == (-17_900_000.0, -8_900_000.0, 17_900_000.0, 8_900_000.0)
-    assert ntfp_tasks.HECTARES_PER_CELL == 9.0
-    assert 'Mollweide' in ntfp_tasks.MOLLWEIDE_WKT
+    # ntfp_tasks.py: the analysis grid is the account's own, so there is no second projection and
+    # no grid constant to pin. What is pinned is that none came back -- the machinery, not the
+    # word, because the comments still say why Mollweide was dropped and that history is the
+    # point of them.
+    for gone in ('MOLLWEIDE_WKT', 'MOLLWEIDE_BBOX', 'HECTARES_PER_CELL',
+                 'ACCESSIBILITY_CELL_SIZE_M', 'reproject_vector', 'buffer_and_union_access'):
+        assert not hasattr(ntfp_tasks, gone), '%s came back' % gone
+    assert 'ha_per_cell' in inspect.getsource(ntfp_tasks)
+    assert ntfp_tasks.REACHABLE_MAX_LATITUDE == 84.0
 
 
 def test_es_config_row_hydrates_ntfp(tmp_path):
@@ -184,3 +188,43 @@ def test_burning_the_country_id_matches_zonal_statistics_over_the_same_polygons(
 
     # And nothing is lost or double counted between them.
     assert ours.sum() == pytest.approx(values.sum(), rel=1e-12)
+
+
+def test_the_reach_widens_with_latitude_because_a_cell_narrows(tmp_path):
+    """A 100 km reach must cover twice as many columns at 60 N as at the equator.
+
+    This is the whole reason the old Mollweide grid existed and the reason it is gone. A cell on
+    the account's grid is the same height everywhere and 309*cos(latitude) metres wide, so a
+    fixed reach in metres has to cross more of them the further north it runs. Buffering in
+    degrees would give the same column count at both latitudes, which is a 10 km buffer at the
+    equator and a 20 km one at 60 N.
+    """
+    gpd = pytest.importorskip('geopandas')
+    from osgeo import gdal, osr
+    from shapely.geometry import Point
+
+    from global_invest.ntfp import ntfp_tasks
+
+    width, height, cell = 1440, 720, 0.25
+    template = str(tmp_path / 'template.tif')
+    dataset = gdal.GetDriverByName('GTiff').Create(template, width, height, 1, gdal.GDT_Float32)
+    dataset.SetGeoTransform((-180.0, cell, 0, 90.0, 0, -cell))
+    srs = osr.SpatialReference()
+    srs.ImportFromEPSG(4326)
+    dataset.SetProjection(srs.ExportToWkt())
+    dataset.GetRasterBand(1).WriteArray(np.ones((height, width), dtype='float32'))
+    dataset = None
+
+    lines = str(tmp_path / 'lines.gpkg')
+    gpd.GeoDataFrame(geometry=[Point(0.125, 0.125), Point(0.125, 60.125)],
+                     crs='EPSG:4326').to_file(lines, driver='GPKG')
+
+    out = str(tmp_path / 'reach.tif')
+    ntfp_tasks.reachable_mask_on_pyramid([lines], template, out, 100_000.0, log=lambda *a: None)
+    reach = gdal.Open(out).ReadAsArray()
+
+    at_equator = int((reach[int((90 - 0.125) // cell)] > 0).sum())
+    at_sixty = int((reach[int((90 - 60.125) // cell)] > 0).sum())
+    # 3.6 cells each way at the equator and 7.2 at 60 N, rounded to whole cells.
+    assert at_equator == 7
+    assert at_sixty == 15
