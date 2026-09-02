@@ -107,7 +107,9 @@ def test_es_config_and_parameters_rows_hydrate_the_fisheries_gep(tmp_path):
     # base_data/global_invest/fisheries is organised by SUBGROUP -- commercial, subsistence,
     # aquaculture -- because the three read different lineages (CWoN, Lynch, FAO+GTAP) and the
     # account reasons per subgroup. The reference anchors stay flat at the top of the service
-    # directory, which is service_data_dir's contract: it seeds top-level files only.
+    # directory. ⚠ service_data_dir seeds TOP-LEVEL files only, so files under a subgroup
+    # folder are not auto-seeded from a shared root and rely on base_data being synced --
+    # which is how they arrive on every machine we run on.
     assert p.fisheries_cwon_cpi_path.endswith('commercial/cpi2019.dta')
     assert p.fisheries_cwon_econ_rent_path.endswith('commercial/EconRent_Analysis_AllYears.dta')
     assert p.fisheries_aquaculture_value_path.endswith('aquaculture/Aquaculture_Value.csv')
@@ -121,7 +123,11 @@ def test_subsistence_computed_value_reproduces_the_committed_output():
     no price behind it; those stay empty here, because a value we cannot derive is not a
     measurement of zero, and being zero they take nothing out of the total."""
     import os
-    reference_dir = utilities.service_data_dir(_base_data_project(), 'fisheries')
+    # Organised by subgroup, condition 15: the subsistence lineage -- its input AND the two
+    # anchors it is checked against -- lives under subsistence/ rather than loose beside
+    # commercial's and aquaculture's.
+    reference_dir = os.path.join(
+        utilities.service_data_dir(_base_data_project(), 'fisheries'), 'subsistence')
     lynch = pd.read_excel(os.path.join(reference_dir, 'Rec fish food_20230509_for USGS data release.xlsx'),
                           engine='openpyxl')
     countries = pd.read_csv(os.path.join(reference_dir, 'subsistence_correspondence.csv'))
@@ -150,7 +156,8 @@ def test_subsistence_recompute_matches_the_releases_own_published_total():
     """The release publishes TCUV beside the quantities and prices it was built from. Our sum
     over species must land on it, or one of the two is wrong."""
     import os
-    reference_dir = utilities.service_data_dir(_base_data_project(), 'fisheries')
+    reference_dir = os.path.join(
+        utilities.service_data_dir(_base_data_project(), 'fisheries'), 'subsistence')
     lynch = pd.read_excel(os.path.join(reference_dir, 'Rec fish food_20230509_for USGS data release.xlsx'),
                           engine='openpyxl')
     by_admin = ff.subsistence_value_by_admin(lynch)
