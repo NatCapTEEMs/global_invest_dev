@@ -58,8 +58,17 @@ with open(path, encoding='utf-8-sig') as f:
 PY
 }
 
-CONDA_ENV="$(read_row ntfp_msi_conda_env)"
-[ -n "$CONDA_ENV" ] || { echo "ntfp_msi_conda_env is blank: fill it in this machine's input/es_parameters.csv"; exit 1; }
+# ⚠ The environment can come from NTFP_CONDA_ENV instead of the CSV, and that is the better way
+# on a machine that also pulls. es_parameters.csv is TRACKED, so filling a machine value into it
+# leaves a local modification that every `git pull` has to be stashed around -- which is what
+# flood's checkout on MSI carries today. Export the variable in the submitting shell and the
+# tracked file stays clean:
+#
+#     NTFP_CONDA_ENV=/users/4/coles081/envs/earth_econ sbatch global_invest/ntfp/run_ntfp_msi.sbatch
+#
+# The CSV row stays as the fallback so the file is still the one place a machine CAN be recorded.
+CONDA_ENV="${NTFP_CONDA_ENV:-$(read_row ntfp_msi_conda_env)}"
+[ -n "$CONDA_ENV" ] || { echo "no environment: set NTFP_CONDA_ENV or fill the ntfp_msi_conda_env row"; exit 1; }
 PYTHON="$CONDA_ENV/bin/python"
 [ -x "$PYTHON" ] || { echo "no interpreter at $PYTHON"; exit 1; }
 
