@@ -229,6 +229,7 @@ ntfp,ntfp_rivers_source_url,https://naciscdn.org/naturalearth/10m/physical/ne_10
 ntfp,ntfp_ndvi_mean_path,global_invest/ntfp/input/mean_ndvi_2015_2019.tif
 ntfp,ntfp_value_per_ha_path,global_invest/ntfp/nontimber_price_iucn_edited.csv
 ntfp,ntfp_value_per_ha_source_url,https://reproducibility.worldbank.org/catalog/194/download/549
+ntfp,ntfp_msi_conda_env,
 landslide_mitigation,uglc_year_source,start_date
 landslide_mitigation,force_run,false
 landslide_mitigation,run_in_parallel,true

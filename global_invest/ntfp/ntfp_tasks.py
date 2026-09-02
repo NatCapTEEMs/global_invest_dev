@@ -249,21 +249,25 @@ def publish_inputs(p):
     utilities.hydrate_es_config(p, 'ntfp', log=hb.log)
     utilities.hydrate_es_parameters(p, 'ntfp', log=hb.log)
     utilities.initialize_country_paths(p)
+    # The grid every raster here now lands on. coastal_carbon and terrestrial_carbon publish it
+    # the same way; a service that resolves the pyramid for itself is how two of them drifted
+    # onto different grids without anyone noticing.
+    utilities.initialize_pyramid_paths(p)
     if not hasattr(p, 'results'):
         p.results = {}
     return p
 
 
 def accessible_forest(p):
-    """Forest hectares reachable from a road or river, per country, on the 300 m analysis grid.
+    """Forest hectares reachable from a road or river, per country, on the account's grid.
 
-    The stage follows the source module step for step: the land cover and the NDVI are put on
-    one Mollweide grid at the land cover's own resolution, the road and river geometries are
-    buffered and dissolved into a single reachable polygon, and forest is counted where it is
-    inside that polygon and green enough to yield a product.
+    The land cover and the NDVI are put on the grid `ha_per_cell_10sec.tif` defines, the reach is
+    grown 10 km from the road and river lines, and forest is counted where it is inside that reach
+    and green enough to yield a product. Every screen and threshold is the source module's; the
+    grid is not, and the module docstring says why.
 
-    Everything is read in blocks. The grid is 119,333 by 59,333, so a single band is 14 GB and
-    the four this needs would not fit in memory at once.
+    Everything is read in blocks. The grid is 129,600 by 64,800, so a single band is 8.4 billion
+    cells and the five this needs would not fit in memory at once.
     """
     publish_inputs(p)
     p.ntfp_accessible_forest_path = os.path.join(p.cur_dir, 'accessible_forest_ha_by_country.csv')
