@@ -126,10 +126,10 @@ flood,flood_depth_aligned_path,global_invest/flood/floodplain_depth/aligned_to_l
 flood,flood_sda_mapping_path,
 flood,flood_sda_legend_path,
 flood,flood_spa_path,global_invest/flood/spa/global_prr_spa.tif
-flood,flood_spa_ratio_path,
-flood,flood_canonical_eur_path,
+flood,flood_spa_ratio_path,global_invest/flood/spa/global_upstream_spa_ratio.tif
+flood,flood_canonical_eur_path,global_invest/flood/flood_damage/country_landtype_flood_damage_JRC_EUR_m2.csv
 flood,flood_sda_damage_wide_path,
-flood,flood_currency_factors_path,
+flood,flood_currency_factors_path,global_invest/flood/flood_damage/currency_conversion_factors_EUR2010_to_USD2019.csv
 flood,flood_amplification_path,
 flood,flood_cn_table_path,
 flood,flood_amplification_pattern,global_amplification_{scenario}_rp{rp}.tif
