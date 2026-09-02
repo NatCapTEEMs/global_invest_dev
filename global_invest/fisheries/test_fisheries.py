@@ -363,3 +363,58 @@ def test_aquatic_plants_are_dropped_and_dropping_them_needs_the_species_table():
     # silent filter, so it raises instead.
     with pytest.raises(ValueError, match='species-group table'):
         ff.aquaculture_value_by_country(value, 2019, None, exclude_aquatic_plants=True)
+
+
+def _fisheries_runs():
+    """Every fisheries project directory on this machine, cold starts included.
+
+    Checking one named directory lets a stale warm run stand in for a fresh one, which is the
+    failure condition 10 exists for. Every run that exists has to agree.
+    """
+    import glob
+    import os
+    pattern = os.path.join(os.path.expanduser('~'), 'Files', 'global_invest', 'projects',
+                           'gep_fisheries*', 'intermediate')
+    return sorted(p for p in glob.glob(pattern) if os.path.isdir(p))
+
+
+def test_every_subsistence_run_reproduces_the_staged_reference_total():
+    """Condition 12 for subsistence: the reproduction is checked against the RUNS, not the maths.
+
+    The three tests above check `subsistence_fisheries_by_country` against the release. That is a
+    check on the function; this is a check on what the pipeline actually wrote, for every run on
+    the machine including the cold start. Commercial fisheries carried a reproduction claim in its
+    entry for weeks with nothing staged and nothing comparing, which is what this shape prevents.
+
+    ⚠ The two sides agree on the TOTAL to the dollar and not on the count: the release publishes 85
+    countries and we publish 65. The twenty are countries the release gives a value of exactly zero
+    with no quantity and no price behind it. A value we cannot derive is not a measurement of zero,
+    so they stay NA here -- and being zero they take nothing out of the total, which is why the
+    totals still match exactly.
+    """
+    import glob
+    import os
+    reference_path = os.path.join(
+        os.path.expanduser('~'), 'Files', 'base_data', 'global_invest', 'fisheries',
+        'subsistence', 'gep-subsistence-fisheries.csv')
+    if not os.path.exists(reference_path):
+        pytest.skip('the staged reference is not on this machine')
+    reference_total = pd.read_csv(reference_path)['gep_subistence_fish'].sum()
+
+    checked = 0
+    for run in _fisheries_runs():
+        for produced in glob.glob(os.path.join(run, '**', 'subsistence_gep_by_country.csv'),
+                                  recursive=True):
+            ours = pd.read_csv(produced)
+            column = [c for c in ours.columns if c.endswith('_gep')][0]
+            # 1e-9, not tighter: the staged CSV stores its values rounded, and the two totals
+            # differ by $0.24 on $7.92bn -- 3.1e-11 relative, which is that rounding rather than a
+            # disagreement. A tolerance tighter than the reference's own precision tests the file
+            # format, not the science.
+            assert ours[column].sum() == pytest.approx(reference_total, rel=1e-9), (
+                '%s totals %r against the staged reference %r'
+                % (produced, ours[column].sum(), reference_total))
+            assert len(ours) == 250, '%s publishes %d rows' % (produced, len(ours))
+            checked += 1
+    if not checked:
+        pytest.skip('no fisheries run on this machine has written a subsistence table')
