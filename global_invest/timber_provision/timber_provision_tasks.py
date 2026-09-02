@@ -62,25 +62,31 @@ def gep_calculation(p):
     df_gep = tp.roundwood_gross_value_by_country(
         hb.df_read(str(p.get_path(p.timber_provision_faostat_roundwood_path))),
         df_gep, int(p.gep_base_year))
+    # ⚠ The account's timber value is CWoN's rent as of 2026-09-02 (Chiara's decision, and the
+    # issues document's recommendation). So `timber_provision_gep` -- the shared key every other
+    # service writes and the account reads -- IS the CWoN rent, and the spatial estimate is kept
+    # beside it as `timber_provision_gep_spatial` rather than deleted: it is the only forestry
+    # layer this library has, and the reason for the switch is recorded in the entry.
+    df_gep = df_gep.rename(columns={'timber_provision_gep': 'timber_provision_gep_spatial',
+                                    'timber_provision_gep_cwon_rent': 'timber_provision_gep'})
     hb.df_write(df_gep[attr_cols + ['year', 'timber_provision_gep',
-                                    'timber_provision_gep_cwon_rent',
+                                    'timber_provision_gep_spatial',
                                     'timber_roundwood_gross_value']],
                 service_results['gep_by_country_base_year'])
-    for column, label in (('timber_provision_gep', 'spatial'),
-                          ('timber_provision_gep_cwon_rent', 'CWoN rent')):
+    for column, label in (('timber_provision_gep_spatial', 'spatial'),
+                          ('timber_provision_gep', 'CWoN rent')):
         priced = df_gep[df_gep['timber_roundwood_gross_value'].gt(0) & df_gep[column].gt(0)]
         over = priced[priced[column] > priced['timber_roundwood_gross_value']]
         if len(over):
             hb.log('  ⚠ %s exceeds its own gross roundwood value in %d countries: %s'
                    % (label, len(over), ', '.join(over['iso3_r250_label'].head(6))))
 
-    spatial = df_gep['timber_provision_gep'].sum()
-    rental = df_gep['timber_provision_gep_cwon_rent'].sum()
-    hb.log(f'Total timber_provision GEP for base year {p.gep_base_year}: {spatial:,.2f}')
-    hb.log(f'  the value raster x GTAP land share : {spatial:,.2f} '
-           f'({int(df_gep["timber_provision_gep"].gt(0).sum())} countries)')
-    hb.log(f'  CWoN "Forest, rents (current US$)" : {rental:,.2f} '
-           f'({int(df_gep["timber_provision_gep_cwon_rent"].notna().sum())} countries), '
+    spatial = df_gep['timber_provision_gep_spatial'].sum()
+    rental = df_gep['timber_provision_gep'].sum()
+    hb.log(f'Total timber_provision GEP for base year {p.gep_base_year}: {rental:,.2f} '
+           f'(CWoN rent, the account\'s figure since 2026-09-02)')
+    hb.log(f'  the superseded spatial estimate    : {spatial:,.2f} '
+           f'({int(df_gep["timber_provision_gep_spatial"].gt(0).sum())} countries), '
            f'ratio {rental / spatial:.2f}')
     committed = hb.df_read(p.timber_provision_gep_path)
     hb.log(f'Committed Forestry table total: {committed.select_dtypes("number").iloc[:, -1].sum():,.2f} (the test anchor).')
