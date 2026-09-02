@@ -217,17 +217,26 @@ def fuelwood_share_of_forest_rent(fao_df, countries_df, year):
     countries = d[d['Area'] != 'World']
 
     def revenue(item):
+        """Production at the WORLD export unit value, the same basis for both products.
+
+        ⚠ Country-own prices were used here until 2026-09-02 and made the share wrong. The share
+        is a RATIO between two revenues, so both sides have to be priced the same way or the ratio
+        measures the pricing rather than the mix. India is the case that exposed it: it exports 309
+        cubic metres of wood fuel for $234,000, an implied $757/m3 against a world $67, and 6,096
+        cubic metres of industrial roundwood at an implied $9,189 against a world $111. A filter
+        that accepted prices under $3,000 took the absurd fuelwood price and rejected the absurd
+        industrial one, so India's fuelwood share came out at 97.6 percent instead of 78.7.
+
+        Neither product's own price is usable for this: barely-traded volumes set them. CWoN faces
+        the same problem and solves it with outlier-trimmed REGIONAL mean export unit values; one
+        world price is the simpler version of the same idea and keeps both sides comparable.
+        """
         sub = countries[countries['Item'] == item]
         produced = sub[sub['Element'] == 'Production'].groupby('iso3_r250_id')['Value'].sum()
-        quantity = sub[sub['Element'] == 'Export quantity'].groupby('iso3_r250_id')['Value'].sum()
-        value = sub[sub['Element'] == 'Export value'].groupby('iso3_r250_id')['Value'].sum() * 1000.0
-        own = (value / quantity).replace([np.inf, -np.inf], np.nan).dropna()
-        own = own[(own > 5) & (own < 3000)]
         w = world[world['Item'] == item]
         world_price = (float(w[w['Element'] == 'Export value']['Value'].iloc[0]) * 1000.0
                        / float(w[w['Element'] == 'Export quantity']['Value'].iloc[0]))
-        price = own.reindex(produced.index).fillna(world_price)
-        return produced * price
+        return produced * world_price
 
     fuel = revenue('Wood fuel').rename('wood_fuel_revenue')
     industrial = revenue('Industrial roundwood').rename('industrial_revenue')
