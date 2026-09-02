@@ -758,7 +758,19 @@ hectare. `ours` is where that lives.
 - **run:** yes
 - **ours:** the country figure, from a staged value raster that is an input. ⚠ **Decided 2026-09-02 (Chiara): the value raster is the input, and this service is not required to rebuild it.** Condition 2 allows that in as many words -- an author's raster staged in base_data is an input like any other.
   The attempt is recorded because it bears on how much of the science we hold. The forest-management mask that had been described as the blocker is **public**: Lesiv et al. (2022) `FML_v3.2.tif`, Zenodo record 4541513, 1.4 GB, now staged and carrying its download URL. With it, the recipe `net_return where FML in 20/31/32/40 AND ESA 2015 is a tree class AND net return > 0` reproduces the delivered raster to **99.11 percent of pixels and 94 percent of value on a Borneo window** -- and to **only 78 percent globally**. The shortfall is entirely tropical: 0.98 between 67 and 44 degrees north, **0.50 between 22 and 1 north**, 0.70 in the southern tropics. On a Congo-basin window no variant of the class list closes it -- adding agroforestry reaches 0.58, dropping the FML mask entirely overshoots to 7.8 -- so something other than the class list separates the two, and it is not the grid, which is identical throughout.
-  So the mask was never the whole blocker, and the honest statement is narrower than either the old entry or the new hope: the three input rasters and the mask are all in hand, and they still do not reproduce the delivered raster in the tropics. What would settle it is the authors' own masking step, not another guess at it.
+  ⚠⚠ **Reverse-engineered rather than guessed at, on 2026-09-02, and the conclusion is that the documented rule is not the rule that was applied.** Reading the FML and ESA class of every pixel the DELIVERED raster keeps, across five regions:
+
+  | window | kept pixels | in an ESA tree class | in FML 20/31/32/40 |
+  |---|---|---|---|
+  | Congo | 421,978 | **49.5%** | 80.6% |
+  | Amazon | 459,291 | **64.3%** | 81.5% |
+  | Borneo | 284,227 | 86.5% | 94.3% |
+  | Scandinavia | 1,177,936 | 80.9% | 89.6% |
+  | SE US | 181,055 | 85.5% | 97.0% |
+
+  The method says "categories 2 to 5 on forested ESA classes". The FML half is roughly right, 81 to 97 percent. The ESA half is not: in the Congo **half the kept pixels are not a tree class at all** -- 25.2 percent are ESA 30, mosaic cropland, and further shares are ESA 10, 11 and 40, all cropland or cropland mosaic. 16.8 percent of kept Congo pixels are FML class 11, naturally regenerating with *no* signs of management, which the documented rule excludes by name.
+
+  So no class list reproduces it, and the shortfall lands exactly where the global rebuild lost value. The three input rasters and the mask are all in hand and they still do not reproduce the delivered raster, because the delivered raster was not made by the rule the appendix describes. This is the "flawed or incomplete description" the issues document flags, now measured rather than asserted. What would settle it is the authors' masking step itself.
 - **method:** Roundwood production times price times the GTAP land factor share, minus per-pixel transport cost, summed to countries. The quantity is a staged value raster we sum by country, not one we build.
 - **total:** $88.74bn
 - **code:** Refactored onto the library template and hazelbean conventions. The country totals are now computed from the drive's value raster rather than read from its summary table, and tested against the committed output.
