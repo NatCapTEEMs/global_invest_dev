@@ -197,3 +197,34 @@ def test_the_faostat_bound_is_published_and_neither_valuation_breaks_it_wholesal
             assert len(over) < 0.1 * len(valued), (
                 '%s: %s exceeds its own gross roundwood value in %d of %d countries, which is a '
                 'units error rather than a price proxy' % (path, column, len(over), len(valued)))
+
+
+def test_every_timber_run_reproduces_the_committed_anchor():
+    """Condition 12: checked against what the RUNS wrote, not against the join alone.
+
+    `test_join_reproduces_the_committed_anchor` reads the staged anchor and joins it, which tests
+    the join. This sums the raster the way the pipeline does and compares every timber run on the
+    machine, cold starts included, against the anchor. Commercial fisheries carried a reproduction
+    claim for weeks on the strength of a function-level test, which is the shape this avoids.
+    """
+    import glob
+    import os
+    anchor_path = os.path.join(REFERENCE_DIR, 'timber_provision_gep.csv')
+    if not os.path.exists(anchor_path):
+        pytest.skip('the committed anchor is not on this machine')
+    anchor = pd.read_csv(anchor_path)['forestry_gep'].sum()
+
+    pattern = os.path.join(os.path.expanduser('~'), 'Files', 'global_invest', 'projects',
+                           'gep_timber_provision*', '**', 'gep_by_country_base_year.csv')
+    produced = glob.glob(pattern, recursive=True)
+    if not produced:
+        pytest.skip('no timber_provision run on this machine')
+    for path in produced:
+        df = pd.read_csv(path)
+        # 1e-7: the raster is float32 and the anchor was written from a separate sum of it.
+        assert df['timber_provision_gep'].sum() == pytest.approx(anchor, rel=1e-7), (
+            '%s totals %r against the committed anchor %r'
+            % (path, df['timber_provision_gep'].sum(), anchor))
+        assert int(df['timber_provision_gep'].gt(0).sum()) == 166, (
+            '%s values %d countries, not the anchor\'s 166'
+            % (path, int(df['timber_provision_gep'].gt(0).sum())))
