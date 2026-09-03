@@ -193,6 +193,29 @@ def reachable_mask_on_pyramid(vector_paths, template_path, out_path, distance_m,
     return out_path
 
 
+def assert_raster_has_data(path, label, log=None):
+    """Three spread rows of a freshly built raster must hold data, or the builder failed silently.
+
+    A broken environment makes gdal.Warp and RasterizeLayer write empty rasters WITH exit 0, and
+    the existence guard then caches them. Sampling at the moment of writing turns a six-minute
+    run over empty tiles into an immediate failure that names the artifact.
+    """
+    log = log or hb.log
+    ds = gdal.Open(path)
+    height, width = ds.RasterYSize, ds.RasterXSize
+    band = ds.GetRasterBand(1)
+    ndv = band.GetNoDataValue()
+    found = 0
+    for row in (height // 4, height // 2, (3 * height) // 4):
+        a = band.ReadAsArray(0, row, width, 1)
+        valid = a != ndv if ndv is not None else a != 0
+        found += int(valid.sum())
+    if not found:
+        raise RuntimeError('%s came out EMPTY at %s: the builder failed silently. Delete the '
+                           'file and check the GDAL/PROJ environment.' % (label, path))
+    log('  %s: %d valid cells in three sampled rows' % (label, found))
+
+
 def rasterize_polygon_to_grid(vector_path, reference_raster_path, out_path,
                               attribute=None, output_type=gdal.GDT_Byte, all_touched=False,
                               append=False):
@@ -359,6 +382,7 @@ def accessible_forest(p):
         hb.log('ntfp: putting the land cover on the account grid')
         warp_to_analysis_grid(p.gep_lulc_input_path, lulc_path, template_path, 'near',
                               output_type=gdal.GDT_Int16)
+        assert_raster_has_data(lulc_path, 'land cover')
 
     # Countries come from the boundary polygons burned onto the grid, which is the zonal step the
     # source module takes, done once for every country at once. A cell goes to whichever polygon
@@ -373,6 +397,7 @@ def accessible_forest(p):
         rasterize_polygon_to_grid(p.gdf_countries_vector_path, template_path, countries_path,
                                   attribute='iso3_r250_id', output_type=gdal.GDT_Int32,
                                   all_touched=False)
+        assert_raster_has_data(countries_path, 'country ids')
 
     # Bilinear because NDVI is continuous, and the integer type is kept so the threshold is
     # compared in the raster's own units rather than on scaled floats.
@@ -384,6 +409,7 @@ def accessible_forest(p):
             warp_to_analysis_grid(p.ntfp_ndvi_mean_path, ndvi_path, template_path, 'bilinear',
                                   output_type=gdal.GDT_Int16,
                                   src_nodata=nf.NDVI_NODATA, dst_nodata=nf.NDVI_NODATA)
+            assert_raster_has_data(ndvi_path, 'NDVI')
     else:
         hb.log('ntfp: no NDVI raster staged, so the forest mask is the land-cover class alone.')
 
@@ -394,6 +420,7 @@ def accessible_forest(p):
         reachable_mask_on_pyramid(
             [p.ntfp_roads_vector_path, p.ntfp_rivers_path],
             template_path, access_path, nf.NTFP_ACCESS_BUFFER_M, log=hb.log)
+        assert_raster_has_data(access_path, 'reachable mask')
 
     hectares = accessible_forest_hectares_by_country(
         lulc_path, access_path, countries_path, template_path, COUNTRY_ID_MAX,

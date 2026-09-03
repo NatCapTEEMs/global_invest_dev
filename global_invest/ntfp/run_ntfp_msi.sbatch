@@ -103,7 +103,9 @@ command -v gdalinfo >/dev/null || { echo "gdalinfo is not on PATH: make_path_pog
 # than helping. The warps are the only step that benefits from a big cache and they are not the
 # expensive part here.
 export GDAL_CACHEMAX=2048
-export GDAL_NUM_THREADS=ALL_CPUS
+# ⚠ GDAL_NUM_THREADS is deliberately NOT set. On a node whose hardware has 128 cores but whose
+# cgroup allows 8, ALL_CPUS oversubscribes by 16x, and the full-resolution burn and warp came
+# out EMPTY with exit 0 while the same calls succeed without it.
 
 "$PYTHON" global_invest/ntfp/run_ntfp.py
 
