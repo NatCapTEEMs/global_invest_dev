@@ -147,6 +147,16 @@ def render_service_results(p):
     to change.
     """
 
+    # ⚠ A cluster node has no quarto, and the render is a report over results that already
+    # exist -- so its absence downgrades to a loud skip rather than failing a job whose
+    # calculation succeeded. The report renders on any machine that has quarto, from the same
+    # results.
+    if shutil.which('quarto') is None:
+        hb.log('render_service_results: quarto is not on PATH, so the results page is NOT '
+               'rendered. The calculation results are unaffected; render on a machine with '
+               'quarto.')
+        return
+
     os.environ['QUARTO_PYTHON'] = sys.executable
     module_root = os.path.dirname(os.path.abspath(__file__))
     for service_label in list(p.results.keys()):

@@ -394,6 +394,14 @@ def accessible_forest(p):
     hectares = accessible_forest_hectares_by_country(
         lulc_path, access_path, countries_path, template_path, COUNTRY_ID_MAX,
         ndvi_path=ndvi_path)
+    # ⚠⚠ A zero table must fail here, not publish. Everything landing in zone 0 -- outside every
+    # country -- means the country id raster is empty, which is what a boundary vector without
+    # the iso3_r250_id field burns. The existence guard then caches that empty raster, so the
+    # error names the file to delete rather than letting a $0 total flow into the account.
+    if not hectares[1:].any():
+        raise RuntimeError('accessible_forest: every hectare landed outside every country, so '
+                           'the country id raster is empty. Delete %s and rerun against a '
+                           'current ee_r264 vintage.' % countries_path)
 
     countries = p.df_countries[['iso3_r250_id', 'iso3_r250_label']].drop_duplicates('iso3_r250_id')
     countries = countries[countries['iso3_r250_id'].notna()]
