@@ -47,6 +47,8 @@ fisheries_subsistence_total: "$7.92bn"
 fisheries_aquaculture_total: "$63.13bn"
 water_supply_total: "$146.08bn"
 water_supply_anchor: "$144.68bn"
+water_use_gep: "$294.2bn"
+water_use_premium_gross: "$886.0bn"
 water_use_ag_total: "$1.06T"
 water_use_domestic_total: "$35.30T"
 water_use_all_total: "$36.36T"
@@ -190,7 +192,7 @@ format:
 
 - [Adding every headline figure gives about {{< meta gep_naive_sum >}}, using the agricultural water-use variant. Using the all-sector one instead makes the same sum about {{< meta gep_naive_sum_all >}}. World GDP in 2019 was about {{< meta world_gdp_2019 >}}.]{.state}
 - [The account reports no total, because that sum swings four-fold on one unresolved choice inside one service.]{.state}
-- **Q1:** what attribution step turns water use into a nature share? The all-sector figure, {{< meta water_use_all_total >}}, is the gross economic value of water used, which is more than a third of the {{< meta world_gdp_2019 >}} world economy.
+- **Q1:** the irrigation premium gives {{< meta water_use_gep >}}: irrigated land earns more per hectare than rainfed, and only that difference is water. Is the natural-resource share applied to it right, given it covers land and water together?
 - **Q2:** which overlaps should be netted out before anything is added? Pollination values part of what crop production already counts, livestock's feed share overlaps crop production, and coastal carbon overlaps terrestrial carbon on the landward side.
 - **Q3:** does the account want one headline figure at all, or the services reported separately?
 
@@ -279,7 +281,7 @@ format:
 | recreation | {{< meta recreation_total >}} provisional | no. The author's output table is not reachable |
 | fire_protection | {{< meta fire_cause_total >}} provisional, one of three coefficients | partially. Reproduces the committed output, but reads the committed regression coefficients rather than refitting them. Kosovo and two Indian sub-regions now reach a country instead of no country |
 | water_supply | hydropower component {{< meta water_supply_total >}} | yes. |
-| water_use | {{< meta water_use_ag_total >}} irrigation and {{< meta water_use_domestic_total >}} domestic, {{< meta water_use_all_total >}} all sectors | no. The drive's two committed figures were produced separately, so neither is a reference |
+| water_use | {{< meta water_use_gep >}} irrigation, from a {{< meta water_use_premium_gross >}} premium | no. The drive's two committed figures were produced separately, so neither is a reference |
 
 : {tbl-colwidths="[22,32,46]"}
 
