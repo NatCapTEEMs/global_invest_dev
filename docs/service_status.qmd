@@ -790,6 +790,32 @@ denominator, which was the actual bug, and the share is the remaining approximat
 - **replicated:** Yes, the committed anchor of $144.68bn over 95 countries, by the reference-matching variant. ⚠ Same lineage, so it tests our port rather than the science.
 - **decided:** -
 - **number:** The median country premium at 2019 is $672 a hectare; across the world's irrigated area that is $701,436,392,250 of output that exists because of irrigation, and 0.332 of it -- $232,876,882,227 -- is the natural-resource share. Counting only countries with a positive premium gives $940.8bn gross and $312.4bn net of the share, a 6% spread, so the answer does not turn on that choice. ⚠ **45 of the 173 come out negative**, every one a country whose irrigated share of AREA exceeds its irrigated share of GVA, which forces it arithmetically; their median irrigated GVA share is 3.8% against a 7.7% area share. ⚠ The 0.332 is land AND water jointly, because no dataset endows water separately -- the premium fixes the denominator, not the share.
+**Domestic, separately, because its fix is NOT the irrigation fix.**
+
+- The split from irrigation is done: `water_use_domestic_value_added` is industrial plus
+  municipal, published as its own column. ⚠ The three columns close exactly by construction --
+  irrigation $1.06T + domestic $35.30T = all-sector $36.36T, per-country residual 0.00 -- so the
+  sum matching is an identity, not a validation of anything.
+- The figure has the same defect as irrigation's did: SDG 6.4.1's industrial and services
+  indicators are value added per cubic metre, so multiplying them back returns the value added of
+  industry and services. Against World Bank GDP for the same 145 countries, domestic alone is
+  **64.2%% of their combined GDP**, median 48%% per country, and exceeds GDP in six. It is, near
+  enough, the non-agricultural economy of the covered countries.
+- ⚠⚠ **The irrigation premium cannot be repeated here, and that is a structural fact, not a
+  missing dataset.** The premium works because rainfed farms are a real population producing the
+  same products without irrigation water, so the difference isolates what the water adds. There
+  is no population of industry or municipalities operating without water to difference against --
+  water is not a treatment some firms decline. So domestic's water share cannot be isolated by
+  comparison, and the route has to be a PRICE OF RAW WATER: abstraction charges, water resource
+  fees, or a raw-water rent, times the volume withdrawn.
+- ⚠ Nobody we hold publishes that price. CWoN has no water rent; GTAP's water-utilities sector
+  `wtr` is folded into `ser` in the s26 aggregation we hold, so not even the delivered-water
+  ceiling can be read from it. Until a raw-water price source is chosen, domestic publishes the
+  denominator and no GEP -- the same convention as irrigation, for a different reason.
+- ⚠ Two boundaries to respect when a price arrives: hydropower ($146.08bn) is already a separate
+  row, and what ecosystems do to the QUALITY of this water is the water purification service,
+  not this one. Domestic here is raw-water provisioning alone, or it double-counts.
+
 - **need:** ⚠⚠ **The ask, in one sentence: is a land-AND-water rent acceptable for this row, or must water be separated?** The premium isolates what irrigation adds -- only what an irrigated hectare earns ABOVE the same land rainfed is credited, a median $672 a hectare at 2019 -- but the share applied to it, GTAP's 0.332, is the share of crop value added going to land and water TOGETHER, because no dataset endows water separately from land. So $232.9bn is the natural-capital rent of what irrigation adds, not water's rent alone, and it is an upper bound on the latter.
   If a joint figure is acceptable, this row is done and the share goes in `es_parameters`. If water must be separated, the thing to look for is a water analogue of GLEAM's feed share -- a MEASURED share of crop output attributable to irrigation water -- and not a better land rent, because every land rent has this same problem. ⚠ Livestock faces the identical choice and publishes both answers rather than picking; that is the convention here, and water follows it.
   ⚠ Two smaller checks before the figure is used: the 45 countries of 173 whose premium comes out negative, all of them ones whose irrigated share of AREA exceeds their irrigated share of GVA; and whether the factor of 1000 in the old agriculture component was a units conversion.

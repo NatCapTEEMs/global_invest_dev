@@ -59,6 +59,24 @@ def main():
         missing.append('df_countries is missing %s, so its vintage is not the one this code reads'
                        % ', '.join(absent))
 
+    # ⚠⚠ The ENVIRONMENT is an input too, and it is checked by behaviour rather than version: a
+    # broken PROJ installation makes gdal.Warp and RasterizeLayer write empty rasters WITH exit 0
+    # (measured: an NDVI warp all-nodata across the Amazon, a country burn with zero cells).
+    # A one-degree burn and warp must produce data, or nothing bigger is worth starting.
+    from osgeo import gdal, ogr
+    target = gdal.GetDriverByName('MEM').Create('', 360, 180, 1, gdal.GDT_Int32)
+    target.SetGeoTransform((-180, 1, 0, 90, 0, -1))
+    target.SetProjection(gdal.Open(p.ha_per_cell_10sec_path).GetProjection())
+    vector = ogr.Open(p.gdf_countries_vector_path)
+    gdal.RasterizeLayer(target, [1], vector.GetLayer(0),
+                        options=['ALL_TOUCHED=FALSE', 'ATTRIBUTE=iso3_r250_id'])
+    burned = int((target.ReadAsArray() > 0).sum())
+    print('[preflight] %-24s %-8s %d cells with a country id'
+          % ('one-degree burn', 'OK' if burned else 'EMPTY', burned))
+    if not burned:
+        missing.append('a one-degree country burn produced zero cells: the GDAL/PROJ '
+                       'environment writes empty rasters with exit 0')
+
     if missing:
         sys.exit('[preflight] %d input(s) do not resolve on this machine: %s'
                  % (len(missing), ', '.join(missing)))

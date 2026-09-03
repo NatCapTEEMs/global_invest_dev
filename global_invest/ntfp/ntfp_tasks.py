@@ -243,13 +243,17 @@ def warp_to_analysis_grid(src_path, out_path, template_path, resample_algorithm,
     transform = template.GetGeoTransform()
     bounds = (transform[0], transform[3] + transform[5] * template.RasterYSize,
               transform[0] + transform[1] * template.RasterXSize, transform[3])
-    gdal.Warp(out_path, src_path,
-              dstSRS=template.GetProjection(),
-              xRes=transform[1], yRes=-transform[5],
-              outputBounds=bounds,
-              resampleAlg=resample_algorithm, outputType=output_type,
-              srcNodata=src_nodata, dstNodata=dst_nodata,
-              multithread=True, creationOptions=list(GTIFF_CREATION_OPTIONS))
+    warped = gdal.Warp(out_path, src_path,
+                       dstSRS=template.GetProjection(),
+                       xRes=transform[1], yRes=-transform[5],
+                       outputBounds=bounds,
+                       resampleAlg=resample_algorithm, outputType=output_type,
+                       srcNodata=src_nodata, dstNodata=dst_nodata,
+                       multithread=True, creationOptions=list(GTIFF_CREATION_OPTIONS))
+    # ⚠ Closed HERE, not left to garbage collection: gdal.Warp returns an open dataset, and a
+    # crash anywhere later in the process leaves the file with unflushed blocks -- readable,
+    # plausible-looking, and missing data.
+    warped = None
     return out_path
 
 
@@ -399,9 +403,11 @@ def accessible_forest(p):
     # the iso3_r250_id field burns. The existence guard then caches that empty raster, so the
     # error names the file to delete rather than letting a $0 total flow into the account.
     if not hectares[1:].any():
-        raise RuntimeError('accessible_forest: every hectare landed outside every country, so '
-                           'the country id raster is empty. Delete %s and rerun against a '
-                           'current ee_r264 vintage.' % countries_path)
+        raise RuntimeError('accessible_forest: the zonal total is zero everywhere. One of three '
+                           'rasters is empty: the country ids (%s), the NDVI (%s), or the '
+                           'reachable mask (%s). Check each with gdalinfo -stats, delete the '
+                           'empty one, and rerun -- the existence guard will otherwise keep '
+                           'reusing it.' % (countries_path, ndvi_path, access_path))
 
     countries = p.df_countries[['iso3_r250_id', 'iso3_r250_label']].drop_duplicates('iso3_r250_id')
     countries = countries[countries['iso3_r250_id'].notna()]
