@@ -98,9 +98,11 @@ command -v gdalinfo >/dev/null || { echo "gdalinfo is not on PATH: make_path_pog
 # Preflight: every input this run reads, resolved through get_path before any work starts.
 "$PYTHON" global_invest/ntfp/preflight_ntfp_inputs.py
 
-# GDAL's block cache, where the warps spend their time. The default is a small share of RAM and
-# this job is given far more than that.
-export GDAL_CACHEMAX=8192
+# GDAL's block cache. ⚠ Kept MODEST on purpose: the line raster is 8.4 billion cells, and a cache
+# large enough to hold a big share of it competes with the rasterizer for the same memory rather
+# than helping. The warps are the only step that benefits from a big cache and they are not the
+# expensive part here.
+export GDAL_CACHEMAX=2048
 export GDAL_NUM_THREADS=ALL_CPUS
 
 "$PYTHON" global_invest/ntfp/run_ntfp.py

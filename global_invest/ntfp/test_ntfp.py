@@ -228,3 +228,47 @@ def test_the_reach_widens_with_latitude_because_a_cell_narrows(tmp_path):
     # 3.6 cells each way at the equator and 7.2 at 60 N, rounded to whole cells.
     assert at_equator == 7
     assert at_sixty == 15
+
+
+def test_burning_in_stripes_gives_the_same_raster_as_one_call(tmp_path):
+    """Striping is an implementation detail and must not change a single cell.
+
+    The one-call version segfaulted on MSI: 21,438,033 road features into an 8.4-billion-cell
+    target, held at once. Stripes bound what GDAL holds, and each stripe's spatial filter means
+    it only sees the features inside it -- so the burn has to come out identical either way, or
+    the fix has quietly changed the answer.
+    """
+    gpd = pytest.importorskip('geopandas')
+    from osgeo import gdal, osr
+    from shapely.geometry import LineString
+
+    from global_invest.ntfp import ntfp_tasks
+
+    width, height, cell = 720, 360, 0.5
+    template = str(tmp_path / 'template.tif')
+    dataset = gdal.GetDriverByName('GTiff').Create(template, width, height, 1, gdal.GDT_Float32)
+    dataset.SetGeoTransform((-180.0, cell, 0, 90.0, 0, -cell))
+    srs = osr.SpatialReference()
+    srs.ImportFromEPSG(4326)
+    dataset.SetProjection(srs.ExportToWkt())
+    dataset.GetRasterBand(1).WriteArray(np.ones((height, width), dtype='float32'))
+    dataset = None
+
+    lines = str(tmp_path / 'lines.gpkg')
+    gpd.GeoDataFrame(geometry=[LineString([(-170, -80), (170, 80)]),
+                               LineString([(-20, 10), (60, 10)])],
+                     crs='EPSG:4326').to_file(lines, driver='GPKG')
+
+    original = ntfp_tasks.BURN_STRIPE_ROWS
+    try:
+        burned = {}
+        for stripe in (4096, 37):        # one stripe covering everything, then many
+            ntfp_tasks.BURN_STRIPE_ROWS = stripe
+            out = str(tmp_path / ('burn_%d.tif' % stripe))
+            ntfp_tasks.burn_lines_in_stripes([lines], template, out, log=lambda *a: None)
+            burned[stripe] = gdal.Open(out).ReadAsArray()
+    finally:
+        ntfp_tasks.BURN_STRIPE_ROWS = original
+
+    assert (burned[4096] > 0).sum() > 0
+    assert np.array_equal(burned[4096], burned[37])
