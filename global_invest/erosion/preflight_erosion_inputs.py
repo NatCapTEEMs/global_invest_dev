@@ -22,13 +22,17 @@ import hazelbean as hb
 
 from global_invest.erosion import erosion_tasks
 
-# The paths the valuation actually opens, from the prevention-shares manifest of a completed run.
-INPUTS = ('erosion_usle_path', 'erosion_avoided_erosion_path',
-          'erosion_upstream_prevention_share_path', 'erosion_country_boundary_path',
-          'erosion_dem_path', 'erosion_yield_stack_path', 'erosion_area_stack_path',
-          'erosion_bandmap_csv_path', 'erosion_elasticity_csv_path',
-          'erosion_fao_gpv_iso3_csv_path', 'erosion_fao_prices_csv_path',
-          'erosion_gdp_csv_path')
+# ⚠⚠ EVERY `*_path` the service hydrates, read off `p` rather than listed here.
+#
+# The first version of this file listed the twelve paths a completed run's prevention-shares
+# manifest recorded, and it passed on MSI while the job died 45 seconds later on
+# `soil/erodibility_30s.tif` -- a file the manifest never mentions because it is an SDR input, and
+# one that sits outside `global_invest/erosion/` so the staging rsync missed it too. A hand-picked
+# list checks what somebody remembered; this checks what the code will actually resolve.
+def _hydrated_paths(p):
+    """Every attribute on `p` whose name ends in `_path`, which is what hydration produces."""
+    return sorted(name for name in vars(p)
+                  if name.endswith('_path') and not name.startswith('_'))
 
 # These two must come from base_data, not from a project directory. See the module docstring.
 MUST_BE_STAGED = ('erosion_usle_path', 'erosion_avoided_erosion_path')
@@ -39,10 +43,16 @@ def main():
     erosion_tasks.publish_inputs(p)
 
     problems = []
-    for name in INPUTS:
+    for name in _hydrated_paths(p):
         path = getattr(p, name, None)
+        # A blank or nan row hydrates to None and is not an input; an output path a task will
+        # WRITE is not one either, and those live under the project dir rather than base_data.
+        if path is None or 'nan' == str(path).lower():
+            continue
         found = hb.path_exists(path)
-        print('[preflight] %-40s %-8s %s' % (name, 'OK' if found else 'MISSING', path))
+        if not found and str(path).startswith(str(p.project_dir)):
+            continue                       # a file this run will generate, not one it reads
+        print('[preflight] %-42s %-8s %s' % (name, 'OK' if found else 'MISSING', path))
         if not found:
             problems.append('%s does not resolve' % name)
         elif name in MUST_BE_STAGED and 'intermediate' in str(path):
