@@ -644,8 +644,8 @@ def _merge_production_value(
 ) -> pd.DataFrame:
     """Production times annual price, falling back country to subregion to region to world.
 
-    Returns the frame. It used to take an output directory and return a path, which put file
-    writing inside what reads as arithmetic and made the fallback untestable without a disk.
+    Returns the frame rather than writing it: file writing inside what reads as arithmetic
+    would make the fallback untestable without a disk.
     """
     logger.info("Merging production × annual prices (Hierarchical)")
 
@@ -825,8 +825,8 @@ def fao_median_prices(p):
     """Per-crop median producer prices in USD, downloaded and built here rather than taken as given.
 
     The pollination value raster is production times price times each crop's dependence on
-    pollinators. The price half used to arrive as a finished table. This runs the path that makes
-    it: FAOSTAT production and producer prices are downloaded, local currency is reconstructed
+    pollinators. This runs the path that makes the price half rather than taking it as a
+    finished table: FAOSTAT production and producer prices are downloaded, local currency is reconstructed
     where FAOSTAT reports only the discontinued series, USD is built against World Bank exchange
     rates, and a median is taken over the price years.
 
@@ -1736,8 +1736,8 @@ def pollination_sufficiency_weighted(p):
                                    output_dir=str(p.cur_dir),
                                    country_raster_path=str(value_raster))
     # The scenario string names the output rasters and nothing else; `lulc_scheme` chooses the
-    # class scheme. They were one argument until 2026-08-30, which is how a sufficiency raster
-    # built from the 2019 map once came out labelled 2020 and was compared against the wrong year.
+    # class scheme. As one argument, a sufficiency raster built from the 2019 map can come out
+    # labelled 2020 and be compared against the wrong year.
     scenario = str(year)
     hb.log('Sufficiency at 300 m from %s' % os.path.basename(str(p.gep_lulc_input_path)))
     run_pollination_sufficiency_300m(settings, lulc_path=str(p.gep_lulc_input_path),
@@ -1948,8 +1948,8 @@ def pollination_source_value_raster(p):
 
     # Absent is not fatal. The account's number comes from the raster our own chain builds, so his
     # is only the other side of the independence check; a machine without it gets a run with one
-    # fewer comparison rather than no run at all. It used to raise here, which made a manual
-    # procedure in somebody else's repository a required step of this pipeline.
+    # fewer comparison rather than no run at all. Raising here would make a manual procedure in
+    # somebody else's repository a required step of this pipeline.
     available = pf.available_source_value_years(p)
     hb.log('No %s in %s (that directory has %s), so the independence check will be skipped. The '
            'account does not depend on it: the GEP value comes from pollination_value_raster_rebuilt.'
@@ -1970,8 +1970,8 @@ def pollination_value_raster(p):
 
     His file is a DENSITY, USD per square kilometre, stated as such in his repo's
     methods_overview.md and confirmed by his own summary CSV, which area-weights before totalling.
-    The GEP path used to sum it directly, giving $18.28bn where the same raster carries $476.29bn
-    area-weighted. So the fix is to multiply by cell area, on the shared WGS84 pyramid like every
+    ⚠ Summing it directly gives $18.28bn where the same raster carries $476.29bn area-weighted,
+    so it is multiplied by cell area, on the shared WGS84 pyramid like every
     other service, and to deflate to the GEP base year when his file is stamped in another year's
     dollars.
 
@@ -2052,9 +2052,9 @@ def pollination_value_raster_rebuilt(p):
         hb.log('Pollination value raster already built. Skipping.')
         return True
 
-    # The production rasters this prices are the ones the tree builds two tasks earlier, at the GEP
-    # base year. Until the yield and production chain was ported it read the author's staged 2020
-    # vintage out of base data, which is why the deflator below used to have a year to cross.
+    # The production rasters this prices are the ones the tree builds two tasks earlier, at the
+    # GEP base year. The author's staged vintage is 2020, which is what gives the deflator below
+    # a year to cross when a run points at it instead.
     production_dir = p.pollination_production_raster_dir
     crosswalk = hb.df_read(p.pollination_crosswalk_fao_cropgrids_path)
     # pd.read_parquet, not hb.df_read: df_read is a CSV reader and reports a parquet as an

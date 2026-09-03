@@ -250,7 +250,7 @@ def configure_sufficiency(p, target_year):
 
 @dataclass
 class SufficiencySettings:
-    """What the raster steps below need, in place of the crop_benefits Config they used to read.
+    """What the raster steps below need, in place of the crop_benefits Config the source module reads.
 
     That Config was loaded from a gitignored local.yaml with `validate=False`, so a missing or
     wrong file did not fail up front, it just proceeded. These seven fields are everything the
@@ -348,7 +348,7 @@ def get_compression_profile(
 
 @dataclass
 class FaoPriceSettings:
-    """What the FAO price steps need, in place of the crop_benefits Config they used to read.
+    """What the FAO price steps need, in place of the crop_benefits Config the source module reads.
 
     The prices are a base-data input rather than a per-run result: the pipeline reads the FAOSTAT
     production and producer-price bulks, reconstructs local currency where FAOSTAT reports only the
@@ -757,8 +757,8 @@ def _compute_annual_prices(prices: pd.DataFrame, cw: pd.DataFrame) -> tuple[pd.D
 # =============================================================================
 # The pollination value raster: production x price x pollination dependence.
 #
-# This is the arithmetic behind poll_value_global_<year>usd.tif, which the GEP
-# valuation used to take as a finished input. Everything here is array and scalar
+# This is the arithmetic behind poll_value_global_<year>usd.tif, built here
+# rather than taken as a finished input. Everything here is array and scalar
 # maths so the task layer can open the per-crop rasters and these functions stay
 # testable without one.
 # =============================================================================
@@ -768,9 +768,9 @@ def price_window_centre_year(price_years):
     """The year the median price is denominated in: the centre of the window it is taken over.
 
     A median over 2017-2021 is 2019 money and needs no deflating for a 2019 account; a median over
-    2018-2022 is 2020 money and does. The window used to be a hardcoded 2018-2022 with the centre
-    written out as a constant called PRODUCTION_RASTER_YEAR, which named neither the thing it was
-    nor the thing it was used for -- the deflator is applied to `price`, never to production.
+    2018-2022 is 2020 money and does. The centre is computed from the window rather than written
+    out as its own constant, because a separate constant can drift from the window it claims to
+    describe -- and the deflator is applied to `price`, never to production.
     """
     years = sorted(int(y) for y in price_years)
     return years[len(years) // 2]

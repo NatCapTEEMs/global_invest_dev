@@ -439,11 +439,10 @@ def salt_marsh_area_within_countries(p):
     gdf_salt_marsh = gpd.read_file(p.salt_marsh_vector_path).to_crs(gdf_regions.crs)
     hb.log(f'Loaded {len(gdf_salt_marsh)} salt marsh polygons, {len(gdf_regions)} marine regions')
 
-    # There used to be a zonal pass over ha_per_cell here, summing hectares per polygon into an
-    # area_ha column and writing salt_marsh_with_area.gpkg "for inspection". Both were dead:
-    # add_equal_area_ha overwrites area_ha with the equal-area geometric area a line later, which
-    # is the measure the other two habitats use and the one that reaches the country table, and
-    # nothing read the gpkg. It cost hours per run to compute a column that was thrown away.
+    # No zonal pass over ha_per_cell here and no "for inspection" gpkg: add_equal_area_ha
+    # overwrites area_ha with the equal-area geometric area a line later -- the measure the other
+    # two habitats use and the one that reaches the country table -- so either would cost hours
+    # per run to compute something nothing reads.
     pieces = ccf.add_equal_area_ha(ccf.intersect_features_with_regions(
         gdf_salt_marsh, gdf_regions, desc='Intersecting salt marsh with countries'))
 
@@ -702,8 +701,8 @@ def gep_calculation(p):
     df_r250_final = ccf.collapse_to_iso3_r250(
         ccf.eez_storage_value_by_iso3(df_gep), hb.df_read(p.df_countries_csv_path))
     # The same shape as every other service's country table: the shared attributes, the year, and
-    # a column named for the service. This used to write a column called `value` alongside all 38
-    # columns of the correspondence, so the account could not read it the way it reads the rest.
+    # a column named for the service: the upstream frame calls it `value`, which the account
+    # cannot read the way it reads the rest.
     df_r250_final = df_r250_final.rename(columns={'value': 'coastal_carbon_gep'})
     df_r250_final['year'] = int(p.gep_base_year)
     attributes = [c for c in utilities.GEP_COUNTRY_ATTRIBUTE_COLUMNS if c in df_r250_final.columns]

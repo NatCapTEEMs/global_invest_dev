@@ -240,9 +240,9 @@ def water_use_components_from_chain(gep_by_country_year_df, countries_df):
     latest['water_use_all_sector_value_added'] = latest[sector_cols].sum(axis=1, min_count=1)
     # The two the account reports, matching the authors' split of 2026-08-31: irrigation, and
     # domestic covering industrial, commercial and residential. Published as their own columns
-    # because the table used to carry agriculture and the total, so domestic existed only as a
-    # subtraction -- and only worked because there happen to be three sectors and one of them was
-    # published. A reader wanting industry apart from residential could not have got it at all.
+    # because with only agriculture and the total published, domestic exists only as a
+    # subtraction -- workable only because there happen to be three sectors, and useless to a
+    # reader wanting industry apart from residential.
     #
     # ⚠ These are VALUE ADDED, not a value of water. SDG 6.4.1 is defined as value added over the
     # volume withdrawn, so multiplying the indicator back by the withdrawal returns the value added

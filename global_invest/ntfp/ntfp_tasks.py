@@ -54,10 +54,10 @@ BURN_STRIPE_ROWS = 4096
 def burn_lines_in_stripes(vector_paths, template_path, out_path, log=None):
     """Burn line layers onto the template grid a horizontal stripe at a time.
 
-    One RasterizeLayer call over the whole world is what segfaulted: the target is 8.4 billion
-    cells and the roads layer carries 21,438,033 features, and GDAL was asked to hold both at
-    once. A stripe is bounded by construction, and the layer's spatial filter is set to the
-    stripe's own extent so each pass touches only the features that fall inside it.
+    One RasterizeLayer call over the whole world segfaults: the target is 8.4 billion cells and
+    the roads layer carries 21,438,033 features, and GDAL is asked to hold both at once. A stripe
+    is bounded by construction, and the layer's spatial filter is set to the stripe's own extent
+    so each pass touches only the features that fall inside it.
 
     ⚠ The raster is created SPARSE_OK. Away from the road network most stripes write no data at
     all, and an unwritten block in a sparse GeoTIFF occupies no disk -- which is what keeps an
@@ -144,13 +144,11 @@ def reachable_mask_on_pyramid(vector_paths, template_path, out_path, distance_m,
         # all_touched, because a road is narrower than a cell everywhere. Burning on the centre
         # rule would drop most of the network before anything was grown from it.
         #
-        # ⚠⚠ Burned in LATITUDE STRIPES, not in one call. The first version pre-created the whole
-        # 129,600 x 64,800 byte raster and handed it to RasterizeLayer with the roads layer's
-        # 21,438,033 line features; on MSI (job 17879365) that segfaulted after four minutes,
-        # having written the three warps first. Rasterizing a stripe at a time bounds what GDAL
-        # holds at once, and a spatial filter means each stripe only sees the features that fall
-        # in it. SPARSE_OK, because a line raster is almost entirely empty and unwritten blocks
-        # then cost nothing on disk.
+        # ⚠⚠ Burned in LATITUDE STRIPES, not in one call: handing RasterizeLayer the whole
+        # 129,600 x 64,800 byte raster and the roads layer's 21,438,033 line features at once
+        # segfaults. A stripe at a time bounds what GDAL holds, and a spatial filter means each
+        # stripe only sees the features that fall in it. SPARSE_OK, because a line raster is
+        # almost entirely empty and unwritten blocks then cost nothing on disk.
         log('  burning the road and river lines onto the grid, in stripes')
         burn_lines_in_stripes(vector_paths, template_path, lines_path, log=log)
 

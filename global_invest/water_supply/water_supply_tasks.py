@@ -86,7 +86,7 @@ def gep_calculation(p):
     hb.log(f'Total water_supply GEP (hydropower component) for base year {p.gep_base_year}: '
            f'{ours:,.2f}')
     hb.log(f'  reference-matching variant {reference:,.2f} over {n_extra} fewer countries; '
-           f'the gap is the reference exclusions, which we no longer apply to the reported value')
+           f'the gap is the reference exclusions, which the reported value does not apply')
     return True
 
 

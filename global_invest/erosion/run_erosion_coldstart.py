@@ -10,11 +10,11 @@ The task reassigns `erosion_usle_path` to its own output whenever it runs:
         p.erosion_usle_path = usle
 
 So a run that executes it stops reading the author's staged `usle_2019_revised_feb_13.tif` --
-which is what the published number is computed from -- and reads its own SDR output instead. On
-2026-09-02 a cold start that let it run produced $12,099,377,565, a third of the total missing,
-with a clean exit and no error anywhere in the log. The valuation was never at fault: our own SDR
-output reproduces the author's DECEMBER raster exactly on every cell he computed, and the pipeline
-is configured against his FEBRUARY one.
+which is what the published number is computed from -- and reads its own SDR output instead. That
+run produces $12,099,377,565, a third of the total missing, with a clean exit and no error
+anywhere in the log: the valuation is not at fault, because our own SDR output reproduces the
+author's DECEMBER raster exactly on every cell he computed, and the pipeline is configured
+against his FEBRUARY one.
 
 Skipping is the correct treatment, not a workaround. Running InVEST SDR globally is a
 `gep_preprocess`-shaped stage by the house convention -- "the output of a preprocess task is an

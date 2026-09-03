@@ -1,7 +1,6 @@
 """The landslide-mitigation science, as pure functions over arrays and frames.
 
-Ported from m-braaksma/landslide_mitigation v0.2.0 (folded 2026-08-16); every function here
-was previously a closure or an inline block inside landslide_mitigation_tasks.py. Nothing in
+Ported from m-braaksma/landslide_mitigation v0.2.0. Nothing in
 this module reads or writes a file or touches a ProjectFlow object -- the task module supplies
 the arrays and frames and writes the results, which is what makes the arithmetic testable.
 
@@ -30,8 +29,8 @@ The calculation, in the order the task tree runs it:
                   coefficients_by_term, hurdle_table_rows) and figure binning
                   (fatality_bin_masks, bucket_legend_labels).
 
-The raster and grid drivers that used to sit here have moved to the task layer, so this file
-holds only functions over arrays and frames.
+The raster and grid drivers live in the task layer, so this file holds only functions over
+arrays and frames.
 """
 import numpy as np
 import pandas as pd

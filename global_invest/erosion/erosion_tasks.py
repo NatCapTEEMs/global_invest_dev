@@ -206,8 +206,8 @@ def read_erosion_dependency(ero_path):
     """Load + normalize the erosion dependency table; return the df.
 
     Base extraction happens in the CALLER after resolving the configured base scenario through
-    utilities.resolve_base_scenario (this function previously hardcoded 'baseline_ignore_damages'
-    as the base, silently ignoring p.es_shock_base_scenario -- right only by spelling coincidence).
+    utilities.resolve_base_scenario -- a base name hardcoded here would silently ignore
+    p.es_shock_base_scenario.
     """
     df = hb.df_read(str(ero_path))
     df['scenario'] = df['scenario'].str.replace('_2050', '').str.replace('2023.0', 'baseline_2023')
@@ -410,9 +410,9 @@ def accumulate_upstream_prevention_share(dem_path, avoided_path, potential_path,
     potential erosion. Both are accumulated on the same D8 network, so the pixel area cancels and
     the result is a share the on-farm one can be combined with.
 
-    This is the layer the valuation used to read from the source repo's cluster workspace. It is
-    computed here instead, from the DEM and the SDR outputs, which is what lets the account run
-    without that workspace.
+    The source repo's valuation reads this layer from its cluster workspace. It is computed here
+    instead, from the DEM and the SDR outputs, which is what lets the account run without that
+    workspace.
 
     Args:
         dem_path (str): elevation, resampled here to the erosion rasters' grid.
@@ -1449,8 +1449,8 @@ def erosion_exposure(p):
 def erosion_paths(p):
     """Every path erosion needs, resolved from the project rather than hardcoded.
 
-    The module used to carry these as constants built from a `ROOT` that named someone else's
-    machine, so three tasks in the tree could only run on the machine the code was written on.
+    Constants built from a `ROOT` naming someone else's machine would tie three tasks in the
+    tree to the machine the code was written on.
     Inputs now resolve through `p.get_path` against base data and outputs land under the task's
     own directory, which is what lets the same code run anywhere.
 
@@ -1814,7 +1814,7 @@ def erosion_shock(p):
     def level_service(scn, yr):
         """METHOD B ("service") -- threshold-free. Credits the continuous prevention share across ALL
         land, which saturates it (median 0.9988, about half of pixels pinned at full protection), so
-        it is reported for comparison and no longer feeds GTAP. Signed positive as a service
+        it is reported for comparison and does not feed GTAP. Signed positive as a service
         delivered, but it still INCREASES with better land condition exactly as A does."""
         return _service_level(np.clip(_grid('ps_continuous', scn, yr), 0.0, 1.0),
                               _grid('rkls_grid', scn, yr))
@@ -1947,7 +1947,7 @@ def erosion_shock_static(p):
         p.input_dir, 'raw_dependencies', 'erosion_prevention_dependency.csv')
     if not hb.path_exists(ero_path):
         raise NameError(
-            'erosion shock: no dependency table at %s. This used to print and return, which left '
+            'erosion shock: no dependency table at %s. Printing and returning here would leave '
             'the consumer with no erosion shock and nothing in the run that failed -- the same '
             'shape as a scenario silently zeroed, which the loop below refuses to do. Set '
             'p.erosion_dependency_path, or stage the file under input_dir/raw_dependencies/.'
@@ -2035,8 +2035,8 @@ def upstream_prevention_share(p):
     sum, by the definition of avoided. Accumulating avoided and potential down the same D8 network
     gives the upstream share that Section B combines with the on-farm one.
 
-    The source repo read this layer out of its own cluster workspace, which is why the valuation
-    used to need that workspace. Computing it here from the DEM and Section A's own outputs is
+    The source repo reads this layer out of its own cluster workspace, so its valuation needs
+    that workspace. Computing it here from the DEM and Section A's own outputs is
     what lets the account run wherever the SDR does.
     """
     publish_inputs(p)

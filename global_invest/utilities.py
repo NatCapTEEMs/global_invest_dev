@@ -33,8 +33,8 @@ import zipfile
 def initialize_country_paths(p, simplified='300sec'):
     """Shared country-boundary references every GEP service needs: the r264 correspondence
     (csv + gpkg + simplified gpkg, all as get_path reference paths) and the loaded df_countries.
-    Called from each service's publish_inputs; the service then adds only its service-specific inputs
-    (this block used to be pasted into every module).
+    Called from each service's publish_inputs; the service then adds only its service-specific
+    inputs.
     """
 
     if getattr(p, 'df_countries', None) is not None:
@@ -259,7 +259,7 @@ def resolve_base_scenario(scenario_labels, scenario_map, base_scn, service, log=
 
     Unlike a data scenario, an unresolvable base is FATAL rather than skippable: it is the
     subtraction reference, so without it every shock in the table is meaningless -- an exact-match
-    miss here previously yielded an empty base, an empty output, and a silent GTAP zero.
+    miss here would yield an empty base, an empty output, and a silent GTAP zero.
     """
     raw = resolve_raw_scenario(scenario_labels, scenario_map, base_scn, service, log=log)
     if raw is None:
@@ -1245,9 +1245,9 @@ from rasterio.windows import Window
 def service_data_dir(p, service):
     """Where one service's inputs live under base data, from the ProjectFlow that knows.
 
-    Replication anchors sit here with everything else the service reads. They used to be a
-    `reference/` directory inside the repo, which made them a special kind of input; they are
-    not, they are inputs.
+    Replication anchors sit here with everything else the service reads: a `reference/`
+    directory inside the repo would make them a special kind of input, and they are not, they
+    are inputs.
 
     A missing local directory is seeded once from the machine's shared data roots
     (p.shared_data_dirs, the same tier get_path searches), which mirror base_data's layout.
@@ -1353,9 +1353,9 @@ GEP_COUNTRY_ATTR_COLS = ['iso3_r250_id', 'iso3_r250_label', 'iso3_r250_name',
 def read_column(path, column, cast=str):
     """One column of a small reference table, as a list.
 
-    The tables these read used to be dictionaries and lists in the modules -- 38 ESA codes, 37
-    FLOPROS countries, 178 FAO crop names. A list of facts in a .py is a list nobody can open in a
-    spreadsheet, diff usefully, or correct without a commit.
+    The tables these read are CSVs rather than dictionaries and lists in the modules -- 38 ESA
+    codes, 37 FLOPROS countries, 178 FAO crop names -- because a list of facts in a .py is a list
+    nobody can open in a spreadsheet, diff usefully, or correct without a commit.
     """
     return [cast(v) for v in hb.df_read(path)[column].dropna().tolist()]
 
@@ -1848,9 +1848,9 @@ def attach_income_group(df, df_countries, iso3_column="iso3", column="income_gro
     """Join the World Bank income group from the shared country table.
 
     Every service that reports by income group reads the same column, so one country cannot sit in
-    a different group in two accounts. Erosion used to carry a 115-country dict in code and drop
-    every country missing from it, which removed about 77 of its ~192 countries from those figures
-    without saying so.
+    a different group in two accounts. A per-service dict in code drops every country missing
+    from it -- a 115-country list would remove about 77 of erosion's ~192 countries from those
+    figures without saying so.
 
     Args:
         df (DataFrame): rows carrying an ISO3 column.

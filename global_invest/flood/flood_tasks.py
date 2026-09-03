@@ -1457,7 +1457,7 @@ def _open_amplification_raster(p, scenario: str, rp: int):
     Raises:
         FileNotFoundError: if a DEGRADED scenario has no raster. Returning None there would make
             the degraded depths equal the current ones, so that return period's GEP would be
-            exactly zero -- which is what a missing file used to do, behind a warning.
+            exactly zero, behind nothing louder than a warning.
     """
     if scenario == "current":
         return None
@@ -2684,8 +2684,8 @@ def valuation_signature(p):
         'return_periods': sorted(int(rp) for rp in p.flood_return_periods),
         'depth_mode': str(getattr(p, 'flood_damage_depth_mode', '')),
         'depth_dir': str(p.flood_depth_aligned_path),
-        # file_fingerprint hashes by default now, so the explicit sha256 that used to sit here
-        # is the same call twice. The reason it was here is now the reason it is everywhere.
+        # file_fingerprint hashes by default, so an explicit sha256 here would be the same
+        # call twice.
         'sda_damage_curves': utilities.file_fingerprint(curves),
         'service_flow': utilities.file_fingerprint(str(p.flood_service_flow_path)),
     }

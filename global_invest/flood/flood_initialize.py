@@ -46,7 +46,7 @@ def build_flood_task_tree(p):
 
 
 def build_flood_calculation_task_tree(p):
-    """Calculation only: the whole chain, which no longer draws anything."""
+    """Calculation only: the whole chain; it draws nothing."""
     build_flood_task_tree(p)
     return p
 
@@ -84,9 +84,8 @@ def build_flood_gep_task_tree(p):
 def build_flood_results_task_tree(p):
     """Render the report from an existing run, the way every other service's results tree does.
 
-    It used to mean the four publication figures, which nothing read. gep_result was defined all
-    along and wired into no tree, so flood was the one service whose results tree did not render
-    its results page.
+    The four publication figures are not here: nothing reads them from a tree, and they are
+    `make_flood_figures`-style work run when wanted.
     """
     p.flood_gep_result_task = p.add_task(flood_tasks.gep_result)
     return p

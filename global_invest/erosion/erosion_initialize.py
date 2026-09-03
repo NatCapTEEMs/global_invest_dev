@@ -30,8 +30,9 @@ def build_gep_service_calculation_task_tree(p):
 def build_gep_service_results_task_tree(p):
     """Results-only run: render the report from a PRIOR calculation's results (does NOT recompute).
 
-    The manuscript figures are no longer a task: nothing downstream read them and the pipeline
-    redrew all thirty-four on every pass. They are `make_erosion_figures.py`, run when wanted.
+    The manuscript figures are not a task: nothing downstream reads them, and as a task the
+    pipeline would redraw all thirty-four on every pass. They are `make_erosion_figures.py`,
+    run when wanted.
     """
     p.erosion_gep_result_task = p.add_task(erosion_tasks.gep_result)
     return p
