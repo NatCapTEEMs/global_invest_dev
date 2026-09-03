@@ -609,7 +609,7 @@ hectare. `ours` is where that lives.
 - **need:** The decision which source is current. And whether the account accepts an attribution it adopts rather than computes: the CWoN rent share is the whole of the ecosystem attribution here and moves the total proportionally. The same question applies to crop and livestock's rental rate. 
 
 
-- **signed off:** amber: examined, and at least one of the sixteen conditions is not yet verified. ⚠ **10 is unmet here** (no longer everywhere: erosion closed it on 2026-09-03, reproducing its published total to $11 in $18.24bn from an empty project directory). ⚠ **11 is unverified**: the base year is 2019 across every service, but the country list, the true-zero-against-missing rule and the shared parameters have not been checked service by service
+- **signed off:** amber, and the distance to green is one decision plus two named small items. ⭐ **Condition 10 is CLOSED (2026-09-04)**: a cold start from an empty project directory reproduces wind, solar and geothermal to the cent -- $110,313,990,626.01 / $53,954,218,147.43 / $6,558,292,384.42, the library's third closure. The code is refactored, tested, and replicates its own run. What keeps it amber: ⚠⚠ **the lambda ask** -- the hydro rent share is applied as a decided working convention, and the group must bless crediting sunlight and wind at all, since three frameworks put their rent near zero; ⚠ the no-lambda countries are dropped rather than filled (71 solar, 50 wind, ~$10bn gross combined); ⚠ the price file's exact World Bank indicator is recorded nowhere, and every rent argument turns on what that retail-level price includes.e
 ## Recreation
 
 - **subgroup:** -
