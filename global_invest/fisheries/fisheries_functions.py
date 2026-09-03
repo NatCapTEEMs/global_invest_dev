@@ -56,7 +56,8 @@ FISH_CAP = 2.0          # +-2% backstop. Every legitimate FI value across FI26/F
 #   FI26 ~ FI85 : r=+0.482                                   -> +0.2916
 #   median FI26/FI45 ratio (n=39, |FI45|>0.05) = +0.8902     -> +0.5026   (independent corroboration)
 # Result: nor = +0.477 (2.6), +0.565 (4.5), +0.558 (8.5) -- gains rise then flatten with warming.
-# ⚠ This is an IMPUTATION, not a correction at source. Flag it to Erwin with #16.
+# ⚠ This is an IMPUTATION, not a correction at source, and is raised with the shock's
+# author as issue #16.
 FISH_VALUE_OVERRIDES = {('FI26', 'nor'): 0.4767}
 
 

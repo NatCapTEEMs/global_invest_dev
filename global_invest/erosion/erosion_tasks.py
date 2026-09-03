@@ -2044,7 +2044,7 @@ def upstream_prevention_share(p):
     # task ran, the same way it reads Section A's.
     #
     # A path configured in es_parameters wins, so the account can read the author's own layer
-    # rather than our rebuild of it. Until 2026-08-27 this line overwrote the configured value
+    # rather than our rebuild of it. This line must not overwrite the configured value
     # unconditionally, which made that row inert: it could be set to anything and the task's own
     # output was used regardless. Where nothing is configured, or the configured file is absent,
     # the task owns the path -- that fallback is what lets the account run on a machine that

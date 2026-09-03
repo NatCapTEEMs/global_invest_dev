@@ -10,10 +10,6 @@ One difference from crop_provision is deliberate and load-bearing: the item sele
 item CODE rather than name, which is the service owner's convention and is robust to FAO renaming
 items. The values ARE converted out of FAOSTAT's thousand USD, at the same point crop_provision
 converts, so this service reports plain USD like the rest of the library -- see attach_countries.
-(This paragraph said the opposite until 2026-09-01, and called it an open item, long after the
-conversion had been added. A reader who believed it would have multiplied the totals by a
-thousand.)
-
 Both value columns are in current US dollars, which for a 2019 run is already 2019 dollars, so
 nothing here needs a currency conversion. The reference implementation reads FAOSTAT element 152
 instead, constant 2014-2016 international dollars, which is neither the account's currency nor its

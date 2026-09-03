@@ -18,8 +18,8 @@ from global_invest.flood import flood_tasks
 
 def add_flood_tasks(p):
     """
-    Standard entry point (per Justin's global_invest convention: each service
-    module exposes at least one add_<service>_tasks(p)) for building the full
+    Standard entry point (the house convention: each service module exposes at
+    least one add_<service>_tasks(p)) for building the full
     flood-control task tree: input preparation -> SDA delineation ->
     SPA-to-SDA service flow -> monetary valuation -> maps & figures.
     This is what run_flood.py calls by default.

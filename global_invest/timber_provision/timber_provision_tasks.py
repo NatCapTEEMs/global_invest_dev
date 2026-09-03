@@ -102,7 +102,7 @@ def gep_calculation(p):
     spatial = df_gep['timber_provision_gep_spatial'].sum()
     rental = df_gep['timber_provision_gep'].sum()
     hb.log(f'Total timber_provision GEP for base year {p.gep_base_year}: {rental:,.2f} '
-           f'(CWoN rent, the account\'s figure since 2026-09-02)')
+           f'(CWoN rent, the account's figure)')
     hb.log(f'  the superseded spatial estimate    : {spatial:,.2f} '
            f'({int(df_gep["timber_provision_gep_spatial"].gt(0).sum())} countries), '
            f'ratio {rental / spatial:.2f}')

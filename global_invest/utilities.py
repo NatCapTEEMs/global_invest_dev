@@ -720,7 +720,7 @@ def hydrate_es_scenarios(p, log=print):
 
 def raster_sum(raster_path, block_rows=2048):
     """Nodata-safe sum of a raster's first band, read blockwise so global rasters fit in
-    memory. Promotion candidate to hazelbean (no equivalent found there on 2026-08-21)."""
+    memory. Promotion candidate to hazelbean (no equivalent there)."""
     gdal.UseExceptions()
     ds = gdal.Open(raster_path)
     band = ds.GetRasterBand(1)
