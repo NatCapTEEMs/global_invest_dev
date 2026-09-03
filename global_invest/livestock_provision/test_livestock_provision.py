@@ -294,11 +294,11 @@ def test_the_harvested_dashboard_table_gives_an_estimate_not_a_bound():
     # green test on a machine where nothing was checked.
     import os
     import hazelbean as hb
-    roots = [getattr(hb.config, 'BASE_DATA_DIR', None),
-             os.path.join(os.path.expanduser('~'), 'Files', 'base_data')]
+    # A bare ProjectFlow only resolves its dirs (creates nothing); its base_data_dir is
+    # the same root a run uses. hb.config path globals are deprecated and never read.
+    root = hb.ProjectFlow().base_data_dir
     reference = os.path.join('global_invest', 'livestock_provision', 'gleam3_dmi_dashboard.psv')
-    path = next((os.path.join(r, reference) for r in roots
-                 if r and os.path.exists(os.path.join(r, reference))), None)
+    path = os.path.join(root, reference) if os.path.exists(os.path.join(root, reference)) else None
     if path is None:
         import pytest
         pytest.skip('the harvested dashboard table is not in this machine\'s base data')
