@@ -767,7 +767,9 @@ hectare. `ours` is where that lives.
    year, median 2022, gives $886.0bn and $294.2bn. That is a different year's answer, not a better
    one, and the account's year is 2019.
 4. **Take nature's share of it.** The farmer still supplies labour and machinery. GTAP puts 33.2%
-   of crop value added with the natural resource, so **$701.4bn x 0.332 = $232.9bn**, the GEP.
+   of crop value added with the natural resource. Per country, clipped at zero -- an account
+   cannot report negative provisioning -- the premium times 0.332 gives **$248.0bn over 169
+   countries** ($232.9bn without the clipping, a 6% difference).
 
 ⚠ The one caveat, carried in `need`: that 33.2% is land AND water together, because no dataset
 endows water separately. Step 3 is solidly water; step 4 is joint. The premium fixed the
@@ -783,8 +785,8 @@ denominator, which was the actual bug, and the share is the remaining approximat
   ⭐ **The irrigation premium is water's version of the GLEAM feed share**: rainfed yield is the counterfactual, the way cultivated feed is livestock's, and the difference is what nature added. ⚠ Which means water's remaining weakness is named precisely: it still applies a LAND rent (GTAP's 0.332) to a correctly-isolated premium, where livestock can apply a share measured on the contribution itself. The thing to look for is a water analogue of GLEAM -- a measured share of crop output attributable to irrigation water -- not a better land rent.
   ⚠ Livestock publishes BOTH routes because the account has not chosen between them. Aquaculture and timber do the same. Water publishing a denominator and no GEP until a share is set is that convention, not a special case.
 - **method:** The **irrigation premium**, as of 2026-09-03. What an irrigated hectare earns above the same land rainfed, times irrigated area, times the natural-resource share of crop value added. The premium is the point: rainfed land earns rent too -- soil, climate, terrain -- and that rent would exist with or without irrigation, so only the difference is attributable to water. Quantities come from AQUASTAT (4555, the share of agricultural value added produced by irrigated agriculture, which is the `1 - Cr` term inside FAO's own CWUE formula; 4313, area equipped for irrigation; 4548, agricultural value added) and FAOSTAT (Land Use 6620, cropland area), joined on M49 codes rather than country names. The share is GTAP's land-and-water share of crop value added, 0.332. ⚠ SUPERSEDES the previous method, which multiplied SDG 6.4.1 back by withdrawal -- an indicator defined AS value added per cubic metre, so the product returned the value added it was built from rather than a value of water.
-- **total:** **$232.9bn**, the irrigation premium at the GTAP rent share, over 173 countries at the account's 2019 year. Beside it: the gross premium $701.4bn, and the denominators the calculation passes through -- $1.06T irrigated value added, $35.30T domestic, $36.36T all sectors. ⚠ Those three are sectoral VALUE ADDED and are named `..._value_added` in the code, never `_gep`. Hydropower is a separate row at $146.08bn.
-- **code:** Refactored onto the library template and hazelbean conventions. Translated from R to Python, with tests covering the sector arithmetic and the country name matching. ⭐⭐ **Rebuilt 2026-09-02 so the denominator and the answer are different columns.** The calculation had no attribution step at all, which is the same as applying a share of 1.0, and it published sectoral value added under a `_gep` name -- so nothing downstream could tell one from the other. Now: the four water-use columns are named `..._value_added`, `apply_water_share_of_value_added` is the step that turns them into an account figure, and the share is `water_use_water_share_of_value_added` in es_parameters with NO default. Blank, as it ships, the GEP columns are absent rather than zero, because a missing share is not a share of nothing. A share outside [0, 1] is refused, since a share above 1 would say water is worth more than the output it helps produce -- the exact failure the step exists to prevent. Three tests pin it.
+- **total:** **$248.0bn irrigation + $95.6bn domestic = $343.6bn water use**, at the account's 2019 year; hydropower is a separate row at $146.08bn, so the three water components together are $489.7bn. Beside them the denominators stay published: the gross premium $701.4bn, irrigated value added $1.06T, domestic $35.30T, all sectors $36.36T -- named `..._value_added`, never `_gep`.
+- **code:** Done and rebuilt twice over. The chain computes the denominators (named `..._value_added`), the irrigation premium, the domestic volumes net of desalination, and the two GEP columns: `irrigation_gep_from_premium` applies the rent share to the PREMIUM with negatives clipped, and `implied_raw_water_price` prices domestic cubic metres at what a cubic metre earns in agriculture. The rent share is `water_use_water_share_of_value_added = 0.332` in es_parameters; an explicit raw-water price overrides the implied one. A share outside [0, 1] and a negative price are refused. Tests pin the clipping, the implied price, the desalination floor and the account-year discipline.
 - **grid:** No raster. The service works on country tables (it reads only CSV and Excel), so nothing multiplies a density by a cell area and the cell-area question does not arise. Verified 2026-08-26 by checking every read in the module.
 - **reference:** The committed anchor, $144.68bn over 95 countries, reproduced by the reference-matching variant. ⚠ Same lineage.
 - **replicated:** Yes, the committed anchor of $144.68bn over 95 countries, by the reference-matching variant. ⚠ Same lineage, so it tests our port rather than the science.
@@ -820,12 +822,14 @@ denominator, which was the actual bug, and the share is the remaining approximat
      ecosystem-provided domestic water is zero, floored rather than negative. What remains:
      **1,122.6 km3**, published as `domestic_withdrawal.csv`.
   3. The price: what a cubic metre of RAW water is worth -- an abstraction charge or resource
-     fee, NOT the water bill, which mostly pays for pipes and treatment.
-     `water_use_raw_water_price_usd_per_m3` in es_parameters; blank as it ships, so the account
-     publishes the quantity and no GEP.
-  4. GEP = quantity x price once a price is chosen. For scale, $0.01 / $0.05 / $0.10 per m3 give
-     **$11.2bn / $56.1bn / $112.3bn** -- two to three orders of magnitude below the $35.30T,
-     which is the size of the category error the old figure carried.
+     fee, NOT the water bill, which mostly pays for pipes and treatment. Nobody publishes a
+     global table, so the price is IMPLIED BY IRRIGATION: the irrigation GEP over the
+     agricultural withdrawal that produced it, **$248.0bn / 2,911.7 km3 = $0.0852 per m3** --
+     what a cubic metre earns in a field, which is what a city would have had to outbid.
+     Squarely inside the range real abstraction charges occupy. An explicit
+     `water_use_raw_water_price_usd_per_m3` in es_parameters overrides it.
+  4. GEP = quantity x price: **1,122.6 km3 x $0.0852 = $95.6bn over 183 countries** -- against
+     the $35.30T the old figure carried, which is the size of the category error.
   ⚠ Two exclusions named rather than modelled: water reclaimed from treated wastewater would
   re-price a cubic metre the ecosystem already provided at its first abstraction, and fossil
   groundwater is stock depletion rather than a renewable flow.

@@ -399,35 +399,57 @@ def apply_raw_water_price(df, price_usd_per_m3):
     return out
 
 
-def apply_water_share_of_value_added(df, water_share):
-    """Turn the value added of water-using sectors into a value of water.
+AQUASTAT_AGRICULTURAL_WITHDRAWAL_CODE = 4250   # Agricultural water withdrawal, 10^9 m3/year
 
-    The share is of sectoral value added, as aquaculture's is of fishing revenue and forestry's
-    of forest revenue.
 
-    ⚠ `water_share` has no default. When it is None the GEP columns are absent rather than zero,
-    so a run without a chosen share publishes the value added and nothing that reads as an
-    account figure.
+def irrigation_gep_from_premium(premium_df, rent_share):
+    """The irrigation GEP per country: the premium times the natural-resource rent share.
+
+    The share applies to the PREMIUM -- what irrigation adds over rainfed -- never to the whole
+    irrigated value added, which is the error the premium exists to fix.
+
+    ⚠ A country's negative premium is clipped to zero here: an account cannot report negative
+    provisioning, and every negative case is a country whose irrigated share of area exceeds its
+    irrigated share of GVA, which the entry records as a data question rather than a value.
 
     Args:
-        df (pd.DataFrame): carries `water_use_irrigation_value_added` and
-            `water_use_domestic_value_added`.
-        water_share (float): the share of sectoral value added attributable to water, or None.
+        premium_df (pd.DataFrame): from irrigation_premium_by_country.
+        rent_share (float): the natural-resource share of crop value added, in [0, 1].
 
     Returns:
-        pd.DataFrame: with `water_use_irrigation_gep` and `water_use_domestic_gep` added when a
-        share is given, and untouched when it is not.
+        pd.DataFrame: premium_df with `water_use_irrigation_gep` added.
     """
-    out = df.copy()
-    if water_share is None:
-        return out
-    share = float(water_share)
+    share = float(rent_share)
     if not 0.0 <= share <= 1.0:
-        raise ValueError('water_use_water_share_of_value_added is %r; a share of value added has '
-                         'to sit in [0, 1]' % water_share)
-    out['water_use_irrigation_gep'] = out['water_use_irrigation_value_added'] * share
-    out['water_use_domestic_gep'] = out['water_use_domestic_value_added'] * share
+        raise ValueError('the rent share is %r; a share of value added has to sit in [0, 1]'
+                         % rent_share)
+    out = premium_df.copy()
+    out['water_use_irrigation_gep'] = out['irrigation_premium_usd'].clip(lower=0.0) * share
     return out
+
+
+def implied_raw_water_price(irrigation_gep_total, agricultural_withdrawal_m3):
+    """The opportunity-cost price of raw water: what a cubic metre earns in agriculture.
+
+    Irrigation is the sector where water's value CAN be isolated, by the rainfed counterfactual.
+    Dividing that value by the water that produced it gives a price per cubic metre, and water
+    that can flow to a city instead of a field is worth at least what the field would have paid
+    for it -- so the same price values the domestic cubic metres.
+
+    Args:
+        irrigation_gep_total (float): the irrigation GEP summed over countries, USD.
+        agricultural_withdrawal_m3 (float): agricultural withdrawal in the same year, m3.
+
+    Returns:
+        float: USD per cubic metre.
+
+    Raises:
+        ValueError: on a non-positive withdrawal, because a price from nothing is not a price.
+    """
+    if not agricultural_withdrawal_m3 > 0:
+        raise ValueError('agricultural withdrawal is %r m3; the implied price needs a positive '
+                         'volume' % agricultural_withdrawal_m3)
+    return float(irrigation_gep_total) / float(agricultural_withdrawal_m3)
 
 
 def _with_country_labels(latest, countries_df):

@@ -227,37 +227,6 @@ def _value_added():
                          'water_use_domestic_value_added': [4000.0, np.nan]})
 
 
-def test_no_share_publishes_no_gep_at_all():
-    """A missing share is not a share of nothing.
-
-    Until 2026-09-02 there was no share step, which is the same as having applied 1.0: the whole
-    value added of irrigated agriculture, industry and services went out under a `_gep` name, and
-    the totals came out larger than the economies they sit in. With no share set the account now
-    publishes the value added and NO gep, so nothing downstream can read one as the other.
-    """
-    out = wf.apply_water_share_of_value_added(_value_added(), None)
-    assert 'water_use_irrigation_gep' not in out.columns
-    assert 'water_use_domestic_gep' not in out.columns
-    assert out['water_use_irrigation_value_added'].sum() == 1500.0
-
-
-def test_a_share_is_applied_to_both_components_and_leaves_the_denominator_intact():
-    out = wf.apply_water_share_of_value_added(_value_added(), 0.05)
-    assert out['water_use_irrigation_gep'].tolist() == [50.0, 25.0]
-    assert out['water_use_domestic_gep'].iloc[0] == 200.0
-    # A country with no domestic value added gets no domestic gep, not a zero.
-    assert pd.isna(out['water_use_domestic_gep'].iloc[1])
-    # The denominator survives, so the two can always be compared.
-    assert out['water_use_irrigation_value_added'].tolist() == [1000.0, 500.0]
-
-
-def test_a_share_outside_zero_to_one_is_refused():
-    """A share of value added above 1 would say water is worth more than the output it helps
-    produce, which is the exact failure the share exists to prevent."""
-    with pytest.raises(ValueError, match='share of value added'):
-        wf.apply_water_share_of_value_added(_value_added(), 1.4)
-
-
 # ---------------------------------------------------------------------------
 # The irrigation premium: what an irrigated hectare earns above the same land rainfed.
 # ---------------------------------------------------------------------------
@@ -360,3 +329,19 @@ def test_desalinated_water_is_not_ecosystem_water():
     assert out.loc[2, 'domestic_ecosystem_m3'] == pytest.approx(2e9)
     priced = wf.apply_raw_water_price(out.reset_index(), 0.05).set_index('m49')
     assert priced.loc[1, 'water_use_domestic_gep'] == 0.0
+
+
+def test_irrigation_gep_is_the_premium_times_the_share_with_negatives_clipped():
+    premium = pd.DataFrame({'m49': [1, 2], 'irrigation_premium_usd': [1000.0, -400.0]})
+    out = wf.irrigation_gep_from_premium(premium, 0.332).set_index('m49')
+    assert out.loc[1, 'water_use_irrigation_gep'] == pytest.approx(332.0)
+    # An account cannot report negative provisioning; the negative case is a data question.
+    assert out.loc[2, 'water_use_irrigation_gep'] == 0.0
+    with pytest.raises(ValueError, match='sit in'):
+        wf.irrigation_gep_from_premium(premium, 1.4)
+
+
+def test_the_implied_price_is_what_a_cubic_metre_earns_in_agriculture():
+    assert wf.implied_raw_water_price(200.0, 1000.0) == pytest.approx(0.2)
+    with pytest.raises(ValueError, match='positive'):
+        wf.implied_raw_water_price(200.0, 0.0)

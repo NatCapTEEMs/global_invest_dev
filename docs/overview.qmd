@@ -47,7 +47,8 @@ fisheries_subsistence_total: "$7.92bn"
 fisheries_aquaculture_total: "$63.13bn"
 water_supply_total: "$146.08bn"
 water_supply_anchor: "$144.68bn"
-water_use_gep: "$232.9bn"
+water_use_gep: "$248.0bn"
+water_use_domestic_gep: "$95.6bn"
 water_use_premium_gross: "$701.4bn"
 water_use_ag_total: "$1.06T"
 water_use_domestic_total: "$35.30T"
@@ -281,7 +282,7 @@ format:
 | recreation | {{< meta recreation_total >}} provisional | no. The author's output table is not reachable |
 | fire_protection | {{< meta fire_cause_total >}} provisional, one of three coefficients | partially. Reproduces the committed output, but reads the committed regression coefficients rather than refitting them. Kosovo and two Indian sub-regions now reach a country instead of no country |
 | water_supply | hydropower component {{< meta water_supply_total >}} | yes. |
-| water_use | {{< meta water_use_gep >}} irrigation, from a {{< meta water_use_premium_gross >}} premium | no. The drive's two committed figures were produced separately, so neither is a reference |
+| water_use | {{< meta water_use_gep >}} irrigation, from a {{< meta water_use_premium_gross >}} premium, and {{< meta water_use_domestic_gep >}} domestic | no. The drive's two committed figures were produced separately, so neither is a reference |
 
 : {tbl-colwidths="[22,32,46]"}
 

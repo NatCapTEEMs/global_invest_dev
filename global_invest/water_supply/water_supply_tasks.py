@@ -132,6 +132,7 @@ def water_use_components(p):
         # The irrigation premium: what an irrigated hectare earns above the same land rainfed.
         # Published beside the value added whenever both inputs are staged, so the account can see
         # the quantity the share would be applied to.
+        premium = None
         premium_path = getattr(p, 'water_use_irrigation_premium_input_path', None)
         cropland_path = getattr(p, 'water_use_cropland_area_input_path', None)
         if hb.path_exists(premium_path) and hb.path_exists(cropland_path):
@@ -155,36 +156,51 @@ def water_use_components(p):
         else:
             hb.log('water_use: the premium inputs are not staged, so no premium is computed.')
 
-        # Domestic: the withdrawn cubic metres ARE the water, so the denominator is the volume
-        # and the account figure is a raw-water price times it. The price, like irrigation's
-        # share, has no default.
+        # Irrigation GEP: the premium times the rent share. ⚠ The share applies to the PREMIUM,
+        # never to the whole irrigated value added -- that is the error the premium exists to fix.
+        share = getattr(p, 'water_use_water_share_of_value_added', None)
+        irrigation_gep = None
+        if share is not None and premium is not None:
+            irrigation_gep = wf.irrigation_gep_from_premium(premium, float(share))
+            hb.log('water_use: irrigation GEP %.6g USD (premium x rent share %.4g, negatives '
+                   'clipped)' % (irrigation_gep['water_use_irrigation_gep'].sum(), float(share)))
+            out = out.merge(irrigation_gep[['m49', 'water_use_irrigation_gep']].rename(
+                columns={'m49': 'iso3_r250_id'}), on='iso3_r250_id', how='left')
+        elif share is None:
+            hb.log('water_use: no rent share set, so the account publishes the premium and no '
+                   'irrigation GEP.')
+
+        # Domestic GEP: the ecosystem-provided cubic metres times a raw-water price. An explicit
+        # price in es_parameters wins; absent one, the price is IMPLIED by irrigation -- what a
+        # cubic metre earns in a field bounds what a city would have paid for it.
         withdrawal_path = getattr(p, 'water_use_withdrawal_by_sector_input_path', None)
         if hb.path_exists(withdrawal_path):
-            volumes = wf.domestic_withdrawal_by_country(
-                pd.read_csv(withdrawal_path), int(p.gep_base_year))
+            withdrawal = pd.read_csv(withdrawal_path)
+            volumes = wf.domestic_withdrawal_by_country(withdrawal, int(p.gep_base_year))
             price = getattr(p, 'water_use_raw_water_price_usd_per_m3', None)
+            if price is None and irrigation_gep is not None:
+                agricultural_m3 = withdrawal[
+                    (withdrawal['Year'] == int(p.gep_base_year))
+                    & (withdrawal['VariableCode'] == wf.AQUASTAT_AGRICULTURAL_WITHDRAWAL_CODE)
+                ]['Value'].sum() * 1e9
+                price = wf.implied_raw_water_price(
+                    irrigation_gep['water_use_irrigation_gep'].sum(), agricultural_m3)
+                hb.log('water_use: raw-water price implied by irrigation: %.4g USD/m3' % price)
             volumes = wf.apply_raw_water_price(volumes, price)
             if price is None:
                 hb.log('water_use: domestic withdrawal %.4g m3 over %d countries at %d; no '
-                       'raw-water price set, so the account publishes the VOLUME and no GEP.'
-                       % (volumes['domestic_withdrawal_m3'].sum(), len(volumes),
-                          int(p.gep_base_year)))
+                       'raw-water price available, so the account publishes the VOLUME and no '
+                       'GEP.' % (volumes['domestic_withdrawal_m3'].sum(), len(volumes),
+                                 int(p.gep_base_year)))
             else:
-                hb.log('water_use: domestic raw-water value %.6g USD at %.4g USD/m3'
+                hb.log('water_use: domestic GEP %.6g USD at %.4g USD/m3'
                        % (volumes['water_use_domestic_gep'].sum(), float(price)))
+                out = out.merge(volumes[['m49', 'water_use_domestic_gep']].rename(
+                    columns={'m49': 'iso3_r250_id'}), on='iso3_r250_id', how='left')
             volumes.to_csv(os.path.join(p.cur_dir, 'domestic_withdrawal.csv'), index=False)
         else:
             hb.log('water_use: the sector withdrawal pull is not staged, so no domestic volume '
                    'is computed.')
-
-        share = getattr(p, 'water_use_water_share_of_value_added', None)
-        out = wf.apply_water_share_of_value_added(out, share)
-        if share is None:
-            hb.log('water_use: no water share set, so the account publishes the VALUE ADDED of '
-                   'the water-using sectors and no GEP. See the method page for why there is no '
-                   'default: nobody publishes this share.')
-        else:
-            hb.log('water_use: applying a water share of %.4g to sectoral value added' % float(share))
         out.to_csv(p.water_use_components_path, index=False, encoding='utf-8-sig')
         hb.log('water_use components (OUR chain): agriculture %.4g USD (%d countries), all-sector %.4g USD '
                '(%d countries); %d chain countries without an r250 match' % (
