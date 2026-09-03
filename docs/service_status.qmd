@@ -751,11 +751,18 @@ hectare. `ours` is where that lives.
    $1.06T -- the value of irrigated farming: the land, the seed, the labour, the machinery, and the
    water. Not the water.
 2. **What the new number asks.** "How much more does a hectare earn BECAUSE it is irrigated?"
-   Irrigated land earns a median $2,914 a hectare; rainfed land earns $1,793. Irrigation adds
-   **$1,121 a hectare**.
-3. **Scale it up.** Across the world's irrigated hectares that is **$886.0bn** of output that
-   exists because of irrigation. Rainfed land's $1,793 is excluded on purpose -- soil, climate and
-   terrain would earn it with or without irrigation. ⭐ This is the step that fixes the old error.
+   The premium is formed PER COUNTRY -- that country's irrigated value added over its irrigated
+   area, less its rainfed value added over its rainfed area -- and the median country premium is
+   **$776 a hectare**. ⚠ It is NOT $2,914 minus $1,793: those are the medians of the two
+   per-hectare figures, and the difference of two medians is not the median of the differences.
+3. **Scale it up.** Each country's premium times its own irrigated area, summed over 173
+   countries and 342,393,869 hectares, is **$886.0bn** -- an area-weighted average premium of
+   $2,588 a hectare, well above the median because the large irrigators are also the high-premium
+   ones. Rainfed land's earnings are excluded on purpose: soil, climate and terrain would earn
+   them with or without irrigation. ⭐ This is the step that fixes the old error.
+   ⚠⚠ **Two countries are 68% of it**: India $397.7bn (a $4,811/ha premium over 82.7M ha) and
+   China $205.6bn ($2,717 over 75.7M ha), then Indonesia $65.2bn, Egypt $44.8bn, Pakistan $31.9bn.
+   A total this concentrated stands or falls on those two, so they are where to check first.
 4. **Take nature's share of it.** The farmer still supplies labour and machinery. GTAP puts 33.2%
    of crop value added with the natural resource, so **$886.0bn x 0.332 = $294.2bn**, the GEP.
 
