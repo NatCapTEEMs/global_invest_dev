@@ -308,3 +308,38 @@ def test_a_country_with_no_rainfed_side_is_dropped_rather_than_dividing_by_zero(
                     [1, 2019, wf.AQUASTAT_IRRIGATED_AREA_CODE, 0.1]])
     crop = pd.DataFrame({'m49': [1], 'Year': [2019], 'cropland_1000ha': [0.1]})
     assert len(wf.irrigation_premium_by_country(aq, crop, 2019)) == 0
+
+
+# ---------------------------------------------------------------------------
+# Domestic: the withdrawn cubic metres are the water; the price turns them into a value.
+# ---------------------------------------------------------------------------
+
+def _withdrawal(rows):
+    return pd.DataFrame(rows, columns=['m49', 'Year', 'VariableCode', 'Value'])
+
+
+def test_domestic_volume_is_municipal_plus_industrial_at_the_account_year():
+    aq = _withdrawal([[1, 2019, wf.AQUASTAT_MUNICIPAL_WITHDRAWAL_CODE, 2.0],    # 2 km3
+                      [1, 2019, wf.AQUASTAT_INDUSTRIAL_WITHDRAWAL_CODE, 3.0],
+                      [1, 2022, wf.AQUASTAT_MUNICIPAL_WITHDRAWAL_CODE, 99.0],   # other year ignored
+                      [2, 2019, wf.AQUASTAT_MUNICIPAL_WITHDRAWAL_CODE, 1.0]])   # industrial missing
+    out = wf.domestic_withdrawal_by_country(aq, 2019).set_index('m49')
+    assert out.loc[1, 'domestic_withdrawal_m3'] == pytest.approx(5e9)
+    # A country reporting one sector keeps that sector rather than being dropped.
+    assert out.loc[2, 'domestic_withdrawal_m3'] == pytest.approx(1e9)
+
+
+def test_no_price_publishes_no_domestic_gep():
+    """A missing price is not a price of zero: the volume is published and no GEP."""
+    aq = _withdrawal([[1, 2019, wf.AQUASTAT_MUNICIPAL_WITHDRAWAL_CODE, 2.0]])
+    out = wf.apply_raw_water_price(wf.domestic_withdrawal_by_country(aq, 2019), None)
+    assert 'water_use_domestic_gep' not in out.columns
+
+
+def test_a_price_values_the_volume_and_a_negative_price_is_refused():
+    aq = _withdrawal([[1, 2019, wf.AQUASTAT_MUNICIPAL_WITHDRAWAL_CODE, 2.0]])
+    vol = wf.domestic_withdrawal_by_country(aq, 2019)
+    out = wf.apply_raw_water_price(vol, 0.05)
+    assert out['water_use_domestic_gep'].iloc[0] == pytest.approx(1e8)
+    with pytest.raises(ValueError, match='cannot be negative'):
+        wf.apply_raw_water_price(vol, -0.05)

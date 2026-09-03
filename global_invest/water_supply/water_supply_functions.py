@@ -322,6 +322,69 @@ def irrigation_premium_by_country(aquastat_df, cropland_df, year):
     return df[['m49', 'irrigated_area_ha', 'premium_usd_per_ha', 'irrigation_premium_usd']]
 
 
+AQUASTAT_MUNICIPAL_WITHDRAWAL_CODE = 4251   # Municipal water withdrawal, 10^9 m3/year
+AQUASTAT_INDUSTRIAL_WITHDRAWAL_CODE = 4252  # Industrial water withdrawal, 10^9 m3/year
+
+
+def domestic_withdrawal_by_country(aquastat_df, year):
+    """Municipal plus industrial withdrawal per country, in cubic metres, at the account year.
+
+    For domestic use the quantity that is water needs no isolating: the withdrawn cubic metres
+    are the water. The irrigation premium has no analogue here -- there is no population of
+    industry or municipalities operating without water to difference against -- so the domestic
+    value is a PRICE of raw water times this volume, and this function supplies the volume.
+
+    Args:
+        aquastat_df (pd.DataFrame): the staged AQUASTAT withdrawal pull, long, with VariableCode,
+            m49, Year, Value in 10^9 m3/year.
+        year (int): the account's base year, applied to the volumes.
+
+    Returns:
+        pd.DataFrame: m49, municipal_m3, industrial_m3 and domestic_withdrawal_m3, one row per
+        country reporting either sector at that year.
+    """
+    wide = (aquastat_df[aquastat_df['Year'] == year]
+            .pivot_table(index=['m49'], columns='VariableCode', values='Value', aggfunc='first')
+            .reset_index())
+    wide.columns = [str(c) for c in wide.columns]
+    wide = wide.rename(columns={str(AQUASTAT_MUNICIPAL_WITHDRAWAL_CODE): 'municipal_km3',
+                                str(AQUASTAT_INDUSTRIAL_WITHDRAWAL_CODE): 'industrial_km3'})
+    for column in ('municipal_km3', 'industrial_km3'):
+        if column not in wide.columns:
+            wide[column] = float('nan')
+    wide = wide[wide[['municipal_km3', 'industrial_km3']].notna().any(axis=1)].copy()
+    wide['municipal_m3'] = wide['municipal_km3'] * 1e9
+    wide['industrial_m3'] = wide['industrial_km3'] * 1e9
+    wide['domestic_withdrawal_m3'] = wide[['municipal_m3', 'industrial_m3']].sum(axis=1, min_count=1)
+    return wide[['m49', 'municipal_m3', 'industrial_m3', 'domestic_withdrawal_m3']]
+
+
+def apply_raw_water_price(df, price_usd_per_m3):
+    """Turn the domestic withdrawal volume into a value of raw water.
+
+    ⚠ `price_usd_per_m3` has no default. It is the price of the RAW resource -- an abstraction
+    charge or resource fee -- not the price of delivered water, which is mostly infrastructure
+    and treatment. When it is None the GEP column is absent rather than zero, so a run without a
+    chosen price publishes the volume and nothing that reads as an account figure.
+
+    Args:
+        df (pd.DataFrame): carries `domestic_withdrawal_m3`.
+        price_usd_per_m3 (float): the raw-water price, or None.
+
+    Returns:
+        pd.DataFrame: with `water_use_domestic_gep` added when a price is given.
+    """
+    out = df.copy()
+    if price_usd_per_m3 is None:
+        return out
+    price = float(price_usd_per_m3)
+    if price < 0:
+        raise ValueError('water_use_raw_water_price_usd_per_m3 is %r; a price cannot be negative'
+                         % price_usd_per_m3)
+    out['water_use_domestic_gep'] = out['domestic_withdrawal_m3'] * price
+    return out
+
+
 def apply_water_share_of_value_added(df, water_share):
     """Turn the value added of water-using sectors into a value of water.
 

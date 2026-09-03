@@ -121,6 +121,9 @@ water_supply,water_use_irrigation_premium_input_path,global_invest/water_supply/
 water_supply,water_use_irrigation_premium_input_source_url,"https://api.data.apps.fao.org/api/v2/bigquery?sql_url=https://data.apps.fao.org/catalog/dataset/945666e6-7803-4621-b8ef-cfd885a84596/resource/4a000a1b-24f0-4328-aab6-b9b525892090/download/query_en.sql&area=World&variable=4313,4318,4548,4555&year=2000,...,2022&type=country"
 water_supply,water_use_cropland_area_input_path,global_invest/water_supply/water_use/data/Raw/faostat/Inputs_LandUse_E_All_Data_Normalized.zip
 water_supply,water_use_cropland_area_input_source_url,https://bulks-faostat.fao.org/production/Inputs_LandUse_E_All_Data_(Normalized).zip
+water_supply,water_use_withdrawal_by_sector_input_path,global_invest/water_supply/water_use/data/Raw/aquastat/aquastat_withdrawal_by_sector.csv
+water_supply,water_use_withdrawal_by_sector_input_source_url,"https://api.data.apps.fao.org/api/v2/bigquery?sql_url=https://data.apps.fao.org/catalog/dataset/945666e6-7803-4621-b8ef-cfd885a84596/resource/4a000a1b-24f0-4328-aab6-b9b525892090/download/query_en.sql&area=World&variable=4250,4251,4252,4253&year=2000,...,2022&type=country"
+water_supply,water_use_raw_water_price_usd_per_m3,
 water_supply,water_use_withdrawal_path,global_invest/water_supply/water_use/data/water_withdraw.csv
 air_filtration,air_filtration_workbook_path,global_invest/air_filtration/air_filtration_gep.xlsx
 water_quality,water_quality_retention_path,global_invest/water_quality/Results/EstimationOutput/retention_estimates.csv

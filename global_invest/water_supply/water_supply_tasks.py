@@ -155,6 +155,28 @@ def water_use_components(p):
         else:
             hb.log('water_use: the premium inputs are not staged, so no premium is computed.')
 
+        # Domestic: the withdrawn cubic metres ARE the water, so the denominator is the volume
+        # and the account figure is a raw-water price times it. The price, like irrigation's
+        # share, has no default.
+        withdrawal_path = getattr(p, 'water_use_withdrawal_by_sector_input_path', None)
+        if hb.path_exists(withdrawal_path):
+            volumes = wf.domestic_withdrawal_by_country(
+                pd.read_csv(withdrawal_path), int(p.gep_base_year))
+            price = getattr(p, 'water_use_raw_water_price_usd_per_m3', None)
+            volumes = wf.apply_raw_water_price(volumes, price)
+            if price is None:
+                hb.log('water_use: domestic withdrawal %.4g m3 over %d countries at %d; no '
+                       'raw-water price set, so the account publishes the VOLUME and no GEP.'
+                       % (volumes['domestic_withdrawal_m3'].sum(), len(volumes),
+                          int(p.gep_base_year)))
+            else:
+                hb.log('water_use: domestic raw-water value %.6g USD at %.4g USD/m3'
+                       % (volumes['water_use_domestic_gep'].sum(), float(price)))
+            volumes.to_csv(os.path.join(p.cur_dir, 'domestic_withdrawal.csv'), index=False)
+        else:
+            hb.log('water_use: the sector withdrawal pull is not staged, so no domestic volume '
+                   'is computed.')
+
         share = getattr(p, 'water_use_water_share_of_value_added', None)
         out = wf.apply_water_share_of_value_added(out, share)
         if share is None:

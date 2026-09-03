@@ -808,10 +808,19 @@ denominator, which was the actual bug, and the share is the remaining approximat
   water is not a treatment some firms decline. So domestic's water share cannot be isolated by
   comparison, and the route has to be a PRICE OF RAW WATER: abstraction charges, water resource
   fees, or a raw-water rent, times the volume withdrawn.
-- ⚠ Nobody we hold publishes that price. CWoN has no water rent; GTAP's water-utilities sector
+- ⭐⭐ **BUILT 2026-09-03, in the irrigation shape: the volume is the denominator and the price is
+  an explicit parameter with no default.** The 2019 withdrawal by sector is pulled from AQUASTAT
+  (4251 municipal, 4252 industrial, staged with its source URL): **1,145.9 km3** -- 520.9
+  municipal plus 625.0 industrial -- over 183 countries, published as `domestic_withdrawal.csv`.
+  `water_use_raw_water_price_usd_per_m3` in es_parameters turns it into
+  `water_use_domestic_gep`; blank, the account publishes the volume and no GEP. For scale, $0.01
+  / $0.05 / $0.10 per m3 give **$11.5bn / $57.3bn / $114.6bn** -- two to three orders of
+  magnitude below the $35.30T, which is the size of the category error the old figure carried.
+- ⚠ Nobody we hold publishes the price. CWoN has no water rent; GTAP's water-utilities sector
   `wtr` is folded into `ser` in the s26 aggregation we hold, so not even the delivered-water
-  ceiling can be read from it. Until a raw-water price source is chosen, domestic publishes the
-  denominator and no GEP -- the same convention as irrigation, for a different reason.
+  ceiling can be read from it. The ask is a raw-water price source -- abstraction charges or
+  resource fees, ideally per country; a single world price is the fallback the parameter
+  accepts today.
 - ⚠ Two boundaries to respect when a price arrives: hydropower ($146.08bn) is already a separate
   row, and what ecosystems do to the QUALITY of this water is the water purification service,
   not this one. Domestic here is raw-water provisioning alone, or it double-counts.
