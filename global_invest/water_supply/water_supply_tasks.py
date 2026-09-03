@@ -60,17 +60,23 @@ def gep_calculation(p):
         df_gep = df_gep.merge(components.drop(columns=['iso3_r250_label']),
                               on='iso3_r250_id', how='left')
     else:
-        df_gep['water_use_agriculture_gep'] = float('nan')
-        df_gep['water_use_all_sector_gep'] = float('nan')
+        df_gep['water_use_agriculture_value_added'] = float('nan')
+        df_gep['water_use_all_sector_value_added'] = float('nan')
     df_gep['year'] = int(p.gep_base_year)
     # water_supply_gep stays the hydropower component alone: how (and whether) the water-use
     # components combine with it is the account's subgroup question, flagged on the deck.
     df_gep['water_supply_gep'] = df_gep['hydropower_gep']
+    # ⚠ The irrigation and domestic columns are VALUE ADDED unless a water share is set, in which
+    # case the `_gep` pair appears beside them. Listing only what is present is what keeps the two
+    # apart: a fixed list would either drop the denominator or invent an answer.
+    water_use_cols = [c for c in ('water_use_irrigation_value_added',
+                                  'water_use_domestic_value_added',
+                                  'water_use_irrigation_gep', 'water_use_domestic_gep',
+                                  'water_use_agriculture_value_added', 'water_use_all_sector_value_added')
+                      if c in df_gep.columns]
     utilities.write_gep_by_country(
-        p, df_gep[attr_cols + ['year', 'hydropower_gep', 'hydropower_gep_reference_variant',
-                               'water_use_irrigation_gep', 'water_use_domestic_gep',
-                               'water_use_agriculture_gep', 'water_use_all_sector_gep',
-                               'water_supply_gep']],
+        p, df_gep[attr_cols + ['year', 'hydropower_gep', 'hydropower_gep_reference_variant']
+                  + water_use_cols + ['water_supply_gep']],
         service_results['gep_by_country_base_year'])
 
     ours = df_gep['hydropower_gep'].sum()
@@ -120,11 +126,24 @@ def water_use_components(p):
         name_cols = ['iso3_r250_id', 'iso3_r250_label', 'iso3_r250_name', 'name_long']
         countries = p.df_countries[[c for c in name_cols if c in p.df_countries.columns]].drop_duplicates('iso3_r250_id')
         out = wf.water_use_components_from_chain(df_gep, countries)
+        # ⚠⚠ The chain returns VALUE ADDED, which is what SDG 6.4.1 inverts back to. The account's
+        # figure is a share of it, and the share is a parameter with no default: when
+        # `water_use_water_share_of_value_added` is blank the GEP columns are simply absent, so
+        # nothing downstream can mistake the denominator for the answer the way it did until
+        # 2026-09-02, when the two were the same column.
+        share = getattr(p, 'water_use_water_share_of_value_added', None)
+        out = wf.apply_water_share_of_value_added(out, share)
+        if share is None:
+            hb.log('water_use: no water share set, so the account publishes the VALUE ADDED of '
+                   'the water-using sectors and no GEP. See the method page for why there is no '
+                   'default: nobody publishes this share.')
+        else:
+            hb.log('water_use: applying a water share of %.4g to sectoral value added' % float(share))
         out.to_csv(p.water_use_components_path, index=False, encoding='utf-8-sig')
         hb.log('water_use components (OUR chain): agriculture %.4g USD (%d countries), all-sector %.4g USD '
                '(%d countries); %d chain countries without an r250 match' % (
-                   out['water_use_agriculture_gep'].sum(), out['water_use_agriculture_gep'].notna().sum(),
-                   out['water_use_all_sector_gep'].sum(), out['water_use_all_sector_gep'].notna().sum(),
+                   out['water_use_agriculture_value_added'].sum(), out['water_use_agriculture_value_added'].notna().sum(),
+                   out['water_use_all_sector_value_added'].sum(), out['water_use_all_sector_value_added'].notna().sum(),
                    out['iso3_r250_label'].isna().sum()))
         committed_ag = hb.df_read(p.water_use_agriculture_path)
         committed_all = hb.df_read(p.water_use_all_sector_path)

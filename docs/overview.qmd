@@ -399,7 +399,7 @@ format:
 - [Values hydropower rent and priced water withdrawal. Hydropower comes from the CWoN wealth table, {{< meta water_supply_total >}} across 97 countries, reproducing the drive's committed output on the 95 it covers. Water use is computed here: agriculture {{< meta water_use_ag_total >}} across 123 countries, all-sector {{< meta water_use_all_total >}} across 149.]{.state}
 - **Q1:** which hydropower total is the account's, the manuscript's {{< meta hydro_manuscript >}} or our rent-based {{< meta water_supply_total >}}? The first follows a direct-use method, price times generation, the second the resource-rent method.
 - **Q2:** why does the reference leave 17 countries empty although the CWoN table values them? We report 97 and carry the 95-country variant as the comparison, so the {{< meta water_supply_anchor >}} anchor still checks out.
-- **Q3:** is the agriculture gap the missing water-stress attribution? We compute withdrawal times AQUASTAT efficiency, the gross value of water used rather than the part attributable to ecosystems, which would explain why the agriculture pair is {{< meta water_use_ag_total >}} against $554.5bn while the all-sector pair agrees closely.
+- **Q3:** SDG 6.4.1 is value added per cubic metre withdrawn, so multiplying it back by withdrawal returns the value added of the water-using sectors. What share of that is attributable to water?
 - **Q4:** how do hydropower and the two water-use components combine into one water_supply value?
 
 ## air_filtration

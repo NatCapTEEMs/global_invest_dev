@@ -205,11 +205,11 @@ def water_use_components_by_country(agriculture_df, all_sector_df, countries_df)
     component (the sheet's agriculture subgroup) and the all-sector total."""
     df = countries_df.merge(
         agriculture_df[['iso3_r250_label', 'wateruse_ag_gep']].rename(
-            columns={'wateruse_ag_gep': 'water_use_agriculture_gep'}),
+            columns={'wateruse_ag_gep': 'water_use_agriculture_value_added'}),
         on='iso3_r250_label', how='left')
     df = df.merge(
         all_sector_df[['iso3_r250_label', 'wateruse_gep']].rename(
-            columns={'wateruse_gep': 'water_use_all_sector_gep'}),
+            columns={'wateruse_gep': 'water_use_all_sector_value_added'}),
         on='iso3_r250_label', how='left')
     return df
 
@@ -236,16 +236,68 @@ def water_use_components_from_chain(gep_by_country_year_df, countries_df):
     ordered = (gep_by_country_year_df.assign(_sectors=sectors_present)
                .sort_values(['_sectors', 'year']))
     latest = ordered.groupby('country', as_index=False).tail(1).drop(columns='_sectors')
-    latest['water_use_agriculture_gep'] = latest['gep_water_agricultural']
-    latest['water_use_all_sector_gep'] = latest[sector_cols].sum(axis=1, min_count=1)
+    latest['water_use_agriculture_value_added'] = latest['gep_water_agricultural']
+    latest['water_use_all_sector_value_added'] = latest[sector_cols].sum(axis=1, min_count=1)
     # The two the account reports, matching the authors' split of 2026-08-31: irrigation, and
     # domestic covering industrial, commercial and residential. Published as their own columns
     # because the table used to carry agriculture and the total, so domestic existed only as a
     # subtraction -- and only worked because there happen to be three sectors and one of them was
     # published. A reader wanting industry apart from residential could not have got it at all.
-    latest['water_use_irrigation_gep'] = latest['gep_water_agricultural']
-    latest['water_use_domestic_gep'] = latest[
+    #
+    # ⚠⚠ These are VALUE ADDED, not a value of water, and they are named for what they are.
+    # SDG 6.4.1 is DEFINED as value added over the volume withdrawn -- for agriculture,
+    # `GVA_agriculture x (1 - rainfed share) / agricultural withdrawal` -- so multiplying the
+    # indicator back by the withdrawal returns the value added it was built from. Measured
+    # 2026-09-02: the all-sector figure is 65% of the combined GDP of the same 152 countries and
+    # exceeds GDP outright in six of them; irrigation is 38% of FAO's entire crop gross output and
+    # exceeds all crop output in seven. An input cannot be worth more than the output it helps
+    # produce, so no coefficient applied afterwards repairs a column that carries this name.
+    latest['water_use_irrigation_value_added'] = latest['gep_water_agricultural']
+    latest['water_use_domestic_value_added'] = latest[
         ['gep_water_industrial', 'gep_water_municipal']].sum(axis=1, min_count=1)
+    return _with_country_labels(latest, countries_df)
+
+
+def apply_water_share_of_value_added(df, water_share):
+    """Turn the value added of water-using sectors into a value of water.
+
+    The account's other services take a share OF a named quantity: aquaculture takes GTAP's
+    natural-resource share of fishing revenue, forestry takes CWoN's forest rental ratio. Water
+    needs the same, and the quantity it is a share of is sectoral value added.
+
+    ⚠⚠ Until 2026-09-02 this step did not exist, which is the same as having applied a share of
+    1.0 -- the whole value added of irrigated agriculture, industry and services was published
+    under a `_gep` name. That is why the figures came out larger than the economies they sit in.
+    The share is now explicit, so it can be argued about; an implicit one cannot be.
+
+    ⚠ `water_share` has no default and none should be invented. Nobody publishes it: GTAP has no
+    water endowment, and CWoN's package has no general water rent -- their only water number is
+    forest water services, a different service entirely. When the parameter is blank the GEP
+    columns are absent rather than zero, because a missing share is not a share of nothing.
+
+    Args:
+        df (pd.DataFrame): carries `water_use_irrigation_value_added` and
+            `water_use_domestic_value_added`.
+        water_share (float): the share of sectoral value added attributable to water, or None.
+
+    Returns:
+        pd.DataFrame: with `water_use_irrigation_gep` and `water_use_domestic_gep` added when a
+        share is given, and untouched when it is not.
+    """
+    out = df.copy()
+    if water_share is None:
+        return out
+    share = float(water_share)
+    if not 0.0 <= share <= 1.0:
+        raise ValueError('water_use_water_share_of_value_added is %r; a share of value added has '
+                         'to sit in [0, 1]' % water_share)
+    out['water_use_irrigation_gep'] = out['water_use_irrigation_value_added'] * share
+    out['water_use_domestic_gep'] = out['water_use_domestic_value_added'] * share
+    return out
+
+
+def _with_country_labels(latest, countries_df):
+    """The name-matching tail of water_use_components_from_chain, unchanged."""
 
     by_name = countries_df.drop_duplicates('iso3_r250_name').set_index('iso3_r250_name')['iso3_r250_label']
     by_long = (countries_df.drop_duplicates('name_long').set_index('name_long')['iso3_r250_label']
@@ -261,8 +313,10 @@ def water_use_components_from_chain(gep_by_country_year_df, countries_df):
     latest = latest.merge(countries_df[['iso3_r250_label', 'iso3_r250_id']].drop_duplicates('iso3_r250_label'),
                           on='iso3_r250_label', how='left')
     return one_row_per_country(latest[['country', 'iso3_r250_id', 'iso3_r250_label', 'year',
-                                       'water_use_agriculture_gep', 'water_use_irrigation_gep',
-                                       'water_use_domestic_gep', 'water_use_all_sector_gep']])
+                                       'water_use_agriculture_value_added',
+                                       'water_use_irrigation_value_added',
+                                       'water_use_domestic_value_added',
+                                       'water_use_all_sector_value_added']])
 
 
 # The AQUASTAT export names some countries twice, once in full and once short ("Russian
@@ -271,8 +325,11 @@ def water_use_components_from_chain(gep_by_country_year_df, countries_df):
 # the country gets two rows and is counted twice in every total. Korea and Russia did exactly
 # that, inflating the reported hydropower total by 1.89bn USD, which stayed invisible because
 # the deck quoted the reference file's total rather than the module's own.
-WATER_USE_VALUE_COLUMNS = ('water_use_agriculture_gep', 'water_use_irrigation_gep',
-                           'water_use_domestic_gep', 'water_use_all_sector_gep')
+# ⚠ The two `_value_added` columns are the denominators; the two `_gep` columns appear only once
+# a water share is set. Both are listed because one_row_per_country has to carry whichever exist.
+WATER_USE_VALUE_COLUMNS = ('water_use_agriculture_value_added', 'water_use_all_sector_value_added',
+                           'water_use_irrigation_value_added', 'water_use_domestic_value_added',
+                           'water_use_irrigation_gep', 'water_use_domestic_gep')
 
 
 def one_row_per_country(df_components):
@@ -288,7 +345,9 @@ def one_row_per_country(df_components):
             silently would be the same class of error as the double-count this prevents.
     """
     resolved = df_components[df_components['iso3_r250_id'].notna()]
-    for column in WATER_USE_VALUE_COLUMNS:
+    # ⚠ Only the columns actually present. The two `_gep` columns exist only when a water share
+    # is set, so a fixed list would make the no-share case -- the default -- raise.
+    for column in [c for c in WATER_USE_VALUE_COLUMNS if c in df_components.columns]:
         distinct = resolved.groupby('iso3_r250_id')[column].nunique(dropna=True)
         conflicted = distinct[distinct > 1]
         if len(conflicted):

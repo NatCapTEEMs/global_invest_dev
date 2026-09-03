@@ -164,9 +164,9 @@ def test_water_use_committed_anchors_join_and_total():
     countries = agriculture[['iso3_r250_id', 'iso3_r250_label']].merge(
         all_sector[['iso3_r250_id', 'iso3_r250_label']], how='outer')
     out = wf.water_use_components_by_country(agriculture, all_sector, countries)
-    assert out['water_use_agriculture_gep'].notna().sum() == 145
-    assert out['water_use_all_sector_gep'].notna().sum() == 183
-    assert np.isclose(out['water_use_agriculture_gep'].sum(),
+    assert out['water_use_agriculture_value_added'].notna().sum() == 145
+    assert out['water_use_all_sector_value_added'].notna().sum() == 183
+    assert np.isclose(out['water_use_agriculture_value_added'].sum(),
                       agriculture['wateruse_ag_gep'].sum())
 
 
@@ -175,11 +175,13 @@ def test_water_use_committed_anchors_join_and_total():
 # ---------------------------------------------------------------------------
 
 def _components(rows):
-    # The account's two reported columns, irrigation and domestic, alongside the agriculture and
-    # all-sector pair the table has always carried.
+    # ⚠ irrigation and domestic are the VALUE ADDED columns: SDG 6.4.1 inverts back to value
+    # added, so that is what the chain produces, and the account's figure is a share of it.
     return pd.DataFrame(rows, columns=['country', 'iso3_r250_id', 'iso3_r250_label', 'year',
-                                       'water_use_agriculture_gep', 'water_use_irrigation_gep',
-                                       'water_use_domestic_gep', 'water_use_all_sector_gep'])
+                                       'water_use_agriculture_value_added',
+                                       'water_use_irrigation_value_added',
+                                       'water_use_domestic_value_added',
+                                       'water_use_all_sector_value_added'])
 
 
 def test_two_spellings_of_one_country_collapse_to_a_single_row():
@@ -191,8 +193,8 @@ def test_two_spellings_of_one_country_collapse_to_a_single_row():
     ]))
     assert len(out) == 1
     assert out.iloc[0]['iso3_r250_label'] == 'RUS'
-    assert out.iloc[0]['water_use_agriculture_gep'] == 5.0     # the non-empty spelling wins
-    assert out.iloc[0]['water_use_all_sector_gep'] == 7.0
+    assert out.iloc[0]['water_use_agriculture_value_added'] == 5.0     # the non-empty spelling wins
+    assert out.iloc[0]['water_use_all_sector_value_added'] == 7.0
 
 
 def test_a_country_the_name_join_could_not_resolve_passes_through():
@@ -213,3 +215,44 @@ def test_two_spellings_that_disagree_on_a_value_raise():
             ['Russian Federation', 643.0, 'RUS', 2015, 5.0, 5.0, 2.0, 7.0],
             ['Russia', 643.0, 'RUS', 2000, 6.0, 6.0, 1.0, 7.0],
         ]))
+
+
+# ---------------------------------------------------------------------------
+# The water share: the step that turns a denominator into an account figure.
+# ---------------------------------------------------------------------------
+
+def _value_added():
+    return pd.DataFrame({'iso3_r250_label': ['AAA', 'BBB'],
+                         'water_use_irrigation_value_added': [1000.0, 500.0],
+                         'water_use_domestic_value_added': [4000.0, np.nan]})
+
+
+def test_no_share_publishes_no_gep_at_all():
+    """A missing share is not a share of nothing.
+
+    Until 2026-09-02 there was no share step, which is the same as having applied 1.0: the whole
+    value added of irrigated agriculture, industry and services went out under a `_gep` name, and
+    the totals came out larger than the economies they sit in. With no share set the account now
+    publishes the value added and NO gep, so nothing downstream can read one as the other.
+    """
+    out = wf.apply_water_share_of_value_added(_value_added(), None)
+    assert 'water_use_irrigation_gep' not in out.columns
+    assert 'water_use_domestic_gep' not in out.columns
+    assert out['water_use_irrigation_value_added'].sum() == 1500.0
+
+
+def test_a_share_is_applied_to_both_components_and_leaves_the_denominator_intact():
+    out = wf.apply_water_share_of_value_added(_value_added(), 0.05)
+    assert out['water_use_irrigation_gep'].tolist() == [50.0, 25.0]
+    assert out['water_use_domestic_gep'].iloc[0] == 200.0
+    # A country with no domestic value added gets no domestic gep, not a zero.
+    assert pd.isna(out['water_use_domestic_gep'].iloc[1])
+    # The denominator survives, so the two can always be compared.
+    assert out['water_use_irrigation_value_added'].tolist() == [1000.0, 500.0]
+
+
+def test_a_share_outside_zero_to_one_is_refused():
+    """A share of value added above 1 would say water is worth more than the output it helps
+    produce, which is the exact failure the share exists to prevent."""
+    with pytest.raises(ValueError, match='share of value added'):
+        wf.apply_water_share_of_value_added(_value_added(), 1.4)
