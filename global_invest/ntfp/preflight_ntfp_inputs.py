@@ -46,6 +46,19 @@ def main():
     if not hb.path_exists(p.ha_per_cell_10sec_path):
         missing.append('ha_per_cell_10sec_path')
 
+    # ⚠⚠ EXISTENCE IS NOT VALIDITY. On MSI (job 17890607) every path resolved and the run died 25
+    # minutes later because `ee_r264_correspondence.csv` was an older vintage carrying neither
+    # `iso3_r250_id` nor `iso3_r250_label` -- the columns the country stage keys on. A file being
+    # present says nothing about it being the one the code expects, so the columns are checked here.
+    required = ['iso3_r250_id', 'iso3_r250_label']
+    absent = [c for c in required if c not in p.df_countries.columns]
+    print('[preflight] %-24s %-8s %s'
+          % ('df_countries columns', 'OK' if not absent else 'STALE',
+             'has %s' % ', '.join(required) if not absent else 'MISSING %s' % ', '.join(absent)))
+    if absent:
+        missing.append('df_countries is missing %s, so its vintage is not the one this code reads'
+                       % ', '.join(absent))
+
     if missing:
         sys.exit('[preflight] %d input(s) do not resolve on this machine: %s'
                  % (len(missing), ', '.join(missing)))
