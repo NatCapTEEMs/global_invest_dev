@@ -126,11 +126,9 @@ def water_use_components(p):
         name_cols = ['iso3_r250_id', 'iso3_r250_label', 'iso3_r250_name', 'name_long']
         countries = p.df_countries[[c for c in name_cols if c in p.df_countries.columns]].drop_duplicates('iso3_r250_id')
         out = wf.water_use_components_from_chain(df_gep, countries)
-        # ⚠⚠ The chain returns VALUE ADDED, which is what SDG 6.4.1 inverts back to. The account's
-        # figure is a share of it, and the share is a parameter with no default: when
-        # `water_use_water_share_of_value_added` is blank the GEP columns are simply absent, so
-        # nothing downstream can mistake the denominator for the answer the way it did until
-        # 2026-09-02, when the two were the same column.
+        # The chain returns VALUE ADDED, which is what SDG 6.4.1 inverts back to. The account's
+        # figure is a share of it, and the share has no default: blank leaves the GEP columns
+        # absent, so nothing downstream can read the denominator as the answer.
         share = getattr(p, 'water_use_water_share_of_value_added', None)
         out = wf.apply_water_share_of_value_added(out, share)
         if share is None:

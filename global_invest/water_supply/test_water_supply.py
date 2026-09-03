@@ -256,3 +256,55 @@ def test_a_share_outside_zero_to_one_is_refused():
     produce, which is the exact failure the share exists to prevent."""
     with pytest.raises(ValueError, match='share of value added'):
         wf.apply_water_share_of_value_added(_value_added(), 1.4)
+
+
+# ---------------------------------------------------------------------------
+# The irrigation premium: what an irrigated hectare earns above the same land rainfed.
+# ---------------------------------------------------------------------------
+
+def _aquastat(rows):
+    return pd.DataFrame(rows, columns=['m49', 'Year', 'VariableCode', 'Value'])
+
+
+def test_the_premium_is_the_difference_per_hectare_not_the_whole_value_added():
+    """AAA: 100 USD of ag value added, 60% of it from 10 ha irrigated, 90 ha rainfed.
+
+    Irrigated earns 60/10 = 6 per ha, rainfed 40/90 = 0.444, so the premium is 5.556 a hectare
+    and 55.56 over the ten hectares. ⚠ The whole irrigated value added is 60 -- crediting water
+    with that is the error the premium exists to fix, because the 0.444 a hectare rainfed land
+    earns would be earned with or without irrigation.
+    """
+    aq = _aquastat([[1, 2019, wf.AQUASTAT_AG_VALUE_ADDED_CODE, 100.0],
+                    [1, 2019, wf.AQUASTAT_IRRIGATED_GVA_SHARE_CODE, 60.0],
+                    [1, 2019, wf.AQUASTAT_IRRIGATED_AREA_CODE, 0.01]])      # 0.01 x 1000 = 10 ha
+    crop = pd.DataFrame({'m49': [1], 'Year': [2019], 'cropland_1000ha': [0.1]})   # 100 ha
+    out = wf.irrigation_premium_by_country(aq, crop, 2019).set_index('m49')
+    assert out.loc[1, 'irrigated_area_ha'] == pytest.approx(10.0)
+    assert out.loc[1, 'premium_usd_per_ha'] == pytest.approx(6.0 - 40.0 / 90.0)
+    assert out.loc[1, 'irrigation_premium_usd'] == pytest.approx(55.5556, rel=1e-4)
+
+
+def test_the_premium_uses_the_account_year_on_both_sources():
+    """A country reporting a later year is not used for it: the account's year is the account's.
+
+    Taking each country's latest available year instead gives a median vintage of 2022 and a
+    total 26% higher, which is a different year's answer rather than a better one.
+    """
+    aq = _aquastat([[1, 2019, wf.AQUASTAT_AG_VALUE_ADDED_CODE, 100.0],
+                    [1, 2019, wf.AQUASTAT_IRRIGATED_GVA_SHARE_CODE, 60.0],
+                    [1, 2019, wf.AQUASTAT_IRRIGATED_AREA_CODE, 0.01],
+                    [1, 2022, wf.AQUASTAT_AG_VALUE_ADDED_CODE, 999.0],
+                    [1, 2022, wf.AQUASTAT_IRRIGATED_GVA_SHARE_CODE, 60.0],
+                    [1, 2022, wf.AQUASTAT_IRRIGATED_AREA_CODE, 0.01]])
+    crop = pd.DataFrame({'m49': [1, 1], 'Year': [2019, 2022], 'cropland_1000ha': [0.1, 0.1]})
+    out = wf.irrigation_premium_by_country(aq, crop, 2019)
+    assert out['irrigation_premium_usd'].sum() == pytest.approx(55.5556, rel=1e-4)
+
+
+def test_a_country_with_no_rainfed_side_is_dropped_rather_than_dividing_by_zero():
+    # Irrigated area equal to cropland leaves no rainfed hectares to compare against.
+    aq = _aquastat([[1, 2019, wf.AQUASTAT_AG_VALUE_ADDED_CODE, 100.0],
+                    [1, 2019, wf.AQUASTAT_IRRIGATED_GVA_SHARE_CODE, 60.0],
+                    [1, 2019, wf.AQUASTAT_IRRIGATED_AREA_CODE, 0.1]])
+    crop = pd.DataFrame({'m49': [1], 'Year': [2019], 'cropland_1000ha': [0.1]})
+    assert len(wf.irrigation_premium_by_country(aq, crop, 2019)) == 0

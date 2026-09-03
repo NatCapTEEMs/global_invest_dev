@@ -63,11 +63,10 @@ def gep_calculation(p):
     df_gep = tp.roundwood_gross_value_by_country(
         hb.df_read(str(p.get_path(p.timber_provision_faostat_roundwood_path))),
         df_gep, int(p.gep_base_year))
-    # ⚠ The account's timber value is CWoN's rent as of 2026-09-02 (Chiara's decision, and the
-    # issues document's recommendation). So `timber_provision_gep` -- the shared key every other
-    # service writes and the account reads -- IS the CWoN rent, and the spatial estimate is kept
-    # beside it as `timber_provision_gep_spatial` rather than deleted: it is the only forestry
-    # layer this library has, and the reason for the switch is recorded in the entry.
+    # ⚠ The account's timber value is CWoN's rent, so `timber_provision_gep` -- the shared key
+    # every other service writes and the account reads -- IS the CWoN rent. The spatial estimate
+    # is kept beside it as `timber_provision_gep_spatial`: it is the only forestry layer this
+    # library has.
     df_gep = df_gep.rename(columns={'timber_provision_gep': 'timber_provision_gep_spatial',
                                     'timber_provision_gep_cwon_rent': 'timber_provision_gep'})
     # ⚠ The fuelwood decomposition. timber_provision_gep is CWoN's forest rent, which is built

@@ -2187,10 +2187,9 @@ def publish_raster_as_pog(path, log=None):
     at a pyramid resolution, with overview levels [3, 15, 30, 90, 180, 360] and exact statistics
     stored internally, tiled and COG-valid.
 
-    ⚠ What is usually missing is NOT the grid. Measured 2026-09-02 across every raster the runs
-    had written: they sit on the right geotransform and fail on overviews and statistics, which is
-    what `hb.make_path_pog` adds. `base_data/pyramids/ha_per_cell_10sec.tif` failed the same way,
-    so this was a library-wide gap rather than any one service's.
+    ⚠ What is usually missing is NOT the grid but the overviews and the internal statistics,
+    which is what `hb.make_path_pog` adds. A raster already on the pyramid still fails without
+    them.
 
     Rewrites in place and is idempotent: a raster already a POG is left alone, so distributing
     twice costs nothing.

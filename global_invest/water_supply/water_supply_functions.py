@@ -244,36 +244,80 @@ def water_use_components_from_chain(gep_by_country_year_df, countries_df):
     # subtraction -- and only worked because there happen to be three sectors and one of them was
     # published. A reader wanting industry apart from residential could not have got it at all.
     #
-    # ⚠⚠ These are VALUE ADDED, not a value of water, and they are named for what they are.
-    # SDG 6.4.1 is DEFINED as value added over the volume withdrawn -- for agriculture,
-    # `GVA_agriculture x (1 - rainfed share) / agricultural withdrawal` -- so multiplying the
-    # indicator back by the withdrawal returns the value added it was built from. Measured
-    # 2026-09-02: the all-sector figure is 65% of the combined GDP of the same 152 countries and
-    # exceeds GDP outright in six of them; irrigation is 38% of FAO's entire crop gross output and
-    # exceeds all crop output in seven. An input cannot be worth more than the output it helps
-    # produce, so no coefficient applied afterwards repairs a column that carries this name.
+    # ⚠ These are VALUE ADDED, not a value of water. SDG 6.4.1 is defined as value added over the
+    # volume withdrawn, so multiplying the indicator back by the withdrawal returns the value added
+    # it was built from. They are named for what they are; the account's figure is a share of them.
     latest['water_use_irrigation_value_added'] = latest['gep_water_agricultural']
     latest['water_use_domestic_value_added'] = latest[
         ['gep_water_industrial', 'gep_water_municipal']].sum(axis=1, min_count=1)
     return _with_country_labels(latest, countries_df)
 
 
+# The AQUASTAT variables the premium reads, and FAOSTAT's cropland item.
+AQUASTAT_IRRIGATED_AREA_CODE = 4313        # Area equipped for irrigation: total, 1000 ha
+AQUASTAT_AG_VALUE_ADDED_CODE = 4548        # Agriculture, value added to GDP, current US$
+AQUASTAT_IRRIGATED_GVA_SHARE_CODE = 4555   # % of agricultural GVA produced by irrigated agriculture
+FAOSTAT_CROPLAND_ITEM_CODE = 6620          # Cropland, element Area, 1000 ha
+
+
+def irrigation_premium_by_country(aquastat_df, cropland_df, year):
+    """What an irrigated hectare earns above the same land rainfed, per country.
+
+    This is the quantity that is actually water. A rent is what is left of value added after
+    labour and capital are paid, and in crop agriculture that residual is attributed to LAND --
+    which rainfed cropland earns too, from soil, climate and terrain. Only the DIFFERENCE is
+    attributable to irrigation, so only the difference is carried forward.
+    Args:
+        aquastat_df (pd.DataFrame): the staged AQUASTAT pull, long, with VariableCode, m49, Year,
+            Value.
+        cropland_df (pd.DataFrame): FAOSTAT Land Use, with the cropland area in 1000 ha, m49 and
+            Year.
+        year (int): the account's base year.
+
+    Returns:
+        pd.DataFrame: m49, irrigated_area_ha, premium_usd_per_ha and irrigation_premium_usd, one
+        row per country that reports every piece at that year.
+    """
+    wide = (aquastat_df[aquastat_df['Year'] == year]
+            .pivot_table(index=['m49'], columns='VariableCode', values='Value', aggfunc='first')
+            .reset_index())
+    wide.columns = [str(c) for c in wide.columns]
+    wide = wide.rename(columns={str(AQUASTAT_IRRIGATED_AREA_CODE): 'irrigated_1000ha',
+                                str(AQUASTAT_AG_VALUE_ADDED_CODE): 'ag_value_added_usd',
+                                str(AQUASTAT_IRRIGATED_GVA_SHARE_CODE): 'irrigated_gva_percent'})
+    needed = ['irrigated_1000ha', 'ag_value_added_usd', 'irrigated_gva_percent']
+    missing = [c for c in needed if c not in wide.columns]
+    if missing:
+        raise ValueError('the AQUASTAT pull has no %s at %d, so the premium cannot be formed'
+                         % (', '.join(missing), year))
+    wide = wide.dropna(subset=needed)
+
+    cropland = cropland_df[cropland_df['Year'] == year][['m49', 'cropland_1000ha']]
+    df = wide.merge(cropland, on='m49', how='inner')
+    # A country whose irrigated area is not smaller than its cropland has no rainfed side to
+    # compare against, and a share outside [0, 100] is not a share.
+    df = df[(df['cropland_1000ha'] > df['irrigated_1000ha'])
+            & df['irrigated_gva_percent'].between(0, 100)].copy()
+
+    df['irrigated_area_ha'] = df['irrigated_1000ha'] * 1000.0
+    rainfed_area_ha = (df['cropland_1000ha'] - df['irrigated_1000ha']) * 1000.0
+    irrigated_va = df['ag_value_added_usd'] * df['irrigated_gva_percent'] / 100.0
+    rainfed_va = df['ag_value_added_usd'] * (1 - df['irrigated_gva_percent'] / 100.0)
+    df['premium_usd_per_ha'] = (irrigated_va / df['irrigated_area_ha']
+                                - rainfed_va / rainfed_area_ha)
+    df['irrigation_premium_usd'] = df['premium_usd_per_ha'] * df['irrigated_area_ha']
+    return df[['m49', 'irrigated_area_ha', 'premium_usd_per_ha', 'irrigation_premium_usd']]
+
+
 def apply_water_share_of_value_added(df, water_share):
     """Turn the value added of water-using sectors into a value of water.
 
-    The account's other services take a share OF a named quantity: aquaculture takes GTAP's
-    natural-resource share of fishing revenue, forestry takes CWoN's forest rental ratio. Water
-    needs the same, and the quantity it is a share of is sectoral value added.
+    The share is of sectoral value added, as aquaculture's is of fishing revenue and forestry's
+    of forest revenue.
 
-    ⚠⚠ Until 2026-09-02 this step did not exist, which is the same as having applied a share of
-    1.0 -- the whole value added of irrigated agriculture, industry and services was published
-    under a `_gep` name. That is why the figures came out larger than the economies they sit in.
-    The share is now explicit, so it can be argued about; an implicit one cannot be.
-
-    ⚠ `water_share` has no default and none should be invented. Nobody publishes it: GTAP has no
-    water endowment, and CWoN's package has no general water rent -- their only water number is
-    forest water services, a different service entirely. When the parameter is blank the GEP
-    columns are absent rather than zero, because a missing share is not a share of nothing.
+    ⚠ `water_share` has no default. When it is None the GEP columns are absent rather than zero,
+    so a run without a chosen share publishes the value added and nothing that reads as an
+    account figure.
 
     Args:
         df (pd.DataFrame): carries `water_use_irrigation_value_added` and

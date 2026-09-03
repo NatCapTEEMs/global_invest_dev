@@ -4,7 +4,7 @@ Mirrors the carbon/pollination tasks on the add_<es>_tasks seam, but the source 
 (marine, never from SEALS maps): cwon_shocks.har FI26/FI45/FI85 by RCP, constant across years, FSH only.
 Writes the per-region FSH shock CSV the same way carbon/pollination write theirs, so
 build_combined_afeall reads it identically. Ported verbatim from the old prepare_es_shocks fisheries
-block onto the seam (Chiara's 'static ES go through the seam too' restructuring).
+block onto the seam, so static ES go through the seam too.
 """
 from global_invest import utilities
 import os
@@ -240,10 +240,9 @@ def fisheries_aquaculture_gep(p):
         # because the account has not decided which denominator lambda is a share of, and the
         # difference is $44.6bn. Forestry is the check: GTAP's land share of forestry value added
         # is 0.589, which on gross output is 0.380, against CWoN's separate rental ratio of 0.376.
-        # ⚠ The account's aquaculture value is the REVENUE share as of 2026-09-02 (Chiara's
-        # decision). FAO gives revenue, so the share applied to it must be a share of revenue;
-        # the value-added share inflates it by 1/0.596. `aquaculture_gep` is therefore the revenue
-        # share, and the superseded value-added figure stays beside it under its own name.
+        # ⚠ The account's aquaculture value is the REVENUE share. FAO gives revenue, so the
+        # share applied to it must be a share of revenue; the value-added share inflates it by
+        # 1/0.596. The value-added figure stays beside it under its own name.
         out['aquaculture_gep_on_value_added_share'] = out['aquaculture_gep']
         out['aquaculture_gep'] = (
             out['aquaculture_value_usd'] * out['natural_resource_share_of_gross_output'])

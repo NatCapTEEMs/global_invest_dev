@@ -219,7 +219,7 @@ def fuelwood_share_of_forest_rent(fao_df, countries_df, year):
     def revenue(item):
         """Production at the WORLD export unit value, the same basis for both products.
 
-        ⚠ Country-own prices were used here until 2026-09-02 and made the share wrong. The share
+        ⚠ Country-own prices are NOT used here and made the share wrong. The share
         is a RATIO between two revenues, so both sides have to be priced the same way or the ratio
         measures the pricing rather than the mix. India is the case that exposed it: it exports 309
         cubic metres of wood fuel for $234,000, an implied $757/m3 against a world $67, and 6,096
