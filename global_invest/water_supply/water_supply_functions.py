@@ -260,6 +260,19 @@ AQUASTAT_IRRIGATED_GVA_SHARE_CODE = 4555   # % of agricultural GVA produced by i
 FAOSTAT_CROPLAND_ITEM_CODE = 6620          # Cropland, element Area, 1000 ha
 
 
+def cropland_area_from_faostat(land_use_df):
+    """FAOSTAT Land Use, long, reduced to the cropland area per country and year.
+
+    Returns m49, Year and cropland_1000ha -- the unit AQUASTAT reports irrigated area in, so the
+    two need no conversion between them. M49 is the join key rather than the country name.
+    """
+    df = land_use_df[(land_use_df['Item Code'] == FAOSTAT_CROPLAND_ITEM_CODE)
+                     & (land_use_df['Element'] == 'Area')].copy()
+    df['m49'] = df['Area Code (M49)'].astype(str).str.lstrip("'").astype(int)
+    return (df.rename(columns={'Value': 'cropland_1000ha'})[['m49', 'Year', 'cropland_1000ha']]
+            .dropna(subset=['cropland_1000ha']))
+
+
 def irrigation_premium_by_country(aquastat_df, cropland_df, year):
     """What an irrigated hectare earns above the same land rainfed, per country.
 

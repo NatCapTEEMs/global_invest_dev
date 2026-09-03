@@ -129,6 +129,32 @@ def water_use_components(p):
         # The chain returns VALUE ADDED, which is what SDG 6.4.1 inverts back to. The account's
         # figure is a share of it, and the share has no default: blank leaves the GEP columns
         # absent, so nothing downstream can read the denominator as the answer.
+        # The irrigation premium: what an irrigated hectare earns above the same land rainfed.
+        # Published beside the value added whenever both inputs are staged, so the account can see
+        # the quantity the share would be applied to.
+        premium_path = getattr(p, 'water_use_irrigation_premium_input_path', None)
+        cropland_path = getattr(p, 'water_use_cropland_area_input_path', None)
+        if hb.path_exists(premium_path) and hb.path_exists(cropland_path):
+            aquastat = pd.read_csv(premium_path)
+            # The FAOSTAT bulk zip carries the data plus four code tables, so the data member is
+            # named rather than letting pandas guess (it refuses a multi-file zip).
+            if str(cropland_path).endswith('.zip'):
+                import zipfile
+                with zipfile.ZipFile(cropland_path) as archive:
+                    member = next(n for n in archive.namelist()
+                                  if n.endswith('All_Data_(Normalized).csv'))
+                    with archive.open(member) as data:
+                        land_use = pd.read_csv(data, encoding='utf-8-sig', low_memory=False)
+            else:
+                land_use = pd.read_csv(cropland_path, encoding='utf-8-sig', low_memory=False)
+            premium = wf.irrigation_premium_by_country(
+                aquastat, wf.cropland_area_from_faostat(land_use), int(p.gep_base_year))
+            hb.log('water_use: irrigation premium %.6g USD over %d countries at %d'
+                   % (premium['irrigation_premium_usd'].sum(), len(premium), int(p.gep_base_year)))
+            premium.to_csv(os.path.join(p.cur_dir, 'irrigation_premium.csv'), index=False)
+        else:
+            hb.log('water_use: the premium inputs are not staged, so no premium is computed.')
+
         share = getattr(p, 'water_use_water_share_of_value_added', None)
         out = wf.apply_water_share_of_value_added(out, share)
         if share is None:
