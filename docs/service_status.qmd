@@ -744,6 +744,25 @@ hectare. `ours` is where that lives.
 - **signed off:** amber: examined, and at least one of the sixteen conditions is not yet verified. ⚠ **10 is unmet here and everywhere**: no service in this library has been built from an empty project directory, so every claim that a clone reproduces it rests on the input paths resolving rather than on a run. ⚠ **11 is unverified**: the base year is 2019 across every service, but the country list, the true-zero-against-missing rule and the shared parameters have not been checked service by service ⚠⚠ **11 exposed a double count, fixed 2026-09-01.** The table carried 253 rows because the water-use components were merged on `iso3_r250_id` and AQUASTAT names some countries twice -- 'Russia' and 'Russian Federation', 'Republic of Korea' and 'South Korea', 'Brunei' and 'Brunei Darussalam' -- so a left join fanned out and **Korea and Russia's hydropower was summed twice, $1,886,621,210 counted double**. The collapse guard for this existed and the components file on disk predated it. Separately, 19 countries the chain values -- the United States, Turkiye, Viet Nam, the United Kingdom, Iran, Tanzania, Cote d'Ivoire among them -- resolved to no r250 id and dropped out entirely, Cote d'Ivoire alone carrying $77.5M of agricultural water value. Both are fixed: 250 rows, no duplicates, nothing unmatched. ⚠ The hydropower figure moves $146,567,066,857 to $146,075,770,382 and all-sector water use $36.58T to $36.61T; the earlier pair was computed from a `hydropower_rent.csv` that predated the current code.
 ## Water Use
 
+
+**How the number is built, in four steps.**
+
+1. **What the old number asked.** "What is all the output of farms that use water worth?" That is
+   $1.06T -- the value of irrigated farming: the land, the seed, the labour, the machinery, and the
+   water. Not the water.
+2. **What the new number asks.** "How much more does a hectare earn BECAUSE it is irrigated?"
+   Irrigated land earns a median $2,914 a hectare; rainfed land earns $1,793. Irrigation adds
+   **$1,121 a hectare**.
+3. **Scale it up.** Across the world's irrigated hectares that is **$886.0bn** of output that
+   exists because of irrigation. Rainfed land's $1,793 is excluded on purpose -- soil, climate and
+   terrain would earn it with or without irrigation. ⭐ This is the step that fixes the old error.
+4. **Take nature's share of it.** The farmer still supplies labour and machinery. GTAP puts 33.2%
+   of crop value added with the natural resource, so **$886.0bn x 0.332 = $294.2bn**, the GEP.
+
+⚠ The one caveat, carried in `need`: that 33.2% is land AND water together, because no dataset
+endows water separately. Step 3 is solidly water; step 4 is joint. The premium fixed the
+denominator, which was the actual bug, and the share is the remaining approximation.
+
 - **subgroup:** water use
 - **module:** water_supply
 - **category:** table arithmetic
