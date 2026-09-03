@@ -324,15 +324,23 @@ def irrigation_premium_by_country(aquastat_df, cropland_df, year):
 
 AQUASTAT_MUNICIPAL_WITHDRAWAL_CODE = 4251   # Municipal water withdrawal, 10^9 m3/year
 AQUASTAT_INDUSTRIAL_WITHDRAWAL_CODE = 4252  # Industrial water withdrawal, 10^9 m3/year
+AQUASTAT_DESALINATED_CODE = 4264            # Desalinated water produced, 10^9 m3/year
 
 
 def domestic_withdrawal_by_country(aquastat_df, year):
     """Municipal plus industrial withdrawal per country, in cubic metres, at the account year.
 
-    For domestic use the quantity that is water needs no isolating: the withdrawn cubic metres
-    are the water. The irrigation premium has no analogue here -- there is no population of
-    industry or municipalities operating without water to difference against -- so the domestic
-    value is a PRICE of raw water times this volume, and this function supplies the volume.
+    ⚠ Withdrawn cubic metres are NOT all ecosystem water, so the priced quantity is
+    `domestic_ecosystem_m3`: withdrawal minus desalinated production, floored at zero. Desalinated
+    water is manufactured, not provided -- and it is over 100% of domestic withdrawal in Kuwait,
+    Qatar and the Maldives, whose ecosystem-provided domestic water is therefore zero. Two
+    exclusions are named rather than modelled: water reclaimed from treated wastewater re-prices
+    a cubic metre the ecosystem already provided at its first abstraction, and fossil groundwater
+    is stock depletion rather than a renewable flow.
+
+    The irrigation premium has no analogue here -- there is no population of industry or
+    municipalities operating without water to difference against -- so the domestic value is a
+    PRICE of raw water times this quantity.
 
     Args:
         aquastat_df (pd.DataFrame): the staged AQUASTAT withdrawal pull, long, with VariableCode,
@@ -348,15 +356,20 @@ def domestic_withdrawal_by_country(aquastat_df, year):
             .reset_index())
     wide.columns = [str(c) for c in wide.columns]
     wide = wide.rename(columns={str(AQUASTAT_MUNICIPAL_WITHDRAWAL_CODE): 'municipal_km3',
-                                str(AQUASTAT_INDUSTRIAL_WITHDRAWAL_CODE): 'industrial_km3'})
-    for column in ('municipal_km3', 'industrial_km3'):
+                                str(AQUASTAT_INDUSTRIAL_WITHDRAWAL_CODE): 'industrial_km3',
+                                str(AQUASTAT_DESALINATED_CODE): 'desalinated_km3'})
+    for column in ('municipal_km3', 'industrial_km3', 'desalinated_km3'):
         if column not in wide.columns:
             wide[column] = float('nan')
     wide = wide[wide[['municipal_km3', 'industrial_km3']].notna().any(axis=1)].copy()
     wide['municipal_m3'] = wide['municipal_km3'] * 1e9
     wide['industrial_m3'] = wide['industrial_km3'] * 1e9
+    wide['desalinated_m3'] = wide['desalinated_km3'] * 1e9
     wide['domestic_withdrawal_m3'] = wide[['municipal_m3', 'industrial_m3']].sum(axis=1, min_count=1)
-    return wide[['m49', 'municipal_m3', 'industrial_m3', 'domestic_withdrawal_m3']]
+    wide['domestic_ecosystem_m3'] = (wide['domestic_withdrawal_m3']
+                                     - wide['desalinated_m3'].fillna(0.0)).clip(lower=0.0)
+    return wide[['m49', 'municipal_m3', 'industrial_m3', 'desalinated_m3',
+                 'domestic_withdrawal_m3', 'domestic_ecosystem_m3']]
 
 
 def apply_raw_water_price(df, price_usd_per_m3):
@@ -368,7 +381,8 @@ def apply_raw_water_price(df, price_usd_per_m3):
     chosen price publishes the volume and nothing that reads as an account figure.
 
     Args:
-        df (pd.DataFrame): carries `domestic_withdrawal_m3`.
+        df (pd.DataFrame): carries `domestic_ecosystem_m3` -- withdrawal net of desalination,
+            the part an ecosystem provided.
         price_usd_per_m3 (float): the raw-water price, or None.
 
     Returns:
@@ -381,7 +395,7 @@ def apply_raw_water_price(df, price_usd_per_m3):
     if price < 0:
         raise ValueError('water_use_raw_water_price_usd_per_m3 is %r; a price cannot be negative'
                          % price_usd_per_m3)
-    out['water_use_domestic_gep'] = out['domestic_withdrawal_m3'] * price
+    out['water_use_domestic_gep'] = out['domestic_ecosystem_m3'] * price
     return out
 
 

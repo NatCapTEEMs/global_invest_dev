@@ -336,10 +336,27 @@ def test_no_price_publishes_no_domestic_gep():
     assert 'water_use_domestic_gep' not in out.columns
 
 
-def test_a_price_values_the_volume_and_a_negative_price_is_refused():
+def test_a_price_values_the_ecosystem_volume_and_a_negative_price_is_refused():
     aq = _withdrawal([[1, 2019, wf.AQUASTAT_MUNICIPAL_WITHDRAWAL_CODE, 2.0]])
     vol = wf.domestic_withdrawal_by_country(aq, 2019)
     out = wf.apply_raw_water_price(vol, 0.05)
     assert out['water_use_domestic_gep'].iloc[0] == pytest.approx(1e8)
     with pytest.raises(ValueError, match='cannot be negative'):
         wf.apply_raw_water_price(vol, -0.05)
+
+
+def test_desalinated_water_is_not_ecosystem_water():
+    """Kuwait's shape: desalination exceeds domestic withdrawal, so the ecosystem provides zero.
+
+    Desalinated water is manufactured. A country whose desal production covers its whole domestic
+    withdrawal gets a floor at zero rather than a negative volume, and a country without desal
+    keeps its withdrawal unchanged.
+    """
+    aq = _withdrawal([[1, 2019, wf.AQUASTAT_MUNICIPAL_WITHDRAWAL_CODE, 1.0],
+                      [1, 2019, wf.AQUASTAT_DESALINATED_CODE, 1.5],
+                      [2, 2019, wf.AQUASTAT_MUNICIPAL_WITHDRAWAL_CODE, 2.0]])
+    out = wf.domestic_withdrawal_by_country(aq, 2019).set_index('m49')
+    assert out.loc[1, 'domestic_ecosystem_m3'] == 0.0
+    assert out.loc[2, 'domestic_ecosystem_m3'] == pytest.approx(2e9)
+    priced = wf.apply_raw_water_price(out.reset_index(), 0.05).set_index('m49')
+    assert priced.loc[1, 'water_use_domestic_gep'] == 0.0

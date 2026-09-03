@@ -808,14 +808,27 @@ denominator, which was the actual bug, and the share is the remaining approximat
   water is not a treatment some firms decline. So domestic's water share cannot be isolated by
   comparison, and the route has to be a PRICE OF RAW WATER: abstraction charges, water resource
   fees, or a raw-water rent, times the volume withdrawn.
-- ⭐⭐ **BUILT 2026-09-03, in the irrigation shape: the volume is the denominator and the price is
-  an explicit parameter with no default.** The 2019 withdrawal by sector is pulled from AQUASTAT
-  (4251 municipal, 4252 industrial, staged with its source URL): **1,145.9 km3** -- 520.9
-  municipal plus 625.0 industrial -- over 183 countries, published as `domestic_withdrawal.csv`.
-  `water_use_raw_water_price_usd_per_m3` in es_parameters turns it into
-  `water_use_domestic_gep`; blank, the account publishes the volume and no GEP. For scale, $0.01
-  / $0.05 / $0.10 per m3 give **$11.5bn / $57.3bn / $114.6bn** -- two to three orders of
-  magnitude below the $35.30T, which is the size of the category error the old figure carried.
+- ⭐⭐ **BUILT 2026-09-03, in the irrigation shape: the QUANTITY is measured and published, the
+  price is an explicit parameter with no default.** The method, in plain steps:
+  1. What is valued: nature delivering usable raw water -- rivers, lakes and aquifers refilled
+     by rain -- to cities and industry. Unlike irrigation, nothing needs isolating: the product
+     IS the water, so the quantity is the cubic metres taken.
+  2. The quantity: 2019 withdrawal from AQUASTAT (4251 municipal + 4252 industrial), **520.9 +
+     625.0 = 1,145.9 km3 over 183 countries**; ⚠ minus desalinated production (4264, 23.3 km3),
+     because a desalination plant manufactures water rather than a river providing it -- and in
+     Kuwait, Qatar and the Maldives desal EXCEEDS domestic withdrawal, so their
+     ecosystem-provided domestic water is zero, floored rather than negative. What remains:
+     **1,122.6 km3**, published as `domestic_withdrawal.csv`.
+  3. The price: what a cubic metre of RAW water is worth -- an abstraction charge or resource
+     fee, NOT the water bill, which mostly pays for pipes and treatment.
+     `water_use_raw_water_price_usd_per_m3` in es_parameters; blank as it ships, so the account
+     publishes the quantity and no GEP.
+  4. GEP = quantity x price once a price is chosen. For scale, $0.01 / $0.05 / $0.10 per m3 give
+     **$11.2bn / $56.1bn / $112.3bn** -- two to three orders of magnitude below the $35.30T,
+     which is the size of the category error the old figure carried.
+  ⚠ Two exclusions named rather than modelled: water reclaimed from treated wastewater would
+  re-price a cubic metre the ecosystem already provided at its first abstraction, and fossil
+  groundwater is stock depletion rather than a renewable flow.
 - ⚠ Nobody we hold publishes the price. CWoN has no water rent; GTAP's water-utilities sector
   `wtr` is folded into `ser` in the s26 aggregation we hold, so not even the delivered-water
   ceiling can be read from it. The ask is a raw-water price source -- abstraction charges or
