@@ -320,14 +320,14 @@ hectare. `ours` is where that lives.
 - **total:** -
 - **code:** -
 - **grid:** -
-- **reference:** -
-- **replicated:** Not in the library yet, so there is nothing to match.
+- **reference:** The all-services table (2026_08_31) carries a `Global Climate Regulation (Marine Carbon)` column totalling **$540,752,480,711,212**. Examined 2026-09-05: a **High Seas row holds $318.2T of it (58.8 percent)**, assigned to no country; 187 countries share the rest (Antarctica $14.5T, US $12.8T, Australia $12.1T). Dividing the total by the terrestrial rental price of $13.185089/tC implies **41,012 GtC** -- the ocean's entire carbon inventory (~38,000 GtC of dissolved inorganic carbon plus organic pools; ~41,000 is the standard figure). So the construction is the whole ocean carbon stock priced at the same rental social cost as the terrestrial stock. ⚠⚠ It sits INSIDE the table's headline totals and dominates them: "Total GEP without abiotic services" is $550.2T, of which this one column is 98 percent.
+- **replicated:** Not in the library, so there is nothing to run. The figure's construction is now identified from the table itself (see `reference`), which is different from having code.
 - **decided:** -
-- **number:** No marine module found.
-- **need:** Is marine carbon in the account's scope?
+- **number:** No marine module found. The table's $540.75T is arithmetically the ocean's ~41,000 GtC at the terrestrial rental price; the annual ocean carbon UPTAKE (~2.5 GtC per year) at the same price would instead be ~$33bn, four orders of magnitude smaller, so which quantity the service means decides everything.
+- **need:** Three questions before this is a row at all. Whether the service is the stock rental of the entire ocean inventory (including ~37,000 GtC of deep water that no policy touches) or the annual uptake flux. Whether $318.2T of High Seas value belongs in a by-country account. And whether one row should be allowed to be 98 percent of the account's headline total.
 
 
-- **signed off:** n/a: no module, and none found on the drive either. Whether marine carbon is in scope is itself open
+- **signed off:** n/a: no module, and none found on the drive either. The reported figure is now decoded (the whole ocean carbon inventory at the terrestrial rental price, 58.8 percent of it on the High Seas) but whether marine carbon is in scope is itself open
 ## Pollination
 
 - **subgroup:** -
