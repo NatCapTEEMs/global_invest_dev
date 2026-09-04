@@ -888,7 +888,7 @@ denominator, which was the actual bug, and the share is the remaining approximat
 - **in the library:** yes
 - **run:** yes
 - **ours:** no in the sense that matters. The World Bank publishes each fuel's resource rent per country and the module sums three of those columns. What we add is catching eight rows that carry another country's value, not a valuation.
-- **method:** The WB's published gas, coal and petroleum resource rents at the base year, summed per country. No model: the rents are read, not derived. The quantity comes from CSVs, the World Bank per-fuel resource rents.
+- **method:** CWoN 2024's per-fuel resource rents -- `gas_rent_cd`, `coal_rent_cd` and `oil_rent_cd` from the public reproducibility archive -- read at the base year in current USD and summed per country. **Nothing is multiplied on our side**: the tables publish the finished rent, built upstream by CWoN's user-cost method as (price minus country extraction cost) times production. No lambda either, for the same reason it is absent from timber and hydropower: the figure IS a rent, so the share step already happened inside CWoN's construction.
 - **total:** $1.05T
 - **code:** Refactored onto the library template and hazelbean conventions. The drive had the outputs but no script, so we wrote the read. Tests cover the three fuels and their sum, a country that appears in the coal table but not the other two (its total is its coal, not missing), and a country in none of the three (missing, not zero).
 - **grid:** No raster. The service works on country tables (it reads only CSV and Excel), so nothing multiplies a density by a cell area and the cell-area question does not arise. Verified 2026-08-26 by checking every read in the module.
