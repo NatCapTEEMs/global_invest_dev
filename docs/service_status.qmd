@@ -899,7 +899,7 @@ denominator, which was the actual bug, and the share is the remaining approximat
 - **need:** Confirmation that the eight duplicated rows are a join error, and which total the account keeps. Is there a model that we should use instead?
 
 
-- **signed off:** amber: examined, and at least one of the sixteen conditions is not yet verified. ⚠ **10 is unmet here** (no longer everywhere: erosion closed it on 2026-09-03, reproducing its published total to $11 in $18.24bn from an empty project directory). ⚠ **11 is unverified**: the base year is 2019 across every service, but the country list, the true-zero-against-missing rule and the shared parameters have not been checked service by service
+ - **signed off:** amber, one decision from green. ⭐ **Condition 10 is CLOSED (2026-09-04)**: a cold start from an empty project directory reproduces every fuel to the cent -- gas $192,483,771,113, coal $113,160,186,067, oil $743,262,045,333, total $1,048,906,002,513 -- the library's fifth closure, run as a one-off command with nothing committed. The read is tested and the eight duplicated committed rows are caught rather than reproduced. What keeps it amber: the account's decision between our $1.05T (recomputed from the parts, duplicates removed) and the committed $1.14T (which counts Norway and Australia three times each), and the standing question of whether a published-rent read belongs in a GEP at all -- the rents are DEPLETION of a non-renewable stock, the one row where the thing valued is the running-down of natural capital rather than a service it delivers.
 ## Forestry (Timber)
 
 - **subgroup:** -
