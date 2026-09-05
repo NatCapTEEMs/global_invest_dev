@@ -130,6 +130,21 @@ def run_invest_sdr(p, paths):
     import natcap.invest.sdr.sdr
     file_registry = natcap.invest.sdr.sdr.execute(args)
 
+    # The extent pin. A run whose grid differs from the author's shifts the severe-erosion mask
+    # rather than erroring, so the mismatch must be loud here, at the one place the grid is made.
+    expected = getattr(p, 'erosion_sdr_expected_grid', None)
+    if expected:
+        usle_paths = glob.glob(os.path.join(args['workspace_dir'], 'usle*.tif'))
+        if usle_paths:
+            import rasterio as _rio
+            with _rio.open(usle_paths[0]) as src:
+                got = [src.width, src.height]
+            if got != list(expected):
+                raise NameError('InVEST SDR wrote a %dx%d grid against the pinned %sx%s (the '
+                                "author's staged rasters). The DEM or watershed inputs changed "
+                                'extent; every raster downstream of this one would silently '
+                                'shift with it.' % (got[0], got[1], expected[0], expected[1]))
+
     hb.log("\n[done] InVEST SDR finished.")
     hb.log("[done] Results in:", args["workspace_dir"])
     hb.log("[done] MERGED watersheds used (raw):", paths.input.watersheds)
@@ -2122,6 +2137,13 @@ def gep_result(p):
     utilities.render_service_results(p)
 
 
+def gep_results_distribution(p):
+    """Copy the registered results into the output directory. Shared implementation in
+    utilities, which is also where a raster leaving as a result becomes a POG."""
+    publish_inputs(p)
+    utilities.distribute_results(p, 'erosion')
+
+
 
 def gep_calculation(p):
     """One row per country, under the key every other service writes.
@@ -2136,7 +2158,9 @@ def gep_calculation(p):
     everything upslope prevent together, not either alone.
     """
     publish_inputs(p)
-    service_results, already_done = utilities.begin_gep_calculation(p, 'erosion')
+    published_map_name = f'erosion_prevention_share_{int(p.gep_base_year)}.tif'
+    service_results, already_done = utilities.begin_gep_calculation(
+        p, 'erosion', extra_results={published_map_name: os.path.join(p.cur_dir, published_map_name)})
     if not p.run_this or already_done:
         return
 
@@ -2144,6 +2168,21 @@ def gep_calculation(p):
     if not hb.path_exists(str(paths.output.integrated_country_gep)):
         raise NameError('erosion has no integrated_country_gep.csv at %s. prevention_shares '
                         'writes it, so run that first.' % paths.output.integrated_country_gep)
+
+    # The published map: the combined prevention share warped off the InVEST projection onto the
+    # account's 30 arc-second pyramid. Nearest neighbour, because the raster is a proportion and
+    # interpolation would invent shares no cell computed.
+    if not hb.path_exists(service_results[published_map_name]):
+        from osgeo import osr
+        wgs84 = osr.SpatialReference()
+        wgs84.ImportFromEPSG(4326)
+        hb.warp_raster_hb(
+            str(paths.output.prevention_share_combined),
+            [1.0 / 120.0, -1.0 / 120.0],
+            service_results[published_map_name],
+            resample_method='near',
+            target_bb=[-180.0, -90.0, 180.0, 90.0],
+            target_sr_wkt=wgs84.ExportToWkt())
 
     df = hb.df_read(str(paths.output.integrated_country_gep))
     column = 'gep_const2019_usd_combined'
