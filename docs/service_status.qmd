@@ -1128,10 +1128,10 @@ denominator, which was the actual bug, and the share is the remaining approximat
 - **code:** -
 - **grid:** -
 - **reference:** -
-- **replicated:** Not in the library yet, so there is nothing to match.
+- **replicated:** Not in the library yet, so there is nothing to match. The all-services table's `Rainfall pattern Regulation` column is empty (2026-09-05: zero countries, zero total), so nothing is produced on their side either.
 - **decided:** -
 - **number:** -
-- **need:** The valuation step (a country-to-country moisture matrix exists)
+- **need:** The valuation step (a country-to-country moisture matrix exists). The stated direction is to combine with the water provision value, which supplies a price -- the account's implied raw-water price from the water row is the natural candidate -- but also builds in an overlap: moisture recycling valued as the upstream contribution to water supply prices the same water twice, once where it falls and once where it is withdrawn, so the row would need netting from or nesting under water supply rather than adding to it.
 
 
-- **signed off:** n/a: no module, but a country-to-country moisture matrix exists. The valuation step is what is missing
+- **signed off:** n/a: no module, but a country-to-country moisture matrix exists. The valuation step is what is missing, and the combine-with-water-provision direction needs the overlap with the water supply row settled before the two can both be in the account
