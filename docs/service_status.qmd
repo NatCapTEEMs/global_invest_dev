@@ -665,11 +665,11 @@ hectare. `ours` is where that lives.
 - **total:** $175.56bn 
 - **code:** Refactored onto the library template and hazelbean conventions. The valuation was ported from the author's v04 script, and the country value is summed from our own city-month files.
 - **grid:** No raster. The service works on country tables (it reads only CSV and Excel), so nothing multiplies a density by a cell area and the cell-area question does not arise. Verified 2026-08-26 by checking every read in the module.
-- **reference:** A committed accounting table exists, $14.19bn, and it is not usable as a check. We sum the city files ourselves and get $175.56bn, and what turns one into the other is unknown: the gap is not a constant factor, ranging about 2.5 to 766 across countries.
-- **replicated:** No, and not comparable: the one committed table measures something else, so we sum the city files ourselves.
+- **reference:** ⭐ **RESOLVED (2026-09-05): the mystery table is a superseded vintage, not a different measure.** The staged folder holds three committed vintages of the same author's output: $14.19bn (`local_climate_regulation_gep.csv`, the one the all-services sheet carries to the dollar), $156.38bn (`_v02`), and $175.56bn (`_12_19_25`, dated 2025-12-19). Ours matches the newest per country -- 168 of 174 to one part in a million, the rest within 49 cents of the file's rounded dollars, totals within $3. The 2.5-to-766 country-varying gap that resisted explanation was the distance between the author's first method and their own later revisions; the cooling-energy-share cap hypothesis was tested and refuted on the way (2 of 174 countries fit).
+- **replicated:** Yes: the author's 2025-12-19 vintage, essentially to the dollar. ⚠ Same lineage -- we price and sum their city-month files with their ported v04 valuation -- so the agreement tests the port.
 - **decided:** -
-- **number:** $175.56bn across 177 countries. The committed accounting table totals $14bn and is carried beside ours. Something sits between these city values and that table which is not in anything we hold.
-- **need:** What turns the city-month valuations into the committed accounting table. And confirmation of which figure the account takes.
+- **number:** $175.56bn across 177 countries, matching the author's newest committed vintage. ⚠⚠ The all-services sheet still carries the OLDEST vintage, $14.19bn -- 12 times low against the author's own current output.
+- **need:** The sheet updated from $14.19bn to the author's own $175.56bn, or the author's confirmation of which vintage the account takes. Nothing else: the vintage chain closed the method question.
 
 
 - **signed off:** amber: examined, and at least one of the sixteen conditions is not yet verified. ⚠ **10 is unmet here** (no longer everywhere: erosion closed it on 2026-09-03, reproducing its published total to $11 in $18.24bn from an empty project directory). ⚠ **11 is unverified**: the base year is 2019 across every service, but the country list, the true-zero-against-missing rule and the shared parameters have not been checked service by service
