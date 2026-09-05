@@ -367,7 +367,7 @@ hectare. `ours` is where that lives.
 - **need:** -
 
 
-- **signed off:** amber: examined, and at least one of the sixteen conditions is not yet verified. ⚠ **10 is unmet here** (no longer everywhere: erosion closed it on 2026-09-03, reproducing its published total to $11 in $18.24bn from an empty project directory). ⚠ **11 is unverified**: the base year is 2019 across every service, but the country list, the true-zero-against-missing rule and the shared parameters have not been checked service by service
+- **signed off:** amber, and the distance to green is mechanical plus one blessing. ⭐ **10 is CLOSED here (2026-09-03, the library's first)**: a cold start from an empty project directory reproduced the published total to $11 in $18.24bn. What keeps it amber: ⚠ **16**: some 60 intermediate rasters are unregistered and the outputs sit on EPSG:8857 (the one legitimate InVEST projection), so registering and warping the published maps out to the shared grid is pending -- an afternoon of mechanical work. ⚠ **15**: the author_drive archive wants tidying and the extent pin recording. ⚠ **11 is unverified** everywhere. ⚠ The border-rule ask (cell-centre against all-touched) is with the author via the issues row; the global total moves 0.4 percent on it and the micro-states move entirely.
 ## Landslides
 
 - **subgroup:** -
