@@ -49,6 +49,8 @@ water_supply_total: "$146.08bn"
 water_supply_anchor: "$144.68bn"
 water_use_gep: "$248.0bn"
 water_use_domestic_gep: "$95.6bn"
+moisture_recycling_gep: "$127.7bn"
+moisture_recycling_export: "$75.3bn"
 water_use_premium_gross: "$701.4bn"
 water_use_ag_total: "$1.06T"
 water_use_all_total: "$36.36T"
@@ -298,6 +300,7 @@ format:
 | timber_provision | {{< meta timber_total >}} | yes. |
 | ntfp | $28.87bn | no. No reference output |
 | stormwater | {{< meta stormwater_volume >}} retained. No dollar total: the price is a placeholder of 1 | no. The retention run is ours, and no author run exists to compare against |
+| moisture_recycling | {{< meta moisture_recycling_gep >}}, of which {{< meta moisture_recycling_export >}} crosses a border as exported rain | no. No reference figure exists anywhere; the construction implements the submission's own valuation direction |
 
 : {tbl-colwidths="[22,32,46]"}
 
@@ -461,6 +464,13 @@ format:
 - [Values stormwater retained by urban vegetation and soils. Our own retention run on the drive's configuration retains {{< meta stormwater_volume >}} per year across 104 countries, wall to wall rather than urban-masked, and the module prices that volume. The run and the country step sit beside the task tree rather than inside it.]{.state}
 - **Q1:** what is the intended price per cubic metre retained? The configuration carries a placeholder of 1, so today's value is the volume.
 - **Q2:** should the run be masked to urban areas? It currently covers the whole land surface.
+
+## moisture_recycling
+
+- [Values the rain a country's land sends to its own and other countries' water use. The WAM2layers country-to-country matrix says what fraction of each country's precipitation evaporated from each other country's land; each destination's irrigation and domestic water GEP is scaled by its terrestrial-origin share and credited upstream to the source countries, giving {{< meta moisture_recycling_gep >}}, of which {{< meta moisture_recycling_export >}} crosses a border. A re-attribution of the water-supply row, never an addition to it.]{.state}
+- **Q1:** how much terrestrial evaporation is the ecosystem's? The run counts all of it; the literature's transpiration fraction would roughly halve the row.
+- **Q2:** how should the account carry it -- as a decomposition of water supply, or as a row holding only the transboundary part? Added whole to water supply it would count the same water twice.
+- **Q3:** should hydropower's water value be re-attributed too? Rain feeds the rivers; the current construction re-attributes irrigation and domestic only.
 
 # Questions for the scenario shocks, not the GEP account
 

@@ -23,3 +23,4 @@ stormwater,stormwater,,2019.0,replacement cost,computed,computed,computed,,,
 extractive_energy,extractive_energy_provision,,2019.0,resource rent,computed,computed,computed,,,
 timber_provision,timber_provision,,2019.0,stumpage value,computed,computed,computed,,,
 example_service,,,,,,,,lulc/esa/seals7/lulc_esa_seals7_2017.tif,,
+moisture_recycling,rainfall_pattern_regulation,,2019.0,reattribution of water supply value,computed,computed,computed,,n/a,n/a

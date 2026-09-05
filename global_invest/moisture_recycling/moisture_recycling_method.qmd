@@ -1,0 +1,65 @@
+---
+title: "Overview of Ecosystem Service: Moisture Recycling (Rainfall Pattern Regulation)"
+format:
+  html:
+    embed-resources: true
+    standalone: true
+---
+
+Moisture recycling values the rain that a country's land sends elsewhere. Terrestrial evaporation
+supplies roughly 40 to 50 percent of the rain that falls over land, so part of every country's
+usable water was made by ecosystems upstream of it, often across a border. The account values
+water where it is withdrawn; this service re-attributes the terrestrially-sourced share of that
+value to the countries whose evaporation became the rain. The base year is 2019.
+
+⚠ The published total is a **re-attribution of a subset of the water-supply row, never an
+addition to it**. The source-side total equals the sink-side total by construction, and the task
+raises if they differ.
+
+## Quantity
+
+The WAM2layers country-to-country sink-fraction matrix (Bakels and Wang-Erlandsson): cell
+$[i, j]$ is the fraction of column-country $j$'s 2019 precipitation that evaporated from
+row-country $i$'s land. A column sums to $j$'s terrestrial-origin share, below one because the
+remainder comes from the ocean. Read from the path recorded in `es_parameters.csv` as
+`moisture_recycling_sink_fraction_input_path`. Twelve destinations sit below the 0.5 degree
+tracking grid and carry all-NaN columns; their water value goes unattributed and the task names
+them and it.
+
+## Price
+
+None of its own. The value being re-attributed is the water-supply account's irrigation premium
+GEP and domestic GEP by country, read as a staged snapshot from
+`moisture_recycling_water_gep_input_path` with the component columns listed in
+`moisture_recycling_water_gep_component_cols`.
+
+## Attribution
+
+`moisture_recycling_ecosystem_share` scales the terrestrial evaporation credited to ecosystems.
+It is 1 in `es_parameters.csv`, counting all terrestrial evaporation; the transpiration-share
+decision that would lower it is open with the group.
+
+## Valuation
+
+`reattributed_water_value` is the whole product:
+
+$$
+\text{GEP}_i = s \sum_j M_{ij} \, V_j
+$$
+
+where $M$ is the sink-fraction matrix, $V_j$ is destination $j$'s irrigation plus domestic water
+GEP, and $s$ is the ecosystem share. The diagonal term is published as the own part (a country's
+moisture serving its own water use) and the rest as the export part. The destination-side view,
+$V_j$ times $j$'s terrestrial-origin share, is published beside it as
+`moisture_recycling_sink_side_value`: the same money read from the other end, which is what makes
+the nesting under water supply visible per country.
+
+`collapse_countries_to_r250` reduces the r264 correspondence to one canonical row per country
+before the join, and the published table carries every account country, NA where the matrix has
+no row.
+
+## Inputs
+
+All paths and parameters come from `es_parameters.csv` under the `moisture_recycling` service key:
+the sink-fraction matrix, the water-supply snapshot it re-attributes, the component column list,
+and the ecosystem share, each with a source row beside it.

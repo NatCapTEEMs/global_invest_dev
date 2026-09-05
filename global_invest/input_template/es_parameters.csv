@@ -334,3 +334,10 @@ erosion,erosion_reference_country_gep_path,global_invest/erosion/reference/integ
 renewable_energy_provision,gep_quantity_input_source_url,https://pxweb.irena.org/pxweb/en/IRENASTAT (Power Capacity and Generation)
 renewable_energy_provision,gep_price_input_source_url,"https://databank.worldbank.org/metadataglossary/doing-business/series/IC.ELC.PRI.KH.DB1619 (Doing Business: Getting Electricity - price of electricity, US cents/kWh, warehouse tariff)"
 renewable_energy_provision,gep_attribution_input_source_note,"computed by the module author with the CWoN hydropower rent method (rent over revenue per country-year); no public URL exists"
+moisture_recycling,moisture_recycling_sink_fraction_input_path,global_invest/moisture_recycling/countries_sink_fraction.csv
+moisture_recycling,moisture_recycling_sink_fraction_source,"WAM2layers country-to-country moisture tracking (Bakels & Wang-Erlandsson, drive folder MREcosystemService, 2025-11 vintage): cell [i j] is the fraction of column-country j's 2019 precipitation evaporated from row-country i's land"
+moisture_recycling,moisture_recycling_water_gep_input_path,global_invest/moisture_recycling/water_use_gep_by_country_base_year.csv
+moisture_recycling,moisture_recycling_water_gep_source,"snapshot of the water_supply run's gep_calculation country table (2026-09 vintage): the irrigation premium GEP and domestic GEP this service re-attributes"
+moisture_recycling,moisture_recycling_water_gep_component_cols,"[""water_use_irrigation_gep"", ""water_use_domestic_gep""]"
+moisture_recycling,moisture_recycling_ecosystem_share,1.0
+moisture_recycling,moisture_recycling_ecosystem_share_source,"1.0 counts all terrestrial evaporation as ecosystem-mediated; the transpiration-share decision that would lower it is open with the group"

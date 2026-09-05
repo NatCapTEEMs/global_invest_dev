@@ -1117,21 +1117,21 @@ denominator, which was the actual bug, and the share is the remaining approximat
 - **signed off:** n/a: no module, but not nothing. A processing script exists and has produced no output
 ## Moisture Recycling (Regional Hydrology)
 
-- **subgroup:** -
-- **module:** -
-- **category:** -
-- **in the library:** no
-- **run:** -
-- **ours:** -
-- **method:** -
-- **total:** -
-- **code:** -
-- **grid:** -
-- **reference:** -
-- **replicated:** Not in the library yet, so there is nothing to match. The all-services table's `Rainfall pattern Regulation` column is empty (2026-09-05: zero countries, zero total), so nothing is produced on their side either.
-- **decided:** -
-- **number:** -
-- **need:** The valuation step (a country-to-country moisture matrix exists). The stated direction is to combine with the water provision value, which supplies a price -- the account's implied raw-water price from the water row is the natural candidate -- but also builds in an overlap: moisture recycling valued as the upstream contribution to water supply prices the same water twice, once where it falls and once where it is withdrawn, so the row would need netting from or nesting under water supply rather than adding to it.
+- **subgroup:** regulating
+- **module:** moisture_recycling
+- **category:** table arithmetic
+- **in the library:** yes
+- **run:** yes
+- **ours:** yes
+- **method:** The WAM2layers country-to-country sink-fraction matrix (Bakels and Wang-Erlandsson, drive submission MREcosystemService) says what fraction of each country's 2019 precipitation evaporated from each other country's land. Each destination's irrigation and domestic water GEP is scaled by its terrestrial-origin share and distributed over source countries with the matrix, so the service credits the countries whose land sent the rain. ⚠⚠ A RE-ATTRIBUTION of the water-supply row, never an addition: source-side and sink-side totals agree by construction and the task raises if they differ.
+- **total:** $127.7bn
+- **code:** Built 2026-09-05 on the library template: functions open nothing, tasks own the IO, seven unit tests pin the orientation convention and the conservation, the published table carries all 250 countries.
+- **grid:** No raster. The matrix is a 225-country table and the water values are country tables; nothing multiplies a density by a cell area.
+- **reference:** None. The all-services table's `Rainfall pattern Regulation` column is empty (zero countries), and the drive submission's appendix (Bakels and Wang-Erlandsson) is a methodology plan whose monetary section is exploratory -- our construction implements its "combine with the water provision value" direction. So this is the rare row where the library figure exists before any reference figure.
+- **replicated:** Nothing to replicate: no reference number exists anywhere.
+- **decided:** The construction (2026-09-05): re-attribute the water row's irrigation plus domestic GEP (the account's own $248.0bn plus $95.6bn) with the sink-fraction matrix; ecosystem share held at 1.0 in es_parameters pending the transpiration decision; the water table read as a staged snapshot of the 2026-09 water_supply run. Coverage: 12 destinations below the 0.5 degree tracking grid ($42.6M unattributed) and 28 account countries absent from the matrix ($1.1M) -- both named in the run log. The submission's companion fields are staged beside the matrix and deliberately unread by the valuation: `countries_source.csv` and `countries_sink.csv` (mm volumes) and `countries_source_fraction.csv` (where each country's own evaporation rains out), kept for the scenario and variability work the appendix plans.
+- **number:** Values the rain a country's land sends to its own and other countries' water use: **$127,682,011,050** published at 2019 (the attribution computes $127.96bn; $279M of it sits in the matrix's three small-island aggregates, CSID, IOSID and PSID, which no account country can carry -- logged by the run), of which $52.3bn serves the source country itself and **$75.3bn crosses a border as exported rain**. The withdrawal-weighted terrestrial share works out to 37 percent of the water value, consistent with the literature's 40-50 percent of land rain having a terrestrial source. Largest sources: India $25.5bn, China $20.6bn, Russia $6.5bn (mostly exported).
+- **need:** Three group decisions. The transpiration share (1.0 counts all terrestrial evaporation as ecosystem-mediated; the literature's transpiration fraction would roughly halve the row). The accounting rule: publish as a decomposition of water supply or as a row carrying only the $75.3bn transboundary part, but never added whole to water supply. And whether hydropower's water value should also be re-attributed (rain feeds the rivers too); the current construction re-attributes irrigation and domestic only.
 
 
-- **signed off:** n/a: no module, but a country-to-country moisture matrix exists. The valuation step is what is missing, and the combine-with-water-provision direction needs the overlap with the water supply row settled before the two can both be in the account
+- **signed off:** amber: built and run, conservation asserted in the task, but the three decisions in `need` are the group's and no reference exists to compare against. Condition 10 not attempted (the run is minutes on a laptop, so closing it is cheap once the construction is blessed)
