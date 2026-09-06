@@ -268,6 +268,71 @@ def build_seals7_biophysical_table(src_csv, out_csv):
     return out_csv
 
 
+def build_equal_area_solve_inputs(p, work_dir, dem_src, erosivity_src, erodibility_src):
+    """Put the SDR solve on ONE equal-area grid, and put every static input on it once.
+
+    InVEST requires a projected CRS (its MODEL_SPEC sets projected=True on all four rasters), so the
+    solve is the one place global_invest leaves WGS84. It should leave for an EQUAL-AREA projection:
+    flow accumulation sums ground area along a flow path, and on Web Mercator -- where a cell's true
+    area falls as cos^2(latitude) -- that sum weights high latitudes far too heavily. The staged
+    inputs are EPSG:3857, inherited from the source author rather than chosen.
+
+    Doing this also fixes a defect that looks unrelated. The three projected inputs were already on
+    one grid, but erosivity and erodibility are global WGS84, so InVEST warped them on every call and
+    intersected the ragged result: a global run wrote 6158x4030 against a pinned 6217x3968, losing 47
+    columns west and 12 east, silently. Warping every input onto one grid ONCE makes the intersection
+    exact, makes the output grid deterministic, and removes about half the per-scenario solve cost --
+    the two soil reprojections were 24 of 56 seconds and were discarded every time.
+
+    Returns the four paths, all on the same grid. Cached: skipped entirely on a rerun.
+    """
+    from osgeo import gdal, osr
+    epsg = int(getattr(p, 'erosion_solve_epsg', 8857))          # Equal Earth
+    pixel = float(getattr(p, 'erosion_solve_pixel_size_m', 6446.75))
+    os.makedirs(work_dir, exist_ok=True)
+
+    target = osr.SpatialReference()
+    target.ImportFromEPSG(epsg)
+    target.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
+    wgs84 = osr.SpatialReference()
+    wgs84.ImportFromEPSG(4326)
+    wgs84.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
+
+    # Derive the world extent rather than hardcoding it, then snap outward to whole pixels so the
+    # grid is reproducible from the CRS and the pixel size alone.
+    transform = osr.CoordinateTransformation(wgs84, target)
+    xs, ys = [], []
+    for lon in range(-180, 181, 5):
+        for lat in (-89.9, -45.0, 0.0, 45.0, 89.9):
+            x, y, _ = transform.TransformPoint(float(lon), lat)
+            xs.append(x)
+            ys.append(y)
+    import math
+    xmin = math.floor(min(xs) / pixel) * pixel
+    xmax = math.ceil(max(xs) / pixel) * pixel
+    ymin = math.floor(min(ys) / pixel) * pixel
+    ymax = math.ceil(max(ys) / pixel) * pixel
+
+    out = {}
+    for name, src, resample in (('dem', dem_src, 'bilinear'),
+                                ('erosivity', erosivity_src, 'bilinear'),
+                                ('erodibility', erodibility_src, 'bilinear')):
+        dst = os.path.join(work_dir, '%s_solve_grid.tif' % name)
+        out[name] = dst
+        if hb.path_exists(dst):
+            continue
+        gdal.Warp(dst, src, dstSRS='EPSG:%d' % epsg, xRes=pixel, yRes=pixel,
+                  outputBounds=(xmin, ymin, xmax, ymax), resampleAlg=resample,
+                  targetAlignedPixels=False, multithread=True,
+                  creationOptions=['TILED=YES', 'BIGTIFF=YES', 'COMPRESS=DEFLATE'])
+        hb.log('    solve grid: %s -> %s' % (os.path.basename(src), os.path.basename(dst)))
+
+    reference = gdal.Open(out['dem'])
+    out['shape'] = [reference.RasterXSize, reference.RasterYSize]
+    out['bounds'] = (xmin, ymin, xmax, ymax)
+    return out
+
+
 def repair_watersheds(src_path, out_path):
     """Repair self-intersecting watershed rings so InVEST SDR can finish.
 
@@ -1247,10 +1312,15 @@ def erosion_sdr(p):
 
     # analysis grid: downsample to a 6.45 km reference for local; run at native SEALS res on the cluster
     native = bool(p.erosion_native_resolution)   # false -> the 6.45 km analysis grid; true -> native SEALS 300 m
-    grid_ref = None if native else p.get_path(p.erosion_analysis_grid_path)
-    dem         = p.get_path(p.erosion_dem_path)
-    erosivity   = p.get_path(p.erosion_erosivity_path)
-    erodibility = p.get_path(p.erosion_erodibility_path)
+    # Every solve input on ONE equal-area grid, built once. See build_equal_area_solve_inputs for why
+    # the solve leaves WGS84 at all and why it must not leave for Web Mercator.
+    solve = build_equal_area_solve_inputs(
+        p, os.path.join(p.cur_dir, 'solve_grid'),
+        p.get_path(p.erosion_dem_path),
+        p.get_path(p.erosion_erosivity_path),
+        p.get_path(p.erosion_erodibility_path))
+    dem, erosivity, erodibility = solve['dem'], solve['erosivity'], solve['erodibility']
+    grid_ref = None if native else dem            # the LULC is matched to the solve grid, not a staged 3857 one
     # Repaired once per run and cached: SDR's report step unions these and GEOS raises on an invalid
     # ring, so a bad geometry kills the run AFTER the rasters are already computed.
     watersheds = os.path.join(p.cur_dir, 'watersheds_valid.gpkg')
@@ -1280,13 +1350,30 @@ def erosion_sdr(p):
                 if not hb.path_exists(lulc_grid):  # categorical LULC -> mode
                     hb.resample_to_match(lulc, grid_ref, lulc_grid, resample_method='mode')
             suffix = '%s_%d' % (scenario, year)
-            sdr.execute(dict(workspace_dir=os.path.join(p.cur_dir, suffix), results_suffix=suffix,
+            workspace = os.path.join(p.cur_dir, suffix)
+            sdr.execute(dict(workspace_dir=workspace, results_suffix=suffix,
                              dem_path=dem, erosivity_path=erosivity, erodibility_path=erodibility,
                              lulc_path=lulc_grid, watersheds_path=watersheds,
                              biophysical_table_path=biophysical, **sdr_params))
+            # The extent pin, on the path the pipeline actually runs. It existed only on invest_sdr(),
+            # which nothing here calls, so a global run silently wrote 6158x4030 against the expected
+            # grid and every raster downstream shifted with it. Now that all four inputs share a grid
+            # the intersection is exact, so a mismatch means an input changed extent and is worth
+            # stopping for rather than discovering in the shock.
+            usle_path = os.path.join(workspace, 'usle_%s.tif' % suffix)
+            if hb.path_exists(usle_path):
+                from osgeo import gdal as _gdal
+                _ds = _gdal.Open(usle_path)
+                got = [_ds.RasterXSize, _ds.RasterYSize]
+                if got != solve['shape']:
+                    raise NameError(
+                        'InVEST SDR wrote a %dx%d grid for %s against the %dx%d solve grid every '
+                        'input was built on. An input changed extent; every raster downstream would '
+                        'shift with it.' % (got[0], got[1], suffix, solve['shape'][0], solve['shape'][1]))
             n += 1
-    hb.log('  erosion SDR: %d scenario x year maps (%s grid) -> usle_/rkls_ in %s'
-          % (n, 'native SEALS' if native else '6.45 km', p.cur_dir))
+    hb.log('  erosion SDR: %d scenario x year maps on the EPSG:%s equal-area solve grid %dx%d '
+           '-> usle_/rkls_ in %s'
+          % (n, getattr(p, 'erosion_solve_epsg', 8857), solve['shape'][0], solve['shape'][1], p.cur_dir))
     return True
 
 
