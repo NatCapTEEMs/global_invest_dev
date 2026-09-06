@@ -235,7 +235,10 @@ def configure_sufficiency(p, target_year):
     value tasks. The 5 km template points at the value raster itself, because the valuation needs
     sufficiency and value on one grid and that removes a separate country-raster input.
     """
-    crop_benefits_dir = p.pollination_value_raster_dir
+    # The parameter is named _dir, so CSV hydration leaves it literal -- only *_path columns run
+    # through get_path. Resolve it here or rasterio is handed a path relative to the working
+    # directory, which only happens to exist on a machine that runs from base_data.
+    crop_benefits_dir = p.get_path(p.pollination_value_raster_dir)
     return SufficiencySettings(
         output_dir=str(p.cur_dir),
         value_raster_dir=str(crop_benefits_dir),
@@ -849,7 +852,11 @@ def find_source_value_raster(p, gep_base_year):
     """
     import glob
     import re
+    # The parameter is named _dir, so hydration leaves it literal; resolve a relative one against
+    # the data roots. An already-resolved directory is used as given.
     source_dir = p.pollination_value_raster_dir
+    if not os.path.isdir(str(source_dir)):
+        source_dir = p.get_path(source_dir)
     candidates = {}
     for path in glob.glob(os.path.join(str(source_dir), 'poll_value_global_*usd.tif')):
         match = re.search(r'poll_value_global_(\d{4})usd\.tif$', os.path.basename(path))
