@@ -1038,24 +1038,24 @@ denominator, which was the actual bug, and the share is the remaining approximat
 - **signed off:** amber: examined, and at least one of the sixteen conditions is not yet verified. ⚠ **10 is unmet here** (no longer everywhere: erosion closed it on 2026-09-03, reproducing its published total to $11 in $18.24bn from an empty project directory). ⚠ **11 is unverified**: the base year is 2019 across every service, but the country list, the true-zero-against-missing rule and the shared parameters have not been checked service by service
 ## Groundwater Recharge
 
-- **subgroup:** -
-- **module:** -
-- **category:** -
-- **in the library:** no
-- **run:** -
-- **ours:** -
-- **method:** -
-- **total:** -
-- **code:** -
-- **grid:** -
-- **reference:** -
-- **replicated:** Not in the library yet, so there is nothing to match.
-- **decided:** -
-- **number:** No recharge module here, and the reason is scope rather than absence of code. A service owner has one: Shunkei Kakimoto's `Shunkei3/GEP_GWR` is public and was updated in October 2025. What kept it out is the sheet's own note, which argues recharge is natural-capital value rather than an ecosystem service flow, and that its end products are already valued in water purification, irrigation and flood mitigation, so counting it again would double-count.
-- **need:** Whether the account excludes recharge on that reasoning -- ⚠ made urgent by the all-services sheet CONTRADICTING its own note: it carries a `Groundwater Recharge` column of **$7,211,276 over 108 countries** (2026-09-06). Two questions travel together: if the exclusion reasoning stands, the column should go; if recharge is in, what does $7.2M measure and in what units -- it sits five orders of magnitude below its neighbours, with India at $2.6M against a groundwater irrigation economy in the hundreds of billions, so it reads as a placeholder or a units slip rather than a valuation. If included for real, the code exists (Shunkei3/GEP_GWR) and the fold is a normal port rather than new science.
+- **subgroup:** regulating
+- **module:** groundwater_recharge
+- **category:** table arithmetic
+- **in the library:** yes
+- **run:** yes
+- **ours:** the valuation yes, the recharge no. The avoided-pumping arithmetic is computed here; the country mean recharge depths are the owner's InVEST Seasonal Water Yield output, read from the staged table and taken as given.
+- **method:** Recharge valued as the pumping energy it saves: recharge keeps the water table higher, so every cubic metre withdrawn is lifted a shorter distance. Value = gamma x tariff / (eta x 3.6e6) x mean recharge depth x groundwater withdrawal -- the lift cost at the country's electricity price, times the year's head increment, times the year's AQUASTAT withdrawal.
+- **total:** $7.21M
+- **code:** Built 2026-09-06 on the library template: functions open nothing, tasks own the IO, four unit tests pin the physics constant, the missing-input rule and the anchor, name aliases spell out every AQUASTAT and price-table join so no country drops silently.
+- **grid:** No raster read here. The recharge depths come from a raster model run elsewhere; what this module reads are country tables.
+- **reference:** ⭐ The all-services sheet's column, REPRODUCED IN FULL: all 108 valued countries match to the cent, total $7,211,275.96 against the sheet's $7,211,275.95. The staged committed `ground_water_gep.csv` (2025-10) is an older input vintage and agrees for 21 of 109 countries; the sheet is the current construction and ours is it, end to end. ⚠ Same lineage on the recharge depths, so the agreement tests the valuation, not the hydrology.
+- **replicated:** Yes, the sheet's column, to the cent, every country.
+- **decided:** Built despite the exclusion note (Chiara, 2026-09-06), so the group decides scope with the number and the method on the table rather than in the abstract. ⚠ The tiny magnitude is the METHOD'S OWN, not an error: valuing one year's recharge as a one-year marginal head increment prices the lift at a fraction of a cent per cubic metre. And the construction WEAKENS the double-count argument the exclusion rests on -- avoided pumping energy is an energy saving, not the water's end-product value, so it does not obviously overlap purification or the irrigation premium.
+- **number:** Values the pumping energy recharge saves: $7,211,275.96 across 109 countries (India $2.6M, USA $0.6M, Indonesia $1.2M). Five orders below neighbouring services by construction. The Jasechko groundwater-depth data staged by the owner suggests the natural extension: valuing the STOCK of avoided depth rather than one year's increment would scale the row by the ratio of water-table depth to annual recharge, typically two to three orders of magnitude.
+- **need:** The scope decision, now sharper than include-or-exclude: (a) out on the double-count reasoning -- then the sheet's column should go; (b) in as marginal pumping savings -- then $7.21M stands and the account owns its smallness; (c) in as the stock of avoided depth -- a different, larger construction the owner's staged data could support. Condition 10 is minutes once blessed.
 
 
-- **signed off:** n/a: no module here, and that is scope rather than absence. The owner's code is public and current (Shunkei3/GEP_GWR, October 2025); it is excluded because the sheet argues recharge is natural-capital value whose end products are already counted elsewhere
+- **signed off:** amber: built and run 2026-09-06, the sheet's column reproduced to the cent in every country, but the scope decision is the group's and conditions 10 and 11 stand open
 ## Fuelwood
 
 - **subgroup:** -

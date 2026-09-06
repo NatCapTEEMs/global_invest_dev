@@ -1,0 +1,49 @@
+---
+title: "Overview of Ecosystem Service: Groundwater Recharge"
+format:
+  html:
+    embed-resources: true
+    standalone: true
+---
+
+Groundwater recharge is valued as the pumping energy it saves. Recharge keeps the water table
+higher, so every cubic metre withdrawn is lifted a shorter distance; the service value is that
+avoided lift, priced at the country's electricity tariff. The base year is 2019.
+
+⚠ The construction values ONE year's recharge as a one-year head increment on that year's
+withdrawals, which is why the totals are millions where neighbouring services are billions: the
+marginal metre of lift costs a fraction of a cent per cubic metre. The magnitude is the method's
+own, not an error.
+
+## Quantity
+
+Two quantities. The country's mean local recharge depth (`l_mean_mm`), the seasonal water yield
+model's output read from the staged country table -- the model itself runs elsewhere, per
+watershed, and is taken as given. And the country's fresh groundwater withdrawal, FAO AQUASTAT,
+in billions of cubic metres at the year set by `groundwater_recharge_withdrawal_year`.
+
+## Price
+
+The country's average electricity price per kilowatt hour, from the staged 2021 global pricing
+table. Lifting one cubic metre by one metre takes gamma / (eta x 3.6e6) kilowatt hours, with
+gamma the specific weight of water (9810 newtons per cubic metre) and eta the pump efficiency
+(`groundwater_recharge_pump_efficiency`, 0.5).
+
+## Valuation
+
+`groundwater_gep` is the whole product:
+
+$$
+\text{GEP}_i = \frac{\gamma \, e_i}{\eta \times 3.6 \times 10^6} \; \bar{L}_i \; Q_i
+$$
+
+where $e_i$ is the electricity tariff, $\bar{L}_i$ the mean recharge depth in metres and $Q_i$
+the withdrawal volume in cubic metres. A country missing any input carries NA with the absence
+named in a note column, never a silent zero. The committed `ground_water_gep.csv` is carried
+beside the result as the replication anchor, and the run log reports the per-country agreement.
+
+## Inputs
+
+All paths and parameters come from `es_parameters.csv` under the `groundwater_recharge` service
+key: the recharge table, the AQUASTAT withdrawal extract, the electricity price table, the pump
+efficiency and the committed reference, each with a source row beside it.

@@ -73,6 +73,7 @@ renewable_wind: "$112.52bn"
 renewable_solar: "$54.41bn"
 renewable_geothermal: "$6.56bn"
 stormwater_volume: "185.85bn m3"
+groundwater_recharge_gep: "$7.21M"
 hydro_manuscript: "$287.7bn"
 cp_total: "$36.72bn"
 lcr_ours: "$175.56bn"
@@ -301,6 +302,7 @@ format:
 | ntfp | $28.87bn | no. No reference output |
 | stormwater | {{< meta stormwater_volume >}} retained. No dollar total: the price is a placeholder of 1 | no. The retention run is ours, and no author run exists to compare against |
 | moisture_recycling | {{< meta moisture_recycling_gep >}}, of which {{< meta moisture_recycling_export >}} crosses a border as exported rain | no. No reference figure exists anywhere; the construction implements the submission's own valuation direction |
+| groundwater_recharge | {{< meta groundwater_recharge_gep >}} avoided pumping cost | yes. The sheet's column reproduced to the cent in all 108 valued countries |
 
 : {tbl-colwidths="[22,32,46]"}
 
@@ -471,6 +473,12 @@ format:
 - **Q1:** how much terrestrial evaporation is the ecosystem's? The run counts all of it; the literature's transpiration fraction would roughly halve the row.
 - **Q2:** how should the account carry it -- as a decomposition of water supply, or as a row holding only the transboundary part? Added whole to water supply it would count the same water twice.
 - **Q3:** should hydropower's water value be re-attributed too? Rain feeds the rivers; the current construction re-attributes irrigation and domestic only.
+
+## groundwater_recharge
+
+- [Values the pumping energy recharge saves: a higher water table means every cubic metre withdrawn is lifted a shorter distance, priced at the country's electricity tariff. The sheet's column is reproduced to the cent in all 108 valued countries, {{< meta groundwater_recharge_gep >}} in total. The magnitude is the method's own: one year's recharge is one year's marginal head increment, a fraction of a cent per cubic metre.]{.state}
+- **Q1:** is the service in scope? The sheet's note argues recharge is natural-capital value whose end products are counted elsewhere, yet the sheet carries the column. Avoided pumping energy does not obviously overlap purification or the irrigation premium, so the double-count argument is weaker than the note assumes.
+- **Q2:** if in, which construction -- one year's marginal head increment ({{< meta groundwater_recharge_gep >}}), or the stock of avoided water-table depth, which the owner's staged groundwater-depth data could support and which would be two to three orders of magnitude larger?
 
 # Questions for the scenario shocks, not the GEP account
 

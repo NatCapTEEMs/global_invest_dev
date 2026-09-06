@@ -343,3 +343,13 @@ moisture_recycling,moisture_recycling_ecosystem_share,1.0
 moisture_recycling,moisture_recycling_ecosystem_share_source,"1.0 counts all terrestrial evaporation as ecosystem-mediated; the transpiration-share decision that would lower it is open with the group"
 erosion,erosion_sdr_expected_grid,"[6217, 3968]"
 erosion,erosion_sdr_expected_grid_source,"the author's staged SDR rasters (usle_2019_revised_feb_13.tif): 6217 columns by 3968 rows on EPSG:3857; an unpinned run wrote 4030 rows, 62 extra Arctic rows"
+groundwater_recharge,groundwater_recharge_l_values_input_path,global_invest/groundwater_recharge/l_val_dt_ctry.csv
+groundwater_recharge,groundwater_recharge_l_values_source,"country mean local recharge from the owner's InVEST Seasonal Water Yield runs (drive folder GEP_GWR final outputs, 2025-10 vintage; converted from l_val_dt_ctry.rds); the model itself runs elsewhere and is taken as given"
+groundwater_recharge,groundwater_recharge_withdrawal_input_path,global_invest/groundwater_recharge/AQUASTAT Dissemination System.csv
+groundwater_recharge,groundwater_recharge_withdrawal_source,"FAO AQUASTAT Fresh groundwater withdrawal, 10^9 m3/year, the owner's own staged extract"
+groundwater_recharge,groundwater_recharge_withdrawal_year,2020
+groundwater_recharge,groundwater_recharge_electricity_price_input_path,global_invest/groundwater_recharge/global-electricity-per-kwh-pricing-2021.xlsx
+groundwater_recharge,groundwater_recharge_electricity_price_source,"average electricity price per kWh in USD, 2021 global pricing table, the owner's own staged copy"
+groundwater_recharge,groundwater_recharge_pump_efficiency,0.5
+groundwater_recharge,groundwater_recharge_reference_path,global_invest/groundwater_recharge/ground_water_gep.csv
+groundwater_recharge,groundwater_recharge_reference_source,"the owner's committed final (ground_water_gep.csv, 2025-10), the replication anchor"
