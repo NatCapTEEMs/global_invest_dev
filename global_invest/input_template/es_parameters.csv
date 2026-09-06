@@ -342,7 +342,9 @@ moisture_recycling,moisture_recycling_water_gep_component_cols,"[""water_use_irr
 moisture_recycling,moisture_recycling_ecosystem_share,1.0
 moisture_recycling,moisture_recycling_ecosystem_share_source,"1.0 counts all terrestrial evaporation as ecosystem-mediated; the transpiration-share decision that would lower it is open with the group"
 erosion,erosion_sdr_expected_grid,"[6217, 3968]"
-erosion,erosion_sdr_expected_grid_source,"the author's staged SDR rasters (usle_2019_revised_feb_13.tif): 6217 columns by 3968 rows on EPSG:3857; an unpinned run wrote 4030 rows, 62 extra Arctic rows"
+erosion,erosion_sdr_expected_grid_source,"the author's staged SDR rasters (usle_2019_revised_feb_13.tif): 6217 columns by 3968 rows on EPSG:3857; an unpinned run wrote 4030 rows, 62 extra Arctic rows. GOVERNS invest_sdr() ONLY -- the legacy path that reproduces the author's raster on his grid. The dynamic pipeline runs erosion_sdr(), which builds every input on one Equal Earth grid derived from the watersheds extent and pins to THAT, so this value does not describe what a pipeline run produces."
+erosion,erosion_solve_epsg,8857
+erosion,erosion_solve_pixel_size_m,6446.75
 groundwater_recharge,groundwater_recharge_l_values_input_path,global_invest/groundwater_recharge/l_val_dt_ctry.csv
 groundwater_recharge,groundwater_recharge_l_values_source,"country mean local recharge from the owner's InVEST Seasonal Water Yield runs (drive folder GEP_GWR final outputs, 2025-10 vintage; converted from l_val_dt_ctry.rds); the model itself runs elsewhere and is taken as given"
 groundwater_recharge,groundwater_recharge_withdrawal_input_path,global_invest/groundwater_recharge/AQUASTAT Dissemination System.csv
