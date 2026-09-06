@@ -1358,17 +1358,25 @@ def erosion_exposure(p):
     import rioxarray as rxr
     import pygeoprocessing as pgp
     from osgeo import gdal
-    from rasterio.crs import CRS as rioCRS
     from rasterio.enums import Resampling
     from global_invest.erosion import erosion_functions
     from global_invest.erosion import erosion_functions as ef
 
     thresh_high = float(p.erosion_threshold_high_t_ha_yr)
-    analysis_crs = rioCRS.from_epsg(int(p.erosion_analysis_epsg))
 
-    def _to_grid_da(da, template=None):    # reproject an open DataArray to the equal-area analysis grid
-        da = da.rio.reproject(analysis_crs, resampling=Resampling.average)
-        return da if template is None else da.rio.reproject_match(template, resampling=Resampling.average)
+    # The analysis grid is a WGS84 PYRAMID RUNG, not a projected CRS. global_invest keeps every
+    # raster geographic, carries the result as a proportion, and multiplies by the pyramidal
+    # ha_per_cell only at the very end; an equal-area CRS is a second way to get area-correct sums
+    # and we do not keep two. The ha_per_cell raster IS the grid definition, so reprojecting onto it
+    # pins the rung and hands the shock its weights from the same file.
+    arcseconds = int(getattr(p, 'erosion_analysis_arcseconds', 300))
+    p.erosion_ha_per_cell_path = p.get_path(
+        os.path.join('pyramids', 'ha_per_cell_%dsec.tif' % arcseconds))
+    grid_template = rxr.open_rasterio(p.erosion_ha_per_cell_path, masked=True).squeeze()
+
+    def _to_grid_da(da, template=None):    # reproject an open DataArray onto the WGS84 pyramid rung
+        return da.rio.reproject_match(grid_template if template is None else template,
+                                      resampling=Resampling.average)
 
     def _to_grid(path, template=None):
         return _to_grid_da(rxr.open_rasterio(path, masked=True).squeeze(), template)
@@ -1440,9 +1448,12 @@ def erosion_exposure(p):
             tr = usle.rio.transform(); px = usle.rio.resolution()
 
             def _write(arr, name):
+                out = os.path.join(p.cur_dir, '%s_%s.tif' % (name, suffix))
                 pgp.numpy_array_to_raster(arr.astype('float32'), -9999.0, (px[0], px[1]),
-                                          (tr.c, tr.f), usle.rio.crs.to_wkt(),
-                                          os.path.join(p.cur_dir, '%s_%s.tif' % (name, suffix)))
+                                          (tr.c, tr.f), usle.rio.crs.to_wkt(), out)
+                # Every raster the service publishes is a POG. The array is already on the rung, so
+                # this adds overviews and internal statistics rather than resampling.
+                hb.make_path_pog(out, output_arcseconds=arcseconds)
 
             _write(combined, 'ps_gated')            # threshold-gated (original candidate)
             _write(continuous, 'ps_continuous')        # threshold-free (method B)
@@ -1456,8 +1467,9 @@ def erosion_exposure(p):
             _write(mask.astype('float32'), 'severe_mask')
             n += 1
     per_country = getattr(p, 'erosion_country_boundary_path', None) is not None
-    hb.log('  erosion prevention: %d maps -> ps_gated_ on EPSG:%d (severe T=%s)'
-          % (n, analysis_crs.to_epsg(), 'per-country 11/2' if per_country else '%.1f flat' % thresh_high))
+    hb.log('  erosion prevention: %d maps -> ps_gated_ on the WGS84 %d arcsecond rung as POGs '
+           '(severe T=%s)'
+          % (n, arcseconds, 'per-country 11/2' if per_country else '%.1f flat' % thresh_high))
     return True
 
 
@@ -1664,6 +1676,7 @@ def erosion_shock(p):
         return
     import numpy as np, pandas as pd, rioxarray as rxr, geopandas as gpd
     from rasterio.features import rasterize as rio_rasterize
+    from rasterio.enums import Resampling
     from global_invest.erosion import erosion_functions
     from global_invest.erosion import erosion_functions as ef
 
@@ -1737,6 +1750,16 @@ def erosion_shock(p):
     zone_id = rio_rasterize([(g, int(z)) for g, z in zip(zr.geometry, zr[zid_col])],
                             out_shape=_ref.shape, transform=_ref.rio.transform(), fill=0, dtype='int32')
     max_id = int(zone_id.max())
+    # Ground area per cell, on the exposure grid. erosion_exposure builds its rasters BY reprojecting
+    # onto this very file, so it aligns exactly; reproject_match is a no-op that also makes the
+    # alignment explicit rather than assumed. Zero where absent so a missing cell contributes nothing
+    # instead of silently weighting as one.
+    _ha_path = getattr(p, 'erosion_ha_per_cell_path', None) or p.get_path(
+        os.path.join('pyramids', 'ha_per_cell_%dsec.tif'
+                     % int(getattr(p, 'erosion_analysis_arcseconds', 300))))
+    ha_per_cell = np.nan_to_num(
+        rxr.open_rasterio(_ha_path, masked=True).squeeze()
+        .rio.reproject_match(_ref, resampling=Resampling.average).values, nan=0.0)
     _ref_path = _ps_path(base_scenario, anchor_years[0])
     _resample_dir = os.path.join(p.cur_dir, 'resampled_spam_bands')
     with rasterio.open(yield_stack) as _sy:
@@ -1770,9 +1793,19 @@ def erosion_shock(p):
         return np.nan_to_num(rxr.open_rasterio(path, masked=True).squeeze().values)
 
     def _zonal(weights):
-        """sum a per-pixel weight into zones -> array indexed by zone id."""
+        """Sum a per-pixel weight into zones, weighted by ground area -> array indexed by zone id.
+
+        The fields are DENSITIES on a geographic grid, where a cell's ground area falls with
+        latitude, so a plain pixel sum would count a Norwegian cell the same as a Kenyan one
+        representing four times the ground. Multiplying by ha_per_cell is the last step of the
+        geographic-throughout rule and the reason no equal-area reprojection is needed.
+
+        It does not cancel between the halves of a ratio: numerator and denominator are summed over
+        the same zone but the weight varies WITHIN a zone, so the area-weighted share differs from
+        the unweighted one wherever a zone spans latitudes.
+        """
         m = np.isfinite(weights) & (zone_id > 0)
-        return np.bincount(zone_id[m], weights=weights[m], minlength=max_id + 1)
+        return np.bincount(zone_id[m], weights=(weights * ha_per_cell)[m], minlength=max_id + 1)
 
     def _series(num, den):
         with np.errstate(invalid='ignore', divide='ignore'):
