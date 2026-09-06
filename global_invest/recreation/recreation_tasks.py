@@ -1,6 +1,6 @@
 """Recreation/tourism GEP tasks: site quality -> visits -> travel-cost value -> country GEP.
 
-Ported from the GEP recreation repo into the house shape: tasks publish their own inputs
+Tasks publish their own inputs
 (publish_inputs), read data references from es_parameters.csv, and aggregate DIRECTLY on r250
 (the source pipeline's own choice -- its country-id raster is iso3_r250_id -- so the aggregation
 surface and the one-row-per-country collapse coincide; no r264 sum can double-count here).

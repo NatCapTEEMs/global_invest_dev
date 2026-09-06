@@ -1,6 +1,6 @@
-"""Fire-protection (wildfire) science, ported from the GEP wildfire repo's R pipeline
-(gep_wildfire_2019.R, translated function by function; the committed per-country output is the
-replication anchor and reproduces to the float -- see test_fire_protection).
+"""Fire-protection (wildfire) science: persistence betas, avoided burned area, avoided damage.
+The committed per-country output is the replication anchor and reproduces to the float -- see
+test_fire_protection.
 
 Method in one pass: per-country AR(1) regressions of burned area on its one-year lag (run
 upstream, results committed) give a fire-persistence beta per country and regression type.

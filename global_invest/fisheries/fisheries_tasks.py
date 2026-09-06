@@ -97,7 +97,7 @@ def fisheries_shock(p):
 # products: the shock reads the FI headers of cwon_shocks.har, the valuation
 # the economic-rent tables of the CWoN 2024 reproducibility package.
 # PROVISIONAL as the account's fisheries GEP until the source choice is
-# blessed (the deck's open question); ported from the author's 2026 script.
+# blessed (the deck's open question).
 # =============================================================================
 
 def publish_inputs(p):

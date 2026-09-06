@@ -14,9 +14,9 @@ Settings come from es_parameters and are read off `p` where they are used. `publ
 one place that decides where a file lives, so every task sees the same layout however it is run. The
 task wrappers at the end are the seam `flood_initialize` grafts onto a task tree.
 """
-# The pipeline runs in five sections, A to E. Outputs are named for what they hold; which
-# source script each was folded in from is in reference/output_provenance.csv, which is how
-# an output of ours is lined up against one of the original pipeline's.
+# The pipeline runs in five sections, A to E. Outputs are named for what they hold;
+# reference/output_provenance.csv maps each output to the committed reference file it is
+# compared against.
 from __future__ import annotations
 
 import glob
@@ -315,7 +315,7 @@ def write_lulc_to_sda_mapping(p) -> str:
         "crop": cropland,
         "pasture": pasture,
         "ignore": ignore,
-        # Aliases (clarity / backward compatibility with the original scripts)
+        # Aliases: the committed configuration files use these names for the same classes
         "built_up": built_up,
         "cropland": cropland,
     }

@@ -224,7 +224,7 @@ def smallholder_area_shares(df_lowder):
     """The share of agricultural area held in farms under two hectares, by region, as a percentage.
 
     The percentage is left as the source publishes it, because the reference's arithmetic consumes
-    it that way and the port has to reproduce the reference before it corrects it.
+    it that way and the reference is reproduced before it is corrected.
     """
     kind_column = 'Number or share of farms / agricultural area'
     rows = df_lowder[df_lowder[kind_column] == LOWDER_AREA_SHARE_ROW]

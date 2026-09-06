@@ -102,7 +102,8 @@ def gep_calculation(p):
 
     df_gep_by_year = utilities.sum_countries_to_year(df_gep_by_country_year, 'crop_provision_gep')
 
-    # The reference's own selection, valued the same way, as the column that proves the port.
+    # The reference's own crop selection, valued the same way, so the two selections can be
+    # compared per country.
     df_reference = utilities.apply_rental_rates(
         df_crop_value_with_group_totals, df_crop_coefs, 'crop_provision_gep')
     df_reference = utilities.normalize_m49_codes(df_reference)
@@ -139,8 +140,8 @@ def gep_calculation(p):
     return value_gep_base_year
 
 def crop_subsistence_gep(p):
-    """Subsistence-crop GEP: the reference pipeline ported, its unit error corrected, and the
-    uncorrected arithmetic published beside it as the proof of the port.
+    """Subsistence-crop GEP: the reference method with its unit error corrected, and the
+    uncorrected arithmetic published beside it so the correction is checkable per country.
 
     A separate component from the commercial figure, written to its own table and never summed into
     it, exactly as the Lynch subsistence value sits beside the commercial rent in fisheries.
@@ -149,8 +150,8 @@ def crop_subsistence_gep(p):
     thousands of hectares against an intensity per single hectare, and the Lowder share is a
     percentage, so reading each as its source labels it is not a variant of the method but the
     method done right. `crop_subsistence_gep_reference` is the reference's own arithmetic through
-    the identical four downstream stages, reproducing its published panel to 2.3e-14, which is what
-    lets a reader check the port rather than take it on trust. The delivered table is also put on
+    the identical four downstream stages, reproducing its published panel to 2.3e-14, so the
+    correction's size is measurable rather than taken on trust. The delivered table is also put on
     the account's country list by the house collapse, keeping every valued country rather than the
     sixteen the reference's own join delivers.
     """

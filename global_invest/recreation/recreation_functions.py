@@ -1,7 +1,7 @@
 """Recreation/tourism science: site quality, gravity-model visits, travel-cost valuation.
 
-Ported from the GEP recreation repo (NatCapTEEMs shared drive, Recreation subfolder); the method
-constants below ARE the published method, so they live in code -- a change is a reviewed commit,
+The method is the one documented on the NatCapTEEMs shared drive (Recreation subfolder); the
+constants below ARE that published method, so they live in code -- a change is a reviewed commit,
 not an input/-copy edit (the sorting rule; landslide's constants follow the same pattern).
 
 Method in one pass: LULC class shares + protected-area share -> a 0-3 environment class;

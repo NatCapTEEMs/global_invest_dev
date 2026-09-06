@@ -130,8 +130,7 @@ def static_shock_rows(fi_data, scenarios, header_map, climate_labels, overrides,
 
 
 # =============================================================================
-# GEP valuation (commercial capture fisheries, CWoN method). Ported from the
-# source repo's 2026 script (gep_commcapturefisheries_cwonmethod_20260720.R):
+# GEP valuation (commercial capture fisheries, CWoN method):
 # CWoN 2024 (FR_WLD_2024_195) fisheries economic rent, deflated to 2019 USD,
 # per-country OLS trend over 2009-2018 predicting 2019, floored at zero.
 # =============================================================================
@@ -237,8 +236,8 @@ def commfish_gep_by_country(trends_df, countries_df):
 
 
 # =============================================================================
-# Subsistence fisheries GEP (Lynch et al. 2024, USGS data release). Ported from
-# the gep-subsistence-fisheries repo; the committed output CSV is the anchor.
+# Subsistence fisheries GEP (Lynch et al. 2024, USGS data release); the
+# committed output CSV is the anchor.
 # =============================================================================
 # The Lynch et al. release carries the whole valuation, not only its result: a harvested
 # quantity at the price's unit, a price per kilogram in USD, and their product per species.

@@ -4,8 +4,8 @@ Thin runner: builds ONE tree and executes it. Inputs are published by each task 
 (publish_inputs in the tasks module); base_data_dir is resolved by ProjectFlow (default /
 machine.env), never hardcoded here.
 
-The accessibility stage of the port is in progress (see ntfp_tasks.gep_calculation), so a
-run currently stops there with the state of the port spelled out.
+A full run builds the reachable-forest mask, values the accessible hectares and renders the
+report; every heavy step is guarded by an existence check, so a rerun resumes where it stopped.
 """
 import hazelbean as hb
 

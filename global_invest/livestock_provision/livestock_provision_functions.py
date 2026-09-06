@@ -15,7 +15,7 @@ nothing here needs a currency conversion. The reference implementation reads FAO
 instead, constant 2014-2016 international dollars, which is neither the account's currency nor its
 price base.
 
-Step two of the port, feed_lambda_by_country, computes the ecosystem-provided share of livestock
+feed_lambda_by_country computes the ecosystem-provided share of livestock
 feed from GLEAM 3, wired through the task layer beside the rental-rate attribution.
 
 Every function here is a pure transformation over frames, which is what the tests exercise. The

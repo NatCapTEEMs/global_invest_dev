@@ -22,8 +22,9 @@ WATER_QUALITY_NUTRIENTS = ('n', 'p')   # nitrogen, phosphorus
 
 
 def element_service_values(retention_df):
-    """Recompute the two verified identities per nutrient and return the frame with our
-    recomputed columns beside the committed ones. Raises if either identity breaks."""
+    """Recompute each nutrient's value from its retention and price columns and return the frame
+    with the recomputed columns added. Raises if either recomputation disagrees with the value
+    column the table carries, which is what pins the valuation to the intermediates it reads."""
     df = retention_df.copy()
     for nutrient in WATER_QUALITY_NUTRIENTS:
         estimated = df[f'{nutrient}_TotalRetention(kg)'] * df['DomesticWaterUseFraction']

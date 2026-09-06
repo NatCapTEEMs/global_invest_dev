@@ -1,6 +1,6 @@
 """The landslide-mitigation science, as pure functions over arrays and frames.
 
-Ported from m-braaksma/landslide_mitigation v0.2.0. Nothing in
+Implements the landslide-mitigation v0.2.0 method. Nothing in
 this module reads or writes a file or touches a ProjectFlow object -- the task module supplies
 the arrays and frames and writes the results, which is what makes the arithmetic testable.
 
@@ -40,7 +40,7 @@ from osgeo import osr
 # Every derived raster in this chain carries the same nodata value.
 NODATA = -9999.0
 
-# METHOD CONSTANTS defining the ported v0.2.0 science (the landslide author's to bless) -- in
+# METHOD CONSTANTS defining the v0.2.0 science (the landslide author's to bless) -- in
 # code so a change costs a reviewed commit. publish_inputs applies them caller-wins, so a
 # deliberate override on p survives.
 DATA_PROCESSING_YEARS = list(range(2007, 2020))  # every year the input rasters are built for

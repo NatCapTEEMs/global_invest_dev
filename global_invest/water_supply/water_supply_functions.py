@@ -69,9 +69,9 @@ def water_supply_gep_by_country(hydropower_df, countries_df):
 
 
 # =============================================================================
-# Water-use chain (agriculture / industrial / municipal), ported from the
-# drive's two-script R chain: script 01 cleans the raw AQUASTAT export into the
-# four SDG 6.4.1 efficiency series (US$/m3, wide by country-year); script 02
+# Water-use chain (agriculture / industrial / municipal), in two stages:
+# stage one cleans the raw AQUASTAT export into the
+# four SDG 6.4.1 efficiency series (US$/m3, wide by country-year); stage two
 # joins iso codes on from the withdrawal table's names, merges the two, and
 # computes sector GEP = efficiency x withdrawal volume at the survey years.
 # Both of the chain's outputs are committed on the drive and replicate: the
@@ -102,7 +102,7 @@ WATER_USE_EFFICIENCY_SERIES = {
 # then iso codes for the names its country map does not carry. The lookup countries keep
 # their AQUASTAT names, so their efficiency and withdrawal rows share an iso code but never
 # a country name -- the merge leaves them as half-rows with no products (USA, RUS, TUR...).
-# The anchor commits that behavior and the port reproduces it.
+# The anchor commits that behavior and this pipeline reproduces it.
 WATER_USE_COUNTRY_RENAMES = {
     'Cabo Verde': 'Cape Verde',
     "Côte d'Ivoire": "Cote d'Ivoire",
