@@ -106,22 +106,22 @@ def save_parquet(df: pd.DataFrame, path: str | str) -> str:
     return path
 
 
-def baseline_denominator(cfg, baseline_lulc_path, target_year):
+def baseline_denominator(cfg, baseline_lulc_path, target_year, baseline_label):
     """Unpaired 2023 pollination value (the % change denominator), computed once."""
-    run_pollination_sufficiency_300m(cfg, lulc_path=baseline_lulc_path, scenario=p.pollination_shock_baseline_label,
+    run_pollination_sufficiency_300m(cfg, lulc_path=baseline_lulc_path, scenario=baseline_label,
                                      lulc_scheme='seals')
-    run_pollination_sufficiency_5km(cfg, scenario=p.pollination_shock_baseline_label)
-    run_pollination_valuation_5km(cfg, scenario=p.pollination_shock_baseline_label, target_year=target_year)
-    return os.path.join(cfg.output_dir, f'value_pollination_sufficiency_{p.pollination_shock_baseline_label}_5km.tif')
+    run_pollination_sufficiency_5km(cfg, scenario=baseline_label)
+    run_pollination_valuation_5km(cfg, scenario=baseline_label, target_year=target_year)
+    return os.path.join(cfg.output_dir, f'value_pollination_sufficiency_{baseline_label}_5km.tif')
 
 
-def scenario_diff_raster(cfg, scenario, lulc_path, baseline_lulc_path, target_year):
+def scenario_diff_raster(cfg, scenario, lulc_path, baseline_lulc_path, target_year, baseline_label):
     """The 5 km scenario-minus-baseline value raster, on cropland stable across the two maps.
 
     Returns the path crop_benefits wrote it to; the task reads it and hands the array to
     zonal_pct_change.
     """
-    stab, b_stab = f'{scenario}_stab', f'{p.pollination_shock_baseline_label}_stab_{scenario}'
+    stab, b_stab = f'{scenario}_stab', f'{baseline_label}_stab_{scenario}'
     for suff_scen, lulc, other in [(stab, lulc_path, baseline_lulc_path),
                                    (b_stab, baseline_lulc_path, lulc_path)]:
         run_pollination_sufficiency_300m_stable_ag(cfg, lulc_path=lulc, other_lulc_path=other,
@@ -131,7 +131,7 @@ def scenario_diff_raster(cfg, scenario, lulc_path, baseline_lulc_path, target_ye
 
     suff_dir = cfg.output_dir
     return run_pollination_diff_5km_pnas(
-        cfg, scenario=scenario, baseline_scenario=p.pollination_shock_baseline_label,
+        cfg, scenario=scenario, baseline_scenario=baseline_label,
         scenario_value_path=os.path.join(suff_dir, f'value_pollination_sufficiency_{stab}_5km.tif'),
         baseline_value_path=os.path.join(suff_dir, f'value_pollination_sufficiency_{b_stab}_5km.tif'))
 
@@ -1553,7 +1553,8 @@ def pollination_shock(p):
                          'p.pollination_base_year_lulc_path) at the SEALS7 base-year map.')
     # The denominator (unpaired 2023 value) is year- and scenario-independent, so the fixed side of
     # the zonal step is built once.
-    denominator_path = baseline_denominator(cfg, base_map, es_shock_base_year)
+    denominator_path = baseline_denominator(cfg, base_map, es_shock_base_year,
+                                            p.pollination_shock_baseline_label)
     baseline_arr, area_arr, zones_arr, zone_labels = _zonal_context(p, denominator_path, p.region_boundary_path)
 
     # value[scenario][year] = per-zone % change of that scenario's year-map vs the 2023 baseline (stable
