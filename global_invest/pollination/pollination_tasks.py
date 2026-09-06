@@ -1565,7 +1565,8 @@ def pollination_shock(p):
         for scen in [base_scenario] + es_shock_scenarios:
             diff_arr, _ = _read_masked(scenario_diff_raster(
                 cfg, scenario=f'{scen}_{year}', lulc_path=p.scenario_lulc_paths[scen][year],
-                baseline_lulc_path=base_map, target_year=es_shock_base_year))
+                baseline_lulc_path=base_map, target_year=es_shock_base_year,
+                baseline_label=p.pollination_shock_baseline_label))
             pct, level = pf.zonal_pct_change(diff_arr, baseline_arr, area_arr, zones_arr, zone_labels)
             value.setdefault(scen, {})[year] = pct
             if level_usd is None:
