@@ -1368,11 +1368,8 @@ def erosion_sdr(p):
                              dem_path=dem, erosivity_path=erosivity, erodibility_path=erodibility,
                              lulc_path=lulc_grid, watersheds_path=watersheds,
                              biophysical_table_path=biophysical, **sdr_params))
-            # The extent pin, on the path the pipeline actually runs. It existed only on invest_sdr(),
-            # which nothing here calls, so a global run silently wrote 6158x4030 against the expected
-            # grid and every raster downstream shifted with it. Now that all four inputs share a grid
-            # the intersection is exact, so a mismatch means an input changed extent and is worth
-            # stopping for rather than discovering in the shock.
+            # Extent pin. All four inputs share one grid, so a mismatch means an input changed
+            # extent, and every raster downstream would shift with it.
             usle_path = os.path.join(workspace, 'usle_%s.tif' % suffix)
             if hb.path_exists(usle_path):
                 from osgeo import gdal as _gdal
@@ -1550,8 +1547,7 @@ def erosion_exposure(p):
                 out = os.path.join(p.cur_dir, '%s_%s.tif' % (name, suffix))
                 pgp.numpy_array_to_raster(arr.astype('float32'), -9999.0, (px[0], px[1]),
                                           (tr.c, tr.f), usle.rio.crs.to_wkt(), out)
-                # Every raster the service publishes is a POG. The array is already on the rung, so
-                # this adds overviews and internal statistics rather than resampling.
+                # Every published raster is a POG; already on the rung, so this only adds overviews.
                 hb.make_path_pog(out, output_arcseconds=arcseconds)
 
             _write(combined, 'ps_gated')            # threshold-gated (original candidate)
@@ -1889,26 +1885,15 @@ def erosion_shock(p):
         return np.nan_to_num(rxr.open_rasterio(path, masked=True).squeeze().values)
 
     def _rkls_tons(scn, yr):
-        """rkls as TONS PER CELL, which is what a zonal sum needs on a geographic grid.
-
-        InVEST declares rkls in metric_ton/hectare -- a density -- so summing it across cells whose
-        ground area varies with latitude would weight a high-latitude cell the same as an equatorial
-        one covering four times the ground. Multiplying by ha_per_cell here is the last step of the
-        geographic-throughout rule, and it is done HERE rather than inside the zonal sum because
-        only the densities need it: prod is already yield x harvested hectares, so weighting that
-        too would count area twice.
-        """
+        """rkls (InVEST gives metric_ton/hectare) as tons per cell."""
         return _grid('rkls_grid', scn, yr) * ha_per_cell
 
     def _zonal(weights):
-        """Sum a per-cell TOTAL into zones -> array indexed by zone id.
+        """Sum a per-cell total into zones -> array indexed by zone id.
 
-        A plain sum, deliberately: everything reaching it is already integrated over the cell --
-        prod is tons (yield x harvested ha) and rkls arrives through _rkls_tons. Area weighting
-        belongs at the density, not here. Weighting inside this function instead applied ha_per_cell
-        to prod as well, while `tot` a few lines above accumulates prod with a raw bincount, so the
-        numerator gained a hectares factor the denominator did not and the shock came out ~1900x
-        too large.
+        A plain sum: everything reaching it is already integrated over the cell, prod as
+        yield x harvested hectares and rkls through _rkls_tons. Densities are weighted by
+        ha_per_cell before they get here, never inside.
         """
         m = np.isfinite(weights) & (zone_id > 0)
         return np.bincount(zone_id[m], weights=weights[m], minlength=max_id + 1)
@@ -1924,10 +1909,7 @@ def erosion_shock(p):
         cropland = SEALS7 class 2); level = -100*alpha*p_crop. Binary threshold, flat alpha, no off-site
         routing. UNIFORM across the GTAP crop sectors by construction: it is measured from LAND COVER, which
         carries no crop detail, so A cannot distinguish wheat land from vegetable land."""
-        # x ha_per_cell because both fields are FRACTIONS of a cell, and the docstring promises a
-        # share of cropland AREA. Summing fractions on a geographic grid counts a high-latitude cell
-        # as much as an equatorial one covering four times the ground; the factor does not cancel
-        # between the halves because it varies within a zone.
+        # x ha_per_cell: both fields are fractions of a cell, and this is a share of cropland AREA.
         p_crop = _series(_zonal(_grid('severe_cropland_frac', scn, yr) * ha_per_cell),
                          _zonal(_grid('cropland_frac', scn, yr) * ha_per_cell))
         lvl = -100.0 * alpha * p_crop
