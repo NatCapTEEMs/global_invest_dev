@@ -48,7 +48,7 @@ PY
 
 # EROSION_CONDA_ENV keeps the machine value out of the tracked CSV; the row is the fallback.
 CONDA_ENV="${EROSION_CONDA_ENV:-${NTFP_CONDA_ENV:-$(read_row flood_msi_conda_env)}}"
-[ -n "$CONDA_ENV" ] || { echo "no environment: set EROSION_CONDA_ENV"; exit 1; }
+[ -n "$CONDA_ENV" ] || { echo "no environment: set EROSION_CONDA_ENV or fill the flood_msi_conda_env row in your project's input/es_parameters.csv"; exit 1; }
 PYTHON="$CONDA_ENV/bin/python"
 [ -x "$PYTHON" ] || { echo "no interpreter at $PYTHON"; exit 1; }
 
