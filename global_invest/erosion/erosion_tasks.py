@@ -268,7 +268,8 @@ def build_seals7_biophysical_table(src_csv, out_csv):
     return out_csv
 
 
-def build_equal_area_solve_inputs(p, work_dir, dem_src, erosivity_src, erodibility_src):
+def build_equal_area_solve_inputs(p, work_dir, dem_src, erosivity_src, erodibility_src,
+                                  watersheds_src):
     """Put the SDR solve on ONE equal-area grid, and put every static input on it once.
 
     InVEST requires a projected CRS (its MODEL_SPEC sets projected=True on all four rasters), so the
@@ -286,7 +287,8 @@ def build_equal_area_solve_inputs(p, work_dir, dem_src, erosivity_src, erodibili
 
     Returns the four paths, all on the same grid. Cached: skipped entirely on a rerun.
     """
-    from osgeo import gdal, osr
+    import math
+    from osgeo import gdal, ogr, osr
     epsg = int(getattr(p, 'erosion_solve_epsg', 8857))          # Equal Earth
     pixel = float(getattr(p, 'erosion_solve_pixel_size_m', 6446.75))
     os.makedirs(work_dir, exist_ok=True)
@@ -294,24 +296,32 @@ def build_equal_area_solve_inputs(p, work_dir, dem_src, erosivity_src, erodibili
     target = osr.SpatialReference()
     target.ImportFromEPSG(epsg)
     target.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
-    wgs84 = osr.SpatialReference()
-    wgs84.ImportFromEPSG(4326)
-    wgs84.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
 
-    # Derive the world extent rather than hardcoding it, then snap outward to whole pixels so the
-    # grid is reproducible from the CRS and the pixel size alone.
-    transform = osr.CoordinateTransformation(wgs84, target)
-    xs, ys = [], []
-    for lon in range(-180, 181, 5):
-        for lat in (-89.9, -45.0, 0.0, 45.0, 89.9):
-            x, y, _ = transform.TransformPoint(float(lon), lat)
-            xs.append(x)
-            ys.append(y)
-    import math
-    xmin = math.floor(min(xs) / pixel) * pixel
-    xmax = math.ceil(max(xs) / pixel) * pixel
-    ymin = math.floor(min(ys) / pixel) * pixel
-    ymax = math.ceil(max(ys) / pixel) * pixel
+    # The extent comes from the WATERSHEDS, not from the world. SDR clips to the watershed vector, so
+    # a grid built to the globe is cut back to the basins anyway -- and the cut is what made the
+    # output grid unpredictable. HydroBASINS stops short of Antarctica and of the far west, so a
+    # world grid loses 47 columns and the run says nothing. Snapping the basin extent outward to
+    # whole pixels makes the clip a no-op and the grid reproducible from the inputs alone.
+    vector = ogr.Open(watersheds_src)
+    layer = vector.GetLayer(0)
+    xmin_raw, xmax_raw, ymin_raw, ymax_raw = layer.GetExtent()
+    source_sr = layer.GetSpatialRef()
+    if source_sr is not None and not source_sr.IsSame(target):
+        source_sr.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
+        to_target = osr.CoordinateTransformation(source_sr, target)
+        xs, ys = [], []
+        for x in (xmin_raw, xmax_raw):
+            for y in (ymin_raw, ymax_raw):
+                tx, ty, _ = to_target.TransformPoint(x, y)
+                xs.append(tx)
+                ys.append(ty)
+        xmin_raw, xmax_raw, ymin_raw, ymax_raw = min(xs), max(xs), min(ys), max(ys)
+    vector = None
+
+    xmin = math.floor(xmin_raw / pixel) * pixel
+    xmax = math.ceil(xmax_raw / pixel) * pixel
+    ymin = math.floor(ymin_raw / pixel) * pixel
+    ymax = math.ceil(ymax_raw / pixel) * pixel
 
     out = {}
     for name, src, resample in (('dem', dem_src, 'bilinear'),
@@ -1312,20 +1322,23 @@ def erosion_sdr(p):
 
     # analysis grid: downsample to a 6.45 km reference for local; run at native SEALS res on the cluster
     native = bool(p.erosion_native_resolution)   # false -> the 6.45 km analysis grid; true -> native SEALS 300 m
+    # Repaired once per run and cached: SDR's report step unions these and GEOS raises on an invalid
+    # ring, so a bad geometry kills the run AFTER the rasters are already computed. Repaired BEFORE
+    # the solve grid is built, because the grid is derived from this vector's extent.
+    watersheds = os.path.join(p.cur_dir, 'watersheds_valid.gpkg')
+    if not hb.path_exists(watersheds):
+        repair_watersheds(p.get_path(p.erosion_watersheds_path), watersheds)
     # Every solve input on ONE equal-area grid, built once. See build_equal_area_solve_inputs for why
-    # the solve leaves WGS84 at all and why it must not leave for Web Mercator.
+    # the solve leaves WGS84 at all, why it must not leave for Web Mercator, and why the extent comes
+    # from the watersheds rather than from the globe.
     solve = build_equal_area_solve_inputs(
         p, os.path.join(p.cur_dir, 'solve_grid'),
         p.get_path(p.erosion_dem_path),
         p.get_path(p.erosion_erosivity_path),
-        p.get_path(p.erosion_erodibility_path))
+        p.get_path(p.erosion_erodibility_path),
+        watersheds)
     dem, erosivity, erodibility = solve['dem'], solve['erosivity'], solve['erodibility']
     grid_ref = None if native else dem            # the LULC is matched to the solve grid, not a staged 3857 one
-    # Repaired once per run and cached: SDR's report step unions these and GEOS raises on an invalid
-    # ring, so a bad geometry kills the run AFTER the rasters are already computed.
-    watersheds = os.path.join(p.cur_dir, 'watersheds_valid.gpkg')
-    if not hb.path_exists(watersheds):
-        repair_watersheds(p.get_path(p.erosion_watersheds_path), watersheds)
     # SDR matches the biophysical table's lucode against the LULC values, and our maps are SEALS7 while
     # the shipped table is keyed on ESA codes -- so re-key it (once) rather than matching nothing.
     biophysical = build_seals7_biophysical_table(
@@ -1456,10 +1469,9 @@ def erosion_exposure(p):
     # ha_per_cell only at the very end; an equal-area CRS is a second way to get area-correct sums
     # and we do not keep two. The ha_per_cell raster IS the grid definition, so reprojecting onto it
     # pins the rung and hands the shock its weights from the same file.
-    arcseconds = int(getattr(p, 'erosion_analysis_arcseconds', 300))
-    p.erosion_ha_per_cell_path = p.get_path(
-        os.path.join('pyramids', 'ha_per_cell_%dsec.tif' % arcseconds))
-    grid_template = rxr.open_rasterio(p.erosion_ha_per_cell_path, masked=True).squeeze()
+    arcseconds = int(p.erosion_analysis_arcseconds)
+    ha_per_cell_path = p.get_path(p.erosion_ha_per_cell_path)
+    grid_template = rxr.open_rasterio(ha_per_cell_path, masked=True).squeeze()
 
     def _to_grid_da(da, template=None):    # reproject an open DataArray onto the WGS84 pyramid rung
         return da.rio.reproject_match(grid_template if template is None else template,
@@ -1841,11 +1853,8 @@ def erosion_shock(p):
     # onto this very file, so it aligns exactly; reproject_match is a no-op that also makes the
     # alignment explicit rather than assumed. Zero where absent so a missing cell contributes nothing
     # instead of silently weighting as one.
-    _ha_path = getattr(p, 'erosion_ha_per_cell_path', None) or p.get_path(
-        os.path.join('pyramids', 'ha_per_cell_%dsec.tif'
-                     % int(getattr(p, 'erosion_analysis_arcseconds', 300))))
     ha_per_cell = np.nan_to_num(
-        rxr.open_rasterio(_ha_path, masked=True).squeeze()
+        rxr.open_rasterio(p.get_path(p.erosion_ha_per_cell_path), masked=True).squeeze()
         .rio.reproject_match(_ref, resampling=Resampling.average).values, nan=0.0)
     _ref_path = _ps_path(base_scenario, anchor_years[0])
     _resample_dir = os.path.join(p.cur_dir, 'resampled_spam_bands')
@@ -1879,20 +1888,30 @@ def erosion_shock(p):
         path = os.path.join(p.erosion_exposure_dir, '%s_%s_%d.tif' % (name, scn, yr))
         return np.nan_to_num(rxr.open_rasterio(path, masked=True).squeeze().values)
 
+    def _rkls_tons(scn, yr):
+        """rkls as TONS PER CELL, which is what a zonal sum needs on a geographic grid.
+
+        InVEST declares rkls in metric_ton/hectare -- a density -- so summing it across cells whose
+        ground area varies with latitude would weight a high-latitude cell the same as an equatorial
+        one covering four times the ground. Multiplying by ha_per_cell here is the last step of the
+        geographic-throughout rule, and it is done HERE rather than inside the zonal sum because
+        only the densities need it: prod is already yield x harvested hectares, so weighting that
+        too would count area twice.
+        """
+        return _grid('rkls_grid', scn, yr) * ha_per_cell
+
     def _zonal(weights):
-        """Sum a per-pixel weight into zones, weighted by ground area -> array indexed by zone id.
+        """Sum a per-cell TOTAL into zones -> array indexed by zone id.
 
-        The fields are DENSITIES on a geographic grid, where a cell's ground area falls with
-        latitude, so a plain pixel sum would count a Norwegian cell the same as a Kenyan one
-        representing four times the ground. Multiplying by ha_per_cell is the last step of the
-        geographic-throughout rule and the reason no equal-area reprojection is needed.
-
-        It does not cancel between the halves of a ratio: numerator and denominator are summed over
-        the same zone but the weight varies WITHIN a zone, so the area-weighted share differs from
-        the unweighted one wherever a zone spans latitudes.
+        A plain sum, deliberately: everything reaching it is already integrated over the cell --
+        prod is tons (yield x harvested ha) and rkls arrives through _rkls_tons. Area weighting
+        belongs at the density, not here. Weighting inside this function instead applied ha_per_cell
+        to prod as well, while `tot` a few lines above accumulates prod with a raw bincount, so the
+        numerator gained a hectares factor the denominator did not and the shock came out ~1900x
+        too large.
         """
         m = np.isfinite(weights) & (zone_id > 0)
-        return np.bincount(zone_id[m], weights=(weights * ha_per_cell)[m], minlength=max_id + 1)
+        return np.bincount(zone_id[m], weights=weights[m], minlength=max_id + 1)
 
     def _series(num, den):
         with np.errstate(invalid='ignore', divide='ignore'):
@@ -1905,8 +1924,12 @@ def erosion_shock(p):
         cropland = SEALS7 class 2); level = -100*alpha*p_crop. Binary threshold, flat alpha, no off-site
         routing. UNIFORM across the GTAP crop sectors by construction: it is measured from LAND COVER, which
         carries no crop detail, so A cannot distinguish wheat land from vegetable land."""
-        p_crop = _series(_zonal(_grid('severe_cropland_frac', scn, yr)),
-                         _zonal(_grid('cropland_frac', scn, yr)))
+        # x ha_per_cell because both fields are FRACTIONS of a cell, and the docstring promises a
+        # share of cropland AREA. Summing fractions on a geographic grid counts a high-latitude cell
+        # as much as an equatorial one covering four times the ground; the factor does not cancel
+        # between the halves because it varies within a zone.
+        p_crop = _series(_zonal(_grid('severe_cropland_frac', scn, yr) * ha_per_cell),
+                         _zonal(_grid('cropland_frac', scn, yr) * ha_per_cell))
         lvl = -100.0 * alpha * p_crop
         return {s: lvl for s in erosion_shock_acts}
 
@@ -1952,7 +1975,7 @@ def erosion_shock(p):
         it is reported for comparison and does not feed GTAP. Signed positive as a service
         delivered, but it still INCREASES with better land condition exactly as A does."""
         return _service_level(np.clip(_grid('ps_continuous', scn, yr), 0.0, 1.0),
-                              _grid('rkls_grid', scn, yr))
+                              _rkls_tons(scn, yr))
 
     def level_service_threshold(scn, yr):
         """METHOD B THRESHOLDED -- B confined to severely eroding pixels, with the severe set taken
@@ -1980,7 +2003,7 @@ def erosion_shock(p):
         production contributes nothing regardless."""
         keep = _grid('severe_mask', base_scenario, yr) > 0.5
         return _service_level(np.where(keep, np.clip(_grid('ps_continuous', scn, yr), 0.0, 1.0), 0.0),
-                              np.where(keep, _grid('rkls_grid', scn, yr), 0.0))
+                              np.where(keep, _rkls_tons(scn, yr), 0.0))
 
     LEVELS = {'damage': level_damage, 'service': level_service,
               'service_threshold': level_service_threshold}
