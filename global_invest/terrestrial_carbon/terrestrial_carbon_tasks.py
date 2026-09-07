@@ -289,8 +289,13 @@ def _align_zones_to_lulc_grid(p, reference_lulc_path):
         return
     aligned_path = os.path.join(p.cur_dir, 'carbon_zones_aligned.tif')
     if not hb.path_exists(aligned_path):
+        # Int32, not the reference's type. The match raster is a 7-class SEALS map stored as Byte,
+        # and taking the output type from it silently truncates every zone id above 255 -- South
+        # Africa's are 606-620, which landed on the Byte nodata and read as missing, leaving zone 0
+        # everywhere and a carbon shock of exactly zero.
         hb.resample_to_match(p.terrestrial_quantity_input_path, reference_lulc_path,
-                             aligned_path, resample_method='near')
+                             aligned_path, resample_method='near',
+                             output_data_type=5, src_ndv=-9999, ndv=-9999)
     p.terrestrial_quantity_input_path = aligned_path
 
 
