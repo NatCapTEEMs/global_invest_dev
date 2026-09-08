@@ -24,4 +24,5 @@ extractive_energy,extractive_energy_provision,,2019.0,resource rent,computed,com
 timber_provision,timber_provision,,2019.0,stumpage value,computed,computed,computed,,,
 example_service,,,,,,,,lulc/esa/seals7/lulc_esa_seals7_2017.tif,,
 moisture_recycling,rainfall_pattern_regulation,,2019.0,reattribution of water supply value,computed,computed,computed,,n/a,n/a
+pest_control,pest_control,,2019.0,organic producer price,computed,computed,computed,,n/a,n/a
 groundwater_recharge,groundwater_recharge,,2019.0,avoided pumping cost,computed,computed,computed,,n/a,n/a

@@ -74,6 +74,8 @@ renewable_solar: "$54.41bn"
 renewable_geothermal: "$6.56bn"
 stormwater_volume: "185.85bn m3"
 groundwater_recharge_gep: "$7.21M"
+pest_control_gep: "$10.34bn"
+pest_control_gep_no_premium: "$7.49bn"
 hydro_manuscript: "$287.7bn"
 cp_total: "$36.72bn"
 lcr_ours: "$175.56bn"
@@ -303,6 +305,7 @@ format:
 | stormwater | {{< meta stormwater_volume >}} retained. No dollar total: the price is a placeholder of 1 | no. The retention run is ours, and no author run exists to compare against |
 | moisture_recycling | {{< meta moisture_recycling_gep >}}, of which {{< meta moisture_recycling_export >}} crosses a border as exported rain | no. No reference figure exists anywhere; the construction implements the submission's own valuation direction |
 | groundwater_recharge | {{< meta groundwater_recharge_gep >}} avoided pumping cost | yes. The sheet's column reproduced to the cent in all 108 valued countries |
+| pest_control | {{< meta pest_control_gep >}} with the appendix's organic price premium, {{< meta pest_control_gep_no_premium >}} without | partly. The sheet's $6.25bn sits at the no-premium level, log-correlation 0.93 across countries; its own pipeline is not on the drive |
 
 : {tbl-colwidths="[22,32,46]"}
 
@@ -479,6 +482,13 @@ format:
 - [Values the pumping energy recharge saves: a higher water table means every cubic metre withdrawn is lifted a shorter distance, priced at the country's electricity tariff. The sheet's column is reproduced to the cent in all 108 valued countries, {{< meta groundwater_recharge_gep >}} in total. The magnitude is the method's own: one year's recharge is one year's marginal head increment, a fraction of a cent per cubic metre.]{.state}
 - **Q1:** is the service in scope? The sheet's note argues recharge is natural-capital value whose end products are counted elsewhere, yet the sheet carries the column. Avoided pumping energy does not obviously overlap purification or the irrigation premium, so the double-count argument is weaker than the note assumes.
 - **Q2:** if in, which construction -- one year's marginal head increment ({{< meta groundwater_recharge_gep >}}), or the stock of avoided water-table depth, which the owner's staged groundwater-depth data could support and which would be two to three orders of magnitude larger?
+
+## pest_control
+
+- [Values the extra yield natural enemies provide on organically managed cropland, at the organic producer price -- organic only by design, and the full value attributed to nature with no lambda. Built from the appendix's own sources: FiBL areas, FAOSTAT yields and prices, the Boldorini effect sizes and the appendix's yield ratios, giving {{< meta pest_control_gep >}} with the appendix's 38 percent organic price premium and {{< meta pest_control_gep_no_premium >}} without it. The committed column's $6.25bn sits at the no-premium level (log-correlation 0.93 across countries), and its pipeline is not on the drive.]{.state}
+- **Q1:** does the committed $6.25bn include the organic price premium the appendix describes? The level says no; with it the same construction gives {{< meta pest_control_gep >}}.
+- **Q2:** what produced Viet Nam's $291M? The staged FiBL 2019 areas support roughly a ninth of it under any reading of the method.
+- **Q3:** can the final pipeline and its inputs be shared, so the row stops being a carried-across file?
 
 # Questions for the scenario shocks, not the GEP account
 

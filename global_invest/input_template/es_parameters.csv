@@ -347,6 +347,29 @@ erosion,erosion_analysis_arcseconds,300
 erosion,erosion_ha_per_cell_path,pyramids/ha_per_cell_300sec.tif
 erosion,erosion_solve_epsg,8857
 erosion,erosion_solve_pixel_size_m,6446.75
+pest_control,pest_control_fibl_area_input_path,global_invest/pest_control/Area_org.xlsx
+pest_control,pest_control_fibl_area_source,"FiBL organic area by crop, country and year (statistics.fibl.org extract 8.1.2025), the owner's own staged copy"
+pest_control,pest_control_faostat_yield_input_path,global_invest/pest_control/faostat_qcl_2019.csv
+pest_control,pest_control_faostat_yield_source,"FAOSTAT QCL 2019 slice (Area harvested, Yield in kg/ha, Production), extracted 2026-09-08 from the bulk normalized file"
+pest_control,pest_control_faostat_price_input_path,global_invest/pest_control/faostat_pp_2019.csv
+pest_control,pest_control_faostat_price_source,"FAOSTAT producer prices 2019, USD per tonne, extracted 2026-09-08 from the bulk normalized file"
+pest_control,pest_control_fao_classification_input_path,global_invest/pest_control/FAO_classification.csv
+pest_control,pest_control_fao_classification_source,"the owner's manual FAOSTAT item to CPC 2.1 group mapping, staged beside the drive submission"
+pest_control,pest_control_effect_lnrr_cereals,0.1280735
+pest_control,pest_control_effect_lnrr_vegetables,0.2316753
+pest_control,pest_control_effect_lnrr_others,0.2829220
+pest_control,pest_control_effect_source,"Boldorini et al. 2024 (Proc R Soc B 291:20232522) Table S3, predators' effect on crop yield by crop type, non-phylogenetic model"
+pest_control,pest_control_yield_ratio_cereals,0.75
+pest_control,pest_control_yield_ratio_fruit_nuts,0.88
+pest_control,pest_control_yield_ratio_vegetables,0.83
+pest_control,pest_control_yield_ratio_pulses,0.85
+pest_control,pest_control_yield_ratio_oilseeds,0.83
+pest_control,pest_control_yield_ratio_stimulants,0.85
+pest_control,pest_control_yield_ratio_source,"organic-to-conventional yield ratios per FAO group, the appendix's meta-regression on the Ponisio et al. 2015 pairs (appendix Table 1)"
+pest_control,pest_control_price_premium,1.38
+pest_control,pest_control_price_premium_source,"organic-to-conventional producer price ratio, the appendix's overall mean from 2,459 matched USDA GATS pairs; 1.0 reproduces the committed file's level"
+pest_control,pest_control_reference_path,global_invest/pest_control/pest_control_gep.csv
+pest_control,pest_control_reference_source,"the owner's committed final (pest_control_gep.csv, 2025-10), the comparison anchor; a Monte Carlo mean, so anchored on coverage and rank, not to the cent"
 groundwater_recharge,groundwater_recharge_l_values_input_path,global_invest/groundwater_recharge/l_val_dt_ctry.csv
 groundwater_recharge,groundwater_recharge_l_values_source,"country mean local recharge from the owner's InVEST Seasonal Water Yield runs (drive folder GEP_GWR final outputs, 2025-10 vintage; converted from l_val_dt_ctry.rds); the model itself runs elsewhere and is taken as given"
 groundwater_recharge,groundwater_recharge_withdrawal_input_path,global_invest/groundwater_recharge/AQUASTAT Dissemination System.csv
