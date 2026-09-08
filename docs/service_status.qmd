@@ -1104,18 +1104,19 @@ denominator, which was the actual bug, and the share is the remaining approximat
 - **in the library:** no
 - **run:** -
 - **ours:** -
-- **method:** -
+- **method:** Organic agriculture only, by design: a proportional yield benefit from biological control (Boldorini et al. 2024, the one meta-analysis their systematic search surfaced; effect sizes for cereals, for vegetables-with-oilseeds-and-pulses and for fruit-and-stimulants, every other FAO group zero), times organic production (FiBL organic area times FAOSTAT conventional yield times an organic-to-conventional yield ratio re-estimated from the Ponisio et al. 2015 pairs), times an organic producer price (FAOSTAT conventional price, model-imputed where missing, times an organic-to-conventional price ratio from USDA GATS trade unit values). ⚠ Lambda is 1 by design -- the full value is attributed to nature, unlike most other rows. Conventional agriculture is excluded on the stated ground that a marginal biocontrol benefit under synthetic pesticides is not quantifiable (Dainese et al. 2019). Monte Carlo for uncertainty; the appendix (2026-08-21 vintage, Sidemo-Holm, Miller, Sylla) says 1,000 iterations in one paragraph and 10,000 in the next.
 - **total:** -
-- **code:** -
-- **grid:** -
-- **reference:** -
-- **replicated:** Not in the library yet, so there is nothing to match.
+- **code:** Not in the library. The drive's `GEP_biocontrol.R` (January 2025) is the author's work-in-progress prototype with his own desktop paths, nine months older than the committed output and predating the appendix's method -- no Monte Carlo, no imputation models, no effect-size step. The pipeline that produced the committed file is not on the drive.
+- **grid:** No raster anywhere in the construction; country-by-crop tables throughout.
+- **reference:** The committed `pest_control_gep.csv` (2025-10-20): $6,250,523,049 over 132 valued countries on the 250-row account list. ⭐ The all-services sheet's `Pest control` column IS this file to the dollar.
+- **replicated:** Nothing. The committed file carries country and value only, so there is nothing underneath to recompute from -- the same shape as coastal protection's coral half. Staged beside it: the FiBL area extract (8.1.2025), the raw GATS pulls and the derived price ratios, and the manual FAO/CPC classification; missing: the effect-size extraction, the yield-ratio meta-regression, the price-imputation models and the final script.
 - **decided:** -
 - **number:** -
-- **need:** The method's completion (a processing script exists. No output yet).
+- **examined for the issues table (2026-09-08):** the committed file explains the sheet exactly ($6,250,523,049 both) and the country fingerprint is the method's own: China $1.96bn then France, USA, Italy, Spain, Greece, Chile -- organic vineyards, orchards and vegetables, since only organic area carries value. Because the final estimate is a Monte Carlo mean, an eventual port anchors distributionally (within a tolerance), not to the cent.
+- **need:** The final pipeline and its missing inputs from William Sidemo-Holm (the effect sizes as extracted, the Ponisio meta-regression, the imputation models, the run script), so the number stops being a carried-across file. And the group's view on lambda equal 1 while the neighbouring crop rows carry a human-input adjustment.
 
 
-- **signed off:** n/a: no module, but not nothing. A processing script exists and has produced no output
+- **signed off:** n/a: no module. The method is documented (appendix, 2026-08) and the committed output exists and is the sheet column to the dollar, but the pipeline that produced it is not on the drive, so nothing can be verified beyond the file itself
 ## Moisture Recycling (Regional Hydrology)
 
 - **subgroup:** regulating
