@@ -165,19 +165,6 @@ def rasterize_presence(vector_path, ref_raster_path, output_path):
         option_list=['ALL_TOUCHED=TRUE', 'MERGE_ALG=ADD'])
 
 
-def rasterize_id_column(vector_path, ref_raster_path, id_column, output_path):
-    """Vector id column -> raster on the reference grid (country ids)."""
-    ref_info = pygeoprocessing.geoprocessing.get_raster_info(ref_raster_path)
-    pygeoprocessing.geoprocessing.create_raster_from_bounding_box(
-        target_bounding_box=ref_info['bounding_box'], target_raster_path=output_path,
-        target_pixel_size=ref_info['pixel_size'], target_pixel_type=ref_info['datatype'],
-        target_srs_wkt=ref_info['projection_wkt'], target_nodata=ref_info['nodata'][0],
-        fill_value=0)
-    pygeoprocessing.geoprocessing.rasterize(
-        vector_path=vector_path, target_raster_path=output_path, burn_values=None,
-        option_list=['ALL_TOUCHED=TRUE', f'ATTRIBUTE={id_column}'])
-
-
 def allocate_overnights_raster(country_overnights_map, hotel_raster_path, country_id_path,
                                output_path):
     pygeoprocessing.raster_calculator(
@@ -305,8 +292,8 @@ def overnight_allocation(p):
         rasterize_presence(p.recreation_hotels_path, p.recreation_road_length_path,
                               p.recreation_hotels_raster_path)
     if not hb.path_exists(p.recreation_country_id_path):
-        rasterize_id_column(p.gep_regions_input_path, p.recreation_road_length_path,
-                               p.gep_regions_id_col, p.recreation_country_id_path)
+        utilities.rasterize_id_column(p.gep_regions_input_path, p.recreation_road_length_path,
+                                      p.gep_regions_id_col, p.recreation_country_id_path)
     if not hb.path_exists(p.recreation_overnights_path):
         if hb.path_exists(p.recreation_unwto_panel_path):
             overnight_df = hb.df_read(p.recreation_unwto_panel_path)

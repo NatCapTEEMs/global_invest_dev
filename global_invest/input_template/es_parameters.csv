@@ -97,6 +97,40 @@ erosion,erosion_watersheds_sanitized_layer,watersheds
 erosion,erosion_yield_reduction_for_shock,0.08
 erosion,erosion_drainage_path,
 erosion,erosion_native_resolution,false
+health_depression,health_depression_population_input_path,global_invest/health_hypertension/ppp_2019_1km_Aggregated.tif
+health_depression,health_depression_population_source,"WorldPop 2019 global mosaic, 1 km, shared with the hypertension strand"
+health_depression,health_depression_ndvi_input_path,global_invest/health_hypertension/ndvi_2019_annual_mean.tif
+health_depression,health_depression_ndvi_source,"MODIS MOD13A2 v6.1 2019 annual mean at 30 arcsec via Google Earth Engine, shared with the hypertension strand; the appendix uses Landsat 30 m -- the coarser grid is the named deviation"
+health_depression,health_depression_urban_input_path,global_invest/health_hypertension/ghs_smod_2020_worldpop_grid.tif
+health_depression,health_depression_urban_source,"JRC GHS-SMOD R2023A epoch 2020 on the WorldPop grid, shared with the hypertension strand; the appendix uses GUPPD settlement polygons"
+health_depression,health_depression_urban_smod_min,21
+health_depression,health_depression_urban_smod_min_source,"SMOD class 21 and above is the urban cluster; 30 restricts to urban centres"
+health_depression,health_depression_prevalence_input_path,global_invest/health_depression/who_depression_prevalence_2015.csv
+health_depression,health_depression_prevalence_source,"WHO GHO GDO_q35, estimated population-based prevalence of depression, 2015 (the WHO 2017 global health estimates)"
+health_depression,health_depression_cost_input_path,global_invest/health_depression/data_cost_mental_health.csv
+health_depression,health_depression_cost_source,"the owner's staged extract of Christensen et al. 2020: societal cost per depression case, USD PPP mostly 2018, 32 countries plus a Europe aggregate"
+health_depression,health_depression_odds_ratio,0.931
+health_depression,health_depression_odds_ratio_source,"odds ratio of depression per 0.1 NDVI increment, Liu et al. 2023 meta-analysis (0.887-0.977)"
+health_depression,health_depression_reference_path,global_invest/health_depression/reference_high_resolution.csv
+health_depression,health_depression_reference_source,"the author's high resolution results file (2025-10-28), which IS the all-services sheet's column; its spatial scope is an open question, so the run log reports the gap rather than anchoring"
+health_hypertension,health_hypertension_population_input_path,global_invest/health_hypertension/ppp_2019_1km_Aggregated.tif
+health_hypertension,health_hypertension_population_source,"WorldPop 2019 global mosaic, 1 km, persons per pixel (data.worldpop.org, downloaded 2026-09-09)"
+health_hypertension,health_hypertension_ndvi_input_path,global_invest/health_hypertension/ndvi_2019_annual_mean.tif
+health_hypertension,health_hypertension_ndvi_source,"MODIS MOD13A2 v6.1 16-day 1 km NDVI, 2019 annual mean, exported at 30 arcsec via Google Earth Engine (MODIS/061/MOD13A2); the appendix uses Copernicus 300 m -- the coarser grid is the named deviation"
+health_hypertension,health_hypertension_urban_input_path,global_invest/health_hypertension/ghs_smod_2020_worldpop_grid.tif
+health_hypertension,health_hypertension_urban_source,"JRC GHS-SMOD R2023A epoch 2020, warped nearest onto the WorldPop grid; the appendix uses GUPPD settlement polygons -- SMOD is the open substitute"
+health_hypertension,health_hypertension_urban_smod_min,21
+health_hypertension,health_hypertension_urban_smod_min_source,"SMOD class 21 and above is the urban cluster; 30 restricts to urban centres"
+health_hypertension,health_hypertension_prevalence_input_path,global_invest/health_hypertension/who_hypertension_prevalence_2019.csv
+health_hypertension,health_hypertension_prevalence_source,"WHO GHO NCD_HYP_PREVALENCE_C, crude prevalence among adults 30-79, both sexes, 2019 (the appendix cites the same WHO series)"
+health_hypertension,health_hypertension_age_share_input_path,global_invest/health_hypertension/wb_share_age_30_79_2019.csv
+health_hypertension,health_hypertension_age_share_source,"share of total population aged 30-79, built from the World Bank SP.POP 5-year bands, 2019; the appendix uses US Census IDB"
+health_hypertension,health_hypertension_cost_input_path,global_invest/health_hypertension/hypertension_cost_per_case.csv
+health_hypertension,health_hypertension_cost_source,"the appendix's Table A1: per-person hypertension treatment cost in 2019 USD, one refereed study per country (USA the average of eight), typed verbatim"
+health_hypertension,health_hypertension_odds_ratio,0.95
+health_hypertension,health_hypertension_odds_ratio_source,"odds ratio of hypertension per 0.1 NDVI increment at the 500 m buffer, Bu et al. 2024 (0.95) with Zhao et al. 2022 (0.94) the alternative"
+health_hypertension,health_hypertension_reference_path,global_invest/health_hypertension/health_hypertension_appendix_table6.csv
+health_hypertension,health_hypertension_reference_source,"the appendix's own Table 6 (2026-08-16), the authoritative attribution; the drive's committed CSV mis-sorts 7 of 19 countries and is not used"
 recreation,recreation_lulc_share_path_template,global_invest/recreation/lulc/lulc_esa_seals7_2010_1km_{lulc_class}_share.tif
 recreation,recreation_pa_share_path,global_invest/recreation/pa/wdpa_accessible_1km_share.tif
 recreation,recreation_road_distance_path,global_invest/recreation/distance_to_roads/distance_to_road_1km_corrected.tif

@@ -1,0 +1,46 @@
+---
+title: "Overview of Ecosystem Service: Mental Health (Depression)"
+format:
+  html:
+    embed-resources: true
+    standalone: true
+---
+
+Urban greenspace is valued as the depression cases it prevents. Paving over a city's nature
+would raise its residents' depression risk; the cases that rise represents are the cases
+today's greenness prevents, priced at the societal cost of one case. The base year is 2019.
+
+⚠ Coverage is the 32 countries with a societal-cost estimate (Christensen et al. 2020), by
+construction, and ⚠ those costs are in USD PPP (mostly 2018) -- the account's currency question.
+The counterfactual converts all urban nature to built land, following the InVEST urban mental
+health model.
+
+## Quantity
+
+Per urban pixel on WorldPop's 1 km grid: observed depression cases (WHO prevalence times
+population) times the prevented-cases factor $e^{-10 \ln(\text{RR}) \, \text{NDVI}} - 1$, the
+InVEST model's dose-response at the pixel's annual NDVI, summed per country over the urban
+settlement mask. The risk ratio comes from the Liu et al. 2023 meta-analytic odds ratio
+(`health_depression_odds_ratio`) converted at the country's own prevalence (Zhang and Yu 1998).
+
+## Price
+
+The societal cost of one depression case -- healthcare plus productivity losses -- from the
+owner's staged Christensen et al. 2020 extract.
+
+## Valuation
+
+$$
+\text{GEP}_i = c_i \; x_i \sum_{j \in \text{urban}} n_j \left(e^{-10 \ln(\text{RR}_i)\,\text{NDVI}_j} - 1\right)
+$$
+
+with $c_i$ the cost per case, $x_i$ the prevalence and $n_j$ the pixel population. The
+author's high-resolution results file is carried beside the result as the comparison point;
+its spatial scope is an open question, so the run log reports the gap rather than anchoring.
+
+## Inputs
+
+All paths and parameters come from `es_parameters.csv` under the `health_depression` service
+key. The three rasters (population, NDVI, urban mask) are the hypertension strand's staged
+files, shared deliberately; the disease tables (prevalence, costs, odds ratio, the author's
+reference) are this service's own, each with a source row beside it.

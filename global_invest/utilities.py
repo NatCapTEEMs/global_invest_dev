@@ -1027,6 +1027,29 @@ def is_redundant(column, df):
 GEP_SUMMARY_GROUPINGS = ('income_grp', 'region_un', 'continent', 'subregion')
 
 
+def rasterize_id_column(vector_path, ref_raster_path, id_column, output_path):
+    """Vector id column -> Int32 raster on the reference grid (country ids), ALL_TOUCHED.
+
+    Args:
+        vector_path: the polygon file carrying the id column.
+        ref_raster_path: the raster whose grid (extent, resolution, projection) the ids land on.
+        id_column: the integer attribute to burn.
+        output_path: the raster written, 0 where no polygon touches.
+    """
+    ref = gdal.Open(ref_raster_path)
+    driver = gdal.GetDriverByName('GTiff')
+    out = driver.Create(output_path, ref.RasterXSize, ref.RasterYSize, 1, gdal.GDT_Int32,
+                        options=['COMPRESS=DEFLATE', 'TILED=YES'])
+    out.SetGeoTransform(ref.GetGeoTransform())
+    out.SetProjection(ref.GetProjection())
+    band = out.GetRasterBand(1)
+    band.SetNoDataValue(0)
+    band.Fill(0)
+    gdal.Rasterize(out, vector_path, options=gdal.RasterizeOptions(
+        attribute=id_column, allTouched=True))
+    out.FlushCache()
+
+
 def report_dir():
     """The directory a results page is rendered into, and where its tables and figures belong.
 
