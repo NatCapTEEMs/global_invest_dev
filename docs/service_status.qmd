@@ -1085,18 +1085,19 @@ denominator, which was the actual bug, and the share is the remaining approximat
 - **in the library:** no
 - **run:** -
 - **ours:** -
-- **method:** -
+- **method:** Physical health (hypertension) is documented (appendix 2026-08-16, Tajibaeva, Bo, Kula): avoided hypertension cases from urban greenspace -- per pixel, WHO prevalence times the NDVI-driven risk reduction (odds ratios per 0.1 NDVI from the Bu 2024 and Zhao 2022 meta-analyses, converted to risk ratios against a baseline prevalence) times the urban population aged 30-79 -- priced at each country's published hypertension treatment cost. ⚠ Coverage is 19 countries BY CONSTRUCTION: only 20 countries have refereed cost studies (appendix Table A1), and extrapolating costs to the rest is the authors' own stated next step. A separate mental-health (depression) strand carries its own sheet column ($159.6M over 32 countries), not examined here.
 - **total:** -
-- **code:** -
-- **grid:** -
-- **reference:** -
-- **replicated:** Not in the library yet, so there is nothing to match.
+- **code:** None on the drive: no pipeline, no NDVI or population intermediates; the quantity workbook is a literature-review organizer. What exists is the appendix, its results table, and a committed per-country CSV.
+- **grid:** The quantity step is a raster construction elsewhere (Copernicus NDVI 300m, WorldPop 100m, GUPPD urban polygons); nothing raster is staged here.
+- **reference:** The appendix's Table 6: $104,664,962,067 over 19 countries, USA $50.5bn plus China $43.3bn making 90 percent. ⚠⚠ **The committed `health_hypertension_gep.csv` (2026-07-20) is that table MISALIGNED**: the values, sorted by country name, were pasted against iso3 labels sorted alphabetically by label, so 7 of 19 countries carry a neighbour's value -- Nigeria shows Poland's $6.86bn, Poland shows Sweden's $48M, Switzerland shows Canada's $881M, Canada shows Cambodia's $34M, Cambodia shows Mexico's $672M, Mexico shows Nigeria's $59M, Sweden shows Switzerland's $38M. Verified exactly: the permutation reproduces all 19 committed values to the dollar and the total is unchanged. The appendix's own table is the authoritative attribution.
+- **replicated:** Nothing to run: no code exists anywhere. The decode above is arithmetic on their own two documents.
 - **decided:** -
 - **number:** -
-- **need:** The method (the drive holds a literature review and a price table so far)
+- **examined for the issues table (2026-09-09):** the all-services sheet's `Physical Health Benefits from Nature Exposure` column ($106.65bn over 13 countries) is a THIRD vintage: correctly name-aligned but earlier -- its values sit near the appendix's (USA $54.1bn against $50.5bn, China $43.7bn against $43.3bn) without matching any of them, and it lacks 6 of the appendix's 19 countries (Nigeria, Switzerland, Colombia, Kenya, Sweden, Ethiopia). So the sheet, the committed CSV and the appendix disagree pairwise, and only the appendix is internally trustworthy.
+- **need:** Three things for the authors (Tajibaeva, Bo, Kula): the sort-order misalignment in the committed CSV (the fix is re-exporting Table 6); which vintage the sheet's $106.65bn is and whether it should be updated to the appendix's $104.66bn over 19; and the pipeline plus the Table A1 cost extraction, without which nothing can be reproduced. Producing it here would mean building the whole NDVI-population raster construction while the method is still extending its cost coverage -- premature until the authors call the method stable.
 
 
-- **signed off:** n/a: no module, and the gap is upstream of code. The drive holds a literature review and a price table; the method itself is what we are waiting on
+- **signed off:** n/a: no module, and the gap is upstream of code -- no pipeline exists on the drive. The appendix documents the method and carries the only trustworthy numbers; the committed CSV mis-attributes 7 of 19 countries and the sheet carries an earlier vintage
 ## Pests
 
 - **subgroup:** -
