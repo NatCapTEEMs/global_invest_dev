@@ -115,6 +115,12 @@ def baseline_denominator(cfg, baseline_lulc_path, target_year, baseline_label):
     return os.path.join(cfg.output_dir, f'value_pollination_sufficiency_{baseline_label}_5km.tif')
 
 
+def paired_scenario_value_path(cfg, scenario):
+    """The stable-ag-masked scenario value raster, the `stab` half of scenario_diff_raster's pair."""
+    return os.path.join(cfg.output_dir,
+                        f'value_pollination_sufficiency_{scenario}_stab_5km.tif')
+
+
 def paired_baseline_value_path(cfg, scenario, baseline_label):
     """The stable-ag-masked 2023 value raster scenario_diff_raster built for this scenario-year.
 
@@ -1572,7 +1578,7 @@ def pollination_shock(p):
     # value[scenario][year] = per-zone % change of that scenario's year-map vs the 2023 baseline (stable
     # ag). level_usd = the denominator of that % change, the per-zone absolute baseline value in base-year
     # USD, emitted so the GEP chain can consume this task instead of rerunning the same rasters.
-    value, level_usd, paired_base = {}, None, {}
+    value, level_usd, paired_base, paired_scen = {}, None, {}, {}
     for year in anchor_years:
         for scen in [base_scenario] + es_shock_scenarios:
             diff_arr, _ = _read_masked(scenario_diff_raster(
@@ -1593,6 +1599,14 @@ def pollination_shock(p):
                     paired_arr, area_arr, zones_arr, zone_labels)
             else:
                 hb.log('  pollination: no paired baseline raster at %s' % paired_path)
+            # The paired SCENARIO value, the other half of the same pair. Over the effective
+            # contemporaneous denominator it is the quantity a provision rescaling needs: the
+            # stressed shock is the original plus 100*(f-1) times it.
+            scen_path = paired_scenario_value_path(cfg, f'{scen}_{year}')
+            if hb.path_exists(scen_path):
+                scen_arr, _ = _read_masked(scen_path)
+                paired_scen.setdefault(scen, {})[year] = pf.zonal_weighted_sum(
+                    scen_arr, area_arr, zones_arr, zone_labels)
 
     # The shock numerator is scenario minus nature-off baseline at each anchor. anchor_shock_tables
     # puts it over the two denominators and dynamic_shock_rows expands those to annual rows.
@@ -1601,9 +1615,15 @@ def pollination_shock(p):
         anchor_shock, anchor_contemp = pf.anchor_shock_tables(
             {y: value[scen][y] for y in anchor_years},
             {y: value[base_scenario][y] for y in anchor_years})
+        # The effective contemporaneous denominator is the unpaired 2023 value times the
+        # no-damage baseline's own growth factor, which is what anchor_shock_tables divides by.
+        growth_by_year = {y: 1.0 + value[base_scenario][y] / 100.0 for y in anchor_years}
         rows += pf.dynamic_shock_rows(anchor_shock, anchor_contemp, level_usd, scen,
                                       p.pollination_shock_acts, es_shock_base_year,
-                                      paired_base_by_year=paired_base.get(scen))
+                                      paired_base_by_year=paired_base.get(scen),
+                                      paired_scen_by_year=paired_scen.get(scen),
+                                      unpaired_denominator=level_usd,
+                                      growth_by_year=growth_by_year)
 
     out = pd.DataFrame(rows)
     utilities.assert_shock_table_sound(out, es_shock_scenarios, 'pollination')

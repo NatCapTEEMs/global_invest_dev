@@ -148,7 +148,8 @@ def anchor_shock_tables(scenario_pct_by_year, baseline_pct_by_year):
 
 
 def dynamic_shock_rows(fixedbase, contemporaneous, level_usd, scenario, sectors, base_year,
-                       paired_base_by_year=None):
+                       paired_base_by_year=None, paired_scen_by_year=None,
+                       unpaired_denominator=None, growth_by_year=None):
     """Anchor-year shocks expanded to one row per zone, sector and year.
 
     The calculation computes a shock only at the years the scenario maps exist for; the economic model
@@ -185,6 +186,24 @@ def dynamic_shock_rows(fixedbase, contemporaneous, level_usd, scenario, sectors,
         # The paired baseline is a LEVEL, not a shock, so it is not ramped from zero: the base year
         # takes the first anchor's value. Years before that anchor are unstressed anyway, so the
         # extension is never read; carrying it flat avoids inventing a ramp toward zero USD.
+        # The quantity a provision rescaling needs, emitted rather than reconstructed. Scaling the
+        # scenario's paired value by f moves the exported contemporaneous shock to
+        # shock + 100*(f - 1)*paired_scen_over_contemp_denom, exactly at the anchors and, because
+        # every stressed year lies at or after the first anchor, exactly under the existing
+        # interpolation too. Reconstructing it from the emitted shocks would need a division by the
+        # contemporaneous shock, which is near zero in most zones.
+        if paired_scen_by_year and unpaired_denominator is not None and growth_by_year:
+            share_at_anchor = []
+            for y in anchor_years:
+                paired = float(paired_scen_by_year[y].get(zone, float('nan')))
+                unpaired = float(unpaired_denominator.get(zone, float('nan')))
+                share_at_anchor.append(paired / unpaired / growth_by_year[y]
+                                       if unpaired else float('nan'))
+            annual_share = np.interp(all_years, interp_years,
+                                     [share_at_anchor[0]] + share_at_anchor)
+        else:
+            annual_share = [float('nan')] * len(all_years)
+
         if paired_base_by_year:
             paired_at_anchor = [float(paired_base_by_year[y].get(zone, float('nan')))
                                 for y in anchor_years]
@@ -192,15 +211,16 @@ def dynamic_shock_rows(fixedbase, contemporaneous, level_usd, scenario, sectors,
                                       [paired_at_anchor[0]] + paired_at_anchor)
         else:
             annual_paired = [float('nan')] * len(all_years)
-        for year, fixed_value, contemp_value, paired_value in zip(
-                all_years, annual, annual_contemp, annual_paired):
+        for year, fixed_value, contemp_value, paired_value, share_value in zip(
+                all_years, annual, annual_contemp, annual_paired, annual_share):
             for sector in sectors:
                 rows.append({'ENDW': endw, 'ACTS': sector, 'REG': reg, 'scenario': scenario,
                              'year': year, 'shock_pct': contemp_value,
                              'shock_pct_fixedbase': fixed_value,
                              'shock_pct_contemp': contemp_value,
                              'value_usd_base': base_usd,
-                             'paired_base_usd': paired_value})
+                             'paired_base_usd': paired_value,
+                             'paired_scen_over_contemp_denom': share_value})
     return rows
 
 
