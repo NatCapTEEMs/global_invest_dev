@@ -2027,6 +2027,22 @@ def erosion_shock(p):
                 series = {name: annual(base_and_scn[2][scn], base_and_scn[0], sector, zid)
                           for name, base_and_scn in by_method.items()}
                 base_by_year, base_at_base, scn_levels = by_method[primary]
+
+                # The LEVELS behind shock_pct, annually, on the same ramp the shock uses: the base
+                # year anchors both series at the same value, so their difference starts at zero and
+                # reproduces shock_pct exactly. Emitted because the shock is an ABSOLUTE difference
+                # with no denominator, so a scenario that scales provision by a retained fraction f
+                # needs f*scenario_level - baseline_level and cannot be derived from the shock alone.
+                if base_at_base is not None:
+                    anchor_base = float(base_at_base[sector].get(zid, np.nan))
+                    level_scn = np.interp(all_years, anchors_x, [anchor_base] + [
+                        scn_levels[scn][y][sector].get(zid, np.nan) for y in anchor_years])
+                    level_base = np.interp(all_years, anchors_x, [anchor_base] + [
+                        base_by_year[y][sector].get(zid, np.nan) for y in anchor_years])
+                else:
+                    level_scn = [np.nan] * len(all_years)
+                    level_base = [np.nan] * len(all_years)
+
                 if base_at_base is not None:
                     f = [scn_levels[scn][y][sector].get(zid, np.nan) - base_at_base[sector].get(zid, np.nan)
                          for y in anchor_years]
@@ -2044,7 +2060,9 @@ def erosion_shock(p):
                                  'shock_pct_fixedbase': annual_f[i],
                                  'shock_pct_damage': series['damage'][i],
                                  'shock_pct_service': series['service'][i],
-                                 'shock_pct_service_threshold': series['service_threshold'][i]})
+                                 'shock_pct_service_threshold': series['service_threshold'][i],
+                                 'level_scenario': level_scn[i],
+                                 'level_baseline': level_base[i]})
 
     out = pd.DataFrame(rows)
     utilities.assert_shock_table_sound(out, scenarios, 'erosion')
