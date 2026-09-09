@@ -91,6 +91,34 @@ def zonal_pct_change(diff_arr, baseline_arr, area_arr, zones_arr, zone_labels):
 # (zone, sector, year); these functions are that turn, with no IO in them.
 # =============================================================================
 
+
+def zonal_weighted_sum(value_arr, area_arr, zones_arr, zone_labels):
+    """Area-weighted sum of a value raster per zone, on zonal_pct_change's conventions.
+
+    Used for the PAIRED baseline, the stable-ag-masked 2023 value that forms the numerator's
+    subtrahend. zonal_pct_change already returns the UNPAIRED 2023 sum as its denominator, and the
+    ratio of the two is what a scenario scaling provision needs: the percent change is
+    100*(P - Q) with P and Q both over the unpaired denominator, so scaling provision by f gives
+    f*pct + 100*Q*(f - 1) rather than f*pct + 100*(f - 1).
+
+    Args:
+        value_arr (np.ndarray): the value raster, nodata as NaN.
+        area_arr (np.ndarray): pixel area on the same grid.
+        zones_arr (np.ndarray): burned zone ids on the same grid.
+        zone_labels (dict): zone id to (ENDW, REG).
+
+    Returns:
+        pd.Series: the weighted sum keyed on (ENDW, REG). Zones summing to nothing are dropped, as
+        in zonal_pct_change, so the two series align.
+    """
+    sums = {}
+    for zone_id, key in zone_labels.items():
+        mask = zones_arr == zone_id
+        total = np.nansum(value_arr[mask] * area_arr[mask])
+        if total:
+            sums[key] = total
+    return pd.Series(sums)
+
 def anchor_shock_tables(scenario_pct_by_year, baseline_pct_by_year):
     """The two shock measures at the anchor years, per zone.
 
@@ -119,7 +147,8 @@ def anchor_shock_tables(scenario_pct_by_year, baseline_pct_by_year):
     return fixedbase, fixedbase / base_factor
 
 
-def dynamic_shock_rows(fixedbase, contemporaneous, level_usd, scenario, sectors, base_year):
+def dynamic_shock_rows(fixedbase, contemporaneous, level_usd, scenario, sectors, base_year,
+                       paired_base_by_year=None):
     """Anchor-year shocks expanded to one row per zone, sector and year.
 
     The calculation computes a shock only at the years the scenario maps exist for; the economic model
@@ -153,13 +182,25 @@ def dynamic_shock_rows(fixedbase, contemporaneous, level_usd, scenario, sectors,
         annual_contemp = np.interp(all_years, interp_years,
                                    [0.0] + list(contemporaneous.loc[zone].values))
         base_usd = float(level_usd.get(zone, float('nan'))) if level_usd is not None else float('nan')
-        for year, fixed_value, contemp_value in zip(all_years, annual, annual_contemp):
+        # The paired baseline is a LEVEL, not a shock, so it is not ramped from zero: the base year
+        # takes the first anchor's value. Years before that anchor are unstressed anyway, so the
+        # extension is never read; carrying it flat avoids inventing a ramp toward zero USD.
+        if paired_base_by_year:
+            paired_at_anchor = [float(paired_base_by_year[y].get(zone, float('nan')))
+                                for y in anchor_years]
+            annual_paired = np.interp(all_years, interp_years,
+                                      [paired_at_anchor[0]] + paired_at_anchor)
+        else:
+            annual_paired = [float('nan')] * len(all_years)
+        for year, fixed_value, contemp_value, paired_value in zip(
+                all_years, annual, annual_contemp, annual_paired):
             for sector in sectors:
                 rows.append({'ENDW': endw, 'ACTS': sector, 'REG': reg, 'scenario': scenario,
                              'year': year, 'shock_pct': contemp_value,
                              'shock_pct_fixedbase': fixed_value,
                              'shock_pct_contemp': contemp_value,
-                             'value_usd_base': base_usd})
+                             'value_usd_base': base_usd,
+                             'paired_base_usd': paired_value})
     return rows
 
 
