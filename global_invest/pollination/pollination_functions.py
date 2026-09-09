@@ -108,16 +108,15 @@ def zonal_weighted_sum(value_arr, area_arr, zones_arr, zone_labels):
         zone_labels (dict): zone id to (ENDW, REG).
 
     Returns:
-        pd.Series: the weighted sum keyed on (ENDW, REG). Zones summing to nothing are dropped, as
-        in zonal_pct_change, so the two series align.
+        pd.Series: the weighted sum keyed on (ENDW, REG), for every zone in zone_labels. A zone
+        summing to zero KEEPS its zero. zonal_pct_change drops such zones because it divides by
+        them; here the sum is a numerator and zero provision is a real value, not a missing one.
     """
     sums = {}
     for zone_id, key in zone_labels.items():
         mask = zones_arr == zone_id
-        total = np.nansum(value_arr[mask] * area_arr[mask])
-        if total:
-            sums[key] = total
-    return pd.Series(sums)
+        sums[key] = float(np.nansum(value_arr[mask] * area_arr[mask]))
+    return pd.Series(sums, dtype=float)
 
 def anchor_shock_tables(scenario_pct_by_year, baseline_pct_by_year):
     """The two shock measures at the anchor years, per zone.
@@ -197,8 +196,13 @@ def dynamic_shock_rows(fixedbase, contemporaneous, level_usd, scenario, sectors,
             for y in anchor_years:
                 paired = float(paired_scen_by_year[y].get(zone, float('nan')))
                 unpaired = float(unpaired_denominator.get(zone, float('nan')))
-                share_at_anchor.append(paired / unpaired / growth_by_year[y]
-                                       if unpaired else float('nan'))
+                # growth_by_year holds one Series per anchor, keyed by zone like everything else
+                # here, so it must be indexed before use. Dividing by the Series silently produced
+                # a Series per row instead of a scalar.
+                growth = growth_by_year[y]
+                growth = float(growth.get(zone, float('nan'))) if hasattr(growth, 'get') else float(growth)
+                share_at_anchor.append(paired / unpaired / growth
+                                       if unpaired and growth else float('nan'))
             annual_share = np.interp(all_years, interp_years,
                                      [share_at_anchor[0]] + share_at_anchor)
         else:
