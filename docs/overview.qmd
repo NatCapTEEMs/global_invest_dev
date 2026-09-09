@@ -500,10 +500,10 @@ format:
 
 ## health_hypertension
 
-- [Values the hypertension treatment cost urban greenspace avoids: per urban pixel, WHO prevalence times the NDVI-driven risk reduction times the population aged 30-79, priced at the country's published cost per case. Built here end to end from the appendix's sources ({{< meta health_hypertension_gep >}} over the 20 countries with a cost study); the appendix's own table is {{< meta health_hypertension_appendix >}} over 19, and our run matches its ranking at 0.989 while sitting 42 percent above its level on the named deviations (1 km NDVI against their 300 m, the wider SMOD urban mask).]{.state}
+- [Values the hypertension treatment cost urban greenspace avoids: prevalence times the NDVI-driven risk reduction times the urban population aged 30-79, at the country's published cost per case. Built here end to end: {{< meta health_hypertension_gep >}} over the 20 countries with a cost study, matching the appendix's {{< meta health_hypertension_appendix >}} at rank correlation 0.989 and 42 percent above its level on the named deviations.]{.state}
 - **Q1:** the drive's committed per-country CSV mis-attributes 7 of its 19 countries -- the values, sorted by country name, were pasted against labels sorted alphabetically, so Nigeria shows Poland's $6.86bn. Can it be re-exported from the appendix's Table 6?
 - **Q2:** which vintage is the sheet's $106.65bn over 13 countries? It matches neither the appendix nor the committed CSV, and lacks six of the appendix's countries.
-- **Q3:** coverage is the price table, not the method -- 20 countries have refereed treatment costs. Transferring costs on the ln-ln fit against GDP per capita (R2 0.32, observed studies kept) extends the row to {{< meta health_hypertension_extended >}} over 187 countries: is that the account's route to full coverage, or do the authors' own extrapolated costs replace it?
+- **Q3:** is the cost transfer the account's route to full coverage? Transferring the 20 studied costs on GDP per capita (R2 0.32, observed studies kept) extends the row to {{< meta health_hypertension_extended >}} over 187 countries.
 
 ## health_depression
 
