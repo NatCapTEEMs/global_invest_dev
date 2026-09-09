@@ -29,6 +29,39 @@ def risk_ratio_from_odds_ratio(odds_ratio, baseline_prevalence):
     return odds_ratio / (1.0 - baseline_prevalence + baseline_prevalence * odds_ratio)
 
 
+def extrapolated_cost_per_case(costs_df, gdppc_df):
+    """Treatment cost per case for every country: observed where a study exists, else transferred.
+
+    The transfer is the ln-ln regression of cost on GDP per capita over the observed countries,
+    retransformed with Duan smearing -- the same benefit-transfer construction the water-quality
+    strand's owners use.
+
+    Args:
+        costs_df (pd.DataFrame): iso3_r250_label and cost_per_case_usd for the studied countries.
+        gdppc_df (pd.DataFrame): iso3_r250_label and gdp_pc_usd for every country.
+
+    Returns:
+        (pd.DataFrame, dict): one row per gdppc country with `cost_per_case_usd` (the observed
+        value where a study exists, the transferred one otherwise) and `cost_source`
+        ('study' or 'extrapolated'); and the fit's {slope, r2, smearing, n} for the log.
+    """
+    m = costs_df.merge(gdppc_df, on='iso3_r250_label')
+    x, y = np.log(m['gdp_pc_usd']), np.log(m['cost_per_case_usd'])
+    slope, intercept = np.polyfit(x, y, 1)
+    resid = y - (intercept + slope * x)
+    smearing = float(np.mean(np.exp(resid)))
+    fit = {'slope': float(slope), 'r2': float(1 - resid.var() / y.var()),
+           'smearing': smearing, 'n': len(m)}
+    out = gdppc_df.copy()
+    out['cost_per_case_usd'] = np.exp(intercept + slope * np.log(out['gdp_pc_usd'])) * smearing
+    out['cost_source'] = 'extrapolated'
+    observed = dict(zip(costs_df['iso3_r250_label'], costs_df['cost_per_case_usd']))
+    has_study = out['iso3_r250_label'].isin(observed)
+    out.loc[has_study, 'cost_per_case_usd'] = out.loc[has_study, 'iso3_r250_label'].map(observed)
+    out.loc[has_study, 'cost_source'] = 'study'
+    return out[['iso3_r250_label', 'cost_per_case_usd', 'cost_source']], fit
+
+
 def health_hypertension_gep(df, odds_ratio):
     """The service value per country: avoided cases times the cost of a case.
 

@@ -129,6 +129,8 @@ health_hypertension,health_hypertension_cost_input_path,global_invest/health_hyp
 health_hypertension,health_hypertension_cost_source,"the appendix's Table A1: per-person hypertension treatment cost in 2019 USD, one refereed study per country (USA the average of eight), typed verbatim"
 health_hypertension,health_hypertension_odds_ratio,0.95
 health_hypertension,health_hypertension_odds_ratio_source,"odds ratio of hypertension per 0.1 NDVI increment at the 500 m buffer, Bu et al. 2024 (0.95) with Zhao et al. 2022 (0.94) the alternative"
+health_hypertension,health_hypertension_gdp_pc_input_path,global_invest/health_hypertension/wb_gdp_per_capita_2019.csv
+health_hypertension,health_hypertension_gdp_pc_source,"World Bank NY.GDP.PCAP.CD, 2019, for the cost transfer behind the extended column: ln cost on ln GDP pc over the 20 studied countries (R2 0.32), Duan smearing, observed costs kept where a study exists"
 health_hypertension,health_hypertension_reference_path,global_invest/health_hypertension/health_hypertension_appendix_table6.csv
 health_hypertension,health_hypertension_reference_source,"the appendix's own Table 6 (2026-08-16), the authoritative attribution; the drive's committed CSV mis-sorts 7 of 19 countries and is not used"
 recreation,recreation_lulc_share_path_template,global_invest/recreation/lulc/lulc_esa_seals7_2010_1km_{lulc_class}_share.tif

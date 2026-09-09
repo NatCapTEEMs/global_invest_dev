@@ -50,3 +50,17 @@ def test_the_staged_tables_join_on_the_account_labels():
     assert set(costs['iso3_r250_label']) <= set(prevalence['iso3'])
     assert set(costs['iso3_r250_label']) <= set(shares['iso3'])
     assert set(reference['iso3_r250_label']) == set(costs['iso3_r250_label']) - {'GHA'}
+
+
+def test_the_cost_transfer_fits_observed_and_keeps_studies():
+    # two observed countries on an exact ln-ln line: slope 1, smearing 1, R2 1;
+    # the unobserved country gets the line's prediction, the observed keep their studies.
+    costs = pd.DataFrame({'iso3_r250_label': ['AAA', 'BBB'], 'cost_per_case_usd': [100.0, 1000.0]})
+    gdppc = pd.DataFrame({'iso3_r250_label': ['AAA', 'BBB', 'CCC'],
+                          'gdp_pc_usd': [1000.0, 10000.0, 100000.0]})
+    out, fit = hf.extrapolated_cost_per_case(costs, gdppc)
+    out = out.set_index('iso3_r250_label')
+    assert np.isclose(fit['slope'], 1.0) and np.isclose(fit['smearing'], 1.0)
+    assert out.loc['AAA', 'cost_source'] == 'study' and out.loc['AAA', 'cost_per_case_usd'] == 100.0
+    assert out.loc['CCC', 'cost_source'] == 'extrapolated'
+    assert np.isclose(out.loc['CCC', 'cost_per_case_usd'], 10000.0)

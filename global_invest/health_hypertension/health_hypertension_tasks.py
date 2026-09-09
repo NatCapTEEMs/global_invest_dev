@@ -110,6 +110,17 @@ def gep_calculation(p):
 
     df = hf.health_hypertension_gep(df, float(p.health_hypertension_odds_ratio))
 
+    gdppc = pd.read_csv(str(p.get_path(p.health_hypertension_gdp_pc_input_path)))
+    ext_costs, fit = hf.extrapolated_cost_per_case(
+        df[['iso3_r250_label', 'cost_per_case_usd']].dropna(),
+        gdppc.rename(columns={'iso3': 'iso3_r250_label'}))
+    df = df.merge(ext_costs.rename(columns={'cost_per_case_usd': 'cost_per_case_usd_extended'}),
+                  on='iso3_r250_label', how='left')
+    df['health_hypertension_gep_extended'] = df['avoided_cases'] * df['cost_per_case_usd_extended']
+    hb.log('  cost transfer for the extended column: ln cost on ln GDP pc over %d studies, '
+           'slope %.3f, R2 %.3f, smearing %.2f -- observed costs kept where a study exists'
+           % (fit['n'], fit['slope'], fit['r2'], fit['smearing']))
+
     reference = pd.read_csv(str(p.get_path(p.health_hypertension_reference_path)))
     df = df.merge(reference.rename(columns={
         'health_hypertension_gep': 'health_hypertension_gep_reference'}),
@@ -133,6 +144,9 @@ def gep_calculation(p):
     hb.log(f'  appendix reference: {df["health_hypertension_gep_reference"].sum():,.2f} over '
            f'{int((df["health_hypertension_gep_reference"].fillna(0) > 0).sum())}; '
            f'log-correlation over shared countries {corr:.3f}')
+    hb.log(f'  extended (transferred costs where no study exists): '
+           f'{df["health_hypertension_gep_extended"].sum():,.2f} over '
+           f'{int((df["health_hypertension_gep_extended"].fillna(0) > 0).sum())} countries')
     return True
 
 
