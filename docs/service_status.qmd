@@ -1137,4 +1137,24 @@ denominator, which was the actual bug, and the share is the remaining approximat
 - **need:** Three group decisions. The transpiration share (1.0 counts all terrestrial evaporation as ecosystem-mediated; the literature's transpiration fraction would roughly halve the row). The accounting rule: publish as a decomposition of water supply or as a row carrying only the $75.3bn transboundary part, but never added whole to water supply. And whether hydropower's water value should also be re-attributed (rain feeds the rivers too); the current construction re-attributes irrigation and domestic only.
 
 
-- **signed off:** amber: built and run, conservation asserted in the task, but the three decisions in `need` are the group's and no reference exists to compare against. Condition 10 not attempted (the run is minutes on a laptop, so closing it is cheap once the construction is blessed)
+- **signed off:** amber: built and run, conservation asserted in the task, but the three decisions in `need` are the group's and no reference exists to compare against. Condition 10 not attempted (the run is minutes on a laptop, so closing it is cheap once the construction is blessed)## Nature View Amenity
+
+- **subgroup:** -
+- **module:** -
+- **category:** -
+- **in the library:** no
+- **run:** -
+- **ours:** -
+- **method:** The hotel landscape premium (method PDF `nature_amenity_value_appendix.pdf`, unsigned): per country, hotel room revenue (rooms x occupancy x average daily rate x 365) times the landscape-room share of a scraped room-price sample, times a premium coefficient identified WITHIN mixed hotels -- landscape rooms against comparable non-landscape rooms in the same hotel and date, so brand, location and star rating difference out. A clean hedonic design on paper.
+- **total:** -
+- **code:** None anywhere. The drive's Scenic Quality folder holds one file, a US home-parcel research PROPOSAL (Hockert, Braaksma, McWay -- LLM parcel scraping plus InVEST viewshed; nothing computed, and a different method from the hotel premium the sheet carries). The hotel-premium method PDF sits in the write-ups folder with no author name, no data and no pipeline.
+- **grid:** No raster; country tables throughout, if it were built.
+- **reference:** The all-services sheet's `Nature view amenity` column only: $65.80bn stated over 132 countries. ⚠ **The sheet's own totals row drops Aruba**: the countries actually sum to $66.06bn, and the $254,981,476 gap is Aruba's row to the dollar -- a SUM-range slip on the sheet's side. Nothing behind the column exists on the drive: no per-country file, no sample, no coefficients.
+- **replicated:** Nothing can be: the landscape-room share and the premium coefficient come from a scraped hotel-room price sample that exists only with the (unnamed) authors. The revenue layer alone (rooms x occupancy x ADR) is checkable against UNWTO accommodation statistics -- already staged for recreation -- but without the sample the two country-specific factors on top of it are unverifiable.
+- **decided:** -
+- **number:** -
+- **examined for the issues table (2026-09-10):** the country fingerprint is hotel revenue, not landscape: USA $7.96bn, Italy $6.37bn, Japan $3.65bn -- and ⚠ Saudi Arabia FOURTH at $3.54bn, which for nature views suggests the room classification (sea, mountain, river, lake, garden) may be sweeping in courtyard and city-garden rooms where hotel revenue is large. Worth one question to whoever owns the sample.
+- **need:** Four asks, the first being WHO: the method PDF is unsigned, so the owner must be identified before anything else. Then the scraped sample (or at least the per-country shares and coefficients, dated and sized), the Aruba totals slip (one SUM range), and the Saudi Arabia classification check. ⚠ This is the one row we genuinely cannot produce: the quantity layer is public, but both country-specific factors live in a sample nobody has seen.
+
+
+- **signed off:** n/a: no module, no code anywhere, and the sheet's column is the only artifact. The method is documented and clean on paper; everything numeric rests on an unseen sample owned by an unnamed author
