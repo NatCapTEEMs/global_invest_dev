@@ -77,6 +77,10 @@ stormwater_volume: "185.85bn m3"
 groundwater_recharge_gep: "$7.21M"
 pest_control_gep: "$10.34bn"
 pest_control_gep_no_premium: "$7.49bn"
+health_hypertension_gep: "$148.71bn"
+health_hypertension_appendix: "$104.66bn"
+health_depression_gep: "$97.96bn"
+health_depression_author: "$159.6M"
 hydro_manuscript: "$287.7bn"
 cp_total: "$36.72bn"
 lcr_ours: "$175.56bn"
@@ -307,6 +311,8 @@ format:
 | moisture_recycling | {{< meta moisture_recycling_gep >}}, of which {{< meta moisture_recycling_export >}} crosses a border as exported rain | no. No reference figure exists anywhere; the construction implements the submission's own valuation direction |
 | groundwater_recharge | {{< meta groundwater_recharge_gep >}} avoided pumping cost | yes. The sheet's column reproduced to the cent in all 108 valued countries |
 | pest_control | {{< meta pest_control_gep >}} with the appendix's organic price premium, {{< meta pest_control_gep_no_premium >}} without | partly. The sheet's $6.25bn sits at the no-premium level, log-correlation 0.93 across countries; its own pipeline is not on the drive |
+| health_hypertension | {{< meta health_hypertension_gep >}} over the 20 countries with a cost study | partly. Rank yes (log-correlation 0.989 on the appendix's {{< meta health_hypertension_appendix >}}), level 42 percent above on named deviations; no pipeline exists on the drive |
+| health_depression | {{< meta health_depression_gep >}} at the method's stated scope | no, deliberately. The author's {{< meta health_depression_author >}} is the same construction at roughly 1/400th of the urban population, so the gap measures the undocumented run scope |
 
 : {tbl-colwidths="[22,32,46]"}
 
@@ -490,6 +496,21 @@ format:
 - **Q1:** does the committed $6.25bn include the organic price premium the appendix describes? The level says no; with it the same construction gives {{< meta pest_control_gep >}}.
 - **Q2:** what produced Viet Nam's $291M? The staged FiBL 2019 areas support roughly a ninth of it under any reading of the method.
 - **Q3:** can the final pipeline and its inputs be shared, so the row stops being a carried-across file?
+
+## health_hypertension
+
+- [Values the hypertension treatment cost urban greenspace avoids: per urban pixel, WHO prevalence times the NDVI-driven risk reduction times the population aged 30-79, priced at the country's published cost per case. Built here end to end from the appendix's sources ({{< meta health_hypertension_gep >}} over the 20 countries with a cost study); the appendix's own table is {{< meta health_hypertension_appendix >}} over 19, and our run matches its ranking at 0.989 while sitting 42 percent above its level on the named deviations (1 km NDVI against their 300 m, the wider SMOD urban mask).]{.state}
+- **Q1:** the drive's committed per-country CSV mis-attributes 7 of its 19 countries -- the values, sorted by country name, were pasted against labels sorted alphabetically, so Nigeria shows Poland's $6.86bn. Can it be re-exported from the appendix's Table 6?
+- **Q2:** which vintage is the sheet's $106.65bn over 13 countries? It matches neither the appendix nor the committed CSV, and lacks six of the appendix's countries.
+- **Q3:** coverage is the price table, not the method -- 20 countries have refereed treatment costs. Is the cost extrapolation the authors plan the account's route to full coverage?
+
+## health_depression
+
+- [Values the depression cases urban greenspace prevents, at the societal cost of a case, following the InVEST urban mental health model. Built here end to end at the method's stated scope -- all urban residents of the 32 countries with a cost study -- giving {{< meta health_depression_gep >}} and 64.5M prevented cases; the author's file carries {{< meta health_depression_author >}}, the same construction at roughly 1/400th of that population, so the run's undocumented spatial extent is now a measured question rather than a guess.]{.state}
+- **Q1:** what extent did the author's run cover? Our full-scope build is 370 times the file at the median country (USA 835, Germany 405), which says a city sample.
+- **Q2:** which of the drive's two variants is blessed -- `high resolution` ({{< meta health_depression_author >}}, the sheet's column) or `low resolution` ($167.3M)?
+- **Q3:** the costs are USD PPP, mostly 2018, against the account's 2019 USD -- restate, or carry the caveat?
+- **Q4:** the two health strands share the same greenness and comorbid outcomes -- how does the account avoid double counting between them?
 
 # Questions for the scenario shocks, not the GEP account
 
