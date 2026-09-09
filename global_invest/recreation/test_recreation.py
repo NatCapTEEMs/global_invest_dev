@@ -85,6 +85,19 @@ def test_value_potential_is_visits_times_national_cost_times_ring_distance():
     assert np.isclose(value[0], expected, rtol=1e-5)
 
 
+def test_value_potential_is_linear_in_the_pixel_size():
+    # The km-per-degree conversion is therefore a pure rescale of the value surface.
+    population = np.array([1000.0, 250.0], dtype='float32')
+    country_id = np.array([2.0, 2.0], dtype='float32')
+    cost_lookup = np.array([0.0, 0.0, 0.5], dtype='float32')
+    k, alpha = rf.RECREATION_GRAVITY_K[1], rf.RECREATION_GRAVITY_ALPHA[1]
+    in_degrees = rf.value_potential_array(population, country_id, cost_lookup, k, alpha,
+                                          buffer_zone=2, pixel_size=1.0)
+    in_km = rf.value_potential_array(population, country_id, cost_lookup, k, alpha,
+                                     buffer_zone=2, pixel_size=111.32)
+    assert np.allclose(in_km, in_degrees * 111.32, rtol=1e-5)
+
+
 def test_overnight_allocation_splits_national_totals_by_hotel_share():
     # Country 1: 3 hotel pixels weighted 1/1/2 sharing 400 overnights -> 100/100/200.
     # Country 2 has overnights but no hotels -> allocates nothing (stays 0).

@@ -97,18 +97,21 @@ def mask_to_sites(input_path, sites_path, output_path):
 
 
 def calculate_kernel_recreation(population_path, country_id_path, fuel_cost_df,
-                                hq_sites_path, visits_output_path, value_output_path, working_dir):
+                                hq_sites_path, visits_output_path, value_output_path, working_dir,
+                                km_per_degree=1.0):
     """The visit/value engine shared by daily recreation and tourism: for each Chebyshev ring,
     build the potential surfaces and convolve them over the population, then mask the summed
     totals to high-quality sites. population_path is residents (daily) or allocated overnights
-    (tourism); everything else is identical between the two."""
+    (tourism); everything else is identical between the two. km_per_degree converts the raster's
+    degree pixel size into the kilometres the fuel-cost column prices; 1.0 leaves the distance
+    in degrees."""
     country_costs = dict(zip(fuel_cost_df['iso3_r250_id'], fuel_cost_df[rf.RECREATION_FUEL_COST_COL]))
     max_country_id = max(country_costs.keys()) if country_costs else 0
     cost_lookup = np.zeros(max_country_id + 1, dtype=np.float32)
     for country_id, cost in country_costs.items():
         cost_lookup[country_id] = cost
 
-    pixel_size = abs(pygeoprocessing.get_raster_info(population_path)['pixel_size'][0])
+    pixel_size = abs(pygeoprocessing.get_raster_info(population_path)['pixel_size'][0]) * km_per_degree
     os.makedirs(working_dir, exist_ok=True)
     total_visits_path = os.path.join(working_dir, 'total_visits.tif')
     total_value_path = os.path.join(working_dir, 'total_value.tif')
@@ -331,7 +334,8 @@ def daily_recreation(p):
             p.recreation_population_path, p.recreation_country_id_path,
             hb.df_read(p.recreation_fuel_cost_path), p.recreation_hq_sites_path,
             p.daily_recreation_visits_path, p.daily_recreation_value_path,
-            working_dir=os.path.join(p.cur_dir, 'kernel'))
+            working_dir=os.path.join(p.cur_dir, 'kernel'),
+            km_per_degree=float(p.recreation_km_per_degree))
     return True
 
 
@@ -348,7 +352,8 @@ def tourist_recreation(p):
             p.recreation_overnights_path, p.recreation_country_id_path,
             hb.df_read(p.recreation_fuel_cost_path), p.recreation_hq_sites_path,
             p.tourist_recreation_visits_path, p.tourist_recreation_value_path,
-            working_dir=os.path.join(p.cur_dir, 'kernel'))
+            working_dir=os.path.join(p.cur_dir, 'kernel'),
+            km_per_degree=float(p.recreation_km_per_degree))
     return True
 
 

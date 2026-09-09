@@ -65,7 +65,8 @@ xe_committed: "$1,140.4bn"
 timber_total: "$132.13bn"
 landslide_total: "$770.7M"
 landslide_deaths: "570.66"
-recreation_total: "$1.73bn"
+recreation_total: "$192.36bn"
+recreation_total_degrees: "$1.73bn"
 fire_cause_total: "-$1.3bn"
 fire_baseline_total: "-$22.4bn"
 fire_area_total: "+$16.7bn"
@@ -283,7 +284,7 @@ format:
 | erosion | not reported | no. The run is ongoing. |
 | landslide_mitigation | {{< meta landslide_total >}} ({{< meta landslide_deaths >}} avoided deaths) | no. The all-services sheet's column ($865M) is the first per-country reference, and it disagrees with ours everywhere: unrelated country splits under near-matching totals |
 | fisheries | shock + commercial GEP {{< meta fisheries_total >}} provisional + subsistence {{< meta fisheries_subsistence_total >}} + aquaculture {{< meta fisheries_aquaculture_total >}} | partially. Subsistence reproduces its committed output, and the commercial run has no reference output yet |
-| recreation | {{< meta recreation_total >}} provisional | no. The author's output table is not reachable |
+| recreation | {{< meta recreation_total >}} with the travel distance in kilometres | no. The author's table is not reachable, and the sheet's {{< meta recreation_total_degrees >}} is the degree construction rounded to three significant figures |
 | fire_protection | {{< meta fire_cause_total >}} provisional, one of three coefficients | partially. Reproduces the committed output, but reads the committed regression coefficients rather than refitting them. Kosovo and two Indian sub-regions now reach a country instead of no country |
 | water_supply | hydropower component {{< meta water_supply_total >}} | yes. |
 | water_use | {{< meta water_use_gep >}} irrigation, from a {{< meta water_use_premium_gross >}} premium, and {{< meta water_use_domestic_gep >}} domestic | no. The drive's two committed figures were produced separately, so neither is a reference |
@@ -362,9 +363,9 @@ format:
 
 ## recreation
 
-- [Values visits to natural recreation sites at travel cost: 1 km sites ranked by land-cover shares, protected areas and road access, then a gravity model sends residents on day trips and tourists on overnight stays into the high-quality sites. Computed end to end in the library.]{.state}
+- [Values visits to natural recreation sites at travel cost: 1 km sites ranked by land-cover shares, protected areas and road access, then a gravity model sends residents on day trips and tourists on overnight stays into the high-quality sites. Computed end to end in the library, with the travel distance converted to the kilometres the fuel cost prices: {{< meta recreation_total >}}. The source construction multiplied the per-km cost by a distance in degrees, giving {{< meta recreation_total_degrees >}} -- the level the sheet carries -- and the value is exactly linear in the conversion, so the two differ by the 111.32 km in an equatorial degree.]{.state}
 - **Q1:** where can we find the source pipeline's results_by_country.csv?
-- **Q2:** did the travel-cost step intend km? It multiplies a USD-per-km fuel cost by a distance measured in the raster's pixel units (degrees), which understates values.
+- **Q2:** did the travel-cost step intend kilometres? The fuel-cost column is USD per km, so we now convert the degree pixel size at 111.32 km per degree -- and since the answer moves the row a hundredfold, it needs the author's word, not just ours.
 
 ## crop_provision
 

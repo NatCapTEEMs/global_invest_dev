@@ -14,10 +14,11 @@ Raster ops are pure array functions (unit-testable) wrapped into pygeoprocessing
 closures by the callers below; nodata semantics are kept exactly as in the source repo so the
 port stays anchor-comparable against its reference output.
 
-todo A units question is FLAGGED, not fixed: the travel-cost distance is buffer_zone * pixel_size
-with pixel_size read from the raster (degrees on a 4326 grid), while the fuel-cost column is USD
-per KM. Port is faithful; resolve against the reference results_by_country.csv when the data and
-anchor are staged, then fix here and in the method qmd together if confirmed.
+The travel-cost distance is buffer_zone * pixel_size with pixel_size handed in by the task
+layer in KILOMETRES (the raster's degree size times `recreation_km_per_degree`), matching the
+fuel-cost column's USD per km. Setting that parameter to 1.0 leaves the distance in degrees,
+which is the source repo's construction. The value is linear in pixel_size, so the two
+configurations differ by exactly that factor.
 """
 
 import numpy as np
