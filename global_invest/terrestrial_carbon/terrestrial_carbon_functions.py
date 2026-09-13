@@ -168,10 +168,12 @@ def dynamic_shock_rows(scenario_by_year, baseline_by_year, baseline_at_base_year
                        base_year, sector, scenario):
     """Anchor-year zone means expanded to one row per zone and year, on both denominators.
 
-    shock_pct is the contemporaneous measure and is what the economic model reads: afeall is a
-    productivity deviation from the baseline path, so it is normalised by the year's own baseline.
-    shock_pct_fixedbase divides the same numerator by the base year's baseline instead, which is
-    the share of base-year value that pollination also reports.
+    Three measures are reported. Two share the numerator `scenario[y] - baseline[y]`, the
+    scenario's departure from the nature-off baseline at the same year: shock_pct divides it by
+    that year's baseline, shock_pct_fixedbase by the base year's. The third, shock_pct_v3, is a
+    different quantity -- `scenario[y] - baseline[base_year]` over the base year, the scenario's
+    own trajectory away from the base year rather than its distance from a contemporaneous
+    baseline. The two answer different questions and do not agree in magnitude or sign.
 
     Args:
         scenario_by_year (dict): anchor year -> pd.Series of per-zone mean carbon density.
@@ -194,6 +196,12 @@ def dynamic_shock_rows(scenario_by_year, baseline_by_year, baseline_at_base_year
         y: shock_percent(scenario_by_year[y], baseline_by_year[y], baseline_at_base_year)
         for y in anchor_years}).dropna()
         if baseline_at_base_year is not None else None)
+    # Baseline at the base year on BOTH sides, so a scenario at the base year is exactly zero and
+    # the interpolation's pinned zero is the measure's own value rather than an imposed one.
+    own_base = (pd.DataFrame({
+        y: shock_percent(scenario_by_year[y], baseline_at_base_year, baseline_at_base_year)
+        for y in anchor_years}).dropna()
+        if baseline_at_base_year is not None else None)
 
     rows = []
     for zone_id, contemp_anchors in contemporaneous.iterrows():
@@ -206,11 +214,18 @@ def dynamic_shock_rows(scenario_by_year, baseline_by_year, baseline_at_base_year
                                                     fixedbase.loc[zone_id].values, base_year)
         else:
             annual_fixed = [np.nan] * len(all_years)
-        for year, contemp_value, fixed_value in zip(all_years, annual_contemp, annual_fixed):
+        if own_base is not None and zone_id in own_base.index:
+            annual_v3 = interpolate_annual_shock(all_years, anchor_years,
+                                                 own_base.loc[zone_id].values, base_year)
+        else:
+            annual_v3 = [np.nan] * len(all_years)
+        for year, contemp_value, fixed_value, v3_value in zip(all_years, annual_contemp,
+                                                              annual_fixed, annual_v3):
             # Explicit, same-named columns in both ES files (carbon + pollination) for the #14 diagnostic.
             rows.append({'ENDW': endw, 'ACTS': sector, 'REG': reg, 'scenario': scenario,
                          'year': year, 'shock_pct': contemp_value,
-                         'shock_pct_fixedbase': fixed_value, 'shock_pct_contemp': contemp_value})
+                         'shock_pct_fixedbase': fixed_value, 'shock_pct_contemp': contemp_value,
+                         'shock_pct_v3': v3_value})
     return rows
 
 

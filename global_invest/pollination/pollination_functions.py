@@ -215,8 +215,22 @@ def dynamic_shock_rows(fixedbase, contemporaneous, level_usd, scenario, sectors,
                                       [paired_at_anchor[0]] + paired_at_anchor)
         else:
             annual_paired = [float('nan')] * len(all_years)
-        for year, fixed_value, contemp_value, paired_value, share_value in zip(
-                all_years, annual, annual_contemp, annual_paired, annual_share):
+
+        # The trajectory away from the base year, not the distance from a contemporaneous
+        # baseline that shock_pct measures. Ratio anchor by anchor and interpolate after:
+        # interpolating the two levels first and dividing gives a different number between anchors.
+        if paired_scen_by_year and paired_base_by_year:
+            v3_at_anchor = []
+            for y in anchor_years:
+                scen_level = float(paired_scen_by_year[y].get(zone, float('nan')))
+                base_level = float(paired_base_by_year[y].get(zone, float('nan')))
+                v3_at_anchor.append(100.0 * (scen_level / base_level - 1.0)
+                                    if base_level else float('nan'))
+            annual_v3 = np.interp(all_years, interp_years, [0.0] + v3_at_anchor)
+        else:
+            annual_v3 = [float('nan')] * len(all_years)
+        for year, fixed_value, contemp_value, paired_value, share_value, v3_value in zip(
+                all_years, annual, annual_contemp, annual_paired, annual_share, annual_v3):
             for sector in sectors:
                 rows.append({'ENDW': endw, 'ACTS': sector, 'REG': reg, 'scenario': scenario,
                              'year': year, 'shock_pct': contemp_value,
@@ -224,7 +238,8 @@ def dynamic_shock_rows(fixedbase, contemporaneous, level_usd, scenario, sectors,
                              'shock_pct_contemp': contemp_value,
                              'value_usd_base': base_usd,
                              'paired_base_usd': paired_value,
-                             'paired_scen_over_contemp_denom': share_value})
+                             'paired_scen_over_contemp_denom': share_value,
+                             'shock_pct_v3': v3_value})
     return rows
 
 
@@ -331,7 +346,7 @@ class SufficiencySettings:
         country_raster_path (str): the raster defining the 5 km target grid. The valuation needs
             sufficiency and value on one grid, so this points at the value raster itself.
         pa_raster_300m_path (str): the protected-area raster, for the protected-area summary.
-        tile_size (int): rows per block when streaming the 300 m land cover. ⚠⚠ **This changes
+        tile_size (int): rows per block when streaming the 300 m land cover. **This changes
             the result, it is not a performance setting.** The foraging-radius kernel takes its
             latitude from the tile's midpoint and rounds the 2 km radius to an integer pixel
             count, so the tile height decides the kernel. At 2048 our raster agreed with the
@@ -898,7 +913,7 @@ def find_source_value_raster(p, gep_base_year):
     His files are named `poll_value_global_<year>usd.tif`, one per price year, and he does not
     publish every year. Take the exact year when it exists, which needs no deflation at all.
 
-    ⚠ Otherwise take the LATEST year he publishes, not the nearest. The files are separate vintages
+    Otherwise take the LATEST year he publishes, not the nearest. The files are separate vintages
     of his model, not one raster restated in different dollars: measured on 2026-08-28, his 2024
     file deflates to $386.76bn at 2019 prices while his 2023 file deflates to $398.74bn, a three
     percent spread that a price index cannot produce. The later file is the later method, and it is

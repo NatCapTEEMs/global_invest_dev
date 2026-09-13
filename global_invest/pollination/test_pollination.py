@@ -584,3 +584,48 @@ def test_our_rebuilt_raster_stays_close_to_the_authors_staged_one():
         checked += 1
     if not checked:
         pytest.skip('no pollination run with an independence check on this machine')
+
+
+def test_dynamic_shock_rows_v3_is_the_scenario_against_its_own_paired_base():
+    """v3 is a trajectory, not a distance from a contemporaneous baseline.
+
+    Pinned because the two were conflated once: the seam emitted only the contemporaneous and
+    fixed-base measures, and the v3 the paper reports had to be rebuilt from rasters by a separate
+    script. They disagree in magnitude and in sign.
+    """
+    fixedbase = _zone_frame({2030: {ZONE_A: -8.0}, 2040: {ZONE_A: -12.0}})
+    paired_base = {2030: pd.Series({ZONE_A: 200.0}), 2040: pd.Series({ZONE_A: 400.0})}
+    paired_scen = {2030: pd.Series({ZONE_A: 180.0}), 2040: pd.Series({ZONE_A: 300.0})}
+
+    rows = pf.dynamic_shock_rows(fixedbase, fixedbase, None, 'net_zero', ('V_F',), base_year=2020,
+                                 paired_base_by_year=paired_base, paired_scen_by_year=paired_scen)
+    by_year = pd.DataFrame(rows).set_index('year')
+
+    # 180/200 - 1 = -10%;  300/400 - 1 = -25%.
+    assert np.isclose(by_year.loc[2030, 'shock_pct_v3'], -10.0)
+    assert np.isclose(by_year.loc[2040, 'shock_pct_v3'], -25.0)
+    # Pinned at zero at the base year and straight between anchors, like every other measure here.
+    assert by_year.loc[2020, 'shock_pct_v3'] == 0.0
+    assert np.isclose(by_year.loc[2025, 'shock_pct_v3'], -5.0)
+    assert np.isclose(by_year.loc[2035, 'shock_pct_v3'], -17.5)
+    # The ratio is taken anchor by anchor. Interpolating the two LEVELS to 2035 and dividing there
+    # would give 240/300 - 1 = -20%, which is not the same number.
+    assert not np.isclose(by_year.loc[2035, 'shock_pct_v3'], -20.0)
+
+
+def test_dynamic_shock_rows_v3_is_missing_rather_than_infinite_on_a_zero_paired_base():
+    fixedbase = _zone_frame({2030: {ZONE_A: -8.0}})
+    rows = pf.dynamic_shock_rows(fixedbase, fixedbase, None, 'net_zero', ('V_F',), base_year=2029,
+                                 paired_base_by_year={2030: pd.Series({ZONE_A: 0.0})},
+                                 paired_scen_by_year={2030: pd.Series({ZONE_A: 5.0})})
+    by_year = pd.DataFrame(rows).set_index('year')
+    # The anchor is unmeasurable, so it is missing rather than an infinite shock. The base year
+    # stays zero: it is zero by construction, not a measurement the zero denominator could spoil.
+    assert np.isnan(by_year.loc[2030, 'shock_pct_v3'])
+    assert by_year.loc[2029, 'shock_pct_v3'] == 0.0
+
+
+def test_dynamic_shock_rows_v3_is_absent_without_the_paired_halves():
+    fixedbase = _zone_frame({2030: {ZONE_A: -8.0}})
+    rows = pf.dynamic_shock_rows(fixedbase, fixedbase, None, 'net_zero', ('V_F',), base_year=2029)
+    assert all(np.isnan(row['shock_pct_v3']) for row in rows)

@@ -317,3 +317,41 @@ def test_shock_percent_keeps_one_numerator_across_both_denominators():
     scenario, baseline_now, baseline_base = pd.Series([10.0]), pd.Series([80.0]), pd.Series([100.0])
     assert tcf.shock_percent(scenario, baseline_now)[0] == -87.5
     assert tcf.shock_percent(scenario, baseline_now, baseline_base)[0] == -70.0
+
+
+def test_dynamic_shock_rows_v3_measures_the_scenario_against_the_base_year_baseline():
+    """v3 answers a different question from the other two measures, and the answers differ in sign.
+
+    shock_pct and shock_pct_fixedbase share the numerator scenario[y] - baseline[y]: the distance
+    from a contemporaneous baseline. v3's numerator is scenario[y] - baseline[base_year]: the
+    trajectory away from the base year. Pinned because the seam reported only the first pair, and
+    the v3 the paper reports had to be rebuilt outside the tree.
+    """
+    zone_labels = {1: ('AEZ1', 'usa')}
+    baseline_at_base_year = pd.Series({1: 100.0})
+    baseline_by_year = {2030: pd.Series({1: 120.0}), 2040: pd.Series({1: 140.0})}
+    scenario_by_year = {2030: pd.Series({1: 126.0}), 2040: pd.Series({1: 133.0})}
+
+    rows = tcf.dynamic_shock_rows(scenario_by_year, baseline_by_year, baseline_at_base_year,
+                                  zone_labels, 2020, 'FRS', 'net_zero')
+    by_year = pd.DataFrame(rows).set_index('year')
+
+    # Contemporaneous: (126-120)/120 = +5%, then (133-140)/140 = -5%.
+    assert np.isclose(by_year.loc[2030, 'shock_pct'], 5.0)
+    assert np.isclose(by_year.loc[2040, 'shock_pct'], -5.0)
+    # Fixed base: the same numerators over the base year's 100.
+    assert np.isclose(by_year.loc[2030, 'shock_pct_fixedbase'], 6.0)
+    assert np.isclose(by_year.loc[2040, 'shock_pct_fixedbase'], -7.0)
+    # v3: (126-100)/100 = +26%, (133-100)/100 = +33%. Positive where the contemporaneous measure
+    # is negative -- the scenario is above its own base year while below the 2040 baseline.
+    assert np.isclose(by_year.loc[2030, 'shock_pct_v3'], 26.0)
+    assert np.isclose(by_year.loc[2040, 'shock_pct_v3'], 33.0)
+    assert by_year.loc[2020, 'shock_pct_v3'] == 0.0
+    assert np.isclose(by_year.loc[2035, 'shock_pct_v3'], 29.5)
+
+
+def test_dynamic_shock_rows_v3_is_absent_without_a_base_year_baseline():
+    zone_labels = {1: ('AEZ1', 'usa')}
+    rows = tcf.dynamic_shock_rows({2030: pd.Series({1: 126.0})}, {2030: pd.Series({1: 120.0})},
+                                  None, zone_labels, 2029, 'FRS', 'net_zero')
+    assert all(np.isnan(row['shock_pct_v3']) for row in rows)
