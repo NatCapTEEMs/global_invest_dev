@@ -1557,9 +1557,28 @@ def pollination_shock(p):
 
     if not getattr(p, 'scenario_lulc_paths', None):
         tmpl = p.es_lulc_path_template
-        p.scenario_lulc_paths = {s: {y: glob.glob(tmpl.format(scenario=s, year=y))[0]
-                                     for y in anchor_years if glob.glob(tmpl.format(scenario=s, year=y))}
-                                 for s in [base_scenario] + es_shock_scenarios}
+        # ONE lookup per scenario-year, and every required map must resolve to EXACTLY one file.
+        # The previous form globbed twice and dropped any year whose glob was empty, so a scenario
+        # with no maps silently became {} and failed later as `KeyError: 2030` -- pointing at the
+        # year rather than at the scenario that has no maps at all. A retired scenario left in the
+        # scenarios CSV (stress_test) reached here and cost a 3-hour run.
+        resolved, missing = {}, []
+        for s in dict.fromkeys([base_scenario] + es_shock_scenarios):
+            resolved[s] = {}
+            for y in anchor_years:
+                hits = sorted(glob.glob(tmpl.format(scenario=s, year=y)))
+                if len(hits) != 1:
+                    missing.append('%s %s: %d matches for %s'
+                                   % (s, y, len(hits), tmpl.format(scenario=s, year=y)))
+                    continue
+                resolved[s][y] = hits[0]
+        if missing:
+            raise ValueError(
+                'pollination: %d required scenario-year map(s) did not resolve to exactly one '
+                'file. Every scenario in es_shock_scenarios must have a map for every anchor year; '
+                'a retired scenario left in the scenarios CSV is the usual cause.\n  %s'
+                % (len(missing), '\n  '.join(missing)))
+        p.scenario_lulc_paths = resolved
 
     # base-year SEALS7 map: per-ES override, else the ES-shared attr. NEVER p.base_year_lulc_path, which
     # SEALS OWNS and overwrites at runtime with its raw-ESA source (a raw-ESA base map would make the
@@ -1608,6 +1627,45 @@ def pollination_shock(p):
                 paired_scen.setdefault(scen, {})[year] = pf.zonal_weighted_sum(
                     scen_arr, area_arr, zones_arr, zone_labels)
 
+    # SAME-YEAR PAIRING (p.pollination_pairing == 'same_year'): pair each scenario map with the
+    # no-damage baseline's map for the SAME year rather than with 2023, so both sides sit on one
+    # common-cropland domain, and divide by the baseline's provision on that same domain. The
+    # base-year pass above still runs -- its rasters already exist, so it costs reads, not model
+    # work -- because it supplies the fixed-base column and the 2023 zero anchor.
+    pairing = str(getattr(p, 'pollination_pairing', 'base_year'))
+    if pairing not in ('base_year', 'same_year'):
+        raise ValueError("p.pollination_pairing must be 'base_year' or 'same_year', got %r" % pairing)
+    same_year = {}
+    if pairing == 'same_year':
+        hb.log('  pollination: SAME-YEAR pairing -- scenario against the no-damage baseline in each '
+               'year, on their common cropland, with that baseline as the denominator')
+        for year in anchor_years:
+            base_lulc = p.scenario_lulc_paths[base_scenario][year]
+            for scen in es_shock_scenarios:
+                label = f'{scen}_{year}_sy'
+                diff_path = scenario_diff_raster(
+                    cfg, scenario=label, lulc_path=p.scenario_lulc_paths[scen][year],
+                    baseline_lulc_path=base_lulc, target_year=es_shock_base_year,
+                    baseline_label=f'{base_scenario}_{year}')
+                diff_arr, _ = _read_masked(diff_path)
+                # The denominator is the baseline's own provision on the SAME common domain, which
+                # is the b_stab half of the pair scenario_diff_raster has just written.
+                denom_path = paired_baseline_value_path(cfg, label, f'{base_scenario}_{year}')
+                if not hb.path_exists(denom_path):
+                    raise NameError('same-year pairing produced no paired baseline raster at %s'
+                                    % denom_path)
+                denom_arr, _ = _read_masked(denom_path)
+                pct, _level = pf.zonal_pct_change(diff_arr, denom_arr, area_arr, zones_arr, zone_labels)
+                # zonal_pct_change drops a zone whose denominator is zero or missing, silently.
+                # Say so: a zone with no baseline provision has no ratio to report, and the count
+                # is the difference between a clean year and one that quietly lost zones.
+                dropped = len(zone_labels) - len(pct)
+                if dropped:
+                    hb.log('    %s %d: %d of %d zones have no baseline provision on the common '
+                           'domain, so no ratio is defined and they are dropped'
+                           % (scen, year, dropped, len(zone_labels)))
+                same_year.setdefault(scen, {})[year] = pct
+
     # The shock numerator is scenario minus nature-off baseline at each anchor. anchor_shock_tables
     # puts it over the two denominators and dynamic_shock_rows expands those to annual rows.
     rows = []
@@ -1618,14 +1676,29 @@ def pollination_shock(p):
         # The effective contemporaneous denominator is the unpaired 2023 value times the
         # no-damage baseline's own growth factor, which is what anchor_shock_tables divides by.
         growth_by_year = {y: 1.0 + value[base_scenario][y] / 100.0 for y in anchor_years}
+        extras = dict(paired_base_by_year=paired_base.get(scen),
+                      paired_scen_by_year=paired_scen.get(scen),
+                      unpaired_denominator=level_usd, growth_by_year=growth_by_year)
+        if pairing == 'same_year':
+            # Replace the rebased measure with the directly paired one, on the zones both
+            # constructions carry. A zone present in one and not the other cannot be compared, so
+            # dropping it is the only honest option -- but it is counted, not silently lost.
+            direct = pd.DataFrame({y: same_year[scen][y] for y in anchor_years}).dropna()
+            shared = anchor_shock.index.intersection(direct.index)
+            if len(shared) < len(anchor_shock.index):
+                hb.log('    %s: %d zone(s) carried by the base-year pairing have no same-year '
+                       'counterpart and are dropped' % (scen, len(anchor_shock.index) - len(shared)))
+            anchor_shock, anchor_contemp = anchor_shock.loc[shared], direct.loc[shared]
+            # paired_scen_over_contemp_denom belongs to the base-year construction: under same-year
+            # pairing the numerator and denominator share one domain, so a provision cut scales the
+            # shock and the stress transform needs no such column. Emitting it would tell
+            # build_stress_variants to apply the additive form to a table that wants the ratio.
+            extras = dict(unpaired_denominator=level_usd)
         rows += pf.dynamic_shock_rows(anchor_shock, anchor_contemp, level_usd, scen,
-                                      p.pollination_shock_acts, es_shock_base_year,
-                                      paired_base_by_year=paired_base.get(scen),
-                                      paired_scen_by_year=paired_scen.get(scen),
-                                      unpaired_denominator=level_usd,
-                                      growth_by_year=growth_by_year)
+                                      p.pollination_shock_acts, es_shock_base_year, **extras)
 
     out = pd.DataFrame(rows)
+    out = utilities.filter_to_model_domain(out, p.pollination_shock_output_path, 'pollination', log=hb.log)
     utilities.assert_shock_table_sound(out, es_shock_scenarios, 'pollination')
     out.to_csv(p.pollination_shock_output_path, index=False)
     hb.log('  pollination shock: %d rows, %d scenarios (shock_pct=shock_pct_contemp=/baseline-year value, shock_pct_fixedbase=/2023 value) -> %s'
@@ -1694,6 +1767,7 @@ def pollination_shock_static(p):
                                      es_shock_base_year, es_shock_end_year)
 
     out = pd.DataFrame(rows)
+    out = utilities.filter_to_model_domain(out, p.pollination_shock_output_path, 'pollination', log=hb.log)
     utilities.assert_shock_table_sound(out, es_shock_scenarios, 'pollination')
     out.to_csv(p.pollination_shock_output_path, index=False)
     nz = out[(out['year'] == es_shock_end_year) & (out['shock_pct'] != 0)] if len(out) else out

@@ -26,7 +26,7 @@ def read_fisheries_headers(cwon_path, headers):
 
 
 # NGFS scenario -> fisheries RCP header. RCP2.6=FI26 (below_2c/net_zero/low_demand),
-# RCP4.5=FI45 (ndcs/delayed_transition), RCP7.0=FI85 (current_policies/fragmented_world/stress_test).
+# RCP4.5=FI45 (ndcs/delayed_transition), RCP7.0=FI85 (current_policies/fragmented_world/-es20).
 # RCP -> FI header. The headers ARE RCP-named (FI26=RCP2.6, FI45=RCP4.5, FI85=RCP8.5; FI85 also
 # serves RCP7.0 as the closest available -- provenance #16). When the scenarios CSV carries a
 # climate_label column (hydrate_es_scenarios publishes p.es_shock_climate_labels), the header is
@@ -36,7 +36,7 @@ RCP_FI_MAP = {'rcp26': 'FI26', 'rcp45': 'FI45', 'rcp60': 'FI85', 'rcp70': 'FI85'
 FISH_HEADER_MAP = {
     'below_2c': 'FI26', 'net_zero': 'FI26', 'low_demand': 'FI26',
     'ndcs': 'FI45', 'delayed_transition': 'FI45',
-    'current_policies': 'FI85', 'fragmented_world': 'FI85', 'stress_test': 'FI85',
+    'current_policies': 'FI85', 'fragmented_world': 'FI85', 'current_policies-es20': 'FI85',
 }
 FISH_CAP = 2.0          # +-2% backstop. Every legitimate FI value across FI26/FI45/FI85 is <=1.6%, so real
                         # signal passes untouched. Kept as a catch-all; known-bad values are now IMPUTED by
@@ -56,7 +56,7 @@ FISH_CAP = 2.0          # +-2% backstop. Every legitimate FI value across FI26/F
 #   FI26 ~ FI85 : r=+0.482                                   -> +0.2916
 #   median FI26/FI45 ratio (n=39, |FI45|>0.05) = +0.8902     -> +0.5026   (independent corroboration)
 # Result: nor = +0.477 (2.6), +0.565 (4.5), +0.558 (8.5) -- gains rise then flatten with warming.
-# ⚠ This is an IMPUTATION, not a correction at source, and is raised with the shock's
+# This is an IMPUTATION, not a correction at source, and is raised with the shock's
 # author as issue #16.
 FISH_VALUE_OVERRIDES = {('FI26', 'nor'): 0.4767}
 
@@ -295,7 +295,7 @@ def subsistence_fisheries_by_country(lynch_df, countries_df):
 # (gep_fisheries_02_calc_gep_fish.R). Aquaculture is the first term times the
 # same share, so nothing new is invented here -- one term of a sum is separated.
 #
-# ⚠ Aquaculture is farmed. What the share values is the natural-resource input to
+# Aquaculture is farmed. What the share values is the natural-resource input to
 # farmed production, not a wild stock, and whether that belongs in the account
 # beside capture is a scope question for the paper rather than a computation.
 # =============================================================================
@@ -390,7 +390,7 @@ def natural_resource_share_of_fishing_gross_output(evfp_array, maks_array, endow
                                                    endowment=GTAP_NATURAL_RESOURCE_ENDOWMENT):
     """The same natural-resource payments as a share of GROSS OUTPUT, not of value added.
 
-    ⚠ Why both exist. `natural_resource_share_of_fishing` divides the natural-resource payment by
+    Why both exist. `natural_resource_share_of_fishing` divides the natural-resource payment by
     the sector's total FACTOR payments -- its value added. FAO's aquaculture figure is a REVENUE,
     which is gross output. Multiplying a revenue by a share of value added overstates it by the
     ratio between the two, and for fishing that ratio is 0.585 on average and as low as 0.265.
@@ -399,7 +399,7 @@ def natural_resource_share_of_fishing_gross_output(evfp_array, maks_array, endow
     sources meet: GTAP's land share of forestry value added is 0.589, and 0.589 x 0.644 = 0.380 on
     gross output, against CWoN's separately-derived forest rental ratio of 0.376. One percent apart.
 
-    ⚠ The conversion is per region and cannot be a single factor: value added over gross output
+    The conversion is per region and cannot be a single factor: value added over gross output
     runs 0.265 to 0.928 across the 50 GTAP regions, so a world average would move small fishing
     economies by more than the correction itself.
 

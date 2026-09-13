@@ -1299,11 +1299,10 @@ def erosion_sdr(p):
     # still needs downstream to find these outputs, and a task body that returns early would leave
     # the attribute unset and fail the next task with an AttributeError.
     p.erosion_sdr_dir = p.cur_dir      # downstream tasks read usle_/rkls_/avoided_erosion_ from here
-    if not p.run_this:
-        return
-    import hazelbean as hb
-    from natcap.invest.sdr import sdr
-
+    # PUBLISHED BEFORE the run_this guard, per ProjectFlow convention: erosion_shock reads
+    # p.scenario_lulc_paths, and on a resumed run this task is SKIPPED because its rasters
+    # already exist. Built after the guard the attribute stayed unset and killed the next
+    # task with AttributeError 25s in -- the exact failure the comment above predicts.
     # Build scenario_lulc_paths from a template if the caller didn't (mirrors carbon/pollination).
     # p.es_lulc_path_template uses {scenario} and {year}; include the base scenario for differencing.
     if not getattr(p, 'scenario_lulc_paths', None) and getattr(p, 'es_lulc_path_template', None):
@@ -1314,11 +1313,41 @@ def erosion_sdr(p):
         if base not in scens:
             scens = scens + [base]
         p.scenario_lulc_paths = {}
+        missing = []
         for scn in scens:
-            yr_map = {y: sorted(glob.glob(tmpl.format(scenario=scn, year=y)))[0]
-                      for y in years if glob.glob(tmpl.format(scenario=scn, year=y))}
+            yr_map = {}
+            for y in years:
+                hits = sorted(glob.glob(tmpl.format(scenario=scn, year=y)))
+                if len(hits) != 1:
+                    missing.append('%s %s: %d matches' % (scn, y, len(hits)))
+                    continue
+                yr_map[y] = hits[0]
             if yr_map:
                 p.scenario_lulc_paths[scn] = yr_map
+        if missing:
+            raise ValueError(
+                'erosion: %d required scenario-year map(s) did not resolve to exactly one file. A '
+                'retired scenario left in the scenarios CSV is the usual cause.\n  %s'
+                % (len(missing), '\n  '.join(missing)))
+        # erosion_method='service_threshold' holds the severe set at the BASE YEAR, reading
+        # severe_mask(base_scenario, es_shock_base_year). The base-year map is NOT matched by the
+        # scenario template -- SEALS writes it under fine_processed_inputs -- so without this entry
+        # the exposure loop never emits a base-year grid and the level function dies three hours in
+        # with RasterioIOError on severe_mask_<base>_<base_year>.tif.
+        base_year = int(getattr(p, 'es_shock_base_year', 0) or 0)
+        base_map = getattr(p, 'es_base_year_lulc_path', None)
+        if base_year and base in p.scenario_lulc_paths:
+            if not (base_map and os.path.isfile(base_map)):
+                raise ValueError(
+                    'erosion: base-year LULC required for the base-year severe mask but not found: '
+                    'p.es_base_year_lulc_path=%r' % (base_map,))
+            p.scenario_lulc_paths[base].setdefault(base_year, base_map)
+
+    if not p.run_this:
+        return
+    import hazelbean as hb
+    from natcap.invest.sdr import sdr
+
 
     # analysis grid: downsample to a 6.45 km reference for local; run at native SEALS res on the cluster
     native = bool(p.erosion_native_resolution)   # false -> the 6.45 km analysis grid; true -> native SEALS 300 m
@@ -1353,8 +1382,22 @@ def erosion_sdr(p):
     sdr_params.update(getattr(p, 'erosion_sdr_params', {}))
 
     n = 0
+    reused = 0
     for scenario, by_year in p.scenario_lulc_paths.items():
         for year, lulc in by_year.items():
+            suffix = '%s_%d' % (scenario, year)
+            workspace = os.path.join(p.cur_dir, suffix)
+            # Per-scenario-year existence guard, per the rule that every expensive step skips work
+            # it has already done. The task's own skip_existing is all-or-nothing -- the dir is
+            # there, so the WHOLE task is skipped -- which is why a chain missing a single
+            # scenario-year could not be completed without re-solving all of them. InVEST SDR is
+            # the most expensive step in the tree, so this guard is what makes a partial chain
+            # finishable. Keyed on the three rasters the downstream tasks read, not on the
+            # workspace dir, which a killed run leaves behind looking complete.
+            if all(hb.path_exists(os.path.join(workspace, name % suffix))
+                   for name in ('usle_%s.tif', 'rkls_%s.tif', 'avoided_erosion_%s.tif')):
+                reused += 1
+                continue
             lulc = p.get_path(lulc)
             if native:
                 lulc_grid = lulc
@@ -1362,8 +1405,6 @@ def erosion_sdr(p):
                 lulc_grid = os.path.join(p.cur_dir, 'lulc_%s_%d_grid.tif' % (scenario, year))
                 if not hb.path_exists(lulc_grid):  # categorical LULC -> mode
                     hb.resample_to_match(lulc, grid_ref, lulc_grid, resample_method='mode')
-            suffix = '%s_%d' % (scenario, year)
-            workspace = os.path.join(p.cur_dir, suffix)
             sdr.execute(dict(workspace_dir=workspace, results_suffix=suffix,
                              dem_path=dem, erosivity_path=erosivity, erodibility_path=erodibility,
                              lulc_path=lulc_grid, watersheds_path=watersheds,
@@ -1381,9 +1422,10 @@ def erosion_sdr(p):
                         'input was built on. An input changed extent; every raster downstream would '
                         'shift with it.' % (got[0], got[1], suffix, solve['shape'][0], solve['shape'][1]))
             n += 1
-    hb.log('  erosion SDR: %d scenario x year maps on the EPSG:%s equal-area solve grid %dx%d '
-           '-> usle_/rkls_ in %s'
-          % (n, getattr(p, 'erosion_solve_epsg', 8857), solve['shape'][0], solve['shape'][1], p.cur_dir))
+    hb.log('  erosion SDR: %d solved, %d already present, on the EPSG:%s equal-area solve grid '
+           '%dx%d -> usle_/rkls_ in %s'
+          % (n, reused, getattr(p, 'erosion_solve_epsg', 8857),
+             solve['shape'][0], solve['shape'][1], p.cur_dir))
     return True
 
 
@@ -1405,18 +1447,26 @@ def erosion_upstream(p):
     dem = p.get_path(p.erosion_dem_path)
 
     n = 0
+    reused = 0
     for scenario, by_year in p.scenario_lulc_paths.items():
         for year in by_year:
             suffix = '%s_%d' % (scenario, year)
+            share_path = os.path.join(p.cur_dir, 'upstream_%s.tif' % suffix)
+            # Same per-scenario-year guard as step 1, for the same reason: D8 routing costs minutes
+            # per map and the task-level skip_existing cannot express "all but one".
+            if hb.path_exists(share_path):
+                reused += 1
+                continue
             sdr_dir = os.path.join(p.erosion_sdr_dir, suffix)
             accumulate_upstream_prevention_share(
                 dem,
                 os.path.join(sdr_dir, 'avoided_erosion_%s.tif' % suffix),
                 os.path.join(sdr_dir, 'rkls_%s.tif' % suffix),
                 os.path.join(p.cur_dir, suffix),
-                os.path.join(p.cur_dir, 'upstream_%s.tif' % suffix))
+                share_path)
             n += 1
-    hb.log('  erosion upstream: %d maps -> upstream_<scn>_<yr>.tif in %s' % (n, p.cur_dir))
+    hb.log('  erosion upstream: %d routed, %d already present -> upstream_<scn>_<yr>.tif in %s'
+           % (n, reused, p.cur_dir))
     return True
 
 
@@ -1478,9 +1528,21 @@ def erosion_exposure(p):
         return _to_grid_da(rxr.open_rasterio(path, masked=True).squeeze(), template)
 
     n = 0
+    reused = 0
+    published = ('ps_gated', 'ps_continuous', 'rkls_grid', 'cropland_frac',
+                 'severe_cropland_frac', 'severe_mask')
     for scenario, by_year in p.scenario_lulc_paths.items():
         for year in by_year:
             suffix = '%s_%d' % (scenario, year)
+            # Same per-scenario-year guard as steps 1 and 2. This step also has to be re-runnable
+            # WITHOUT re-doing finished work for a second reason: it is grafted skip_existing=1, so
+            # the runner flips that off to let it write a missing scenario-year, and without this
+            # guard flipping it re-derives all six rasters for every scenario-year that was already
+            # correct -- each rewrite displacing the previous file rather than replacing it.
+            if all(hb.path_exists(os.path.join(p.cur_dir, '%s_%s.tif' % (name, suffix)))
+                   for name in published):
+                reused += 1
+                continue
             sdr_dir = os.path.join(p.erosion_sdr_dir, suffix)
             # PS is computed ON the analysis grid (reproject usle/avoided/ups FIRST, then PS) -- the
             # order matters because PS is nonlinear; computing it on the native grid then reprojecting
@@ -1539,7 +1601,13 @@ def erosion_exposure(p):
                     crop_mask, gdal.GDT_Byte, 255,
                     raster_driver_creation_tuple=('GTIFF', (
                         'TILED=YES', 'BIGTIFF=YES', 'COMPRESS=DEFLATE', 'PREDICTOR=2')))
-            cropfrac = np.nan_to_num(_to_grid(crop_mask, usle).values)
+            # Streamed onto the analysis grid rather than loaded: the native mask is 8.40
+            # billion cells, and holding it resident is what exhausted a 64 GB job. Same grid,
+            # same average resampling, same nodata handling -- see crop_fraction_on_grid.
+            from global_invest.erosion import crop_fraction
+            cropfrac = crop_fraction.read_fraction(crop_fraction.crop_fraction_on_grid(
+                crop_mask, ha_per_cell_path,
+                os.path.join(p.cur_dir, 'cropland_frac_grid_%s.tif' % suffix)))
 
             tr = usle.rio.transform(); px = usle.rio.resolution()
 
@@ -1562,9 +1630,9 @@ def erosion_exposure(p):
             _write(mask.astype('float32'), 'severe_mask')
             n += 1
     per_country = getattr(p, 'erosion_country_boundary_path', None) is not None
-    hb.log('  erosion prevention: %d maps -> ps_gated_ on the WGS84 %d arcsecond rung as POGs '
-           '(severe T=%s)'
-          % (n, arcseconds, 'per-country 11/2' if per_country else '%.1f flat' % thresh_high))
+    hb.log('  erosion prevention: %d built, %d already present -> ps_gated_ on the WGS84 %d '
+           'arcsecond rung as POGs (severe T=%s)'
+          % (n, reused, arcseconds, 'per-country 11/2' if per_country else '%.1f flat' % thresh_high))
     return True
 
 
@@ -1961,7 +2029,8 @@ def erosion_shock(p):
 
     def level_service_threshold(scn, yr):
         """METHOD B THRESHOLDED -- B confined to severely eroding pixels, with the severe set taken
-        from the BASE scenario and held FIXED. THE DEFAULT (see p.erosion_method).
+        from the BASE scenario AT THE BASE YEAR and held FIXED across both scenarios and years.
+        THE DEFAULT (see p.erosion_method).
 
         Verified inside this task by the full ZAF pipeline run: shock_pct, the column
         build_combined_afeall consumes, comes out identical to shock_pct_service_threshold with a
@@ -1983,7 +2052,12 @@ def erosion_shock(p):
         higher means better. Gating only the numerator would instead measure how much severe erosion a
         zone HAS. No cropland term is needed: every sum carries prod as a factor, so a pixel with no
         production contributes nothing regardless."""
-        keep = _grid('severe_mask', base_scenario, yr) > 0.5
+        # The severe set is held at the BASE YEAR, not at yr. Holding it across scenarios
+        # alone left it moving across years (137,517 severe cells at 2023 against 149,007 at
+        # 2050, +8.4%), which is invisible to V1 -- both scenarios share mask(base, t) -- but
+        # not to a difference taken ACROSS years: L_s(t) and L_s(2023) were then averaged over
+        # different pixel sets, and a zone entering or leaving the set swung the whole level.
+        keep = _grid('severe_mask', base_scenario, es_shock_base_year) > 0.5
         return _service_level(np.where(keep, np.clip(_grid('ps_continuous', scn, yr), 0.0, 1.0), 0.0),
                               np.where(keep, _rkls_tons(scn, yr), 0.0))
 
@@ -2065,6 +2139,7 @@ def erosion_shock(p):
                                  'level_baseline': level_base[i]})
 
     out = pd.DataFrame(rows)
+    out = utilities.filter_to_model_domain(out, p.erosion_shock_output_path, 'erosion', log=hb.log)
     utilities.assert_shock_table_sound(out, scenarios, 'erosion')
     out.to_csv(p.erosion_shock_output_path, index=False)
     end = out[out['year'] == es_shock_end_year]
@@ -2139,6 +2214,7 @@ def erosion_shock_static(p):
                                  'scenario': our_scn, 'year': year, 'shock_pct': val * frac})
 
     out = pd.DataFrame(rows)
+    out = utilities.filter_to_model_domain(out, p.erosion_shock_output_path, 'erosion', log=hb.log)
     utilities.assert_shock_table_sound(out, es_shock_scenarios, 'erosion')
     out.to_csv(p.erosion_shock_output_path, index=False)
     nz = out[(out['year'] == es_shock_end_year) & (out['shock_pct'] != 0)] if len(out) else out

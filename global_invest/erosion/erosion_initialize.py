@@ -70,15 +70,24 @@ def add_erosion_tasks(p, parent=None):
         return p
     # The SDR data references live in es_parameters (erosion rows), hydrated by publish_inputs
     # in each task -- a builder constructs the tree and configures nothing.
-    # skip_existing=1 on the three EXPENSIVE steps makes the chain resumable: InVEST SDR and the D8
-    # routing each cost minutes per scenario-year and their outputs are deterministic, so re-running them
-    # on every relaunch wastes the whole iteration. The final shock task deliberately does NOT skip --
-    # it is cheap, it is the step still being iterated on, and it must pick up any change to the
-    # coefficients, the crop-sector map or the method selector.
-    # ⚠ Consequence: a task killed MID-WRITE leaves a dir that now looks complete and will be skipped.
-    # If a run dies inside sdr/upstream/exposure, delete that task's dir before relaunching.
-    p.erosion_sdr_task      = p.add_task(erosion_tasks.erosion_sdr, parent=parent, skip_existing=1)
-    p.erosion_upstream_task = p.add_task(erosion_tasks.erosion_upstream, parent=parent, skip_existing=1)
-    p.erosion_exposure_task = p.add_task(erosion_tasks.erosion_exposure, parent=parent, skip_existing=1)
+    #
+    # NO skip_existing ON THE CHAIN. Resumability is real -- InVEST SDR and the D8 routing each cost
+    # minutes per scenario-year -- but it belongs INSIDE each task, keyed on the rasters that task
+    # produces, and that is where it now lives (erosion_tasks: each of sdr/upstream/exposure skips a
+    # scenario-year whose outputs are already present). The task-level flag was strictly worse in
+    # three ways, all of which were paid for:
+    #   * it keys on the task DIRECTORY, so a run killed mid-write leaves a dir that looks complete
+    #     and is skipped forever -- the old comment here predicted exactly that;
+    #   * it is all-or-nothing, so a chain missing ONE scenario-year cannot be completed. That is
+    #     what made erosion_method='service_threshold' unbuildable: nothing ever produced the
+    #     base-year severe mask, and every relaunch skipped the tasks that would have;
+    #   * it forced consumers to reach into the tree and flip the flag back off to make progress,
+    #     which is configuration living in a runner rather than in the tree.
+    # With the inner guards, a task that runs on a complete tree re-solves nothing: the static solve
+    # grid, the repaired watersheds and the re-keyed biophysical table are all cached too, so the
+    # residual cost is a few path_exists calls.
+    p.erosion_sdr_task      = p.add_task(erosion_tasks.erosion_sdr, parent=parent)
+    p.erosion_upstream_task = p.add_task(erosion_tasks.erosion_upstream, parent=parent)
+    p.erosion_exposure_task = p.add_task(erosion_tasks.erosion_exposure, parent=parent)
     p.erosion_shock_task    = p.add_task(erosion_tasks.erosion_shock, parent=parent)
     return p
