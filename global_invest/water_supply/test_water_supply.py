@@ -175,7 +175,7 @@ def test_water_use_committed_anchors_join_and_total():
 # ---------------------------------------------------------------------------
 
 def _components(rows):
-    # ⚠ irrigation and domestic are the VALUE ADDED columns: SDG 6.4.1 inverts back to value
+    # irrigation and domestic are the VALUE ADDED columns: SDG 6.4.1 inverts back to value
     # added, so that is what the chain produces, and the account's figure is a share of it.
     return pd.DataFrame(rows, columns=['country', 'iso3_r250_id', 'iso3_r250_label', 'year',
                                        'water_use_agriculture_value_added',
@@ -239,7 +239,7 @@ def test_the_premium_is_the_difference_per_hectare_not_the_whole_value_added():
     """AAA: 100 USD of ag value added, 60% of it from 10 ha irrigated, 90 ha rainfed.
 
     Irrigated earns 60/10 = 6 per ha, rainfed 40/90 = 0.444, so the premium is 5.556 a hectare
-    and 55.56 over the ten hectares. ⚠ The whole irrigated value added is 60 -- crediting water
+    and 55.56 over the ten hectares. The whole irrigated value added is 60 -- crediting water
     with that is the error the premium exists to fix, because the 0.444 a hectare rainfed land
     earns would be earned with or without irrigation.
     """

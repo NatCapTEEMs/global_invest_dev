@@ -378,7 +378,7 @@ def test_the_damage_tables_convert_eur2010_to_usd2019_and_give_pasture_the_cropl
     Every value takes one combined factor, the 2010 FX rate times the US inflator to 2019.
     Pasture has no curve of its own in the JRC table, so it takes cropland's.
 
-    ⚠ This is the WIDE input shape, where the depth columns are ALREADY absolute EUR/m2.
+    This is the WIDE input shape, where the depth columns are ALREADY absolute EUR/m2.
     The other shape -- a fractional curve per region times a max damage per country -- is
     build_canonical_from_components, tested below, and 4A does not call it. Which shape the
     real canonical file has decides which is right, and getting it wrong scales every damage
@@ -518,7 +518,7 @@ def test_our_flood_gep_reproduces_the_authors_committed_table():
     His `flood_gep_for_merge_v2_2024hazard.csv` is the table he named as the one to join against the
     other services, staged in base_data beside our own run's output so the comparison survives.
 
-    ⚠ What it proves is narrow, and the entry says so: the module is his pipeline with our path
+    What it proves is narrow, and the entry says so: the module is his pipeline with our path
     handling and ProjectFlow wiring, so agreement was close to guaranteed. This is a build test --
     it catches our refactor breaking his arithmetic, and nothing about whether the arithmetic is
     right."""

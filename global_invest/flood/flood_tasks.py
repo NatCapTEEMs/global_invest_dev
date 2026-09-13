@@ -1364,7 +1364,7 @@ def build_damage_tables(p):
     Cropland's curve is copied to pasture when `flood_set_pasture_equal_crop` is set, which is the
     JRC default: pasture has no curve of its own.
 
-    ⚠ The staged inputs cannot currently price buildings, and the guard below stops the run rather
+    The staged inputs cannot currently price buildings, and the guard below stops the run rather
     than letting it report the shortfall as a number. `jrc_fractional_curves_long.csv` holds a
     zero at all nine depths for `GLOBAL` crossed with `Residential buildings` while every other
     region carries a real curve, and `country_landtype_flood_damage_JRC_EUR_m2.csv` puts all 214
@@ -1898,7 +1898,7 @@ def compute_ead_by_country(p, scenario: str = "current") -> pd.DataFrame:
     hb.log(f"[DONE] Step 4C [{scenario}]: ok={n_ok} / {len(iso3_dirs)}, "
           f"total EAD ${total:,.0f}")
 
-    # ⚠ "ok" counts countries that completed, not countries that produced a number. On 2026-08-29
+    # "ok" counts countries that completed, not countries that produced a number. On 2026-08-29
     # this printed ok=250/250 while every country was $0, because the run had hydrated no config
     # and there was nothing to value -- and the zero total flowed all the way into a published
     # published GEP table without anything raising. A whole-world zero is never a real result, so it stops
@@ -2823,7 +2823,7 @@ def gep_calculation(p):
     The author's export is the fallback when that chain has not run. Which was used is recorded in
     the log and in service_results.
 
-    ⚠ This is the GEP, not the expected annual damage the same pipeline reports.
+    This is the GEP, not the expected annual damage the same pipeline reports.
     """
     publish_inputs(p)
     service_results, already_done = utilities.begin_gep_calculation(p, 'flood')

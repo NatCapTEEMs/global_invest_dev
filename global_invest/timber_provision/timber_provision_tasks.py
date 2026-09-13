@@ -63,13 +63,13 @@ def gep_calculation(p):
     df_gep = tp.roundwood_gross_value_by_country(
         hb.df_read(str(p.get_path(p.timber_provision_faostat_roundwood_path))),
         df_gep, int(p.gep_base_year))
-    # ⚠ The account's timber value is CWoN's rent, so `timber_provision_gep` -- the shared key
+    # The account's timber value is CWoN's rent, so `timber_provision_gep` -- the shared key
     # every other service writes and the account reads -- IS the CWoN rent. The spatial estimate
     # is kept beside it as `timber_provision_gep_spatial`: it is the only forestry layer this
     # library has.
     df_gep = df_gep.rename(columns={'timber_provision_gep': 'timber_provision_gep_spatial',
                                     'timber_provision_gep_cwon_rent': 'timber_provision_gep'})
-    # ⚠ The fuelwood decomposition. timber_provision_gep is CWoN's forest rent, which is built
+    # The fuelwood decomposition. timber_provision_gep is CWoN's forest rent, which is built
     # from FAOSTAT items 1864 (Wood Fuel), 1866 and 1867 (industrial roundwood) summed BEFORE the
     # rental ratio, so fuelwood is already inside it. The account keeps the timber figure whole --
     # that is the decision -- and publishes the split beside it so a separate fuelwood row is
@@ -88,7 +88,7 @@ def gep_calculation(p):
                 service_results['gep_by_country_base_year'])
     fuel = df_gep['timber_provision_gep_fuelwood_part'].sum()
     industrial = df_gep['timber_provision_gep_industrial_part'].sum()
-    hb.log('  ⚠ of which fuelwood: %s (%.1f%%); industrial roundwood: %s. A separate fuelwood '
+    hb.log('  of which fuelwood: %s (%.1f%%); industrial roundwood: %s. A separate fuelwood '
            'service would be a SUBSET of the timber figure, not an addition.'
            % (f'{fuel:,.2f}', 100 * fuel / (fuel + industrial), f'{industrial:,.2f}'))
     for column, label in (('timber_provision_gep_spatial', 'spatial'),
@@ -96,7 +96,7 @@ def gep_calculation(p):
         priced = df_gep[df_gep['timber_roundwood_gross_value'].gt(0) & df_gep[column].gt(0)]
         over = priced[priced[column] > priced['timber_roundwood_gross_value']]
         if len(over):
-            hb.log('  ⚠ %s exceeds its own gross roundwood value in %d countries: %s'
+            hb.log('  %s exceeds its own gross roundwood value in %d countries: %s'
                    % (label, len(over), ', '.join(over['iso3_r250_label'].head(6))))
 
     spatial = df_gep['timber_provision_gep_spatial'].sum()
@@ -120,7 +120,7 @@ def gep_result(p):
 def fuelwood_gep(p):
     """Fuelwood as its own table: our lambda-applied estimate, the reference, and the gap.
 
-    ⚠ Fuelwood is NOT an additional service on top of timber. CWoN's forest rent is built from
+    Fuelwood is NOT an additional service on top of timber. CWoN's forest rent is built from
     FAOSTAT items 1864 (Wood Fuel), 1866 and 1867 (industrial roundwood) summed before the rental
     ratio, so the fuelwood rent is already inside `timber_provision_gep`. This task makes that part
     addressable rather than adding to it, because the account may want a fuelwood row and needs to
@@ -135,7 +135,7 @@ def fuelwood_gep(p):
       export unit value, with NO lambda. The upper bound, and the shape the reference has.
     - `fuelwood_gep_reference`  the author's committed output, staged from the drive.
 
-    ⚠ The reference applies no ecosystem share at all: across the 178 countries FAOSTAT also
+    The reference applies no ecosystem share at all: across the 178 countries FAOSTAT also
     covers, it is $181,140,611,163 over 1,929,080,408 m3, an implied $93.90/m3 against FAO's export
     unit value of $67.47. That is a gross value, not a rent, and it is the lambda question the
     issues document raises for this service.

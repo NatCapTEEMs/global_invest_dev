@@ -2,7 +2,7 @@
 
 GEP side: the valuation builds the pollination value raster here (pollination_value_raster:
 production times world producer price times each crop's dependence on animal pollination, written
-as USD in the cell) and aggregates it to one row per country on r250. ⚠ The raster made
+as USD in the cell) and aggregates it to one row per country on r250. The raster made
 elsewhere carries USD per square kilometre; a zonal sum over that adds densities and yields
 $18.28bn where the area-weighted total is $476.29bn. Building the raster as USD in the cell is
 what makes the zonal sum the total.

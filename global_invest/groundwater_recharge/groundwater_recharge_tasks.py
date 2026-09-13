@@ -81,7 +81,7 @@ def gep_calculation(p):
     aquastat['iso3_r250_label'] = aquastat['Area'].map(name_to_iso3)
     unmapped = sorted(aquastat[aquastat['iso3_r250_label'].isna()]['Area'].unique())
     if unmapped:
-        hb.log('  ⚠ %d AQUASTAT areas have no country mapping and their withdrawals are dropped: %s'
+        hb.log('  %d AQUASTAT areas have no country mapping and their withdrawals are dropped: %s'
                % (len(unmapped), ', '.join(unmapped[:8]) + ('...' if len(unmapped) > 8 else '')))
     withdrawal = aquastat.rename(columns={'Value': 'gw_wdw_bil_m3'})[
         ['iso3_r250_label', 'gw_wdw_bil_m3']].dropna(subset=['iso3_r250_label'])
@@ -93,7 +93,7 @@ def gep_calculation(p):
     prices['iso3_r250_label'] = prices['Country name'].map(price_name_to_iso3)
     unpriced = sorted(prices[prices['iso3_r250_label'].isna()]['Country name'].unique())
     if unpriced:
-        hb.log('  ⚠ %d price-table names have no country mapping and their tariffs are dropped: %s'
+        hb.log('  %d price-table names have no country mapping and their tariffs are dropped: %s'
                % (len(unpriced), ', '.join(unpriced[:8]) + ('...' if len(unpriced) > 8 else '')))
     prices = prices[['iso3_r250_label', 'electricity_usd_per_kwh']].dropna(subset=['iso3_r250_label'])
 

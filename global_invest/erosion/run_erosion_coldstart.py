@@ -3,7 +3,7 @@
 The question this answers is narrow: does the erosion pipeline reproduce its published
 $18,240,930,373 when nothing is carried over from a previous run?
 
-⚠⚠ `invest_sdr` is SKIPPED, and that is the whole point of this file rather than an optimisation.
+`invest_sdr` is SKIPPED, and that is the whole point of this file rather than an optimisation.
 The task reassigns `erosion_usle_path` to its own output whenever it runs:
 
     if p.run_this or hb.path_exists(usle):

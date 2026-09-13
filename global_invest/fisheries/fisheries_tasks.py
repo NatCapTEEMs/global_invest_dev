@@ -57,7 +57,7 @@ def fisheries_shock(p):
     # RAMP the FI value from 0 at the base year rather than taking the HAR's series as-is: the HAR
     # is a STEP asserting the full RCP impact from 2018, which no reading of the source supports (no
     # warming has accumulated by our base year), and the other three services all start at 0.
-    # ⚠ This IMPOSES a profile the data lacks: state it in methods; provenance is #16.
+    # This IMPOSES a profile the data lacks: state it in methods; provenance is #16.
     # The ramp anchors on the last SEALS anchor year, NOT the run length -- anchoring on the run's
     # own end year would deliver the whole 2050 impact by 2025 on a short test run (~13x). Which
     # horizon the FI number actually belongs to is undocumented upstream (#16); override with
@@ -203,7 +203,7 @@ def fisheries_aquaculture_gep(p):
             [str(name).strip() for name in axis] for axis in evfp.sets.setElements]
         share = ff.natural_resource_share_of_fishing(
             evfp.array, endowments, activities, regions)
-        # ⚠ CWoN has no aquaculture rent, so aquaculture cannot take CWoN's lambda the way timber,
+        # CWoN has no aquaculture rent, so aquaculture cannot take CWoN's lambda the way timber,
         # crop, livestock and the extractives do. What it CAN do is use GTAP's share on CWoN's
         # denominator, so the figure is at least commensurable with the rest of the account. Same
         # denominator, different source: that is the best available and the entry says so.
@@ -240,7 +240,7 @@ def fisheries_aquaculture_gep(p):
         # because the account has not decided which denominator lambda is a share of, and the
         # difference is $44.6bn. Forestry is the check: GTAP's land share of forestry value added
         # is 0.589, which on gross output is 0.380, against CWoN's separate rental ratio of 0.376.
-        # ⚠ The account's aquaculture value is the REVENUE share. FAO gives revenue, so the
+        # The account's aquaculture value is the REVENUE share. FAO gives revenue, so the
         # share applied to it must be a share of revenue; the value-added share inflates it by
         # 1/0.596. The value-added figure stays beside it under its own name.
         out['aquaculture_gep_on_value_added_share'] = out['aquaculture_gep']

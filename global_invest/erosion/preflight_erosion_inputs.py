@@ -3,16 +3,16 @@
     python global_invest/erosion/preflight_erosion_inputs.py
 
 A 14-hour `prevention_shares` that dies on a missing table in hour three is the failure this
-prevents. ⚠ Every path is resolved the way the tasks resolve it -- through `publish_inputs` -- so
+prevents. Every path is resolved the way the tasks resolve it -- through `publish_inputs` -- so
 what this reports is what the run will read, not what the CSV happens to say.
 
-⚠⚠ `invest_sdr` is skipped in the cold start, so `erosion_usle_path` and
+`invest_sdr` is skipped in the cold start, so `erosion_usle_path` and
 `erosion_avoided_erosion_path` must resolve to the AUTHOR'S STAGED `revised_feb_13` rasters rather
 than to a project directory. That is the whole point of the variant, so it is asserted here rather
 than assumed: a path under `intermediate/` means the skip did not hold and the run would produce
 the December answer.
 
-⚠ This has to be a FILE inside the repository rather than a heredoc in the sbatch. ProjectFlow
+This has to be a FILE inside the repository rather than a heredoc in the sbatch. ProjectFlow
 infers where project directories live from the calling script's git repo, and a script piped in on
 stdin is not inside one.
 """
@@ -22,7 +22,7 @@ import hazelbean as hb
 
 from global_invest.erosion import erosion_tasks
 
-# ⚠⚠ EVERY `*_path` the service hydrates, read off `p` rather than listed here.
+# EVERY `*_path` the service hydrates, read off `p` rather than listed here.
 #
 # The first version of this file listed the twelve paths a completed run's prevention-shares
 # manifest recorded, and it passed on MSI while the job died 45 seconds later on

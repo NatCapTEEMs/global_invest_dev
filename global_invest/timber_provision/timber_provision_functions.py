@@ -184,7 +184,7 @@ def roundwood_gross_value_by_country(fao_df, countries_df, year):
 def fuelwood_share_of_forest_rent(fao_df, countries_df, year):
     """How much of CWoN's forest rent is fuelwood rather than industrial roundwood.
 
-    ⚠ This is a DECOMPOSITION, not a second service. CWoN's `Forest, rents (current US$)` --
+    This is a DECOMPOSITION, not a second service. CWoN's `Forest, rents (current US$)` --
     published here as `timber_provision_gep` -- is built in `forest_timber_depletion.do` from three
     FAOSTAT items and summed before the rental ratio is applied:
 
@@ -219,7 +219,7 @@ def fuelwood_share_of_forest_rent(fao_df, countries_df, year):
     def revenue(item):
         """Production at the WORLD export unit value, the same basis for both products.
 
-        ⚠ Country-own prices are NOT used here and made the share wrong. The share
+        Country-own prices are NOT used here and made the share wrong. The share
         is a RATIO between two revenues, so both sides have to be priced the same way or the ratio
         measures the pricing rather than the mix. India is the case that exposed it: it exports 309
         cubic metres of wood fuel for $234,000, an implied $757/m3 against a world $67, and 6,096
@@ -250,7 +250,7 @@ def fuelwood_share_of_forest_rent(fao_df, countries_df, year):
 def wood_fuel_gross_value_by_country(fao_df, countries_df, year):
     """FAOSTAT wood fuel production priced at each country's own WOOD FUEL export unit value.
 
-    ⚠ Not the fuelwood share of roundwood gross, which was the first attempt and was wrong by
+    Not the fuelwood share of roundwood gross, which was the first attempt and was wrong by
     almost three times: roundwood gross uses each country's roundwood price, which is dominated by
     industrial timber at about $111/m3 against wood fuel's $67, so scaling it by a revenue share
     prices fuelwood as though it were sawlogs. Wood fuel has its own production and its own export
@@ -266,7 +266,7 @@ def wood_fuel_gross_value_by_country(fao_df, countries_df, year):
                    / float(world[world['Element'] == 'Export quantity']['Value'].iloc[0]))
     fuel = d[(d['Area'] != 'World') & (d['Item'] == 'Wood fuel')]
     produced = fuel[fuel['Element'] == 'Production'].groupby('iso3_r250_id')['Value'].sum()
-    # ⚠ ONE world price for every country, which is the opposite of what the industrial-roundwood
+    # ONE world price for every country, which is the opposite of what the industrial-roundwood
     # bound does, and deliberately. Fuelwood is overwhelmingly NOT traded: it is collected and
     # burned where it grows, so a country's export unit value is set by a tiny specialty flow and
     # says nothing about the price of the rest. Using own prices here gave $368bn against a world

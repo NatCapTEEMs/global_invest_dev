@@ -147,7 +147,7 @@ def render_service_results(p):
     to change.
     """
 
-    # ⚠ A cluster node has no quarto, and the render is a report over results that already
+    # A cluster node has no quarto, and the render is a report over results that already
     # exist -- so its absence downgrades to a loud skip rather than failing a job whose
     # calculation succeeded. The report renders on any machine that has quarto, from the same
     # results.
@@ -312,6 +312,55 @@ def resolve_base_scenario(scenario_labels, scenario_map, base_scn, service, log=
 # carbon/pollination are unbounded percent-change ratios (a near-zero base-year denominator can make
 # a large value legitimate), erosion/fisheries are bounded percentage points (<=8 / <=2 upstream).
 SHOCK_ABS_MAX = 500.0
+
+
+# GTAP land endowments: exactly the AEZS set, and the land block of ENDW, in the model sets.har
+# (AEZ1-AEZ18; ENDW adds the labour types, Capital and NatRes). The r50xAEZ18 shock boundary also
+# carries an AEZ0 residual polygon that no GTAP element corresponds to, so a shock row on it cannot
+# be consumed whatever its value. Membership, not magnitude, is what makes such a row invalid --
+# AEZ0 rows have sat inside a delivered carbon table at |shock| well under the contamination bound.
+GTAP_LAND_ENDW = tuple("AEZ%d" % i for i in range(1, 19))
+
+
+def filter_to_model_domain(df, output_path, label, valid_endw=GTAP_LAND_ENDW, endw_col='ENDW', log=print):
+    """Drop shock rows GTAP has no element for, keeping them beside the table for diagnostics.
+
+    Applied immediately before assert_shock_table_sound, so validation judges only what will actually
+    be delivered. An out-of-domain row is neither a small value to tolerate nor a large one to
+    reject: it is a row the model cannot consume, and it should not reach a bound check at all.
+
+    Only ENDW is filtered. AEZ1-AEZ18 is fixed across GTAP-AEZ aggregations and can be asserted here;
+    the ACTS and REG sets are aggregation-specific (s26/r50 for today's consumer) and pinning them in
+    a shared science library would bake one consumer aggregation into every other.
+
+    Args:
+        df (pd.DataFrame): the assembled shock table.
+        output_path (str): where the table itself is going. Excluded rows are written beside it as
+            <stem>_out_of_domain.csv; a stale one is removed when nothing is excluded, so the file
+            never outlives the run that produced it.
+        label (str): service name, for the log line.
+        valid_endw (tuple): the endowment elements GTAP accepts.
+        endw_col (str): the endowment column. A table without one (fisheries is region-only) passes
+            through untouched.
+        log (callable): where to report what was excluded.
+
+    Returns:
+        pd.DataFrame: the rows GTAP can consume.
+    """
+    if endw_col not in df.columns or not len(df):
+        return df
+    excluded_path = "%s_out_of_domain.csv" % os.path.splitext(output_path)[0]
+    in_domain = df[endw_col].astype(str).str.strip().isin(set(valid_endw))
+    excluded = df[~in_domain]
+    if not len(excluded):
+        if os.path.exists(excluded_path):
+            os.remove(excluded_path)
+        return df
+    excluded.to_csv(excluded_path, index=False)
+    log('  %s shock: held back %d of %d row(s) outside the GTAP endowment domain (%s) -> %s'
+        % (label, len(excluded), len(df), ', '.join(sorted(excluded[endw_col].astype(str).unique())),
+           excluded_path))
+    return df[in_domain].reset_index(drop=True)
 
 
 def assert_shock_table_sound(df, requested_scenarios, label, abs_max=SHOCK_ABS_MAX):
@@ -1179,7 +1228,7 @@ def register_result(p, service, name, path):
     covers the rest: a map is usually built in its own earlier task, and registering it there --
     beside the line that writes it -- is what keeps the two from drifting apart.
 
-    ⚠⚠ Registration is not bookkeeping. `distribute_results` copies what this registry names and
+    Registration is not bookkeeping. `distribute_results` copies what this registry names and
     nothing else, and it is the only place a raster is converted into a POG. A map that is never
     registered never leaves `intermediate/`, so nobody outside a run can open it and condition 16
     has nothing to check -- which is why the library reported clean on the POG condition while
@@ -1867,7 +1916,7 @@ def normalize_columns(df):
 def pixel_area_m2(transform) -> float:
     """Nominal pixel area from an affine transform, in square metres.
 
-    ⚠ Nominal: in a conformal projection this is the equatorial value. See mercator_area_scale.
+    Nominal: in a conformal projection this is the equatorial value. See mercator_area_scale.
     """
     return abs(float(transform.a) * float(transform.e))
 
@@ -2143,7 +2192,7 @@ def collapse_regions_to_countries(df_regions, attribute_columns, value_column, s
 def expand_country_values_to_regions(df_regions, df_by_country, value_column):
     """Each r264 region carrying its COUNTRY's value, for the map only.
 
-    ⚠ The result must never be summed: every sub-region of a split country carries the whole
+    The result must never be summed: every sub-region of a split country carries the whole
     country's value, so a sum counts China six times.
 
     Args:
@@ -2220,7 +2269,7 @@ def publish_raster_as_pog(path, log=None):
     at a pyramid resolution, with overview levels [3, 15, 30, 90, 180, 360] and exact statistics
     stored internally, tiled and COG-valid.
 
-    ⚠ What is usually missing is NOT the grid but the overviews and the internal statistics,
+    What is usually missing is NOT the grid but the overviews and the internal statistics,
     which is what `hb.make_path_pog` adds. A raster already on the pyramid still fails without
     them.
 

@@ -391,6 +391,7 @@ def terrestrial_carbon_shock(p):
             p.terrestrial_carbon_shock_acts, scenario)
 
     out = pd.DataFrame(rows)
+    out = utilities.filter_to_model_domain(out, p.terrestrial_carbon_shock_output_path, 'terrestrial_carbon', log=hb.log)
     utilities.assert_shock_table_sound(out, scenarios, 'terrestrial_carbon')
     out.to_csv(p.terrestrial_carbon_shock_output_path, index=False)
     hb.log('  carbon shock: %d rows, %d scenarios (shock_pct=shock_pct_contemp=/base_Y, shock_pct_fixedbase=/base_%d) -> %s'
@@ -451,6 +452,7 @@ def terrestrial_carbon_shock_static(p):
                                       es_shock_base_year, es_shock_end_year)
 
     out = pd.DataFrame(rows)
+    out = utilities.filter_to_model_domain(out, p.terrestrial_carbon_shock_output_path, 'terrestrial_carbon', log=hb.log)
     utilities.assert_shock_table_sound(out, es_shock_scenarios, 'terrestrial_carbon')
     out.to_csv(p.terrestrial_carbon_shock_output_path, index=False)
     nz = out[(out['year'] == es_shock_end_year) & (out['shock_pct'] != 0)] if len(out) else out

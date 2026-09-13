@@ -166,7 +166,7 @@ def gep_calculation(p):
     fibl['iso3_r250_label'] = fibl['country'].map(name_to_iso3)
     unmapped = sorted(fibl[fibl['iso3_r250_label'].isna()]['country'].unique())
     if unmapped:
-        hb.log('  ⚠ %d FiBL countries have no mapping and their areas are dropped: %s'
+        hb.log('  %d FiBL countries have no mapping and their areas are dropped: %s'
                % (len(unmapped), ', '.join(unmapped[:8])))
     fibl = fibl.dropna(subset=['iso3_r250_label'])
 

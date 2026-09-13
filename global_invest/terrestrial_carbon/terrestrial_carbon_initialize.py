@@ -63,13 +63,20 @@ def add_terrestrial_carbon_tasks(p, parent=None):
     carbon-specific defaults in the task: the output CSV into p.es_shock_dir, the r50xAEZ boundary /
     Spawn density / carbon zones via p.get_path.
     """
-    # skip_existing=1 makes the shock re-runnable via ProjectFlow (dir present -> p.run_this=0 and the task
-    # publishes its output path then returns), matching the calc chain and erosion. Cached intermediates
-    # inside the task are a second layer for partial re-runs.
+    # NO skip_existing. The flag keys on the TASK DIRECTORY, and that directory holds the cached
+    # density rasters -- so once they exist the whole task is skipped and the summaries and the
+    # output table are never rebuilt, even when they are missing or invalidated. The task reported
+    # "Skipping" and "Script complete" and produced nothing, which is why consumers had to reach in
+    # and set skip_existing = 0 to make progress.
+    #
+    # Re-runnability lives INSIDE the task instead, and at a finer grain: _zone_mean guards the
+    # density raster and the zonal summary separately, per scenario-year. Deleting one summary
+    # rebuilds that summary alone and reuses its density raster; deleting the output table rebuilds
+    # the table from summaries already on disk. Same principle as the erosion chain.
     dynamic = 'terrestrial_carbon' in getattr(p, 'dynamic_es', [])
     if not dynamic:   # not requested dynamic -> read the frozen dependency table
-        p.terrestrial_carbon_shock_task = p.add_task(terrestrial_carbon_tasks.terrestrial_carbon_shock_static, parent=parent, skip_existing=1)
+        p.terrestrial_carbon_shock_task = p.add_task(terrestrial_carbon_tasks.terrestrial_carbon_shock_static, parent=parent)
         return p
     # dynamic: recompute from the SEALS maps (one task for carbon; cf. erosion's multi-task chain)
-    p.terrestrial_carbon_shock_task = p.add_task(terrestrial_carbon_tasks.terrestrial_carbon_shock, parent=parent, skip_existing=1)
+    p.terrestrial_carbon_shock_task = p.add_task(terrestrial_carbon_tasks.terrestrial_carbon_shock, parent=parent)
     return p

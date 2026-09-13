@@ -66,7 +66,7 @@ def gep_calculation(p):
     # water_supply_gep stays the hydropower component alone: how (and whether) the water-use
     # components combine with it is the account's subgroup question, flagged on the deck.
     df_gep['water_supply_gep'] = df_gep['hydropower_gep']
-    # ⚠ The irrigation and domestic columns are VALUE ADDED unless a water share is set, in which
+    # The irrigation and domestic columns are VALUE ADDED unless a water share is set, in which
     # case the `_gep` pair appears beside them. Listing only what is present is what keeps the two
     # apart: a fixed list would either drop the denominator or invent an answer.
     water_use_cols = [c for c in ('water_use_irrigation_value_added',
@@ -156,7 +156,7 @@ def water_use_components(p):
         else:
             hb.log('water_use: the premium inputs are not staged, so no premium is computed.')
 
-        # Irrigation GEP: the premium times the rent share. ⚠ The share applies to the PREMIUM,
+        # Irrigation GEP: the premium times the rent share. The share applies to the PREMIUM,
         # never to the whole irrigated value added -- that is the error the premium exists to fix.
         share = getattr(p, 'water_use_water_share_of_value_added', None)
         irrigation_gep = None

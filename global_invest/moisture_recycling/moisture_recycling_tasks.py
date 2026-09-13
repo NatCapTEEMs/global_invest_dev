@@ -3,7 +3,7 @@
 This layer owns every file read and write. The science it calls lives in
 moisture_recycling_functions, which never opens a file.
 
-⚠ The published total is a re-attribution of a SUBSET of the water-supply row (its irrigation and
+The published total is a re-attribution of a SUBSET of the water-supply row (its irrigation and
 domestic components, scaled by each destination's terrestrial-origin precipitation share). It is
 never added to water supply; the two rows partition the same money.
 """
@@ -50,13 +50,13 @@ def gep_calculation(p):
 
     dropped = sorted(set(water_value.index) - set(matrix.columns))
     if dropped:
-        hb.log('  ⚠ %d countries carry water value but are absent from the moisture matrix and '
+        hb.log('  %d countries carry water value but are absent from the moisture matrix and '
                'receive no attribution: %s (their value: %s)'
                % (len(dropped), ', '.join(dropped[:8]) + ('...' if len(dropped) > 8 else ''),
                   f'{water_value.reindex(dropped).sum():,.0f}'))
     untracked = mr.untracked_destinations(matrix)
     if untracked:
-        hb.log('  ⚠ %d destinations are below the tracking grid (all-NaN columns) and their '
+        hb.log('  %d destinations are below the tracking grid (all-NaN columns) and their '
                'water value goes unattributed: %s (their value: %s)'
                % (len(untracked), ', '.join(untracked),
                   f'{water_value.reindex(untracked).fillna(0.0).sum():,.0f}'))
@@ -75,7 +75,7 @@ def gep_calculation(p):
     aggregate_sources = sorted(set(df_gep['iso3_r250_label']) - set(countries['iso3_r250_label']))
     if aggregate_sources:
         lost = df_gep.set_index('iso3_r250_label').loc[aggregate_sources, 'moisture_recycling_gep'].sum()
-        hb.log('  ⚠ %d matrix sources are aggregates with no account country and leave the '
+        hb.log('  %d matrix sources are aggregates with no account country and leave the '
                'published table: %s (their value: %s)'
                % (len(aggregate_sources), ', '.join(aggregate_sources), f'{lost:,.0f}'))
     df_gep['year'] = int(p.gep_base_year)
@@ -88,7 +88,7 @@ def gep_calculation(p):
     gdf.to_file(service_results['gep_by_country_base_year'].replace('.csv', '.gpkg'), driver='GPKG')
 
     hb.log(f'Total moisture_recycling GEP for base year {p.gep_base_year}: {source_total:,.2f}')
-    hb.log('  ⚠ a re-attribution of the water-supply row, never an addition to it: the same '
+    hb.log('  a re-attribution of the water-supply row, never an addition to it: the same '
            'total read on the sink side is %s. Of the source-side value, %s serves the source '
            'country itself and %s is exported as rain.'
            % (f'{sink_total:,.2f}', f'{df_gep["moisture_recycling_gep_own_part"].sum():,.2f}',

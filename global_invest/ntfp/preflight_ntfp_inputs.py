@@ -5,7 +5,7 @@ discover rather than the queue wait plus however far the warps get before reachi
 
     python global_invest/ntfp/preflight_ntfp_inputs.py
 
-⚠ This has to be a FILE inside the repository rather than a heredoc in the sbatch. ProjectFlow
+This has to be a FILE inside the repository rather than a heredoc in the sbatch. ProjectFlow
 infers where project directories live from the calling script's git repo, and a script piped in
 on stdin is not inside one, so the constructor raises before any input is checked.
 """
@@ -22,7 +22,7 @@ INPUTS = ('gep_lulc_input_path', 'ntfp_ndvi_mean_path', 'ntfp_roads_vector_path'
 def main():
     p = hb.ProjectFlow(project_name='gep_ntfp', run_mode='check')
     # The same four calls the tasks make in publish_inputs, in the same order, so what this
-    # resolves is what the run will resolve. ⚠ Writing them out here is what caught
+    # resolves is what the run will resolve. Writing them out here is what caught
     # initialize_pyramid_paths missing from the task's own publish_inputs: ha_per_cell was read
     # by the warps and published by nobody, and the run would have died on the first one.
     utilities.hydrate_es_config(p, 'ntfp', log=hb.log)
@@ -46,7 +46,7 @@ def main():
     if not hb.path_exists(p.ha_per_cell_10sec_path):
         missing.append('ha_per_cell_10sec_path')
 
-    # ⚠⚠ EXISTENCE IS NOT VALIDITY. On MSI (job 17890607) every path resolved and the run died 25
+    # EXISTENCE IS NOT VALIDITY. On MSI (job 17890607) every path resolved and the run died 25
     # minutes later because `ee_r264_correspondence.csv` was an older vintage carrying neither
     # `iso3_r250_id` nor `iso3_r250_label` -- the columns the country stage keys on. A file being
     # present says nothing about it being the one the code expects, so the columns are checked here.
@@ -59,7 +59,7 @@ def main():
         missing.append('df_countries is missing %s, so its vintage is not the one this code reads'
                        % ', '.join(absent))
 
-    # ⚠⚠ The ENVIRONMENT is an input too, and it is checked by behaviour rather than version: a
+    # The ENVIRONMENT is an input too, and it is checked by behaviour rather than version: a
     # broken PROJ installation makes gdal.Warp and RasterizeLayer write empty rasters WITH exit 0
     # (measured: an NDVI warp all-nodata across the Amazon, a country burn with zero cells).
     # A one-degree burn and warp must produce data, or nothing bigger is worth starting.

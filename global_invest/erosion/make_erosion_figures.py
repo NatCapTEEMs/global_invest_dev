@@ -670,7 +670,7 @@ def generate_all_maps_and_figures(p, paths):
     # =============================================================================
     # 10) SUMMARY
     # =============================================================================
-    hb.log(f"✅ Done. Figures saved to: {paths.output.figure_directory}")
+    hb.log(f"Done. Figures saved to: {paths.output.figure_directory}")
     hb.log("Created files:")
     for fp in sorted(glob.glob(os.path.join(paths.output.figure_directory, "*"))):
         if os.path.splitext(fp)[1].lower() in {".png", ".csv"}:

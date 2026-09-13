@@ -144,9 +144,6 @@ def gep_calculation(p):
     hb.log(f'  appendix reference: {df["health_hypertension_gep_reference"].sum():,.2f} over '
            f'{int((df["health_hypertension_gep_reference"].fillna(0) > 0).sum())}; '
            f'log-correlation over shared countries {corr:.3f}')
-    hb.log(f'  extended (transferred costs where no study exists): '
-           f'{df["health_hypertension_gep_extended"].sum():,.2f} over '
-           f'{int((df["health_hypertension_gep_extended"].fillna(0) > 0).sum())} countries')
     return True
 
 

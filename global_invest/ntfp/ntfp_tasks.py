@@ -5,7 +5,7 @@ defines. Accessibility is the reach grown 10 km from the road and river lines, a
 mask is screened by a five-year mean NDVI. The roads and rivers are the source module's own
 layers, and the screens, thresholds and class ranges are its choices, pinned by tests.
 
-⚠ The source module worked on a second grid, Mollweide at 300 m, because equal-area made a cell
+The source module worked on a second grid, Mollweide at 300 m, because equal-area made a cell
 a flat 9.0 hectares. The area that bought is already exact on the pyramid, read from ha_per_cell,
 and the projection cost the map: `hb.make_path_pog` refuses a Mollweide raster, so nothing this
 service produced could be published or compared with another service cell for cell.
@@ -30,7 +30,7 @@ COUNTRY_ID_MAX = 900
 # 309*cos(latitude) m wide, so its area is not a constant and is read from `ha_per_cell` rather
 # than assumed -- which is the house rule, and is exact where a fixed hectares-per-cell is not.
 #
-# ⚠⚠ This replaced a second grid, Mollweide at 300 m, carried over from the source module.
+# This replaced a second grid, Mollweide at 300 m, carried over from the source module.
 # Equal-area made the hectares a constant 9.0, which is why it was chosen, and it cost the map:
 # `hb.make_path_pog` refuses a Mollweide raster outright, because the account's pyramid is
 # defined in degrees. Nothing this service produced could be published, and its cells could not
@@ -59,7 +59,7 @@ def burn_lines_in_stripes(vector_paths, template_path, out_path, log=None):
     is bounded by construction, and the layer's spatial filter is set to the stripe's own extent
     so each pass touches only the features that fall inside it.
 
-    ⚠ The raster is created SPARSE_OK. Away from the road network most stripes write no data at
+    The raster is created SPARSE_OK. Away from the road network most stripes write no data at
     all, and an unwritten block in a sparse GeoTIFF occupies no disk -- which is what keeps an
     8.4 GB nominal raster to a fraction of that.
     """
@@ -74,7 +74,7 @@ def burn_lines_in_stripes(vector_paths, template_path, out_path, log=None):
     target.SetProjection(template.GetProjection())
     target = None                     # closed, so each stripe reopens it for update
 
-    # ⚠⚠ A spatial filter without an index is a full sequential scan, so striping a layer of
+    # A spatial filter without an index is a full sequential scan, so striping a layer of
     # 21,438,033 features would read every one of them once per stripe. Shapefiles carry their
     # index in a sidecar `.qix`, which the roads layer does not ship with; building it once here
     # turns each stripe's filter into a lookup. The file is written beside the shapefile, so a
@@ -120,7 +120,7 @@ def reachable_mask_on_pyramid(vector_paths, template_path, out_path, distance_m,
     and is read with a halo deep enough to see every line that could reach into it. The world
     wraps at the antimeridian, so the halo wraps too: a road in Chukotka reaches Alaska.
 
-    ⚠ `hb.distance_transform_edt` is pygeoprocessing's, which takes one sampling distance for a
+    `hb.distance_transform_edt` is pygeoprocessing's, which takes one sampling distance for a
     whole raster and writes a file. The cell width here changes with latitude, so the sampling
     has to change with it, which that signature cannot express. This calls scipy's array form,
     the same transform underneath.
@@ -144,7 +144,7 @@ def reachable_mask_on_pyramid(vector_paths, template_path, out_path, distance_m,
         # all_touched, because a road is narrower than a cell everywhere. Burning on the centre
         # rule would drop most of the network before anything was grown from it.
         #
-        # ⚠⚠ Burned in LATITUDE STRIPES, not in one call: handing RasterizeLayer the whole
+        # Burned in LATITUDE STRIPES, not in one call: handing RasterizeLayer the whole
         # 129,600 x 64,800 byte raster and the roads layer's 21,438,033 line features at once
         # segfaults. A stripe at a time bounds what GDAL holds, and a spatial filter means each
         # stripe only sees the features that fall in it. SPARSE_OK, because a line raster is
@@ -273,7 +273,7 @@ def warp_to_analysis_grid(src_path, out_path, template_path, resample_algorithm,
                        resampleAlg=resample_algorithm, outputType=output_type,
                        srcNodata=src_nodata, dstNodata=dst_nodata,
                        multithread=True, creationOptions=list(GTIFF_CREATION_OPTIONS))
-    # ⚠ Closed HERE, not left to garbage collection: gdal.Warp returns an open dataset, and a
+    # Closed HERE, not left to garbage collection: gdal.Warp returns an open dataset, and a
     # crash anywhere later in the process leaves the file with unflushed blocks -- readable,
     # plausible-looking, and missing data.
     warped = None
@@ -290,7 +290,7 @@ def accessible_forest_hectares_by_country(lulc_path, access_path, country_id_pat
     A cell counts when the land cover calls it forest, the reachable mask covers it, and, where
     an NDVI raster is given, it carries enough live vegetation to yield a product.
 
-    ⚠ A cell's area is READ, from `ha_per_cell_10sec.tif`, not assumed. On the account's grid it
+    A cell's area is READ, from `ha_per_cell_10sec.tif`, not assumed. On the account's grid it
     runs from about 9.5 hectares at the equator to nearly nothing at the poles, where the old
     equal-area grid made it a flat 9.0 everywhere.
 
@@ -425,7 +425,7 @@ def accessible_forest(p):
     hectares = accessible_forest_hectares_by_country(
         lulc_path, access_path, countries_path, template_path, COUNTRY_ID_MAX,
         ndvi_path=ndvi_path)
-    # ⚠⚠ A zero table must fail here, not publish. Everything landing in zone 0 -- outside every
+    # A zero table must fail here, not publish. Everything landing in zone 0 -- outside every
     # country -- means the country id raster is empty, which is what a boundary vector without
     # the iso3_r250_id field burns. The existence guard then caches that empty raster, so the
     # error names the file to delete rather than letting a $0 total flow into the account.

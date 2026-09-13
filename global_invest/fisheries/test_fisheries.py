@@ -107,7 +107,7 @@ def test_es_config_and_parameters_rows_hydrate_the_fisheries_gep(tmp_path):
     # base_data/global_invest/fisheries is organised by SUBGROUP -- commercial, subsistence,
     # aquaculture -- because the three read different lineages (CWoN, Lynch, FAO+GTAP) and the
     # account reasons per subgroup. The reference anchors stay flat at the top of the service
-    # directory. ⚠ service_data_dir seeds TOP-LEVEL files only, so files under a subgroup
+    # directory. service_data_dir seeds TOP-LEVEL files only, so files under a subgroup
     # folder are not auto-seeded from a shared root and rely on base_data being synced --
     # which is how they arrive on every machine we run on.
     assert p.fisheries_cwon_cpi_path.endswith('commercial/cpi2019.dta')
@@ -386,7 +386,7 @@ def test_every_subsistence_run_reproduces_the_staged_reference_total():
     the machine including the cold start. Commercial fisheries carried a reproduction claim in its
     entry for weeks with nothing staged and nothing comparing, which is what this shape prevents.
 
-    ⚠ The two sides agree on the TOTAL to the dollar and not on the count: the release publishes 85
+    The two sides agree on the TOTAL to the dollar and not on the count: the release publishes 85
     countries and we publish 65. The twenty are countries the release gives a value of exactly zero
     with no quantity and no price behind it. A value we cannot derive is not a measurement of zero,
     so they stay NA here -- and being zero they take nothing out of the total, which is why the

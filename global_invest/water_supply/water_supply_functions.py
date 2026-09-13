@@ -244,7 +244,7 @@ def water_use_components_from_chain(gep_by_country_year_df, countries_df):
     # subtraction -- workable only because there happen to be three sectors, and useless to a
     # reader wanting industry apart from residential.
     #
-    # ⚠ These are VALUE ADDED, not a value of water. SDG 6.4.1 is defined as value added over the
+    # These are VALUE ADDED, not a value of water. SDG 6.4.1 is defined as value added over the
     # volume withdrawn, so multiplying the indicator back by the withdrawal returns the value added
     # it was built from. They are named for what they are; the account's figure is a share of them.
     latest['water_use_irrigation_value_added'] = latest['gep_water_agricultural']
@@ -330,7 +330,7 @@ AQUASTAT_DESALINATED_CODE = 4264            # Desalinated water produced, 10^9 m
 def domestic_withdrawal_by_country(aquastat_df, year):
     """Municipal plus industrial withdrawal per country, in cubic metres, at the account year.
 
-    ⚠ Withdrawn cubic metres are NOT all ecosystem water, so the priced quantity is
+    Withdrawn cubic metres are NOT all ecosystem water, so the priced quantity is
     `domestic_ecosystem_m3`: withdrawal minus desalinated production, floored at zero. Desalinated
     water is manufactured, not provided -- and it is over 100% of domestic withdrawal in Kuwait,
     Qatar and the Maldives, whose ecosystem-provided domestic water is therefore zero. Two
@@ -375,7 +375,7 @@ def domestic_withdrawal_by_country(aquastat_df, year):
 def apply_raw_water_price(df, price_usd_per_m3):
     """Turn the domestic withdrawal volume into a value of raw water.
 
-    ⚠ `price_usd_per_m3` has no default. It is the price of the RAW resource -- an abstraction
+    `price_usd_per_m3` has no default. It is the price of the RAW resource -- an abstraction
     charge or resource fee -- not the price of delivered water, which is mostly infrastructure
     and treatment. When it is None the GEP column is absent rather than zero, so a run without a
     chosen price publishes the volume and nothing that reads as an account figure.
@@ -408,7 +408,7 @@ def irrigation_gep_from_premium(premium_df, rent_share):
     The share applies to the PREMIUM -- what irrigation adds over rainfed -- never to the whole
     irrigated value added, which is the error the premium exists to fix.
 
-    ⚠ A country's negative premium is clipped to zero here: an account cannot report negative
+    A country's negative premium is clipped to zero here: an account cannot report negative
     provisioning, and every negative case is a country whose irrigated share of area exceeds its
     irrigated share of GVA, which the entry records as a data question rather than a value.
 
@@ -481,7 +481,7 @@ def _with_country_labels(latest, countries_df):
 # the country gets two rows and is counted twice in every total. Korea and Russia did exactly
 # that, inflating the reported hydropower total by 1.89bn USD, which stayed invisible because
 # the deck quoted the reference file's total rather than the module's own.
-# ⚠ The two `_value_added` columns are the denominators; the two `_gep` columns appear only once
+# The two `_value_added` columns are the denominators; the two `_gep` columns appear only once
 # a water share is set. Both are listed because one_row_per_country has to carry whichever exist.
 WATER_USE_VALUE_COLUMNS = ('water_use_agriculture_value_added', 'water_use_all_sector_value_added',
                            'water_use_irrigation_value_added', 'water_use_domestic_value_added',
@@ -501,7 +501,7 @@ def one_row_per_country(df_components):
             silently would be the same class of error as the double-count this prevents.
     """
     resolved = df_components[df_components['iso3_r250_id'].notna()]
-    # ⚠ Only the columns actually present. The two `_gep` columns exist only when a water share
+    # Only the columns actually present. The two `_gep` columns exist only when a water share
     # is set, so a fixed list would make the no-share case -- the default -- raise.
     for column in [c for c in WATER_USE_VALUE_COLUMNS if c in df_components.columns]:
         distinct = resolved.groupby('iso3_r250_id')[column].nunique(dropna=True)

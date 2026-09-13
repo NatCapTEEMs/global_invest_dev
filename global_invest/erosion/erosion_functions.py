@@ -275,7 +275,7 @@ def _required_path(p, attribute, constant_name):
 
 
 
-# ✅ Use MERGED watershed ONLY
+# Use MERGED watershed ONLY
 
 # Sanitized watersheds used to prevent overflow + CRS parse failures in report
 

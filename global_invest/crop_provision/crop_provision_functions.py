@@ -247,7 +247,7 @@ def subsistence_own_consumption(df_rulis, df_wb_hist, df_area_value, df_income, 
                                 df_gross_prod, df_iso):
     """Step 01: own consumption per country and survey year, as the reference computes it.
 
-    ⚠ The arithmetic on the last line is the reference's, and its units do not agree with the
+    The arithmetic on the last line is the reference's, and its units do not agree with the
     sources: FAOSTAT reports cropland in THOUSANDS of hectares against an intensity per SINGLE
     hectare, and the Lowder share is a PERCENTAGE that is never divided by 100. The single /100
     converts only the own-consumption share. The two errors compound to a factor of ten, and this
@@ -304,7 +304,7 @@ def interpolate_missing_years(df_own, df_gross_prod_usd, df_gdp_per_capita):
     with too few observations to fit falls back to scaling commercial production by its median
     observed ratio.
 
-    ⚠ The dropna below is the reference's, and it is why eleven countries lose observations they
+    The dropna below is the reference's, and it is why eleven countries lose observations they
     had: a country-year missing GDP per capita or commercial production leaves the panel here, and
     an OBSERVED own-consumption value goes with it. Ethiopia has three surveyed years entering this
     step and none leaving it, so every Ethiopian row downstream is a prediction.
@@ -425,7 +425,7 @@ def rank_extrapolation_features(df, feature_columns, target_column='own_con2'):
 def extrapolate_to_unsurveyed(df_interpolated, df_wb_hist, df_covariates, df_iso):
     """Step 04: countries no survey reached, filled from a global regression on one covariate.
 
-    ⚠ This is where the panel stops being survey evidence. The regressor chosen is cropland area,
+    This is where the panel stops being survey evidence. The regressor chosen is cropland area,
     which is also the largest term in the formula that produced the target, so the relationship is
     close to circular; and the filled rows outnumber the observed ones by more than twenty-five to
     one. The panel records `own_con_source` per row so a reader can separate them.
@@ -541,7 +541,7 @@ def deflate_to_base_year(df_gep, df_cpi, base_year):
 def subsistence_on_country_list(df_deflated, df_countries, base_year):
     """Step 00: the base-year panel on the account's country list, one row per country.
 
-    ⚠ The reference joins its panel against the r264 correspondence on a Natural Earth name column
+    The reference joins its panel against the r264 correspondence on a Natural Earth name column
     and delivers 16 of its own 66 valued countries. Collapsing the correspondence to one row per
     country and joining on the ISO3 label keeps every one of them, which is the house rule
     `collapse_countries_to_r250` exists for.
