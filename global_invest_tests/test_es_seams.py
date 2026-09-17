@@ -18,6 +18,7 @@ from global_invest.terrestrial_carbon import terrestrial_carbon_initialize
 from global_invest.pollination import pollination_initialize
 from global_invest.erosion import erosion_initialize
 from global_invest.fisheries import fisheries_initialize
+from global_invest.timber_provision import timber_provision_initialize
 
 
 class FakeProjectFlow:
@@ -85,11 +86,42 @@ class TestESSeams(unittest.TestCase):
         for seam in [terrestrial_carbon_initialize.add_terrestrial_carbon_tasks,
                      pollination_initialize.add_pollination_tasks,
                      erosion_initialize.add_erosion_tasks,
-                     fisheries_initialize.add_fisheries_tasks]:
+                     fisheries_initialize.add_fisheries_tasks,
+                     timber_provision_initialize.add_timber_provision_shock_tasks]:
             with self.subTest(seam=seam.__name__):
                 params = list(inspect.signature(seam).parameters)
                 self.assertEqual(params[:2], ['p', 'parent'],
                                  f'{seam.__name__} must be callable as (p, parent=...)')
+
+
+    def test_timber_seam_registers_its_two_tasks(self):
+        """Timber is the FRS alternative to carbon, so it must graft like any other seam.
+
+        It registers two tasks rather than one: the value-density lookup has to exist before the
+        shock can read it, and carbon builds its equivalent in a separate task for the same reason.
+        """
+        p = FakeProjectFlow()
+        timber_provision_initialize.add_timber_provision_shock_tasks(p)
+        self.assertEqual(p.registered,
+                         ['timber_value_density_table', 'timber_provision_shock'])
+
+    def test_timber_writes_beside_carbon_not_over_it(self):
+        """The two seams must land in different files, or adding timber silently replaces carbon."""
+        from global_invest.terrestrial_carbon import terrestrial_carbon_tasks as tct
+        from global_invest.timber_provision import timber_provision_tasks as tpt
+        import inspect
+        def assigned_output(fn):
+            # The code lines only: a docstring naming the other seam is prose, not a destination.
+            src = inspect.getsource(fn)
+            body = src.split('"""')[-1]
+            return [ln.strip() for ln in body.splitlines() if '_interpolated.csv' in ln]
+
+        carbon_out = ' '.join(assigned_output(tct.terrestrial_carbon_shock))
+        timber_out = ' '.join(assigned_output(tpt.timber_provision_shock))
+        self.assertIn('terrestrial_carbon_interpolated.csv', carbon_out)
+        self.assertIn('timber_provision_interpolated.csv', timber_out)
+        self.assertNotIn('terrestrial_carbon_interpolated.csv', timber_out,
+                         'timber would overwrite the carbon seam')
 
 
 if __name__ == '__main__':

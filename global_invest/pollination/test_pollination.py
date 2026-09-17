@@ -629,3 +629,162 @@ def test_dynamic_shock_rows_v3_is_absent_without_the_paired_halves():
     fixedbase = _zone_frame({2030: {ZONE_A: -8.0}})
     rows = pf.dynamic_shock_rows(fixedbase, fixedbase, None, 'net_zero', ('V_F',), base_year=2029)
     assert all(np.isnan(row['shock_pct_v3']) for row in rows)
+
+
+# ---------------------------------------------------------------------------------------------
+# Crop-to-GTAP-sector split
+#
+# The per-crop loop sums 153 crops into one raster, which destroys the sector identity. Everything
+# downstream then gives each sector the whole zone's value rather than its share -- invisible while
+# only shock_pct is read, and wrong as soon as a value becomes a denominator (oilseed pollination
+# value exceeded oilseed output in 19 of 50 regions before this split existed).
+# ---------------------------------------------------------------------------------------------
+
+def _correspondence_and_crosswalk():
+    """The shipped crop->sector correspondence and the crop list the pollination task iterates."""
+    import glob
+    import os
+
+    import pandas as pd
+
+    corr = glob.glob(os.path.expanduser(
+        '~/Files/gtap_invest/projects/elasticities_assessment/elasticities_assessment/'
+        'input_template/cropgrids_c153_gtapv7_s8_correspondence.csv'))
+    summary = glob.glob(os.path.expanduser(
+        '~/Files/gep_repos/crop_benefits_outputs/rasters_*/pollination/value_*/'
+        'poll_value_summary_*usd.csv'))
+    if not corr or not summary:
+        import pytest
+        pytest.skip('correspondence or value summary not staged on this machine')
+    return (pd.read_csv(corr[0], encoding='utf-8-sig'),
+            pd.read_csv(sorted(summary)[-1], encoding='utf-8-sig'))
+
+
+def test_every_valued_crop_maps_to_a_gtap_sector():
+    """A crop with no sector keeps its value in the total and loses it from every sector raster.
+
+    That is a silent leak: the totals still reconcile, so nothing looks wrong, while the per-sector
+    shares are all quietly too small.
+    """
+    corr, summary = _correspondence_and_crosswalk()
+    mapped = set(corr['cropgrids_label'].astype(str))
+    valued = set(summary['cropgrids_crop'].astype(str))
+    missing = sorted(valued - mapped)
+    assert not missing, (
+        '%d valued crops have no GTAP sector, so their value would vanish from the per-sector '
+        'rasters while remaining in the total: %s' % (len(missing), missing[:10]))
+
+
+def test_sector_split_conserves_total_value():
+    """Summing the sectors must reproduce the ungrouped total, to the cent.
+
+    This is the invariant the split has to preserve: it REDISTRIBUTES value between sectors, it
+    never creates or destroys any.
+    """
+    corr, summary = _correspondence_and_crosswalk()
+    m = summary.merge(corr[['cropgrids_label', 'gtapv7_label']],
+                      left_on='cropgrids_crop', right_on='cropgrids_label', how='left')
+    poll_col = [c for c in summary.columns if c.startswith('total_poll_value')][0]
+    ungrouped = float(summary[poll_col].sum())
+    by_sector = float(m.groupby('gtapv7_label')[poll_col].sum().sum())
+    assert abs(by_sector - ungrouped) < 1.0, (
+        'sector split does not conserve value: %.2f grouped vs %.2f ungrouped'
+        % (by_sector, ungrouped))
+
+
+def test_v_f_and_osd_do_not_own_everything():
+    """The two sectors NGFS writes must not be assumed to hold all pollination value.
+
+    They hold ~92%; the rest sits in OCR, PFB and GRO and currently receives no shock at all. If
+    this ever reads 100%, the correspondence has collapsed and the split is doing nothing.
+    """
+    corr, summary = _correspondence_and_crosswalk()
+    m = summary.merge(corr[['cropgrids_label', 'gtapv7_label']],
+                      left_on='cropgrids_crop', right_on='cropgrids_label', how='left')
+    poll_col = [c for c in summary.columns if c.startswith('total_poll_value')][0]
+    by_sector = m.groupby('gtapv7_label')[poll_col].sum()
+    share_two = by_sector.reindex(['V_F', 'OSD']).fillna(0.0).sum() / by_sector.sum()
+    assert 0.80 < share_two < 0.99, (
+        'V_F+OSD hold %.1f%% of pollination value; outside the expected band, so either the '
+        'correspondence changed or the split collapsed' % (100 * share_two))
+
+
+def test_dynamic_shock_rows_accepts_per_sector_crop_levels_without_changing_shock_pct():
+    """Step 1 of the output-denominated shock: crop levels are delivered, and nothing else moves.
+
+    The point of the test is the second half. Handing a new denominator to the row writer must not
+    change shock_pct, which is what the solver reads; if it did, the published afeall results would
+    shift the moment the crop rasters exist. So: same shock_pct with and without the crop levels,
+    and value_usd_base takes the SECTOR's pollination level rather than the zone total.
+    """
+    import pandas as pd
+
+    from global_invest.pollination import pollination_functions as pf
+
+    zone = ('AEZ3', 'CHL')
+    fixed = pd.DataFrame({2030: [10.0], 2050: [20.0]}, index=pd.MultiIndex.from_tuples([zone]))
+    contemp = fixed.copy()
+    zone_total = pd.Series({zone: 2.0e9})                 # the whole zone, all crops
+    poll_by_sector = {'V_F': pd.Series({zone: 1.7e9}), 'OSD': pd.Series({zone: 0.3e9})}
+    crop_by_sector = {'V_F': pd.Series({zone: 9.0e9}), 'OSD': pd.Series({zone: 0.21e9})}
+
+    without = pf.dynamic_shock_rows(fixed, contemp, zone_total, 'net_zero', ['V_F', 'OSD'], 2023)
+    with_levels = pf.dynamic_shock_rows(fixed, contemp, zone_total, 'net_zero', ['V_F', 'OSD'], 2023,
+                                        level_usd_by_sector=poll_by_sector,
+                                        crop_usd_by_sector=crop_by_sector)
+
+    a = pd.DataFrame(without).sort_values(['ACTS', 'year']).reset_index(drop=True)
+    b = pd.DataFrame(with_levels).sort_values(['ACTS', 'year']).reset_index(drop=True)
+    assert len(a) == len(b) and len(a) > 0
+    # What the solver reads is untouched.
+    assert (a['shock_pct'].values == b['shock_pct'].values).all()
+    # The value column now carries the sector's own share, not the zone total copied twice.
+    vf = b[b['ACTS'] == 'V_F']['value_usd_base'].iloc[0]
+    osd = b[b['ACTS'] == 'OSD']['value_usd_base'].iloc[0]
+    assert vf == 1.7e9 and osd == 0.3e9, (vf, osd)
+    assert abs((vf + osd) - 2.0e9) < 1.0, 'sector shares must reproduce the zone total, not multiply it'
+    # And without the levels, the historical behaviour: zone total on every sector row.
+    assert (a['value_usd_base'] == 2.0e9).all()
+
+
+def test_shock_pct_output_is_the_same_dollars_over_crop_value():
+    """Step 2: the output-denominated column, checked against hand arithmetic.
+
+    shock_pct is d_usd / poll_usd. shock_pct_output must be the SAME d_usd over crop_usd, so the
+    two differ exactly by the pollination share of crop value -- no re-estimation, no second
+    numerator. And it must be NaN, never 0, where the crop level is absent: a zero would reach the
+    solver as "no shock" and look like a result.
+    """
+    import math
+
+    import pandas as pd
+
+    from global_invest.pollination import pollination_functions as pf
+
+    zone = ('AEZ3', 'CHL')
+    fixed = pd.DataFrame({2050: [20.0]}, index=pd.MultiIndex.from_tuples([zone]))
+    poll = {'V_F': pd.Series({zone: 1.7e9}), 'OSD': pd.Series({zone: 0.3e9})}
+    crop = {'V_F': pd.Series({zone: 9.0e9})}          # OSD deliberately has no crop level
+
+    rows = pd.DataFrame(pf.dynamic_shock_rows(
+        fixed, fixed.copy(), pd.Series({zone: 2.0e9}), 'net_zero', ['V_F', 'OSD'], 2023,
+        level_usd_by_sector=poll, crop_usd_by_sector=crop))
+    r2050 = rows[rows['year'] == 2050].set_index('ACTS')
+
+    # V_F: 20% of $1.7bn = $0.34bn; over $9.0bn crop = 3.777...%
+    vf = r2050.loc['V_F']
+    assert abs(vf['shock_pct'] - 20.0) < 1e-9
+    assert abs(vf['shock_pct_output'] - 100.0 * (0.20 * 1.7e9) / 9.0e9) < 1e-9
+    # The ratio between the two columns IS the pollination share of crop value.
+    assert abs(vf['shock_pct_output'] / vf['shock_pct'] - 1.7e9 / 9.0e9) < 1e-12
+
+    # OSD: no crop level -> NaN, and shock_pct itself untouched.
+    osd = r2050.loc['OSD']
+    assert abs(osd['shock_pct'] - 20.0) < 1e-9
+    assert math.isnan(osd['shock_pct_output'])
+
+    # Without any crop levels at all the column exists and is NaN throughout, so a consumer can
+    # tell "not computed" from "computed as zero".
+    plain = pd.DataFrame(pf.dynamic_shock_rows(
+        fixed, fixed.copy(), pd.Series({zone: 2.0e9}), 'net_zero', ['V_F'], 2023))
+    assert 'shock_pct_output' in plain.columns and plain['shock_pct_output'].isna().all()

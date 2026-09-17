@@ -181,3 +181,158 @@ def fuelwood_gep(p):
                   out['fuelwood_gep_gross_at_export_price'].sum(),
                   out['fuelwood_gep_reference'].sum()))
     return True
+
+
+# ---------------------------------------------------------------------------------------------
+# Timber as a scenario ES shock, alongside carbon on FRS
+#
+# Carbon and timber both reach GTAP as afeall on forestry, and only one of them is what forestry
+# land actually yields. Carbon is a proxy: it is a zonal mean density by land-cover class, so it
+# moves when composition changes rather than when remaining forest becomes more or less productive,
+# and it tells the model that land grows less WOOD when what changed is how much CARBON it holds.
+# Timber is the direct measure -- biomass yield x log price, net of transport, on land the Lesiv map
+# marks as actively managed.
+#
+# These tasks add timber BESIDE carbon rather than replacing it, so the two can be compared on the
+# same scenarios and the size of the proxy's error is measurable instead of argued. Carbon's seam is
+# untouched; a run that does not build the timber tree behaves exactly as before.
+#
+# The machinery is carbon's, deliberately. generate_carbon_density_raster and dynamic_shock_rows
+# take a DENSITY LOOKUP (lulc_id x zone_id -> value) and know nothing about carbon, so timber needs
+# its own lookup table and nothing else. Reimplementing them here would fork a verified path to
+# change one input raster.
+# ---------------------------------------------------------------------------------------------
+
+def timber_value_density_table(p):
+    """Mean timber value density per (land-cover class, zone), the lookup the shock reads.
+
+    The same construction as terrestrial_carbon's density table, over the timber value raster
+    instead of the carbon density raster, so the two shocks differ in their layer and in nothing
+    else.
+    """
+    publish_inputs(p)
+    p.timber_value_density_lookup_table_path = os.path.join(
+        p.cur_dir, 'timber_value_density_lookup_table.csv')
+    if not p.run_this:
+        return True
+    if hb.path_exists(p.timber_value_density_lookup_table_path):
+        return True
+
+    from global_invest.terrestrial_carbon import terrestrial_carbon_tasks as tct
+
+    # The GRID comes from terrestrial_carbon, because timber_provision's own es_config carries
+    # `computed` for gep_quantity_input_path and nothing for the LULC grid -- it is a static
+    # country valuation and never needed either. Hydrating carbon's rows supplies the LULC map and
+    # the zone raster, and using the SAME two here as the shock task does is what makes the lookup
+    # and its consumer agree; reading them from two places is how a table gets built on one grid and
+    # applied on another.
+    #
+    # NOTE, and it is a real one: those zones are CARBON zones, ecological strata chosen to explain
+    # carbon density. Timber has its own regionalisation upstream (Tian et al. timber regions in the
+    # value raster's own construction), and stratifying timber value by carbon zones is a borrowed
+    # choice, not a justified one. It makes the two seams comparable cell for cell, which is the
+    # point of this comparison; it is NOT a claim that carbon zones are the right strata for timber.
+    # Clear first. Hydration SKIPS an attribute that is already set, and publish_inputs above has
+    # already put timber's own `computed` into gep_quantity_input_path -- so hydrating carbon's rows
+    # without this leaves the literal string 'computed' where a raster path belongs, and
+    # stack_layers_summary is handed a filename that does not exist.
+    for attr in ('gep_quantity_input_path', 'gep_lulc_input_path'):
+        if getattr(p, attr, None) in ('computed', '', None):
+            try:
+                delattr(p, attr)
+            except AttributeError:
+                pass
+    utilities.hydrate_es_config(p, 'terrestrial_carbon', log=hb.log)
+    utilities.hydrate_es_parameters(p, 'terrestrial_carbon', log=hb.log)
+    for attr in ('gep_quantity_input_path', 'gep_lulc_input_path'):
+        value = getattr(p, attr, None)
+        if not value or value == 'computed':
+            raise NameError(
+                '%s is %r after hydrating terrestrial_carbon. The timber density table needs '
+                "carbon's LULC grid and zone raster; without them the lookup cannot be built."
+                % (attr, value))
+
+    # Align the value raster to the LULC grid first: stack_layers_summary reads the three layers
+    # cell by cell and a mismatched grid silently pairs the wrong cells rather than failing.
+    aligned_path = os.path.join(p.cur_dir, 'timber_value_density_aligned.tif')
+    if not hb.path_exists(aligned_path):
+        hb.resample_to_match(p.timber_provision_value_raster_path, p.gep_lulc_input_path,
+                             aligned_path, resample_method='bilinear')
+
+    summary = tct.stack_layers_summary(
+        group_layer1_path=p.gep_lulc_input_path,
+        group_layer2_path=p.gep_quantity_input_path,
+        value_layer_path=aligned_path,
+        group1_name='lulc_id',
+        group2_name='carbon_zone_id',
+        value_name='carbon_density')
+    summary.to_csv(p.timber_value_density_lookup_table_path, index=False)
+    hb.log('  timber value density table: %d (lulc x zone) rows -> %s'
+           % (len(summary), p.timber_value_density_lookup_table_path))
+    return True
+
+
+def timber_provision_shock(p):
+    """Per-scenario 300 m LULC -> a timber ES-productivity shock on FRS.
+
+    Carbon's shock task with the timber lookup substituted, writing
+    `timber_provision_interpolated.csv` beside `terrestrial_carbon_interpolated.csv`. The two are
+    directly comparable: same scenarios, same anchor years, same zones, same shock definition.
+
+    NOT wired into any GTAP pass by default. Producing it is the point -- whether forestry should be
+    shocked by carbon, by timber, or by both is a modelling decision, and this makes the comparison
+    available without pre-empting it.
+    """
+    if not getattr(p, 'timber_provision_shock_output_path', None):
+        p.timber_provision_shock_output_path = os.path.join(
+            getattr(p, 'es_shock_dir', None) or p.project_dir, 'timber_provision_interpolated.csv')
+    if not p.run_this:
+        return
+    import geopandas as gpd
+
+    from global_invest.terrestrial_carbon import terrestrial_carbon_functions as tcf
+    from global_invest.terrestrial_carbon import terrestrial_carbon_tasks as tct
+
+    # Carbon's export keys: same zones, same boundary, same activity (FRS). Borrowing them is what
+    # makes the two seams comparable row for row rather than merely similar.
+    utilities.hydrate_es_parameters(p, 'terrestrial_carbon', log=hb.log)
+    base_scenario = utilities.required_base_scenario(p, 'terrestrial_carbon')
+    es_shock_base_year = int(p.es_shock_base_year)
+    anchor_years = sorted(y for y in map(int, p.es_shock_years) if y > es_shock_base_year)
+
+    scenarios = list(getattr(p, 'es_shock_scenarios', []))
+    if not scenarios:
+        scenarios = [s for s in p.scenario_lulc_paths if s != base_scenario]
+
+    reference_lulc_path = p.scenario_lulc_paths[base_scenario][anchor_years[-1]]
+    tct._align_zones_to_lulc_grid(p, reference_lulc_path)
+    tct._inject_base_year_map(p, base_scenario, es_shock_base_year, reference_lulc_path)
+
+    density_lookup = tcf.carbon_density_lookup(
+        pd.read_csv(p.timber_value_density_lookup_table_path, index_col=False))
+    zone_labels = tcf.zone_labels_from_boundary(
+        gpd.read_file(p.region_boundary_path, engine='pyogrio'),
+        p.terrestrial_carbon_shock_id_col, p.terrestrial_carbon_shock_endw_col,
+        p.terrestrial_carbon_shock_reg_col, p.terrestrial_carbon_shock_endw_format)
+
+    baseline_by_year = {y: tct._zone_mean(p, base_scenario, y, density_lookup) for y in anchor_years}
+    baseline_at_base_year = (
+        tct._zone_mean(p, base_scenario, es_shock_base_year, density_lookup)
+        if es_shock_base_year in p.scenario_lulc_paths.get(base_scenario, {}) else None)
+
+    rows = []
+    for scenario in scenarios:
+        rows += tcf.dynamic_shock_rows(
+            {y: tct._zone_mean(p, scenario, y, density_lookup) for y in anchor_years},
+            baseline_by_year, baseline_at_base_year, zone_labels, es_shock_base_year,
+            p.terrestrial_carbon_shock_acts, scenario)
+
+    out = pd.DataFrame(rows)
+    out = utilities.filter_to_model_domain(out, p.timber_provision_shock_output_path,
+                                           'timber_provision', log=hb.log)
+    utilities.assert_shock_table_sound(out, scenarios, 'timber_provision')
+    out.to_csv(p.timber_provision_shock_output_path, index=False)
+    hb.log('  timber shock: %d rows, %d scenarios -> %s'
+           % (len(out), out['scenario'].nunique() if rows else 0,
+              p.timber_provision_shock_output_path))
+    return True

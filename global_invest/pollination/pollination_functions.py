@@ -148,7 +148,8 @@ def anchor_shock_tables(scenario_pct_by_year, baseline_pct_by_year):
 
 def dynamic_shock_rows(fixedbase, contemporaneous, level_usd, scenario, sectors, base_year,
                        paired_base_by_year=None, paired_scen_by_year=None,
-                       unpaired_denominator=None, growth_by_year=None):
+                       unpaired_denominator=None, growth_by_year=None,
+                       level_usd_by_sector=None, crop_usd_by_sector=None):
     """Anchor-year shocks expanded to one row per zone, sector and year.
 
     The calculation computes a shock only at the years the scenario maps exist for; the economic model
@@ -167,6 +168,16 @@ def dynamic_shock_rows(fixedbase, contemporaneous, level_usd, scenario, sectors,
         scenario (str): the scenario label written into every row.
         sectors (iterable): the GTAP activities the shock applies to.
         base_year (int): the year the ramp starts from, at zero.
+        level_usd_by_sector (dict or None): per-zone baseline value keyed by GTAP activity, from the
+            per-sector value rasters. When given, each sector row carries ITS OWN share rather than
+            the zone total, so summing sectors reproduces the zone total instead of multiplying it.
+            When None the zone total is repeated -- the historical behaviour, safe only because the
+            solver reads shock_pct and never this column.
+        crop_usd_by_sector (dict or None): per-zone baseline CROP value keyed by GTAP activity, from
+            the per-sector crop rasters. The denominator for an output-scaling shock: the change in
+            pollination value as a share of what the sector produces on that land, which is what
+            aoall reads as a percentage of output. Accepted here; the column it feeds is emitted
+            separately.
 
     Returns:
         list: dicts, one per zone, sector and year from base_year through the last anchor year.
@@ -232,11 +243,41 @@ def dynamic_shock_rows(fixedbase, contemporaneous, level_usd, scenario, sectors,
         for year, fixed_value, contemp_value, paired_value, share_value, v3_value in zip(
                 all_years, annual, annual_contemp, annual_paired, annual_share, annual_v3):
             for sector in sectors:
+                # This sector's own share of the zone's baseline value when the per-sector rasters
+                # exist, and the zone total otherwise. The fallback is the historical behaviour and
+                # is NOT a denominator: summing it across sectors counts the same dollars once per
+                # sector, which is how oilseed pollination value came to exceed oilseed output.
+                sector_usd = base_usd
+                if level_usd_by_sector:
+                    series = level_usd_by_sector.get(str(sector).upper())
+                    if series is not None:
+                        sector_usd = float(series.get(zone, float('nan')))
+                # The output-denominated shock: the same dollar change, as a share of what the
+                # sector produces on that land rather than of the pollination it receives.
+                #   shock_pct         = d_usd / poll_usd   (what afeall on land has always read)
+                #   shock_pct_output  = d_usd / crop_usd   (what aoall on output should read)
+                # Both from one d_usd, so the two differ only by the pollination share of crop
+                # value; nothing about the scenario or the zone is re-estimated. NaN, not zero,
+                # when the crop level is absent -- a zero would read as "no shock" downstream.
+                output_value = float('nan')
+                crop_usd = float('nan')
+                if crop_usd_by_sector:
+                    crop_series = crop_usd_by_sector.get(str(sector).upper())
+                    if crop_series is not None:
+                        crop_usd = float(crop_series.get(zone, float('nan')))
+                        if np.isfinite(crop_usd) and crop_usd > 0 and np.isfinite(sector_usd):
+                            d_usd = contemp_value / 100.0 * sector_usd
+                            output_value = 100.0 * d_usd / crop_usd
                 rows.append({'ENDW': endw, 'ACTS': sector, 'REG': reg, 'scenario': scenario,
                              'year': year, 'shock_pct': contemp_value,
                              'shock_pct_fixedbase': fixed_value,
                              'shock_pct_contemp': contemp_value,
-                             'value_usd_base': base_usd,
+                             'shock_pct_output': output_value,
+                             'value_usd_base': sector_usd,
+                             # The denominator shock_pct_output was formed against, carried so a
+                             # consumer collapsing AEZ can weight by it. Collapsing an output share
+                             # by pollination value would mix the two denominators.
+                             'crop_usd_base': crop_usd,
                              'paired_base_usd': paired_value,
                              'paired_scen_over_contemp_denom': share_value,
                              'shock_pct_v3': v3_value})

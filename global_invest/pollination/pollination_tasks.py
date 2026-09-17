@@ -1597,6 +1597,38 @@ def pollination_shock(p):
     # value[scenario][year] = per-zone % change of that scenario's year-map vs the 2023 baseline (stable
     # ag). level_usd = the denominator of that % change, the per-zone absolute baseline value in base-year
     # USD, emitted so the GEP chain can consume this task instead of rerunning the same rasters.
+    # The per-SECTOR baseline levels, when the value task wrote per-sector rasters. Without them the
+    # zone total below is stamped onto every sector row, so summing sectors double-counts and a
+    # sector's value can exceed its own output. These are levels only: shock_pct is unaffected, so
+    # wiring them changes nothing the solver reads.
+    # Two levels per sector: the pollination value (numerator's own base) and the CROP value, which
+    # is the denominator an output-scaling shock needs. Both from the per-sector rasters the value
+    # task writes, read here on the same zones so the ratio between them is formed cell-consistently.
+    level_usd_by_sector = {}
+    crop_usd_by_sector = {}
+    raster_dir = os.path.dirname(denominator_path)
+    for sector in getattr(p, 'pollination_shock_acts', []) or []:
+        key = str(sector).upper()
+        for kind, target in (('poll', level_usd_by_sector), ('crop', crop_usd_by_sector)):
+            sector_raster = os.path.join(
+                raster_dir, '%s_value_per_cell_%s_%dusd.tif' % (kind, key.lower(), es_shock_base_year))
+            if not hb.path_exists(sector_raster):
+                continue
+            sector_arr, _ = _read_masked(sector_raster)
+            _, sector_level = pf.zonal_pct_change(sector_arr, sector_arr, area_arr, zones_arr, zone_labels)
+            target[key] = sector_level
+    if level_usd_by_sector:
+        hb.log('  per-sector baseline levels wired for %s' % ', '.join(sorted(level_usd_by_sector)))
+        # Without the crop side there is nothing to divide by for an output-denominated shock, and
+        # the numerator alone would silently fall back to the service denominator. Say so.
+        missing_crop = sorted(set(level_usd_by_sector) - set(crop_usd_by_sector))
+        if missing_crop:
+            hb.log('  WARNING: crop value rasters missing for %s; no output-denominated shock for them'
+                   % ', '.join(missing_crop))
+    else:
+        hb.log('  no per-sector value rasters found; value_usd_base stays the zone total repeated '
+               'across sectors (do NOT use it as a denominator)')
+
     value, level_usd, paired_base, paired_scen = {}, None, {}, {}
     for year in anchor_years:
         for scen in [base_scenario] + es_shock_scenarios:
@@ -1695,7 +1727,9 @@ def pollination_shock(p):
             # build_stress_variants to apply the additive form to a table that wants the ratio.
             extras = dict(unpaired_denominator=level_usd)
         rows += pf.dynamic_shock_rows(anchor_shock, anchor_contemp, level_usd, scen,
-                                      p.pollination_shock_acts, es_shock_base_year, **extras)
+                                      p.pollination_shock_acts, es_shock_base_year,
+                                      level_usd_by_sector=level_usd_by_sector or None,
+                                      crop_usd_by_sector=crop_usd_by_sector or None, **extras)
 
     out = pd.DataFrame(rows)
     out = utilities.filter_to_model_domain(out, p.pollination_shock_output_path, 'pollination', log=hb.log)
@@ -2199,8 +2233,27 @@ def pollination_value_raster_rebuilt(p):
            'rest, from the file\'s own world-average row.'
            % (len(coffee_by_country), coffee_fallback))
 
+    # Which GTAP sector each crop belongs to. Without this the 153 crops are summed into one raster
+    # and the sector identity is gone, so downstream every sector receives the whole zone's value
+    # rather than its own share -- harmless while only shock_pct is read, and wrong the moment a
+    # value is used as a denominator (oilseed pollination value then exceeds oilseed output in 19
+    # of 50 regions). Absent correspondence => no split, and the totals behave exactly as before.
+    crop_sector = {}
+    correspondence_path = getattr(p, 'pollination_crop_sector_correspondence_path', None)
+    if correspondence_path and hb.path_exists(correspondence_path):
+        corr = hb.df_read(correspondence_path)
+        crop_sector = dict(zip(corr['cropgrids_label'].astype(str),
+                               corr['gtapv7_label'].astype(str).str.upper()))
+        hb.log('Crop-to-sector split ON: %d crops over %d GTAP sectors'
+               % (len(crop_sector), len(set(crop_sector.values()))))
+    else:
+        hb.log('Crop-to-sector split OFF: no pollination_crop_sector_correspondence_path; '
+               'per-sector value rasters will not be written')
+
     total_pollination_density = None
     total_crop_density = None
+    sector_pollination_density = {}
+    sector_crop_density = {}
     reference_meta = None
     summary_rows = []
     skipped = {'no_item_code': [], 'no_raster': [], 'no_price': []}
@@ -2246,6 +2299,16 @@ def pollination_value_raster_rebuilt(p):
         total_crop_density[valid] += crop_density[valid]
         covered |= valid
 
+        # The same accumulation, kept separate by sector. Allocated lazily so only the sectors this
+        # crosswalk actually reaches cost memory.
+        sector = crop_sector.get(crop_name)
+        if sector:
+            if sector not in sector_pollination_density:
+                sector_pollination_density[sector] = np.zeros(pollination_density.shape, dtype='float64')
+                sector_crop_density[sector] = np.zeros(crop_density.shape, dtype='float64')
+            sector_pollination_density[sector][valid] += pollination_density[valid]
+            sector_crop_density[sector][valid] += crop_density[valid]
+
         summary_rows.append({
             'cropgrids_crop': crop_name, 'item_code_fao': item_code,
             'item_fao': row.get('item_fao'),
@@ -2262,6 +2325,9 @@ def pollination_value_raster_rebuilt(p):
                 pf.value_density_to_per_cell(crop_density, area_km2))),
             'pollination_value_usd': float(np.nansum(
                 pf.value_density_to_per_cell(pollination_density, area_km2))),
+            # Which GTAP activity this crop's value belongs to, so the split is recoverable from the
+            # summary alone without re-reading any raster.
+            'gtap_sector': crop_sector.get(crop_name, ''),
         })
 
     if reference_meta is None:
@@ -2277,6 +2343,23 @@ def pollination_value_raster_rebuilt(p):
     utilities.write_raster(str(p.pollination_value_raster_rebuilt_path),
                  np.where(np.isfinite(value_per_cell), value_per_cell, NODATA_OUT).astype('float32'),
                  out_meta, nodata=NODATA_OUT)
+
+    # Per-sector value rasters, so a zonal step can produce a value per (zone, SECTOR) instead of one
+    # value per zone repeated across sectors. Written beside the total rather than replacing it: the
+    # total is what the existing shock path reads, and this task must not change those numbers.
+    for sector in sorted(sector_pollination_density):
+        for kind, density in (('poll', sector_pollination_density[sector]),
+                              ('crop', sector_crop_density[sector])):
+            per_cell = pf.value_density_to_per_cell(density, area_km2)
+            sector_path = os.path.join(
+                p.cur_dir, '%s_value_per_cell_%s_%dusd.tif' % (kind, sector.lower(), year))
+            utilities.write_raster(
+                sector_path,
+                np.where(np.isfinite(per_cell), per_cell, NODATA_OUT).astype('float32'),
+                out_meta, nodata=NODATA_OUT)
+    if sector_pollination_density:
+        hb.log('  per-sector value rasters: %d sectors (%s)'
+               % (len(sector_pollination_density), ', '.join(sorted(sector_pollination_density))))
 
     df_summary = pd.DataFrame(summary_rows)
     hb.df_write(df_summary, p.pollination_value_summary_rebuilt_path)
