@@ -355,9 +355,9 @@ def scc_valuation_rows(stock_by_scenario_year, base_stock, price, base_year, ret
     return out[columns]
 
 
-def plot_scc_valuation(df, attributes, price, price_column, base_year, out_path):
-    """Two panels: the world's change in carbon value by scenario over time, and the last year's
-    change by continent and scenario.
+def plot_scc_valuation(df, attributes, price, price_column, base_year, out_path, aside=None):
+    """Three panels: the world's change in carbon value by scenario from the base year, the same
+    against the nature-off baseline at the same year, and the last year's change by continent.
 
     Args:
         df (pd.DataFrame): scc_valuation_rows output.
@@ -366,31 +366,53 @@ def plot_scc_valuation(df, attributes, price, price_column, base_year, out_path)
         price_column (str): its convention name, for the title.
         base_year (int): the year changes are measured from.
         out_path (str): where the PNG goes.
+        aside (str): a scenario to keep off the panels and report in the caption instead -- the
+            reduced-provision scenario removes a fifth of the stock at a stroke and flattens every
+            other line to the axis when drawn with them.
     """
     import matplotlib
     matplotlib.use('Agg')
     import matplotlib.pyplot as plt
 
-    world = df.groupby(['scenario', 'year'])['delta_value_usd'].sum().unstack('scenario') / 1e9
-    last = df[df['year'] == df['year'].max()].merge(attributes, on='iso3_r250_id', how='left')
+    shown = df if aside is None else df[df['scenario'] != aside]
+    last_year = int(df['year'].max())
+    world = shown.groupby(['scenario', 'year'])['delta_value_usd'].sum().unstack('scenario') / 1e9
+    has_baseline = 'delta_value_vs_baseline_usd' in shown.columns
+    last = shown[shown['year'] == last_year].merge(attributes, on='iso3_r250_id', how='left')
     by_continent = last.groupby(['continent', 'scenario'])['delta_value_usd'].sum().unstack('scenario') / 1e9
 
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5.5), gridspec_kw={'width_ratios': [1.1, 1]})
-    world.plot(ax=ax1, linewidth=1.8)
-    ax1.axhline(0, color='0.4', linewidth=0.8)
-    ax1.set_title('World: change in terrestrial carbon value from %d' % base_year)
-    ax1.set_ylabel('billion USD')
-    ax1.set_xlabel('')
-    ax1.legend(title='scenario', fontsize=8, title_fontsize=8, frameon=False)
-    by_continent.plot(kind='bar', ax=ax2, width=0.8)
-    ax2.axhline(0, color='0.4', linewidth=0.8)
-    ax2.set_title('%d: change by continent' % int(df['year'].max()))
-    ax2.set_ylabel('billion USD')
-    ax2.set_xlabel('')
-    ax2.tick_params(axis='x', rotation=30)
-    ax2.get_legend().remove()
-    fig.suptitle('Carbon stock change valued at %s (%.2f USD per Mg C, held constant)' % (price_column, price),
-                 fontsize=10)
+    n = 3 if has_baseline else 2
+    fig, axes = plt.subplots(1, n, figsize=(6 * n, 5.2))
+    ax = axes[0]
+    world.plot(ax=ax, linewidth=1.8)
+    ax.axhline(0, color='0.4', linewidth=0.8)
+    ax.set_title('World: change from %d' % base_year)
+    ax.set_ylabel('billion USD per year')
+    ax.set_xlabel('')
+    ax.legend(title='scenario', fontsize=8, title_fontsize=8, frameon=False)
+    if has_baseline:
+        vs = shown.groupby(['scenario', 'year'])['delta_value_vs_baseline_usd'].sum().unstack('scenario') / 1e9
+        ax = axes[1]
+        vs.plot(ax=ax, linewidth=1.8, legend=False)
+        ax.axhline(0, color='0.4', linewidth=0.8)
+        ax.set_title('World: change from the nature-off baseline, same year')
+        ax.set_ylabel('billion USD per year')
+        ax.set_xlabel('')
+    ax = axes[-1]
+    by_continent.plot(kind='bar', ax=ax, width=0.8, legend=False)
+    ax.axhline(0, color='0.4', linewidth=0.8)
+    ax.set_title('%d: change from %d by continent' % (last_year, base_year))
+    ax.set_ylabel('billion USD per year')
+    ax.set_xlabel('')
+    ax.tick_params(axis='x', rotation=30, labelsize=8)
+    for a in axes[:-1]:
+        a.xaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(lambda v, _: '%d' % v))
+    caption = 'Carbon stock valued at %s: %.2f USD per Mg C per year, held at its %s value' % (
+        price_column, price, 'base-year')
+    if aside is not None and aside in set(df['scenario']):
+        away = df[(df['scenario'] == aside) & (df['year'] == last_year)]['delta_value_usd'].sum() / 1e9
+        caption += '. %s not drawn: %.0f bn per year at %d' % (aside, away, last_year)
+    fig.suptitle(caption, fontsize=10)
     fig.tight_layout()
     fig.savefig(out_path, dpi=150)
     plt.close(fig)

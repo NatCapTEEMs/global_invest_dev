@@ -487,7 +487,8 @@ def terrestrial_carbon_scc_valuation(p):
     attributes = gpd.read_file(p.gep_regions_input_path, engine='pyogrio')[
         ['iso3_r250_id', 'continent']].drop_duplicates('iso3_r250_id')
     tcf.plot_scc_valuation(out, attributes, price, p.gep_price_convention, base_year,
-                           p.terrestrial_carbon_scc_figure_path)
+                           p.terrestrial_carbon_scc_figure_path,
+                           aside=getattr(p, 'es_provision_label', None))
     world = out.groupby(['scenario', 'year'])['delta_value_usd'].sum()
     last = int(out['year'].max())
     hb.log('  carbon SCC valuation: %d rows, price %.2f USD/Mg C (%s at %s); world change at %d: %s -> %s'
