@@ -220,49 +220,33 @@ def timber_value_density_table(p):
 
     from global_invest.terrestrial_carbon import terrestrial_carbon_tasks as tct
 
-    # The GRID comes from terrestrial_carbon, because timber_provision's own es_config carries
-    # `computed` for gep_quantity_input_path and nothing for the LULC grid -- it is a static
-    # country valuation and never needed either. Hydrating carbon's rows supplies the LULC map and
-    # the zone raster, and using the SAME two here as the shock task does is what makes the lookup
-    # and its consumer agree; reading them from two places is how a table gets built on one grid and
-    # applied on another.
+    # Keyed on SEALS7 classes, because that is what the scenario maps carry. Carbon's shock lookup
+    # (carbon_density_lookup_seals7_spawn.csv) is built the same way; its GEP lookup is keyed on the
+    # 37 ESA classes and applied to a SEALS7 map matches zero cells -- the library refuses that
+    # outright, which is how the first attempt at this table was caught.
     #
-    # NOTE, and it is a real one: those zones are CARBON zones, ecological strata chosen to explain
-    # carbon density. Timber has its own regionalisation upstream (Tian et al. timber regions in the
-    # value raster's own construction), and stratifying timber value by carbon zones is a borrowed
-    # choice, not a justified one. It makes the two seams comparable cell for cell, which is the
-    # point of this comparison; it is NOT a claim that carbon zones are the right strata for timber.
-    # Clear first. Hydration SKIPS an attribute that is already set, and publish_inputs above has
-    # already put timber's own `computed` into gep_quantity_input_path -- so hydrating carbon's rows
-    # without this leaves the literal string 'computed' where a raster path belongs, and
-    # stack_layers_summary is handed a filename that does not exist.
-    for attr in ('gep_quantity_input_path', 'gep_lulc_input_path'):
-        if getattr(p, attr, None) in ('computed', '', None):
-            try:
-                delattr(p, attr)
-            except AttributeError:
-                pass
-    utilities.hydrate_es_config(p, 'terrestrial_carbon', log=hb.log)
+    # The base-year SEALS7 map is the one the ES shocks form their 2023 denominator from, under the
+    # project's own fine_processed_inputs. The timber value raster and the carbon zones are on its
+    # grid already (10 arcsec global), so nothing is resampled.
     utilities.hydrate_es_parameters(p, 'terrestrial_carbon', log=hb.log)
-    for attr in ('gep_quantity_input_path', 'gep_lulc_input_path'):
-        value = getattr(p, attr, None)
-        if not value or value == 'computed':
-            raise NameError(
-                '%s is %r after hydrating terrestrial_carbon. The timber density table needs '
-                "carbon's LULC grid and zone raster; without them the lookup cannot be built."
-                % (attr, value))
-
-    # Align the value raster to the LULC grid first: stack_layers_summary reads the three layers
-    # cell by cell and a mismatched grid silently pairs the wrong cells rather than failing.
-    aligned_path = os.path.join(p.cur_dir, 'timber_value_density_aligned.tif')
-    if not hb.path_exists(aligned_path):
-        hb.resample_to_match(p.timber_provision_value_raster_path, p.gep_lulc_input_path,
-                             aligned_path, resample_method='bilinear')
+    base_year = int(getattr(p, 'es_shock_base_year', None) or p.key_base_year)
+    seals7_base_path = os.path.join(p.intermediate_dir, 'fine_processed_inputs', 'lulc', 'esa', 'seals7',
+                                    'lulc_esa_seals7_%d.tif' % base_year)
+    zones_path = p.terrestrial_quantity_input_path
+    value_path = p.timber_provision_value_raster_path
+    for label, path in (('SEALS7 base map', seals7_base_path), ('carbon zones', zones_path),
+                        ('timber value raster', value_path)):
+        if not hb.path_exists(path):
+            raise NameError('%s not found at %s' % (label, path))
+    shapes = {label: rasterio.open(path).shape for label, path in
+              (('base', seals7_base_path), ('zones', zones_path), ('value', value_path))}
+    if len(set(shapes.values())) != 1:
+        raise ValueError('timber density table needs one grid, got %s' % shapes)
 
     summary = tct.stack_layers_summary(
-        group_layer1_path=p.gep_lulc_input_path,
-        group_layer2_path=p.gep_quantity_input_path,
-        value_layer_path=aligned_path,
+        group_layer1_path=seals7_base_path,
+        group_layer2_path=zones_path,
+        value_layer_path=value_path,
         group1_name='lulc_id',
         group2_name='carbon_zone_id',
         value_name='carbon_density')
@@ -300,9 +284,8 @@ def timber_provision_shock(p):
     es_shock_base_year = int(p.es_shock_base_year)
     anchor_years = sorted(y for y in map(int, p.es_shock_years) if y > es_shock_base_year)
 
-    scenarios = list(getattr(p, 'es_shock_scenarios', []))
-    if not scenarios:
-        scenarios = [s for s in p.scenario_lulc_paths if s != base_scenario]
+    # Same resolution as carbon, from the same helper: the maps a project names by template.
+    scenarios = tct._resolve_scenario_lulc_paths(p, base_scenario, anchor_years)
 
     reference_lulc_path = p.scenario_lulc_paths[base_scenario][anchor_years[-1]]
     tct._align_zones_to_lulc_grid(p, reference_lulc_path)

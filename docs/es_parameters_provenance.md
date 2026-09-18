@@ -12,7 +12,7 @@ an archive member name are values you can act on.
 
 **`erosion_yield_bridge`** — alpha is the flat erosion-to-yield coefficient Method A applies to every crop; yield_coefficient_fallback is what Method B uses for a crop with no coefficient of its own. They are the same 0.08 today and the code comment says they are the same bridge, but they answer different questions, so they are two rows rather than one. 19 of 46 crops take the fallback and 5 have no entry at all.
 
-**`erosion_sdr_params`** — one calibration for both the static GEP and the dynamic shock path. ⚠ They used to differ, with sdr_max and ic_0_param transposed between them; these are the dynamic values, the conventional Borselli pair.
+**`erosion_sdr_params`** — one calibration for both the static GEP and the dynamic shock path. They used to differ, with sdr_max and ic_0_param transposed between them; these are the dynamic values, the conventional Borselli pair.
 
 **`erosion_threshold`** — threshold_high 11.0 t/ha/yr is the SES-11 severe-erosion threshold the account is named for, and threshold_low 2.0 the tolerable one. They decide which pixels count as severe, so they are the two rows most worth checking against the methodology before a run.
 
@@ -34,7 +34,7 @@ an archive member name are values you can act on.
 
 **`flood_return_periods`** — the six on disk under floodplain_depth_v2_nowater/aligned_to_lulc, which is the reported 2024 hazard set with permanent water removed.
 
-**`flood_input_reference`** — machine-specific, so these ship blank: base_data carries no global_invest/flood tree. On MSI they are under /projects/standard/jajohns/shared/flood_gep/inputs/. ⚠ Three are not where a tidy layout would put them: the reported depths are floodplain_depth_v2_nowater/, the SPA ratio is in counterfactual_mosaic/, and the CN table is in counterfactual/ while the amplification rasters are in counterfactual_mosaic/.
+**`flood_input_reference`** — machine-specific, so these ship blank: base_data carries no global_invest/flood tree. On MSI they are under /projects/standard/jajohns/shared/flood_gep/inputs/. Three are not where a tidy layout would put them: the reported depths are floodplain_depth_v2_nowater/, the SPA ratio is in counterfactual_mosaic/, and the CN table is in counterfactual/ while the amplification rasters are in counterfactual_mosaic/.
 
 **`flood_amplification_pattern`** — the staged files are global_amplification_<scenario>_rp<rp>.tif. The f0p3 and f0p5 variants beside them are alternative depth exponents; the unsuffixed file is the default.
 
@@ -42,9 +42,9 @@ an archive member name are values you can act on.
 
 **`flood_optional_tables`** — protection_path and protection_evidence_path are optional companions: blank means the table is not supplied, and the readers branch on None. When an evidence table IS given and has no ISO3 column the run stops, because which countries count as documented decides how much damage is truncated.
 
-**`flood_skip_damage_tables`** — ⚠ flood_tasks reads this with TWO different defaults -- False at the run_valuation_chain call site and True at the GEP one -- so the behaviour depended on which ran. The damage tables are prebuilt inputs and the inputs directory is not writable, so building them raises PermissionError; the deleted set_flood_paths set True. Setting it here makes both call sites agree
+**`flood_skip_damage_tables`** — flood_tasks reads this with TWO different defaults -- False at the run_valuation_chain call site and True at the GEP one -- so the behaviour depended on which ran. The damage tables are prebuilt inputs and the inputs directory is not writable, so building them raises PermissionError; the deleted set_flood_paths set True. Setting it here makes both call sites agree
 
-**`flood_divergent_defaults`** — ⚠ apply_service_flow and report_protection_split are TRUE here and FALSE as getattr defaults in configure_valuation. The deleted set_flood_paths set both True, so the run behaviour was True while the code default said otherwise. Deleting it without moving these would have silently turned off the ecosystem attribution that produces ead_attributed_to_spa_usd2019
+**`flood_divergent_defaults`** — apply_service_flow and report_protection_split are TRUE here and FALSE as getattr defaults in configure_valuation. The deleted set_flood_paths set both True, so the run behaviour was True while the code default said otherwise. Deleting it without moving these would have silently turned off the ecosystem attribution that produces ead_attributed_to_spa_usd2019
 
 **`flood_valuation_settings`** — the Section D switches, moved out of configure_valuation on 2026-08-29 where they were getattr defaults in code. Code set before hydration WINS over the CSV -- hydrate_es_parameters skips an attribute that is already set -- so defaults living in code silently shadowed anything put here
 

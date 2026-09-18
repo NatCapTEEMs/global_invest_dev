@@ -450,7 +450,7 @@ def terrestrial_carbon_scc_valuation(p):
     anchor_years = sorted(y for y in map(int, p.es_shock_years) if y > base_year)
     excluded = set(getattr(p, 'es_shock_excluded_scenarios', ()) or ())
     scenarios = [s for s in p.es_shock_scenarios if s not in excluded]
-    density_dir = p.terrestrial_carbon_shock_task.task_dir
+    density_dir = p.terrestrial_carbon_shock_dir   # published by ProjectFlow when the shock task ran
 
     def stock_by_country(scenario, year):
         """Mg C per country for one scenario map: density x ha per cell, summed by country."""
