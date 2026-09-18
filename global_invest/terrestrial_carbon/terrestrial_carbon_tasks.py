@@ -277,6 +277,36 @@ def _zone_mean(p, scenario, year, density_lookup):
         p.terrestrial_carbon_shock_value_col]
 
 
+
+def _resolve_scenario_lulc_paths(p, base_scenario, anchor_years):
+    """Build p.scenario_lulc_paths from p.es_lulc_path_template when the caller has not, and return
+    the scenario list.
+
+    Shared by every seam that walks scenario maps -- carbon and timber -- so a project passes one
+    template string rather than a path-building task, and both seams resolve the same files.
+
+    Args:
+        p (ProjectFlow): carries es_lulc_path_template ({scenario}/{year} placeholders) or a
+            pre-built scenario_lulc_paths {scenario: {year: path}}, and optionally es_shock_scenarios.
+        base_scenario (str): the nature-off baseline label, always resolved.
+        anchor_years (list): the SEALS anchor years to resolve maps for.
+
+    Returns:
+        list: the policy scenarios -- es_shock_scenarios if set, else every resolved scenario
+            other than the baseline.
+    """
+    scenarios = list(getattr(p, 'es_shock_scenarios', []))
+    if not getattr(p, 'scenario_lulc_paths', None):
+        tmpl = p.es_lulc_path_template
+        p.scenario_lulc_paths = {
+            scen: {y: glob.glob(tmpl.format(scenario=scen, year=y))[0]
+                   for y in anchor_years if glob.glob(tmpl.format(scenario=scen, year=y))}
+            for scen in [base_scenario] + scenarios}
+    if not scenarios:
+        scenarios = [s for s in p.scenario_lulc_paths if s != base_scenario]
+    return scenarios
+
+
 def _align_zones_to_lulc_grid(p, reference_lulc_path):
     """Point p.terrestrial_quantity_input_path at a carbon-zones raster on the reference map's grid.
 
@@ -356,15 +386,7 @@ def terrestrial_carbon_shock(p):
     # Resolve the LULC map per scenario by globbing es_lulc_path_template ({scenario}/{year}
     # placeholders) when the caller didn't pre-build scenario_lulc_paths, so a project passes only
     # a template string rather than a path-building task.
-    scenarios = list(getattr(p, 'es_shock_scenarios', []))
-    if not getattr(p, 'scenario_lulc_paths', None):
-        tmpl = p.es_lulc_path_template
-        p.scenario_lulc_paths = {
-            scen: {y: glob.glob(tmpl.format(scenario=scen, year=y))[0]
-                   for y in anchor_years if glob.glob(tmpl.format(scenario=scen, year=y))}
-            for scen in [base_scenario] + scenarios}
-    if not scenarios:
-        scenarios = [s for s in p.scenario_lulc_paths if s != base_scenario]
+    scenarios = _resolve_scenario_lulc_paths(p, base_scenario, anchor_years)
 
     reference_lulc_path = p.scenario_lulc_paths[base_scenario][anchor_years[-1]]
     _align_zones_to_lulc_grid(p, reference_lulc_path)
@@ -396,6 +418,80 @@ def terrestrial_carbon_shock(p):
     out.to_csv(p.terrestrial_carbon_shock_output_path, index=False)
     hb.log('  carbon shock: %d rows, %d scenarios (shock_pct=shock_pct_contemp=/base_Y, shock_pct_fixedbase=/base_%d) -> %s'
           % (len(out), out['scenario'].nunique() if rows else 0, es_shock_base_year, p.terrestrial_carbon_shock_output_path))
+    return True
+
+
+def terrestrial_carbon_scc_valuation(p):
+    """Every scenario map's carbon stock, valued the way the GEP valuation values the base year.
+
+    The shock task above measures carbon as a mean density per zone, because a shock is a ratio and
+    area cancels. This task measures it as a STOCK -- density x hectares per cell, summed by
+    country -- and prices it at the GEP price convention (`gep_price_convention`, read from
+    `gep_price_input_path` at `gep_base_year`), exactly as gep_calculation does for the base year.
+    The result is the change from the base year, per country, scenario and year, and a figure.
+
+    Reads the density rasters the shock task cached (carbon_density_<scenario>_<year>.tif in its
+    task dir), so it never re-derives carbon from the maps. Writes:
+      terrestrial_carbon_scc_valuation.csv   iso3_r250_id, scenario, year, stock_mgc,
+                                             delta_stock_mgc, delta_value_usd (annual, interpolated
+                                             between anchors as the shock is)
+      terrestrial_carbon_scc_valuation.png
+    """
+    publish_inputs(p)
+    utilities.initialize_pyramid_paths(p)
+    p.terrestrial_carbon_scc_valuation_path = os.path.join(p.cur_dir, 'terrestrial_carbon_scc_valuation.csv')
+    p.terrestrial_carbon_scc_figure_path = os.path.join(p.cur_dir, 'terrestrial_carbon_scc_valuation.png')
+    if not p.run_this:
+        return True
+    import geopandas as gpd
+
+    base_scenario = utilities.required_base_scenario(p, 'terrestrial_carbon')
+    base_year = int(p.es_shock_base_year)
+    anchor_years = sorted(y for y in map(int, p.es_shock_years) if y > base_year)
+    excluded = set(getattr(p, 'es_shock_excluded_scenarios', ()) or ())
+    scenarios = [s for s in p.es_shock_scenarios if s not in excluded]
+    density_dir = p.terrestrial_carbon_shock_task.task_dir
+
+    def stock_by_country(scenario, year):
+        """Mg C per country for one scenario map: density x ha per cell, summed by country."""
+        density_path = os.path.join(density_dir, 'carbon_density_%s_%d.tif' % (scenario, year))
+        if not hb.path_exists(density_path):
+            raise NameError('the shock task left no density raster for %s %d: %s' % (scenario, year, density_path))
+        per_cell_path = os.path.join(p.cur_dir, 'carbon_per_cell_%s_%d.tif' % (scenario, year))
+        if not hb.path_exists(per_cell_path):
+            hb.multiply(density_path, p.ha_per_cell_10sec_path, per_cell_path)
+        summary_path = os.path.join(p.cur_dir, 'carbon_by_country_region_%s_%d.csv' % (scenario, year))
+        if not hb.path_exists(summary_path):
+            tcf.summarize_raster_by_region(per_cell_path, p.gep_regions_input_path, summary_path,
+                                           year=year, id_column=p.gep_regions_id_col)
+        regions = hb.df_read(summary_path)
+        # summed on the country id, so a country split across r264 sub-regions counts once
+        return regions.groupby('iso3_r250_id')['total'].sum()
+
+    base_stock = stock_by_country(base_scenario, base_year)
+    stocks = {s: {y: stock_by_country(s, y) for y in anchor_years} for s in scenarios}
+
+    df_price = pd.read_excel(p.gep_price_input_path)[[p.gep_price_convention, 'year']]
+    price = float(df_price.loc[df_price['year'] == int(p.gep_base_year), p.gep_price_convention].iloc[0])
+
+    out = tcf.scc_valuation_rows(
+        stocks, base_stock, price, base_year,
+        retained=getattr(p, 'es_provision_retained', None),
+        from_year=getattr(p, 'es_provision_from_year', None),
+        cut_source=getattr(p, 'es_provision_source_scenario', None),
+        cut_label=getattr(p, 'es_provision_label', None))
+    out.to_csv(p.terrestrial_carbon_scc_valuation_path, index=False, encoding='utf-8-sig')
+
+    attributes = gpd.read_file(p.gep_regions_input_path, engine='pyogrio')[
+        ['iso3_r250_id', 'continent']].drop_duplicates('iso3_r250_id')
+    tcf.plot_scc_valuation(out, attributes, price, p.gep_price_convention, base_year,
+                           p.terrestrial_carbon_scc_figure_path)
+    world = out.groupby(['scenario', 'year'])['delta_value_usd'].sum()
+    last = int(out['year'].max())
+    hb.log('  carbon SCC valuation: %d rows, price %.2f USD/Mg C (%s at %s); world change at %d: %s -> %s'
+           % (len(out), price, p.gep_price_convention, p.gep_base_year, last,
+              {s: '%.1fbn' % (world[(s, last)] / 1e9) for s in sorted(out['scenario'].unique())},
+              p.terrestrial_carbon_scc_valuation_path))
     return True
 
 

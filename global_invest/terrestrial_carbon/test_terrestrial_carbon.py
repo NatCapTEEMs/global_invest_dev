@@ -355,3 +355,25 @@ def test_dynamic_shock_rows_v3_is_absent_without_a_base_year_baseline():
     rows = tcf.dynamic_shock_rows({2030: pd.Series({1: 126.0})}, {2030: pd.Series({1: 120.0})},
                                   None, zone_labels, 2029, 'FRS', 'net_zero')
     assert all(np.isnan(row['shock_pct_v3']) for row in rows)
+
+
+def test_scc_valuation_interpolates_prices_and_derives_the_cut():
+    """Two countries, one scenario with anchors at 2030 and 2050, price 10 $/Mg C."""
+    base = pd.Series({1: 100.0, 2: 50.0})
+    stocks = {'cp': {2030: pd.Series({1: 110.0, 2: 40.0}), 2050: pd.Series({1: 130.0, 2: 40.0})},
+              'cp-es20': {2030: pd.Series({1: 110.0, 2: 40.0}), 2050: pd.Series({1: 130.0, 2: 40.0})}}
+    out = tcf.scc_valuation_rows(stocks, base, price=10.0, base_year=2023, retained=0.8,
+                                 from_year=2030, cut_source='cp', cut_label='cp-es20')
+    cp = out[(out['scenario'] == 'cp') & (out['iso3_r250_id'] == 1)].set_index('year')
+    assert cp.loc[2023, 'delta_value_usd'] == 0.0
+    # linear between 2023 (100) and 2030 (110): 2027 -> 100 + 4/7 * 10
+    assert abs(cp.loc[2027, 'stock_mgc'] - (100 + 40 / 7)) < 1e-9
+    assert abs(cp.loc[2040, 'delta_value_usd'] - (120 - 100) * 10) < 1e-9
+    assert cp.loc[2050, 'delta_value_usd'] == 300.0
+    # the cut: the modelled es20 rows are replaced by 0.8 x cp from 2030, untouched before
+    es20 = out[(out['scenario'] == 'cp-es20') & (out['iso3_r250_id'] == 1)].set_index('year')
+    assert es20.loc[2029, 'stock_mgc'] == cp.loc[2029, 'stock_mgc']
+    assert abs(es20.loc[2030, 'stock_mgc'] - 0.8 * 110) < 1e-9
+    assert abs(es20.loc[2050, 'delta_value_usd'] - (0.8 * 130 - 100) * 10) < 1e-9
+    assert sorted(out['scenario'].unique()) == ['cp', 'cp-es20']
+    assert len(out) == 2 * 2 * 28

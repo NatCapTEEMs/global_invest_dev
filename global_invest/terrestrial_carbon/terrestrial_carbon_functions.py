@@ -285,3 +285,97 @@ def collapse_regions_to_countries(df_regions, df_price, price_column):
                                   'terrestrial_carbon_gep']]
 
 
+
+
+# =============================================================================
+# Scenario valuation at the social cost of carbon. The same arithmetic as the GEP
+# valuation above -- stock x the base-year price -- applied to every scenario map
+# and reported as the change from the base year.
+# =============================================================================
+
+def scc_valuation_rows(stock_by_scenario_year, base_stock, price, base_year, retained=None,
+                       from_year=None, cut_source=None, cut_label=None):
+    """Carbon stock per country and year, valued at one price, as its change from the base year.
+
+    Args:
+        stock_by_scenario_year (dict): scenario -> {anchor year -> pd.Series of Mg C per country,
+            indexed by iso3_r250_id}.
+        base_stock (pd.Series): Mg C per country in the base year, the same for every scenario.
+        price (float): $ per Mg C, the GEP price convention at the GEP base year.
+        base_year (int): the year every change is measured from.
+        retained, from_year, cut_source, cut_label: the reduced-provision configuration. When all
+            four are given, `cut_label` is derived from `cut_source` by retaining `retained` of its
+            stock from `from_year` on, and any modelled rows under `cut_label` are replaced.
+
+    Returns:
+        pd.DataFrame: iso3_r250_id, scenario, year (base_year..last anchor, annual, linear between
+        anchors), stock_mgc, delta_stock_mgc, delta_value_usd.
+    """
+    cut = all(x is not None for x in (retained, from_year, cut_source, cut_label))
+    frames = []
+    for scenario, by_year in stock_by_scenario_year.items():
+        if cut and scenario == cut_label:
+            continue
+        anchors = sorted(by_year)
+        years = list(range(base_year, anchors[-1] + 1))
+        table = pd.DataFrame({base_year: base_stock, **{y: by_year[y] for y in anchors}})
+        table = table.dropna()
+        annual = table.reindex(columns=years).interpolate(axis=1, limit_area='inside')
+        long = annual.stack().rename('stock_mgc').reset_index()
+        long.columns = ['iso3_r250_id', 'year', 'stock_mgc']
+        long['scenario'] = scenario
+        frames.append(long)
+        if cut and scenario == cut_source:
+            stressed = long.copy()
+            stressed['scenario'] = cut_label
+            stressed.loc[stressed['year'] >= from_year, 'stock_mgc'] *= retained
+            frames.append(stressed)
+    out = pd.concat(frames, ignore_index=True)
+    base = base_stock.rename('base_stock_mgc').reset_index()
+    base.columns = ['iso3_r250_id', 'base_stock_mgc']
+    out = out.merge(base, on='iso3_r250_id', how='left')
+    out['delta_stock_mgc'] = out['stock_mgc'] - out['base_stock_mgc']
+    out['delta_value_usd'] = out['delta_stock_mgc'] * price
+    return out[['iso3_r250_id', 'scenario', 'year', 'stock_mgc', 'delta_stock_mgc', 'delta_value_usd']]
+
+
+def plot_scc_valuation(df, attributes, price, price_column, base_year, out_path):
+    """Two panels: the world's change in carbon value by scenario over time, and the last year's
+    change by continent and scenario.
+
+    Args:
+        df (pd.DataFrame): scc_valuation_rows output.
+        attributes (pd.DataFrame): iso3_r250_id -> continent, one row per country.
+        price (float): the price used, for the title.
+        price_column (str): its convention name, for the title.
+        base_year (int): the year changes are measured from.
+        out_path (str): where the PNG goes.
+    """
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+
+    world = df.groupby(['scenario', 'year'])['delta_value_usd'].sum().unstack('scenario') / 1e9
+    last = df[df['year'] == df['year'].max()].merge(attributes, on='iso3_r250_id', how='left')
+    by_continent = last.groupby(['continent', 'scenario'])['delta_value_usd'].sum().unstack('scenario') / 1e9
+
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5.5), gridspec_kw={'width_ratios': [1.1, 1]})
+    world.plot(ax=ax1, linewidth=1.8)
+    ax1.axhline(0, color='0.4', linewidth=0.8)
+    ax1.set_title('World: change in terrestrial carbon value from %d' % base_year)
+    ax1.set_ylabel('billion USD')
+    ax1.set_xlabel('')
+    ax1.legend(title='scenario', fontsize=8, title_fontsize=8, frameon=False)
+    by_continent.plot(kind='bar', ax=ax2, width=0.8)
+    ax2.axhline(0, color='0.4', linewidth=0.8)
+    ax2.set_title('%d: change by continent' % int(df['year'].max()))
+    ax2.set_ylabel('billion USD')
+    ax2.set_xlabel('')
+    ax2.tick_params(axis='x', rotation=30)
+    ax2.get_legend().remove()
+    fig.suptitle('Carbon stock change valued at %s (%.2f USD per Mg C, held constant)' % (price_column, price),
+                 fontsize=10)
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=150)
+    plt.close(fig)
+    return out_path

@@ -79,4 +79,7 @@ def add_terrestrial_carbon_tasks(p, parent=None):
         return p
     # dynamic: recompute from the SEALS maps (one task for carbon; cf. erosion's multi-task chain)
     p.terrestrial_carbon_shock_task = p.add_task(terrestrial_carbon_tasks.terrestrial_carbon_shock, parent=parent)
+    # The same maps valued as stocks at the social cost of carbon, from the density rasters the
+    # shock task cached. Reported beside the shock, whichever variable the shock is routed to.
+    p.terrestrial_carbon_scc_valuation_task = p.add_task(terrestrial_carbon_tasks.terrestrial_carbon_scc_valuation, parent=parent)
     return p
