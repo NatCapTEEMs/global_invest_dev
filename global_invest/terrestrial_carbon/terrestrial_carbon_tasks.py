@@ -469,6 +469,7 @@ def terrestrial_carbon_scc_valuation(p):
         return regions.groupby('iso3_r250_id')['total'].sum()
 
     base_stock = stock_by_country(base_scenario, base_year)
+    baseline_by_year = {y: stock_by_country(base_scenario, y) for y in anchor_years}
     stocks = {s: {y: stock_by_country(s, y) for y in anchor_years} for s in scenarios}
 
     df_price = pd.read_excel(p.gep_price_input_path)[[p.gep_price_convention, 'year']]
@@ -479,7 +480,8 @@ def terrestrial_carbon_scc_valuation(p):
         retained=getattr(p, 'es_provision_retained', None),
         from_year=getattr(p, 'es_provision_from_year', None),
         cut_source=getattr(p, 'es_provision_source_scenario', None),
-        cut_label=getattr(p, 'es_provision_label', None))
+        cut_label=getattr(p, 'es_provision_label', None),
+        baseline_by_year=baseline_by_year)
     out.to_csv(p.terrestrial_carbon_scc_valuation_path, index=False, encoding='utf-8-sig')
 
     attributes = gpd.read_file(p.gep_regions_input_path, engine='pyogrio')[

@@ -377,3 +377,9 @@ def test_scc_valuation_interpolates_prices_and_derives_the_cut():
     assert abs(es20.loc[2050, 'delta_value_usd'] - (0.8 * 130 - 100) * 10) < 1e-9
     assert sorted(out['scenario'].unique()) == ['cp', 'cp-es20']
     assert len(out) == 2 * 2 * 28
+    # against a contemporaneous baseline: 2050 baseline 120 for country 1 -> cp is +10 above it
+    out2 = tcf.scc_valuation_rows(stocks, base, price=10.0, base_year=2023,
+                                  baseline_by_year={2030: pd.Series({1: 105.0, 2: 50.0}), 2050: pd.Series({1: 120.0, 2: 50.0})})
+    cp2 = out2[(out2['scenario'] == 'cp') & (out2['iso3_r250_id'] == 1)].set_index('year')
+    assert abs(cp2.loc[2050, 'delta_value_vs_baseline_usd'] - 100.0) < 1e-9
+    assert abs(cp2.loc[2023, 'delta_value_vs_baseline_usd']) < 1e-9

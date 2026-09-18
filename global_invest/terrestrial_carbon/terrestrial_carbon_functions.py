@@ -294,7 +294,7 @@ def collapse_regions_to_countries(df_regions, df_price, price_column):
 # =============================================================================
 
 def scc_valuation_rows(stock_by_scenario_year, base_stock, price, base_year, retained=None,
-                       from_year=None, cut_source=None, cut_label=None):
+                       from_year=None, cut_source=None, cut_label=None, baseline_by_year=None):
     """Carbon stock per country and year, valued at one price, as its change from the base year.
 
     Args:
@@ -306,10 +306,14 @@ def scc_valuation_rows(stock_by_scenario_year, base_stock, price, base_year, ret
         retained, from_year, cut_source, cut_label: the reduced-provision configuration. When all
             four are given, `cut_label` is derived from `cut_source` by retaining `retained` of its
             stock from `from_year` on, and any modelled rows under `cut_label` are replaced.
+        baseline_by_year (dict): anchor year -> pd.Series of Mg C per country for the nature-off
+            baseline at the same year. When given, the change from that contemporaneous baseline
+            is reported beside the change from the base year.
 
     Returns:
         pd.DataFrame: iso3_r250_id, scenario, year (base_year..last anchor, annual, linear between
-        anchors), stock_mgc, delta_stock_mgc, delta_value_usd.
+        anchors), stock_mgc, delta_stock_mgc, delta_value_usd, and with a baseline
+        delta_stock_vs_baseline_mgc, delta_value_vs_baseline_usd.
     """
     cut = all(x is not None for x in (retained, from_year, cut_source, cut_label))
     frames = []
@@ -336,7 +340,19 @@ def scc_valuation_rows(stock_by_scenario_year, base_stock, price, base_year, ret
     out = out.merge(base, on='iso3_r250_id', how='left')
     out['delta_stock_mgc'] = out['stock_mgc'] - out['base_stock_mgc']
     out['delta_value_usd'] = out['delta_stock_mgc'] * price
-    return out[['iso3_r250_id', 'scenario', 'year', 'stock_mgc', 'delta_stock_mgc', 'delta_value_usd']]
+    columns = ['iso3_r250_id', 'scenario', 'year', 'stock_mgc', 'delta_stock_mgc', 'delta_value_usd']
+    if baseline_by_year is not None:
+        anchors = sorted(baseline_by_year)
+        years = list(range(base_year, anchors[-1] + 1))
+        table = pd.DataFrame({base_year: base_stock, **{y: baseline_by_year[y] for y in anchors}}).dropna()
+        annual = table.reindex(columns=years).interpolate(axis=1, limit_area='inside')
+        long = annual.stack().rename('baseline_stock_mgc').reset_index()
+        long.columns = ['iso3_r250_id', 'year', 'baseline_stock_mgc']
+        out = out.merge(long, on=['iso3_r250_id', 'year'], how='left')
+        out['delta_stock_vs_baseline_mgc'] = out['stock_mgc'] - out['baseline_stock_mgc']
+        out['delta_value_vs_baseline_usd'] = out['delta_stock_vs_baseline_mgc'] * price
+        columns += ['delta_stock_vs_baseline_mgc', 'delta_value_vs_baseline_usd']
+    return out[columns]
 
 
 def plot_scc_valuation(df, attributes, price, price_column, base_year, out_path):
