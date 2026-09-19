@@ -254,19 +254,24 @@ def dynamic_shock_rows(fixedbase, contemporaneous, level_usd, scenario, sectors,
                         sector_usd = float(series.get(zone, float('nan')))
                 # The output-denominated shock: the same dollar change, as a share of what the
                 # sector produces on that land rather than of the pollination it receives.
-                #   shock_pct         = d_usd / poll_usd   (what afeall on land has always read)
-                #   shock_pct_output  = d_usd / crop_usd   (what aoall on output should read)
-                # Both from one d_usd, so the two differ only by the pollination share of crop
-                # value; nothing about the scenario or the zone is re-estimated. NaN, not zero,
-                # when the crop level is absent -- a zero would read as "no shock" downstream.
+                #   shock_pct_v3      = d_usd / poll_usd   the paper's reference: the scenario's own
+                #                                          trajectory from the base year (paired)
+                #   shock_pct_output  = d_usd / crop_usd   what aoall on output reads
+                # ONE dollar change, d_usd = shock_pct_v3/100 x the sector's base-year pollination
+                # value, so the two differ only by the pollination share of crop value. It is the
+                # v3 numerator, the measure the export selects for pollination -- forming it from
+                # the contemporaneous measure would hand aoall a different quantity than afeall was
+                # given and relabel it. NaN, not zero, when the crop level or the v3 series is
+                # absent -- a zero would read as "no shock" downstream.
                 output_value = float('nan')
                 crop_usd = float('nan')
                 if crop_usd_by_sector:
                     crop_series = crop_usd_by_sector.get(str(sector).upper())
                     if crop_series is not None:
                         crop_usd = float(crop_series.get(zone, float('nan')))
-                        if np.isfinite(crop_usd) and crop_usd > 0 and np.isfinite(sector_usd):
-                            d_usd = contemp_value / 100.0 * sector_usd
+                        if (np.isfinite(crop_usd) and crop_usd > 0 and np.isfinite(sector_usd)
+                                and np.isfinite(v3_value)):
+                            d_usd = v3_value / 100.0 * sector_usd
                             output_value = 100.0 * d_usd / crop_usd
                 rows.append({'ENDW': endw, 'ACTS': sector, 'REG': reg, 'scenario': scenario,
                              'year': year, 'shock_pct': contemp_value,

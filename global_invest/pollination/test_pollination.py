@@ -747,13 +747,15 @@ def test_dynamic_shock_rows_accepts_per_sector_crop_levels_without_changing_shoc
     assert (a['value_usd_base'] == 2.0e9).all()
 
 
-def test_shock_pct_output_is_the_same_dollars_over_crop_value():
-    """Step 2: the output-denominated column, checked against hand arithmetic.
+def test_shock_pct_output_is_the_v3_dollars_over_crop_value():
+    """The output-denominated column is the PAPER'S numerator over the crop-value denominator.
 
-    shock_pct is d_usd / poll_usd. shock_pct_output must be the SAME d_usd over crop_usd, so the
-    two differ exactly by the pollination share of crop value -- no re-estimation, no second
-    numerator. And it must be NaN, never 0, where the crop level is absent: a zero would reach the
-    solver as "no shock" and look like a result.
+    The export selects shock_pct_v3 for pollination: the scenario's own paired trajectory from the
+    base year, 100 (S_t - S_2023) / S_2023. shock_pct_output must be that same dollar change,
+    d_usd = v3/100 x the sector's base-year pollination value, over the sector's crop value --
+    NOT the contemporaneous measure relabelled. Expected values are hand-computed from the levels
+    below, independently of the function. NaN, never 0, where the crop level or the v3 series is
+    absent.
     """
     import math
 
@@ -762,29 +764,42 @@ def test_shock_pct_output_is_the_same_dollars_over_crop_value():
     from global_invest.pollination import pollination_functions as pf
 
     zone = ('AEZ3', 'CHL')
-    fixed = pd.DataFrame({2050: [20.0]}, index=pd.MultiIndex.from_tuples([zone]))
+    idx = pd.MultiIndex.from_tuples([zone])
+    # contemporaneous measure deliberately DIFFERENT from v3, so a relabelling would be caught
+    fixed = pd.DataFrame({2030: [10.0], 2050: [20.0]}, index=idx)
+    contemp = pd.DataFrame({2030: [3.0], 2050: [7.0]}, index=idx)
+    # paired levels: base 2.0e9 (S_2023), scenario 2.2e9 at 2030 and 2.5e9 at 2050
+    paired_base = {2030: pd.Series({zone: 2.0e9}), 2050: pd.Series({zone: 2.0e9})}
+    paired_scen = {2030: pd.Series({zone: 2.2e9}), 2050: pd.Series({zone: 2.5e9})}
     poll = {'V_F': pd.Series({zone: 1.7e9}), 'OSD': pd.Series({zone: 0.3e9})}
     crop = {'V_F': pd.Series({zone: 9.0e9})}          # OSD deliberately has no crop level
 
     rows = pd.DataFrame(pf.dynamic_shock_rows(
-        fixed, fixed.copy(), pd.Series({zone: 2.0e9}), 'net_zero', ['V_F', 'OSD'], 2023,
+        fixed, contemp, pd.Series({zone: 2.0e9}), 'net_zero', ['V_F', 'OSD'], 2023,
+        paired_base_by_year=paired_base, paired_scen_by_year=paired_scen,
         level_usd_by_sector=poll, crop_usd_by_sector=crop))
-    r2050 = rows[rows['year'] == 2050].set_index('ACTS')
+    vf = rows[rows['ACTS'] == 'V_F'].set_index('year')
 
-    # V_F: 20% of $1.7bn = $0.34bn; over $9.0bn crop = 3.777...%
-    vf = r2050.loc['V_F']
-    assert abs(vf['shock_pct'] - 20.0) < 1e-9
-    assert abs(vf['shock_pct_output'] - 100.0 * (0.20 * 1.7e9) / 9.0e9) < 1e-9
-    # The ratio between the two columns IS the pollination share of crop value.
-    assert abs(vf['shock_pct_output'] / vf['shock_pct'] - 1.7e9 / 9.0e9) < 1e-12
+    # v3 at 2050: 100 (2.5/2.0 - 1) = 25 %; the V_F sector holds 1.7e9 of the zone's 2.0e9, so its
+    # dollar change is 0.25 x 1.7e9 = 0.425e9; over 9.0e9 crop value = 4.7222 %
+    assert abs(vf.loc[2050, 'shock_pct_v3'] - 25.0) < 1e-9
+    assert abs(vf.loc[2050, 'shock_pct_output'] - 100.0 * (0.25 * 1.7e9) / 9.0e9) < 1e-9
+    # at 2030: v3 = 10 %, output share = 0.10 x 1.7 / 9.0 = 1.8889 %
+    assert abs(vf.loc[2030, 'shock_pct_output'] - 100.0 * (0.10 * 1.7e9) / 9.0e9) < 1e-9
+    # between anchors the v3 series is interpolated and the output share follows it: 2040 = 17.5 %
+    assert abs(vf.loc[2040, 'shock_pct_output'] - 100.0 * (0.175 * 1.7e9) / 9.0e9) < 1e-9
+    # the ratio output/v3 IS the pollination share of crop value, and it is NOT the contemp ratio
+    assert abs(vf.loc[2050, 'shock_pct_output'] / vf.loc[2050, 'shock_pct_v3'] - 1.7e9 / 9.0e9) < 1e-12
+    assert abs(vf.loc[2050, 'shock_pct_output'] - vf.loc[2050, 'shock_pct'] * 1.7e9 / 9.0e9) > 1e-3
+    # base year: no shock
+    assert vf.loc[2023, 'shock_pct_output'] == 0.0
 
-    # OSD: no crop level -> NaN, and shock_pct itself untouched.
-    osd = r2050.loc['OSD']
-    assert abs(osd['shock_pct'] - 20.0) < 1e-9
+    # OSD: no crop level -> NaN
+    osd = rows[(rows['ACTS'] == 'OSD') & (rows['year'] == 2050)].iloc[0]
     assert math.isnan(osd['shock_pct_output'])
 
-    # Without any crop levels at all the column exists and is NaN throughout, so a consumer can
-    # tell "not computed" from "computed as zero".
+    # No paired levels -> no v3 -> output share NaN throughout, never zero
     plain = pd.DataFrame(pf.dynamic_shock_rows(
-        fixed, fixed.copy(), pd.Series({zone: 2.0e9}), 'net_zero', ['V_F'], 2023))
-    assert 'shock_pct_output' in plain.columns and plain['shock_pct_output'].isna().all()
+        fixed, contemp, pd.Series({zone: 2.0e9}), 'net_zero', ['V_F'], 2023,
+        level_usd_by_sector=poll, crop_usd_by_sector=crop))
+    assert plain['shock_pct_output'].isna().all()
