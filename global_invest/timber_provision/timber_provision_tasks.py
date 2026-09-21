@@ -361,7 +361,9 @@ def timber_provision_shock(p):
         _write_eligible_value(value_path, base_lulc_path, eligible_path)
     _log_eligible_coverage(p, value_path, eligible_path)
     jobs = []
-    for scenario in [base_scenario] + list(scenarios):
+    # The baseline may also be listed among the scenarios; each map is valued exactly once, or two
+    # workers would write the same raster at the same time.
+    for scenario in dict.fromkeys([base_scenario] + list(scenarios)):
         years = list(anchor_years) + ([es_shock_base_year] if es_shock_base_year in p.scenario_lulc_paths.get(scenario, {}) else [])
         for year in years:
             jobs.append((scenario, year, p.scenario_lulc_paths[scenario][year], eligible_path,
