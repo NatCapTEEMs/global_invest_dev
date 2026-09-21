@@ -1531,6 +1531,9 @@ def _zonal_context(p, denominator_path, correspondence_gpkg):
                                           p.pollination_shock_endw_format)
 
 
+POLLINATION_SHOCK_SIGNATURE = 'pollination_shock_signature.json'   # beside the table, in the shared es_shocks dir
+
+
 def pollination_shock(p):
     """Per-scenario 300 m LULC at each SEALS anchor year -> V_F/OSD shock, piecewise-interp to annual.
 
@@ -1588,6 +1591,15 @@ def pollination_shock(p):
     if not base_map:
         raise ValueError('pollination base-year LULC not set: point p.es_base_year_lulc_path (or '
                          'p.pollination_base_year_lulc_path) at the SEALS7 base-year map.')
+    # The table is reused when it was made from these very maps and settings; the zonal reads below
+    # cost about twenty minutes per pass and a pass that finds the table must return in seconds.
+    shock_maps = sorted({base_map} | {m for by_year in p.scenario_lulc_paths.values() for m in by_year.values()})
+    shock_outputs = [p.pollination_shock_output_path]
+    reason = utilities.reuse_reason(p, 'pollination', shock_outputs, POLLINATION_SHOCK_SIGNATURE, light_inputs=shock_maps)
+    if reason is None:
+        hb.log('  pollination shock: reusing %s (same maps, same settings)' % p.pollination_shock_output_path)
+        return True
+    hb.log('  pollination shock: computing because %s' % reason)
     # The denominator (unpaired 2023 value) is year- and scenario-independent, so the fixed side of
     # the zonal step is built once.
     denominator_path = baseline_denominator(cfg, base_map, es_shock_base_year,
@@ -1735,6 +1747,7 @@ def pollination_shock(p):
     out = utilities.filter_to_model_domain(out, p.pollination_shock_output_path, 'pollination', log=hb.log)
     utilities.assert_shock_table_sound(out, es_shock_scenarios, 'pollination')
     out.to_csv(p.pollination_shock_output_path, index=False)
+    utilities.write_reuse_signature(p, 'pollination', shock_outputs, POLLINATION_SHOCK_SIGNATURE, light_inputs=shock_maps)
     hb.log('  pollination shock: %d rows, %d scenarios (shock_pct=shock_pct_contemp=/baseline-year value, shock_pct_fixedbase=/2023 value) -> %s'
           % (len(out), out['scenario'].nunique() if rows else 0, p.pollination_shock_output_path))
     # value_usd_base is the GEP hand-off, not read by GTAP (build_combined_afeall takes shock_pct only).

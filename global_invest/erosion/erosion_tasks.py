@@ -1782,6 +1782,9 @@ def resample_band_to_match(stack_path, band, match_path, working_dir, resample_m
     return array
 
 
+EROSION_SHOCK_SIGNATURE = 'erosion_shock_signature.json'   # beside the table, in the shared es_shocks dir
+
+
 def erosion_shock(p):
     """DYNAMIC step 4: per-ee_r50_aez18 crop-productivity LEVELS by three methods, reported side by side.
 
@@ -1902,6 +1905,18 @@ def erosion_shock(p):
     # four services on one shape and makes "B_y == 0 for the ignore-dependencies baseline" a check that can
     # actually be run against the CSV rather than inferred from an absence.
     scenarios = list(p.scenario_lulc_paths)
+
+    # Reuse the table when it was made from these very exposure rasters, maps and settings: the SPAM
+    # resampling and zonal reads below cost about twenty minutes per pass, and a pass that finds the
+    # table must return in seconds.
+    shock_maps = sorted({m for by_year in p.scenario_lulc_paths.values() for m in by_year.values()}
+                        | set(glob.glob(os.path.join(p.erosion_exposure_dir, '*.tif'))))
+    shock_outputs = [p.erosion_shock_output_path]
+    reason = utilities.reuse_reason(p, 'erosion', shock_outputs, EROSION_SHOCK_SIGNATURE, light_inputs=shock_maps)
+    if reason is None:
+        hb.log('  erosion shock: reusing %s (same exposure rasters, maps and settings)' % p.erosion_shock_output_path)
+        return
+    hb.log('  erosion shock: computing because %s' % reason)
 
     # Precompute ONCE (all ps_gated rasters share the analysis grid): rasterize the zones and reproject
     # each SPAM crop's production to that grid, plus its zone totals (ps-independent, so constant across
@@ -2142,6 +2157,7 @@ def erosion_shock(p):
     out = utilities.filter_to_model_domain(out, p.erosion_shock_output_path, 'erosion', log=hb.log)
     utilities.assert_shock_table_sound(out, scenarios, 'erosion')
     out.to_csv(p.erosion_shock_output_path, index=False)
+    utilities.write_reuse_signature(p, 'erosion', shock_outputs, EROSION_SHOCK_SIGNATURE, light_inputs=shock_maps)
     end = out[out['year'] == es_shock_end_year]
     hb.log('  erosion shock (dynamic): %d rows, %d scenarios, %d anchors, alpha=%.3f, primary=%s'
           % (len(out), len(scenarios), len(anchor_years), alpha, primary.upper()))

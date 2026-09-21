@@ -320,6 +320,9 @@ def _value_one_timber_map(job):
     return summary_path
 
 
+TIMBER_SHOCK_SIGNATURE = 'timber_provision_shock_signature.json'   # beside the table, in the shared es_shocks dir
+
+
 def timber_provision_shock(p):
     """Per-scenario 300 m LULC -> a timber ES-productivity shock on FRS.
 
@@ -374,6 +377,15 @@ def timber_provision_shock(p):
     if es_shock_base_year not in p.scenario_lulc_paths.get(base_scenario, {}):
         raise NameError('timber needs the base-year map (%d) among the baseline maps to fix the eligible area' % es_shock_base_year)
     base_lulc_path = p.scenario_lulc_paths[base_scenario][es_shock_base_year]
+    # Reuse the table when it was made from these very maps and settings; the per-map guards below
+    # still cost minutes of verification, and a pass that finds the table must return in seconds.
+    shock_maps = sorted({m for by_year in p.scenario_lulc_paths.values() for m in by_year.values()})
+    shock_outputs = [p.timber_provision_shock_output_path]
+    reason = utilities.reuse_reason(p, 'timber_provision', shock_outputs, TIMBER_SHOCK_SIGNATURE, light_inputs=shock_maps)
+    if reason is None:
+        hb.log('  timber shock: reusing %s (same maps, same settings)' % p.timber_provision_shock_output_path)
+        return True
+    hb.log('  timber shock: computing because %s' % reason)
     # The fixed eligible area, once: managed in the base year AND forest in the base-year map.
     eligible_path = os.path.join(p.cur_dir, 'timber_eligible_value_%d.tif' % es_shock_base_year)
     if not hb.path_exists(eligible_path):
@@ -424,6 +436,7 @@ def timber_provision_shock(p):
         raise ValueError('timber shock_pct_v3 outside [-100, 0]: min %.4g max %.4g -- the eligible-area measure '
                          'can only lose value' % (v3.min(), v3.max()))
     out.to_csv(p.timber_provision_shock_output_path, index=False)
+    utilities.write_reuse_signature(p, 'timber_provision', shock_outputs, TIMBER_SHOCK_SIGNATURE, light_inputs=shock_maps)
     hb.log('  timber shock: %d rows, %d scenarios -> %s'
            % (len(out), out['scenario'].nunique() if rows else 0,
               p.timber_provision_shock_output_path))

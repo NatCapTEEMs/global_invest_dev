@@ -411,31 +411,16 @@ def assert_shock_table_sound(df, requested_scenarios, label, abs_max=SHOCK_ABS_M
     return True
 
 
-def reuse_reason(p, service, outputs, signature_name='run_signature.json'):
-    """Why a task cannot reuse what is on disk, or None when it can.
+def _signature(settings, inputs, light_inputs=()):
+    """The signature dict: settings by value, inputs by content, light inputs by size and mtime."""
+    fingerprints = dict(inputs)
+    for path in light_inputs:
+        fingerprints[str(path)] = file_fingerprint(path, content=False)
+    return {'settings': settings, 'inputs': fingerprints}
 
-    An existence check answers "is there an output?" when the question is "was it made from what
-    we are running now?". Four services gate a whole calculation on their final file existing, so
-    a rerun after a fix silently republishes the old answer: flood reported COMPLETED in 2h15m and
-    returned the previous run's figures in every digit.
 
-    The signature is the service's own es_parameters values plus a fingerprint of every input path
-    among them, so any configuration or input change invalidates it without each service listing
-    its dependencies by hand.
-
-    Args:
-        p: the ProjectFlow object, already hydrated.
-        service (str): the es_parameters service name.
-        outputs (list): the files reuse would republish.
-        signature_name (str): the signature filename, written beside the first output.
-
-    Returns:
-        str | None: the reason to recompute, naming what differs, or None to reuse.
-    """
-    missing = [o for o in outputs if not hb.path_exists(o)]
-    if missing:
-        return 'there is no %s to reuse' % os.path.basename(missing[0])
-
+def _service_settings_and_inputs(p, service):
+    """The service's own es_parameters values and a content fingerprint of each `_path` among them."""
     prefix = service + '_'
     settings, inputs = {}, {}
     for name, value in sorted(vars(p).items()):
@@ -445,17 +430,38 @@ def reuse_reason(p, service, outputs, signature_name='run_signature.json'):
             inputs[name] = file_fingerprint(value)
         elif isinstance(value, (str, int, float, bool, list, tuple, type(None))):
             settings[name] = value
-    signature = {'settings': settings, 'inputs': inputs}
+    return settings, inputs
 
-    path = os.path.join(os.path.dirname(outputs[0]), signature_name)
-    if not hb.path_exists(path):
+
+def outputs_reuse_reason(outputs, signature, signature_path):
+    """Why `outputs` cannot be reused, or None when they can.
+
+    An existence check answers "is there an output?" when the question is "was it made from what
+    we are running now?". Four services gate a whole calculation on their final file existing, so
+    a rerun after a fix silently republishes the old answer: flood reported COMPLETED in 2h15m and
+    returned the previous run's figures in every digit. The opposite failure is as real: a pass
+    that recomputes a finished table because nothing recorded what produced it cost the NGFS rerun
+    about an hour and a half on 21 Sep 2026, twice in one day.
+
+    Args:
+        outputs (list): the files reuse would republish.
+        signature (dict): what would produce them now, from `_signature`.
+        signature_path (str): where the previous run recorded its signature.
+
+    Returns:
+        str | None: the reason to recompute, naming what differs, or None to reuse.
+    """
+    missing = [o for o in outputs if not hb.path_exists(o)]
+    if missing:
+        return 'there is no %s to reuse' % os.path.basename(missing[0])
+    if not hb.path_exists(signature_path):
         return ('the outputs carry no signature, so what produced them is unknown; they predate '
                 'this check')
     try:
-        old = json.loads(open(path, encoding='utf-8').read())
+        old = json.loads(open(signature_path, encoding='utf-8').read())
     except Exception:
         return 'the signature beside the outputs cannot be read'
-
+    settings, inputs = signature['settings'], signature['inputs']
     changed = sorted(k for k in set(old.get('settings', {})) | set(settings)
                      if old.get('settings', {}).get(k) != settings.get(k))
     moved = sorted(k for k in set(old.get('inputs', {})) | set(inputs)
@@ -465,20 +471,41 @@ def reuse_reason(p, service, outputs, signature_name='run_signature.json'):
     return None
 
 
-def write_reuse_signature(p, service, outputs, signature_name='run_signature.json'):
+def write_outputs_signature(signature, signature_path):
+    """Record what produced a set of outputs, so the next run can tell whether it may reuse them."""
+    hb.write_to_file(json.dumps(signature, indent=2, sort_keys=True, default=str), signature_path)
+
+
+def reuse_reason(p, service, outputs, signature_name='run_signature.json', light_inputs=()):
+    """Why a service task cannot reuse what is on disk, or None when it can.
+
+    The signature is the service's own es_parameters values plus a fingerprint of every input path
+    among them, so any configuration or input change invalidates it without each service listing
+    its dependencies by hand. `light_inputs` are inputs the task reads that are not among its
+    es_parameters -- the scenario land-cover maps, for the shock tasks -- fingerprinted by size and
+    mtime because reading gigabytes of maps is the very cost being avoided; a `touch` on one of them
+    costs a rebuild that was not needed, which is the safe direction.
+
+    Args:
+        p: the ProjectFlow object, already hydrated.
+        service (str): the es_parameters service name.
+        outputs (list): the files reuse would republish.
+        signature_name (str): the signature filename, written beside the first output.
+        light_inputs (iterable): paths fingerprinted by size and mtime.
+
+    Returns:
+        str | None: the reason to recompute, naming what differs, or None to reuse.
+    """
+    settings, inputs = _service_settings_and_inputs(p, service)
+    return outputs_reuse_reason(outputs, _signature(settings, inputs, light_inputs),
+                                os.path.join(os.path.dirname(outputs[0]), signature_name))
+
+
+def write_reuse_signature(p, service, outputs, signature_name='run_signature.json', light_inputs=()):
     """Record what produced these outputs, so the next run can tell whether it may reuse them."""
-    prefix = service + '_'
-    settings, inputs = {}, {}
-    for name, value in sorted(vars(p).items()):
-        if not name.startswith(prefix) or callable(value):
-            continue
-        if name.endswith('_path') and isinstance(value, str):
-            inputs[name] = file_fingerprint(value)
-        elif isinstance(value, (str, int, float, bool, list, tuple, type(None))):
-            settings[name] = value
-    hb.write_to_file(json.dumps({'settings': settings, 'inputs': inputs},
-                                indent=2, sort_keys=True, default=str),
-                     os.path.join(os.path.dirname(outputs[0]), signature_name))
+    settings, inputs = _service_settings_and_inputs(p, service)
+    write_outputs_signature(_signature(settings, inputs, light_inputs),
+                            os.path.join(os.path.dirname(outputs[0]), signature_name))
 
 
 def add_rows_missing_from_template(local_path, template_path, key_columns, log=print):
