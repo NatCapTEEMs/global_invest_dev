@@ -287,10 +287,29 @@ def _log_eligible_coverage(p, value_path, eligible_path):
     p.timber_excluded_share_pct = excluded
 
 
+def _summary_complete(summary_path, min_zones=100):
+    """A zonal summary counts as done only if it holds the zones and a positive total: a summary
+    written by a worker that was killed (or read from a torn raster) has a header and nothing
+    else, or zeros, and a guard that trusts its existence keeps it forever."""
+    if not hb.path_exists(summary_path):
+        return False
+    try:
+        d = pd.read_csv(summary_path)
+    except Exception:
+        return False
+    return len(d) >= min_zones and 'total' in d.columns and float(d['total'].sum()) > 0
+
+
 def _value_one_timber_map(job):
-    """Worker: the timber value raster of one scenario map and its zonal summary (both cached)."""
+    """Worker: the timber value raster of one scenario map and its zonal summary (both cached).
+    An incomplete summary is rebuilt together with its raster, because a torn raster is what
+    usually produced it."""
     scenario, year, lulc_path, eligible_path, raster_path, summary_path, boundary_path, id_col = job
     from global_invest.terrestrial_carbon import terrestrial_carbon_functions as tcf
+    if hb.path_exists(summary_path) and not _summary_complete(summary_path):
+        for stale in (summary_path, summary_path[:-4] + '_zone_ids.tif', raster_path):
+            if os.path.exists(stale):
+                os.remove(stale)
     if not hb.path_exists(raster_path):
         lulc_ndv = hb.get_ndv_from_path(lulc_path)
         def on_forest(eligible_block, lulc_block):
@@ -369,7 +388,7 @@ def timber_provision_shock(p):
             jobs.append((scenario, year, p.scenario_lulc_paths[scenario][year], eligible_path,
                          _timber_value_raster_path(p, scenario, year), _timber_summary_path(p, scenario, year),
                          p.region_boundary_path, p.terrestrial_carbon_shock_id_col))
-    todo = [j for j in jobs if not hb.path_exists(j[5])]
+    todo = [j for j in jobs if not _summary_complete(j[5])]
     n_workers = max(1, min(int(getattr(p, 'num_workers', 1) or 1), len(todo)))
     hb.log('  timber: %d scenario-year maps, %d to value, %d workers' % (len(jobs), len(todo), n_workers))
     if todo:
