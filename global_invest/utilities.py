@@ -363,7 +363,7 @@ def filter_to_model_domain(df, output_path, label, valid_endw=GTAP_LAND_ENDW, en
     return df[in_domain].reset_index(drop=True)
 
 
-def assert_shock_table_sound(df, requested_scenarios, label, abs_max=SHOCK_ABS_MAX):
+def assert_shock_table_sound(df, requested_scenarios, label, abs_max=SHOCK_ABS_MAX, column='shock_pct'):
     """Raise if the ES shock table `df` violates what must hold before it is written.
 
     Called immediately before to_csv in each <es>_shock / <es>_shock_static, so the failure surfaces where
@@ -395,14 +395,16 @@ def assert_shock_table_sound(df, requested_scenarios, label, abs_max=SHOCK_ABS_M
             problems.append('has %d duplicate row(s) on %s -- any sum over these multiplies. e.g. %s'
                             % (n_dup, keys, example))
 
-    if 'shock_pct' in df.columns and len(df):
-        worst = float(df['shock_pct'].abs().max())
+    # The bound applies to the measure the run exports (`column`); a table's other measures are
+    # informational and can legitimately blow up (a contemporaneous ratio over a baseline that
+    # went to nearly zero in a small zone).
+    if column in df.columns and len(df):
+        worst = float(df[column].abs().max())
         if worst > abs_max:
-            bad = df.loc[df['shock_pct'].abs() > abs_max].head(2)
-            cols = [c for c in ('scenario', 'REG', 'year', 'shock_pct') if c in bad.columns]
-            problems.append('has |shock_pct| up to %.6g, above the %.6g sanity bound -- that is '
-                            'contamination, not signal. e.g. %s'
-                            % (worst, abs_max, bad[cols].to_dict('records')))
+            bad = df.loc[df[column].abs() > abs_max].head(2)
+            cols = [c for c in ('scenario', 'REG', 'year', column) if c in bad.columns]
+            problems.append('has |%s| up to %.6g, above the %.6g sanity bound -- that is contamination, '
+                            'not signal. e.g. %s' % (column, worst, abs_max, bad[cols].to_dict('records')))
 
     if problems:
         raise ValueError('%s shock table is unsound:\n  - %s' % (label, '\n  - '.join(problems)))

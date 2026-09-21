@@ -415,7 +415,14 @@ def timber_provision_shock(p):
     out = pd.DataFrame(rows)
     out = utilities.filter_to_model_domain(out, p.timber_provision_shock_output_path,
                                            'timber_provision', log=hb.log)
-    utilities.assert_shock_table_sound(out, scenarios, 'timber_provision')
+    # The run exports shock_pct_v3 (the scenario's own trajectory from the base year), which the
+    # eligible-area measure bounds in [-100, 0]; the contemporaneous ratio can blow up where the
+    # baseline's eligible value in a small zone goes to nearly nothing, and is not fed.
+    utilities.assert_shock_table_sound(out, scenarios, 'timber_provision', column='shock_pct_v3')
+    v3 = out['shock_pct_v3'].dropna()
+    if len(v3) and (v3.max() > 1e-6 or v3.min() < -100 - 1e-6):
+        raise ValueError('timber shock_pct_v3 outside [-100, 0]: min %.4g max %.4g -- the eligible-area measure '
+                         'can only lose value' % (v3.min(), v3.max()))
     out.to_csv(p.timber_provision_shock_output_path, index=False)
     hb.log('  timber shock: %d rows, %d scenarios -> %s'
            % (len(out), out['scenario'].nunique() if rows else 0,
