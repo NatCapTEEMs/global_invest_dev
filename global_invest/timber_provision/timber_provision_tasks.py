@@ -256,16 +256,69 @@ def timber_value_density_table(p):
     return True
 
 
+def _timber_value_raster_path(p, scenario, year):
+    return os.path.join(p.cur_dir, 'timber_value_on_forest_%s_%d.tif' % (scenario, year))
+
+
+def _timber_summary_path(p, scenario, year):
+    return os.path.join(p.cur_dir, 'timber_value_by_zone_%s_%d.csv' % (scenario, year))
+
+
+def _write_eligible_value(value_path, base_lulc_path, out_path):
+    """The base-year timber value on the fixed eligible area (managed AND forest in the base map)."""
+    lulc_ndv = hb.get_ndv_from_path(base_lulc_path)
+    def eligible(value_block, lulc_block):
+        return tp.timber_eligible_value(value_block, lulc_block, lulc_ndv=lulc_ndv)
+    hb.raster_calculator_flex([value_path, base_lulc_path], eligible, out_path, datatype=6, ndv=np.nan)
+
+
+def _log_eligible_coverage(p, value_path, eligible_path):
+    """How much base-year managed value the intersection with the base-year map keeps and excludes."""
+    total = kept = 0.0
+    with rasterio.open(value_path) as v, rasterio.open(eligible_path) as e:
+        for _, window in v.block_windows(1):
+            a = v.read(1, window=window).astype('float64'); b = e.read(1, window=window).astype('float64')
+            total += float(np.nansum(np.where(a > 0, a, 0.0))); kept += float(np.nansum(np.where(b > 0, b, 0.0)))
+    excluded = 100.0 * (1.0 - kept / total) if total > 0 else float('nan')
+    hb.log('  timber eligible area: base-year managed value %.4g; %.4g (%.1f%%) on cells the base-year map classes '
+           'as forest and kept; %.1f%% excluded where the two maps disagree' % (total, kept, 100 - excluded, excluded))
+    p.timber_eligible_value_total = kept
+    p.timber_managed_value_total = total
+    p.timber_excluded_share_pct = excluded
+
+
+def _value_one_timber_map(job):
+    """Worker: the timber value raster of one scenario map and its zonal summary (both cached)."""
+    scenario, year, lulc_path, eligible_path, raster_path, summary_path, boundary_path, id_col = job
+    from global_invest.terrestrial_carbon import terrestrial_carbon_functions as tcf
+    if not hb.path_exists(raster_path):
+        lulc_ndv = hb.get_ndv_from_path(lulc_path)
+        def on_forest(eligible_block, lulc_block):
+            return tp.timber_value_on_forest(eligible_block, lulc_block, lulc_ndv=lulc_ndv)
+        hb.raster_calculator_flex([eligible_path, lulc_path], on_forest, raster_path, datatype=6, ndv=np.nan)
+    if not hb.path_exists(summary_path):
+        tcf.summarize_raster_by_region(raster_path, boundary_path, summary_path, year=year, id_column=id_col)
+    return summary_path
+
+
 def timber_provision_shock(p):
     """Per-scenario 300 m LULC -> a timber ES-productivity shock on FRS.
 
-    Carbon's shock task with the timber lookup substituted, writing
-    `timber_provision_interpolated.csv` beside `terrestrial_carbon_interpolated.csv`. The two are
-    directly comparable: same scenarios, same anchor years, same zones, same shock definition.
+    Timber value per zone is the base-year managed net return summed over a FIXED eligible area --
+    the cells that are managed in the base year (Lesiv mask, positive net return) and forest in the
+    model's base-year map -- retained where the scenario map still says forest and removed where it
+    has become non-forest (timber_provision_functions). Forest gained outside that area is not
+    credited; a scenario cell without land-cover data is not treated as a conversion. The zonal
+    step and the shock arithmetic are carbon's (same zones, same anchor years, same change from
+    the base year), so the two tables stay comparable row for row. The per-map value rasters are
+    written in parallel (p.num_workers). The task logs how much base-year managed value the
+    intersection with the base-year map excludes.
 
-    NOT wired into any GTAP pass by default. Producing it is the point -- whether forestry should be
-    shocked by carbon, by timber, or by both is a modelling decision, and this makes the comparison
-    available without pre-empting it.
+    The class x zone mean lookup this task read before 21 Sep 2026 (timber_value_density_table) is
+    no longer used: it diluted forest by unmanaged forest and gave non-forest classes value where
+    the mask overlapped them, so afforestation lowered the measure and deforestation raised it.
+
+    NOT wired into any GTAP pass by default; the run file routes it.
     """
     if not getattr(p, 'timber_provision_shock_output_path', None):
         p.timber_provision_shock_output_path = os.path.join(
@@ -291,22 +344,50 @@ def timber_provision_shock(p):
     tct._align_zones_to_lulc_grid(p, reference_lulc_path)
     tct._inject_base_year_map(p, base_scenario, es_shock_base_year, reference_lulc_path)
 
-    density_lookup = tcf.carbon_density_lookup(
-        pd.read_csv(p.timber_value_density_lookup_table_path, index_col=False))
     zone_labels = tcf.zone_labels_from_boundary(
         gpd.read_file(p.region_boundary_path, engine='pyogrio'),
         p.terrestrial_carbon_shock_id_col, p.terrestrial_carbon_shock_endw_col,
         p.terrestrial_carbon_shock_reg_col, p.terrestrial_carbon_shock_endw_format)
 
-    baseline_by_year = {y: tct._zone_mean(p, base_scenario, y, density_lookup) for y in anchor_years}
-    baseline_at_base_year = (
-        tct._zone_mean(p, base_scenario, es_shock_base_year, density_lookup)
-        if es_shock_base_year in p.scenario_lulc_paths.get(base_scenario, {}) else None)
+    value_path = p.timber_provision_value_raster_path
+    if not hb.path_exists(value_path):
+        raise NameError('timber value raster not found at %s' % value_path)
+    if es_shock_base_year not in p.scenario_lulc_paths.get(base_scenario, {}):
+        raise NameError('timber needs the base-year map (%d) among the baseline maps to fix the eligible area' % es_shock_base_year)
+    base_lulc_path = p.scenario_lulc_paths[base_scenario][es_shock_base_year]
+    # The fixed eligible area, once: managed in the base year AND forest in the base-year map.
+    eligible_path = os.path.join(p.cur_dir, 'timber_eligible_value_%d.tif' % es_shock_base_year)
+    if not hb.path_exists(eligible_path):
+        _write_eligible_value(value_path, base_lulc_path, eligible_path)
+    _log_eligible_coverage(p, value_path, eligible_path)
+    jobs = []
+    for scenario in [base_scenario] + list(scenarios):
+        years = list(anchor_years) + ([es_shock_base_year] if es_shock_base_year in p.scenario_lulc_paths.get(scenario, {}) else [])
+        for year in years:
+            jobs.append((scenario, year, p.scenario_lulc_paths[scenario][year], eligible_path,
+                         _timber_value_raster_path(p, scenario, year), _timber_summary_path(p, scenario, year),
+                         p.region_boundary_path, p.terrestrial_carbon_shock_id_col))
+    todo = [j for j in jobs if not hb.path_exists(j[5])]
+    n_workers = max(1, min(int(getattr(p, 'num_workers', 1) or 1), len(todo)))
+    hb.log('  timber: %d scenario-year maps, %d to value, %d workers' % (len(jobs), len(todo), n_workers))
+    if todo:
+        if n_workers > 1:
+            import multiprocessing
+            with multiprocessing.Pool(n_workers) as pool:
+                pool.map(_value_one_timber_map, todo)
+        else:
+            for j in todo:
+                _value_one_timber_map(j)
+
+    def zone_value(scenario, year):
+        return hb.df_read(_timber_summary_path(p, scenario, year)).set_index('region_id')[p.terrestrial_carbon_shock_value_col]
+    baseline_by_year = {y: zone_value(base_scenario, y) for y in anchor_years}
+    baseline_at_base_year = zone_value(base_scenario, es_shock_base_year)
 
     rows = []
     for scenario in scenarios:
         rows += tcf.dynamic_shock_rows(
-            {y: tct._zone_mean(p, scenario, y, density_lookup) for y in anchor_years},
+            {y: zone_value(scenario, y) for y in anchor_years},
             baseline_by_year, baseline_at_base_year, zone_labels, es_shock_base_year,
             p.terrestrial_carbon_shock_acts, scenario)
 

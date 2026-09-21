@@ -276,3 +276,53 @@ def wood_fuel_gross_value_by_country(fao_df, countries_df, year):
     out = pd.DataFrame({'wood_fuel_m3': produced,
                         'wood_fuel_gross_value': produced * world_price})
     return countries_df.merge(out.reset_index(), on='iso3_r250_id', how='left')
+
+
+# SEALS7 land-cover class of forest, the only class that carries timber value in a scenario map.
+SEALS7_FOREST_ID = 4
+
+
+def timber_eligible_value(value, base_lulc, forest_ids=(SEALS7_FOREST_ID,), lulc_ndv=None):
+    """The base-year timber value of the fixed eligible area: cells that are managed in the base
+    year (value > 0, the management mask and the floor at zero net return are inside `value`) AND
+    forest in the model's base-year land-cover map. Everything else is 0; nodata in `value` stays
+    nodata.
+
+    Returns:
+        np.ndarray: float32.
+    """
+    value = np.asarray(value, dtype='float32')
+    eligible = np.isin(base_lulc, list(forest_ids)) & (value > 0)
+    if lulc_ndv is not None:
+        eligible &= base_lulc != lulc_ndv
+    out = np.where(eligible, value, np.float32(0.0))
+    return np.where(np.isfinite(value), out, np.float32(np.nan)).astype('float32')
+
+
+def timber_value_on_forest(eligible_value, lulc, forest_ids=(SEALS7_FOREST_ID,), lulc_ndv=None):
+    """The timber value a scenario map carries: each eligible cell's baseline net return where the
+    map still says forest, removed where it has become non-forest. Forest gained outside the
+    eligible area carries nothing (eligible_value is 0 there). A scenario cell with no land-cover
+    data is not a conversion: it keeps its eligible value.
+
+    This is deliberately not a class-mean lookup: a class mean over all cells of a class dilutes
+    forest by unmanaged forest and gives non-forest classes value wherever the management mask
+    overlaps them, so afforestation lowered the measure and deforestation raised it (the 2050
+    transition decomposition of 21 Sep 2026).
+
+    Args:
+        eligible_value (np.ndarray): from timber_eligible_value, on the same grid as `lulc`.
+        lulc (np.ndarray): the scenario map's land-cover classes.
+        forest_ids (tuple): the class ids counted as forest.
+        lulc_ndv: the map's nodata value, if any.
+
+    Returns:
+        np.ndarray: float32; nodata where eligible_value is nodata.
+    """
+    ev = np.asarray(eligible_value, dtype='float32')
+    is_forest = np.isin(lulc, list(forest_ids))
+    unknown = (lulc == lulc_ndv) if lulc_ndv is not None else np.zeros(lulc.shape, dtype=bool)
+    keep = is_forest | unknown
+    out = np.where(keep, ev, np.float32(0.0))
+    return np.where(np.isfinite(ev), out, np.float32(np.nan)).astype('float32')
+
