@@ -114,3 +114,14 @@ def test_negligible_region_is_excluded_by_share_of_the_world_total():
     base = pd.Series({1: 1e5, 2: 0.0, 3: 0.001, 4: 1e9})            # VNM 1e-4 of the world, KOR 1e-12
     rows = pd.DataFrame(_rows({2050: pd.Series({1: 1e5, 2: 0.0, 3: 500.0, 4: 1e9})}, base))
     assert 'KOR' not in set(rows.REG) and 'VNM' in set(rows.REG)
+
+
+def test_summed_measure_reads_zone_totals_not_zone_means():
+    """A zone mean is what a per-zone ratio needs; summing means across zones of different size is
+    not the region's quantity. The summed path must read the summary's `total` column."""
+    import inspect
+    from global_invest.timber_provision import timber_provision_tasks as t
+    src = inspect.getsource(t.timber_provision_shock)
+    assert "def zone_total(" in src and "['total']" in inspect.getsource(t.timber_provision_shock)
+    call = src[src.index('tcf.summed_shock_rows('):src.index('tcf.summed_shock_rows(') + 300]
+    assert call.count('zone_total(') >= 2 and 'zone_value(' not in call

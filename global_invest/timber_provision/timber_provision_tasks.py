@@ -492,6 +492,13 @@ def timber_provision_shock(p):
 
     def zone_value(scenario, year):
         return hb.df_read(_timber_summary_path(p, scenario, year)).set_index('region_id')[p.terrestrial_carbon_shock_value_col]
+
+    def zone_total(scenario, year):
+        """The zone's SUMMED quantity. The configured value column is a zone MEAN, which is what a
+        per-zone ratio needs (the cell count cancels) and exactly what must not be added across
+        zones of different size: a regional total formed from means understates large zones and
+        overstates small ones. The summed measure therefore reads the summary's own total."""
+        return hb.df_read(_timber_summary_path(p, scenario, year)).set_index('region_id')['total']
     baseline_by_year = {y: zone_value(base_scenario, y) for y in anchor_years}
     baseline_at_base_year = zone_value(base_scenario, es_shock_base_year)
 
@@ -507,8 +514,8 @@ def timber_provision_shock(p):
         # them, nothing is capped and nothing is excluded. A region whose own total base-year
         # biomass is zero or negligible has no denominator and is reported, not shocked.
         rows += tcf.summed_shock_rows(
-            {scenario: {y: zone_value(scenario, y) for y in anchor_years} for scenario in scenarios},
-            baseline_at_base_year, zone_labels, es_shock_base_year,
+            {scenario: {y: zone_total(scenario, y) for y in anchor_years} for scenario in scenarios},
+            zone_total(base_scenario, es_shock_base_year), zone_labels, es_shock_base_year,
             p.terrestrial_carbon_shock_acts, log=hb.log)
     else:
         for scenario in scenarios:
