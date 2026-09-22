@@ -496,11 +496,26 @@ def timber_provision_shock(p):
     baseline_at_base_year = zone_value(base_scenario, es_shock_base_year)
 
     rows = []
-    for scenario in scenarios:
-        rows += tcf.dynamic_shock_rows(
-            {y: zone_value(scenario, y) for y in anchor_years},
-            baseline_by_year, baseline_at_base_year, zone_labels, es_shock_base_year,
-            p.terrestrial_carbon_shock_acts, scenario)
+    if measure == 'aboveground_carbon':
+        # SUMS, NOT MEANS OF RATIOS (D19, 22 Sep 2026). This measure credits forest gained after
+        # the base year, so a zone holding almost no forest in the base year and afforested later
+        # has an unbounded ratio -- China AEZ18 went from 116 to 532,000 Mg C, a ratio of
+        # +459,000 %, and eighteen such zones pulled the land-payment-weighted world mean to
+        # +1.2 % while the aggregate biomass change was -2.8 %. The region's shock is therefore
+        # the change in its SUMMED biomass: 100 x (sum scenario / sum baseline - 1). Zones with no
+        # base-year biomass keep contributing their gain to the numerator; no ratio is formed for
+        # them, nothing is capped and nothing is excluded. A region whose own total base-year
+        # biomass is zero or negligible has no denominator and is reported, not shocked.
+        rows += tcf.summed_shock_rows(
+            {scenario: {y: zone_value(scenario, y) for y in anchor_years} for scenario in scenarios},
+            baseline_at_base_year, zone_labels, es_shock_base_year,
+            p.terrestrial_carbon_shock_acts, log=hb.log)
+    else:
+        for scenario in scenarios:
+            rows += tcf.dynamic_shock_rows(
+                {y: zone_value(scenario, y) for y in anchor_years},
+                baseline_by_year, baseline_at_base_year, zone_labels, es_shock_base_year,
+                p.terrestrial_carbon_shock_acts, scenario)
 
     out = pd.DataFrame(rows)
     out = utilities.filter_to_model_domain(out, p.timber_provision_shock_output_path,

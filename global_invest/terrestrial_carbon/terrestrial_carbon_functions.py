@@ -229,6 +229,68 @@ def dynamic_shock_rows(scenario_by_year, baseline_by_year, baseline_at_base_year
     return rows
 
 
+def summed_shock_rows(scenario_by_year_by_scenario, baseline_at_base_year, zone_labels, base_year,
+                      sector, negligible_share=1e-6, log=print):
+    """Regional shocks formed from SUMMED quantities rather than from means of zonal ratios.
+
+    For a measure that can add quantity where the base year had none -- forest biomass on land
+    afforested after the base year -- a zonal ratio is unbounded, and a weighted mean of such
+    ratios is dominated by zones that hold almost nothing. The region's change is instead
+    100 x (sum over its zones of the scenario quantity / the same sum in the base year - 1), so a
+    gain in a zone with no base-year quantity still enters the numerator and no ratio is formed
+    for it. Every zone of a region receives that regional value, which is what the aoall channel
+    reads; the zone rows are kept so the table's shape matches the other services.
+
+    A region whose base-year total is zero, or negligible against the world total, has no
+    denominator: it is logged and left out rather than given a fabricated number.
+
+    Args:
+        scenario_by_year_by_scenario (dict): scenario -> {anchor year -> per-zone quantity}.
+        baseline_at_base_year (pd.Series): per-zone quantity in the base year (the baseline map).
+        zone_labels (dict): zone id -> (ENDW, REG).
+        base_year (int): the year the trajectory starts from, at zero.
+        sector (str): the GTAP activity the shock applies to.
+        negligible_share (float): a region's base-year total below this share of the world total
+            is treated as having no denominator.
+        log (callable): where the excluded regions are reported.
+
+    Returns:
+        list: dicts, one per zone and year, carrying the region's summed-quantity trajectory.
+    """
+    zones_by_region = {}
+    for zone_id, (endw, reg) in zone_labels.items():
+        zones_by_region.setdefault(reg, []).append(zone_id)
+
+    def regional_total(series, region):
+        ids = [z for z in zones_by_region[region] if z in series.index]
+        return float(np.nansum(series.loc[ids].to_numpy())) if ids else float('nan')
+
+    base_by_region = {reg: regional_total(baseline_at_base_year, reg) for reg in zones_by_region}
+    world_base = float(np.nansum([v for v in base_by_region.values() if np.isfinite(v)]))
+    without_base = sorted(reg for reg, v in base_by_region.items()
+                          if not np.isfinite(v) or v <= 0 or (world_base > 0 and v / world_base < negligible_share))
+    if without_base:
+        log('  summed measure: %d region(s) with zero or negligible base-year quantity, not shocked: %s'
+            % (len(without_base), ', '.join(without_base)))
+
+    rows = []
+    for scenario, by_year in scenario_by_year_by_scenario.items():
+        anchor_years = sorted(by_year)
+        all_years = list(range(base_year, anchor_years[-1] + 1))
+        for reg, zone_ids in zones_by_region.items():
+            if reg in without_base:
+                continue
+            anchors = [100.0 * (regional_total(by_year[y], reg) / base_by_region[reg] - 1.0) for y in anchor_years]
+            annual = interpolate_annual_shock(all_years, anchor_years, np.asarray(anchors), base_year)
+            for zone_id in zone_ids:
+                endw, _ = zone_labels[zone_id]
+                for year, value in zip(all_years, annual):
+                    rows.append({'ENDW': endw, 'ACTS': sector, 'REG': reg, 'scenario': scenario,
+                                 'year': year, 'shock_pct': value, 'shock_pct_fixedbase': value,
+                                 'shock_pct_contemp': value, 'shock_pct_v3': value})
+    return rows
+
+
 def static_shock_rows(baseline_values, scenario_values, scenario, sector, base_year, end_year):
     """The frozen table's scenario-minus-baseline difference, ramped linearly from the base year.
 

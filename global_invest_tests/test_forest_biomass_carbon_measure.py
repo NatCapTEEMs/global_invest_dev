@@ -69,3 +69,48 @@ def test_task_switches_on_the_resource_measure_and_signs_it():
     assert 'p.timber_provision_biomass_carbon_density_path' in helper
     assert 'total_carbon_density' not in helper
     assert src.index("utilities.reuse_reason(") < src.index("_write_biomass_base_and_new_forest(")
+
+
+# --- the summed-quantity aggregation (D19 option 1, 22 Sep 2026) -------------------------------
+import pandas as pd
+from global_invest.terrestrial_carbon import terrestrial_carbon_functions as tcf
+
+LABELS = {1: ('AEZ1', 'VNM'), 2: ('AEZ2', 'VNM'), 3: ('AEZ3', 'KOR'), 4: ('AEZ4', 'XXX')}
+
+
+def _rows(scen_by_year, base):
+    return tcf.summed_shock_rows({'current_policies': scen_by_year}, base, LABELS, 2023, 'FRS', log=lambda *a: None)
+
+
+def test_region_shock_is_the_ratio_of_sums_not_a_mean_of_ratios():
+    base = pd.Series({1: 100.0, 2: 0.0, 3: 50.0, 4: 1e4})          # zone 2 holds nothing in the base year
+    scen = {2050: pd.Series({1: 50.0, 2: 500.0, 3: 25.0, 4: 1e4})}  # zone 2 afforested: +500
+    rows = pd.DataFrame(_rows(scen, base))
+    vnm = rows[(rows.REG == 'VNM') & (rows.year == 2050)].shock_pct.unique()
+    assert len(vnm) == 1 and abs(vnm[0] - (550 / 100 - 1) * 100) < 1e-9     # +450 %, from the sums
+    kor = rows[(rows.REG == 'KOR') & (rows.year == 2050)].shock_pct.unique()
+    assert abs(kor[0] - (-50.0)) < 1e-9
+    assert rows[(rows.REG == 'VNM') & (rows.year == 2023)].shock_pct.abs().max() == 0.0
+
+
+def test_every_zone_of_a_region_carries_the_regional_value():
+    base = pd.Series({1: 100.0, 2: 100.0, 3: 50.0, 4: 1e4})
+    rows = pd.DataFrame(_rows({2050: pd.Series({1: 60.0, 2: 40.0, 3: 50.0, 4: 1e4})}, base))
+    vnm = rows[(rows.REG == 'VNM') & (rows.year == 2050)]
+    assert set(vnm.ENDW) == {'AEZ1', 'AEZ2'} and vnm.shock_pct.nunique() == 1
+    assert abs(vnm.shock_pct.iloc[0] - (-50.0)) < 1e-9
+
+
+def test_region_without_base_year_quantity_is_reported_not_shocked():
+    base = pd.Series({1: 100.0, 2: 0.0, 3: 0.0, 4: 1e4})            # KOR has nothing at all
+    said = []
+    rows = pd.DataFrame(tcf.summed_shock_rows({'current_policies': {2050: pd.Series({1: 90.0, 2: 0.0, 3: 900.0, 4: 1e4})}},
+                                              base, LABELS, 2023, 'FRS', log=said.append))
+    assert 'KOR' not in set(rows.REG)
+    assert said and 'KOR' in said[0]
+
+
+def test_negligible_region_is_excluded_by_share_of_the_world_total():
+    base = pd.Series({1: 1e5, 2: 0.0, 3: 0.001, 4: 1e9})            # VNM 1e-4 of the world, KOR 1e-12
+    rows = pd.DataFrame(_rows({2050: pd.Series({1: 1e5, 2: 0.0, 3: 500.0, 4: 1e9})}, base))
+    assert 'KOR' not in set(rows.REG) and 'VNM' in set(rows.REG)
