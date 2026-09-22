@@ -111,10 +111,22 @@ class TestESSeams(unittest.TestCase):
         from global_invest.timber_provision import timber_provision_tasks as tpt
         import inspect
         def assigned_output(fn):
-            # The code lines only: a docstring naming the other seam is prose, not a destination.
+            # The CODE lines only: a docstring naming the other seam is prose, not a destination.
+            # Parity of triple quotes, not a split on the last one: a helper defined inside the
+            # function carries its own docstring, which hid the assignment (22 Sep 2026).
             src = inspect.getsource(fn)
-            body = src.split('"""')[-1]
-            return [ln.strip() for ln in body.splitlines() if '_interpolated.csv' in ln]
+            lines, in_doc = [], False
+            for line in src.splitlines():
+                marks = line.count(chr(34) * 3) + line.count(chr(39) * 3)
+                if in_doc:
+                    in_doc = marks % 2 == 0
+                    continue
+                if marks % 2:
+                    in_doc = True
+                    continue
+                if marks == 0 and '_interpolated.csv' in line:
+                    lines.append(line.strip())
+            return lines
 
         carbon_out = ' '.join(assigned_output(tct.terrestrial_carbon_shock))
         timber_out = ' '.join(assigned_output(tpt.timber_provision_shock))
