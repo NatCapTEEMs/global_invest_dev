@@ -326,3 +326,57 @@ def timber_value_on_forest(eligible_value, lulc, forest_ids=(SEALS7_FOREST_ID,),
     out = np.where(keep, ev, np.float32(0.0))
     return np.where(np.isfinite(ev), out, np.float32(np.nan)).astype('float32')
 
+
+
+# --- D19: the timber resource measured as aboveground forest biomass carbon ----------------------
+# An alternative proxy construction (22 Sep 2026) that changes both the resource measure and the
+# footprint: living aboveground biomass carbon (Spawn & Gibbs 2020, Mg C/ha) on the cells that are
+# forest in EACH scenario map, instead of base-year net return on the fixed 2023 managed footprint.
+# Converted forest leaves with its observed density; forest gained after the base year enters at
+# its carbon zone's mean forest density -- an ASSUMPTION of mature biomass at once, not simulated
+# growth; the data carry no regrowth curve. Carbon -> dry biomass is / 0.47 (IPCC 2006 GL) and the
+# zone's value per tonne is calibrated once on the 2023 managed footprint, so both cancel in the
+# zonal ratio: the fed shock is the percentage change in aboveground forest biomass carbon.
+
+CARBON_FRACTION_OF_DRY_MATTER = 0.47
+
+
+def forest_biomass_carbon_base(agbc_density, ha_per_cell, base_lulc, forest_ids=(SEALS7_FOREST_ID,), lulc_ndv=None):
+    """Aboveground biomass carbon per cell (Mg C) on the base-year forest; NaN elsewhere.
+
+    NaN outside the base-year forest is the marker "not forest in the base year" that
+    forest_biomass_carbon_on_map reads, so it must not be confused with a forest cell of zero
+    density (which stays 0).
+    """
+    d = np.asarray(agbc_density, dtype='float32')
+    ha = np.asarray(ha_per_cell, dtype='float32')
+    is_forest = np.isin(base_lulc, list(forest_ids))
+    if lulc_ndv is not None:
+        is_forest &= base_lulc != lulc_ndv
+    stock = np.where(np.isfinite(d) & (d > 0), d, np.float32(0.0)) * np.where(ha > 0, ha, np.float32(0.0))
+    return np.where(is_forest, stock, np.float32(np.nan)).astype('float32')
+
+
+def forest_biomass_carbon_on_map(base_forest_carbon, new_forest_carbon, lulc, forest_ids=(SEALS7_FOREST_ID,), lulc_ndv=None):
+    """The aboveground forest biomass carbon a scenario map carries, per cell (Mg C).
+
+    Cells forest in the base year keep their observed stock while the map says forest and carry 0
+    once it does not; cells that were not forest in the base year and are forest now enter at
+    `new_forest_carbon` (the carbon zone's mean forest density x cell area, the mature-density
+    assumption); a cell with no land-cover data in the map is not a conversion and keeps its
+    base-year stock (0 if it had none).
+
+    Args:
+        base_forest_carbon (np.ndarray): from forest_biomass_carbon_base (NaN = not forest in the base year).
+        new_forest_carbon (np.ndarray): Mg C the cell would hold as forest, from the zone lookup; nodata/NaN -> 0.
+        lulc (np.ndarray): the scenario map.
+    """
+    base = np.asarray(base_forest_carbon, dtype='float32')
+    new = np.asarray(new_forest_carbon, dtype='float32')
+    new = np.where(np.isfinite(new) & (new > 0), new, np.float32(0.0))
+    was_forest = np.isfinite(base)
+    is_forest = np.isin(lulc, list(forest_ids))
+    unknown = (lulc == lulc_ndv) if lulc_ndv is not None else np.zeros(lulc.shape, dtype=bool)
+    kept = np.where(was_forest & (is_forest | unknown), base, np.float32(0.0))
+    gained = np.where(~was_forest & is_forest & ~unknown, new, np.float32(0.0))
+    return (kept + gained).astype('float32')

@@ -320,6 +320,65 @@ def _value_one_timber_map(job):
     return summary_path
 
 
+def _biomass_one_map(job):
+    """Worker for the aboveground-carbon measure (D19): the forest biomass carbon a scenario map
+    carries -- observed stock kept while forest, the zone's mean forest density where forest was
+    gained -- and its zonal summary (both cached, torn summaries rebuilt)."""
+    scenario, year, lulc_path, base_forest_path, new_forest_path, raster_path, summary_path, boundary_path, id_col = job
+    from global_invest.terrestrial_carbon import terrestrial_carbon_functions as tcf
+    if hb.path_exists(summary_path) and not _summary_complete(summary_path):
+        for stale in (summary_path, summary_path[:-4] + '_zone_ids.tif', raster_path):
+            if os.path.exists(stale):
+                os.remove(stale)
+    if not hb.path_exists(raster_path):
+        lulc_ndv = hb.get_ndv_from_path(lulc_path)
+        def on_map(base_block, new_block, lulc_block):
+            return tp.forest_biomass_carbon_on_map(base_block, new_block, lulc_block, lulc_ndv=lulc_ndv)
+        hb.raster_calculator_flex([base_forest_path, new_forest_path, lulc_path], on_map, raster_path, datatype=6, ndv=np.nan)
+    if not hb.path_exists(summary_path):
+        tcf.summarize_raster_by_region(raster_path, boundary_path, summary_path, year=year, id_column=id_col)
+    return summary_path
+
+
+def _write_biomass_base_and_new_forest(p, base_lulc_path, base_forest_path, new_forest_path):
+    """Once per project: the base-year forest biomass carbon per cell (NaN off the base forest) and
+    the carbon zone's mean forest density x cell area the mature-density assumption credits to
+    forest gained later. The lookup is built from the aboveground layer on the base forest."""
+    from global_invest.terrestrial_carbon import terrestrial_carbon_tasks as tct
+    density_path = p.timber_provision_biomass_carbon_density_path
+    zones_path = p.terrestrial_quantity_input_path
+    ha_path = getattr(p, 'ha_per_cell_10sec_path', None) or p.get_path(*utilities.HA_PER_CELL_10SEC_REF_PARTS)
+    for label, path in (('aboveground biomass carbon', density_path), ('carbon zones', zones_path), ('ha per cell', ha_path)):
+        if not hb.path_exists(path):
+            raise NameError('%s not found at %s' % (label, path))
+    shapes = {label: rasterio.open(path).shape for label, path in (('density', density_path), ('zones', zones_path), ('ha', ha_path), ('base map', base_lulc_path))}
+    if len(set(shapes.values())) != 1:
+        raise ValueError('the biomass measure needs one grid, got %s' % shapes)
+    lulc_ndv = hb.get_ndv_from_path(base_lulc_path)
+    if not hb.path_exists(base_forest_path):
+        def base(density_block, ha_block, lulc_block):
+            return tp.forest_biomass_carbon_base(density_block, ha_block, lulc_block, lulc_ndv=lulc_ndv)
+        hb.raster_calculator_flex([density_path, ha_path, base_lulc_path], base, base_forest_path, datatype=6, ndv=np.nan)
+    lookup_path = os.path.join(p.cur_dir, 'forest_agbc_density_by_carbon_zone.csv')
+    if not hb.path_exists(lookup_path):
+        summary = tct.stack_layers_summary(group_layer1_path=base_lulc_path, group_layer2_path=zones_path,
+                                           value_layer_path=density_path, group1_name='lulc_id',
+                                           group2_name='carbon_zone_id', value_name='agbc_density')
+        summary = summary[summary['lulc_id'] == tp.SEALS7_FOREST_ID]
+        summary.to_csv(lookup_path, index=False)
+    lookup = pd.read_csv(lookup_path)
+    mean_col = [c for c in lookup.columns if c.startswith('agbc_density') and ('mean' in c or c == 'agbc_density')][0]
+    by_zone = dict(zip(lookup['carbon_zone_id'].astype(int), lookup[mean_col].astype(float)))
+    hb.log('  biomass measure: forest AGB carbon density lookup, %d carbon zones, world median %.1f Mg C/ha (%s)'
+           % (len(by_zone), float(np.median(list(by_zone.values()))) if by_zone else float('nan'), os.path.basename(density_path)))
+    if not hb.path_exists(new_forest_path):
+        def new_forest(zone_block, ha_block):
+            dens = np.vectorize(lambda z: by_zone.get(int(z), 0.0), otypes=['float32'])(zone_block)
+            ha = np.where(np.asarray(ha_block) > 0, ha_block, 0.0).astype('float32')
+            return (dens * ha).astype('float32')
+        hb.raster_calculator_flex([zones_path, ha_path], new_forest, new_forest_path, datatype=6, ndv=np.nan)
+
+
 TIMBER_SHOCK_SIGNATURE = 'timber_provision_shock_signature.json'   # beside the table, in the shared es_shocks dir
 
 
@@ -371,8 +430,13 @@ def timber_provision_shock(p):
         p.terrestrial_carbon_shock_id_col, p.terrestrial_carbon_shock_endw_col,
         p.terrestrial_carbon_shock_reg_col, p.terrestrial_carbon_shock_endw_format)
 
+    # WHICH RESOURCE the shock measures (D17 'net_return' is the default; D19 'aboveground_carbon'
+    # is the alternative proxy construction, set by the variant's caller).
+    measure = getattr(p, 'timber_provision_resource_measure', None) or 'net_return'
+    if measure not in ('net_return', 'aboveground_carbon'):
+        raise ValueError("p.timber_provision_resource_measure must be 'net_return' or 'aboveground_carbon', got %r" % measure)
     value_path = p.timber_provision_value_raster_path
-    if not hb.path_exists(value_path):
+    if measure == 'net_return' and not hb.path_exists(value_path):
         raise NameError('timber value raster not found at %s' % value_path)
     if es_shock_base_year not in p.scenario_lulc_paths.get(base_scenario, {}):
         raise NameError('timber needs the base-year map (%d) among the baseline maps to fix the eligible area' % es_shock_base_year)
@@ -386,31 +450,45 @@ def timber_provision_shock(p):
         hb.log('  timber shock: reusing %s (same maps, same settings)' % p.timber_provision_shock_output_path)
         return True
     hb.log('  timber shock: computing because %s' % reason)
-    # The fixed eligible area, once: managed in the base year AND forest in the base-year map.
-    eligible_path = os.path.join(p.cur_dir, 'timber_eligible_value_%d.tif' % es_shock_base_year)
-    if not hb.path_exists(eligible_path):
-        _write_eligible_value(value_path, base_lulc_path, eligible_path)
-    _log_eligible_coverage(p, value_path, eligible_path)
     jobs = []
-    # The baseline may also be listed among the scenarios; each map is valued exactly once, or two
-    # workers would write the same raster at the same time.
-    for scenario in dict.fromkeys([base_scenario] + list(scenarios)):
-        years = list(anchor_years) + ([es_shock_base_year] if es_shock_base_year in p.scenario_lulc_paths.get(scenario, {}) else [])
-        for year in years:
-            jobs.append((scenario, year, p.scenario_lulc_paths[scenario][year], eligible_path,
-                         _timber_value_raster_path(p, scenario, year), _timber_summary_path(p, scenario, year),
-                         p.region_boundary_path, p.terrestrial_carbon_shock_id_col))
-    todo = [j for j in jobs if not _summary_complete(j[5])]
+    if measure == 'net_return':
+        # The fixed eligible area, once: managed in the base year AND forest in the base-year map.
+        eligible_path = os.path.join(p.cur_dir, 'timber_eligible_value_%d.tif' % es_shock_base_year)
+        if not hb.path_exists(eligible_path):
+            _write_eligible_value(value_path, base_lulc_path, eligible_path)
+        _log_eligible_coverage(p, value_path, eligible_path)
+        worker = _value_one_timber_map
+        # The baseline may also be listed among the scenarios; each map is valued exactly once, or two
+        # workers would write the same raster at the same time.
+        for scenario in dict.fromkeys([base_scenario] + list(scenarios)):
+            years = list(anchor_years) + ([es_shock_base_year] if es_shock_base_year in p.scenario_lulc_paths.get(scenario, {}) else [])
+            for year in years:
+                jobs.append((scenario, year, p.scenario_lulc_paths[scenario][year], eligible_path,
+                             _timber_value_raster_path(p, scenario, year), _timber_summary_path(p, scenario, year),
+                             p.region_boundary_path, p.terrestrial_carbon_shock_id_col))
+    else:
+        # D19: aboveground forest biomass carbon on the forest of each map; the footprint moves.
+        base_forest_path = os.path.join(p.cur_dir, 'forest_agbc_base_%d.tif' % es_shock_base_year)
+        new_forest_path = os.path.join(p.cur_dir, 'forest_agbc_new_forest_zone_mean.tif')
+        _write_biomass_base_and_new_forest(p, base_lulc_path, base_forest_path, new_forest_path)
+        worker = _biomass_one_map
+        for scenario in dict.fromkeys([base_scenario] + list(scenarios)):
+            years = list(anchor_years) + ([es_shock_base_year] if es_shock_base_year in p.scenario_lulc_paths.get(scenario, {}) else [])
+            for year in years:
+                jobs.append((scenario, year, p.scenario_lulc_paths[scenario][year], base_forest_path, new_forest_path,
+                             _timber_value_raster_path(p, scenario, year), _timber_summary_path(p, scenario, year),
+                             p.region_boundary_path, p.terrestrial_carbon_shock_id_col))
+    todo = [j for j in jobs if not _summary_complete(j[-3])]
     n_workers = max(1, min(int(getattr(p, 'num_workers', 1) or 1), len(todo)))
-    hb.log('  timber: %d scenario-year maps, %d to value, %d workers' % (len(jobs), len(todo), n_workers))
+    hb.log('  timber (%s): %d scenario-year maps, %d to value, %d workers' % (measure, len(jobs), len(todo), n_workers))
     if todo:
         if n_workers > 1:
             import multiprocessing
             with multiprocessing.Pool(n_workers) as pool:
-                pool.map(_value_one_timber_map, todo)
+                pool.map(worker, todo)
         else:
             for j in todo:
-                _value_one_timber_map(j)
+                worker(j)
 
     def zone_value(scenario, year):
         return hb.df_read(_timber_summary_path(p, scenario, year)).set_index('region_id')[p.terrestrial_carbon_shock_value_col]
@@ -432,9 +510,12 @@ def timber_provision_shock(p):
     # baseline's eligible value in a small zone goes to nearly nothing, and is not fed.
     utilities.assert_shock_table_sound(out, scenarios, 'timber_provision', column='shock_pct_v3')
     v3 = out['shock_pct_v3'].dropna()
-    if len(v3) and (v3.max() > 1e-6 or v3.min() < -100 - 1e-6):
+    if measure == 'net_return' and len(v3) and (v3.max() > 1e-6 or v3.min() < -100 - 1e-6):
         raise ValueError('timber shock_pct_v3 outside [-100, 0]: min %.4g max %.4g -- the eligible-area measure '
                          'can only lose value' % (v3.min(), v3.max()))
+    if measure == 'aboveground_carbon' and len(v3) and v3.min() < -100 - 1e-6:
+        raise ValueError('biomass shock_pct_v3 below -100: min %.4g' % v3.min())
+    out['timber_resource_measure'] = measure
     out.to_csv(p.timber_provision_shock_output_path, index=False)
     utilities.write_reuse_signature(p, 'timber_provision', shock_outputs, TIMBER_SHOCK_SIGNATURE, light_inputs=shock_maps)
     hb.log('  timber shock: %d rows, %d scenarios -> %s'
