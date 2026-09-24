@@ -233,7 +233,7 @@ def timber_value_density_table(p):
     seals7_base_path = os.path.join(p.intermediate_dir, 'fine_processed_inputs', 'lulc', 'esa', 'seals7',
                                     'lulc_esa_seals7_%d.tif' % base_year)
     zones_path = p.terrestrial_quantity_input_path
-    value_path = p.timber_provision_value_raster_path
+    value_path = getattr(p, 'timber_provision_value_raster_path', None)
     for label, path in (('SEALS7 base map', seals7_base_path), ('carbon zones', zones_path),
                         ('timber value raster', value_path)):
         if not hb.path_exists(path):
@@ -340,6 +340,62 @@ def _biomass_one_map(job):
     return summary_path
 
 
+# The displacement two grids may differ by before they are treated as different grids, in PIXELS.
+# Explicit and absolute: a relative tolerance on coordinates would scale with longitude and quietly
+# permit more slop at the edges of a global raster than at its centre.
+GRID_TOLERANCE_PIXELS = 1e-7
+
+
+def _assert_one_grid(grids, tolerance_pixels=GRID_TOLERANCE_PIXELS):
+    """Every raster must lie on one grid. Shape and CRS exactly; geometry to a pixel tolerance.
+
+    Exact equality of the affine transform was too strict: a base map carrying 90.00000000000001 as
+    its y origin instead of 90.0 -- a difference of 1e-14 degrees, about a nanometre on the ground and
+    4e-12 of a pixel -- failed a check meant to catch genuinely different grids, and blocked the
+    timber seam (2026-09-24). Representation noise is not misalignment.
+
+    Comparing origins alone would be the wrong repair. A tiny difference in pixel size or a rotation
+    term leaves the origin identical and accumulates across 129,600 columns into a real offset, so
+    the test is the displacement at ALL FOUR CORNERS, in pixel units. That catches translation,
+    scale and rotation with one criterion, and it fails where it should: a half-pixel shift, or a
+    resolution difference of one part in 10^9, both exceed the tolerance by the far corner.
+
+    Args:
+        grids (dict): label -> (shape, affine transform, CRS).
+        tolerance_pixels (float): maximum corner displacement, in pixels.
+
+    Raises:
+        ValueError: naming the labels that disagree and the displacement measured.
+    """
+    labels = list(grids)
+    reference_label = labels[0]
+    ref_shape, ref_transform, ref_crs = grids[reference_label]
+    height, width = ref_shape
+    corners = ((0, 0), (0, width), (height, 0), (height, width))
+    for label in labels[1:]:
+        shape, transform, crs = grids[label]
+        if shape != ref_shape:
+            raise ValueError('the biomass measure needs one grid: %s is %s but %s is %s'
+                             % (label, shape, reference_label, ref_shape))
+        if crs != ref_crs:
+            raise ValueError('the biomass measure needs one grid: %s has CRS %s, %s has %s'
+                             % (label, crs, reference_label, ref_crs))
+        worst, where = 0.0, None
+        for row, column in corners:
+            ax, ay = ref_transform * (column, row)
+            bx, by = transform * (column, row)
+            displacement = max(abs(ax - bx) / abs(ref_transform.a),
+                               abs(ay - by) / abs(ref_transform.e))
+            if displacement > worst:
+                worst, where = displacement, (row, column)
+        if worst > tolerance_pixels:
+            raise ValueError(
+                'the biomass measure needs one grid: %s is displaced from %s by %.3g pixels at '
+                'corner (row %d, col %d), above the %g pixel tolerance. %s transform %s, %s %s'
+                % (label, reference_label, worst, where[0], where[1], tolerance_pixels,
+                   label, transform, reference_label, ref_transform))
+
+
 def _write_biomass_base_and_new_forest(p, base_lulc_path, base_forest_path, new_forest_path):
     """Once per project: the base-year forest biomass carbon per cell (NaN off the base forest) and
     the carbon zone's mean forest density x cell area the mature-density assumption credits to
@@ -351,9 +407,11 @@ def _write_biomass_base_and_new_forest(p, base_lulc_path, base_forest_path, new_
     for label, path in (('aboveground biomass carbon', density_path), ('carbon zones', zones_path), ('ha per cell', ha_path)):
         if not hb.path_exists(path):
             raise NameError('%s not found at %s' % (label, path))
-    shapes = {label: rasterio.open(path).shape for label, path in (('density', density_path), ('zones', zones_path), ('ha', ha_path), ('base map', base_lulc_path))}
-    if len(set(shapes.values())) != 1:
-        raise ValueError('the biomass measure needs one grid, got %s' % shapes)
+    grids = {}
+    for label, path in (('density', density_path), ('zones', zones_path), ('ha', ha_path), ('base map', base_lulc_path)):
+        with rasterio.open(path) as src:
+            grids[label] = (src.shape, src.transform, src.crs)
+    _assert_one_grid(grids)
     lulc_ndv = hb.get_ndv_from_path(base_lulc_path)
     if not hb.path_exists(base_forest_path):
         def base(density_block, ha_block, lulc_block):
@@ -435,7 +493,7 @@ def timber_provision_shock(p):
     measure = getattr(p, 'timber_provision_resource_measure', None) or 'net_return'
     if measure not in ('net_return', 'aboveground_carbon'):
         raise ValueError("p.timber_provision_resource_measure must be 'net_return' or 'aboveground_carbon', got %r" % measure)
-    value_path = p.timber_provision_value_raster_path
+    value_path = getattr(p, 'timber_provision_value_raster_path', None)
     if measure == 'net_return' and not hb.path_exists(value_path):
         raise NameError('timber value raster not found at %s' % value_path)
     if es_shock_base_year not in p.scenario_lulc_paths.get(base_scenario, {}):
@@ -444,9 +502,22 @@ def timber_provision_shock(p):
     # Reuse the table when it was made from these very maps and settings; the per-map guards below
     # still cost minutes of verification, and a pass that finds the table must return in seconds.
     shock_maps = sorted({m for by_year in p.scenario_lulc_paths.values() for m in by_year.values()})
+    if measure == 'aboveground_carbon':
+        settings, inputs = utilities._service_settings_and_inputs(p, 'timber_provision')
+        inputs = {k: v for k, v in inputs.items() if not k.endswith('_output_path')}
+        settings.update(resource_measure=measure, aggregation='regional_sums', anchors=anchor_years,
+                        scenarios=list(scenarios), base_year=es_shock_base_year)
+        signed = shock_maps + [p.timber_provision_biomass_carbon_density_path,
+            p.terrestrial_quantity_input_path, p.region_boundary_path,
+            getattr(p, 'ha_per_cell_10sec_path', None) or p.get_path(*utilities.HA_PER_CELL_10SEC_REF_PARTS),
+            __file__, tp.__file__, tcf.__file__]
+        inputs.update({str(path): utilities.file_fingerprint(path) for path in signed})
+        utilities.require_workspace_signature(p.cur_dir, utilities._signature(settings, inputs),
+            os.path.join(p.cur_dir, 'd19_workspace_signature.json'),
+            prepared_inputs=(p.terrestrial_quantity_input_path, base_lulc_path))
     shock_outputs = [p.timber_provision_shock_output_path]
     reason = utilities.reuse_reason(p, 'timber_provision', shock_outputs, TIMBER_SHOCK_SIGNATURE, light_inputs=shock_maps)
-    if reason is None:
+    if reason is None and measure != 'aboveground_carbon':
         hb.log('  timber shock: reusing %s (same maps, same settings)' % p.timber_provision_shock_output_path)
         return True
     hb.log('  timber shock: computing because %s' % reason)
@@ -489,6 +560,17 @@ def timber_provision_shock(p):
         else:
             for j in todo:
                 worker(j)
+
+    # D19 sums require every boundary zone, not merely a plausible row count.
+    # Include AEZ0 in physical regional totals as in D19; economic rows are filtered later.
+    if measure == 'aboveground_carbon':
+        for job in jobs:
+            scenario, year = job[:2]
+            summary = pd.read_csv(job[-3]).assign(scenario=scenario, year=year)
+            utilities.assert_zonal_coverage_complete(summary, [scenario], [year], set(zone_labels),
+                                                    'D19 biomass', log=hb.log)
+            if (summary['total'] < 0).any():
+                raise ValueError('Negative D19 biomass total')
 
     def zone_value(scenario, year):
         return hb.df_read(_timber_summary_path(p, scenario, year)).set_index('region_id')[p.terrestrial_carbon_shock_value_col]
@@ -538,6 +620,8 @@ def timber_provision_shock(p):
     if measure == 'aboveground_carbon' and len(v3) and v3.min() < -100 - 1e-6:
         raise ValueError('biomass shock_pct_v3 below -100: min %.4g' % v3.min())
     out['timber_resource_measure'] = measure
+    if measure == 'aboveground_carbon':
+        out['timber_provision_accounting'] = 'aboveground_carbon_summed_v1'
     out.to_csv(p.timber_provision_shock_output_path, index=False)
     utilities.write_reuse_signature(p, 'timber_provision', shock_outputs, TIMBER_SHOCK_SIGNATURE, light_inputs=shock_maps)
     hb.log('  timber shock: %d rows, %d scenarios -> %s'

@@ -37,8 +37,9 @@ def add_timber_provision_shock_tasks(p, parent=None):
     would make every GEP run build SEALS-dependent tasks it has no maps for.
     """
     kwargs = {'parent': parent} if parent is not None else {}
-    p.timber_value_density_table_task = p.add_task(
-        timber_provision_tasks.timber_value_density_table, **kwargs)
+    if getattr(p, 'timber_provision_resource_measure', None) != 'aboveground_carbon':
+        p.timber_value_density_table_task = p.add_task(
+            timber_provision_tasks.timber_value_density_table, **kwargs)
     p.timber_provision_shock_task = p.add_task(
         timber_provision_tasks.timber_provision_shock, **kwargs)
     return p
