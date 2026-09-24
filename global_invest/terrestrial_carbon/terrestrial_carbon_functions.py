@@ -165,7 +165,7 @@ def zone_labels_from_boundary(regions_df, id_column, endw_column, reg_column, en
 
 
 def dynamic_shock_rows(scenario_by_year, baseline_by_year, baseline_at_base_year, zone_labels,
-                       base_year, sector, scenario):
+                       base_year, sector, scenario, log=None):
     """Anchor-year zone means expanded to one row per zone and year, on both denominators.
 
     Three measures are reported. Two share the numerator `scenario[y] - baseline[y]`, the
@@ -188,10 +188,21 @@ def dynamic_shock_rows(scenario_by_year, baseline_by_year, baseline_at_base_year
     Returns:
         list: dicts, one per zone and year from base_year through the last anchor year.
     """
+    say = log or (lambda *a: None)
     anchor_years = sorted(scenario_by_year)
     all_years = list(range(base_year, anchor_years[-1] + 1))
-    contemporaneous = pd.DataFrame({
-        y: shock_percent(scenario_by_year[y], baseline_by_year[y]) for y in anchor_years}).dropna()
+    contemporaneous_raw = pd.DataFrame({
+        y: shock_percent(scenario_by_year[y], baseline_by_year[y]) for y in anchor_years})
+    contemporaneous = contemporaneous_raw.dropna()
+    # A zone with no baseline quantity has no denominator, so no percentage exists for it and none
+    # is invented -- but it is SAID, because a quietly shorter table is how an undefined ratio and a
+    # zone nobody measured come to look the same. A zone that reaches zero is not this: its
+    # denominator is its own base year, which is present, and its ratio is a defined -100%.
+    undefined = sorted(set(contemporaneous_raw.index) - set(contemporaneous.index))
+    if undefined:
+        say('    %s: %d zone(s) have no defined ratio at one or more anchor years and carry no '
+            'shock: %s%s' % (scenario, len(undefined), undefined[:20],
+                             ' ...' if len(undefined) > 20 else ''))
     fixedbase = (pd.DataFrame({
         y: shock_percent(scenario_by_year[y], baseline_by_year[y], baseline_at_base_year)
         for y in anchor_years}).dropna()

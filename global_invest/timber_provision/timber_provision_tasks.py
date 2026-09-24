@@ -604,7 +604,7 @@ def timber_provision_shock(p):
             rows += tcf.dynamic_shock_rows(
                 {y: zone_value(scenario, y) for y in anchor_years},
                 baseline_by_year, baseline_at_base_year, zone_labels, es_shock_base_year,
-                p.terrestrial_carbon_shock_acts, scenario)
+                p.terrestrial_carbon_shock_acts, scenario, log=hb.log)
 
     out = pd.DataFrame(rows)
     out = utilities.filter_to_model_domain(out, p.timber_provision_shock_output_path,
