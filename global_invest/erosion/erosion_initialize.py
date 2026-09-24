@@ -87,7 +87,8 @@ def add_erosion_tasks(p, parent=None):
     # grid, the repaired watersheds and the re-keyed biophysical table are all cached too, so the
     # residual cost is a few path_exists calls.
     p.erosion_sdr_task      = p.add_task(erosion_tasks.erosion_sdr, parent=parent)
-    p.erosion_upstream_task = p.add_task(erosion_tasks.erosion_upstream, parent=parent)
-    p.erosion_exposure_task = p.add_task(erosion_tasks.erosion_exposure, parent=parent)
+    if getattr(p, 'erosion_method', None) != 'damage_area':
+        p.erosion_upstream_task = p.add_task(erosion_tasks.erosion_upstream, parent=parent)
+        p.erosion_exposure_task = p.add_task(erosion_tasks.erosion_exposure, parent=parent)
     p.erosion_shock_task    = p.add_task(erosion_tasks.erosion_shock, parent=parent)
     return p

@@ -1,0 +1,191 @@
+"""Production area-damage seam for NGFS; SDR grid and source data are unchanged."""
+from pathlib import Path
+import importlib.metadata
+import json
+import numpy as np
+import pandas as pd
+from global_invest import utilities
+from global_invest.erosion import erosion_damage as damage
+
+ACCOUNTING = 'damage_area_8pct_v1'
+
+
+def read_grid(path, expected=None):
+    import rasterio
+    with rasterio.open(path) as src:
+        geometry = (src.shape, src.transform, src.crs)
+        if expected is not None and geometry != expected:
+            raise ValueError('Erosion grid mismatch: ' + str(path))
+        return src.read(1, masked=True).astype('float64').filled(np.nan), geometry
+
+
+def crop_fraction(source, reference, destination):
+    """Fraction of the SDR-cell footprint covered by full-resolution cropland pixels.
+
+    No overview use, no nearest-neighbour cropland assignment. Source nodata is
+    tracked separately; any solve cell overlapping missing source coverage is
+    excluded later rather than treated as non-cropland.
+    """
+    import rasterio
+    from osgeo import gdal
+    destination = Path(destination)
+    coverage = destination.with_name(destination.stem + '_source_coverage.tif')
+    sigpath = str(destination) + '.json'
+    signature = {'settings': {'method': 'native_fraction_with_coverage_v1'},
+                 'inputs': {str(p): utilities.file_fingerprint(p) for p in (source, reference, __file__)}}
+    if utilities.outputs_reuse_reason([str(destination), str(coverage)], signature, sigpath) is None:
+        return str(destination), str(coverage)
+    native = destination.with_name(destination.stem + '_native.tif')
+    with rasterio.open(source) as src:
+        profile = src.profile.copy()
+        profile.update(dtype='uint8', nodata=255, count=2, compress='deflate', BIGTIFF='YES',
+                       tiled=True, blockxsize=256, blockysize=256)
+        with rasterio.open(native, 'w', **profile) as dst:
+            for _, window in src.block_windows(1):
+                a = src.read(1, window=window, masked=True)
+                valid = ~np.ma.getmaskarray(a)
+                dst.write(((a.data == 2) & valid).astype('uint8'), 1, window=window)
+                dst.write(valid.astype('uint8'), 2, window=window)
+    with rasterio.open(reference) as ref:
+        for band, path in ((1, destination), (2, coverage)):
+            one = gdal.Translate('', str(native), format='MEM', bandList=[band])
+            result = gdal.Warp(str(path), one, dstSRS=ref.crs.to_wkt(),
+                outputBounds=tuple(ref.bounds), width=ref.width, height=ref.height,
+                resampleAlg='average', overviewLevel='NONE', srcNodata=255, dstNodata=-9999.,
+                outputType=gdal.GDT_Float32, creationOptions=['TILED=YES','COMPRESS=DEFLATE'])
+            if result is None:
+                raise ValueError('Failed to produce erosion crop fraction: ' + str(path))
+            result = None
+    utilities.write_outputs_signature(signature, sigpath)
+    return str(destination), str(coverage)
+
+
+def tables_to_seam(tables, labels, scenarios, anchors, years, base_scenario, base_year,
+                    sectors, provision_loss, stress_from):
+    """Require matched defined area denominators at every anchor; never fill missing zones."""
+    base = tables[(base_scenario, base_year)].set_index('zone_id')
+    all_ids = sorted(set().union(*(set(t.zone_id) for t in tables.values())))
+    labels = labels.set_index('zone_id')
+    if labels.index.duplicated().any() or set(all_ids) - set(labels.index):
+        raise ValueError('Missing or ambiguous erosion zone correspondence')
+    all_ids = [i for i in all_ids if 1 <= int(labels.loc[i, 'aez18_id']) <= 18]
+    rows = []
+    for zone in all_ids:
+        if zone not in base.index or not np.isfinite(base.loc[zone, 'level']):
+            raise ValueError('Undefined base damage in economic zone %s' % zone)
+        b = float(base.loc[zone, 'level'])
+        for scenario in scenarios:
+            ordinary, stressed = [], []
+            for year in anchors:
+                t = tables[(scenario, year)].set_index('zone_id')
+                if zone not in t.index or not np.isfinite(t.loc[zone, ['level','stressed_level']].to_numpy(dtype=float)).all():
+                    raise ValueError('Undefined damage: %s %s zone %s' % (scenario, year, zone))
+                ordinary.append(float(t.loc[zone, 'level']))
+                stressed.append(float(t.loc[zone, 'stressed_level']))
+            g = damage.annual_damage_change(b, anchors, ordinary, years, base_year=base_year)
+            gs = damage.annual_damage_change(b, anchors, ordinary, years, base_year=base_year,
+                                            stressed_levels=stressed, stress_from=stress_from)
+            for sector in sectors:
+                for year, value, value_stressed in zip(years, g, gs):
+                    rows.append(dict(ENDW='AEZ%d' % labels.loc[zone,'aez18_id'], ACTS=str(sector).upper(),
+                        REG=str(labels.loc[zone,'gtapv7_r50_label']).upper(), scenario=scenario,
+                        year=int(year), shock_pct=float(value), damage_level_base=b,
+                        damage_level=b+float(value), damage_level_stressed=b+float(value_stressed),
+                        erosion_accounting=ACCOUNTING, erosion_provision_loss=provision_loss,
+                        erosion_stress_from_year=stress_from))
+    if not rows:
+        raise ValueError('No defined in-domain erosion trajectories')
+    return pd.DataFrame(rows)
+
+
+def erosion_damage_shock(p):
+    """SDR + native crop fractions -> area damage, physical stress and annual level table.
+
+    A single common valid soil/LULC support across all requested dates and
+    scenarios prevents coverage changes masquerading as productivity changes.
+    Coverage tables retain AEZ0 and excluded hectares; economic rows never do.
+    """
+    p.erosion_shock_output_path = str(Path(p.es_shock_dir) / 'erosion_interpolated.csv')
+    if not p.run_this:
+        return
+    import geopandas as gpd
+    from rasterio.features import rasterize
+    version = importlib.metadata.version('natcap.invest')
+    if tuple(map(int, version.split('.')[:2])) < (3,15):
+        raise ValueError('Damage seam requires verified SDR t/ha/year outputs (InVEST >=3.15)')
+    base_year, end_year = int(p.es_shock_base_year), int(p.es_shock_end_year)
+    base_scenario = utilities.required_base_scenario(p, 'erosion')
+    anchors = sorted({int(y) for y in p.es_shock_years if int(y) > base_year})
+    if not anchors or anchors[-1] != end_year:
+        raise ValueError('Damage anchors must reach the configured end year')
+    stress_from = int(p.es_provision_from_year)
+    if stress_from not in anchors:
+        raise ValueError('Erosion stress onset requires a physical anchor')
+    provision_loss = 1 - float(p.es_provision_retained)
+    excluded = set(getattr(p, 'es_shock_excluded_scenarios', []) or [])
+    excluded |= {base_scenario, p.es_provision_label}
+    scenarios = sorted(set(p.es_shock_scenarios) - excluded)
+    if not scenarios or p.es_provision_source_scenario not in scenarios:
+        raise ValueError('Damage seam requires the ordinary source pathway')
+    cases = [(base_scenario, base_year)] + [(s,y) for s in scenarios for y in anchors]
+    work = Path(p.cur_dir); work.mkdir(parents=True, exist_ok=True)
+    boundary_path = p.get_path(p.region_boundary_path)
+    inputs = [boundary_path, __file__, damage.__file__]
+    files = {}
+    for scenario, year in cases:
+        source = p.scenario_lulc_paths.get(scenario, {}).get(year)
+        tag = '%s_%d' % (scenario, year)
+        folder = Path(p.erosion_sdr_dir) / tag
+        usle, rkls = folder / ('usle_'+tag+'.tif'), folder / ('rkls_'+tag+'.tif')
+        for path in (source, usle, rkls):
+            if not path or not Path(path).is_file():
+                raise ValueError('Missing configured erosion input %s %s: %s' % (scenario,year,path))
+            inputs.append(str(path))
+        files[(scenario,year)] = (source, usle, rkls)
+    signature = {'settings': {'accounting':ACCOUNTING, 'threshold_t_ha_year':11., 'alpha':.08,
+        'cases': [list(x) for x in cases], 'base_year':base_year,'end_year':end_year,
+        'provision_loss':provision_loss,'stress_from':stress_from,'sectors':list(p.erosion_shock_acts),
+        'invest_version':version,'support':'common_all_inputs'},
+        'inputs': {str(path):utilities.file_fingerprint(path) for path in inputs}}
+    coverage_path = work/'damage_coverage.csv'; signature_path = work/'damage_signature.json'
+    out = Path(p.erosion_shock_output_path)
+    if utilities.outputs_reuse_reason([str(out),str(coverage_path)],signature,str(signature_path)) is None:
+        return
+    # Invalidate the old success record before a rebuild that might be interrupted.
+    signature_path.unlink(missing_ok=True)
+    geometry = None; support = None; fractions = {}
+    for key,(source,usle,rkls) in files.items():
+        loss, geo = read_grid(usle, geometry)
+        if geometry is None: geometry = geo
+        potential,_ = read_grid(rkls,geometry)
+        tag='%s_%d'%key
+        frac,covered = crop_fraction(source,usle,work/('crop_fraction_'+tag+'.tif'))
+        c,_=read_grid(covered,geometry);f,_=read_grid(frac,geometry)
+        valid=np.isfinite(loss)&np.isfinite(potential)&np.isfinite(f)&(c>=1-1e-7)
+        support=valid if support is None else support&valid
+        fractions[key]=(frac,covered)
+    shape,transform,crs=geometry
+    if crs.to_epsg()!=8857:
+        raise ValueError('Damage area calculation requires the configured Equal Earth EPSG:8857 grid')
+    hectares=abs(transform.a*transform.e-transform.b*transform.d)/10000
+    boundary=gpd.read_file(boundary_path).to_crs(crs)
+    labels=boundary[['ee_r50_aez18_id','aez18_id','gtapv7_r50_label']].drop_duplicates().rename(columns={'ee_r50_aez18_id':'zone_id'})
+    if labels.zone_id.duplicated().any(): raise ValueError('Ambiguous zone correspondence')
+    zones=rasterize(((g,int(i)) for g,i in zip(boundary.geometry,boundary.ee_r50_aez18_id)
+                    if g is not None and not g.is_empty),out_shape=shape,transform=transform,fill=0,dtype='int32')
+    tables={};coverage=[]
+    for key,(source,usle,rkls) in files.items():
+        loss,_=read_grid(usle,geometry);potential,_=read_grid(rkls,geometry)
+        frac,_=read_grid(fractions[key][0],geometry)
+        table=damage.summarize_damage_areas(loss,potential,frac,hectares,zones,common_support=support,
+                                          threshold=11.,provision_loss=provision_loss)
+        tables[key]=table
+        coverage.append(table.assign(scenario=key[0],year=key[1]).merge(labels,on='zone_id',validate='many_to_one'))
+    coverage=pd.concat(coverage,ignore_index=True)
+    coverage['in_economic_domain']=coverage.aez18_id.between(1,18)
+    coverage.to_csv(coverage_path,index=False)
+    result=tables_to_seam(tables,labels,scenarios,anchors,list(range(base_year,end_year+1)),
+                         base_scenario,base_year,p.erosion_shock_acts,provision_loss,stress_from)
+    out.parent.mkdir(parents=True,exist_ok=True)
+    temporary=out.with_suffix('.tmp.csv');result.to_csv(temporary,index=False);temporary.replace(out)
+    utilities.write_outputs_signature(signature,str(signature_path))

@@ -1387,6 +1387,17 @@ def erosion_sdr(p):
         for year, lulc in by_year.items():
             suffix = '%s_%d' % (scenario, year)
             workspace = os.path.join(p.cur_dir, suffix)
+            lulc = p.get_path(lulc)
+            # Refuse old/changed workspaces rather than silently reusing the
+            # pre-fix grids or overwriting preserved production evidence.
+            signature = utilities._signature(
+                {'resampling': 'full_resolution_source_nodata_v1', 'native': native,
+                 'sdr_params': sdr_params},
+                {'biophysical': utilities.file_fingerprint(biophysical)},
+                light_inputs=[lulc, dem, erosivity, erodibility, watersheds])
+            signature_path = os.path.join(workspace, 'erosion_sdr_signature.json')
+            sdr_outputs = [os.path.join(workspace, name % suffix) for name in
+                           ('usle_%s.tif', 'rkls_%s.tif', 'avoided_erosion_%s.tif')]
             # Per-scenario-year existence guard, per the rule that every expensive step skips work
             # it has already done. The task's own skip_existing is all-or-nothing -- the dir is
             # there, so the WHOLE task is skipped -- which is why a chain missing a single
@@ -1394,17 +1405,35 @@ def erosion_sdr(p):
             # the most expensive step in the tree, so this guard is what makes a partial chain
             # finishable. Keyed on the three rasters the downstream tasks read, not on the
             # workspace dir, which a killed run leaves behind looking complete.
-            if all(hb.path_exists(os.path.join(workspace, name % suffix))
-                   for name in ('usle_%s.tif', 'rkls_%s.tif', 'avoided_erosion_%s.tif')):
+            if utilities.outputs_reuse_reason(sdr_outputs, signature, signature_path) is None:
                 reused += 1
                 continue
-            lulc = p.get_path(lulc)
+            if (any(hb.path_exists(path) for path in sdr_outputs)
+                    and utilities.outputs_reuse_reason([], signature, signature_path) is not None):
+                raise ValueError('Erosion SDR outputs lack the current input/resampling signature: '
+                                 + workspace + '. Rebuild in a fresh erosion directory; preserve old outputs.')
             if native:
                 lulc_grid = lulc
             else:
                 lulc_grid = os.path.join(p.cur_dir, 'lulc_%s_%d_grid.tif' % (scenario, year))
-                if not hb.path_exists(lulc_grid):  # categorical LULC -> mode
-                    hb.resample_to_match(lulc, grid_ref, lulc_grid, resample_method='mode')
+                grid_signature_path = lulc_grid + '.signature.json'
+                grid_reason = utilities.outputs_reuse_reason(
+                    [lulc_grid], signature, grid_signature_path)
+                if grid_reason is not None:
+                    if hb.path_exists(lulc_grid):
+                        raise ValueError('Unverified erosion LULC grid: ' + lulc_grid
+                                         + '. Use a fresh erosion directory.')
+                    # Use original categorical pixels at every date. GDAL's AUTO
+                    # overview selection otherwise treats the unpyramided base map
+                    # differently from future maps, creating false land-cover change.
+                    hb.resample_to_match(
+                        lulc, grid_ref, lulc_grid, resample_method='mode',
+                        src_ndv=hb.get_ndv_from_path(lulc), overview_level='NONE')
+                    utilities.write_outputs_signature(signature, grid_signature_path)
+            os.makedirs(workspace, exist_ok=True)
+            # Record the input contract before execution; completeness is checked
+            # separately, allowing an interrupted run with unchanged inputs to resume.
+            utilities.write_outputs_signature(signature, signature_path)
             sdr.execute(dict(workspace_dir=workspace, results_suffix=suffix,
                              dem_path=dem, erosivity_path=erosivity, erodibility_path=erodibility,
                              lulc_path=lulc_grid, watersheds_path=watersheds,
@@ -1421,6 +1450,9 @@ def erosion_sdr(p):
                         'InVEST SDR wrote a %dx%d grid for %s against the %dx%d solve grid every '
                         'input was built on. An input changed extent; every raster downstream would '
                         'shift with it.' % (got[0], got[1], suffix, solve['shape'][0], solve['shape'][1]))
+            if not all(hb.path_exists(path) for path in sdr_outputs):
+                raise RuntimeError('Incomplete erosion SDR outputs: ' + workspace)
+            utilities.write_outputs_signature(signature, signature_path)
             n += 1
     hb.log('  erosion SDR: %d solved, %d already present, on the EPSG:%s equal-area solve grid '
            '%dx%d -> usle_/rkls_ in %s'
@@ -1829,6 +1861,9 @@ def erosion_shock(p):
     erosion_elasticity_csv_path; base scenario via es_shock_base_scenario. Optional: erosion_alpha,
     erosion_method.
     """
+    if getattr(p, 'erosion_method', None) == 'damage_area':
+        from global_invest.erosion.erosion_damage_pipeline import erosion_damage_shock
+        return erosion_damage_shock(p)
     spam_aliases = {k: v.split(';') for k, v in
                     utilities.read_lookup(p.erosion_spam_alias_path,
                                           'spam_label', 'aliases').items()}
