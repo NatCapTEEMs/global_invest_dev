@@ -19,6 +19,65 @@ def read_grid(path, expected=None):
         return src.read(1, masked=True).astype('float64').filled(np.nan), geometry
 
 
+def normalise_zone_ids(frame, column='ee_r50_aez18_id'):
+    """The boundary's zone id as a validated int64, once, before anything keys on it.
+
+    The gpkg stores ee_r50_aez18_id as TEXT while aez18_id beside it is int64. Rasterisation
+    coerced with int(i) and the label frame did not, so the two sides of the later join carried
+    different dtypes and pandas refused the merge after twelve hours of upstream work. Normalising
+    at ingestion means rasterisation, labels and every join downstream use one validated set of ids
+    rather than each coercing, or not coercing, on its own.
+
+    Rejected rather than coerced: a missing id has no zone, a non-numeric one is not an id, and a
+    fractional one means the column is not what it claims. Each would otherwise become a plausible
+    integer and key a silently wrong join.
+
+    Args:
+        frame (gpd.GeoDataFrame): the boundary as read.
+        column (str): the id column to normalise in place.
+
+    Returns:
+        gpd.GeoDataFrame: the same frame with `column` as int64.
+
+    Raises:
+        ValueError: on a missing, non-numeric or fractional id.
+    """
+    import numpy as _np
+    import pandas as _pd
+    raw = frame[column]
+    if raw.isna().any():
+        raise ValueError('%s: %d row(s) have no zone id' % (column, int(raw.isna().sum())))
+    numeric = _pd.to_numeric(raw, errors='coerce')
+    bad = numeric.isna()
+    if bad.any():
+        raise ValueError('%s: %d non-numeric zone id(s), e.g. %s'
+                         % (column, int(bad.sum()), raw[bad].head(5).tolist()))
+    fractional = numeric != _np.floor(numeric)
+    if fractional.any():
+        raise ValueError('%s: %d fractional zone id(s), e.g. %s'
+                         % (column, int(fractional.sum()), numeric[fractional].head(5).tolist()))
+    frame = frame.copy()
+    frame[column] = numeric.astype('int64')
+    return frame
+
+
+def zone_label_table(boundary, id_column='ee_r50_aez18_id',
+                     carry=('aez18_id', 'gtapv7_r50_label')):
+    """One row per zone id, with the correspondence checked AFTER conversion.
+
+    Two different strings can normalise to the same integer, so a correspondence that looked
+    one-to-one in the file can become conflicting once the ids are numbers. The check therefore
+    runs on the converted ids and reports what conflicts rather than only that something does.
+    """
+    labels = boundary[[id_column] + list(carry)].drop_duplicates().rename(columns={id_column: 'zone_id'})
+    conflicting = labels[labels.zone_id.duplicated(keep=False)]
+    if len(conflicting):
+        raise ValueError('Ambiguous zone correspondence after id normalisation: %d row(s) over %d '
+                         'zone id(s), e.g. %s' % (len(conflicting), conflicting.zone_id.nunique(),
+                                                  conflicting.sort_values('zone_id').head(6).to_dict('records')))
+    return labels
+
+
 def crop_fraction(source, reference, destination):
     """Fraction of the SDR-cell footprint covered by full-resolution cropland pixels.
 
@@ -168,10 +227,10 @@ def erosion_damage_shock(p):
     if crs.to_epsg()!=8857:
         raise ValueError('Damage area calculation requires the configured Equal Earth EPSG:8857 grid')
     hectares=abs(transform.a*transform.e-transform.b*transform.d)/10000
-    boundary=gpd.read_file(boundary_path).to_crs(crs)
-    labels=boundary[['ee_r50_aez18_id','aez18_id','gtapv7_r50_label']].drop_duplicates().rename(columns={'ee_r50_aez18_id':'zone_id'})
-    if labels.zone_id.duplicated().any(): raise ValueError('Ambiguous zone correspondence')
-    zones=rasterize(((g,int(i)) for g,i in zip(boundary.geometry,boundary.ee_r50_aez18_id)
+    boundary=normalise_zone_ids(gpd.read_file(boundary_path).to_crs(crs))
+    labels=zone_label_table(boundary)
+    # The SAME validated ids feed the raster and the labels, so the join keys cannot diverge.
+    zones=rasterize(((g,i) for g,i in zip(boundary.geometry,boundary.ee_r50_aez18_id)
                     if g is not None and not g.is_empty),out_shape=shape,transform=transform,fill=0,dtype='int32')
     tables={};coverage=[]
     for key,(source,usle,rkls) in files.items():
