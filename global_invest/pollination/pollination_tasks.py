@@ -1001,8 +1001,9 @@ def _process_tile(
         lulc_nat = src.read(1, window=nat_win)
         nat_mask = np.isin(lulc_nat, list(nat_classes)).astype(np.uint8)
         
-        # Convolve
-        counts = convolve(nat_mask, weights=kernel, mode="constant", cval=0.0).astype(np.int32)
+        # Accumulate into int32: uint8 output wraps at 256 habitat neighbours.
+        # Casting after convolution is too late to recover the lost counts.
+        counts = convolve(nat_mask, weights=kernel, mode="constant", cval=0.0, output=np.int32)
         
         # Extract core
         nat_row0 = int(nat_win.row_off)
@@ -1595,6 +1596,40 @@ def pollination_shock(p):
     # cost about twenty minutes per pass and a pass that finds the table must return in seconds.
     shock_maps = sorted({base_map} | {m for by_year in p.scenario_lulc_paths.values() for m in by_year.values()})
     shock_outputs = [p.pollination_shock_output_path]
+    accounting = getattr(p, 'pollination_value_accounting', 'legacy')
+    if accounting not in ('legacy', 'retained_value_v1'):
+        raise ValueError('Unknown pollination_value_accounting: ' + str(accounting))
+    if accounting == 'retained_value_v1':
+        if str(getattr(p, 'pollination_pairing', 'base_year')) != 'base_year':
+            raise ValueError('Retained dollar accounting requires base-year pairing')
+        from global_invest.pollination.retained_pipeline import build_retained_table
+        from global_invest.pollination import retained_value, retained_raster, retained_pipeline
+        settings, inputs = utilities._service_settings_and_inputs(p, 'pollination')
+        inputs = {k: v for k, v in inputs.items() if not k.endswith('_output_path')}
+        settings['accounting'] = accounting
+        settings['anchors'] = anchor_years
+        settings['scenarios'] = es_shock_scenarios
+        settings['base_year'] = es_shock_base_year
+        signed = shock_maps + [__file__, pf.__file__, retained_value.__file__,
+                               retained_raster.__file__, retained_pipeline.__file__, p.region_boundary_path]
+        inputs.update({str(path): utilities.file_fingerprint(path) for path in signed})
+        utilities.require_workspace_signature(
+            cfg.output_dir, utilities._signature(settings, inputs),
+            os.path.join(cfg.output_dir, 'retained_workspace_signature.json'))
+        signature_name = 'pollination_retained_value_v1_signature.json'
+        reason = utilities.reuse_reason(p, 'pollination', shock_outputs, signature_name, light_inputs=shock_maps)
+        if reason is None:
+            return True
+        if hb.path_exists(p.pollination_shock_output_path):
+            raise ValueError('Unverified or old pollination table; use a fresh output directory')
+        denominator_path = baseline_denominator(cfg, base_map, es_shock_base_year,
+                                                p.pollination_shock_baseline_label)
+        out = build_retained_table(p, cfg, base_map, denominator_path, anchor_years,
+                                   es_shock_scenarios, es_shock_base_year)
+        out = utilities.filter_to_model_domain(out, p.pollination_shock_output_path, 'pollination', log=hb.log)
+        out.to_csv(p.pollination_shock_output_path, index=False)
+        utilities.write_reuse_signature(p, 'pollination', shock_outputs, signature_name, light_inputs=shock_maps)
+        return True
     reason = utilities.reuse_reason(p, 'pollination', shock_outputs, POLLINATION_SHOCK_SIGNATURE, light_inputs=shock_maps)
     if reason is None:
         hb.log('  pollination shock: reusing %s (same maps, same settings)' % p.pollination_shock_output_path)
