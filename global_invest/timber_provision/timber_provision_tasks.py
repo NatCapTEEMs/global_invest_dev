@@ -512,9 +512,25 @@ def timber_provision_shock(p):
             getattr(p, 'ha_per_cell_10sec_path', None) or p.get_path(*utilities.HA_PER_CELL_10SEC_REF_PARTS),
             __file__, tp.__file__, tcf.__file__]
         inputs.update({str(path): utilities.file_fingerprint(path) for path in signed})
+        # The value rasters and their zone-id rasters are INPUTS to the summarisation, not outputs
+        # of it. The signature hashes whole source files, so any edit to this module or to the shock
+        # arithmetic invalidates the workspace wholesale -- including rasters whose entire producing
+        # chain (forest_biomass_carbon_on_map, raster_calculator_flex, the cython kernel) is
+        # untouched. Naming them here is the guard's own mechanism for a prepared input, and it is
+        # what allows a summariser fix to be re-run over rasters that cost hours and did not change.
+        # It is NOT a way to reuse a raster whose producer moved: verify that before adding to this.
+        prepared = [p.terrestrial_quantity_input_path, base_lulc_path,
+                    os.path.join(p.cur_dir, 'forest_agbc_base_%d.tif' % es_shock_base_year),
+                    os.path.join(p.cur_dir, 'forest_agbc_new_forest_zone_mean.tif'),
+                    os.path.join(p.cur_dir, 'forest_agbc_density_by_carbon_zone.csv')]
+        for scenario in dict.fromkeys([base_scenario] + list(scenarios)):
+            for year in list(anchor_years) + ([es_shock_base_year] if es_shock_base_year in p.scenario_lulc_paths.get(scenario, {}) else []):
+                summary_path = _timber_summary_path(p, scenario, year)
+                prepared += [_timber_value_raster_path(p, scenario, year),
+                             os.path.splitext(summary_path)[0] + '_zone_ids.tif']
         utilities.require_workspace_signature(p.cur_dir, utilities._signature(settings, inputs),
             os.path.join(p.cur_dir, 'd19_workspace_signature.json'),
-            prepared_inputs=(p.terrestrial_quantity_input_path, base_lulc_path))
+            prepared_inputs=tuple(prepared))
     shock_outputs = [p.timber_provision_shock_output_path]
     reason = utilities.reuse_reason(p, 'timber_provision', shock_outputs, TIMBER_SHOCK_SIGNATURE, light_inputs=shock_maps)
     if reason is None and measure != 'aboveground_carbon':
