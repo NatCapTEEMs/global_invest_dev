@@ -224,6 +224,21 @@ def test_static_shock_rows_apply_the_imputation_override_before_the_ramp():
     assert by_year[2030] == 0.4767     # the imputed value, not the corrupt 13.504
 
 
+def test_static_shock_rows_preserve_supplied_norway_value_without_override():
+    source = 13.503955841064453
+    rows = ff.static_shock_rows(
+        {'FI26': {'nor': _fi_series(source)}}, ['net_zero'],
+        ff.FISH_HEADER_MAP, {}, {}, ('FSH',),
+        base_year=2023, end_year=2050, time_varying=True, constant_year=2050,
+        ramp_to_end=True, ramp_end_year=2050)
+    levels = {row['year']: row['shock_pct'] for row in rows}
+    assert levels[2023] == 0.
+    assert levels[2050] == source
+    factors = [(1 + levels[y] / 100) / (1 + levels[y - 1] / 100)
+               for y in range(2024, 2051)]
+    assert np.isclose(np.prod(factors), 1 + source / 100, atol=1e-12, rtol=0)
+
+
 def test_static_shock_rows_drop_a_scenario_whose_header_the_data_lacks():
     fi_data = {'FI26': {'usa': _fi_series(0.8)}}
     rows = ff.static_shock_rows(

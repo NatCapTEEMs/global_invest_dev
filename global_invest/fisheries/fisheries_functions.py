@@ -38,18 +38,14 @@ FISH_HEADER_MAP = {
     'ndcs': 'FI45', 'delayed_transition': 'FI45',
     'current_policies': 'FI85', 'fragmented_world': 'FI85', 'current_policies-es20': 'FI85',
 }
-FISH_CAP = 2.0          # +-2% backstop. Every legitimate FI value across FI26/FI45/FI85 is <=1.6%, so real
-                        # signal passes untouched. Kept as a catch-all; known-bad values are now IMPUTED by
-                        # FISH_VALUE_OVERRIDES below rather than merely clipped.
-
 # (header, region) -> imputed value, for entries that are demonstrably corrupt at source.
 #
 # 'nor' FI26 = +13.504 while its FI45 = +0.565 and FI85 = +0.558. A 24x larger gain under the WEAKEST
 # warming inverts the physics -- DBEM's high-latitude gains grow with warming, they do not peak at RCP2.6
-# -- so the value is an error, not signal. Clipping it to the +-2 cap does not fix the problem: with only
-# 50 regions the global mean is dominated by this one cell (RCP2.6 mean +0.3037, of which 'nor' alone
-# contributes +0.270; capped it still supplies ~half the remaining mean), so the SIGN of the below_2c
-# fisheries shock rested on a number we know is wrong.
+# -- so the value is an error, not signal. With only 50 regions the global mean is dominated by this one
+# cell (RCP2.6 mean +0.3037, of which 'nor' alone contributes +0.270), so the SIGN of the below_2c
+# fisheries shock rested on a number we know is wrong. Imputing it is what fixes that; a magnitude clip
+# would leave the same cell supplying about half the remaining mean while looking healthy.
 #
 # Imputed from Norway's OWN other-RCP values by OLS across the other 49 regions:
 #   FI26 ~ FI45 : r=+0.813, slope +0.7411, intercept +0.0583 -> +0.4767   <- used (best correlated)

@@ -75,19 +75,18 @@ def fisheries_shock(p):
             [int(y) for y in getattr(p, 'es_shock_years', []) or []] or [es_shock_end_year]))
 
     out = pd.DataFrame(rows)
-    # Assert BEFORE the cap: the clip silently absorbs whatever the CWoN table delivers, so a
-    # contaminated source value would otherwise be clamped to +-2 and look healthy -- the same
-    # silent-failure shape the assertion exists to catch. After the clip the magnitude check
-    # could never fire.
+    # The table is written as the source delivers it: a value the source gets wrong is imputed by
+    # FISH_VALUE_OVERRIDES, which is a stated substitution, rather than clamped to a magnitude that
+    # would look healthy and hide it. The soundness check is therefore the only thing standing
+    # between a contaminated FI value and the solver.
     utilities.assert_shock_table_sound(out, es_shock_scenarios, 'fisheries')
-    if len(out):
-        out['shock_pct'] = out['shock_pct'].clip(-ff.FISH_CAP, ff.FISH_CAP)
     out.to_csv(p.fisheries_shock_output_path, index=False)
-    hb.log('  fisheries shock: %d rows, %d scenarios (%s, capped +-%.0f%%) -> %s'
+    hb.log('  fisheries shock: %d rows, %d scenarios (%s), |shock| up to %.4g%% -> %s'
           % (len(out), out['scenario'].nunique() if len(out) else 0,
              ('per-year' if time_varying else 'constant @%d'
               % int(getattr(p, 'fisheries_constant_year', es_shock_end_year))),
-             ff.FISH_CAP, p.fisheries_shock_output_path))
+             float(out['shock_pct'].abs().max()) if len(out) else 0.0,
+             p.fisheries_shock_output_path))
     return True
 
 
