@@ -383,3 +383,32 @@ def test_scc_valuation_interpolates_prices_and_derives_the_cut():
     cp2 = out2[(out2['scenario'] == 'cp') & (out2['iso3_r250_id'] == 1)].set_index('year')
     assert abs(cp2.loc[2050, 'delta_value_vs_baseline_usd'] - 100.0) < 1e-9
     assert abs(cp2.loc[2023, 'delta_value_vs_baseline_usd']) < 1e-9
+
+
+# --- what retaining a measured zero does to a PER-ZONE measure -------------------------------------
+# The summed (D19) measure absorbs a zone's zero into its region's total. The per-zone measures --
+# terrestrial_carbon, pollination, and timber's net_return path -- divide by the zone's own baseline,
+# so a zone whose quantity reaches zero is a -100% shock on that zone rather than a small change in a
+# regional sum. These two tests hold that difference still, because it is the economically material
+# consequence of no longer deleting measured zeros, and it must not drift unnoticed either way.
+
+def test_zone_reaching_zero_gives_a_minus_hundred_percent_per_zone_shock():
+    """A zone that keeps its baseline but loses all its own quantity. The per-zone ratio is -100%.
+
+    While measured zeros were deleted from the zonal summary this zone was simply absent from the
+    scenario series, the subtraction produced NaN, dropna removed it, and a total loss reached the
+    economic model as NO shock at all. It now reaches it as the loss it is.
+    """
+    baseline = pd.Series({1: 100.0, 2: 50.0})
+    scenario_with_explicit_zero = pd.Series({1: 100.0, 2: 0.0})
+    result = tcf.shock_percent(scenario_with_explicit_zero, baseline).dropna()
+    assert result.to_dict() == {1: pytest.approx(0.0), 2: pytest.approx(-100.0)}
+
+
+def test_zone_with_no_baseline_quantity_is_still_dropped_not_shocked():
+    """The other direction is unchanged: a zero DENOMINATOR has no ratio, so the zone carries no
+    shock rather than an infinite one, whether or not it now appears in the summary."""
+    baseline_with_explicit_zero = pd.Series({1: 100.0, 2: 0.0})
+    scenario = pd.Series({1: 100.0, 2: 25.0})
+    result = tcf.shock_percent(scenario, baseline_with_explicit_zero).dropna()
+    assert result.to_dict() == {1: pytest.approx(0.0)}

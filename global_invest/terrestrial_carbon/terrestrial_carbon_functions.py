@@ -261,11 +261,28 @@ def summed_shock_rows(scenario_by_year_by_scenario, baseline_at_base_year, zone_
     for zone_id, (endw, reg) in zone_labels.items():
         zones_by_region.setdefault(reg, []).append(zone_id)
 
-    def regional_total(series, region):
-        ids = [z for z in zones_by_region[region] if z in series.index]
-        return float(np.nansum(series.loc[ids].to_numpy())) if ids else float('nan')
+    def regional_total(series, region, what):
+        """The region's summed quantity, from EVERY one of its zones.
 
-    base_by_region = {reg: regional_total(baseline_at_base_year, reg) for reg in zones_by_region}
+        A zone absent from the series is a failure, not a zero. Dropping it silently would make a
+        missing measurement arithmetically indistinguishable from a measured zero, in the one
+        direction that matters: a zone missing from a scenario year but present in the base year
+        lowers the ratio exactly as a real loss would. The zonal summaries are asserted complete
+        before they are read, so an absence here means that assertion was bypassed."""
+        ids = zones_by_region[region]
+        absent = [z for z in ids if z not in series.index]
+        if absent:
+            raise ValueError('summed measure: %s is missing %d of region %s\'s %d zones: %s. A '
+                             'missing zone is not a zero; it is an unmeasured one.'
+                             % (what, len(absent), region, len(ids), sorted(absent)))
+        values = series.loc[ids].to_numpy()
+        if not np.isfinite(values).all():
+            raise ValueError('summed measure: %s carries %d non-finite value(s) in region %s'
+                             % (what, int((~np.isfinite(values)).sum()), region))
+        return float(values.sum())
+
+    base_by_region = {reg: regional_total(baseline_at_base_year, reg, 'the base-year quantity')
+                      for reg in zones_by_region}
     world_base = float(np.nansum([v for v in base_by_region.values() if np.isfinite(v)]))
     without_base = sorted(reg for reg, v in base_by_region.items()
                           if not np.isfinite(v) or v <= 0 or (world_base > 0 and v / world_base < negligible_share))
@@ -273,14 +290,23 @@ def summed_shock_rows(scenario_by_year_by_scenario, baseline_at_base_year, zone_
         log('  summed measure: %d region(s) with zero or negligible base-year quantity, not shocked: %s'
             % (len(without_base), ', '.join(without_base)))
 
-    rows = []
+    rows, total_loss = [], []
     for scenario, by_year in scenario_by_year_by_scenario.items():
         anchor_years = sorted(by_year)
         all_years = list(range(base_year, anchor_years[-1] + 1))
         for reg, zone_ids in zones_by_region.items():
             if reg in without_base:
                 continue
-            anchors = [100.0 * (regional_total(by_year[y], reg) / base_by_region[reg] - 1.0) for y in anchor_years]
+            totals = {y: regional_total(by_year[y], reg, '%s %d' % (scenario, y)) for y in anchor_years}
+            # A region that reaches zero has lost ALL its biomass, which is a -100% productivity
+            # factor on every one of its zones for the rest of the horizon. That is a defensible
+            # arithmetic result and an implausible physical one, so it is collected and raised
+            # together below rather than interpolated into annual shocks unexamined. A zone that
+            # reaches zero is not this: its zeros simply stop contributing to the region's sum.
+            for y, total in totals.items():
+                if total <= 0.0:
+                    total_loss.append((scenario, reg, y, total, base_by_region[reg]))
+            anchors = [100.0 * (totals[y] / base_by_region[reg] - 1.0) for y in anchor_years]
             annual = interpolate_annual_shock(all_years, anchor_years, np.asarray(anchors), base_year)
             for zone_id in zone_ids:
                 endw, _ = zone_labels[zone_id]
@@ -288,6 +314,12 @@ def summed_shock_rows(scenario_by_year_by_scenario, baseline_at_base_year, zone_
                     rows.append({'ENDW': endw, 'ACTS': sector, 'REG': reg, 'scenario': scenario,
                                  'year': year, 'shock_pct': value, 'shock_pct_fixedbase': value,
                                  'shock_pct_contemp': value, 'shock_pct_v3': value})
+    if total_loss:
+        raise ValueError(
+            'summed measure: %d region-year(s) reach zero or negative total quantity against a '
+            'positive base year, which is a -100%% regional productivity factor held to the end of '
+            'the horizon. This needs review before annual conversion, not interpolation: %s'
+            % (len(total_loss), sorted((s, r, int(y), t, b) for s, r, y, t, b in total_loss)))
     return rows
 
 

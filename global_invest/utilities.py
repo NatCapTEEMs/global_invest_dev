@@ -122,12 +122,24 @@ def summarize_raster_by_region(value_raster_path, region_boundary_path, out_path
         value_raster_path, region_boundary_path, zone_ids_raster_path=zone_ids_raster,
         id_column_label=id_column, zones_raster_data_type=5, all_touched=False,
         stats_to_retrieve='sums_counts', assert_projections_same=False, verbose=False)
-    stats = stats[(stats.index != 0) & (stats['counts'] > 0)]   # drop background + empty zones
+    # The ONLY test of emptiness is that nothing was measured in the zone: counts == 0. A zone whose
+    # measured quantity comes to exactly zero is kept, with its zero, because for anything that later
+    # forms a regional total or a ratio the alternative is fatal -- an absent row and a real zero are
+    # then the same thing, and a zone that genuinely lost all its forest cannot be told from a zone
+    # nobody measured. Zone 0 is the background outside every polygon.
+    stats = stats[(stats.index != 0) & (stats['counts'] > 0)]
+    measured_zeros = sorted(stats.index[stats['sums'] == 0].tolist())
+    if measured_zeros:
+        print('  %s: %d zone(s) hold valid pixels whose total is exactly zero, retained as measured '
+              'zeros rather than dropped: %s' % (os.path.basename(out_path), len(measured_zeros), measured_zeros))
 
     df = regions.assign(_zid=regions[id_column].astype('int64')).merge(
         stats, left_on='_zid', right_index=True, how='right').drop(columns=['_zid', 'geometry'])
     df = df.rename(columns={'sums': 'total', 'counts': 'count'})
     df['mean'] = df['total'] / df['count']
+    # Carried so a consumer can act on the distinction without re-deriving it, and so a zero in a
+    # finished table says on its own face whether it was measured.
+    df['measured_zero'] = df['total'] == 0
     df['year'] = year
     if 'ee_r50_aez18_id' in df.columns:
         df['region_id'] = df['ee_r50_aez18_id'].astype(int)
@@ -361,6 +373,127 @@ def filter_to_model_domain(df, output_path, label, valid_endw=GTAP_LAND_ENDW, en
         % (label, len(excluded), len(df), ', '.join(sorted(excluded[endw_col].astype(str).unique())),
            excluded_path))
     return df[in_domain].reset_index(drop=True)
+
+
+# How many (scenario, year, zone) keys a failure message prints in full before it summarises.
+# Generous, because the whole point is that the reader can act on the message without going back to
+# the data: at 470 zones and 28 scenario-years a complete failure is ~13,000 keys, and a cap well
+# above one scenario-year's worth keeps every ordinary failure fully enumerated.
+KEY_ENUMERATION_LIMIT = 600
+
+
+def _enumerate_keys(keys, limit=KEY_ENUMERATION_LIMIT):
+    """Every key, or a bounded sample that SAYS it is one, plus the distinct zones and scenario-years.
+
+    A count paired with an unlabelled excerpt reads as the whole set: 'D19 biomass: 6 ... First few:
+    [five keys]' was acted on as five zones, and the sixth went unexamined (2026-09-24). The distinct
+    zone and scenario-year lists are always complete because they are bounded by the run's own
+    dimensions, and they are what a reader actually acts on.
+    """
+    keys = list(keys)
+    zones = sorted({str(k[2]) for k in keys})
+    scenario_years = sorted({(str(k[0]), k[1]) for k in keys})
+    if len(keys) <= limit:
+        listed = '  all %d: %s' % (len(keys), keys)
+    else:
+        listed = ('  first %d of %d (%d NOT shown): %s'
+                  % (limit, len(keys), len(keys) - limit, keys[:limit]))
+    return ('%s\n  distinct zones (%d, complete): %s\n  distinct scenario-years (%d, complete): %s'
+            % (listed, len(zones), zones, len(scenario_years), scenario_years))
+
+
+def assert_zonal_coverage_complete(frame, expected_scenarios, expected_years, expected_zones, label,
+                                   value_column='total', scenario_column='scenario',
+                                   year_column='year', zone_column='region_id',
+                                   intentional_exclusions=None, log=None):
+    """Raise unless every expected scenario, year and zone carries a finite total.
+
+    A zonal summary that silently loses a scenario-year, or carries NaN where a map failed to
+    produce a value, reaches the economic model as a zero shock rather than as an error. Both
+    failures look identical in a finished table, which is why they are asserted here rather than
+    inspected later.
+
+    Exclusions that are MEANT to be absent -- a zone the model does not cover, a scenario-year a
+    variant deliberately omits -- are declared by the caller and reported on their own, so the
+    distinction between "we chose to leave this out" and "this went missing" survives in the log.
+
+    Args:
+        frame (pd.DataFrame): the assembled zonal totals, one row per scenario, year and zone.
+        expected_scenarios (iterable): every scenario that must appear.
+        expected_years (iterable): every anchor year that must appear.
+        expected_zones (iterable): every zone or country id that must appear.
+        label (str): the service or table name, for the message.
+        value_column (str): the column that must be present and finite.
+        scenario_column, year_column, zone_column (str): the identifying columns.
+        intentional_exclusions (iterable or None): (scenario, year, zone) tuples that are expected to
+            be absent. Reported separately; never counted as missing.
+        log (callable or None): where the exclusion report goes; print when None.
+
+    Raises:
+        ValueError: naming the missing combinations and the non-finite values, with examples.
+    """
+    import numpy as np
+    import pandas as pd
+
+    say = log or print
+    key_columns = [scenario_column, year_column, zone_column]
+    missing_columns = [c for c in key_columns + [value_column] if c not in frame.columns]
+    if missing_columns:
+        raise ValueError('%s: required columns absent: %s' % (label, missing_columns))
+    if frame[key_columns].isna().any().any():
+        raise ValueError('%s: missing identifying keys' % label)
+    normalized_keys = frame[key_columns].copy()
+    normalized_keys[scenario_column] = normalized_keys[scenario_column].astype(str)
+    years_numeric = pd.to_numeric(normalized_keys[year_column], errors='coerce')
+    if (~np.isfinite(years_numeric) | (years_numeric != np.floor(years_numeric))).any():
+        raise ValueError('%s: year keys must be finite integers' % label)
+    normalized_keys[year_column] = years_numeric.astype(int)
+    duplicates = normalized_keys.duplicated(keep=False)
+    if duplicates.any():
+        raise ValueError('%s: duplicate scenario/year/zone keys: %s' %
+                         (label, normalized_keys.loc[duplicates].head(5).to_dict('records')))
+    declared = {(str(s), int(y), z) for s, y, z in (intentional_exclusions or ())}
+    expected = {(str(s), int(y), z) for s in expected_scenarios for y in expected_years
+                for z in expected_zones}
+    required = expected - declared
+
+    if len(frame):
+        present = {(str(r[scenario_column]), int(r[year_column]), r[zone_column])
+                   for _, r in frame[[scenario_column, year_column, zone_column]].iterrows()}
+    else:
+        present = set()
+
+    problems = []
+    missing = sorted(required - present, key=lambda t: (t[0], t[1], str(t[2])))
+    if missing:
+        problems.append('%s: %d of %d required (scenario, year, zone) totals are absent. A missing '
+                        'total is a zero shock in the economic model, not a gap.\n%s'
+                        % (label, len(missing), len(required), _enumerate_keys(missing)))
+
+    if len(frame) and value_column in frame.columns:
+        values = pd.to_numeric(frame[value_column], errors='coerce')
+        bad = frame.loc[~np.isfinite(values)]
+        if len(bad):
+            example = bad.head(3)[[scenario_column, year_column, zone_column, value_column]].to_dict('records')
+            problems.append('%s: %d row(s) carry a non-finite %s. NaN and inf reach the model as a '
+                            'zero or an overflow rather than as a failure. e.g. %s'
+                            % (label, len(bad), value_column, example))
+
+    unexpected_exclusions = sorted(declared - expected, key=lambda t: (t[0], t[1], str(t[2])))
+    if unexpected_exclusions:
+        problems.append('%s: %d declared exclusion(s) are not in the expected set at all, so the '
+                        'declaration is stale or wrong.\n%s'
+                        % (label, len(unexpected_exclusions), _enumerate_keys(unexpected_exclusions)))
+
+    if declared:
+        say('  %s: %d (scenario, year, zone) total(s) excluded by declaration, not missing: %s%s'
+            % (label, len(declared), sorted(declared)[:5],
+               ' ...' if len(declared) > 5 else ''))
+
+    if problems:
+        raise ValueError('\n'.join(problems))
+    say('  %s: %d of %d required zonal totals present and finite' % (label, len(required), len(required)))
+    return True
 
 
 def assert_shock_table_sound(df, requested_scenarios, label, abs_max=SHOCK_ABS_MAX, column='shock_pct'):
@@ -2353,3 +2486,26 @@ def distribute_results(p, service, log=None):
         if str(output_path).lower().endswith(('.tif', '.tiff')):
             publish_raster_as_pog(output_path, log=log)
     log('GEP results distribution complete.')
+
+
+def require_workspace_signature(workspace, signature, signature_path, prepared_inputs=()):
+    """Refuse unsigned/changed cached service data; allow interrupted same-input work.
+
+    Record the contract before writing service outputs. An existing result is
+    reusable only under this same contract; this does not certify completion.
+    """
+    reason = outputs_reuse_reason([], signature, signature_path)
+    if reason is None:
+        return
+    artifacts = []
+    allowed = {os.path.abspath(str(p)) for p in prepared_inputs}
+    if os.path.isdir(workspace):
+        for folder, _, names in os.walk(workspace):
+            artifacts.extend(os.path.join(folder, n) for n in names
+                             if n.lower().endswith(('.tif', '.tiff', '.csv', '.parquet'))
+                             and os.path.abspath(os.path.join(folder, n)) not in allowed)
+    if artifacts:
+        raise ValueError('Unverified or changed service workspace %s (%s). Preserve it and use a '
+                         'fresh directory; example cached file: %s' % (workspace, reason, artifacts[0]))
+    os.makedirs(workspace, exist_ok=True)
+    write_outputs_signature(signature, signature_path)
