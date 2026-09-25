@@ -120,8 +120,19 @@ def crop_fraction(source, reference, destination):
 
 
 def tables_to_seam(tables, labels, scenarios, anchors, years, base_scenario, base_year,
-                    sectors, provision_loss, stress_from):
-    """Require matched defined area denominators at every anchor; never fill missing zones."""
+                    sectors, provision_loss, stress_from, baseline_domain=None,
+                    excluded_path=None, coverage=None):
+    """Estimate on the BASE-YEAR cropland domain; never fill a missing zone or invent a baseline.
+
+    A zone with no baseline cropland has no d_2023, so 100(d_2023 - d_t) does not exist for it. Such
+    a zone is EXCLUDED from the economic rows with its reason recorded, and stays in the coverage
+    report: newly appearing cropland outside the base-year domain is reported, not shocked. That is
+    not the same statement as a measured zero shock and must not be written as one.
+
+    An exclusion is only legitimate where absence is ESTABLISHED. Baseline cropland removed by the
+    coverage restriction, or coverage too poor to establish absence, leaves the baseline unknown and
+    remains a failure. So does a zone with a defined baseline and an undefined future year.
+    """
     base = tables[(base_scenario, base_year)].set_index('zone_id')
     all_ids = sorted(set().union(*(set(t.zone_id) for t in tables.values())))
     labels = labels.set_index('zone_id')
@@ -129,9 +140,29 @@ def tables_to_seam(tables, labels, scenarios, anchors, years, base_scenario, bas
         raise ValueError('Missing or ambiguous erosion zone correspondence')
     all_ids = [i for i in all_ids if 1 <= int(labels.loc[i, 'aez18_id']) <= 18]
     rows = []
+    excluded = []
     for zone in all_ids:
         if zone not in base.index or not np.isfinite(base.loc[zone, 'level']):
-            raise ValueError('Undefined base damage in economic zone %s' % zone)
+            domain = (baseline_domain or {}).get(int(zone))
+            if domain is None:
+                raise ValueError('Undefined base damage in economic zone %s and no baseline domain '
+                                 'evidence to classify it' % zone)
+            if domain['baseline_crop_ha'] > 1e-9 or domain['baseline_nodata_ha'] > 1e-9:
+                raise ValueError(
+                    'Economic zone %s has no base-year damage but %.4f ha of baseline cropland '
+                    '(%.4f ha lost to source nodata, mean coverage %.6f): the baseline is UNKNOWN, '
+                    'not zero, so no trajectory may be formed and none may be excluded'
+                    % (zone, domain['baseline_crop_ha'], domain['baseline_nodata_ha'],
+                       domain['mean_source_coverage']))
+            excluded.append({'zone_id': int(zone),
+                             'aez18_id': int(labels.loc[zone, 'aez18_id']),
+                             'reg': labels.loc[zone, 'gtapv7_r50_label'],
+                             'reason': 'no base-year cropland: d_2023 undefined, trajectory does '
+                                       'not exist; NOT a measured zero shock',
+                             'baseline_crop_ha': domain['baseline_crop_ha'],
+                             'baseline_nodata_ha': domain['baseline_nodata_ha'],
+                             'mean_source_coverage': domain['mean_source_coverage']})
+            continue
         b = float(base.loc[zone, 'level'])
         for scenario in scenarios:
             ordinary, stressed = [], []
@@ -152,6 +183,25 @@ def tables_to_seam(tables, labels, scenarios, anchors, years, base_scenario, bas
                         damage_level=b+float(value), damage_level_stressed=b+float(value_stressed),
                         erosion_accounting=ACCOUNTING, erosion_provision_loss=provision_loss,
                         erosion_stress_from_year=stress_from))
+    if excluded and excluded_path is not None:
+        frame = pd.DataFrame(excluded)
+        # The future cropland these zones DO acquire, reported beside the exclusion so the record
+        # says what was set aside rather than only that something was.
+        if coverage is not None and len(coverage):
+            future = pd.concat(coverage, ignore_index=True) if isinstance(coverage, list) else coverage
+            keep = future[future.zone_id.isin(frame.zone_id)]
+            if len(keep):
+                summary = keep.groupby('zone_id').agg(
+                    scenario_years_present=('scenario', 'size'),
+                    max_future_crop_ha=('valid_crop_ha', 'max'),
+                    max_future_severe_crop_ha=('severe_crop_ha', 'max'),
+                    max_future_excluded_crop_ha=('excluded_crop_ha', 'max')).reset_index()
+                frame = frame.merge(summary, on='zone_id', how='left')
+                keep.to_csv(str(excluded_path).replace('.csv', '_future_rows.csv'), index=False)
+        frame.to_csv(excluded_path, index=False)
+        print('  erosion: %d economic zone(s) EXCLUDED for having no base-year cropland '
+              '(d_2023 undefined, not a measured zero): %s -> %s'
+              % (len(frame), sorted(frame.zone_id.tolist()), excluded_path))
     if not rows:
         raise ValueError('No defined in-domain erosion trajectories')
     return pd.DataFrame(rows)
@@ -232,6 +282,22 @@ def erosion_damage_shock(p):
     # The SAME validated ids feed the raster and the labels, so the join keys cannot diverge.
     zones=rasterize(((g,i) for g,i in zip(boundary.geometry,boundary.ee_r50_aez18_id)
                     if g is not None and not g.is_empty),out_shape=shape,transform=transform,fill=0,dtype='int32')
+    # The base-year cropland DOMAIN, classified before any trajectory is formed. A zone absent from
+    # the base-year damage table has no d_2023 and no trajectory, but that is only a legitimate
+    # exclusion when the zone genuinely had no baseline cropland. Cropland removed by the coverage
+    # restriction means the baseline is UNKNOWN, not zero, and must stay a failure.
+    base_key=(base_scenario,base_year)
+    baseline_domain={}
+    if base_key in fractions:
+        base_frac,_=read_grid(fractions[base_key][0],geometry)
+        base_cover,_=read_grid(fractions[base_key][1],geometry)
+        crop_ha=np.where(np.isfinite(base_frac),base_frac,0.0)*hectares
+        full=base_cover>=1-1e-7
+        for z in np.unique(zones[zones>0]):
+            m=zones==z
+            baseline_domain[int(z)]={'baseline_crop_ha':float(crop_ha[m].sum()),
+                                     'baseline_nodata_ha':float(crop_ha[m&~full].sum()),
+                                     'mean_source_coverage':float(np.nanmean(base_cover[m]))}
     tables={};coverage=[]
     for key,(source,usle,rkls) in files.items():
         loss,_=read_grid(usle,geometry);potential,_=read_grid(rkls,geometry)
@@ -243,8 +309,11 @@ def erosion_damage_shock(p):
     coverage=pd.concat(coverage,ignore_index=True)
     coverage['in_economic_domain']=coverage.aez18_id.between(1,18)
     coverage.to_csv(coverage_path,index=False)
+    excluded_path=Path(coverage_path).with_name('erosion_excluded_zones.csv')
     result=tables_to_seam(tables,labels,scenarios,anchors,list(range(base_year,end_year+1)),
-                         base_scenario,base_year,p.erosion_shock_acts,provision_loss,stress_from)
+                         base_scenario,base_year,p.erosion_shock_acts,provision_loss,stress_from,
+                         baseline_domain=baseline_domain,excluded_path=excluded_path,
+                         coverage=coverage)
     out.parent.mkdir(parents=True,exist_ok=True)
     temporary=out.with_suffix('.tmp.csv');result.to_csv(temporary,index=False);temporary.replace(out)
     utilities.write_outputs_signature(signature,str(signature_path))
