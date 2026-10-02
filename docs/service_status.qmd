@@ -1144,21 +1144,21 @@ denominator, which was the actual bug, and the share is the remaining approximat
 ## Nature View Amenity
 
 - **subgroup:** -
-- **module:** -
-- **category:** -
-- **in the library:** no
-- **run:** -
-- **ours:** -
+- **module:** nature_view_amenity
+- **category:** table arithmetic
+- **in the library:** yes (ported 2026-10-02)
+- **run:** yes
+- **ours:** the construction yes, reimplemented on the library template from the CAS method; the sample, the comparable groups, the UN Tourism inventory and every convention (the 3IQR rule, the uniform occupancy, the price vintage) are the owner's, taken as given with sources beside them.
 - **method:** The hotel landscape premium, now attributed: it is the CAS team's (Baolong Han, Ouyang group; submission 2026-09-12 via Steve). Per country: hotel rooms 2019 times mean occupancy times 365 times the scenic-room share times the unit price difference, with the premium identified WITHIN mixed hotels -- scenic rooms against comparable non-scenic rooms in the same hotel and date, so brand, location and star rating difference out. 7,270 comparable groups, 5,213 retained after a two-sided 3IQR rule on the log price ratio; occupancy a uniform 0.539 from the 106-country UN Tourism 2019 table. The previously unsigned drive PDF is this construction.
-- **total:** -
-- **code:** Delivered 2026-09-12 and RUN here 2026-10-02: three Python scripts over an openpyxl-only package (comparable groups, premium rates, values), staged at `base_data/global_invest/cas_submission_2026_09/hotel_scenic/`. Our run reproduces their shipped results workbook to the cent ($59,728,312,716.92 both; largest per-country difference $0.000002). The raw 244MB room-price sample and the analysis-ready workbook ship with it. The Scenic Quality drive folder's US home-parcel proposal (Hockert, Braaksma, McWay) remains a different, uncomputed method.
+- **total:** $59.73bn
+- **code:** Ported 2026-10-02 onto the library template: functions open nothing, tasks own the IO, five unit tests pin the premium conventions, the Excel-inclusive 3IQR rule and the missing-input rule. The owner's own delivery (2026-09-12) was also run here as delivered: three Python scripts over an openpyxl-only package (comparable groups, premium rates, values), staged at `base_data/global_invest/cas_submission_2026_09/hotel_scenic/`. Our run reproduces their shipped results workbook to the cent ($59,728,312,716.92 both; largest per-country difference $0.000002). The raw 244MB room-price sample and the analysis-ready workbook ship with it. The Scenic Quality drive folder's US home-parcel proposal (Hockert, Braaksma, McWay) remains a different, uncomputed method.
 - **grid:** No raster; country tables throughout, if it were built.
 - **reference:** The CAS results workbook: **$59.73bn over 124 valued countries**, a NEWER vintage than the sheet's $65.80bn, which is superseded. Both earlier flags moved in the new vintage: Aruba is properly in the table ($268.9M -- the old totals row dropped exactly its $254,981,476), and Saudi Arabia falls from $3.54bn to $1.79bn and out of the top ranks, consistent with a tightened room classification.
-- **replicated:** Yes, to the cent, from their own analysis-ready workbook through their own code -- fidelity, not yet independence: the comparable-group construction from the 244MB raw sample (script 01) and the sample's collection itself are the layers a deeper check would re-run.
+- **replicated:** Yes, TWICE and to the cent: their code run here reproduces their workbook exactly, and our independent reimplementation reproduces it again -- $59,728,312,716.92, all 124 valued countries to the cent, 5,213 kept groups matching their pipeline's own expected count. ⚠ The anchor also caught a port defect on the way: Namibia's alpha-2 code is the literal string NA, which pandas reads as missing -- the first run silently dropped its $43.1M and the per-country anchor flagged it. What remains unexamined is upstream of the staged workbooks: the comparable-group construction from the 244MB raw sample and the scrape itself.
 - **decided:** -
-- **number:** -
+- **number:** Values the room-price premium natural views earn: **$59,728,312,716.92** published at 2019 over 124 countries (USA $8.55bn, Italy $6.60bn, Japan $2.64bn; Saudi Arabia $1.79bn). Quantity is 2019 room-nights; the premium is scraped at the submission's booking dates, the owner's convention, named in the method.
 - **examined for the issues table (2026-09-10):** the country fingerprint is hotel revenue, not landscape: USA $7.96bn, Italy $6.37bn, Japan $3.65bn -- and ⚠ Saudi Arabia FOURTH at $3.54bn, which for nature views suggests the room classification (sea, mountain, river, lake, garden) may be sweeping in courtyard and city-garden rooms where hotel revenue is large. Worth one question to whoever owns the sample.
 - **need:** The old asks are ANSWERED by the 2026-09-12 CAS submission (owner, sample, code, Aruba, Saudi). Remaining: confirm the sheet's column is replaced by the $59.73bn vintage; the sample's provenance one level deeper (which booking platform, which scrape dates, hotel coverage per country); and whether the group wants it folded as a library module -- the construction is country-table arithmetic on staged workbooks, a normal port.
 
 
-- **signed off:** n/a: no module yet, but no longer evidence-poor -- owner known (CAS), sample and code delivered, their result reproduced here to the cent. A fold onto the library template is a normal port with their workbook as the anchor
+- **signed off:** amber: ported, run and anchored to the cent in every valued country, but conditions 10 and 11 stand open and the deeper layers (group construction from the raw sample, the scrape's provenance) are the owner's to document

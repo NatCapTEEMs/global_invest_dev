@@ -20,8 +20,8 @@ poll_with_sufficiency: "$163.45bn"
 poll_fao: "$515bn"
 livestock_ind: "$136bn"
 livestock_world: "$653bn"
-n_services: "27"
-n_accounts: "30"
+n_services: "28"
+n_accounts: "31"
 n_replicating: "10"
 ntfp_total: "$13.85bn"
 ntfp_no_edit: "$12.98bn"
@@ -32,7 +32,7 @@ erosion_author_ses11: "$14.59bn"
 erosion_author_eps5: "$29.1bn"
 cat_reads: "1"
 cat_rescales: "2"
-cat_table: "15"
+cat_table: "16"
 cat_raster: "9"
 cat_model: "3"
 gep_naive_sum: "$11.2T"
@@ -82,6 +82,7 @@ health_hypertension_appendix: "$104.66bn"
 health_hypertension_extended: "$247.44bn"
 health_depression_gep: "$97.96bn"
 health_depression_author: "$159.6M"
+nature_view_gep: "$59.73bn"
 hydro_manuscript: "$287.7bn"
 cp_total: "$36.72bn"
 lcr_ours: "$175.56bn"
@@ -190,7 +191,7 @@ format:
 |---|---|---|
 | Reads a published value | {{< meta cat_reads >}} | urban cooling |
 | Rescales a published rate | {{< meta cat_rescales >}} | mining production, extractive energy |
-| Table arithmetic | {{< meta cat_table >}} | crop, livestock, both fisheries, energy, hydropower, water use, air filtration, sandstorm, wildfires, water quality, coastal protection, moisture recycling, groundwater recharge, pest control |
+| Table arithmetic | {{< meta cat_table >}} | crop, livestock, both fisheries, energy, hydropower, water use, air filtration, sandstorm, wildfires, water quality, coastal protection, moisture recycling, groundwater recharge, pest control, nature view amenity |
 | Raster arithmetic | {{< meta cat_raster >}} | terrestrial carbon, coastal carbon, pollination, ntfp, timber, floods, stormwater, both health strands |
 | Process model run here | {{< meta cat_model >}} | erosion, landslides, recreation |
 
@@ -314,6 +315,7 @@ format:
 | pest_control | {{< meta pest_control_gep >}} with the appendix's organic price premium, {{< meta pest_control_gep_no_premium >}} without | partly. The sheet's $6.25bn sits at the no-premium level, log-correlation 0.93 across countries; its own pipeline is not on the drive |
 | health_hypertension | {{< meta health_hypertension_gep >}} over the 20 countries with a cost study | partly. Rank yes (log-correlation 0.989 on the appendix's {{< meta health_hypertension_appendix >}}), level 42 percent above on named deviations; no pipeline exists on the drive |
 | health_depression | {{< meta health_depression_gep >}} at the method's stated scope | no, deliberately. The author's {{< meta health_depression_author >}} is the same construction at roughly 1/400th of the urban population, so the gap measures the undocumented run scope |
+| nature_view_amenity | {{< meta nature_view_gep >}} hotel room-price premium | yes. The CAS owner's workbook reproduced to the cent in all 124 valued countries, by their code run here and by our independent port |
 
 : {tbl-colwidths="[22,32,46]"}
 
@@ -512,6 +514,13 @@ format:
 - **Q2:** which of the drive's two variants is blessed -- `high resolution` ({{< meta health_depression_author >}}, the sheet's column) or `low resolution` ($167.3M)?
 - **Q3:** the costs are USD PPP, mostly 2018, against the account's 2019 USD -- restate, or carry the caveat?
 - **Q4:** the two health strands share the same greenness and comorbid outcomes -- how does the account avoid double counting between them?
+
+## nature_view_amenity
+
+- [Values the room-price premium natural views earn: within one hotel on one date, a sea-, mountain- or garden-view room prices above a comparable room without the view, so brand and location difference out. Ported from the CAS team's 2026-09-12 submission and anchored to the cent in all 124 valued countries: {{< meta nature_view_gep >}} at 2019.]{.state}
+- **Q1:** the room prices are scraped at the submission's own booking dates and applied to 2019 room-nights -- is that the account's intended price vintage?
+- **Q2:** one uniform mean occupancy (0.539, from 106 reporting countries) applies to every country -- acceptable, or should occupancy be per-country where reported?
+- **Q3:** what are the sample's provenance details one level deeper -- booking platform, scrape dates, hotels per country?
 
 # Questions for the scenario shocks, not the GEP account
 

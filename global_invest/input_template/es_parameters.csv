@@ -385,6 +385,16 @@ erosion,erosion_analysis_arcseconds,300
 erosion,erosion_ha_per_cell_path,pyramids/ha_per_cell_300sec.tif
 erosion,erosion_solve_epsg,8857
 erosion,erosion_solve_pixel_size_m,6446.75
+nature_view_amenity,nature_view_amenity_raw_master_input_path,global_invest/nature_view_amenity/Global_Hotel_API_Master.xlsx
+nature_view_amenity,nature_view_amenity_raw_master_source,"the CAS team's raw hotel room-price sample (Baolong Han, submission 2026-09-12 via the drive), read only for the coordinate-to-country mapping"
+nature_view_amenity,nature_view_amenity_comparable_groups_input_path,global_invest/nature_view_amenity/Hotel_Room_Comparable_Groups.xlsx
+nature_view_amenity,nature_view_amenity_comparable_groups_source,"the CAS analysis-ready workbook: 236,727 room records and 7,270 within-hotel comparable groups; prices scraped at the submission's own dates and applied to 2019 room-nights, the owner's convention"
+nature_view_amenity,nature_view_amenity_country_mapping_input_path,global_invest/nature_view_amenity/Country_ISO_Mapping.xlsx
+nature_view_amenity,nature_view_amenity_country_mapping_source,"the CAS country list: names, ISO alpha-2 and alpha-3"
+nature_view_amenity,nature_view_amenity_un_tourism_input_path,global_invest/nature_view_amenity/UN_Tourism_2019_Hotel_Rooms_and_Occupancy.xlsx
+nature_view_amenity,nature_view_amenity_un_tourism_source,"UN Tourism 2019 hotel rooms per country and room occupancy (106 reporting countries; the mean is applied uniformly, the owner's convention)"
+nature_view_amenity,nature_view_amenity_reference_path,global_invest/nature_view_amenity/reference_results.xlsx
+nature_view_amenity,nature_view_amenity_reference_source,"the owner's results workbook ($59.73bn over 124 countries), the replication anchor; their own code reproduced it here to the cent on 2026-10-02"
 pest_control,pest_control_fibl_area_input_path,global_invest/pest_control/Area_org.xlsx
 pest_control,pest_control_fibl_area_source,"FiBL organic area by crop, country and year (statistics.fibl.org extract 8.1.2025), the owner's own staged copy"
 pest_control,pest_control_faostat_yield_input_path,global_invest/pest_control/faostat_qcl_2019.csv
