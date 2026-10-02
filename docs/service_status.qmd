@@ -1060,7 +1060,7 @@ denominator, which was the actual bug, and the share is the remaining approximat
 - **need:** The scope decision, now sharper than include-or-exclude: (a) out on the double-count reasoning -- then the sheet's column should go; (b) in as marginal pumping savings -- then $7.21M stands and the account owns its smallness; (c) in as the stock of avoided depth -- a different, larger construction the owner's staged data could support. Condition 10 is minutes once blessed.
 
 
-- **signed off:** amber: built and run 2026-09-06, the sheet's column reproduced to the cent in every country, but the scope decision is the group's and conditions 10 and 11 stand open
+- **signed off:** amber: built and run 2026-09-06, the sheet's column reproduced to the cent in every country, but the scope decision is the group's. ⭐ Condition 10 CLOSED 2026-10-02: a cold start from an empty project directory reproduces $7,211,275.96 to the cent
 ## Fuelwood
 
 - **subgroup:** -
@@ -1099,7 +1099,7 @@ denominator, which was the actual bug, and the share is the remaining approximat
 - **need:** For the physical authors: the committed CSV's sort misalignment (re-export Table 6); which vintage the sheet's $106.65bn is; and whether our cost transfer matches their planned extrapolation -- the extended column prices every country by the ln-ln fit of cost on GDP per capita over their 20 studies (R2 0.32, Duan smearing, observed costs kept), giving $247.44bn over 187 countries. For Yingjie Li: the run's spatial extent (our measured 370x gap says a city sample); which of the two variants is blessed; PPP against the account's 2019 USD. For the group: whether the zero-vegetation counterfactual (physical) and the all-built counterfactual (mental) are the accounting the GEP wants, and how the two strands avoid double counting each other.
 
 
-- **signed off:** amber, both strands: built, run and tested 2026-09-09, the physical strand rank-anchored on the appendix (0.989) but 42 percent above its level on named deviations, the mental strand deliberately unanchored until the author's scope is known. Condition 10 not attempted (each run is minutes once the staged rasters exist)
+- **signed off:** amber, both strands: built, run and tested 2026-09-09, the physical strand rank-anchored on the appendix (0.989) but 42 percent above its level on named deviations, the mental strand deliberately unanchored until the author's scope is known. ⭐ Condition 10 CLOSED for both strands 2026-10-02: cold starts reproduce $148,706,081,306.76 (and the extended $247bn column's fit statistics) and $97,960,172,780.38 with 64,530,894 prevented cases, all to the cent
 ## Pests
 
 - **subgroup:** -
@@ -1140,7 +1140,7 @@ denominator, which was the actual bug, and the share is the remaining approximat
 - **need:** Three group decisions. The transpiration share (1.0 counts all terrestrial evaporation as ecosystem-mediated; the literature's transpiration fraction would roughly halve the row). The accounting rule: publish as a decomposition of water supply or as a row carrying only the $75.3bn transboundary part, but never added whole to water supply. And whether hydropower's water value should also be re-attributed (rain feeds the rivers too); the current construction re-attributes irrigation and domestic only.
 
 
-- **signed off:** amber: built and run, conservation asserted in the task, but the three decisions in `need` are the group's and no reference exists to compare against. Condition 10 not attempted (the run is minutes on a laptop, so closing it is cheap once the construction is blessed)
+- **signed off:** amber: built and run, conservation asserted in the task, but the three decisions in `need` are the group's and no reference exists to compare against. ⭐ Condition 10 CLOSED 2026-10-02: a cold start reproduces the published $127,682,011,050.38 with every one of the 250 rows identical -- and caught a dormant defect doing it: the map-writing merge lacked the region id after the 250-row refactor, invisible warm because skip-existing never re-ran it; fixed the house way (the collapse frame merged in before the write)
 ## Nature View Amenity
 
 - **subgroup:** -
@@ -1161,4 +1161,4 @@ denominator, which was the actual bug, and the share is the remaining approximat
 - **need:** The old asks are ANSWERED by the 2026-09-12 CAS submission (owner, sample, code, Aruba, Saudi). Remaining: confirm the sheet's column is replaced by the $59.73bn vintage; the sample's provenance one level deeper (which booking platform, which scrape dates, hotel coverage per country); and whether the group wants it folded as a library module -- the construction is country-table arithmetic on staged workbooks, a normal port.
 
 
-- **signed off:** amber: ported, run and anchored to the cent in every valued country, but conditions 10 and 11 stand open and the deeper layers (group construction from the raw sample, the scrape's provenance) are the owner's to document
+- **signed off:** amber: ported, run and anchored to the cent in every valued country. ⭐ Condition 10 CLOSED 2026-10-02: a cold start from an empty project directory reproduces $59,728,312,716.92, 124 of 124 to the cent. The deeper layers (group construction from the raw sample, the scrape's provenance) remain the owner's to document

@@ -78,6 +78,7 @@ def gep_calculation(p):
         hb.log('  %d matrix sources are aggregates with no account country and leave the '
                'published table: %s (their value: %s)'
                % (len(aggregate_sources), ', '.join(aggregate_sources), f'{lost:,.0f}'))
+    df_gep = countries.merge(df_gep, on='iso3_r250_label', how='left')
     df_gep['year'] = int(p.gep_base_year)
     utilities.write_gep_by_country(
         p, df_gep[utilities.published_country_columns(df_gep, 'moisture_recycling')],
