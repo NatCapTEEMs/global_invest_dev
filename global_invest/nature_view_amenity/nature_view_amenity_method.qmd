@@ -15,7 +15,9 @@ year is 2019.
 ⚠ Two of the owner's conventions are kept and named rather than changed: the room prices are
 scraped at the submission's own booking dates and applied to 2019 room-nights, and one uniform
 mean occupancy (from the 106 reporting countries in the UN Tourism table) applies to every
-country.
+country. Because the scrape is 2026 money, the published figure deflates it to 2019 by the
+shared US CPI factor; the owner-vintage reading is kept beside it and is what the replication
+anchor holds at.
 
 ## Quantity
 

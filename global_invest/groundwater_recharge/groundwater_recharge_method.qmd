@@ -25,9 +25,10 @@ in billions of cubic metres at the year set by `groundwater_recharge_withdrawal_
 ## Price
 
 The country's average electricity price per kilowatt hour, from the staged 2021 global pricing
-table. Lifting one cubic metre by one metre takes gamma / (eta x 3.6e6) kilowatt hours, with
-gamma the specific weight of water (9810 newtons per cubic metre) and eta the pump efficiency
-(`groundwater_recharge_pump_efficiency`, 0.5).
+table, deflated from 2021 to the 2019 base year by the shared US CPI factor (the tariffs are
+USD, so one scalar carries every country). Lifting one cubic metre by one metre takes
+gamma / (eta x 3.6e6) kilowatt hours, with gamma the specific weight of water (9810 newtons per
+cubic metre) and eta the pump efficiency (`groundwater_recharge_pump_efficiency`, 0.5).
 
 ## Valuation
 
