@@ -527,3 +527,64 @@ def test_a_country_faostat_gives_no_aggregate_for_takes_its_regions_factor():
     out = cp.agricultural_ppp_factors(area_value, value, income, 2019).set_index('Country')
     assert out.at['Delta', 'ppp_factor'] == pytest.approx(2.0)
     assert out.at['Delta', 'ppp_factor_source'].startswith('regional median')
+
+
+def test_impute_fills_price_gaps_from_the_staged_values_table_and_leaves_valued_rows_alone():
+    """A pair with production and no USD value takes the value the pollination chain already
+    computed, in thousand USD: in place where its row exists empty, appended where no row
+    exists, and a country the value file never names (so no FAO area code for the rental
+    lookup) is left out. No price arithmetic happens here; the table's value_usd is the fill."""
+    values = pd.DataFrame({
+        'area_code': [1, 1],
+        'area_code_M49': ["'010", "'010"],
+        'country': ['Aaaland', 'Aaaland'],
+        'crop_code': [100, 200],
+        'crop': ['Wheat', 'Rye'],
+        'year': [2019, 2019],
+        'crop_provision_gep': [50.0, np.nan],
+    })
+    fao_values = pd.DataFrame({
+        'area_code_m49': ['010', '010', '020', '030', '020'],
+        'iso3': ['AAA', 'AAA', 'BBB', 'CCC', 'BBB'],
+        'area_fao': ['Aaaland', 'Aaaland', 'Bbbland', 'Cccland', 'Bbbland'],
+        'item_code_fao': [100, 200, 100, 100, 300],
+        'item_fao': ['Wheat', 'Rye', 'Wheat', 'Wheat', 'Barley'],
+        'year': [2019] * 5,
+        'total_production_tonnes': [10.0, 4.0, 6.0, 5.0, 3.0],
+        'price_source_agg_level': ['country', 'country', 'subregion', 'world', 'missing'],
+        'value_usd': [9999.0, 2000.0, 1500.0, 500.0, np.nan],
+    })
+
+    out = cp.impute_missing_crop_values(
+        values, fao_values, 2019, {10: 1, 20: 2}, ['Wheat', 'Rye', 'Barley'])
+
+    keyed = out.set_index(['country', 'crop'])
+    # Aaaland Wheat already carries a FAOSTAT value, so the table's 9999 never touches it.
+    assert keyed.at[('Aaaland', 'Wheat'), 'crop_provision_gep'] == 50.0
+    assert keyed.at[('Aaaland', 'Wheat'), 'value_source'] == 'faostat'
+    # Rye's empty row is filled in place: the table's 2000 USD arrives as 2.0 thousand USD.
+    assert keyed.at[('Aaaland', 'Rye'), 'crop_provision_gep'] == pytest.approx(2.0)
+    assert keyed.at[('Aaaland', 'Rye'), 'value_source'] == 'price_country'
+    # Bbbland has no row at all, so one is appended carrying the table's level flag and the
+    # FAO area code the rental lookup needs.
+    assert keyed.at[('Bbbland', 'Wheat'), 'crop_provision_gep'] == pytest.approx(1.5)
+    assert keyed.at[('Bbbland', 'Wheat'), 'value_source'] == 'price_subregion'
+    assert keyed.at[('Bbbland', 'Wheat'), 'area_code'] == 2
+    # Cccland is not in the area-code map, and Barley's row is unpriced; neither enters.
+    assert 'Cccland' not in out['country'].values
+    assert 'Barley' not in out['crop'].values
+    assert len(out) == 3
+
+
+def test_area_codes_by_m49_keeps_the_account_row_not_the_aggregate_component():
+    """FAOSTAT's value file carries China (351, M49 159) beside China, mainland (41, M49 156),
+    and the account drops the mainland as an aggregate area. With the successor map sending 159
+    to 156, the map must resolve 156 to the kept row's code, 351."""
+    raw = pd.DataFrame({
+        'Area Code': [351, 41, 1],
+        'Area Code (M49)': ["'159", "'156", "'010"],
+        'Area': ['China', 'China, mainland', 'Aaaland'],
+    })
+    out = cp.area_codes_by_m49(raw, aggregate_areas=['China, mainland'])
+    assert out[156] == 351
+    assert out[10] == 1

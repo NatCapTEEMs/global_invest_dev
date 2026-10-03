@@ -6,7 +6,7 @@ terrestrial_total: "$5.365T"
 coastal_eez: "$17.72bn"
 coastal_all: "$58.75bn"
 coastal_report: "$26.65bn"
-crop_total: "$511.5bn"
+crop_total: "$814.3bn"
 crop_subsistence_total: "$23.78bn"
 crop_subsistence_reference: "$1.83bn"
 extractive_total: "$99.54bn"
@@ -278,7 +278,7 @@ format:
 |---|---|---|
 | terrestrial_carbon | {{< meta terrestrial_total >}} | yes. |
 | coastal_carbon | {{< meta coastal_eez >}} EEZ-only, {{< meta coastal_all >}} all rows | yes. |
-| crop_provision | {{< meta crop_total >}} | yes. |
+| crop_provision | {{< meta crop_total >}} | partially. The reference arithmetic reproduces as a column beside ours; the published figure additionally fills FAOSTAT's USD price gaps from the values table the pollination module stages |
 | livestock_provision | $246bn rental rate, {{< meta livestock_world >}} feed share | no. Both attributions run; which one the account uses is the open decision, and there is no reference output |
 | coastal_protection | {{< meta cp_total >}} | partially. Mangroves are replicated, $30.40bn against their $30.40bn; the coral half, $5.88bn after the shared CPI, is read through |
 | extractive_materials | {{< meta extractive_total >}} | yes. |
@@ -382,10 +382,10 @@ format:
 
 ## crop_provision
 
-- [Values crop production from FAOSTAT production values, quantity times producer price per country, times the land rental rate. We run it ourselves and it replicates, validated against the reference table.]{.state}
+- [Values crop production from FAOSTAT production values, quantity times price, times the land rental rate. FAOSTAT's USD value stops wherever its own USD price series stops, so production with no value is a price gap. Those pairs take the value the pollination module already stages, production times that year's USD price falling back country to subregion to region to world, and the rental rate then applies to both. The fill moves India from $12.9bn to $103.3bn and newly values 22 countries.]{.state}
 - **Q1:** does the account add crop_provision and pollination? The reasoning is on the pollination slide.
 - **Q2:** is subsistence in scope as a separate crop subgroup? Adding it would double-count, because FAOSTAT's production values already include part of what households grow and eat themselves. The reference pipeline is now ported and its own arithmetic, {{< meta crop_subsistence_reference >}}, reproduces beside ours as proof the port is faithful. We publish {{< meta crop_subsistence_total >}}: its units disagree with its sources, and it predicts the own-consumption level from cropland area where the survey measures a share.
-- **Q3:** should 32 countries with no FAOSTAT production value be reported as zero, as they are now, or left unvalued? Uganda, Uzbekistan and Guatemala have no gross production value in any year from 2014 to 2021, and Zimbabwe has 2018 and 2021 but not 2019, so a zero says they grew nothing. Whether the reference table we reproduce carries zeros there decides it.
+- **Q3:** should the 24 countries whose crops now carry value but no CWoN rental rate read as zero, as they do, or as unvalued? A zero reads as land contributing nothing.
 
 ## livestock_provision
 

@@ -1,11 +1,14 @@
 # -*- coding: utf-8 -*-
 """Crop-provision science: FAOSTAT gross production value x the CWoN land rental rate.
 
-The quantity-and-price stage is already fused in the source data: FAOSTAT's Value of Production
-bulk file reports gross production value per country, crop and year, so no separate price join
-happens here. Attribution is the Changing Wealth of Nations 2024 land rental rate, a per-country
-share that varies by decade, applied by an as-of merge so each year takes the rate of the decade
-it falls in. The result is converted from FAOSTAT's thousand USD to plain USD once, before any
+The quantity-and-price stage is fused in the source data where FAOSTAT fused it: the Value of
+Production bulk reports gross production value per country, crop and year. Where FAOSTAT's
+current-USD series carries production and no value -- its USD value stops wherever its own USD
+producer-price series stops -- the pair is filled from production tonnes times the median USD
+producer price the pollination chain stages, at the deepest level that table resolves (country,
+subregion, region, world). Attribution is the Changing Wealth of Nations 2024 land rental rate,
+a per-country share that varies by decade, applied by an as-of merge so each year takes the
+rate of the decade it falls in, to filled and read rows alike. The result is converted from FAOSTAT's thousand USD to plain USD once, before any
 grouping, and collapsed onto the r250 country list.
 
 The subsistence component sits at the bottom of this module, the way the Lynch subsistence value
@@ -58,6 +61,106 @@ def attach_countries_in_usd(df_crop_value, df_countries, value_column='crop_prov
                      left_on='iso3_r250_id', right_on='area_code_M49')
     df[value_column] = df[value_column] * utilities.FAOSTAT_THOUSAND_USD
     return df
+
+
+def normalize_m49_series(values):
+    """FAOSTAT M49 codes as plain integers, dissolved states mapped to their successor."""
+    out = values.astype(str).str.replace("'", '', regex=False).astype(int)
+    return out.replace(utilities.M49_SUCCESSORS)
+
+
+def area_codes_by_m49(df_fao_raw, aggregate_areas):
+    """FAO area code per normalized M49 code, from the value file's own area register.
+
+    The rental-rate lookup is keyed on the FAO area code, which the production table does not
+    carry, so a filled row takes its code from here. Aggregate areas are dropped first; that is
+    what makes China resolve to the account's China row (FAO 351) rather than to the mainland
+    component the account drops as an aggregate.
+    """
+    areas = df_fao_raw[~df_fao_raw['Area'].isin(aggregate_areas)]
+    areas = areas[['Area Code', 'Area Code (M49)']].drop_duplicates()
+    m49 = normalize_m49_series(areas['Area Code (M49)'])
+    return dict(zip(m49, areas['Area Code'].astype(int)))
+
+
+def impute_missing_crop_values(df_crop_value, df_fao_values, year, area_code_by_m49,
+                               items, value_column='crop_provision_gep'):
+    """FAOSTAT's missing current-USD values filled from the pollination chain's values table.
+
+    A pair with production and no value is a price gap, not absent production: FAOSTAT's
+    current-USD gross production value stops wherever its own USD producer-price series stops,
+    which is how India carries 2019 rice production and no 2019 rice value. The fill reads the
+    value the pollination chain already computes and stages -- production tonnes times that
+    year's producer price in USD, the price falling back country to subregion to region to
+    world -- so the two services value a crop one way and this module adds no price code of its
+    own. Filled rows arrive in the same thousand-USD unit the FAOSTAT rows carry and say which
+    level priced them in value_source, and the rental rate downstream applies to filled and
+    read rows alike.
+
+    A production country the value file never names cannot take a rental rate (that lookup is
+    keyed on the FAO area code the value file carries), so its rows are left out rather than
+    valued without the attribution; the caller's log counts them.
+
+    Args:
+        df_crop_value (pd.DataFrame): the cleaned long value frame, thousand USD.
+        df_fao_values (pd.DataFrame): the staged fao_values table, with area_code_m49, iso3,
+            area_fao, item_code_fao, item_fao, year, total_production_tonnes,
+            price_source_agg_level and value_usd.
+        year (int): the year to fill, the account's base year.
+        area_code_by_m49 (dict): normalized M49 code -> FAO area code.
+        items (iterable): the items the service values; integers select by FAO item code,
+            strings by name, as in clean_faostat_values.
+        value_column (str): the value column.
+
+    Returns:
+        pd.DataFrame: df_crop_value with the filled rows and a value_source column
+        ('faostat', or 'price_<level>' for a filled row).
+    """
+    df = df_crop_value.copy()
+    df['value_source'] = np.where(df[value_column].notna(), 'faostat', None)
+    df_m49 = normalize_m49_series(df['area_code_M49'])
+
+    codes = [i for i in items if isinstance(i, int)]
+    names = [i for i in items if isinstance(i, str)]
+    values = df_fao_values[(df_fao_values['year'] == year)
+                           & (df_fao_values['value_usd'] > 0)]
+    values = values[values['item_code_fao'].isin(codes) | values['item_fao'].isin(names)].copy()
+    values['m49'] = normalize_m49_series(values['area_code_m49'])
+
+    at_year = df['year'] == year
+    valued_pairs = set(zip(df_m49[at_year & df[value_column].notna()],
+                           df.loc[at_year & df[value_column].notna(), 'crop_code']))
+    gaps = values[[(m, i) not in valued_pairs
+                   for m, i in zip(values['m49'], values['item_code_fao'])]]
+    gaps = gaps[gaps['m49'].isin(area_code_by_m49)].copy()
+    gaps[value_column] = gaps['value_usd'] / utilities.FAOSTAT_THOUSAND_USD
+    gaps['value_source'] = 'price_' + gaps['price_source_agg_level']
+
+    # A pair whose row exists with an empty value is filled in place; a pair with no row at all
+    # arrives as a new row carrying the FAO area code the rental lookup needs.
+    fill_map = {(m, i): (v, s) for m, i, v, s in zip(
+        gaps['m49'], gaps['item_code_fao'], gaps[value_column], gaps['value_source'])}
+    filled_pairs = set()
+    for position in df.index[at_year & df[value_column].isna()]:
+        pair = (df_m49[position], df.at[position, 'crop_code'])
+        hit = fill_map.get(pair)
+        if hit is not None:
+            df.at[position, value_column], df.at[position, 'value_source'] = hit
+            filled_pairs.add(pair)
+
+    to_append = gaps[[(m, i) not in filled_pairs
+                      for m, i in zip(gaps['m49'], gaps['item_code_fao'])]]
+    new_rows = pd.DataFrame({
+        'area_code': to_append['m49'].map(area_code_by_m49).astype(int),
+        'area_code_M49': to_append['m49'].astype(int),
+        'country': to_append['area_fao'],
+        'crop_code': to_append['item_code_fao'],
+        'crop': to_append['item_fao'],
+        'year': year,
+        value_column: to_append[value_column],
+        'value_source': to_append['value_source'],
+    })
+    return pd.concat([df, new_rows], ignore_index=True)
 
 
 

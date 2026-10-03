@@ -293,6 +293,8 @@ crop_provision,fao_input_path,global_invest/crop_provision/Value_of_Production_E
 crop_provision,faostat_aggregate_areas_path,global_invest/fao/faostat_aggregate_areas.csv
 crop_provision,faostat_aggregate_items_path,global_invest/fao/faostat_aggregate_items.csv
 crop_provision,crop_provision_default_items_path,global_invest/crop_provision/fao_crop_items.csv
+crop_provision,crop_provision_fao_values_table_path,global_invest/pollination/fao/fao_values_1993_2024.csv
+crop_provision,crop_provision_fao_values_table_source,"built by pollination's fao_median_prices task (the ported crop_benefits chain): production tonnes x that year's USD producer price, the price falling back country to subregion to region to world, with the level in price_source_agg_level"
 crop_provision,crop_provision_reference_by_country_path,global_invest/crop_provision/reference/gep_by_country_2019_reference.csv
 crop_provision,fao_input_source_url,https://bulks-faostat.fao.org/production/Value_of_Production_E_All_Data.zip
 crop_provision,fao_input_source_archive_member,Value_of_Production_E_All_Data.csv

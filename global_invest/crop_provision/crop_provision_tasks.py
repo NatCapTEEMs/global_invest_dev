@@ -78,9 +78,10 @@ def gep_calculation(p):
         p.commercial_attribute_subservices = utilities.read_column(
             p.crop_provision_default_items_path, 'item_fao')
 
-    df_crop_value = read_crop_values(
-        p.fao_input_path, p.commercial_attribute_subservices,
-        utilities.read_column(p.faostat_aggregate_areas_path, 'area_fao'))
+    aggregate_areas = utilities.read_column(p.faostat_aggregate_areas_path, 'area_fao')
+    df_fao_raw = pd.read_csv(p.fao_input_path, encoding='ISO-8859-1', low_memory=False)
+    df_crop_value = utilities.clean_faostat_values(
+        df_fao_raw, p.commercial_attribute_subservices, 'crop_provision_gep', aggregate_areas)
     # FAOSTAT publishes both the individual crop and the group total that adds those crops up.
     # The item list carries both, so a group total is kept only where no individual item is. The
     # frame before that rule is kept, because valuing it is what reproduces the reference and a
@@ -90,6 +91,25 @@ def gep_calculation(p):
         df_crop_value, utilities.read_column(p.faostat_aggregate_items_path, 'item_fao'),
         'crop_provision_gep')
     df_crop_coefs = read_crop_coefs(p.cwon_crop_coefficients_path)
+
+    # Pairs with production and no current-USD value at the base year are a FAOSTAT price gap,
+    # filled from the values table the pollination chain stages (its production times that
+    # year's hierarchically resolved USD price); the rental rate below then applies to filled
+    # and read rows alike. The reference frame above stays unfilled, because it exists to
+    # reproduce the reference.
+    base_year = int(p.gep_base_year)
+    df_fao_values = pd.read_csv(str(p.get_path(p.crop_provision_fao_values_table_path)))
+    df_crop_value = crop_provision_functions.impute_missing_crop_values(
+        df_crop_value, df_fao_values, base_year,
+        crop_provision_functions.area_codes_by_m49(df_fao_raw, aggregate_areas),
+        p.commercial_attribute_subservices)
+    filled = df_crop_value[df_crop_value['value_source'].astype(str).str.startswith('price_')]
+    hb.log('  %d country-crop pairs at %d carried production and no FAOSTAT USD value; filled '
+           'from the staged pollination values table (%s), %s thousand USD before the rental rate'
+           % (len(filled), base_year,
+              ', '.join('%s %d' % (level, count) for level, count
+                        in filled['value_source'].value_counts().items()),
+              f"{filled['crop_provision_gep'].sum():,.0f}"))
 
     df_gep_by_country_year_crop = utilities.apply_rental_rates(
         df_crop_value, df_crop_coefs, 'crop_provision_gep')
@@ -110,7 +130,6 @@ def gep_calculation(p):
     df_reference = crop_provision_functions.attach_countries_in_usd(df_reference, p.df_countries)
     df_reference = utilities.sum_items_to_country_year(df_reference, 'crop_provision_gep')
 
-    base_year = int(p.gep_base_year)
     df_gep_by_country_base_year = df_gep_by_country_year.loc[
         df_gep_by_country_year['year'] == base_year].copy()
     reference_base_year = df_reference.loc[df_reference['year'] == base_year,
