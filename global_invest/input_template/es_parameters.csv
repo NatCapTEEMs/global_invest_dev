@@ -336,7 +336,8 @@ pollination,pollination_fao_prices_source_archive_member,Prices_E_All_Data_(Norm
 pollination,pollination_value_raster_dir,global_invest/pollination/crop_benefits
 air_filtration,air_filtration_vsl_path,global_invest/air_filtration/data/clean/vsl.csv
 coastal_protection,coastal_protection_coral_reef_path,global_invest/coastal_protection/coral_reefs_annual_expected_benefit_nfamara.xlsx
-coastal_protection,coastal_protection_gdp_deflator_path,global_invest/coastal_protection/gdp_inflation_deflator/GDP_Inflation_deflator.xlsx
+coastal_protection,coastal_protection_us_cpi_input_path,socioeconomic/fred_cpiaucsl/CPIAUCSL.csv
+coastal_protection,coastal_protection_us_cpi_source,"FRED CPIAUCSL monthly, annual means; the account's ONE temporal dollar series (also the EPA VSL update's)"
 landslide_mitigation,landslide_elevation_path,seals/static_regressors/alt_m.tif
 landslide_mitigation,landslide_lulc_path_template,lulc/esa/lulc_esa_{year}.tif
 pollination,pollination_crosswalk_m49_iso3_path,global_invest/pollination/fao/crosswalks/crosswalk_m49_iso3.csv
@@ -349,7 +350,8 @@ pollination,pollination_fao_production_table_path,global_invest/pollination/fao/
 pollination,pollination_dependence_table_path,global_invest/pollination/fao/pollination/pollination_1993_2024.parquet
 pollination,pollination_coffee_split_path,global_invest/pollination/coffee_types_distribution/prop_arabica_robusta.csv
 pollination,pollination_price_years,"[2017, 2018, 2019, 2020, 2021]"
-pollination,pollination_cpi_path,global_invest/pollination/us_cpi_u_annual.csv
+pollination,pollination_us_cpi_input_path,socioeconomic/fred_cpiaucsl/CPIAUCSL.csv
+pollination,pollination_us_cpi_source,"FRED CPIAUCSL monthly, annual means; the account's ONE temporal dollar series"
 pollination,pollination_excluded_item_codes_path,global_invest/pollination/fao_excluded_item_codes.csv
 pollination,pollination_fx_inherit_path,global_invest/pollination/fx_inherit_iso3_correspondence.csv
 pollination,pollination_imf_fao_names_path,global_invest/pollination/imf_fao_country_name_correspondence.csv

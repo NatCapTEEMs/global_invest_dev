@@ -894,10 +894,9 @@ def fao_median_prices(p):
 
 
 
-def load_cpi_by_year(p):
-    """The US CPI-U annual series, year to index, from the table beside the service."""
-    df = hb.df_read(p.pollination_cpi_path)
-    return {int(r.year): float(r.cpi_u) for r in df.itertuples()}
+def load_shared_cpi(p):
+    """The account's one US CPI series (FRED CPIAUCSL), read where every service reads it."""
+    return pd.read_csv(str(p.get_path(p.pollination_us_cpi_input_path)))
 
 
 def load_excluded_item_codes(p):
@@ -2201,7 +2200,7 @@ def pollination_value_raster(p):
     # Prefer his raster for the GEP base year itself; fall back to the nearest year he publishes
     # and deflate, which is exact because the deflator is a scalar on a density.
     source_path, source_year = pf.find_source_value_raster(p, year)
-    deflator = pf.usd_deflator(source_year, year, load_cpi_by_year(p))
+    deflator = utilities.usd_deflation_factor(load_shared_cpi(p), source_year, year)
     hb.log('Pollination value raster from the source author: %s (%d USD), deflator to %d is %.4f'
            % (os.path.basename(source_path), source_year, year, deflator))
 
@@ -2267,8 +2266,8 @@ def pollination_value_raster_rebuilt(p):
 
     # The deflator is on the PRICE, not on production: the median is taken over a five-year window
     # and is therefore in that window's centre-year dollars.
-    deflator = pf.usd_deflator(pf.price_window_centre_year(p.pollination_price_years),
-                               year, load_cpi_by_year(p))
+    deflator = utilities.usd_deflation_factor(
+        load_shared_cpi(p), pf.price_window_centre_year(p.pollination_price_years), year)
     hb.log('Pricing at %d USD: prices are %d-centred, deflator %.4f'
            % (year, pf.price_window_centre_year(p.pollination_price_years), deflator))
 

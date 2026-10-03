@@ -10,8 +10,8 @@ to within 2e-7 and, unlike reading it, would show us a disagreement if one appea
 
 The coral-reef component is NOT computed here. Its table carries a finished annual benefit per
 country and nothing underneath it, so there is no calculation to run; it is carried from 2011 to the
-base year by the cumulative World Bank GDP deflator and added. That is the open ask on this
-service.
+base year by the shared US CPI factor (utilities.usd_deflation_factor) and added. That is the open
+ask on this service.
 
 Every function here is a pure transformation over frames, which is what the tests exercise. The
 task module reads the three workbooks and passes the frames in.
@@ -21,15 +21,12 @@ import logging
 import pandas as pd
 import hazelbean as hb
 
-# The coral-reef benefit table reports 2011 USD, so the deflator runs over 2012 through the base
-# year: eight annual rates whose product carries a 2011 value to 2019.
+# The coral-reef benefit table reports 2011 USD, carried to the base year by the shared US CPI
+# factor. The values are USD, not local currency, so one factor serves every country.
 CORAL_REEF_VALUE_YEAR = 2011
-# The year the service reports. Kept beside the coral year because the two define the deflator
-# span together, and the mangrove table only carries this year.
+# The year the service reports. Kept beside the coral year because the two define the CPI span
+# together, and the mangrove table only carries this year.
 COASTAL_PROTECTION_BASE_YEAR = 2019
-# The World Bank deflator series is an annual percentage change, so each year contributes
-# 1 + rate/100 to the cumulative multiplier.
-DEFLATOR_PERCENT = 100.0
 
 
 # The two columns the mangrove value is computed from, and the published total kept beside it
@@ -63,47 +60,6 @@ def clean_mangrove_values(df_raw):
     return df
 
 
-def reshape_gdp_inflation_deflator(df_raw):
-    """The World Bank deflator table melted from one column per year to one row per country-year.
-
-    Args:
-        df_raw (pd.DataFrame): the World Bank wide table as shipped.
-
-    Returns:
-        pd.DataFrame: Country Name, Country Code, Indicator Name, Indicator Code, year, value.
-    """
-    df = df_raw.melt(
-        id_vars=['Country Name', 'Country Code', 'Indicator Name', 'Indicator Code'],
-        var_name='year',
-        value_name='value',
-    )
-    df['year'] = pd.to_numeric(df['year'], errors='coerce').astype('Int64')
-    return df
-
-
-def deflator_multiplier_by_country(df_deflator_long, start_year, end_year):
-    """The cumulative GDP deflator multiplier per country over an inclusive year span.
-
-    Each year in the span contributes 1 + rate/100 and the years are multiplied together, so a
-    value in start_year - 1 currency times this multiplier is that value in end_year currency.
-
-    Args:
-        df_deflator_long (pd.DataFrame): the long deflator table, with Country Code,
-            Country Name, year and value (annual percent change).
-        start_year (int): first year whose inflation is applied.
-        end_year (int): last year whose inflation is applied.
-
-    Returns:
-        pd.DataFrame: ee_r264_label, ee_r264_name, deflator_multiplier.
-    """
-    df = df_deflator_long[df_deflator_long['year'].between(start_year, end_year)].copy()
-    df['multiplier'] = 1 + df['value'] / DEFLATOR_PERCENT
-    df = (df.groupby(['Country Code', 'Country Name'], as_index=False)['multiplier']
-          .prod()
-          .rename(columns={'multiplier': 'deflator_multiplier'}))
-    return df.rename(columns={'Country Code': 'ee_r264_label', 'Country Name': 'ee_r264_name'})
-
-
 def mangrove_gep_by_country(gdf_countries, df_mangrove_value):
     """Mangrove protection value summed to one row per country and year.
 
@@ -126,26 +82,23 @@ def mangrove_gep_by_country(gdf_countries, df_mangrove_value):
     return df.rename(columns={'Value': 'coastal_protection_gep_mangrove'})
 
 
-def coral_reef_gep_by_country(gdf_countries, df_coral_reef_value, df_deflator_multiplier,
+def coral_reef_gep_by_country(gdf_countries, df_coral_reef_value, deflation_factor,
                               base_year=COASTAL_PROTECTION_BASE_YEAR):
     """Coral-reef protection value carried to the base year, one row per country.
 
     The coral table is keyed on country NAME, so it is joined to the correspondence on
     ee_r264_name and then de-duplicated on the country/year/value triple, which collapses the
-    sub-region rows a split country's name matches. The surviving rows are multiplied by their
-    country's cumulative deflator and stamped with the base year.
-
-    A country the World Bank deflator table does not cover gets a missing multiplier, so its
-    deflated value is missing and cannot be summed: the aggregation propagates that rather than
-    skipping it, so the country comes out unvalued instead of valued at zero. On the shipped data
-    nine countries land here, Taiwan the largest.
+    sub-region rows a split country's name matches. The surviving rows are multiplied by the
+    shared US CPI factor and stamped with the base year. The values are USD of the table's own
+    year, not local currency, so one factor carries every country.
 
     Args:
         gdf_countries (pd.DataFrame): the r264 country correspondence.
         df_coral_reef_value (pd.DataFrame): the coral table, with ee_r264_name, coral_reef_value
             and year.
-        df_deflator_multiplier (pd.DataFrame): ee_r264_label and deflator_multiplier.
-        base_year (int): the year the deflated values are stamped with and filtered to.
+        deflation_factor (float): the US CPI factor from the coral table's year to base_year
+            (utilities.usd_deflation_factor).
+        base_year (int): the year the deflated values are stamped with.
 
     Returns:
         pd.DataFrame: iso3_r250_label, year, coastal_protection_gep_coral_reef.
@@ -154,15 +107,11 @@ def coral_reef_gep_by_country(gdf_countries, df_coral_reef_value, df_deflator_mu
     df = df.dropna(subset=['coral_reef_value'])
     df = df.drop_duplicates(subset=['iso3_r250_label', 'year', 'coral_reef_value'])
 
-    deflated = hb.df_merge(df, df_deflator_multiplier, how='left', on='ee_r264_label')
-    deflated['coral_reef_value'] = deflated['coral_reef_value'] * deflated['deflator_multiplier']
-    deflated['year'] = base_year
-
-    df = pd.concat([df, deflated], ignore_index=True)
+    df['coral_reef_value'] = df['coral_reef_value'] * deflation_factor
+    df['year'] = base_year
     df = (df.groupby(['iso3_r250_label', 'year'], as_index=False, dropna=False)['coral_reef_value']
-          .agg(lambda country_year_values: country_year_values.sum(skipna=False)))
-    df = df.rename(columns={'coral_reef_value': 'coastal_protection_gep_coral_reef'})
-    return df[df['year'] == base_year]
+          .sum())
+    return df.rename(columns={'coral_reef_value': 'coastal_protection_gep_coral_reef'})
 
 
 def combine_coastal_components(df_mangrove, df_coral_reef):
@@ -170,9 +119,8 @@ def combine_coastal_components(df_mangrove, df_coral_reef):
 
     The join is outer because the two tables cover different countries, and a country present in
     only one of them contributes that component alone rather than dropping out. Only the component
-    the join itself had to invent is zeroed: a country the coral table does carry, but whose value
-    coral_reef_gep_by_country could not deflate, keeps its missing value and so reports a missing
-    total rather than its mangrove component alone.
+    the join itself had to invent is zeroed: a component a table carries as missing stays missing
+    and so reports a missing total rather than the other component alone.
 
     Args:
         df_mangrove (pd.DataFrame): iso3_r250_label, year, coastal_protection_gep_mangrove.

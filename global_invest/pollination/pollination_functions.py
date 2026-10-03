@@ -905,24 +905,6 @@ def price_window_centre_year(price_years):
     return years[len(years) // 2]
 
 
-def usd_deflator(from_year, to_year, cpi_by_year):
-    """CPI ratio converting dollars of one year into dollars of another.
-
-    Args:
-        from_year (int): the year the value is currently denominated in.
-        to_year (int): the year wanted.
-        cpi_by_year (dict): year to price index, read from the CPI table by the task layer.
-
-    Returns:
-        float: multiply a `from_year` dollar amount by this to get `to_year` dollars.
-
-    Raises:
-        KeyError: if either year is outside the table, which is deliberate. Silently returning
-            1.0 for an unknown year would leave the value undeflated and indistinguishable from
-            a correct one.
-    """
-    return cpi_by_year[int(to_year)] / cpi_by_year[int(from_year)]
-
 
 def crop_pollination_value_density(production_density, price_usd_per_tonne, dependence_ratio):
     """Per-crop pollination value, as a density, from a production density.
