@@ -1120,7 +1120,7 @@ denominator, which was the actual bug, and the share is the remaining approximat
 - **need:** Three asks. Whether the committed $6.25bn includes the organic price premium (the level says no; the appendix says the method has one). What produced Viet Nam's $291M. And the final pipeline with its inputs from William Sidemo-Holm (the Ponisio meta-regression, the imputation models, the run script), so the anchor can tighten past rank agreement. Plus the group's view on lambda equal 1 while the neighbouring crop rows carry a human-input adjustment.
 
 
-- **signed off:** amber: built and run, five tests green, but the two level questions (premium, Viet Nam) are the owner's to answer and the committed reference cannot be reproduced past rank agreement without the missing pipeline. Condition 10 not attempted (the run is minutes on a laptop, so closing it is cheap once the construction is blessed)
+- **signed off:** amber: built and run, five tests green, but the two level questions (premium, Viet Nam) are the owner's to answer and the committed reference cannot be reproduced past rank agreement without the missing pipeline. ⭐ Condition 10 CLOSED 2026-10-02: a cold start from an empty project directory reproduces $10,338,294,391.30 to the cent, the premium-1.0 reading identical
 ## Moisture Recycling (Regional Hydrology)
 
 - **subgroup:** regulating
