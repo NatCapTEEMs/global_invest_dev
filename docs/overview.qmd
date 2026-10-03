@@ -63,7 +63,8 @@ xe_total: "$1.05T"
 terrestrial_total_r3: "$3.4627T"
 xe_committed: "$1,140.4bn"
 timber_total: "$132.13bn"
-landslide_total: "$770.7M"
+landslide_total: "$657.8M"
+landslide_oecd: "$770.7M"
 landslide_deaths: "570.66"
 recreation_total: "$192.36bn"
 recreation_total_degrees: "$1.73bn"
@@ -74,15 +75,18 @@ renewable_wind: "$112.52bn"
 renewable_solar: "$54.41bn"
 renewable_geothermal: "$6.56bn"
 stormwater_volume: "185.85bn m3"
-groundwater_recharge_gep: "$7.21M"
+groundwater_recharge_gep: "$6.80M"
+groundwater_recharge_owner: "$7.21M"
 pest_control_gep: "$10.34bn"
 pest_control_gep_no_premium: "$7.49bn"
 health_hypertension_gep: "$148.71bn"
 health_hypertension_appendix: "$104.66bn"
 health_hypertension_extended: "$247.44bn"
-health_depression_gep: "$97.96bn"
+health_depression_gep: "$96.15bn"
+health_depression_ppp: "$97.96bn"
 health_depression_author: "$159.6M"
-nature_view_gep: "$59.73bn"
+nature_view_gep: "$46.09bn"
+nature_view_owner: "$59.73bn"
 hydro_manuscript: "$287.7bn"
 cp_total: "$36.72bn"
 lcr_ours: "$175.56bn"
@@ -288,7 +292,7 @@ format:
 |---|---|---|
 | pollination | {{< meta poll_raster >}} at 2019, the author's raster. {{< meta poll_fao >}} FAO side | yes. |
 | erosion | not reported | no. The run is ongoing. |
-| landslide_mitigation | {{< meta landslide_total >}} ({{< meta landslide_deaths >}} avoided deaths) | no. The all-services sheet's column ($865M) is the first per-country reference, and it disagrees with ours everywhere: unrelated country splits under near-matching totals |
+| landslide_mitigation | {{< meta landslide_total >}} ({{< meta landslide_deaths >}} avoided deaths at the shared EPA life-years-lost VSL; {{< meta landslide_oecd >}} at OECD) | partly. The author's rebuilt panel prices our deaths within 7 percent of his refreshed $707M, the gap being his newer death layer; the old sheet column ($865M) remains unexplained |
 | fisheries | shock + commercial GEP {{< meta fisheries_total >}} provisional + subsistence {{< meta fisheries_subsistence_total >}} + aquaculture {{< meta fisheries_aquaculture_total >}} | partially. Subsistence reproduces its committed output, and the commercial run has no reference output yet |
 | recreation | {{< meta recreation_total >}} with the travel distance in kilometres | no. The author's table is not reachable, and the sheet's {{< meta recreation_total_degrees >}} is the degree construction rounded to three significant figures |
 | fire_protection | {{< meta fire_cause_total >}} provisional, one of three coefficients | partially. Reproduces the committed output, but reads the committed regression coefficients rather than refitting them. Kosovo and two Indian sub-regions now reach a country instead of no country |
@@ -311,11 +315,11 @@ format:
 | ntfp | $28.87bn | no. No reference output |
 | stormwater | {{< meta stormwater_volume >}} retained. No dollar total: the price is a placeholder of 1 | no. The retention run is ours, and no author run exists to compare against |
 | moisture_recycling | {{< meta moisture_recycling_gep >}}, of which {{< meta moisture_recycling_export >}} crosses a border as exported rain | no. No reference figure exists anywhere; the construction implements the submission's own valuation direction |
-| groundwater_recharge | {{< meta groundwater_recharge_gep >}} avoided pumping cost | yes. The sheet's column reproduced to the cent in all 108 valued countries |
+| groundwater_recharge | {{< meta groundwater_recharge_gep >}} avoided pumping cost in 2019 USD | yes. The sheet's {{< meta groundwater_recharge_owner >}} is the owner's 2021-tariff construction, reproduced to the cent in all 108 valued countries before the shared deflation |
 | pest_control | {{< meta pest_control_gep >}} with the appendix's organic price premium, {{< meta pest_control_gep_no_premium >}} without | partly. The sheet's $6.25bn sits at the no-premium level, log-correlation 0.93 across countries; its own pipeline is not on the drive |
 | health_hypertension | {{< meta health_hypertension_gep >}} over the 20 countries with a cost study | partly. Rank yes (log-correlation 0.989 on the appendix's {{< meta health_hypertension_appendix >}}), level 42 percent above on named deviations; no pipeline exists on the drive |
 | health_depression | {{< meta health_depression_gep >}} at the method's stated scope | no, deliberately. The author's {{< meta health_depression_author >}} is the same construction at roughly 1/400th of the urban population, so the gap measures the undocumented run scope |
-| nature_view_amenity | {{< meta nature_view_gep >}} hotel room-price premium | yes. The CAS owner's workbook reproduced to the cent in all 124 valued countries, by their code run here and by our independent port |
+| nature_view_amenity | {{< meta nature_view_gep >}} hotel room-price premium in 2019 USD | yes. The owner's {{< meta nature_view_owner >}} at the scrape vintage reproduced to the cent in all 124 countries, twice; the published figure deflates it to the base year |
 
 : {tbl-colwidths="[22,32,46]"}
 
@@ -489,7 +493,7 @@ format:
 
 ## groundwater_recharge
 
-- [Values the pumping energy recharge saves: a higher water table means every cubic metre withdrawn is lifted a shorter distance, priced at the country's electricity tariff. The sheet's column is reproduced to the cent in all 108 valued countries, {{< meta groundwater_recharge_gep >}} in total. The magnitude is the method's own: one year's recharge is one year's marginal head increment, a fraction of a cent per cubic metre.]{.state}
+- [Values the pumping energy recharge saves: a higher water table means every cubic metre withdrawn is lifted a shorter distance, priced at the country's electricity tariff. The sheet's {{< meta groundwater_recharge_owner >}} is the owner's 2021-tariff construction, reproduced to the cent in all 108 valued countries; the published {{< meta groundwater_recharge_gep >}} deflates those tariffs to the base year through the account's one CPI series. The magnitude is the method's own: one year's recharge is one year's marginal head increment, a fraction of a cent per cubic metre.]{.state}
 - **Q1:** is the service in scope? The sheet's note argues recharge is natural-capital value whose end products are counted elsewhere, yet the sheet carries the column. Avoided pumping energy does not obviously overlap purification or the irrigation premium, so the double-count argument is weaker than the note assumes.
 - **Q2:** if in, which construction -- one year's marginal head increment ({{< meta groundwater_recharge_gep >}}), or the stock of avoided water-table depth, which the owner's staged groundwater-depth data could support and which would be two to three orders of magnitude larger?
 
@@ -509,7 +513,7 @@ format:
 
 ## health_depression
 
-- [Values the depression cases urban greenspace prevents, at the societal cost of a case, following the InVEST urban mental health model. Built here end to end at the method's stated scope -- all urban residents of the 32 countries with a cost study -- giving {{< meta health_depression_gep >}} and 64.5M prevented cases; the author's file carries {{< meta health_depression_author >}}, the same construction at roughly 1/400th of that population, so the run's undocumented spatial extent is now a measured question rather than a guess.]{.state}
+- [Values the depression cases urban greenspace prevents, at the societal cost of a case, following the InVEST urban mental health model. Built here end to end at the method's stated scope -- all urban residents of the 32 countries with a cost study -- giving {{< meta health_depression_gep >}} in market 2019 USD ({{< meta health_depression_ppp >}} in the owner's PPP-2018 dollars before the conversion by country price levels and the account's one CPI series) and 64.5M prevented cases; the author's file carries {{< meta health_depression_author >}}, the same construction at roughly 1/400th of that population, so the run's undocumented spatial extent is now a measured question rather than a guess.]{.state}
 - **Q1:** what extent did the author's run cover? Our full-scope build is 370 times the file at the median country (USA 835, Germany 405), which says a city sample.
 - **Q2:** which of the drive's two variants is blessed -- `high resolution` ({{< meta health_depression_author >}}, the sheet's column) or `low resolution` ($167.3M)?
 - **Q3:** the costs are USD PPP, mostly 2018, against the account's 2019 USD -- restate, or carry the caveat?
@@ -517,8 +521,8 @@ format:
 
 ## nature_view_amenity
 
-- [Values the room-price premium natural views earn: within one hotel on one date, a sea-, mountain- or garden-view room prices above a comparable room without the view, so brand and location difference out. Ported from the CAS team's 2026-09-12 submission and anchored to the cent in all 124 valued countries: {{< meta nature_view_gep >}} at 2019.]{.state}
-- **Q1:** the room prices are scraped at the submission's own booking dates and applied to 2019 room-nights -- is that the account's intended price vintage?
+- [Values the room-price premium natural views earn: within one hotel on one date, a sea-, mountain- or garden-view room prices above a comparable room without the view, so brand and location difference out. Ported from the CAS team's 2026-09-12 submission and anchored to the cent in all 124 valued countries at the owner's scrape vintage ({{< meta nature_view_owner >}}); published at {{< meta nature_view_gep >}} in 2019 USD through the account's one CPI series.]{.state}
+- **Q1:** the premium is scraped at the submission's own booking dates; the account now deflates it to 2019 USD through its one CPI series -- does the owner agree with that convention?
 - **Q2:** one uniform mean occupancy (0.539, from 106 reporting countries) applies to every country -- acceptable, or should occupancy be per-country where reported?
 - **Q3:** what are the sample's provenance details one level deeper -- booking platform, scrape dates, hotels per country?
 

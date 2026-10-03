@@ -111,6 +111,11 @@ health_depression,health_depression_cost_input_path,global_invest/health_depress
 health_depression,health_depression_cost_source,"the owner's staged extract of Christensen et al. 2020: societal cost per depression case, USD PPP mostly 2018, 32 countries plus a Europe aggregate"
 health_depression,health_depression_odds_ratio,0.931
 health_depression,health_depression_odds_ratio_source,"odds ratio of depression per 0.1 NDVI increment, Liu et al. 2023 meta-analysis (0.887-0.977)"
+health_depression,health_depression_us_cpi_input_path,socioeconomic/fred_cpiaucsl/CPIAUCSL.csv
+health_depression,health_depression_us_cpi_source,"FRED CPIAUCSL monthly, annual means; the account's ONE temporal dollar series (also the EPA VSL update's)"
+health_depression,health_depression_price_level_input_path,socioeconomic/worldbank_ppp_price_level/price_level_ratio_gdp_based.csv
+health_depression,health_depression_price_level_source,"market-rate GDP over PPP GDP per country (WB NY.GDP.MKTP.CD / NY.GDP.MKTP.PP.CD); USA is 1 by construction"
+health_depression,health_depression_cost_year,2018
 health_depression,health_depression_reference_path,global_invest/health_depression/reference_high_resolution.csv
 health_depression,health_depression_reference_source,"the author's high resolution results file (2025-10-28), which IS the all-services sheet's column; its spatial scope is an open question, so the run log reports the gap rather than anchoring"
 health_hypertension,health_hypertension_population_input_path,global_invest/health_hypertension/ppp_2019_1km_Aggregated.tif
@@ -276,6 +281,8 @@ ntfp,ntfp_ndvi_mean_path,global_invest/ntfp/input/mean_ndvi_2015_2019.tif
 ntfp,ntfp_value_per_ha_path,global_invest/ntfp/nontimber_price_iucn_edited.csv
 ntfp,ntfp_value_per_ha_source_url,https://reproducibility.worldbank.org/catalog/194/download/549
 ntfp,ntfp_msi_conda_env,
+landslide_mitigation,landslide_mitigation_vsl_panel_path,global_invest/landslide_mitigation/vsl_2026_09/vsl_by_country_2019.csv
+landslide_mitigation,landslide_mitigation_vsl_panel_source,"the rebuilt EPA life-years-lost VSL panel (m-braaksma/landslide_mitigation v0.2.1, 2026-09-14): EPA $7.9M 2008$ to $9,876,237 at 2019, GDP-pc-PPP x life-years-lost transfer, 250 of 250 covered with tier recorded; blank this row to recover the OECD schedule"
 landslide_mitigation,uglc_year_source,start_date
 landslide_mitigation,force_run,false
 landslide_mitigation,run_in_parallel,true
@@ -393,6 +400,10 @@ nature_view_amenity,nature_view_amenity_country_mapping_input_path,global_invest
 nature_view_amenity,nature_view_amenity_country_mapping_source,"the CAS country list: names, ISO alpha-2 and alpha-3"
 nature_view_amenity,nature_view_amenity_un_tourism_input_path,global_invest/nature_view_amenity/UN_Tourism_2019_Hotel_Rooms_and_Occupancy.xlsx
 nature_view_amenity,nature_view_amenity_un_tourism_source,"UN Tourism 2019 hotel rooms per country and room occupancy (106 reporting countries; the mean is applied uniformly, the owner's convention)"
+nature_view_amenity,nature_view_amenity_us_cpi_input_path,socioeconomic/fred_cpiaucsl/CPIAUCSL.csv
+nature_view_amenity,nature_view_amenity_us_cpi_source,"FRED CPIAUCSL monthly, annual means; the account's ONE temporal dollar series (also the EPA VSL update's)"
+nature_view_amenity,nature_view_amenity_price_year,2026
+nature_view_amenity,nature_view_amenity_price_year_source,"the scrape's own booking dates; the published table deflates to the base year, the anchor holds at the owner vintage"
 nature_view_amenity,nature_view_amenity_reference_path,global_invest/nature_view_amenity/reference_results.xlsx
 nature_view_amenity,nature_view_amenity_reference_source,"the owner's results workbook ($59.73bn over 124 countries), the replication anchor; their own code reproduced it here to the cent on 2026-10-02"
 pest_control,pest_control_fibl_area_input_path,global_invest/pest_control/Area_org.xlsx
@@ -426,5 +437,8 @@ groundwater_recharge,groundwater_recharge_withdrawal_year,2020
 groundwater_recharge,groundwater_recharge_electricity_price_input_path,global_invest/groundwater_recharge/global-electricity-per-kwh-pricing-2021.xlsx
 groundwater_recharge,groundwater_recharge_electricity_price_source,"average electricity price per kWh in USD, 2021 global pricing table, the owner's own staged copy"
 groundwater_recharge,groundwater_recharge_pump_efficiency,0.5
+groundwater_recharge,groundwater_recharge_us_cpi_input_path,socioeconomic/fred_cpiaucsl/CPIAUCSL.csv
+groundwater_recharge,groundwater_recharge_us_cpi_source,"FRED CPIAUCSL monthly, annual means; the account's ONE temporal dollar series (also the EPA VSL update's)"
+groundwater_recharge,groundwater_recharge_electricity_price_year,2021
 groundwater_recharge,groundwater_recharge_reference_path,global_invest/groundwater_recharge/ground_water_gep.csv
 groundwater_recharge,groundwater_recharge_reference_source,"the owner's committed final (ground_water_gep.csv, 2025-10), the replication anchor"

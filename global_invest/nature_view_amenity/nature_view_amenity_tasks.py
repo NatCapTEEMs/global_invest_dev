@@ -153,6 +153,17 @@ def gep_calculation(p):
         ['iso3_r250_label', 'nature_view_amenity_gep_reference']],
         on='iso3_r250_label', how='left')
 
+    # the anchor holds at the owner's scraped price vintage; the published table is the
+    # account's base-year dollars via the shared CPI series
+    cpi = pd.read_csv(str(p.get_path(p.nature_view_amenity_us_cpi_input_path)))
+    deflation = utilities.usd_deflation_factor(
+        cpi, int(p.nature_view_amenity_price_year), int(p.gep_base_year))
+    df_gep['nature_view_amenity_gep_owner_vintage'] = df_gep['nature_view_amenity_gep']
+    df_gep['nature_view_amenity_gep'] = df_gep['nature_view_amenity_gep'] * deflation
+    hb.log('  published value deflated from the %s scrape vintage to %s USD by the shared '
+           'CPI factor %.6f: total %s'
+           % (p.nature_view_amenity_price_year, p.gep_base_year, deflation,
+              f"{df_gep['nature_view_amenity_gep'].sum():,.2f}"))
     df_gep['year'] = int(p.gep_base_year)
     utilities.write_gep_by_country(
         p, df_gep[utilities.published_country_columns(df_gep, 'nature_view_amenity')],
@@ -161,15 +172,15 @@ def gep_calculation(p):
                       left_on='ee_r264_id', right_on='ee_r264_id')
     gdf.to_file(service_results['gep_by_country_base_year'].replace('.csv', '.gpkg'), driver='GPKG')
 
-    ours = df_gep['nature_view_amenity_gep'].sum()
+    ours = df_gep['nature_view_amenity_gep_owner_vintage'].sum()
     ref = df_gep['nature_view_amenity_gep_reference'].sum()
-    both = df_gep[df_gep['nature_view_amenity_gep'].notna()
+    both = df_gep[df_gep['nature_view_amenity_gep_owner_vintage'].notna()
                   & df_gep['nature_view_amenity_gep_reference'].notna()]
-    agree = (abs(both['nature_view_amenity_gep'] - both['nature_view_amenity_gep_reference'])
+    agree = (abs(both['nature_view_amenity_gep_owner_vintage'] - both['nature_view_amenity_gep_reference'])
              <= 0.01 + 1e-9 * both['nature_view_amenity_gep_reference'].abs()).sum()
-    hb.log(f'Total nature_view_amenity GEP for base year {p.gep_base_year}: {ours:,.2f} '
-           f'({int((df_gep["nature_view_amenity_gep"].fillna(0) > 0).sum())} countries)')
-    hb.log(f'  owner reference: {ref:,.2f}; countries agreeing to the cent: {agree} of {len(both)}')
+    hb.log(f'At the owner price vintage: {ours:,.2f} '
+           f'({int((df_gep["nature_view_amenity_gep"].fillna(0) > 0).sum())} countries); '
+           f'owner reference {ref:,.2f}; countries agreeing to the cent: {agree} of {len(both)}')
     return True
 
 

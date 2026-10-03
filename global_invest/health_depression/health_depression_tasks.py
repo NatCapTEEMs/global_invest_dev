@@ -128,8 +128,21 @@ def gep_calculation(p):
     if unmapped:
         hb.log('  %d cost-table rows are aggregates or unmapped and are dropped: %s'
                % (len(unmapped), ', '.join(unmapped)))
-    df = df.merge(costs.dropna(subset=['iso3_r250_label']).rename(
-        columns={'Price_USD_PPP': 'cost_per_case_usd'})[['iso3_r250_label', 'cost_per_case_usd']],
+    costs = costs.dropna(subset=['iso3_r250_label']).rename(
+        columns={'Price_USD_PPP': 'cost_per_case_usd'})[['iso3_r250_label', 'cost_per_case_usd']]
+    # the Christensen costs are international (PPP) dollars of their own year; the shared
+    # price-level and CPI series take them to the account's market USD at the base year
+    pli = pd.read_csv(str(p.get_path(p.health_depression_price_level_input_path)))
+    costs = utilities.international_to_usd(
+        costs, pli, int(p.health_depression_cost_year), 'cost_per_case_usd')
+    cpi = pd.read_csv(str(p.get_path(p.health_depression_us_cpi_input_path)))
+    deflation = utilities.usd_deflation_factor(
+        cpi, int(p.health_depression_cost_year), int(p.gep_base_year))
+    costs['cost_per_case_usd'] = costs['cost_per_case_usd'] * deflation
+    hb.log('  costs converted from %s international dollars to %s USD: country price levels '
+           'then the shared CPI factor %.6f'
+           % (p.health_depression_cost_year, p.gep_base_year, deflation))
+    df = df.merge(costs[['iso3_r250_label', 'cost_per_case_usd']],
         on='iso3_r250_label', how='left')
 
     df = hd.health_depression_gep(df)

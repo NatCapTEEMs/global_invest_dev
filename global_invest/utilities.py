@@ -1238,6 +1238,49 @@ def is_redundant(column, df):
 GEP_SUMMARY_GROUPINGS = ('income_grp', 'region_un', 'continent', 'subregion')
 
 
+def usd_deflation_factor(cpi_df, from_year, to_year):
+    """The US CPI annual-mean ratio turning nominal from_year USD into to_year USD.
+
+    One series for every temporal dollar conversion in the account, so no two services
+    deflate differently. The frame is FRED's CPIAUCSL as staged (monthly observations).
+
+    Args:
+        cpi_df (pd.DataFrame): observation_date and CPIAUCSL columns.
+        from_year (int): the year the nominal values are denominated in.
+        to_year (int): the year to express them in.
+
+    Returns:
+        float: the multiplicative factor (less than 1 when deflating a later year back).
+    """
+    cpi = cpi_df.copy()
+    cpi['year'] = pd.to_datetime(cpi['observation_date']).dt.year
+    annual = cpi.groupby('year')['CPIAUCSL'].mean()
+    return float(annual.loc[to_year] / annual.loc[from_year])
+
+
+def international_to_usd(df, pli_df, year, value_col, iso3_col='iso3_r250_label'):
+    """Convert per-country international-dollar (PPP) values into market USD of the same year.
+
+    The price level ratio is market-exchange-rate GDP over PPP GDP from the World Bank's two
+    headline series, so the USA is exactly 1 by construction. A country without a ratio for
+    that year carries NA afterwards, never a silent pass-through, and the note names it.
+
+    Args:
+        df (pd.DataFrame): per-country values in international dollars.
+        pli_df (pd.DataFrame): iso3, year, price_level_ratio (the staged series).
+        year (int): the year the PPP values are denominated in.
+        value_col (str): the column to convert.
+        iso3_col (str): the country key in df.
+
+    Returns:
+        pd.DataFrame: df with value_col converted and `price_level_ratio` carried beside it.
+    """
+    ratios = pli_df[pli_df['year'] == year][['iso3', 'price_level_ratio']]
+    out = df.merge(ratios.rename(columns={'iso3': iso3_col}), on=iso3_col, how='left')
+    out[value_col] = out[value_col] * out['price_level_ratio']
+    return out
+
+
 def rasterize_id_column(vector_path, ref_raster_path, id_column, output_path):
     """Vector id column -> Int32 raster on the reference grid (country ids), ALL_TOUCHED.
 

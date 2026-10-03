@@ -803,3 +803,213 @@ def test_shock_pct_output_is_the_v3_dollars_over_crop_value():
         fixed, contemp, pd.Series({zone: 2.0e9}), 'net_zero', ['V_F'], 2023,
         level_usd_by_sector=poll, crop_usd_by_sector=crop))
     assert plain['shock_pct_output'].isna().all()
+
+
+import ast
+import math
+from pathlib import Path
+from typing import Tuple
+import unittest
+import numpy as np
+from scipy.ndimage import convolve
+
+SOURCE = Path(__file__).with_name('pollination_tasks.py')
+TREE = ast.parse(SOURCE.read_text())
+NS = dict(np=np, math=math, Tuple=Tuple, convolve=convolve)
+HELPERS = {'_compute_radii_pixels', '_make_elliptical_kernel'}
+nodes = [n for n in TREE.body if
+         isinstance(n, ast.FunctionDef) and n.name in HELPERS or
+         isinstance(n, ast.Assign) and any(isinstance(t, ast.Name) and
+         t.id in {'_COS_LAT_FLOOR', '_RADIUS_METERS', '_METERS_PER_DEG_LAT', '_MAX_RY', '_MAX_RX'} for t in n.targets)]
+exec(compile(ast.Module(body=nodes, type_ignores=[]), str(SOURCE), 'exec'), NS)
+worker = next(n for n in TREE.body if isinstance(n, ast.FunctionDef) and n.name == '_process_tile')
+count = next(n for n in ast.walk(worker) if isinstance(n, ast.Assign) and any(isinstance(t, ast.Name) and t.id == 'counts' for t in n.targets))
+EXPR = compile(ast.Expression(count.value), str(SOURCE), 'eval')
+
+def production(mask, kernel):
+    return eval(EXPR, dict(NS, nat_mask=mask, kernel=kernel))
+
+class HabitatCounts(unittest.TestCase):
+    def test_center_matches_exact_neighbor_sum(self):
+        for latitude in (0, 30, 50, 55, 60, 70):
+            with self.subTest(latitude=latitude):
+                ry, rx = NS['_compute_radii_pixels'](latitude, 1/360, 1/360)
+                kernel = NS['_make_elliptical_kernel'](ry, rx)
+                mask = kernel.copy()
+                mask[ry, rx] = 0  # focal pixel is cropland
+                self.assertEqual(int(production(mask, kernel)[ry, rx]), int(mask.sum()))
+
+    def test_habitat_removal_cannot_increase_sufficiency(self):
+        kernel = NS['_make_elliptical_kernel'](7, 12)
+        mask = kernel.copy()
+        mask[7, 12] = 0
+        previous = 1.0
+        for row, col in np.argwhere(mask):
+            mask[row, col] = 0
+            count = int(production(mask, kernel)[7, 12])
+            sufficiency = min(count / int(kernel.sum()) / .3, 1.)
+            self.assertLessEqual(sufficiency, previous)
+            previous = sufficiency
+        self.assertEqual(previous, 0.)
+
+if __name__ == '__main__':
+    unittest.main()
+
+
+import numpy as np
+import pytest
+
+from global_invest.pollination import provision_decomposition as pd_mod
+from global_invest.pollination.retained_value import retained_value_change
+
+
+def test_hectare_components_partition_baseline_cropland():
+    base = np.array([[2, 2, 3], [2, 3, 3]])
+    future = np.array([[2, 3, 2], [2, 3, 3]])
+    ha = np.full((2, 3), 10.0)
+    got = pd_mod.component_hectares(base, future, ha)
+    assert got['retained_ha'] == 20.0            # (0,0) and (1,0)
+    assert got['lost_ha'] == 10.0                # (0,1) crop -> non-crop
+    assert got['new_ha'] == 10.0                 # (0,2) non-crop -> crop
+    assert got['retained_ha'] + got['lost_ha'] == got['base_cropland_ha']
+    assert got['retained_ha'] + got['new_ha'] == got['future_cropland_ha']
+
+
+def test_retained_term_matches_the_fed_measure():
+    """The decomposition must not quietly redefine the estimand it is diagnosing."""
+    value, base_ha, retained_ha = 1000.0, 100.0, 60.0
+    suff_base, suff_future = 0.4, 0.7
+    got = pd_mod.decompose(value, retained_ha, 40.0, 0.0, base_ha, suff_base, suff_future)
+    fed = retained_value_change(value, retained_ha / base_ha, suff_base, suff_future)
+    assert np.isclose(got['retained_change'], fed)
+
+
+def test_identity_reconciles():
+    got = pd_mod.decompose(500.0, 50.0, 30.0, 20.0, 80.0, 0.5, 0.6)
+    summary = pd_mod.reconcile(got)
+    assert np.isclose(summary['total_change'],
+                      summary['retained_change'] + summary['new_provision'] - summary['lost_provision'])
+
+
+def test_new_cropland_without_a_base_rate_is_reported_not_zeroed():
+    """A cell with no baseline cropland cannot yield a value per hectare; the area must survive."""
+    got = pd_mod.decompose(0.0, 0.0, 0.0, 25.0, 0.0, 0.3, 0.9)
+    assert got['new_provision'] == 0.0
+    assert got['unvalued_new_ha'] == 25.0
+    summary = pd_mod.reconcile(got)
+    assert summary['unvalued_new_ha'] == 25.0
+    assert 'no defensible crop value' in summary['caveat']
+
+
+def test_unvalued_assumption_declines_to_value_any_new_land():
+    got = pd_mod.decompose(1000.0, 50.0, 0.0, 50.0, 50.0, 0.5, 0.5,
+                           new_cropland_valuation='unvalued')
+    assert got['new_provision'] == 0.0
+    assert got['unvalued_new_ha'] == 50.0
+
+
+def test_one_sided_sufficiency_coverage_contributes_nothing():
+    """A component computed where only one year has sufficiency would difference against nothing."""
+    got = pd_mod.decompose(1000.0, 50.0, 10.0, 10.0, 60.0, np.nan, 0.8)
+    assert got['retained_change'] == 0.0
+    assert got['lost_provision'] == 0.0
+    assert got['new_provision'] == 0.0
+
+
+def test_components_that_overrun_baseline_cropland_are_rejected():
+    with pytest.raises(ValueError, match='do not partition'):
+        pd_mod.decompose(100.0, 60.0, 60.0, 0.0, 100.0, 0.5, 0.5)
+
+
+def test_unknown_valuation_assumption_is_rejected():
+    with pytest.raises(ValueError, match='unknown new-cropland valuation'):
+        pd_mod.decompose(100.0, 10.0, 0.0, 0.0, 10.0, 0.5, 0.5, new_cropland_valuation='zero')
+
+
+def test_label_says_valued_support_when_some_new_cropland_is_unvalued():
+    got = pd_mod.decompose(0.0, 0.0, 0.0, 25.0, 0.0, 0.3, 0.9)
+    summary = pd_mod.reconcile(got)
+    assert summary['quantity'] == 'provision change on valued support'
+
+
+def test_label_says_total_only_when_everything_is_valued_and_covered():
+    got = pd_mod.decompose(1000.0, 60.0, 40.0, 0.0, 100.0, 0.4, 0.7)
+    summary = pd_mod.reconcile(got)
+    assert summary['quantity'] == 'total provision change'
+    assert summary['unvalued_new_ha'] == 0.0
+    assert summary['excluded_for_missing_sufficiency_ha'] == 0.0
+
+
+def test_area_excluded_for_missing_sufficiency_is_reported_not_dropped():
+    got = pd_mod.decompose(1000.0, 50.0, 10.0, 10.0, 60.0, np.nan, 0.8)
+    summary = pd_mod.reconcile(got)
+    assert summary['excluded_for_missing_sufficiency_ha'] == 70.0
+    assert summary['quantity'] == 'provision change on valued support'
+
+
+import unittest
+import numpy as np
+from retained_raster import _overlap
+
+
+class OverlapTests(unittest.TestCase):
+    def test_coincident_edges_do_not_create_neighbour_slivers(self):
+        weights=_overlap(2,0,1000.+1e-12,1.,0.,1.,1003).toarray()
+        self.assertEqual(np.count_nonzero(weights),2)
+        np.testing.assert_array_equal(weights[1000:1002],np.eye(2))
+
+    def test_real_small_overlap_is_preserved(self):
+        weights=_overlap(1,0,1000.+1e-5,1.,0.,1.,1002).toarray()
+        self.assertEqual(np.count_nonzero(weights),2)
+        self.assertAlmostEqual(weights[1001,0],1e-5,places=10)
+        self.assertAlmostEqual(weights.sum(),1.)
+
+
+if __name__=='__main__': unittest.main()
+
+
+import unittest
+import numpy as np
+from retained_value import retained_value_change, output_share_pct, annual_retained_rows
+
+
+class RetainedValueTests(unittest.TestCase):
+    def test_half_retained_does_not_receive_whole_cell_value(self):
+        # $100 crop value; $20 dependent; half retained; sufficiency .4 -> .6.
+        delta = retained_value_change(20, .5, .4, .6)
+        self.assertAlmostEqual(float(delta), 2.)
+        self.assertAlmostEqual(output_share_pct(delta, 100), 2.)
+
+    def test_turnover_alone_is_not_habitat_productivity_change(self):
+        np.testing.assert_allclose(retained_value_change([20, 20], [0, .5], [.4, .4], [.4, .4]), 0)
+
+    def test_habitat_loss_never_produces_gain(self):
+        delta = retained_value_change([20, 10], [.5, 1], [.8, .5], [.2, .4])
+        self.assertTrue(np.all(delta < 0))
+
+    def test_sector_denominator_includes_all_baseline_crop_value(self):
+        delta = retained_value_change([20, 10], [.5, 0], [.4, np.nan], [.6, np.nan])
+        self.assertAlmostEqual(output_share_pct(delta, [100, 100]), 1.)
+
+    def test_inconsistent_coverage_and_missing_aggregation_refused(self):
+        with self.assertRaises(ValueError):
+            retained_value_change(20, .5, .4, np.nan)
+        with self.assertRaises(ValueError):
+            output_share_pct([1, np.nan], [100, 100])
+
+    def test_common_value_unit_conversion_cancels(self):
+        self.assertAlmostEqual(output_share_pct([2, -1], [100, 50]),
+                               output_share_pct([2000, -1000], [100000, 50000]))
+
+    def test_annual_dollars_allow_zero_baseline_and_preserve_anchor_change(self):
+        import pandas as pd
+        index=pd.MultiIndex.from_tuples([('AEZ1','USA')])
+        zero=pd.Series([0.],index=index); future=pd.Series([2.],index=index)
+        rows=annual_retained_rows({2030:zero},{2030:future},zero,'current_policies',2023,['V_F'])
+        self.assertEqual(rows.iloc[0].delta_pollination_usd,0.)
+        self.assertEqual(rows.iloc[-1].delta_pollination_usd,2.)
+        np.testing.assert_allclose(rows.delta_pollination_usd,np.linspace(0,2,8))
+
+
+if __name__ == '__main__':
+    unittest.main()

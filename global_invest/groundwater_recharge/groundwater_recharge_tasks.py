@@ -88,6 +88,14 @@ def gep_calculation(p):
 
     prices = pd.read_excel(str(p.get_path(p.groundwater_recharge_electricity_price_input_path)))
     prices = prices.rename(columns={'Average price of 1KW/h (USD)': 'electricity_usd_per_kwh'})
+    # the tariff table is denominated in its own year's dollars; one shared CPI series takes
+    # it to the account's base year, and the log carries both readings
+    cpi = pd.read_csv(str(p.get_path(p.groundwater_recharge_us_cpi_input_path)))
+    deflation = utilities.usd_deflation_factor(
+        cpi, int(p.groundwater_recharge_electricity_price_year), int(p.gep_base_year))
+    prices['electricity_usd_per_kwh'] = prices['electricity_usd_per_kwh'] * deflation
+    hb.log('  tariffs deflated %s -> %s by the shared CPI factor %.6f'
+           % (p.groundwater_recharge_electricity_price_year, p.gep_base_year, deflation))
     price_name_to_iso3 = dict(name_to_iso3)
     price_name_to_iso3.update(PRICE_NAME_TO_ISO3)
     prices['iso3_r250_label'] = prices['Country name'].map(price_name_to_iso3)

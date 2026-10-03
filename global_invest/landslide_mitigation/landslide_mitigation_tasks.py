@@ -1952,16 +1952,23 @@ def build_vsl_raster(p):
             p.vsl_raster_path = out_path
             return p
 
-        # ---- 1. Parse OECD VSL CSV ----
-        # NOTE: has commas/special characters in the name as downloaded, so glob rather
-        # than a brittle hardcoded match.
-        oecd_candidates = glob.glob(os.path.join(p.landslide_input_data_dir, 'oecd_vsl', '*.csv'))
-        if not oecd_candidates:
-            raise FileNotFoundError(f'No CSV found in {p.landslide_input_data_dir}/oecd_vsl/')
-
-        vsl_by_iso3 = lmf.vsl_usd_2019_by_iso3(hb.df_read(oecd_candidates[0]))
-        p.L.info(f'OECD VSL: {len(vsl_by_iso3)} countries with direct estimates (deflated to '
-                 f'2019 constant USD, factor={lmf.DEFLATOR_2022_TO_2019:.4f}).')
+        # ---- 1. The VSL schedule: the shared EPA life-years-lost panel when configured,
+        # the OECD estimates otherwise ----
+        panel_path = getattr(p, 'landslide_mitigation_vsl_panel_path', None)
+        if panel_path:
+            panel = pd.read_csv(str(p.get_path(panel_path)))
+            vsl_by_iso3 = dict(zip(panel['iso3_r250_label'], panel['vsl_usd']))
+            p.L.info(f'VSL from the shared EPA life-years-lost panel: {len(vsl_by_iso3)} '
+                     f'countries, fallback tiers recorded in the panel itself.')
+        else:
+            # NOTE: has commas/special characters in the name as downloaded, so glob rather
+            # than a brittle hardcoded match.
+            oecd_candidates = glob.glob(os.path.join(p.landslide_input_data_dir, 'oecd_vsl', '*.csv'))
+            if not oecd_candidates:
+                raise FileNotFoundError(f'No CSV found in {p.landslide_input_data_dir}/oecd_vsl/')
+            vsl_by_iso3 = lmf.vsl_usd_2019_by_iso3(hb.df_read(oecd_candidates[0]))
+            p.L.info(f'OECD VSL: {len(vsl_by_iso3)} countries with direct estimates (deflated to '
+                     f'2019 constant USD, factor={lmf.DEFLATOR_2022_TO_2019:.4f}).')
 
         # ---- 2. Join to correspondence GPKG ----
         # publish_inputs already resolved this through initialize_country_paths, which every
@@ -2531,9 +2538,21 @@ def gep_calculation(p):
             f'staged one at landslide_zonal_statistics_path; neither is present.')
 
     zonal = pd.read_csv(zonal_path)
-    per_country = (zonal.groupby('iso3_r250_label', as_index=False)['avoided_value_sum_usd']
+    # with the shared VSL panel configured, the account prices the zonal deaths itself; the
+    # staged value column (priced upstream at the OECD schedule) stays beside it in the log
+    panel_path = getattr(p, 'landslide_mitigation_vsl_panel_path', None)
+    if panel_path:
+        panel = pd.read_csv(str(p.get_path(panel_path)))
+        zonal = zonal.merge(panel[['iso3_r250_label', 'vsl_usd']], on='iso3_r250_label', how='left')
+        zonal['value_usd'] = zonal['avoided_deaths_sum'] * zonal['vsl_usd']
+        p.L.info('Deaths priced at the shared EPA life-years-lost panel; the staged OECD-priced '
+                 'column sums to %s beside it.'
+                 % format(zonal['avoided_value_sum_usd'].sum(), ',.2f'))
+    else:
+        zonal['value_usd'] = zonal['avoided_value_sum_usd']
+    per_country = (zonal.groupby('iso3_r250_label', as_index=False)['value_usd']
                    .sum(min_count=1)
-                   .rename(columns={'avoided_value_sum_usd': 'landslide_mitigation_gep'}))
+                   .rename(columns={'value_usd': 'landslide_mitigation_gep'}))
 
     df_gep = utilities.country_attributes(p).merge(per_country, on='iso3_r250_label', how='left')
     df_gep['year'] = year
