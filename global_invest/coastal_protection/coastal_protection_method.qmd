@@ -15,9 +15,8 @@ coast. The service is therefore valued as avoided storm and flood damage, and it
 two habitats: mangroves and coral reefs. Both are attributed to the country whose coast they
 protect, and the two components are added to give one national coastal protection value.
 
-# Methods
 
-## Estimating Quantity
+## Quantity
 
 Neither component is modelled from habitat extent inside this module. Both arrive as published
 per-country tables in which the physical protection modelling has already been done upstream, so
@@ -38,7 +37,7 @@ country in 2011 US dollars. This table is keyed on country name rather than coun
 is joined to the correspondence on the name and then reduced to one row per country before the
 currency conversion below.
 
-## Estimating Price
+## Price
 
 No price is applied in this module. Both source tables are already monetary, which means the
 quantity and price stages are fused upstream and the attribution factor is one:
