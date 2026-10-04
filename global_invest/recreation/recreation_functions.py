@@ -42,7 +42,12 @@ RECREATION_SITE_MATRIX = np.array([                  # rows: accessibility 1-5, 
     [3, 5, 5, 9],
     [3, 6, 6, 9]])
 RECREATION_HQ_SITE_CLASS = 9
-RECREATION_FUEL_COST_COL = 'gasoline_cost_usd_per_km_2019_gppdata'
+# The fuel table's own cost-per-km column multiplies the per-litre price by 7.1 -- the IEA
+# GFEI fuel economy, which is 7.1 litres per HUNDRED kilometres -- so it runs exactly 100x
+# high (its staged construction script applies it per kilometre). The engine prices from the
+# clean per-litre column with the economy read as its source states it.
+RECREATION_FUEL_COST_COL = 'gasoline_price_usd_per_liter_2019_gppdata'
+GFEI_LITERS_PER_KM = 0.071
 # The UNWTO workbook's Units column reads Thousands on the Overnights rows, so the panel's
 # numbers are thousands of person-nights; the arrivals cleaner's own x1000 is the same
 # convention read from the same workbook.

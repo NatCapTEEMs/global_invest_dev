@@ -253,7 +253,8 @@ def calculate_recreation_flows(inputs, outputs, country_to_group_map, group_para
     n_cols, n_rows = raster_info['raster_size']
 
     cost_df = pd.read_csv(inputs['country_costs'])
-    cost_map = dict(zip(cost_df['iso3_r250_id'], cost_df[rf.RECREATION_FUEL_COST_COL]))
+    cost_map = {cid: price * rf.GFEI_LITERS_PER_KM for cid, price in
+                zip(cost_df['iso3_r250_id'], cost_df[rf.RECREATION_FUEL_COST_COL])}
 
     for key in ('visits', 'value', 'unmet'):
         pygeoprocessing.new_raster_from_base(
@@ -719,11 +720,12 @@ def gep_calculation(p):
     channel columns and coverage shares published beside it); a country with no channel at
     all stays missing.
 
-    The tourist ground-travel column is published and NOT summed into recreation_gep: with
-    the overnights read at the workbook's stated thousands, that channel multiplies
-    person-nights by the ANNUAL participation rate, and whether the author intends a
-    per-night rate instead moves it by orders of magnitude. The column carries his
-    construction as delivered; the headline waits for his answer.
+    The tourist ground-travel column is published and NOT summed into recreation_gep. The
+    author's methods page says the lodging flow treats overnights as the population proxy
+    with visits calculated identically -- but at his documented calibration (a = 102.5
+    annual visits per capita) that gives every person-night 102.5 site trips, which no
+    reading of the design can intend. The column carries the construction as delivered; the
+    headline takes the channels whose dimensions hold.
     """
     publish_inputs(p)
     service_results, already_done = utilities.begin_gep_calculation(p, 'recreation')
@@ -782,16 +784,13 @@ def gep_calculation(p):
                 driver='GPKG')
 
     total = df_gep['recreation_gep'].sum()
-    hb.log('Total recreation GEP for base year %s: %s over %d countries (summed channels: '
-           'daily ground travel %s, accommodation %s, air travel %s; tourist ground travel '
-           '%s published beside the sum, held out pending the per-night participation '
-           'question)'
+    hb.log('Total recreation GEP for base year %s: %s over %d countries (channels: ground '
+           'travel daily %s + tourist %s, accommodation %s, air travel %s)'
            % (p.gep_base_year, f'{total:,.2f}',
               int(df_gep['recreation_gep'].notna().sum()),
-              f"{df_gep['daily_value'].sum():,.0f}",
+              f"{df_gep['daily_value'].sum():,.0f}", f"{df_gep['tourist_value'].sum():,.0f}",
               f"{df_gep['accommodation_value'].sum():,.0f}",
-              f"{df_gep['air_travel_value'].sum():,.0f}",
-              f"{df_gep['tourist_value'].sum():,.0f}"))
+              f"{df_gep['air_travel_value'].sum():,.0f}"))
     return total
 
 

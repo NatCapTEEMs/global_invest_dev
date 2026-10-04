@@ -185,6 +185,15 @@ def test_task_reader_finds_each_sheet_header_below_the_banner_row(tmp_path):
     assert afghanistan['overnights_international'] == 150.0
 
 
+def test_fuel_cost_prices_from_the_per_litre_column_at_the_gfei_economy():
+    # The staged cost-per-km column multiplies the per-litre price by 7.1, the GFEI economy
+    # read per kilometre instead of per hundred; pricing from the price column at 0.071 L/km
+    # is the source read as labelled (USA 2019: $0.66/L -> $0.047/km).
+    assert rf.RECREATION_FUEL_COST_COL == 'gasoline_price_usd_per_liter_2019_gppdata'
+    assert rf.GFEI_LITERS_PER_KM == pytest.approx(7.1 / 100.0)
+    assert 0.659750 * rf.GFEI_LITERS_PER_KM == pytest.approx(0.04684, abs=1e-4)
+
+
 def test_air_travel_value_prices_arrivals_at_the_region_pair_fare():
     arrivals = pd.DataFrame({
         'iso3_r250_id': [8, 8, 8, 12],
@@ -229,8 +238,8 @@ def _group_window_reference(pop, country_id, sites, country_to_group, group_para
     cutoff, edges = rf.compute_group_bands(pixel_size_km, max_distance_km, max_bands)
     max_cid = max(cost_map)
     cost_lookup = np.zeros(max_cid + 1)
-    for cid, cost in cost_map.items():
-        cost_lookup[cid] = cost
+    for cid, price in cost_map.items():
+        cost_lookup[cid] = price * rf.GFEI_LITERS_PER_KM
     for gid in sorted(set(country_to_group.values())):
         a, b = group_params[gid]['a'], group_params[gid]['b']
         group_countries = [c for c, g in country_to_group.items() if g == gid]

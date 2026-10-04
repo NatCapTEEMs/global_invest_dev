@@ -25,7 +25,7 @@ so one large park is one destination rather than many independent site pixels.
 **Trips.** Each population pixel carries an annual trip budget: population times a
 participation level, split over distance bands within a fixed 50 km cutoff by a closed-form
 exponential decay. Participation and decay rate come per country from the demand-parameter
-table (five parameter groups on the staged table). A band's fixed budget divides evenly
+table (his documented calibration: one worldwide group). A band's fixed budget divides evenly
 across the sites its ring reaches; a band with no reachable site, and all demand beyond the
 cutoff, is tracked as unmet rather than discarded. Residents travel from their home pixels
 (WorldPop); tourists travel from their accommodation, built by allocating each country's
@@ -37,8 +37,11 @@ read as thousands of person-nights, the same convention the arrivals sheet alrea
 ## Price
 
 **Ground travel**: realized visits price the round trip to their band's midpoint distance at
-the origin country's per-km fuel cost (2019). A country without fuel-cost data keeps its
-visits and gets a missing value, never free travel. **Accommodation**: overnight stays times
+the origin country's fuel cost: the 2019 per-litre gasoline price times the IEA GFEI fuel
+economy of 7.1 litres per hundred kilometres (the staged table's own cost-per-km column
+applies that economy per kilometre, one hundred times too high, so the price column is read
+instead). A country without fuel-price data keeps its visits and gets a missing value,
+never free travel. **Accommodation**: overnight stays times
 the hotel price per person per night from the author's hybrid price surface; a price gap is
 missing, not free, and each country's price-coverage share is published beside the value.
 **Air travel**: arrivals by origin region times the staged region-to-region round-trip 2019
@@ -55,11 +58,14 @@ summed over the channels the country has: a channel whose data gap makes it miss
 out of the sum, the channel columns and coverage shares are published beside the total, and
 a country with no channel at all is missing. One row per country on the r250 list.
 
-The tourist ground-travel column is published and not yet summed into the total: with the
-overnights at their stated thousands, that channel multiplies person-nights by the ANNUAL
-participation rate, and whether the author intends a per-night rate instead moves it by
-orders of magnitude. The column carries the construction as delivered; the sum waits for
-his answer.
+The tourist ground-travel column is published and not summed into the total. The author's
+methods page says the lodging flow treats overnights as the population proxy with visits
+calculated identically, but at his documented calibration that hands every person-night
+102.5 site trips, which no reading of the design can intend; the column carries the
+construction as delivered and the sum takes the channels whose dimensions hold. The demand
+parameters are his documented calibration, one worldwide group (a 102.50 annual visits per
+capita, decay 0.167 per km) from the England, Tel Aviv and Beijing surveys;
+country-specific groups are the outstanding task his methods page names.
 
 ## Implementation notes
 

@@ -148,8 +148,8 @@ recreation,recreation_population_path,global_invest/recreation/worldpop/ppp_2010
 recreation,recreation_fuel_cost_path,global_invest/recreation/feul_cost_per_km_2019_2datasources_iso3.csv
 recreation,recreation_unwto_path,global_invest/recreation/unwto-all-data-download_2022.xlsx
 recreation,recreation_hotels_path,global_invest/recreation/Export_GEO-data_4-University-of-Minnesota.gpkg
-recreation,recreation_demand_params_path,global_invest/recreation/recreation_demand_params_global.csv
-recreation,recreation_demand_params_source,"the author's demand-parameter table: iso3 to param_group with a participation level (per-capita annual visit rate) and an exponential distance-decay rate per group"
+recreation,recreation_demand_params_path,global_invest/recreation/recreation_demand_params_calibrated.csv
+recreation,recreation_demand_params_source,"the author's documented calibration (recreation_methods.qmd): ONE worldwide group, a=102.50 annual visits per capita and b=0.167 per km, the unweighted mean of the England PaNS, Tel Aviv and Beijing surveys; built here onto the 250-country list because the drive's archetype CSV (2026-09-05) predates the doc, which calls earlier values placeholders"
 recreation,recreation_hotel_price_path,global_invest/recreation/booking/hotel_price_per_occupancy_mean_0p5deg_filled.tif
 recreation,recreation_hotel_price_source,"the author's hybrid hotel-price surface (observed, kriged, nearest-within-500km, country-mean precedence; see booking/README_Interpolation.md); NaN means no price estimate, never free"
 recreation,recreation_airfare_matrix_path,global_invest/recreation/airfare_2019_regions.csv
