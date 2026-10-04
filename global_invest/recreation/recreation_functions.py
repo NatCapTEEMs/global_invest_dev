@@ -1,30 +1,27 @@
-"""Recreation/tourism science: site quality, gravity-model visits, travel-cost valuation.
+"""Recreation/tourism science: site quality, banded travel-cost flows, three value channels.
 
-The method is the one documented on the NatCapTEEMs shared drive (Recreation subfolder); the
-constants below ARE that published method, so they live in code -- a change is a reviewed commit,
-not an input/-copy edit (the sorting rule; landslide's constants follow the same pattern).
+The method is the author's zonal travel-cost rewrite (m-braaksma/gep_recreation through
+540f7af); the constants below ARE that method, so they live in code -- a change is a reviewed
+commit, not an input/-copy edit.
 
 Method in one pass: LULC class shares + protected-area share -> a 0-3 environment class;
-urban share + distance-to-road -> a 1-5 accessibility class; the two cross into a 1-9 site rank,
-of which class 9 is a high-quality site. Population (residents for daily recreation, allocated
-UNWTO overnights for tourism) generates visits into sites within 1-4 km Chebyshev rings via a
-gravity model, and visits are valued at national per-km fuel cost times ring distance.
+urban share + distance-to-road -> a 1-5 accessibility class; the two cross into a 1-9 site
+rank, of which class 9 is a high-quality site, dissolved into discrete sites by connected
+components. Demand is a per-capita trip budget (participation a) split over distance bands by
+an exponential decay (rate b), both read per country from the demand-parameter table; each
+band's fixed budget divides evenly over the sites its ring reaches, the rest is unmet, and
+realized visits price at the origin country's per-km fuel cost over the round trip to the band
+midpoint. Two further channels add on: overnight stays priced at the hotel-price surface, and
+arrivals by origin region priced at the staged region-to-region airfare matrix.
 
-Raster ops are pure array functions (unit-testable) wrapped into pygeoprocessing.raster_calculator
-closures by the callers below; nodata semantics are kept exactly as in the source repo so the
-port stays anchor-comparable against its reference output.
-
-The travel-cost distance is buffer_zone * pixel_size with pixel_size handed in by the task
-layer in KILOMETRES (the raster's degree size times `recreation_km_per_degree`), matching the
-fuel-cost column's USD per km. Setting that parameter to 1.0 leaves the distance in degrees,
-which is the source repo's construction. The value is linear in pixel_size, so the two
-configurations differ by exactly that factor.
+Raster ops are pure array functions (unit-testable) wrapped into pygeoprocessing closures by
+the task layer; the band maths is closed form (cdf_exp), so no numerical integration anywhere.
 """
 
 import numpy as np
 import pandas as pd
 
-# --- Method constants (published science; see module docstring) ---
+# --- Method constants (the author's method; see module docstring) ---
 RECREATION_LULC_CLASSES = ('cropland', 'forest', 'grassland', 'othernat', 'urban', 'water')
 RECREATION_LULC_SCORES = {'cropland': 0.4, 'forest': 1.0, 'grassland': 0.7,
                           'othernat': 0.85, 'urban': 0.05, 'water': 1.0}
@@ -45,10 +42,6 @@ RECREATION_SITE_MATRIX = np.array([                  # rows: accessibility 1-5, 
     [3, 5, 5, 9],
     [3, 6, 6, 9]])
 RECREATION_HQ_SITE_CLASS = 9
-RECREATION_DIST_BUFFERS = (1, 2, 3, 4)               # Chebyshev rings, grid cells (~km at 1 km)
-RECREATION_GRAVITY_K = (0.0132, 0.0267, 0.0518, 0.1067)      # per ring
-RECREATION_GRAVITY_ALPHA = (0.00155, 0.00115, 0.00098, 0.00067)
-RECREATION_WEEKS_PER_YEAR = 52
 RECREATION_FUEL_COST_COL = 'gasoline_cost_usd_per_km_2019_gppdata'
 
 INT_NDV = -1
@@ -91,32 +84,149 @@ def site_rank_array(acc_class, env_class):
     return RECREATION_SITE_MATRIX[acc_class - 1, env_class].astype(np.int16)
 
 
-def visit_potential_array(population, country_id, k, alpha):
-    """Gravity model: annual visits a population cell would generate if in the given ring."""
-    result = np.full_like(population, FLOAT_NDV, dtype=np.float32)
-    valid_mask = (~np.isnan(population) & ~np.isnan(country_id)
-                  & (population > 0) & (country_id >= 0))
-    if np.any(valid_mask):
-        weekly_visits = (1 + k) / (k + np.exp(-alpha * population[valid_mask]))
-        result[valid_mask] = weekly_visits * RECREATION_WEEKS_PER_YEAR
-        result[~valid_mask] = 0
-    return result
+# --- Banded travel-cost demand (the author's zonal rewrite) ---
+def cdf_exp(d_km, b):
+    """CDF of the normalized exponential density f(d) = b exp(-b d); closed form."""
+    return 1.0 - np.exp(-b * d_km)
 
 
-def value_potential_array(population, country_id, cost_lookup, k, alpha, buffer_zone, pixel_size):
-    """Visits x national travel cost for the given ring (see the flagged units note above)."""
-    max_country_id = len(cost_lookup) - 1
-    result = np.full_like(population, FLOAT_NDV, dtype=np.float32)
-    valid_mask = (~np.isnan(population) & ~np.isnan(country_id)
-                  & (population > 0) & (country_id >= 0) & (country_id <= max_country_id))
-    if np.any(valid_mask):
-        weekly_visits = (1 + k) / (k + np.exp(-alpha * population[valid_mask]))
-        annual_visits = weekly_visits * RECREATION_WEEKS_PER_YEAR
-        ring_distance = buffer_zone * pixel_size
-        travel_costs = cost_lookup[country_id[valid_mask].astype(int)] * (ring_distance - 0.5 * pixel_size)
-        result[valid_mask] = annual_visits * travel_costs
-        result[~valid_mask] = 0
-    return result
+def compute_group_bands(pixel_size_km, max_distance_km=50.0, max_bands=8):
+    """The fixed-cutoff distance bands, grid-aware, exactly as the source computes them.
+
+    The cutoff is the same for every parameter group (a farthest reasonable day trip); the
+    band count is floor(cutoff / pixel), clamped to [1, max_bands], so no band is narrower
+    than the grid resolves. The decay rate b shapes how demand SPLITS over these bands
+    (cdf_exp), never where it stops.
+
+    Returns:
+        (cutoff_km, edges): edges is the list of n_bands + 1 km values from 0 to the cutoff.
+    """
+    cutoff_km = max_distance_km
+    n_bands = int(np.clip(np.floor(cutoff_km / pixel_size_km), 1, max_bands))
+    band_width = cutoff_km / n_bands
+    edges = [i * band_width for i in range(n_bands + 1)]
+    return cutoff_km, edges
+
+
+def ring_kernel_array(r_lo, r_hi, pixel_size_km):
+    """Binary ring indicator over pixel offsets: 1 where the offset distance falls in
+    (r_lo, r_hi], or [0, r_hi] for the first band. One kernel serves both the site count
+    within the band and the even spread of the band's fixed budget."""
+    radius_px = int(np.ceil(r_hi / pixel_size_km))
+    yy, xx = np.mgrid[-radius_px:radius_px + 1, -radius_px:radius_px + 1]
+    d_km = np.sqrt(xx ** 2 + yy ** 2) * pixel_size_km
+    within = (d_km <= r_hi) if r_lo == 0 else ((d_km > r_lo) & (d_km <= r_hi))
+    return within.astype(np.float32)
+
+
+def validate_recreation_params(df):
+    """The demand-parameter table as the two lookups the flow engine needs.
+
+    Args:
+        df (pd.DataFrame): iso3_r250_id, iso3_r250_name, param_group, participation_param,
+            distance_param.
+
+    Returns:
+        (country_to_group_map, group_params): id -> group, and group -> {'a', 'b'}.
+
+    Raises:
+        ValueError: on missing columns, or a param_group whose countries disagree on the
+            parameter values -- that disagreement means the grouping and the parameters have
+            different ideas of what a group is.
+    """
+    required = ['iso3_r250_id', 'iso3_r250_name', 'param_group',
+                'participation_param', 'distance_param']
+    missing_cols = [c for c in required if c not in df.columns]
+    if missing_cols:
+        raise ValueError(f'Parameter table missing required columns: {missing_cols}')
+    check = df.groupby('param_group')[['participation_param', 'distance_param']].nunique()
+    bad = check[(check['participation_param'] > 1) | (check['distance_param'] > 1)]
+    if not bad.empty:
+        raise ValueError(
+            'param_group(s) with inconsistent participation_param/distance_param across '
+            f'countries: {list(bad.index)}. Every country sharing a param_group must have '
+            'identical parameter values.')
+    country_to_group_map = dict(zip(df['iso3_r250_id'].astype(int), df['param_group'].astype(int)))
+    group_params = {}
+    for gid, sub in df.groupby('param_group'):
+        row = sub.iloc[0]
+        group_params[int(gid)] = {'a': float(row['participation_param']),
+                                  'b': float(row['distance_param'])}
+    return country_to_group_map, group_params
+
+
+def nearest_year_choice(df, id_col, value_col, target_year):
+    """One row per id: the value from the year closest to target_year, later years winning
+    ties, exactly as the source's fallback sorts. Returns id, year_used, year_distance and
+    the value column."""
+    rows = []
+    for row_id, sub in df.groupby(id_col):
+        sub = sub.assign(year_distance=(sub['year'] - target_year).abs())
+        best = sub.sort_values(['year_distance', 'year'], ascending=[True, False]).iloc[0]
+        rows.append({id_col: row_id, 'year_used': int(best['year']),
+                     'year_distance': int(best['year_distance']), value_col: best[value_col]})
+    return pd.DataFrame(rows)
+
+
+def air_travel_value_by_country(arrivals, crosswalk, airfare, target_year):
+    """Arrivals by origin region, priced at the staged region-to-region 2019 airfare matrix.
+
+    Per destination country the year is the nearest one with any nonzero region-level
+    arrivals, so a country's origin-region shares all come from one year. Arrivals from or to
+    the unpriced residual region stay counted but unpriced, which the coverage share exposes.
+
+    Args:
+        arrivals (pd.DataFrame): iso3_r250_id, origin_region, year, arrivals.
+        crosswalk (pd.DataFrame): iso3_r250_id, unwto_region.
+        airfare (pd.DataFrame): origin_region, destination_region, predicted_fare_2019_usd.
+        target_year (int): the base year.
+
+    Returns:
+        pd.DataFrame: iso3_r250_id, total_arrivals, priced_arrivals, air_travel_value,
+        arrivals_coverage_share.
+    """
+    totals = arrivals.groupby(['iso3_r250_id', 'year'])['arrivals'].sum().reset_index()
+    totals = totals[totals['arrivals'] > 0]
+    year_choice = nearest_year_choice(totals, 'iso3_r250_id', 'arrivals', target_year)[
+        ['iso3_r250_id', 'year_used']]
+
+    chosen = arrivals.merge(year_choice, left_on=['iso3_r250_id', 'year'],
+                            right_on=['iso3_r250_id', 'year_used'])
+    merged = chosen.merge(
+        crosswalk.rename(columns={'unwto_region': 'destination_region'}),
+        on='iso3_r250_id', how='left')
+    merged = merged.merge(airfare, on=['origin_region', 'destination_region'], how='left')
+    merged['priced_arrivals'] = np.where(
+        merged['predicted_fare_2019_usd'].notna(), merged['arrivals'], 0.0)
+    merged['value'] = merged['arrivals'] * merged['predicted_fare_2019_usd']
+
+    out = merged.groupby('iso3_r250_id').agg(
+        total_arrivals=('arrivals', 'sum'),
+        priced_arrivals=('priced_arrivals', 'sum'),
+        air_travel_value=('value', lambda s: s.sum(skipna=True))).reset_index()
+    out['arrivals_coverage_share'] = np.where(
+        out['total_arrivals'] > 0, out['priced_arrivals'] / out['total_arrivals'], np.nan)
+    return out
+
+
+UNWTO_ARRIVAL_REGIONS = ('Africa', 'Americas', 'East Asia and the Pacific', 'Europe',
+                         'Middle East', 'South Asia', 'Other not classified')
+
+
+def clean_unwto_arrivals_by_region(df):
+    """The Inbound Tourism-Regions sheet (read from its own header row) as a tidy arrivals
+    table: iso3_r250_id, origin_region, year, arrivals (the sheet reports thousands)."""
+    region_col = 'Unnamed: 6'
+    df = df[df[region_col].isin(UNWTO_ARRIVAL_REGIONS)].copy()
+    df['C.'] = df['C.'].ffill()
+    year_cols = [c for c in df.columns if isinstance(c, int)]
+    tidy = df.melt(id_vars=['C.', region_col], value_vars=year_cols,
+                   var_name='year', value_name='arrivals_thousands')
+    tidy = tidy.rename(columns={'C.': 'iso3_r250_id', region_col: 'origin_region'})
+    tidy['origin_region'] = tidy['origin_region'].replace({'Other not classified': 'Other'})
+    tidy['iso3_r250_id'] = tidy['iso3_r250_id'].astype(int)
+    tidy['arrivals'] = pd.to_numeric(tidy['arrivals_thousands'], errors='coerce') * 1000.0
+    return tidy[['iso3_r250_id', 'origin_region', 'year', 'arrivals']].dropna(subset=['arrivals'])
 
 
 def allocate_overnights_array(hotel_array, country_array, country_overnights_map):
@@ -224,17 +334,28 @@ def clean_unwto_data(sheets_by_tourism_type):
 
 
 def build_country_overnights_map(overnight_df, target_year):
-    """Panel -> {iso3_r250_id: domestic + international overnights} for the target year."""
-    year_data = overnight_df[overnight_df['year'] == target_year]
-    country_overnights_map = {}
-    for _, row in year_data.iterrows():
-        total_overnights = 0
-        for col in ('overnights_domestic', 'overnights_international'):
-            if col in row and pd.notna(row[col]):
-                total_overnights += row[col]
-        if total_overnights > 0:
-            country_overnights_map[row['iso3_r250_id']] = (
-                country_overnights_map.get(row['iso3_r250_id'], 0) + total_overnights)
-    return country_overnights_map
+    """Panel -> ({iso3_r250_id: overnights}, substitution rows), nearest year standing in.
+
+    UNWTO reporting is patchy, so a country with no row at the target year takes its nearest
+    year with positive overnights (later years win ties). The substitution rows say exactly
+    which year each country used and how far off it was; a country with no usable year in ANY
+    year is absent from both returns and reads downstream as missing, never as zero.
+    """
+    df = overnight_df.copy()
+    df['total_overnights'] = df[['overnights_domestic', 'overnights_international']].sum(
+        axis=1, min_count=1)
+    df = df[df['total_overnights'] > 0]
+    if df.empty:
+        return {}, []
+    choice = nearest_year_choice(df[['iso3_r250_id', 'year', 'total_overnights']],
+                                 'iso3_r250_id', 'total_overnights', target_year)
+    names = df.drop_duplicates('iso3_r250_id').set_index('iso3_r250_id')['unwto_name']
+    country_overnights_map = dict(zip(choice['iso3_r250_id'], choice['total_overnights']))
+    substitution_rows = [{
+        'iso3_r250_id': row['iso3_r250_id'], 'unwto_name': names.get(row['iso3_r250_id'], ''),
+        'year_used': row['year_used'], 'target_year': target_year,
+        'year_distance': row['year_distance'], 'total_overnights': row['total_overnights'],
+    } for _, row in choice.iterrows()]
+    return country_overnights_map, substitution_rows
 
 

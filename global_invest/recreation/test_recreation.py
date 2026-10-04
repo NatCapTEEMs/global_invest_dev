@@ -1,15 +1,17 @@
 """Unit tests for the recreation GEP port (synthetic, self-contained).
 
-Pins the ported science against hand-derived values so the port stays anchor-comparable: the
-classification ops and matrices, the Chebyshev ring kernels, the gravity model, the overnight
-allocation, and the per-country aggregation (born-r250 -- the id raster IS iso3_r250_id).
-The reference-output comparison (results_by_country.csv from the source pipeline) is the
-LIVE-run gate once the drive data is staged; these tests cover the math, not the data.
+Pins the ported science against hand-derived values: the classification matrices, the band
+maths and its conservation, the demand-parameter validation, the UNWTO machinery with its
+nearest-year fallback, the air-travel valuation, and the one structural change the port
+makes -- the flow engine windows by country where the source windows by parameter group, and
+one test computes both formulations on a shared toy world and requires the same rasters.
 """
 from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
+import pytest
+from scipy import signal
 
 from global_invest.recreation import recreation_functions as rf
 from global_invest.recreation import recreation_tasks as rt
@@ -37,89 +39,80 @@ def test_accessibility_and_site_rank_follow_the_matrices():
     roads = np.array([1.0, 100.0], dtype='float32')
     acc = rf.accessibility_class_array(urban, roads)
     assert list(acc) == [5, 1]
-    # Site rank: accessibility 5 x env 3 -> 9 (high-quality); accessibility 1 x env 0 -> 1.
     rank = rf.site_rank_array(np.array([5, 1]), np.array([3, 0]))
     assert list(rank) == [rf.RECREATION_HQ_SITE_CLASS, 1]
 
 
-def test_distance_kernels_ring_one_is_full_block_rings_beyond_are_hollow(tmp_path):
-    import pygeoprocessing
-    k1 = str(tmp_path / 'k1.tif')
-    k3 = str(tmp_path / 'k3.tif')
-    rt.create_distance_kernel(k1, 1)
-    rt.create_distance_kernel(k3, 3)
-    a1 = pygeoprocessing.raster_to_numpy_array(k1)
-    a3 = pygeoprocessing.raster_to_numpy_array(k3)
-    assert a1.shape == (3, 3) and a1.sum() == 9          # ring 1: full block, center included
-    assert a3.shape == (7, 7) and a3.sum() == 24         # ring 3: hollow ring only
-    assert a3[3, 3] == 0 and a3[0, 0] == 1
+def test_band_edges_are_grid_aware_and_shares_sum_to_the_cutoff_cdf():
+    cutoff, edges = rf.compute_group_bands(pixel_size_km=1.0, max_distance_km=50.0, max_bands=8)
+    assert cutoff == 50.0 and len(edges) == 9 and edges[0] == 0.0 and edges[-1] == 50.0
+    # A cutoff the grid cannot subdivide collapses to one band.
+    _, coarse = rf.compute_group_bands(pixel_size_km=80.0, max_distance_km=50.0, max_bands=8)
+    assert len(coarse) == 2
+    # The band shares plus the beyond-cutoff share partition the whole budget.
+    b = 0.35
+    shares = [rf.cdf_exp(edges[k + 1], b) - rf.cdf_exp(edges[k], b) for k in range(8)]
+    assert np.isclose(sum(shares) + (1.0 - rf.cdf_exp(cutoff, b)), 1.0)
 
 
-def test_gravity_visits_are_bounded_and_monotone_in_population():
-    country_id = np.zeros(3, dtype='float32')
-    population = np.array([1.0, 1000.0, 1e9], dtype='float32')
-    k, alpha = rf.RECREATION_GRAVITY_K[0], rf.RECREATION_GRAVITY_ALPHA[0]
-    visits = rf.visit_potential_array(population, country_id, k, alpha)
-    assert np.all(np.diff(visits) > 0)                                   # more people, more visits
-    assert np.isclose(visits[-1], (1 + k) / k * rf.RECREATION_WEEKS_PER_YEAR, rtol=1e-4)
-    # zero population generates nothing WHEN the block has any valid pixel (source semantics,
-    # kept for anchor fidelity: an entirely-invalid block stays nodata, and the downstream
-    # convolution treats nodata and 0 identically -- both contribute nothing).
-    mixed = rf.visit_potential_array(np.array([0.0, 10.0], dtype='float32'),
-                                     np.zeros(2, dtype='float32'), k, alpha)
-    assert mixed[0] == 0 and mixed[1] > 0
-    all_invalid = rf.visit_potential_array(np.zeros(1, dtype='float32'), country_id[:1], k, alpha)
-    assert all_invalid[0] == rf.FLOAT_NDV
+def test_ring_kernels_partition_the_disc():
+    # The first band includes the centre; later rings are hollow; together they tile the
+    # cutoff disc with no overlap, so no pixel offset is counted in two bands.
+    _, edges = rf.compute_group_bands(pixel_size_km=1.0, max_distance_km=4.0, max_bands=4)
+    kernels = [rf.ring_kernel_array(edges[k], edges[k + 1], 1.0) for k in range(4)]
+    assert kernels[0][1, 1] == 1 and kernels[1].sum() > 0
+    size = kernels[-1].shape[0]
+    stacked = np.zeros((size, size))
+    for kernel in kernels:
+        pad = (size - kernel.shape[0]) // 2
+        stacked[pad:pad + kernel.shape[0], pad:pad + kernel.shape[0]] += kernel
+    assert stacked.max() == 1.0                          # no offset in two bands
+    yy, xx = np.mgrid[-size // 2 + 1:size // 2 + 1, -size // 2 + 1:size // 2 + 1]
+    inside = np.sqrt(xx ** 2 + yy ** 2) <= 4.0
+    assert np.array_equal(stacked > 0, inside)           # and the disc is fully tiled
 
 
-def test_value_potential_is_visits_times_national_cost_times_ring_distance():
-    population = np.array([1000.0], dtype='float32')
-    country_id = np.array([2.0], dtype='float32')
-    cost_lookup = np.array([0.0, 0.0, 0.5], dtype='float32')             # country 2: 0.5 USD/km
-    k, alpha = rf.RECREATION_GRAVITY_K[1], rf.RECREATION_GRAVITY_ALPHA[1]
-    buffer_zone, pixel_size = 2, 1.0
-    visits = rf.visit_potential_array(population, country_id, k, alpha)
-    value = rf.value_potential_array(population, country_id, cost_lookup, k, alpha,
-                                     buffer_zone, pixel_size)
-    expected = visits[0] * 0.5 * (buffer_zone * pixel_size - 0.5 * pixel_size)
-    assert np.isclose(value[0], expected, rtol=1e-5)
+def test_param_validation_rejects_a_group_whose_countries_disagree():
+    good = pd.DataFrame({
+        'iso3_r250_id': [1, 2, 3], 'iso3_r250_name': ['A', 'B', 'C'],
+        'param_group': [1, 1, 2], 'participation_param': [6.0, 6.0, 2.0],
+        'distance_param': [0.35, 0.35, 0.45]})
+    country_to_group, group_params = rf.validate_recreation_params(good)
+    assert country_to_group == {1: 1, 2: 1, 3: 2}
+    assert group_params[1] == {'a': 6.0, 'b': 0.35}
+    bad = good.copy()
+    bad.loc[1, 'participation_param'] = 7.0
+    with pytest.raises(ValueError):
+        rf.validate_recreation_params(bad)
 
 
-def test_value_potential_is_linear_in_the_pixel_size():
-    # The km-per-degree conversion is therefore a pure rescale of the value surface.
-    population = np.array([1000.0, 250.0], dtype='float32')
-    country_id = np.array([2.0, 2.0], dtype='float32')
-    cost_lookup = np.array([0.0, 0.0, 0.5], dtype='float32')
-    k, alpha = rf.RECREATION_GRAVITY_K[1], rf.RECREATION_GRAVITY_ALPHA[1]
-    in_degrees = rf.value_potential_array(population, country_id, cost_lookup, k, alpha,
-                                          buffer_zone=2, pixel_size=1.0)
-    in_km = rf.value_potential_array(population, country_id, cost_lookup, k, alpha,
-                                     buffer_zone=2, pixel_size=111.32)
-    assert np.allclose(in_km, in_degrees * 111.32, rtol=1e-5)
+def test_nearest_year_fallback_prefers_closer_then_later_years():
+    panel = pd.DataFrame({
+        'iso3_r250_id': [8, 8, 8, 12, 12],
+        'unwto_name': ['ALBANIA'] * 3 + ['BELGIUM'] * 2,
+        'year': [2016, 2018, 2020, 2015, 2021],
+        'overnights_domestic': [1.0, 2.0, 3.0, 4.0, 5.0],
+        'overnights_international': [0.0, 0.0, 0.0, 0.0, 0.0]})
+    result, substitutions = rf.build_country_overnights_map(panel, 2019)
+    # 2018 and 2020 tie at distance 1; the later year wins, as in the source's sort.
+    assert result[8] == 3.0
+    assert result[12] == 5.0                              # 2021 at distance 2 beats 2015 at 4
+    by_id = {row['iso3_r250_id']: row for row in substitutions}
+    assert by_id[8]['year_used'] == 2020 and by_id[8]['year_distance'] == 1
+    # A country with no positive overnights in any year is absent, never zero.
+    empty, _ = rf.build_country_overnights_map(panel.assign(
+        overnights_domestic=0.0, overnights_international=np.nan), 2019)
+    assert empty == {}
 
 
 def test_overnight_allocation_splits_national_totals_by_hotel_share():
-    # Country 1: 3 hotel pixels weighted 1/1/2 sharing 400 overnights -> 100/100/200.
-    # Country 2 has overnights but no hotels -> allocates nothing (stays 0).
     hotels = np.array([1, 1, 2, 0], dtype='float32')
     countries = np.array([1, 1, 1, 2], dtype='float32')
     out = rf.allocate_overnights_array(hotels, countries, {1: 400.0, 2: 999.0})
     assert list(out) == [100.0, 100.0, 200.0, 0.0]
 
 
-def test_build_country_overnights_map_sums_domestic_and_international_for_target_year():
-    panel = pd.DataFrame({
-        'iso3_r250_id': [8, 8, 12],
-        'year': [2019, 2018, 2019],
-        'overnights_domestic': [100.0, 5.0, np.nan],
-        'overnights_international': [50.0, 5.0, 30.0]})
-    result = rf.build_country_overnights_map(panel, 2019)
-    assert result == {8: 150.0, 12: 30.0}
-
-
 def test_unwto_extraction_tidies_the_sheet_layout():
-    # The UNWTO sheet layout: merged cells arrive as NaN (ffilled), year columns as strings,
-    # the Overnights indicator row carries the values.
     raw = pd.DataFrame({
         'C.': [8.0, np.nan, np.nan],
         'Basic data and indicators': ['ALBANIA', np.nan, np.nan],
@@ -134,9 +127,7 @@ def test_unwto_extraction_tidies_the_sheet_layout():
 
 def _unwto_sheet(total_overnights, hotel_overnights):
     """One accommodation sheet as read_unwto_sheets hands it over: two countries, each with a
-    Total row and a Hotels row, and the merged cells under a country name arriving as NaN. The
-    second country always reports a Total, which is what holds the Total column open in the
-    pivot when the first country's Total is missing."""
+    Total row and a Hotels row, and the merged cells under a country name arriving as NaN."""
     return pd.DataFrame({
         'C.': [8.0, np.nan, 12.0, np.nan],
         'Basic data and indicators': ['ALBANIA', np.nan, 'BELGIUM', np.nan],
@@ -180,25 +171,130 @@ def test_task_reader_finds_each_sheet_header_below_the_banner_row(tmp_path):
     assert afghanistan['overnights_international'] == 150.0
 
 
+def test_air_travel_value_prices_arrivals_at_the_region_pair_fare():
+    arrivals = pd.DataFrame({
+        'iso3_r250_id': [8, 8, 8, 12],
+        'origin_region': ['Europe', 'Other', 'Europe', 'Africa'],
+        'year': [2019, 2019, 2017, 2018],
+        'arrivals': [1000.0, 500.0, 999.0, 200.0]})
+    crosswalk = pd.DataFrame({'iso3_r250_id': [8, 12], 'unwto_region': ['Europe', 'Africa']})
+    airfare = pd.DataFrame({
+        'origin_region': ['Europe', 'Africa'], 'destination_region': ['Europe', 'Africa'],
+        'predicted_fare_2019_usd': [300.0, 400.0]})
+    out = rf.air_travel_value_by_country(arrivals, crosswalk, airfare, 2019).set_index('iso3_r250_id')
+    # Country 8 uses its exact 2019 rows: Europe arrivals priced, Other counted but unpriced.
+    assert out.at[8, 'air_travel_value'] == 1000.0 * 300.0
+    assert out.at[8, 'total_arrivals'] == 1500.0
+    assert out.at[8, 'arrivals_coverage_share'] == pytest.approx(1000.0 / 1500.0)
+    # Country 12 falls back to its nearest year (2018) and prices fully.
+    assert out.at[12, 'air_travel_value'] == 200.0 * 400.0
+
+
 def _write_tif(path, array, nodata=-9999.0):
     from osgeo import gdal, osr
     array = np.asarray(array, dtype='float32')
     h, w = array.shape
     ds = gdal.GetDriverByName('GTiff').Create(str(path), w, h, 1, gdal.GDT_Float32)
-    ds.SetGeoTransform((-180.0, 360.0 / w, 0.0, 90.0, 0.0, -180.0 / h))
+    # A toy geographic grid centred on the equator, so pixel size in km is uniform enough
+    # for the ring geometry; 0.01 degrees to match the production grid's spacing.
+    ds.SetGeoTransform((0.0, 0.01, 0.0, 0.2, 0.0, -0.01))
     srs = osr.SpatialReference(); srs.ImportFromEPSG(4326); ds.SetProjection(srs.ExportToWkt())
     band = ds.GetRasterBand(1); band.SetNoDataValue(nodata)
     band.WriteArray(array); band.FlushCache(); ds = None
 
 
-def test_country_sums_key_on_the_id_raster_and_respect_nodata(tmp_path):
-    ids = np.array([[1, 1], [2, -9999]], dtype='float32')
-    vals = np.array([[10.0, 5.0], [2.0, 100.0]], dtype='float32')       # 100 sits on nodata id
-    _write_tif(tmp_path / 'ids.tif', ids)
-    _write_tif(tmp_path / 'vals.tif', vals)
-    df = rt.sum_rasters_by_country_id({'daily_value': str(tmp_path / 'vals.tif')},
-                                      str(tmp_path / 'ids.tif'))
-    assert df.set_index('iso3_r250_id')['daily_value'].to_dict() == {1: 15.0, 2: 2.0}
+def _group_window_reference(pop, country_id, sites, country_to_group, group_params, cost_map,
+                            pixel_size_km, max_distance_km, max_bands):
+    """The SOURCE formulation, transcribed: one pass per parameter group over the full grid,
+    the group's pixels selected by a group mask. What the port changes is only the windowing
+    (per country), so this reference is what the engine must reproduce."""
+    visits = np.zeros_like(pop, dtype=np.float64)
+    value = np.zeros_like(pop, dtype=np.float64)
+    unmet = np.zeros_like(pop, dtype=np.float64)
+    site_ind = (sites == 1).astype(np.float64)
+    cutoff, edges = rf.compute_group_bands(pixel_size_km, max_distance_km, max_bands)
+    max_cid = max(cost_map)
+    cost_lookup = np.zeros(max_cid + 1)
+    for cid, cost in cost_map.items():
+        cost_lookup[cid] = cost
+    for gid in sorted(set(country_to_group.values())):
+        a, b = group_params[gid]['a'], group_params[gid]['b']
+        group_countries = [c for c, g in country_to_group.items() if g == gid]
+        group_mask = np.isin(country_id, group_countries)
+        valid = (pop > 0) & group_mask
+        budget = np.where(valid, pop * a, 0.0)
+        cost_per_km = np.zeros_like(pop, dtype=np.float64)
+        in_range = valid & (country_id >= 0) & (country_id <= max_cid)
+        cost_per_km[in_range] = cost_lookup[country_id[in_range].astype(int)]
+        for k in range(len(edges) - 1):
+            r_lo, r_hi = edges[k], edges[k + 1]
+            r_mid = 0.5 * (r_lo + r_hi)
+            share = rf.cdf_exp(r_hi, b) - rf.cdf_exp(r_lo, b)
+            q_band = budget * share
+            kernel = rf.ring_kernel_array(r_lo, r_hi, pixel_size_km).astype(np.float64)
+            denom = signal.fftconvolve(site_ind, kernel, mode='same')
+            denom_safe = np.where(denom > 1e-6, denom, np.nan)
+            q_visits = np.where(np.isfinite(denom_safe), q_band / denom_safe, 0.0)
+            q_value = q_visits * cost_per_km * 2.0 * r_mid
+            no_site = ~np.isfinite(denom_safe) & valid
+            unmet[no_site] += q_band[no_site]
+            visits += signal.fftconvolve(q_visits, kernel, mode='same') * site_ind
+            value += signal.fftconvolve(q_value, kernel, mode='same') * site_ind
+        unmet += np.where(valid, budget * (1.0 - rf.cdf_exp(cutoff, b)), 0.0)
+    return visits, value, unmet
+
+
+def test_country_windowed_engine_reproduces_the_group_windowed_formulation(tmp_path):
+    """The port's one structural change, pinned: windowing by country gives the same visits,
+    value and unmet rasters as the source's one-pass-per-group formulation, because country
+    ids partition each group's pixels and the maths is pixel-local within the cutoff."""
+    rng = np.random.default_rng(7)
+    shape = (36, 54)
+    country_id = np.full(shape, -9999.0, dtype='float32')
+    country_id[4:30, 3:20] = 1
+    country_id[4:30, 20:38] = 2
+    country_id[8:26, 40:52] = 3
+    pop = np.where(country_id > 0, rng.uniform(0, 80, shape), -9999.0).astype('float32')
+    pop[6, 5] = 0.0                                       # a zero-population pixel stays inert
+    sites = np.zeros(shape, dtype='float32')
+    for row, col in [(10, 10), (11, 10), (20, 25), (5, 37), (12, 45), (25, 50)]:
+        sites[row, col] = 1.0                             # one site just across a border
+    country_to_group = {1: 1, 2: 1, 3: 2}                 # two countries share a group
+    group_params = {1: {'a': 6.0, 'b': 0.35}, 2: {'a': 2.0, 'b': 0.6}}
+    cost_map = {1: 0.1, 2: 0.25, 3: 0.4}
+
+    paths = {}
+    for name, array in (('pop', pop), ('country', country_id), ('sites', sites)):
+        paths[name] = str(tmp_path / f'{name}.tif')
+        _write_tif(paths[name], array)
+    costs_path = str(tmp_path / 'costs.csv')
+    pd.DataFrame({'iso3_r250_id': list(cost_map), rf.RECREATION_FUEL_COST_COL:
+                  list(cost_map.values())}).to_csv(costs_path, index=False)
+    outputs = {key: str(tmp_path / f'{key}.tif') for key in ('visits', 'value', 'unmet')}
+    outputs.update({key: str(tmp_path / f'{key}.csv')
+                    for key in ('site_table', 'group_table', 'missing_cost_iso3')})
+
+    max_distance_km, max_bands = 5.0, 4
+    rt.calculate_recreation_flows(
+        {'hq_sites': paths['sites'], 'population': paths['pop'],
+         'country_id': paths['country'], 'country_costs': costs_path},
+        outputs, country_to_group, group_params, max_distance_km, max_bands)
+
+    import pygeoprocessing
+    pixel_size_km = rt.convert_pixel_size_to_km(paths['pop'], 0.01)
+    ref_visits, ref_value, ref_unmet = _group_window_reference(
+        pop.astype(np.float64), country_id, sites, country_to_group, group_params, cost_map,
+        pixel_size_km, max_distance_km, max_bands)
+    got = {key: pygeoprocessing.raster_to_numpy_array(outputs[key]) for key in
+           ('visits', 'value', 'unmet')}
+    for key, reference in (('visits', ref_visits), ('value', ref_value), ('unmet', ref_unmet)):
+        assert np.allclose(got[key], reference.astype(np.float32), rtol=1e-4, atol=1e-3), key
+
+    # Conservation, per group: budget = realized + unmet, and the visits raster carries
+    # exactly the realized trips.
+    qa = pd.read_csv(outputs['group_table'])
+    assert np.allclose(qa['budget_total'], qa['realized_total'] + qa['unmet_total'], rtol=1e-9)
+    assert np.isclose(got['visits'].sum(), qa['realized_total'].sum(), rtol=1e-4)
 
 
 def test_es_config_and_parameters_rows_hydrate_the_recreation_surface(tmp_path):
@@ -213,3 +309,5 @@ def test_es_config_and_parameters_rows_hydrate_the_recreation_surface(tmp_path):
     utilities.hydrate_es_parameters(p, 'recreation', log=lambda *a: None)
     assert '{lulc_class}' in p.recreation_lulc_share_path_template       # formatted at use
     assert p.recreation_fuel_cost_path.endswith('feul_cost_per_km_2019_2datasources_iso3.csv')
+    assert float(p.recreation_max_distance_km) == 50.0
+    assert p.recreation_airfare_matrix_path.endswith('airfare_2019_regions.csv')

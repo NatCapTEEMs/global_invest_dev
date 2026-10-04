@@ -1,4 +1,4 @@
-"""Full recreation GEP run: site quality -> gravity-model visits -> travel-cost value -> report.
+"""Full recreation GEP run: site quality -> banded travel-cost flows -> three channels -> report.
 
 Thin runner: builds ONE tree and executes it. Inputs are published by each task itself
 (publish_inputs in the tasks module); base_data_dir is resolved by ProjectFlow (default /
@@ -10,11 +10,9 @@ consortium drive's Recreation/data/ tree -- 0_inputs/* to the module root,
   - lulc/: the six SEALS7 2010 1 km class-share rasters
   - pa/: WDPA accessible-area share       - distance_to_roads/: distance-to-road raster
   - grip4_road_length/: the 1 km reference grid   - worldpop/: 2010 population, aligned
-  - module root: fuel-cost CSV, UNWTO all-data workbook (xlsx -> needs openpyxl), hotels gpkg
-
-Verification anchor: the reference results_by_country.csv from the source pipeline's project
-dir (not committed to its repo) -- compare per-country daily/tourist visits and values once the
-data is staged. See the flagged travel-cost units note in recreation_functions.
+  - module root: fuel-cost CSV, UNWTO all-data workbook (xlsx -> needs openpyxl), hotels
+    gpkg, demand-parameter table, region crosswalk, the staged airfare matrix
+  - booking/: the hotel-price surface
 """
 import hazelbean as hb
 
