@@ -115,6 +115,34 @@ def test_es_config_and_parameters_rows_hydrate_the_fisheries_gep(tmp_path):
     assert p.fisheries_aquaculture_value_path.endswith('aquaculture/Aquaculture_Value.csv')
 
 
+def test_commercial_computed_value_reproduces_the_author_csv():
+    """The author's cleaned per-country capture CSV (2026-07-20, staged 2026-10) is the first
+    machine-readable reference this component has had: the full chain recomputed from the
+    staged CWoN inputs lands on his rows at his integer rounding. Same CWoN data on both
+    sides, so agreement tests the two implementations against each other, not the science."""
+    import os
+    data_dir = utilities.service_data_dir(_base_data_project(), 'fisheries')
+    cpi = ff.clean_cwon_cpi(pd.read_stata(os.path.join(data_dir, 'commercial', 'cpi2019.dta')))
+    rent = ff.clean_cwon_econ_rent(
+        pd.read_stata(os.path.join(data_dir, 'commercial', 'EconRent_Analysis_AllYears.dta')))
+    trends = ff.fisheries_rent_trends(ff.deflate_rent_to_2019usd(rent, cpi))
+    reference = pd.read_csv(
+        os.path.join(data_dir, 'author_drive_2026_10', 'fish_provision_capture_gep_20260720.csv'),
+        encoding='utf-8-sig')
+
+    merged = reference.merge(trends.rename(columns={'wb_code': 'iso3_r250_label'}),
+                             on='iso3_r250_label', how='left')
+    ours, ref = merged['positive_resrent_2019_hat'], merged['commfish_provision']
+    both = ours.notna() & ref.notna()
+    assert both.sum() == 165                                   # 107 valued plus 58 floored zeros
+    # The atol is his whole-dollar rounding plus the measured float drift against the staged
+    # run's environment, worst $3.96 (Vanuatu); the rtol covers the large countries at 4e-9.
+    assert np.allclose(ours[both], ref[both], rtol=1e-6, atol=5.0)
+    assert np.isclose(ours[both].sum(), ref[both].sum(), rtol=1e-7)
+    # His blank rows are the countries the chain cannot estimate, never ones we value.
+    assert not (ref.isna() & ours.notna()).any()
+
+
 # --- Subsistence component (Lynch et al. 2024) ---
 def test_subsistence_computed_value_reproduces_the_committed_output():
     """We compute from quantity times price rather than reading the release's TCUV column.

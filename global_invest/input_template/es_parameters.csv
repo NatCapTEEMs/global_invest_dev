@@ -25,6 +25,8 @@ fisheries,fisheries_ramp_to_end_year,true
 fisheries,fisheries_time_varying,true
 fisheries,fisheries_shock_acts,"[""FSH""]"
 fisheries,cwon_shocks_path_template,gtappy/cge_releases/gtapv7-aez-rd/data/{aggregation_label}/cwon_shocks.har
+fisheries,fisheries_reference_by_country_path,global_invest/fisheries/author_drive_2026_10/fish_provision_capture_gep_20260720.csv
+fisheries,fisheries_reference_source,"the author's cleaned per-country capture GEP (2026-07-20, delivered 2026-10-03 with write-ups staged beside it); the module's table matches it at integer rounding, pinned by a test"
 fisheries,fisheries_cwon_cpi_path,global_invest/fisheries/commercial/cpi2019.dta
 fisheries,fisheries_cwon_econ_rent_path,global_invest/fisheries/commercial/EconRent_Analysis_AllYears.dta
 fisheries,fisheries_aquaculture_value_path,global_invest/fisheries/aquaculture/Aquaculture_Value.csv
