@@ -29,9 +29,10 @@ table (five parameter groups on the staged table). A band's fixed budget divides
 across the sites its ring reaches; a band with no reachable site, and all demand beyond the
 cutoff, is tracked as unmet rather than discarded. Residents travel from their home pixels
 (WorldPop); tourists travel from their accommodation, built by allocating each country's
-UNWTO overnight stays over its hotel locations, with the nearest reported year standing in
-where 2019 is unreported and a country with no overnights data in any year kept missing
-rather than zero.
+UNWTO overnight stays over its national hotel stock, with the nearest reported year standing
+in where 2019 is unreported and a country with no overnights data in any year kept missing
+rather than zero. The workbook's Units column reads Thousands, so the panel's numbers are
+read as thousands of person-nights, the same convention the arrivals sheet already gets.
 
 ## Price
 
@@ -47,12 +48,18 @@ this module reads it as a staged input and makes no network request).
 ## Valuation
 
 $$
-\text{GEP}_i = V^{\text{daily}}_i + V^{\text{tourist}}_i + V^{\text{accommodation}}_i + V^{\text{air}}_i
+\text{GEP}_i = V^{\text{daily}}_i + V^{\text{accommodation}}_i + V^{\text{air}}_i
 $$
 
 summed over the channels the country has: a channel whose data gap makes it missing stays
 out of the sum, the channel columns and coverage shares are published beside the total, and
 a country with no channel at all is missing. One row per country on the r250 list.
+
+The tourist ground-travel column is published and not yet summed into the total: with the
+overnights at their stated thousands, that channel multiplies person-nights by the ANNUAL
+participation rate, and whether the author intends a per-night rate instead moves it by
+orders of magnitude. The column carries the construction as delivered; the sum waits for
+his answer.
 
 ## Implementation notes
 

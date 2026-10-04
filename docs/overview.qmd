@@ -66,8 +66,8 @@ timber_total: "$132.13bn"
 landslide_total: "$657.8M"
 landslide_oecd: "$770.7M"
 landslide_deaths: "570.66"
-recreation_total: "$192.36bn"
-recreation_total_degrees: "$1.73bn"
+recreation_total: "$1.74T"
+recreation_tourist_ground: "$1.63T"
 fire_cause_total: "-$1.3bn"
 fire_baseline_total: "-$22.4bn"
 fire_area_total: "+$16.7bn"
@@ -200,7 +200,7 @@ format:
 | Process model run here | {{< meta cat_model >}} | erosion, landslides, recreation |
 
 - One of each, in order: urban cooling reads a dollar column out of a committed file, mining rescales a World Bank rent share times GDP, crop production multiplies FAOSTAT output by the CWoN land rental rate, and pollination multiplies 158 production grids by price and dependence cell by cell.
-- The three process models have dynamics of their own: erosion runs InVEST SDR with sediment routing, landslides computes slope stability twice per pixel, and recreation runs a gravity model allocating visits into scored sites.
+- The three process models have dynamics of their own: erosion runs InVEST SDR with sediment routing, landslides computes slope stability twice per pixel, and recreation allocates banded trip budgets into dissolved sites and prices three spending channels.
 - The ladder measures work, not confidence. The account without a usable number sits at the top: stormwater has no dollar total because its price is a placeholder. Crop production, down at table arithmetic, reproduces its reference exactly.
 - One label per service also hides a split. Water quality computes its dollar figure and reads the one it reports, coastal protection computes mangroves and reads corals, and wildfires computes the valuation on coefficients it did not fit. The ours column carries that, the category cannot.
 
@@ -294,7 +294,7 @@ format:
 | erosion | not reported | no. The run is ongoing. |
 | landslide_mitigation | {{< meta landslide_total >}} ({{< meta landslide_deaths >}} avoided deaths at the shared EPA life-years-lost VSL; {{< meta landslide_oecd >}} at OECD) | partly. The author's rebuilt panel prices our deaths within 7 percent of his refreshed $707M, the gap being his newer death layer; the old sheet column ($865M) remains unexplained |
 | fisheries | shock + commercial GEP {{< meta fisheries_total >}} provisional + subsistence {{< meta fisheries_subsistence_total >}} + aquaculture {{< meta fisheries_aquaculture_total >}} | partially. Subsistence reproduces its committed output, and the commercial table matches the author's per-country CSV at his rounding; aquaculture's delivered $100.68bn differs structurally from both earlier vintages |
-| recreation | {{< meta recreation_total >}} with the travel distance in kilometres | no. The author's table is not reachable, and the sheet's {{< meta recreation_total_degrees >}} is the degree construction rounded to three significant figures |
+| recreation | {{< meta recreation_total >}} over three channels; tourist ground travel {{< meta recreation_tourist_ground >}} published beside the sum | no. The author's rewrite commits no output table, so our run is the first end-to-end number |
 | fire_protection | {{< meta fire_cause_total >}} provisional, one of three coefficients | partially. Reproduces the committed output, but reads the committed regression coefficients rather than refitting them. Kosovo and two Indian sub-regions now reach a country instead of no country |
 | water_supply | hydropower component {{< meta water_supply_total >}} | yes. |
 | water_use | {{< meta water_use_gep >}} irrigation, from a {{< meta water_use_premium_gross >}} premium, and {{< meta water_use_domestic_gep >}} domestic | no. The drive's two committed figures were produced separately, so neither is a reference |
@@ -376,9 +376,10 @@ format:
 
 ## recreation
 
-- [Values visits to natural recreation sites at travel cost: 1 km sites ranked by land-cover shares, protected areas and road access, then a gravity model sends residents on day trips and tourists on overnight stays into the high-quality sites. Computed end to end in the library, with the travel distance converted to the kilometres the fuel cost prices: {{< meta recreation_total >}}. The source construction multiplied the per-km cost by a distance in degrees, giving {{< meta recreation_total_degrees >}} -- the level the sheet carries -- and the value is exactly linear in the conversion, so the two differ by the 111.32 km in an equatorial degree.]{.state}
-- **Q1:** where can we find the source pipeline's results_by_country.csv?
-- **Q2:** did the travel-cost step intend kilometres? The fuel-cost column is USD per km, so we now convert the degree pixel size at 111.32 km per degree -- and since the answer moves the row a hundredfold, it needs the author's word, not just ours.
+- [Values nature-based recreation over three spending channels on the author's rewrite: residents' day trips priced at round-trip fuel cost into dissolved high-quality sites, tourists' accommodation at the hotel-price surface, and international air travel at the staged regional airfare matrix, giving {{< meta recreation_total >}}. Two source defects were fixed on the way in: the UNWTO overnights are read at their stated thousands, and the hotel allocation now divides by the national hotel stock (the blockwise version handed Spain its total 22 times over).]{.state}
+- **Q1:** does the tourist ground-travel channel take an annual or a per-night participation rate? Overnights times the annual rate gives {{< meta recreation_tourist_ground >}}, which is published beside the sum and not in it until the author answers.
+- **Q2:** should all arrivals price at air fares? UNWTO arrivals include land borders, and the air channel prices every one of them at a regional round-trip fare.
+- **Q3:** what calibrates the five demand-parameter archetypes? The participation levels and decay rates carry the whole ground-travel quantity.
 
 ## crop_provision
 

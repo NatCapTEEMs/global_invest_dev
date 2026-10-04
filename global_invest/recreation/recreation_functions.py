@@ -43,6 +43,10 @@ RECREATION_SITE_MATRIX = np.array([                  # rows: accessibility 1-5, 
     [3, 6, 6, 9]])
 RECREATION_HQ_SITE_CLASS = 9
 RECREATION_FUEL_COST_COL = 'gasoline_cost_usd_per_km_2019_gppdata'
+# The UNWTO workbook's Units column reads Thousands on the Overnights rows, so the panel's
+# numbers are thousands of person-nights; the arrivals cleaner's own x1000 is the same
+# convention read from the same workbook.
+UNWTO_OVERNIGHTS_UNIT_NIGHTS = 1000.0
 
 INT_NDV = -1
 FLOAT_NDV = -9999.0
@@ -229,13 +233,20 @@ def clean_unwto_arrivals_by_region(df):
     return tidy[['iso3_r250_id', 'origin_region', 'year', 'arrivals']].dropna(subset=['arrivals'])
 
 
-def allocate_overnights_array(hotel_array, country_array, country_overnights_map):
-    """National overnight totals spread proportionally over each country's hotel pixels."""
+def allocate_overnights_array(hotel_array, country_array, country_overnights_map,
+                              country_hotel_totals):
+    """National overnight totals spread proportionally over each country's hotel pixels.
+
+    The hotel totals are the NATIONAL counts, computed once over the whole raster and passed
+    in -- a denominator computed inside a blockwise closure hands the full national total to
+    every block that holds one of the country's hotels (Spain came out exactly 22 times its
+    panel total, one repeat per block with a Spanish hotel).
+    """
     result = np.zeros_like(hotel_array, dtype=np.float32)
     for country_id, total_overnights in country_overnights_map.items():
-        country_mask = (country_array == country_id)
-        hotels_in_country = np.sum(hotel_array[country_mask])
+        hotels_in_country = country_hotel_totals.get(country_id, 0)
         if hotels_in_country > 0:
+            country_mask = (country_array == country_id)
             result[country_mask] = (hotel_array[country_mask] / hotels_in_country) * total_overnights
     return result
 
@@ -350,7 +361,8 @@ def build_country_overnights_map(overnight_df, target_year):
     choice = nearest_year_choice(df[['iso3_r250_id', 'year', 'total_overnights']],
                                  'iso3_r250_id', 'total_overnights', target_year)
     names = df.drop_duplicates('iso3_r250_id').set_index('iso3_r250_id')['unwto_name']
-    country_overnights_map = dict(zip(choice['iso3_r250_id'], choice['total_overnights']))
+    country_overnights_map = dict(zip(
+        choice['iso3_r250_id'], choice['total_overnights'] * UNWTO_OVERNIGHTS_UNIT_NIGHTS))
     substitution_rows = [{
         'iso3_r250_id': row['iso3_r250_id'], 'unwto_name': names.get(row['iso3_r250_id'], ''),
         'year_used': row['year_used'], 'target_year': target_year,

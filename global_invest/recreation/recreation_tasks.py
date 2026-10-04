@@ -99,12 +99,34 @@ def rasterize_presence(vector_path, ref_raster_path, output_path):
         option_list=['ALL_TOUCHED=TRUE', 'MERGE_ALG=ADD'])
 
 
+def count_hotels_by_country(hotel_raster_path, country_id_path):
+    """National hotel-pixel counts in one streaming pass, so the allocation's denominator is
+    the country's whole hotel stock rather than whatever one raster block holds."""
+    totals = {}
+    hotel_ds = gdal.Open(hotel_raster_path); hotel_band = hotel_ds.GetRasterBand(1)
+    country_ds = gdal.Open(country_id_path); country_band = country_ds.GetRasterBand(1)
+    for block_info in pygeoprocessing.iterblocks((hotel_raster_path, 1), offset_only=True):
+        xoff, yoff = block_info['xoff'], block_info['yoff']
+        wx, wy = block_info['win_xsize'], block_info['win_ysize']
+        hotels = hotel_band.ReadAsArray(xoff, yoff, wx, wy)
+        countries = country_band.ReadAsArray(xoff, yoff, wx, wy)
+        mask = hotels > 0
+        for country_id in np.unique(countries[mask]):
+            if country_id > 0:
+                totals[int(country_id)] = totals.get(int(country_id), 0.0) + float(
+                    hotels[mask & (countries == country_id)].sum())
+    hotel_band = None; hotel_ds = None
+    country_band = None; country_ds = None
+    return totals
+
+
 def allocate_overnights_raster(country_overnights_map, hotel_raster_path, country_id_path,
                                output_path):
+    country_hotel_totals = count_hotels_by_country(hotel_raster_path, country_id_path)
     pygeoprocessing.raster_calculator(
         [(hotel_raster_path, 1), (country_id_path, 1)],
-        lambda hotels, countries: rf.allocate_overnights_array(hotels, countries,
-                                                               country_overnights_map),
+        lambda hotels, countries: rf.allocate_overnights_array(
+            hotels, countries, country_overnights_map, country_hotel_totals),
         output_path, gdal.GDT_Float32, rf.FLOAT_NDV)
 
 
@@ -696,6 +718,12 @@ def gep_calculation(p):
     sum of the channels the country HAS (a partial sum where coverage is partial, with the
     channel columns and coverage shares published beside it); a country with no channel at
     all stays missing.
+
+    The tourist ground-travel column is published and NOT summed into recreation_gep: with
+    the overnights read at the workbook's stated thousands, that channel multiplies
+    person-nights by the ANNUAL participation rate, and whether the author intends a
+    per-night rate instead moves it by orders of magnitude. The column carries his
+    construction as delivered; the headline waits for his answer.
     """
     publish_inputs(p)
     service_results, already_done = utilities.begin_gep_calculation(p, 'recreation')
@@ -733,7 +761,7 @@ def gep_calculation(p):
     df.loc[no_arrivals, ['air_travel_value', 'arrivals_coverage_share']] = np.nan
     df = df.drop(columns='total_arrivals')
 
-    channel_cols = ['daily_value', 'tourist_value', 'accommodation_value', 'air_travel_value']
+    channel_cols = ['daily_value', 'accommodation_value', 'air_travel_value']
     df['recreation_gep'] = df[channel_cols].sum(axis=1, min_count=1)
     df['year'] = int(p.gep_base_year)
 
@@ -754,13 +782,16 @@ def gep_calculation(p):
                 driver='GPKG')
 
     total = df_gep['recreation_gep'].sum()
-    hb.log('Total recreation GEP for base year %s: %s over %d countries (channels: ground '
-           'travel daily %s + tourist %s, accommodation %s, air travel %s)'
+    hb.log('Total recreation GEP for base year %s: %s over %d countries (summed channels: '
+           'daily ground travel %s, accommodation %s, air travel %s; tourist ground travel '
+           '%s published beside the sum, held out pending the per-night participation '
+           'question)'
            % (p.gep_base_year, f'{total:,.2f}',
               int(df_gep['recreation_gep'].notna().sum()),
-              f"{df_gep['daily_value'].sum():,.0f}", f"{df_gep['tourist_value'].sum():,.0f}",
+              f"{df_gep['daily_value'].sum():,.0f}",
               f"{df_gep['accommodation_value'].sum():,.0f}",
-              f"{df_gep['air_travel_value'].sum():,.0f}"))
+              f"{df_gep['air_travel_value'].sum():,.0f}",
+              f"{df_gep['tourist_value'].sum():,.0f}"))
     return total
 
 

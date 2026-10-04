@@ -95,8 +95,8 @@ def test_nearest_year_fallback_prefers_closer_then_later_years():
         'overnights_international': [0.0, 0.0, 0.0, 0.0, 0.0]})
     result, substitutions = rf.build_country_overnights_map(panel, 2019)
     # 2018 and 2020 tie at distance 1; the later year wins, as in the source's sort.
-    assert result[8] == 3.0
-    assert result[12] == 5.0                              # 2021 at distance 2 beats 2015 at 4
+    assert result[8] == 3.0 * rf.UNWTO_OVERNIGHTS_UNIT_NIGHTS
+    assert result[12] == 5.0 * rf.UNWTO_OVERNIGHTS_UNIT_NIGHTS   # 2021 at distance 2 beats 2015
     by_id = {row['iso3_r250_id']: row for row in substitutions}
     assert by_id[8]['year_used'] == 2020 and by_id[8]['year_distance'] == 1
     # A country with no positive overnights in any year is absent, never zero.
@@ -106,10 +106,24 @@ def test_nearest_year_fallback_prefers_closer_then_later_years():
 
 
 def test_overnight_allocation_splits_national_totals_by_hotel_share():
+    # The denominator is the NATIONAL hotel count handed in, so a raster block holding only
+    # part of a country's hotels allocates only that part's share -- the per-block closure
+    # it replaces handed the full national total to every such block (Spain: exactly 22x).
     hotels = np.array([1, 1, 2, 0], dtype='float32')
     countries = np.array([1, 1, 1, 2], dtype='float32')
-    out = rf.allocate_overnights_array(hotels, countries, {1: 400.0, 2: 999.0})
-    assert list(out) == [100.0, 100.0, 200.0, 0.0]
+    out = rf.allocate_overnights_array(hotels, countries, {1: 400.0, 2: 999.0}, {1: 8.0})
+    assert list(out) == [50.0, 50.0, 100.0, 0.0]    # this block holds half of country 1's hotels
+    full = rf.allocate_overnights_array(hotels, countries, {1: 400.0, 2: 999.0}, {1: 4.0})
+    assert list(full) == [100.0, 100.0, 200.0, 0.0]
+
+
+def test_overnights_map_reads_the_workbook_thousands_as_nights():
+    panel = pd.DataFrame({
+        'iso3_r250_id': [724], 'unwto_name': ['SPAIN'], 'year': [2019],
+        'overnights_domestic': [170721.0], 'overnights_international': [299092.0]})
+    result, _ = rf.build_country_overnights_map(panel, 2019)
+    # The Units column says Thousands, so Spain's 469,813 panel units are 469.8M nights.
+    assert result[724] == pytest.approx(469813.0 * 1000.0)
 
 
 def test_unwto_extraction_tidies_the_sheet_layout():
