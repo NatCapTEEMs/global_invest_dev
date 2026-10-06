@@ -58,6 +58,8 @@ from IPython.display import Image, display
 service_label = 'recreation'
 
 for k, v in p.results[service_label].items():
+    if not str(v).lower().endswith(('.csv', '.parquet')):
+        continue
     df = hb.df_read(v)
     setattr(p, k, df)
 

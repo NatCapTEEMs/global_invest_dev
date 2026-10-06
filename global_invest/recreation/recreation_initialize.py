@@ -36,4 +36,5 @@ def build_gep_service_task_tree(p):
     """Full GEP run: the calculation calculation plus the results/report task."""
     p = build_gep_service_calculation_task_tree(p)
     p.recreation_gep_result_task = p.add_task(recreation_tasks.gep_result)
+    p.recreation_gep_results_distribution_task = p.add_task(recreation_tasks.gep_results_distribution)
     return p

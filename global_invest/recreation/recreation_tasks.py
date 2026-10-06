@@ -552,6 +552,19 @@ def _flow_io(p, task_dir):
     return outputs, country_to_group_map, group_params
 
 
+def _register_flow_rasters_on_pyramid(p, outputs, prefix):
+    """Publish a flow pass's three rasters: warp each onto the 150-arcsecond pyramid rung with
+    sum-preserving resampling (they carry per-cell visits and dollars, so the warp must keep
+    the map's total equal to the table's) and register them as results, so distribution
+    converts them to POGs."""
+    for key in ('visits', 'value', 'unmet'):
+        result_name = '%s_%s_150sec.tif' % (prefix, os.path.basename(outputs[key])[:-len('_1km.tif')])
+        pyramid_path = os.path.join(os.path.dirname(outputs[key]), result_name)
+        if not hb.path_exists(pyramid_path):
+            utilities.warp_raster_to_pyramid_sum(outputs[key], pyramid_path, 150)
+        utilities.register_result(p, 'recreation', result_name, pyramid_path)
+
+
 def daily_recreation(p):
     """Resident population -> site flows (visits, value, unmet demand)."""
     publish_inputs(p)
@@ -571,6 +584,7 @@ def daily_recreation(p):
                 'country_costs': str(p.get_path(p.recreation_fuel_cost_path))},
             outputs, country_to_group_map, group_params,
             float(p.recreation_max_distance_km), int(p.recreation_max_bands))
+    _register_flow_rasters_on_pyramid(p, outputs, 'recreation_daily')
     return True
 
 
@@ -594,6 +608,7 @@ def tourist_recreation(p):
                 'country_costs': str(p.get_path(p.recreation_fuel_cost_path))},
             outputs, country_to_group_map, rf.per_night_group_params(group_params),
             float(p.recreation_max_distance_km), int(p.recreation_max_bands))
+    _register_flow_rasters_on_pyramid(p, outputs, 'recreation_tourist')
     return True
 
 
@@ -805,6 +820,13 @@ def gep_load_results(p):
             f'Run the calculation first (run_recreation.py), then re-run results.')
     p.results.setdefault('recreation', {})
     p.results['recreation']['gep_by_country_base_year'] = result_path
+
+
+def gep_results_distribution(p):
+    """Copy this service's registered results into the output directory. Shared implementation
+    in utilities, which converts every raster it copies into a POG."""
+    publish_inputs(p)
+    utilities.distribute_results(p, 'recreation')
 
 
 def gep_result(p):
