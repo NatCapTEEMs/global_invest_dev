@@ -119,6 +119,49 @@ def crop_fraction(source, reference, destination):
     return str(destination), str(coverage)
 
 
+# NAMED, AUDITABLE exceptions -- not a rule. Each was enumerated from damage_coverage.csv and
+# examined before being listed; every one has 0.000 ha of severe cropland at the base year, so its
+# d_2023 is zero. Excluding them asserts NOTHING about their future damage: d_t is unmeasured, and
+# with d_2023 = 0 and d_t in [0, 0.08] the unscaled change could be anywhere in -8 to 0 points.
+# These are not measured zeros and not a claim that the zones are immaterial.
+#
+# Two distinct causes, both leaving d_t unmeasurable:
+#   coverage -- cropland exists but lies entirely outside the valid erosion support, so the zone
+#               appears with 0 valid hectares and a non-finite level;
+#   no crop  -- the zone holds no cropland footprint at all in that scenario-year, so
+#               summarize_damage_areas (which returns only zones with total + excluded > 0) omits
+#               its row entirely. An absent row is evidence of this, not a contradiction of it.
+#
+#   zone  region  AEZ  undefined   cause     base cropland   base severe
+#   1001  col       1  21 of 21    coverage    447.896 ha      0.000 ha
+#   1008  col       8   3 of 21    no crop    1095.930 ha      0.000 ha
+#   1318  eur      18   3 of 21    no crop      20.946 ha      0.000 ha
+#   1916  jpn      16  14 of 21    no crop      31.076 ha      0.000 ha
+#   4118  xef      18   3 of 21    no crop      19.648 ha      0.000 ha
+#
+# A named zone is excluded from EVERY scenario and year even where only some are undefined. Keeping
+# it where it is defined and dropping it elsewhere would put it in the economic rows for some
+# pathways and not others, and the comparison between pathways is the entire point of the exercise.
+#
+# Any zone NOT listed here still fails, and the failure reports every offending zone at once rather
+# than the first: discovering these one run at a time cost two and a half hours per zone.
+FUTURE_COVERAGE_EXCLUSIONS = {
+    1001: 'future cropland outside valid erosion support',
+    1008: 'no future cropland footprint in low_demand',
+    1318: 'no future cropland footprint in fragmented_world and net_zero',
+    1916: 'no future cropland footprint in any pathway at several anchors',
+    4118: 'no future cropland footprint in below_2c, low_demand and ndcs',
+}
+
+
+def _damage_missing(indexed_table, zone):
+    """True when a zone has no usable damage level in an already-indexed table."""
+    if zone not in indexed_table.index:
+        return True
+    return not np.isfinite(indexed_table.loc[zone, ['level', 'stressed_level']]
+                           .to_numpy(dtype=float)).all()
+
+
 def tables_to_seam(tables, labels, scenarios, anchors, years, base_scenario, base_year,
                     sectors, provision_loss, stress_from, baseline_domain=None,
                     excluded_path=None, coverage=None):
@@ -131,9 +174,15 @@ def tables_to_seam(tables, labels, scenarios, anchors, years, base_scenario, bas
 
     An exclusion is only legitimate where absence is ESTABLISHED. Baseline cropland removed by the
     coverage restriction, or coverage too poor to establish absence, leaves the baseline unknown and
-    remains a failure. So does a zone with a defined baseline and an undefined future year.
+    remains a failure.
+
+    An undefined FUTURE year is likewise a failure, with one exception, and the exception is named
+    zone by zone in FUTURE_COVERAGE_EXCLUSIONS rather than inferred. A named zone must be undefined
+    in every scenario-year and for the stated cause, or it still fails: a zone excluded under some
+    pathways and shocked under others would make the comparison between them incoherent.
     """
-    base = tables[(base_scenario, base_year)].set_index('zone_id')
+    indexed = {key: table.set_index('zone_id') for key, table in tables.items()}
+    base = indexed[(base_scenario, base_year)]
     all_ids = sorted(set().union(*(set(t.zone_id) for t in tables.values())))
     labels = labels.set_index('zone_id')
     if labels.index.duplicated().any() or set(all_ids) - set(labels.index):
@@ -141,6 +190,29 @@ def tables_to_seam(tables, labels, scenarios, anchors, years, base_scenario, bas
     all_ids = [i for i in all_ids if 1 <= int(labels.loc[i, 'aez18_id']) <= 18]
     rows = []
     excluded = []
+    # Find EVERY zone whose future is undefined before shocking any of them. Raising on the first
+    # unnamed zone hides the rest, and each rediscovery costs a full run of the seam.
+    # Only zones with a DEFINED base year belong here. A zone with no base-year damage has no
+    # d_2023 at all, so its future cannot be the thing that is missing; it is the baseline-domain
+    # rule's business, decided below on baseline_domain evidence. Scanning it here instead reports
+    # it as an unnamed future-undefined zone and stops a run the baseline rule would have handled.
+    undefined_by_zone = {}
+    for zone in all_ids:
+        if zone not in base.index or not np.isfinite(base.loc[zone, 'level']):
+            continue
+        missing = [(s, y) for s in scenarios for y in anchors if _damage_missing(indexed[(s, y)], zone)]
+        if missing:
+            undefined_by_zone[zone] = missing
+    unnamed = sorted(z for z in undefined_by_zone if int(z) not in FUTURE_COVERAGE_EXCLUSIONS)
+    if unnamed:
+        detail = '; '.join('zone %s (%s, AEZ%s) undefined in %d of %d scenario-year(s), first %s %s'
+                           % (z, labels.loc[z, 'gtapv7_r50_label'], labels.loc[z, 'aez18_id'],
+                              len(undefined_by_zone[z]), len(scenarios) * len(anchors),
+                              undefined_by_zone[z][0][0], undefined_by_zone[z][0][1])
+                           for z in unnamed)
+        raise ValueError('Undefined damage in %d zone(s) that are not named exceptions. A new case '
+                         'must be examined and named before it may be excluded, never swept in by '
+                         'rule. All of them: %s' % (len(unnamed), detail))
     for zone in all_ids:
         if zone not in base.index or not np.isfinite(base.loc[zone, 'level']):
             domain = (baseline_domain or {}).get(int(zone))
@@ -164,12 +236,39 @@ def tables_to_seam(tables, labels, scenarios, anchors, years, base_scenario, bas
                              'mean_source_coverage': domain['mean_source_coverage']})
             continue
         b = float(base.loc[zone, 'level'])
+        undefined = undefined_by_zone.get(zone, [])
+        if undefined:
+            # The stated cause must hold for every undefined year, or the name describes nothing.
+            # A zone ABSENT from a table is evidence of no cropland footprint, not a contradiction;
+            # a zone PRESENT with valid cropland and no defined damage is unexplained and fails.
+            contradicting = [(s, y) for s, y in undefined
+                             if zone in indexed[(s, y)].index
+                             and float(indexed[(s, y)].loc[zone, 'valid_crop_ha']) > 1e-9]
+            if contradicting:
+                s, y = contradicting[0]
+                raise ValueError('Zone %s is a named exclusion, but %d of its %d undefined '
+                                 'scenario-year(s) still hold valid cropland (first: %s %s); the '
+                                 'named cause does not hold'
+                                 % (zone, len(contradicting), len(undefined), s, y))
+            excluded.append({'zone_id': int(zone),
+                             'aez18_id': int(labels.loc[zone, 'aez18_id']),
+                             'reg': labels.loc[zone, 'gtapv7_r50_label'],
+                             'reason': FUTURE_COVERAGE_EXCLUSIONS[int(zone)],
+                             'baseline_crop_ha': float(base.loc[zone, 'valid_crop_ha']),
+                             'baseline_severe_crop_ha': float(base.loc[zone, 'severe_crop_ha']),
+                             'baseline_damage_level': b,
+                             'baseline_nodata_ha': 0.0,
+                             'mean_source_coverage': float('nan'),
+                             'undefined_scenario_years': len(undefined),
+                             'of_scenario_years': len(scenarios) * len(anchors),
+                             'max_future_excluded_crop_ha': max(
+                                 [float(indexed[(s, y)].loc[zone, 'excluded_crop_ha'])
+                                  for s, y in undefined if zone in indexed[(s, y)].index] or [0.0])})
+            continue
         for scenario in scenarios:
             ordinary, stressed = [], []
             for year in anchors:
-                t = tables[(scenario, year)].set_index('zone_id')
-                if zone not in t.index or not np.isfinite(t.loc[zone, ['level','stressed_level']].to_numpy(dtype=float)).all():
-                    raise ValueError('Undefined damage: %s %s zone %s' % (scenario, year, zone))
+                t = indexed[(scenario, year)]
                 ordinary.append(float(t.loc[zone, 'level']))
                 stressed.append(float(t.loc[zone, 'stressed_level']))
             g = damage.annual_damage_change(b, anchors, ordinary, years, base_year=base_year)
@@ -199,9 +298,10 @@ def tables_to_seam(tables, labels, scenarios, anchors, years, base_scenario, bas
                 frame = frame.merge(summary, on='zone_id', how='left')
                 keep.to_csv(str(excluded_path).replace('.csv', '_future_rows.csv'), index=False)
         frame.to_csv(excluded_path, index=False)
-        print('  erosion: %d economic zone(s) EXCLUDED for having no base-year cropland '
-              '(d_2023 undefined, not a measured zero): %s -> %s'
+        print('  erosion: %d economic zone(s) EXCLUDED, no measured zero among them: %s -> %s'
               % (len(frame), sorted(frame.zone_id.tolist()), excluded_path))
+        for reason, count in frame.reason.value_counts().items():
+            print('    %d zone(s): %s' % (count, reason))
     if not rows:
         raise ValueError('No defined in-domain erosion trajectories')
     return pd.DataFrame(rows)

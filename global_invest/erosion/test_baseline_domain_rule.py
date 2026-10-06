@@ -7,7 +7,8 @@ no shock in both cases.
 
 An exclusion is legitimate only where absence is ESTABLISHED. Baseline cropland removed by the
 coverage restriction leaves the baseline unknown, and that stays a failure -- as does a zone with a
-defined baseline and an undefined future year.
+defined baseline and an undefined future year, unless that zone is a NAMED exception. See
+test_future_coverage_exclusion.py for the one named case and the guards around it.
 """
 import numpy as np
 import pandas as pd
