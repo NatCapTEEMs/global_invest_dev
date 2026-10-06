@@ -2466,6 +2466,40 @@ def drop_aggregates_where_components_exist(df, aggregate_items, value_column,
     return marked[~redundant].drop(columns='n')
 
 
+def warp_raster_to_pyramid_sum(src_path, dst_path, arcseconds):
+    """Warp a per-cell quantity raster onto the global pyramid grid at `arcseconds`,
+    conserving the global sum (GDAL's overlap-weighted sum resampling).
+
+    For publishing a raster whose native grid is off the pyramid. Counts and currency are
+    per-cell amounts, so average-style resampling would rescale the total by the cell-area
+    ratio; sum keeps the map's total equal to the table's.
+
+    Args:
+        src_path (str): the native-grid raster.
+        dst_path (str): where the pyramid-grid raster is written.
+        arcseconds (float): a pyramid rung (1, 10, 30, 150, 300, 900, 1800, 3600, ...).
+
+    Returns:
+        str: dst_path.
+    """
+    if float(arcseconds) not in hb.pyramid_compatible_resolutions:
+        # The table is keyed both ways, 150.0 and '150', so sorting it whole raises TypeError and
+        # masks this ValueError with one that says nothing about the argument.
+        rungs = sorted(k for k in hb.pyramid_compatible_resolutions if not isinstance(k, str))
+        raise ValueError('arcseconds %r is not a pyramid rung (supported: %s)'
+                         % (arcseconds, rungs))
+    degrees = hb.pyramid_compatible_resolutions[float(arcseconds)]
+    ndv = hb.get_ndv_from_path(src_path)
+    gdal.Warp(dst_path, src_path,
+              xRes=degrees, yRes=degrees,
+              outputBounds=(-180.0, -90.0, 180.0, 90.0),
+              dstSRS='EPSG:4326',
+              resampleAlg='sum',
+              srcNodata=ndv, dstNodata=ndv,
+              creationOptions=['COMPRESS=DEFLATE', 'TILED=YES'])
+    return dst_path
+
+
 def publish_raster_as_pog(path, log=None):
     """Rewrite a published raster as a POG: a pyramidal COG.
 

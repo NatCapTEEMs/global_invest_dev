@@ -1,5 +1,7 @@
 """Shared ES-utility tests. resolve_raw_scenario is used by every service's static shock task, so it is
 tested once here rather than duplicated per service."""
+import pytest
+
 from global_invest import utilities
 
 
@@ -225,3 +227,40 @@ def test_filter_to_model_domain_clears_a_stale_diagnostic_file(tmp_path):
                        'year': [2030], 'shock_pct': [1.0]})
     utilities.filter_to_model_domain(df, output_path, 'erosion', log=lambda *a: None)
     assert not stale.exists()
+
+
+def test_warp_to_pyramid_sum_conserves_the_total_and_lands_on_the_rung(tmp_path):
+    """Flow rasters carry per-cell visits and dollars, so the published warp must keep the
+    map's global sum equal to the table's; average-style resampling would shrink it by the
+    cell-area ratio (about 17x from 36 to 150 arcseconds)."""
+    import numpy as np
+    import hazelbean as hb
+    from osgeo import gdal, osr
+    from global_invest import utilities
+
+    src_path = str(tmp_path / 'per_cell_quantity_36sec.tif')
+    n_rows, n_cols, cell = 500, 1000, 0.01
+    array = np.zeros((n_rows, n_cols), dtype=np.float32)
+    rng = np.random.default_rng(7)
+    array[rng.integers(0, n_rows, 400), rng.integers(0, n_cols, 400)] = \
+        rng.uniform(1.0, 100.0, 400).astype(np.float32)
+    driver = gdal.GetDriverByName('GTiff')
+    ds = driver.Create(src_path, n_cols, n_rows, 1, gdal.GDT_Float32)
+    ds.SetGeoTransform((0.0, cell, 0.0, 50.0, 0.0, -cell))
+    srs = osr.SpatialReference(); srs.ImportFromEPSG(4326)
+    ds.SetProjection(srs.ExportToWkt())
+    band = ds.GetRasterBand(1); band.SetNoDataValue(-9999.0); band.WriteArray(array)
+    ds = None
+
+    dst_path = str(tmp_path / 'per_cell_quantity_150sec.tif')
+    utilities.warp_raster_to_pyramid_sum(src_path, dst_path, 150)
+
+    info = hb.get_raster_info_hb(dst_path)
+    assert info['pixel_size'][0] == pytest.approx(hb.pyramid_compatible_resolutions[150.0])
+    assert info['bounding_box'] == pytest.approx([-180.0, -90.0, 180.0, 90.0])
+    warped = gdal.Open(dst_path).ReadAsArray()
+    warped_sum = warped[warped != -9999.0].sum()
+    assert warped_sum == pytest.approx(float(array.sum()), rel=1e-5)
+
+    with pytest.raises(ValueError):
+        utilities.warp_raster_to_pyramid_sum(src_path, str(tmp_path / 'bad.tif'), 36)
