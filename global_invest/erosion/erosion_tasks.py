@@ -1423,12 +1423,13 @@ def erosion_sdr(p):
                     if hb.path_exists(lulc_grid):
                         raise ValueError('Unverified erosion LULC grid: ' + lulc_grid
                                          + '. Use a fresh erosion directory.')
-                    # Use original categorical pixels at every date. GDAL's AUTO
-                    # overview selection otherwise treats the unpyramided base map
-                    # differently from future maps, creating false land-cover change.
+                    # resample_method='mode' is categorical, so hazelbean reads the original
+                    # pixels rather than an overview. AUTO selection otherwise treated the
+                    # unpyramided base map differently from future maps, creating false
+                    # land-cover change.
                     hb.resample_to_match(
                         lulc, grid_ref, lulc_grid, resample_method='mode',
-                        src_ndv=hb.get_ndv_from_path(lulc), overview_level='NONE')
+                        src_ndv=hb.get_ndv_from_path(lulc))
                     utilities.write_outputs_signature(signature, grid_signature_path)
             os.makedirs(workspace, exist_ok=True)
             # Record the input contract before execution; completeness is checked
