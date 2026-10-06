@@ -66,8 +66,8 @@ timber_total: "$132.13bn"
 landslide_total: "$657.8M"
 landslide_oecd: "$770.7M"
 landslide_deaths: "570.66"
-recreation_total: "$1.60T"
-recreation_tourist_ground: "$521bn"
+recreation_total: "$82.3bn"
+recreation_tourist_ground: "$1.43bn"
 fire_cause_total: "-$1.3bn"
 fire_baseline_total: "-$22.4bn"
 fire_area_total: "+$16.7bn"
@@ -294,7 +294,7 @@ format:
 | erosion | not reported | no. The run is ongoing. |
 | landslide_mitigation | {{< meta landslide_total >}} ({{< meta landslide_deaths >}} avoided deaths at the shared EPA life-years-lost VSL; {{< meta landslide_oecd >}} at OECD) | partly. The author's rebuilt panel prices our deaths within 7 percent of his refreshed $707M, the gap being his newer death layer; the old sheet column ($865M) remains unexplained |
 | fisheries | shock + commercial GEP {{< meta fisheries_total >}} provisional + subsistence {{< meta fisheries_subsistence_total >}} + aquaculture {{< meta fisheries_aquaculture_total >}} | partially. Subsistence reproduces its committed output, and the commercial table matches the author's per-country CSV at his rounding; aquaculture's delivered $100.68bn differs structurally from both earlier vintages |
-| recreation | {{< meta recreation_total >}} over three channels; tourist ground travel {{< meta recreation_tourist_ground >}} published beside the sum | no. The author's rewrite commits no output table, so our run is the first end-to-end number |
+| recreation | {{< meta recreation_total >}} ground travel, residents plus tourists at a/365; accommodation $982bn and air $527bn published beside the total | no. The author's rewrite commits no output table, so our run is the first end-to-end number |
 | fire_protection | {{< meta fire_cause_total >}} provisional, one of three coefficients | partially. Reproduces the committed output, but reads the committed regression coefficients rather than refitting them. Kosovo and two Indian sub-regions now reach a country instead of no country |
 | water_supply | hydropower component {{< meta water_supply_total >}} | yes. |
 | water_use | {{< meta water_use_gep >}} irrigation, from a {{< meta water_use_premium_gross >}} premium, and {{< meta water_use_domestic_gep >}} domestic | no. The drive's two committed figures were produced separately, so neither is a reference |
@@ -376,10 +376,9 @@ format:
 
 ## recreation
 
-- [Values nature-based recreation over three spending channels on the author's rewrite, at his documented calibration: residents' day trips priced at round-trip fuel cost into dissolved high-quality sites, tourists' accommodation at the hotel-price surface, and air travel at the staged regional fare matrix, giving {{< meta recreation_total >}}. Three source defects were fixed on the way in: the UNWTO overnights read at their stated thousands, the hotel allocation divided by the national stock (the blockwise version handed Spain its total 22 times over), and the fuel economy read at its stated 7.1 litres per hundred kilometres (applied per kilometre, 100 times high).]{.state}
-- **Q1:** does a tourist person-night take the annual participation rate? At the calibrated a of 102.5 that gives every hotel night 102.5 site trips, so the {{< meta recreation_tourist_ground >}} channel is published beside the sum and not in it until the author answers.
-- **Q2:** should all arrivals price at air fares? UNWTO arrivals include land borders, and the air channel prices every one of them at a regional round-trip fare.
-- **Q3:** is one worldwide demand pair acceptable? His own page names country groups as the outstanding task, and his EU check runs 600 times the JRC visit counts on scope.
+- [Values nature-based recreation on the author's rewrite at his documented calibration: residents' day trips and tourists' site trips ({{< meta recreation_tourist_ground >}} at his corrected a/365 per person-night) priced at round-trip fuel cost into dissolved high-quality sites, {{< meta recreation_total >}} over 133 countries. Accommodation at the hotel-price surface ($982bn) and air travel at the staged regional fares ($527bn) are published beside the total, as the author's own country table reports them. Three source defects were fixed on the way in: the UNWTO overnights read at their stated thousands, the hotel allocation divided by the national stock, and the fuel economy read at its stated 7.1 litres per hundred kilometres.]{.state}
+- [The author answered the person-night question (each night carried the full annual rate of 102.5 trips; now a/365) and the channel scope follows his combined total: ground travel summed, the rest beside it. A country missing either ground channel carries a missing total, his own table arithmetic.]{.state}
+- **Q1:** will he share one per-country output of his fixed run, so the port verifies by replication rather than construction? His repo does not yet carry the a/365 fix; ours is implemented from his stated formula and reconciles when he pushes.
 
 ## crop_provision
 

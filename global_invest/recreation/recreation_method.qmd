@@ -9,10 +9,11 @@ format:
 ---
 
 Nature-based recreation is valued on a capital-account basis: realized visits to high-quality
-natural sites, priced at what each traveler spends to make them. Three channels add together
-per country, each its own price on its own quantity: the ground travel of residents and of
-tourists to the sites, the accommodation tourists stay in, and the international air travel
-that brings them to the country. The base year is 2019.
+natural sites, priced at what each traveler spends to make them. The headline sums the ground
+travel of residents and of tourists to the sites, following the source's own combined total.
+The accommodation tourists stay in and the international air travel that brings them to the
+country are valued as separate additive components and published beside the total, exactly as
+the source reports them. The base year is 2019.
 
 ## Quantity
 
@@ -28,7 +29,8 @@ exponential decay. Participation and decay rate come per country from the demand
 table (his documented calibration: one worldwide group). A band's fixed budget divides evenly
 across the sites its ring reaches; a band with no reachable site, and all demand beyond the
 cutoff, is tracked as unmet rather than discarded. Residents travel from their home pixels
-(WorldPop); tourists travel from their accommodation, built by allocating each country's
+(WorldPop) with the full annual rate; tourists travel from their accommodation, each
+person-night carrying the rate's daily share (a/365), built by allocating each country's
 UNWTO overnight stays over its national hotel stock, with the nearest reported year standing
 in where 2019 is unreported and a country with no overnights data in any year kept missing
 rather than zero. The workbook's Units column reads Thousands, so the panel's numbers are
@@ -51,20 +53,20 @@ this module reads it as a staged input and makes no network request).
 ## Valuation
 
 $$
-\text{GEP}_i = V^{\text{daily}}_i + V^{\text{accommodation}}_i + V^{\text{air}}_i
+\text{GEP}_i = V^{\text{daily}}_i + V^{\text{tourist}}_i
 $$
 
-summed over the channels the country has: a channel whose data gap makes it missing stays
-out of the sum, the channel columns and coverage shares are published beside the total, and
-a country with no channel at all is missing. One row per country on the r250 list.
+the source's combined total, plain addition, so a country whose fuel-cost or overnights gap
+makes either ground channel unknown has a missing total rather than a partial one presented
+as complete. Accommodation and air travel are published beside the total as separate
+additive columns with their coverage shares, as the source's own country table reports
+them. One row per country on the r250 list.
 
-The tourist ground-travel column is published and not summed into the total. The author's
-methods page says the lodging flow treats overnights as the population proxy with visits
-calculated identically, but at his documented calibration that hands every person-night
-102.5 site trips, which no reading of the design can intend; the column carries the
-construction as delivered and the sum takes the channels whose dimensions hold. The demand
-parameters are his documented calibration, one worldwide group (a 102.50 annual visits per
-capita, decay 0.167 per km) from the England, Tel Aviv and Beijing surveys;
+A tourist person-night carries the daily share of the annual participation rate, a/365 or
+about 0.28 visits per night at zero distance. This is the author's correction of the
+delivered construction, which priced each night at the full annual rate of 102.5 visits.
+The demand parameters are his documented calibration, one worldwide group (a 102.50 annual
+visits per capita, decay 0.167 per km) from the England, Tel Aviv and Beijing surveys;
 country-specific groups are the outstanding task his methods page names.
 
 ## Implementation notes

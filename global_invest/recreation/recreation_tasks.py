@@ -575,7 +575,8 @@ def daily_recreation(p):
 
 
 def tourist_recreation(p):
-    """Allocated overnights -> site flows: the same engine with overnights as population."""
+    """Allocated overnights -> site flows: the same engine with overnights as population,
+    each person-night carrying the daily share of the annual participation rate (a/365)."""
     publish_inputs(p)
     p.tourist_recreation_visits_path = os.path.join(p.cur_dir, 'site_visits_1km.tif')
     p.tourist_recreation_value_path = os.path.join(p.cur_dir, 'site_value_1km.tif')
@@ -591,7 +592,7 @@ def tourist_recreation(p):
                 'population': p.recreation_overnights_path,
                 'country_id': p.recreation_country_id_path,
                 'country_costs': str(p.get_path(p.recreation_fuel_cost_path))},
-            outputs, country_to_group_map, group_params,
+            outputs, country_to_group_map, rf.per_night_group_params(group_params),
             float(p.recreation_max_distance_km), int(p.recreation_max_bands))
     return True
 
@@ -710,22 +711,19 @@ def air_travel_value(p):
 
 
 def gep_calculation(p):
-    """GEP valuation for recreation: the four channels on one row per country, and their sum.
+    """GEP valuation for recreation: ground travel summed, the other channels beside it.
 
-    The convention per channel follows the source's aggregation: a country with no fuel-cost
+    recreation_gep follows the source's combined total: resident daily value plus tourist
+    ground-travel value, with accommodation and air travel published as separate additive
+    columns rather than folded in. The sum is plain addition, so a country whose fuel-cost
+    or overnights gap makes either ground channel unknown gets a missing total rather than
+    a partial one presented as complete.
+
+    The per-channel conventions follow the source's aggregation: a country with no fuel-cost
     data gets a missing travel value rather than a free-travel zero; a country with no UNWTO
     overnights in any year gets missing tourist and accommodation channels, never zeros; a
-    country without arrivals-by-region data gets a missing air channel. recreation_gep is the
-    sum of the channels the country HAS (a partial sum where coverage is partial, with the
-    channel columns and coverage shares published beside it); a country with no channel at
-    all stays missing.
-
-    The tourist ground-travel column is published and NOT summed into recreation_gep. The
-    author's methods page says the lodging flow treats overnights as the population proxy
-    with visits calculated identically -- but at his documented calibration (a = 102.5
-    annual visits per capita) that gives every person-night 102.5 site trips, which no
-    reading of the design can intend. The column carries the construction as delivered; the
-    headline takes the channels whose dimensions hold.
+    country without arrivals-by-region data gets a missing air channel. The tourist flow
+    prices each person-night at the daily share of the annual participation rate (a/365).
     """
     publish_inputs(p)
     service_results, already_done = utilities.begin_gep_calculation(p, 'recreation')
@@ -763,8 +761,10 @@ def gep_calculation(p):
     df.loc[no_arrivals, ['air_travel_value', 'arrivals_coverage_share']] = np.nan
     df = df.drop(columns='total_arrivals')
 
-    channel_cols = ['daily_value', 'accommodation_value', 'air_travel_value']
-    df['recreation_gep'] = df[channel_cols].sum(axis=1, min_count=1)
+    # The source's combined total is ground travel only (resident + tourist); accommodation
+    # and air travel stay separate additive columns. Plain addition, so a missing ground
+    # channel propagates to a missing total.
+    df['recreation_gep'] = df['daily_value'] + df['tourist_value']
     df['year'] = int(p.gep_base_year)
 
     attr_cols = ['iso3_r250_id', 'iso3_r250_label', 'iso3_r250_name',
@@ -784,8 +784,8 @@ def gep_calculation(p):
                 driver='GPKG')
 
     total = df_gep['recreation_gep'].sum()
-    hb.log('Total recreation GEP for base year %s: %s over %d countries (channels: ground '
-           'travel daily %s + tourist %s, accommodation %s, air travel %s)'
+    hb.log('Total recreation GEP for base year %s: %s over %d countries (ground travel '
+           'daily %s + tourist %s; beside the total: accommodation %s, air travel %s)'
            % (p.gep_base_year, f'{total:,.2f}',
               int(df_gep['recreation_gep'].notna().sum()),
               f"{df_gep['daily_value'].sum():,.0f}", f"{df_gep['tourist_value'].sum():,.0f}",

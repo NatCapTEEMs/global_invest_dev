@@ -86,6 +86,14 @@ def test_param_validation_rejects_a_group_whose_countries_disagree():
         rf.validate_recreation_params(bad)
 
 
+def test_tourist_rate_prices_a_person_night_at_the_daily_share():
+    group_params = {1: {'a': 102.50, 'b': 0.167}}
+    night = rf.per_night_group_params(group_params)
+    assert night[1]['a'] == pytest.approx(102.50 / 365.0)
+    assert night[1]['b'] == 0.167
+    assert group_params[1]['a'] == 102.50
+
+
 def test_nearest_year_fallback_prefers_closer_then_later_years():
     panel = pd.DataFrame({
         'iso3_r250_id': [8, 8, 8, 12, 12],

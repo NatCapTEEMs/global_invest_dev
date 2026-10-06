@@ -52,6 +52,10 @@ GFEI_LITERS_PER_KM = 0.071
 # numbers are thousands of person-nights; the arrivals cleaner's own x1000 is the same
 # convention read from the same workbook.
 UNWTO_OVERNIGHTS_UNIT_NIGHTS = 1000.0
+# The participation rate a is annual visits per person, but the tourist flow's population
+# unit is a person-night, so a night carries the rate's daily share (a/365) -- the source's
+# correction of the delivered construction, which priced each night at the full annual rate.
+TOURIST_NIGHTS_PER_YEAR = 365.0
 
 INT_NDV = -1
 FLOAT_NDV = -9999.0
@@ -162,6 +166,13 @@ def validate_recreation_params(df):
         group_params[int(gid)] = {'a': float(row['participation_param']),
                                   'b': float(row['distance_param'])}
     return country_to_group_map, group_params
+
+
+def per_night_group_params(group_params):
+    """The demand parameters with the participation rate converted from annual visits per
+    person to visits per person-night (a / 365); the decay parameter is unchanged."""
+    return {gid: {'a': prm['a'] / TOURIST_NIGHTS_PER_YEAR, 'b': prm['b']}
+            for gid, prm in group_params.items()}
 
 
 def nearest_year_choice(df, id_col, value_col, target_year):
