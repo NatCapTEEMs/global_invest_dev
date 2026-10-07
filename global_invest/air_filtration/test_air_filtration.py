@@ -90,35 +90,25 @@ def test_es_config_and_parameters_rows_hydrate_air_filtration(tmp_path):
     assert p.air_filtration_workbook_path.endswith('air_filtration/air_filtration_gep.xlsx')
 
 
-def test_vsl_comes_from_the_country_table_and_distinguishes_serbia_from_kosovo():
-    # The workbook calls both rows Serbia; only the r250 order says the second is Kosovo. A name
-    # join hands Serbia's value to both and never resolves Kosovo, which is the failure this
-    # guards. XYZ exercises the ISO3 alias, and NOP is priced by the workbook but absent from the
-    # table, so it keeps the workbook's figure rather than being averaged away.
+def test_vsl_comes_from_the_shared_panel_and_a_missing_country_raises():
+    # The panel keys on iso3_r250_label, so the workbook's duplicate "Serbia" naming (FID 137
+    # and 232) cannot misprice Kosovo: each row takes its own label's value. The workbook
+    # column no longer prices anything, and the repricing report carries the rows that moved.
     workbook = pd.DataFrame({
-        'Country': ['Serbia', 'Serbia', 'Turkey', 'Nowhere', 'Filler'],
-        'VSL': [1.0, 2.0, 30.0, 40.0, 99.0],
-        'VSL_Source': ['country', 'country', 'country', 'country', 'global_avg'],
+        'Country': ['Serbia', 'Serbia', 'Turkey'],
+        'VSL': [10.0, 20.0, 30.0],
+        'VSL_Source': ['country', 'country', 'country'],
     })
     order = pd.DataFrame({
-        'ee_r264_description': ['Serbia', 'Kosovo', 'Turkey', 'Nowhere', 'Filler'],
-        'iso3_r250_label': ['SRB', 'XKX', 'TUR', 'NOP', 'FIL'],
+        'ee_r264_description': ['Serbia', 'Kosovo', 'Turkey'],
+        'iso3_r250_label': ['SRB', 'XKX', 'TUR'],
     })
-    table = pd.DataFrame({'country': ['serbia', 'kosovo', 'turkey-turkiye'],
-                          'vsl': [10.0, 20.0, 30.0]})
+    panel = pd.DataFrame({'iso3_r250_label': ['SRB', 'XKX', 'TUR'],
+                          'vsl_usd': [10.0, 25.0, 30.0]})
 
-    vsl, matched, disagreeing, unsourced = af.vsl_from_country_table(workbook, order, table)
+    vsl, repriced = af.vsl_from_shared_panel(workbook, order, panel)
 
-    assert vsl[0] == 10.0 and vsl[1] == 20.0      # each gets its own country's value
-    assert vsl[2] == 30.0                          # TUR resolved through the ISO3 alias
-    assert vsl[3] == 40.0                          # absent from the table, workbook figure kept
-    assert matched == 3
-    assert list(unsourced['iso3']) == ['NOP']
-    assert np.isclose(vsl[4], np.mean([10.0, 20.0, 30.0]))   # global_avg row takes the mean
-    assert set(disagreeing['iso3']) == {'SRB', 'XKX', 'FIL'}
-
-
-def test_vsl_table_slug_handles_accents_and_aliases():
-    assert af.vsl_table_slug("Côte d'lvoire", 'CIV') == 'cote-divoire'
-    assert af.vsl_table_slug('South Korea', 'KOR') == 'korea-south'
-    assert af.vsl_table_slug('United States', 'USA') == 'united-states'
+    assert list(vsl) == [10.0, 25.0, 30.0]
+    assert list(repriced['iso3']) == ['XKX']
+    with pytest.raises(ValueError):
+        af.vsl_from_shared_panel(workbook, order, panel[panel['iso3_r250_label'] != 'TUR'])

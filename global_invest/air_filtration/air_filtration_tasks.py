@@ -21,8 +21,8 @@ def publish_inputs(p):
     utilities.hydrate_es_config(p, 'air_filtration', log=hb.log)
     utilities.hydrate_es_parameters(p, 'air_filtration', log=hb.log)
     utilities.initialize_country_paths(p)
-    # The air quality group's country-level value-of-life table, which is the source behind the
-    # workbook's VSL column and the one the valuation reads.
+    # The account's shared VSL panel, the rebuilt EPA life-years-lost table both mortality
+    # services read (landslide_mitigation points its panel row at the same file).
     # hydrate_es_parameters already set this from es_parameters; resolve it against base data.
     p.air_filtration_vsl_path = p.get_path(p.air_filtration_vsl_path)
     if not hasattr(p, 'results'):
@@ -43,20 +43,15 @@ def gep_calculation(p):
 
     r250_order = hb.df_read(os.path.join(utilities.service_data_dir(p, 'air_filtration'), 'r250_gpkg_order.csv'))
 
-    # The valuation reads the group's country table rather than the workbook's VSL column, and
-    # says where the two disagree. They are the same build, so a disagreement is a question for
-    # the group, not a reason to stop: the run reports it and carries on with the table.
+    # The valuation prices at the account's shared VSL panel rather than the workbook's own
+    # column. The departure from the workbook is the decided repricing, so the run reports its
+    # size rather than each row.
     vsl_table = hb.df_read(p.air_filtration_vsl_path)
-    vsl, matched, disagreeing, unsourced = af.vsl_from_country_table(
-        workbook, r250_order, vsl_table)
-    hb.log(f'VSL sourced from the country table for {matched} of {len(r250_order)} countries.')
-    for row in unsourced.itertuples():
-        hb.log(f'  {row.country} ({row.iso3}) is priced per country in the workbook at '
-               f'{row.workbook_vsl:,.0f} but is absent from the table, so the workbook figure '
-               f'stands and this value is not one we can source.')
-    for row in disagreeing.itertuples():
-        hb.log(f'  VSL differs for {row.country} ({row.iso3}): workbook {row.workbook_vsl:,.0f}, '
-               f'table {row.table_vsl:,.0f}, {row.relative_difference:.1%} apart.')
+    vsl, repriced = af.vsl_from_shared_panel(workbook, r250_order, vsl_table)
+    max_departure = float(repriced['relative_difference'].max()) if len(repriced) else 0.0
+    hb.log('VSL from the shared panel for all %d countries; %d rows depart from the workbook '
+           'column, the largest by %.0f%%.'
+           % (len(r250_order), len(repriced), 100 * max_departure))
 
     df = af.air_quality_gep_by_country(workbook, r250_order, vsl=vsl)
 

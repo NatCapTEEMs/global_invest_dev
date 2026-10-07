@@ -54,8 +54,8 @@ moisture_recycling_export: "$75.3bn"
 water_use_premium_gross: "$701.4bn"
 water_use_ag_total: "$1.06T"
 water_use_all_total: "$36.36T"
-air_filtration_total: "$17.81bn"
-sandstorm_total: "$595.36bn"
+air_filtration_total: "$17.48bn"
+sandstorm_total: "$567.71bn"
 wq_usd: "$638.34bn"
 wq_intl: "$655.91bn"
 flood_total: "$112.78bn"
@@ -363,9 +363,7 @@ format:
 ## landslide_mitigation
 
 - [Values landslide deaths avoided by forest cover: slope stability modelled with and without forest root cohesion, the difference turned into avoided deaths and priced at a value of a statistical life. Computed end to end in the library. His v0.2.1 per-country output (632 deaths, $707.2M) matches our distribution at 0.978 log-correlation with the same five leaders, Nepal first in both.]{.state}
-- **Q1:** can the all-services sheet carry his v0.2.1 column? Its current $865M column is USA-led and matches neither his v0.2.1 run nor ours, so it prices some other quantity from some other run.
-- **Q2:** which input versions did the run behind the v0.2.1 release use?
-- [This is the only service that builds its own value of a statistical life, from the OECD country table. To price a death the same way across the account it should move onto the air quality group's shared table, and that will change this number, since the two sources differ.]{.state}
+- [Two decisions close the open questions: his v0.2.1 output is the account's reference (the sheet's $865M column is superseded by his own run), and the rebuilt EPA life-years-lost panel is the account's one value of a statistical life, read by both mortality services. This service already priced on the panel, so its number does not move. What remains is one cluster session: the cold start, and the published map registered and warped onto the pyramid.]{.state}
 
 ## fisheries
 
@@ -428,16 +426,14 @@ format:
 ## air_filtration
 
 - [Values deaths avoided by vegetation capturing air pollution, priced at a GDP-adjusted value of a statistical life (the monetary value assigned to one avoided death). We recompute the valuation and reproduce the committed totals. The avoided-death counts come from the group's emissions-to-health model, which turns fire emissions into excess deaths; we do not rebuild it and take its counts as given.]{.state}
-- [The valuation reads the group's country table directly, sourcing the value of life for 218 of 250 countries, and the totals are unchanged.]{.state}
-- [Serbia and Kosovo are swapped in the workbook, which labels both rows Serbia: the row that is Serbia carries Kosovo's value of life and the row that is Kosovo carries Serbia's. We read them the right way round from the table.]{.state}
-- **Q1:** Macao and Palestine are priced per country in the workbook but appear nowhere in the table. What is their source?
-- **Q2:** which currency year is the table in, and could it carry an ISO3 column rather than a slugged country name?
-- **Q3:** which vintage are the avoided-death counts?
+- [The valuation now prices every country at the account's one shared value of a statistical life, the rebuilt EPA life-years-lost panel both mortality services read. Deposition moves $17.81bn to {{< meta air_filtration_total >}} and dust $595.36bn to {{< meta sandstorm_total >}}, the fallback countries moving most, because the panel's per-country transfer replaces the workbook's global-average fill.]{.state}
+- [Serbia and Kosovo are swapped in the workbook, which labels both rows Serbia. The panel joins on the account's own labels, so each is priced as itself.]{.state}
+- **Q1:** which vintage are the avoided-death counts?
 
 ## sandstorm_prevention
 
-- [Values deaths avoided by ecosystems suppressing windblown dust, priced the same way as air filtration and computed by the same module. We recompute the valuation and reproduce the committed totals.]{.state}
-- The two questions on the previous slide apply here unchanged, because both channels share one calculation and one VSL column.
+- [Values deaths avoided by ecosystems suppressing windblown dust, priced the same way as air filtration and computed by the same module, now at the shared VSL panel.]{.state}
+- The vintage question on the previous slide applies here unchanged, because both channels share one calculation and one panel.
 
 ## water_quality
 

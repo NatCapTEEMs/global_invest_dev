@@ -5,9 +5,9 @@ The consortium drive's Air Filtration folder carries the committed per-country w
 -- the sheet's air_filtration service) and from DUST (windblown-dust suppression -- the sheet's
 sandstorm prevention service), each valued at a GDP-adjusted VSL. The upstream science behind
 the deaths columns (process-based emissions models + Global InMAP + health impacts, per the
-appendix) is not rebuildable here and is taken as given; the valuation layer is rebuilt and
-verified against the workbook exactly. The deposition total, $17.81bn, is the manuscript's
-air-filtration number.
+appendix) is not rebuildable here and is taken as given; the valuation layer is rebuilt, prices
+at the account's shared VSL panel, and reports where the workbook's own VSL column (which the
+manuscript's $17.81bn deposition total carries) differs from it.
 
 Two identified rules, both asserted in the tests:
 - The workbook's rows are the r250 geopackage in row order (FID 1..250); names differ from our
@@ -30,30 +30,6 @@ AIR_FILTRATION_MIN_NAME_MATCHES = 190  # positional-join sanity floor (199 obser
 # column before the difference is worth reporting. The two are the same build, so a country that
 # differs is either a stale workbook row or a revision, and either way somebody has to say which.
 VSL_AGREEMENT_RTOL = 1e-6
-
-# The table keys on a slug. Slugifying our country description matches 205 of 250 outright; these
-# are the ones whose slug the table spells differently, keyed by ISO3 so a name edit cannot break
-# them. Macao and Palestine are deliberately absent: the workbook prices both per country and the
-# table has neither, so they are the two values we cannot source and the run says so.
-VSL_TABLE_SLUG_BY_ISO3 = {
-    'KOR': 'korea-south', 'PRK': 'korea-north', 'FSM': 'micronesia-federated-states-of',
-    'BHS': 'bahamas-the', 'GMB': 'gambia-the', 'TUR': 'turkey-turkiye', 'CIV': 'cote-divoire',
-    'MMR': 'burma', 'VIR': 'virgin-islands', 'COD': 'congo-democratic-republic-of-the',
-    'COG': 'congo-republic-of-the', 'HKG': 'hong-kong', 'SWZ': 'eswatini',
-}
-
-
-def vsl_table_slug(description, iso3):
-    """The table's key for a country: its ISO3 alias if it has one, else the slugified name."""
-    import re
-    import unicodedata
-
-    if iso3 in VSL_TABLE_SLUG_BY_ISO3:
-        return VSL_TABLE_SLUG_BY_ISO3[iso3]
-    ascii_name = (unicodedata.normalize('NFKD', str(description))
-                  .encode('ascii', 'ignore').decode())
-    return re.sub(r'[^a-z0-9]+', '-', ascii_name.lower().replace('&', ' and ')).strip('-')
-
 
 def gdp_adjusted_vsl(life_expectancy_df, median_age_df, gdp_df):
     """The documented VSL method (vsl.R, ported for transparency): US VSL per life-year lost,
@@ -84,56 +60,40 @@ def verify_global_average_fill(workbook_df):
     return global_average
 
 
-def vsl_from_country_table(workbook_df, r250_order_df, vsl_df):
-    """The VSL column rebuilt from the air quality group's country table.
+def vsl_from_shared_panel(workbook_df, r250_order_df, panel_df):
+    """The VSL column from the account's shared panel, positionally aligned to the workbook.
 
-    The workbook carries a VSL column we did not compute. This builds the same column from the
-    group's published country-level table so the valuation reads a source we hold rather than a
-    number handed to us. A country the table names takes its value; a country it does not takes
-    the mean of the ones it does, which is the fill rule the workbook itself follows (see
-    verify_global_average_fill).
-
-    The join is on the r250 order's `ee_r264_description`, not on the workbook's `Country`, for
-    the same reason air_quality_gep_by_country joins by position: the workbook calls both FID 137
-    and FID 232 "Serbia" when the second is Kosovo, so a name join hands Serbia's value to Kosovo
-    and never resolves Kosovo at all. The description column distinguishes them.
+    The panel is the rebuilt EPA life-years-lost table both mortality services read, keyed by
+    iso3_r250_label with every account country covered, so there is no fill rule and a missing
+    country is an error rather than an average. The workbook's own VSL column no longer prices
+    anything; rows where the panel departs from it beyond VSL_AGREEMENT_RTOL are returned so
+    the run can report the size of the repricing it applies.
 
     Args:
         workbook_df (pd.DataFrame): the workbook, carrying `VSL`, in r250 row order.
-        r250_order_df (pd.DataFrame): the r250 order, carrying `ee_r264_description`.
-        vsl_df (pd.DataFrame): the group's table, carrying `country` and `vsl`.
+        r250_order_df (pd.DataFrame): the r250 order, carrying `iso3_r250_label`.
+        panel_df (pd.DataFrame): the shared panel, carrying `iso3_r250_label` and `vsl_usd`.
 
     Returns:
-        (pd.Series, pd.DataFrame): the rebuilt VSL positionally aligned to the workbook, and the
-        rows where it disagrees with the workbook's own column by more than VSL_AGREEMENT_RTOL.
+        (pd.Series, pd.DataFrame): the panel VSL positionally aligned to the workbook, and the
+        rows where it departs from the workbook's own column.
     """
     import pandas as pd
 
     order = r250_order_df.reset_index(drop=True)
-    key = [vsl_table_slug(d, i) for d, i in
-           zip(order['ee_r264_description'], order['iso3_r250_label'])]
-    table = (vsl_df.assign(_k=vsl_df['country'].astype(str).str.strip().str.lower())
-             .drop_duplicates('_k').set_index('_k')['vsl'])
-    rebuilt = pd.Series(key, name='vsl').map(table)
-    matched = int(rebuilt.notna().sum())
-
+    table = panel_df.drop_duplicates('iso3_r250_label').set_index('iso3_r250_label')['vsl_usd']
+    vsl = order['iso3_r250_label'].map(table).rename('vsl')
+    if vsl.isna().any():
+        raise ValueError('the shared VSL panel is missing: %s'
+                         % sorted(order.loc[vsl.isna(), 'iso3_r250_label']))
     workbook_vsl = workbook_df['VSL'].reset_index(drop=True)
-    source = workbook_df['VSL_Source'].reset_index(drop=True)
-
-    # A country the workbook prices itself but the table does not name keeps the workbook's
-    # figure, and is reported: it is a value we could not source, not one to quietly average away.
-    unsourced = rebuilt.isna() & (source == 'country')
-    rebuilt = rebuilt.where(~unsourced, workbook_vsl)
-    # The rest are the workbook's global_avg rows, which carry the mean of the priced ones.
-    rebuilt = rebuilt.fillna(rebuilt[~unsourced].mean())
-    difference = (rebuilt - workbook_vsl).abs() / workbook_vsl.abs()
+    difference = (vsl - workbook_vsl).abs() / workbook_vsl.abs()
     report = pd.DataFrame({'country': order['ee_r264_description'],
                            'iso3': order['iso3_r250_label'],
                            'workbook_vsl': workbook_vsl,
-                           'table_vsl': rebuilt,
-                           'relative_difference': difference,
-                           'unsourced': unsourced})
-    return rebuilt, matched, report[difference > VSL_AGREEMENT_RTOL].copy(), report[unsourced].copy()
+                           'table_vsl': vsl,
+                           'relative_difference': difference})
+    return vsl, report[difference > VSL_AGREEMENT_RTOL].copy()
 
 
 def air_quality_benefits(workbook_df, vsl=None):
