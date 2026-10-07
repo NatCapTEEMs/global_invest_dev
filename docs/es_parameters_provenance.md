@@ -10,7 +10,7 @@ an archive member name are values you can act on.
 
 **`erosion_fao_gpv_iso3`** — the author's processed FAOSTAT table, from the drive's erosion folder
 
-**`erosion_yield_bridge`** — alpha is the flat erosion-to-yield coefficient Method A applies to every crop; yield_coefficient_fallback is what Method B uses for a crop with no coefficient of its own. They are the same 0.08 today and the code comment says they are the same bridge, but they answer different questions, so they are two rows rather than one. 19 of 46 crops take the fallback and 5 have no entry at all.
+**`erosion_yield_bridge`** — alpha is the flat erosion-to-yield coefficient a GTAP sector falls back to when none of its crops has a coefficient (the 8% `damage_area` method hardcodes 0.08 and does not read it); yield_coefficient_fallback is what Method B uses for a crop with no coefficient of its own. They are the same 0.08 today and the code comment says they are the same bridge, but they answer different questions, so they are two rows rather than one. 19 of 46 crops take the fallback and 5 have no entry at all.
 
 **`erosion_sdr_params`** — one calibration for both the static GEP and the dynamic shock path. They used to differ, with sdr_max and ic_0_param transposed between them; these are the dynamic values, the conventional Borselli pair.
 
