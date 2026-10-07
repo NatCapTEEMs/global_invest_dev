@@ -292,7 +292,7 @@ format:
 |---|---|---|
 | pollination | {{< meta poll_raster >}} at 2019, the author's raster. {{< meta poll_fao >}} FAO side | yes. |
 | erosion | not reported | no. The run is ongoing. |
-| landslide_mitigation | {{< meta landslide_total >}} ({{< meta landslide_deaths >}} avoided deaths at the shared EPA life-years-lost VSL; {{< meta landslide_oecd >}} at OECD) | partly. The author's rebuilt panel prices our deaths within 7 percent of his refreshed $707M, the gap being his newer death layer; the old sheet column ($865M) remains unexplained |
+| landslide_mitigation | {{< meta landslide_total >}} ({{< meta landslide_deaths >}} avoided deaths at the shared EPA life-years-lost VSL; {{< meta landslide_oecd >}} at OECD) | largely. His v0.2.1 per-country output matches ours at 0.978 log-correlation with the same five leaders, pinned by a test; the sheet column ($865M) matches neither run |
 | fisheries | shock + commercial GEP {{< meta fisheries_total >}} provisional + subsistence {{< meta fisheries_subsistence_total >}} + aquaculture {{< meta fisheries_aquaculture_total >}} | partially. Subsistence reproduces its committed output, and the commercial table matches the author's per-country CSV at his rounding; aquaculture's delivered $100.68bn differs structurally from both earlier vintages |
 | recreation | {{< meta recreation_total >}} ground travel, residents plus tourists at a/365; accommodation $982bn and air $527bn published beside the total | no. The author's rewrite commits no output table, so our run is the first end-to-end number |
 | fire_protection | {{< meta fire_cause_total >}} provisional, one of three coefficients | partially. Reproduces the committed output, but reads the committed regression coefficients rather than refitting them. Kosovo and two Indian sub-regions now reach a country instead of no country |
@@ -362,9 +362,9 @@ format:
 
 ## landslide_mitigation
 
-- [Values landslide deaths avoided by forest cover: slope stability modelled with and without forest root cohesion, the difference turned into avoided deaths and priced at a value of a statistical life. Computed end to end in the library.]{.state}
-- **Q1:** do you have a per-country output from a v0.2.0 run?
-- **Q2:** which input versions did the run behind the v0.2.0 release use?
+- [Values landslide deaths avoided by forest cover: slope stability modelled with and without forest root cohesion, the difference turned into avoided deaths and priced at a value of a statistical life. Computed end to end in the library. His v0.2.1 per-country output (632 deaths, $707.2M) matches our distribution at 0.978 log-correlation with the same five leaders, Nepal first in both.]{.state}
+- **Q1:** can the all-services sheet carry his v0.2.1 column? Its current $865M column is USA-led and matches neither his v0.2.1 run nor ours, so it prices some other quantity from some other run.
+- **Q2:** which input versions did the run behind the v0.2.1 release use?
 - [This is the only service that builds its own value of a statistical life, from the OECD country table. To price a death the same way across the account it should move onto the air quality group's shared table, and that will change this number, since the two sources differ.]{.state}
 
 ## fisheries

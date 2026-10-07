@@ -532,3 +532,35 @@ def test_roc_auc_matches_the_reference_implementation_including_ties():
     assert np.isnan(lmf.roc_auc(np.zeros(5), np.arange(5.0)))
     assert np.isnan(lmf.roc_auc(np.ones(5), np.arange(5.0)))
 
+
+
+def test_the_authors_v021_table_shares_our_distribution():
+    """The author's v0.2.1 per-country output (staged 2026-09, verified byte-identical to the
+    drive's copy 2026-10-06) against our run: the comparison the all-services sheet column
+    failed (0.72 log-correlation, USA-led), pinned so the agreement cannot quietly lapse.
+    Runs against every landslide project on the machine; skips where none exists."""
+    import glob
+    import pandas as pd
+    import pytest
+    his_path = os.path.join(os.path.expanduser('~'), 'Files', 'base_data', 'global_invest',
+                            'landslide_mitigation', 'vsl_2026_09', 'landslide_mitigation_gep.xlsx')
+    runs = sorted(glob.glob(os.path.join(
+        os.path.expanduser('~'), 'Files', 'global_invest', 'projects',
+        'gep_landslide_mitigation*', 'intermediate', 'gep_calculation',
+        'gep_by_country_base_year.csv')))
+    if not (os.path.exists(his_path) and runs):
+        pytest.skip('the author workbook or a landslide run is not on this machine')
+    his = pd.read_excel(his_path)
+    assert his['avoided_value_sum_usd'].sum() == pytest.approx(707_155_816, abs=1.0)
+    assert his['avoided_deaths_sum'].sum() == pytest.approx(632.0, abs=0.5)
+    for ours_path in runs:
+        ours = pd.read_csv(ours_path)
+        merged = ours.merge(his, on='iso3_r250_id')
+        both = merged[(merged['landslide_mitigation_gep'] > 0)
+                      & (merged['avoided_value_sum_usd'] > 0)]
+        assert len(both) >= 210
+        corr = np.corrcoef(np.log(both['landslide_mitigation_gep']),
+                           np.log(both['avoided_value_sum_usd']))[0, 1]
+        assert corr > 0.97
+        assert (merged.nlargest(5, 'landslide_mitigation_gep')['iso3_r250_id'].tolist()
+                == merged.nlargest(5, 'avoided_value_sum_usd')['iso3_r250_id'].tolist())
