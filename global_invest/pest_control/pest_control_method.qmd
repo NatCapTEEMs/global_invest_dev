@@ -1,0 +1,55 @@
+---
+title: "Overview of Ecosystem Service: Pest Control"
+format:
+  html:
+    embed-resources: true
+    standalone: true
+---
+
+Biological pest control is valued as the extra yield natural enemies provide on organically
+managed cropland, at the organic producer price. The base year is 2019.
+
+⚠ The scope is organic agriculture only, by design: the underlying evidence measures the yield
+effect of predators where synthetic pesticides are absent, and no comparable estimate exists
+for conventional systems. The full value is attributed to nature -- no human-input adjustment
+(lambda) is applied, unlike the neighbouring crop rows.
+
+## Quantity
+
+Organic production per crop and country: FiBL's organic area extract, times the country's
+conventional FAOSTAT yield, times an organic-to-conventional yield ratio per FAO crop group
+(`pest_control_yield_ratio_*`). FiBL aggregate rows with no FAOSTAT production analogue are
+excluded and their share logged, never guessed.
+
+## Price
+
+The organic producer price: the country's FAOSTAT 2019 producer price for the crop (the item's
+global median where the country reports none), times the organic-to-conventional price premium
+(`pest_control_price_premium`).
+
+## Valuation
+
+Per crop $i$, country $j$:
+
+$$
+\text{Value}_{ij} = \left(e^{\text{lnRR}_{g(i)}} - 1\right) \; A_{ij} \; y_{ij} \, r_{g(i)} \; p_{ij} \, \pi
+$$
+
+where $\text{lnRR}_{g(i)}$ is the crop group's meta-analytic log response ratio
+(`pest_control_effect_lnrr_*`: the cereal effect for cereals, the vegetable effect for
+vegetables, oilseeds and pulses, the other-crops effect for fruit, nuts and stimulants, zero
+for every other group), $A$ the organic area, $y$ the conventional yield, $r$ the yield ratio,
+$p$ the producer price and $\pi$ the price premium. Countries sum over crops; the published
+table carries all 250 account countries with NA where nothing is valued.
+
+The committed `pest_control_gep.csv` is carried beside the result as the comparison anchor. It
+is a Monte Carlo mean from a pipeline that is not on the drive, so the run log reports coverage
+and log-rank agreement rather than a to-the-cent match, and the total scales linearly in $\pi$
+(the committed level corresponds closely to $\pi = 1$).
+
+## Inputs
+
+All paths and parameters come from `es_parameters.csv` under the `pest_control` service key:
+the FiBL area extract, the FAOSTAT 2019 yield and price slices, the FAO/CPC crop
+classification, the three effect sizes, the six yield ratios, the price premium and the
+committed reference, each with a source row beside it.

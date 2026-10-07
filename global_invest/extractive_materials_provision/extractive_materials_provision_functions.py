@@ -34,11 +34,6 @@ def world_bank_wide_to_long(df_wide, value_column):
                         var_name='year', value_name=value_column)
 
 
-def group_countries(df):
-    """Country-year rows summed to one global row per year."""
-    return utilities.sum_countries_to_year(df, 'Value')
-
-
 
 def mineral_rent_gep(mineral_rent_percent, gdp_current_usd, factor):
     """Mineral provision value: the rent share of GDP, times the attribution factor.

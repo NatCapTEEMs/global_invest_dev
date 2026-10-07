@@ -9,6 +9,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from global_invest import utilities
 from global_invest.crop_provision import crop_provision_functions as cp
@@ -35,7 +36,7 @@ def _raw_faostat_frame():
     """Four FAOSTAT rows: one that survives, one unrequested crop, one aggregate area, one whose
     element is not gross production value. The year columns are the file's full Y1961..Y2022 span
     with a flag column beside each, because the melt reads all of them."""
-    years = range(cp.FAOSTAT_FIRST_YEAR, cp.FAOSTAT_LAST_YEAR + 1)
+    years = range(utilities.FAOSTAT_FIRST_YEAR, utilities.FAOSTAT_LAST_YEAR + 1)
     frame = pd.DataFrame({
         'Area Code': [1, 1, 2, 223],
         'Area Code (M49)': ["'010", "'010", "'020", "'223"],
@@ -56,14 +57,14 @@ def _raw_faostat_frame():
 
 
 def test_clean_crop_values_keeps_gross_production_value_and_melts_the_years():
-    out = cp.clean_crop_values(_raw_faostat_frame(), items=['Wheat'], aggregate_areas=['World'])
+    out = utilities.clean_faostat_values(_raw_faostat_frame(), items=['Wheat'], value_column='crop_provision_gep', aggregate_areas=['World'])
 
     # 'Rye' is not requested, 'World' is an aggregate area, and area 223's row is element 152.
     assert set(out['crop']) == {'Wheat'}
     assert set(out['country']) == {'Aaaland'}
     assert not [c for c in out.columns if c.endswith('F')]      # flag columns dropped
     # One surviving source row, melted over the full year span.
-    assert len(out) == cp.FAOSTAT_LAST_YEAR - cp.FAOSTAT_FIRST_YEAR + 1
+    assert len(out) == utilities.FAOSTAT_LAST_YEAR - utilities.FAOSTAT_FIRST_YEAR + 1
     values = out.set_index('year')['crop_provision_gep']
     assert values.loc[1961] == 1.0
     assert values.loc[2022] == 5.0
@@ -74,8 +75,8 @@ def test_clean_crop_values_keeps_gross_production_value_and_melts_the_years():
 
 def test_clean_crop_values_renames_area_223_to_turkey():
     raw = _raw_faostat_frame()
-    raw.loc[3, 'Element Code'] = cp.FAOSTAT_GROSS_PRODUCTION_VALUE_ELEMENT
-    out = cp.clean_crop_values(raw, items=['Wheat'], aggregate_areas=['World'])
+    raw.loc[3, 'Element Code'] = utilities.FAOSTAT_GROSS_PRODUCTION_VALUE_ELEMENT
+    out = utilities.clean_faostat_values(raw, items=['Wheat'], value_column='crop_provision_gep', aggregate_areas=['World'])
     assert set(out.loc[out['area_code'] == 223, 'country']) == {'Turkey'}
 
 
@@ -106,7 +107,7 @@ def test_merge_crop_with_coefs_applies_the_decade_in_force_and_leaves_uncovered_
     })
     coefs = pd.DataFrame({'FAO': [1, 1], 'year': [1961, 2011], 'rental_rate': [0.30, 0.35]})
 
-    out = cp.merge_crop_with_coefs(values, coefs).set_index(['area_code', 'year'])['crop_provision_gep']
+    out = utilities.apply_rental_rates(values, coefs, 'crop_provision_gep').set_index(['area_code', 'year'])['crop_provision_gep']
     assert np.isnan(out.loc[(1, 1960)])          # before the first decade: no rate in force
     assert out.loc[(1, 1961)] == 30.0            # 100 x 0.30
     assert out.loc[(1, 2015)] == 70.0            # 200 x 0.35, the 2011-2020 decade
@@ -157,13 +158,13 @@ def test_group_crops_then_group_countries_sum_to_the_same_total():
         'year': [2019, 2019, 2019, 2018],
         'crop_provision_gep': [30000.0, 15000.0, 40000.0, 1000.0],
     })
-    by_country = cp.group_crops(crop_rows)
+    by_country = utilities.sum_items_to_country_year(crop_rows, 'crop_provision_gep')
     per_country = by_country.set_index(['iso3_r250_id', 'year'])['crop_provision_gep']
     assert per_country.loc[(10, 2019)] == 45000.0        # two crops summed
     assert per_country.loc[(20, 2019)] == 40000.0
     assert per_country.loc[(10, 2018)] == 1000.0
 
-    by_year = cp.group_countries(by_country).set_index('year')['crop_provision_gep']
+    by_year = utilities.sum_countries_to_year(by_country, 'crop_provision_gep').set_index('year')['crop_provision_gep']
     assert by_year.loc[2019] == 85000.0
     assert by_year.loc[2018] == 1000.0
 
@@ -181,14 +182,14 @@ def test_normalize_m49_codes_unquotes_casts_and_maps_successors():
 def test_every_successor_maps_to_a_different_live_code():
     """A successor mapping that pointed at itself, or at another dissolved state, would leave
     production stranded."""
-    for dissolved, successor in cp.M49_SUCCESSORS.items():
+    for dissolved, successor in utilities.M49_SUCCESSORS.items():
         assert dissolved != successor
-        assert successor not in cp.M49_SUCCESSORS
+        assert successor not in utilities.M49_SUCCESSORS
 
 
 def test_the_faostat_unit_factor_is_the_thousand_usd_conversion():
-    assert cp.FAOSTAT_THOUSAND_USD == 1000.0
-    assert cp.FAOSTAT_VALUE_UNIT == '1000 USD'
+    assert utilities.FAOSTAT_THOUSAND_USD == 1000.0
+    assert utilities.FAOSTAT_VALUE_UNIT == '1000 USD'
 
 
 def test_task_reader_cleans_the_faostat_bulk_file(tmp_path):
@@ -220,3 +221,409 @@ def test_es_config_row_hydrates_crop_provision(tmp_path):
     p.get_path = lambda *a, **k: '/resolved/' + '/'.join(a)
     utilities.hydrate_es_config(p, 'crop_provision', log=lambda *a: None)
     assert p.sheet_label == 'crop_provision'
+
+
+# =================================================================================================
+# The subsistence component: a port, so the tests pin the reproduction and the two findings.
+# =================================================================================================
+
+def _rulis_rows():
+    """A RuLIS export in miniature: the indicator this reads and the one beside it."""
+    own = cp.RULIS_OWN_CONSUMPTION_INDICATOR
+    return pd.DataFrame([
+        {'Indicator': own, 'Country': 'Kenya', 'Disaggregation': 'National', 'Year': 2005,
+         'Value': 54.8, cp.PER_AREA_COLUMN: 500.0, 'Standard Deviation': 1.0,
+         'Number of observations': 10, 'Income Classification': 'L'},
+        {'Indicator': own, 'Country': 'Georgia', 'Disaggregation': 'Rural', 'Year': 2013,
+         'Value': 60.0, cp.PER_AREA_COLUMN: 900.0, 'Standard Deviation': 1.0,
+         'Number of observations': 5, 'Income Classification': 'LM'},
+        {'Indicator': own, 'Country': 'Georgia', 'Disaggregation': 'Urban', 'Year': 2013,
+         'Value': 40.0, cp.PER_AREA_COLUMN: 900.0, 'Standard Deviation': 1.0,
+         'Number of observations': 5, 'Income Classification': 'LM'},
+        {'Indicator': cp.RULIS_SOLD_AT_MARKET_INDICATOR, 'Country': 'Kenya',
+         'Disaggregation': 'National', 'Year': 2005, 'Value': 88.0,
+         cp.PER_AREA_COLUMN: 500.0, 'Standard Deviation': 1.0,
+         'Number of observations': 10, 'Income Classification': 'L'},
+    ])
+
+
+def test_the_sold_at_market_indicator_is_dropped():
+    """It sits in the same export and is close to this indicator's complement, so reading it would
+    value the commercial half as subsistence."""
+    out = cp.national_own_consumption_shares(_rulis_rows())
+    assert cp.RULIS_SOLD_AT_MARKET_INDICATOR not in set(out['Indicator'])
+    assert len(out) == 3
+
+
+def test_a_country_with_no_national_row_takes_the_mean_of_rural_and_urban():
+    """Georgia is surveyed but never reported nationally. Dropping it would be a silent loss."""
+    out = cp.add_constructed_national_rows(cp.national_own_consumption_shares(_rulis_rows()))
+    georgia = out[out['Country'] == 'Georgia']
+    assert len(georgia) == 1
+    assert georgia['Value'].iloc[0] == pytest.approx(50.0)
+    assert georgia['Disaggregation'].iloc[0] == cp.RULIS_NATIONAL
+
+
+def test_a_country_reported_nationally_keeps_only_its_national_row():
+    """Kenya has a national figure, so averaging its settlement rows in would pull the share
+    towards the households most likely to eat what they grow."""
+    out = cp.add_constructed_national_rows(cp.national_own_consumption_shares(_rulis_rows()))
+    assert out[out['Country'] == 'Kenya']['Value'].tolist() == [pytest.approx(54.8)]
+
+
+def test_the_share_of_agricultural_area_is_read_not_the_share_of_farms():
+    """Both rows sit in the same Lowder table under the same region. The share of farms is about
+    seven times the share of area."""
+    lowder = pd.DataFrame([
+        {'Region': 'South Asia', 'Number or share of farms / agricultural area': 'share of farms (%)',
+         '< 1 ha': 70.4, '1–2 ha': 13.8},
+        {'Region': 'South Asia',
+         'Number or share of farms / agricultural area': cp.LOWDER_AREA_SHARE_ROW,
+         '< 1 ha': 23.9, '1–2 ha': 21.5}])
+    out = cp.smallholder_area_shares(lowder)
+    assert len(out) == 1 and out['< 1 ha'].iloc[0] == 23.9
+
+
+def test_reading_the_wrong_lowder_row_raises_rather_than_returning_nothing():
+    lowder = pd.DataFrame([
+        {'Region': 'South Asia', 'Number or share of farms / agricultural area': 'share of farms (%)',
+         '< 1 ha': 70.4, '1–2 ha': 13.8}])
+    with pytest.raises(NameError, match='share of agricultural area'):
+        cp.smallholder_area_shares(lowder)
+
+
+def test_the_unit_correction_is_exactly_a_factor_of_ten():
+    """The finding, pinned on the arithmetic rather than on two named constants.
+
+    FAOSTAT reports cropland in THOUSANDS of hectares against an intensity per SINGLE hectare, and
+    the Lowder share is a PERCENTAGE the reference never divides by 100. Those compound to ten, and
+    this computes both columns from one worked row rather than asserting a ratio between constants
+    -- which is the stronger test, because it fails if either line's arithmetic changes and not
+    merely if a constant is edited.
+
+    Ethiopia 2019, from the source files: 18,190 thousand hectares of cropland, a Sub-Saharan
+    smallholder share of 27.7 percent, 502.95 international dollars per hectare, and 33.7 percent
+    eaten rather than sold.
+    """
+    row = pd.DataFrame([{
+        'Value_x': 18190.0, '< 1 ha': 11.5, '1–2 ha': 16.2,
+        cp.PER_AREA_COLUMN: 502.95,
+        cp.RULIS_OWN_CONSUMPTION_INDICATOR: 33.700001,
+    }])
+    smallholder_percent = row['< 1 ha'] + row['1–2 ha']
+    own_share_percent = row[cp.RULIS_OWN_CONSUMPTION_INDICATOR]
+
+    reference = (row['Value_x'] * smallholder_percent * row[cp.PER_AREA_COLUMN]
+                 * own_share_percent / 100.0).iloc[0]
+    corrected = (row['Value_x'] * 1000.0 * (smallholder_percent / 100.0)
+                 * row[cp.PER_AREA_COLUMN] * (own_share_percent / 100.0)).iloc[0]
+
+    assert reference == pytest.approx(85_401_830, rel=1e-6)
+    assert corrected == pytest.approx(854_018_300, rel=1e-6)
+    assert corrected / reference == pytest.approx(10.0)
+
+
+def test_a_country_that_does_not_land_on_the_account_list_raises():
+    """The reference joins its panel against the correspondence on a Natural Earth name column and
+    delivers 16 of its own 66 valued countries -- 250 rows and a populated column, so the loss is
+    invisible. Here it is an error."""
+    countries = pd.DataFrame([
+        {'ee_r264_label': 'KEN', 'iso3_r250_label': 'KEN', 'iso3_r250_id': 404,
+         'iso3_r250_name': 'Kenya'}])
+    panel = pd.DataFrame([
+        {'alpha-3': 'KEN', 'Year': 2019, 'own_con': 1.0, 'own_con2': 1.0,
+         'own_con_source': 'observed', 'rental_rate': 0.3, 'crop_subsistence_gep': 1.0},
+        {'alpha-3': 'ATL', 'Year': 2019, 'own_con': 5.0, 'own_con2': 5.0,
+         'own_con_source': 'observed', 'rental_rate': 0.3, 'crop_subsistence_gep': 5.0}])
+    with pytest.raises(ValueError, match='did not land on the account country list'):
+        cp.subsistence_on_country_list(panel, countries, 2019)
+
+
+def test_a_year_takes_the_rate_of_the_decade_it_falls_in():
+    coefs = pd.DataFrame([{'Order': 1, 'FAO': 159, 'ISO3': 'KEN', 'Country/territory': 'Kenya',
+                           '2001-2010': 0.2, '2011-2020': 0.3}])
+    panel = pd.DataFrame([{'alpha-3': 'KEN', 'Year': 2019, 'own_con2': 100.0}])
+    out = cp.apply_subsistence_rental_rate(panel, coefs)
+    assert out['rental_rate'].iloc[0] == 0.3
+    assert out['gep_value'].iloc[0] == pytest.approx(30.0)
+
+
+def _crop_provision_runs():
+    """Every crop_provision project directory on this machine, cold starts included.
+
+    Checking one named directory lets a stale warm run stand in for a fresh one, which is the
+    failure condition 10 exists for. Every run that exists has to agree.
+    """
+    import glob
+    import os
+    pattern = os.path.join(os.path.expanduser('~'), 'Files', 'global_invest', 'projects',
+                           'gep_crop_provision*', 'intermediate')
+    return sorted(p for p in glob.glob(pattern) if os.path.isdir(p))
+
+
+def test_the_commercial_figure_matches_the_reference_output_country_by_country():
+    """The claim that crop_provision reproduces its reference was carried in the status table for
+    weeks while the reference sat in nobody's repository and no test looked at it. It is staged
+    now, so this compares against it -- for every run on the machine, not one chosen directory.
+
+    Skips rather than fails when base_data or a run is absent, because a machine without either is
+    not a machine this can speak about."""
+    import os
+    reference_path = os.path.join(
+        os.path.expanduser('~'), 'Files', 'base_data', 'global_invest', 'crop_provision',
+        'reference', 'gep_by_country_2019_reference.csv')
+    if not os.path.exists(reference_path):
+        pytest.skip('the staged reference is not on this machine')
+
+    # FAOSTAT carries dissolved states beside their successors -- "Ethiopia PDR" next to Ethiopia,
+    # "Serbia and Montenegro" next to Serbia -- under one M49 code each. The reference leaves those
+    # rows stranded at zero; this library maps them to the successor, which is one of the two fixes
+    # crop_provision documents. So the reference is summed onto the M49 code before comparing,
+    # which is the same collapse, and comparing row for row would count Ethiopia twice.
+    reference = pd.read_csv(reference_path, encoding='utf-8-sig')
+    reference = reference.groupby('area_code_M49', as_index=False).agg(
+        crop_provision_gep_reference=('crop_provision_gep_reference', 'sum'))
+
+    checked = 0
+    for run in _crop_provision_runs():
+        project_path = os.path.join(run, 'gep_calculation', 'gep_by_country_base_year.csv')
+        if not os.path.exists(project_path):
+            continue
+        ours = pd.read_csv(project_path)
+        if 'crop_provision_gep_reference' not in ours.columns:
+            continue                      # a run from before the reproduction was published
+        joined = reference.merge(
+            ours[['iso3_r250_id', 'crop_provision_gep_reference']].rename(
+                columns={'crop_provision_gep_reference': 'crop_provision_gep'}),
+            left_on='area_code_M49', right_on='iso3_r250_id', how='inner')
+        assert len(joined) == len(reference), run
+        relative = ((joined['crop_provision_gep'] - joined['crop_provision_gep_reference']).abs()
+                    / joined['crop_provision_gep_reference'].abs().replace(0, np.nan))
+        assert relative.max() < 1e-12, run
+        assert joined['crop_provision_gep'].sum() == pytest.approx(
+            joined['crop_provision_gep_reference'].sum(), rel=1e-12), run
+        checked += 1
+    if not checked:
+        pytest.skip('no crop_provision run on this machine')
+
+
+def test_the_subsistence_reference_column_reproduces_their_published_panel():
+    """The published figure is ours; this is the column beside it that proves the port is faithful.
+    Same rule: every run on the machine, cold starts included."""
+    import os
+    reference_path = os.path.join(
+        os.path.expanduser('~'), 'Files', 'base_data', 'global_invest', 'crop_provision',
+        'subsistence', 'reference', 'agr_subsistence_adjusted_2020.csv')
+    if not os.path.exists(reference_path):
+        pytest.skip('the staged reference is not on this machine')
+    theirs = pd.read_csv(reference_path)
+    theirs = theirs[theirs['Year'] == 2019][['alpha-3', 'gep_value_2019']].dropna()
+
+    checked = 0
+    for run in _crop_provision_runs():
+        path = os.path.join(run, 'crop_subsistence_gep', 'subsistence_gep_by_country.csv')
+        if not os.path.exists(path):
+            continue
+        ours = pd.read_csv(path).dropna(subset=['crop_subsistence_gep_reference'])
+        joined = ours.merge(theirs, left_on='iso3_r250_label', right_on='alpha-3', how='inner')
+        assert len(joined) == len(theirs), run
+        relative = ((joined['crop_subsistence_gep_reference'] - joined['gep_value_2019']).abs()
+                    / joined['gep_value_2019'].abs().replace(0, np.nan))
+        assert relative.max() < 1e-10, run
+        # Correcting the units alone is exactly ten times their arithmetic, which is the finding.
+        # The published figure departs further, because it also imputes the survey SHARE for an
+        # unsurveyed country rather than predicting the LEVEL from cropland area, so it is compared
+        # on being larger and on the same order rather than on a fixed ratio.
+        assert (ours['crop_subsistence_gep_units_only'].sum()
+                == pytest.approx(10 * ours['crop_subsistence_gep_reference'].sum(), rel=1e-12)), run
+        published = ours['crop_subsistence_gep'].sum()
+        assert published > ours['crop_subsistence_gep_units_only'].sum(), run
+        assert published < 4 * ours['crop_subsistence_gep_units_only'].sum(), run
+        checked += 1
+    if not checked:
+        pytest.skip('no crop_provision run on this machine')
+
+
+def test_an_unsurveyed_country_takes_a_regional_share_only_where_the_region_has_enough_surveys():
+    """The imputation the account uses in place of the reference's regression. A region with too
+    few surveys behind it falls back to the global median rather than passing off two observations
+    as a regional pattern, and every row records which it used."""
+    observed = pd.DataFrame([
+        {'Country': 'Kenya', 'Value': 50.0}, {'Country': 'Malawi', 'Value': 60.0},
+        {'Country': 'Ghana', 'Value': 40.0}, {'Country': 'Peru', 'Value': 20.0}])
+    income = pd.DataFrame([
+        {'Country': 'Kenya', 'Region': 'Sub-Saharan Africa', 'Code': 'KEN'},
+        {'Country': 'Malawi', 'Region': 'Sub-Saharan Africa', 'Code': 'MWI'},
+        {'Country': 'Ghana', 'Region': 'Sub-Saharan Africa', 'Code': 'GHA'},
+        {'Country': 'Peru', 'Region': 'Latin America & Caribbean', 'Code': 'PER'},
+        {'Country': 'Uganda', 'Region': 'Sub-Saharan Africa', 'Code': 'UGA'},
+        {'Country': 'Bolivia', 'Region': 'Latin America & Caribbean', 'Code': 'BOL'}])
+    out = cp.impute_own_consumption_shares(observed, income, minimum_per_region=3).set_index('Country')
+
+    assert out.at['Kenya', 'own_consumption_share'] == pytest.approx(0.50)
+    assert out.at['Kenya', 'share_source'] == 'observed'
+    # Sub-Saharan Africa has three surveys, so Uganda takes their median.
+    assert out.at['Uganda', 'own_consumption_share'] == pytest.approx(0.50)
+    assert out.at['Uganda', 'share_source'].startswith('regional median')
+    # Latin America has one, so Bolivia takes the global median of all four.
+    assert out.at['Bolivia', 'own_consumption_share'] == pytest.approx(0.45)
+    assert out.at['Bolivia', 'share_source'] == 'global median'
+
+
+def test_the_imputation_never_reaches_above_lower_middle_income():
+    """The reference scopes its panel to the low and lower-middle-income classes and that scope is
+    kept, so a high-income country never acquires a subsistence estimate from a regional median."""
+    wb = pd.DataFrame([{'Country': 'Kenya', '2019': 'L'}, {'Country': 'France', '2019': 'H'},
+                       {'Country': 'Ghana', '2019': 'LM'}, {'Country': 'Chile', '2019': 'UM'}])
+    eligible = cp.low_and_lower_middle_income_countries(wb, 2019)
+    assert sorted(eligible['Country']) == ['Ghana', 'Kenya']
+
+
+def test_the_ppp_factor_is_faostats_own_two_publications_of_the_same_output():
+    """The account reports 2019 US dollars and reads FAOSTAT's current-year values as already being
+    that. It holds for the Value of Production table and not for the production intensity, which
+    FAOSTAT publishes only in international dollars -- so that one component was in the wrong
+    currency and no current-US$ version exists to read instead.
+
+    The conversion needs no external table: agricultural land times the intensity is total
+    agricultural output in international dollars, and Value of Production reports the same output
+    in current US dollars, so their ratio is the factor. This pins that identity."""
+    area_value = pd.DataFrame([
+        {'Area': 'Testland', 'Item': 'Agricultural land', 'Element': 'Area', 'Year': 2019,
+         'Value': 1000.0},                                   # 1,000 thousand ha = 1,000,000 ha
+        {'Area': 'Testland', 'Item': 'Agricultural land',
+         'Element': cp.LAND_USE_VALUE_PER_AREA_ELEMENT, 'Year': 2019, 'Value': 200.0}])
+    # 1,000,000 ha x 200 Int$/ha = 200,000,000 Int$ against 100,000,000 US$ -> a factor of 2.
+    value = pd.DataFrame([
+        {'Area': 'Testland', 'Item': 'Agriculture', 'Element Code': 57, 'Unit': '1000 USD',
+         'Y2019': 100000.0}])
+    income = pd.DataFrame([{'Country': 'Testland', 'Region': 'Sub-Saharan Africa'}])
+
+    out = cp.agricultural_ppp_factors(area_value, value, income, 2019).set_index('Country')
+    assert out.at['Testland', 'ppp_factor'] == pytest.approx(2.0)
+    assert out.at['Testland', 'ppp_factor_source'] == 'FAOSTAT, this country'
+
+
+def test_a_country_faostat_gives_no_aggregate_for_takes_its_regions_factor():
+    """18 of the 66 subsistence countries have no FAOSTAT "Agriculture" value, the same coverage
+    gap that put group totals in the item lists. They take a regional median rather than 1.0,
+    because assuming no conversion is itself a conversion."""
+    area_value = pd.DataFrame([
+        {'Area': 'Alpha', 'Item': 'Agricultural land', 'Element': 'Area', 'Year': 2019, 'Value': 1000.0},
+        {'Area': 'Alpha', 'Item': 'Agricultural land',
+         'Element': cp.LAND_USE_VALUE_PER_AREA_ELEMENT, 'Year': 2019, 'Value': 200.0},
+        {'Area': 'Beta', 'Item': 'Agricultural land', 'Element': 'Area', 'Year': 2019, 'Value': 500.0},
+        {'Area': 'Beta', 'Item': 'Agricultural land',
+         'Element': cp.LAND_USE_VALUE_PER_AREA_ELEMENT, 'Year': 2019, 'Value': 200.0},
+        {'Area': 'Gamma', 'Item': 'Agricultural land', 'Element': 'Area', 'Year': 2019, 'Value': 900.0},
+        {'Area': 'Gamma', 'Item': 'Agricultural land',
+         'Element': cp.LAND_USE_VALUE_PER_AREA_ELEMENT, 'Year': 2019, 'Value': 200.0}])
+    value = pd.DataFrame([
+        {'Area': a, 'Item': 'Agriculture', 'Element Code': 57, 'Unit': '1000 USD', 'Y2019': v}
+        for a, v in (('Alpha', 100000.0), ('Beta', 50000.0), ('Gamma', 90000.0))])
+    income = pd.DataFrame([{'Country': c, 'Region': 'Sub-Saharan Africa'}
+                           for c in ('Alpha', 'Beta', 'Gamma', 'Delta')])
+
+    out = cp.agricultural_ppp_factors(area_value, value, income, 2019).set_index('Country')
+    assert out.at['Delta', 'ppp_factor'] == pytest.approx(2.0)
+    assert out.at['Delta', 'ppp_factor_source'].startswith('regional median')
+
+
+def test_impute_fills_price_gaps_from_the_staged_values_table_and_leaves_valued_rows_alone():
+    """A pair with production and no USD value takes the value the pollination chain already
+    computed, in thousand USD: in place where its row exists empty, appended where no row
+    exists, and a country the value file never names (so no FAO area code for the rental
+    lookup) is left out. No price arithmetic happens here; the table's value_usd is the fill."""
+    values = pd.DataFrame({
+        'area_code': [1, 1],
+        'area_code_M49': ["'010", "'010"],
+        'country': ['Aaaland', 'Aaaland'],
+        'crop_code': [100, 200],
+        'crop': ['Wheat', 'Rye'],
+        'year': [2019, 2019],
+        'crop_provision_gep': [50.0, np.nan],
+    })
+    fao_values = pd.DataFrame({
+        'area_code_m49': ['010', '010', '020', '030', '020'],
+        'iso3': ['AAA', 'AAA', 'BBB', 'CCC', 'BBB'],
+        'area_fao': ['Aaaland', 'Aaaland', 'Bbbland', 'Cccland', 'Bbbland'],
+        'item_code_fao': [100, 200, 100, 100, 300],
+        'item_fao': ['Wheat', 'Rye', 'Wheat', 'Wheat', 'Barley'],
+        'year': [2019] * 5,
+        'total_production_tonnes': [10.0, 4.0, 6.0, 5.0, 3.0],
+        'price_source_agg_level': ['country', 'country', 'subregion', 'world', 'missing'],
+        'value_usd': [9999.0, 2000.0, 1500.0, 500.0, np.nan],
+    })
+
+    out = cp.impute_missing_crop_values(
+        values, fao_values, 2019, {10: 1, 20: 2}, ['Wheat', 'Rye', 'Barley'])
+
+    keyed = out.set_index(['country', 'crop'])
+    # Aaaland Wheat already carries a FAOSTAT value, so the table's 9999 never touches it.
+    assert keyed.at[('Aaaland', 'Wheat'), 'crop_provision_gep'] == 50.0
+    assert keyed.at[('Aaaland', 'Wheat'), 'value_source'] == 'faostat'
+    # Rye's empty row is filled in place: the table's 2000 USD arrives as 2.0 thousand USD.
+    assert keyed.at[('Aaaland', 'Rye'), 'crop_provision_gep'] == pytest.approx(2.0)
+    assert keyed.at[('Aaaland', 'Rye'), 'value_source'] == 'price_country'
+    # Bbbland has no row at all, so one is appended carrying the table's level flag and the
+    # FAO area code the rental lookup needs.
+    assert keyed.at[('Bbbland', 'Wheat'), 'crop_provision_gep'] == pytest.approx(1.5)
+    assert keyed.at[('Bbbland', 'Wheat'), 'value_source'] == 'price_subregion'
+    assert keyed.at[('Bbbland', 'Wheat'), 'area_code'] == 2
+    # Cccland is not in the area-code map, and Barley's row is unpriced; neither enters.
+    assert 'Cccland' not in out['country'].values
+    assert 'Barley' not in out['crop'].values
+    assert len(out) == 3
+
+
+def test_an_item_filled_under_a_kept_group_total_is_not_counted_twice():
+    """Iiiland has only its group total valued (India 2019), so the total is kept and rice is
+    already inside it; filling rice as well would count it twice. Aaaland has a valued item, so
+    its total is dropped and its empty rye row is filled as usual."""
+    values = pd.DataFrame({
+        'area_code': [1, 1, 1, 3, 3],
+        'area_code_M49': ["'010", "'010", "'010", "'030", "'030"],
+        'country': ['Aaaland', 'Aaaland', 'Aaaland', 'Iiiland', 'Iiiland'],
+        'crop_code': [100, 200, 1717, 27, 1717],
+        'crop': ['Wheat', 'Rye', 'Cereals, primary', 'Rice', 'Cereals, primary'],
+        'year': [2019] * 5,
+        'crop_provision_gep': [10.0, np.nan, 15.0, np.nan, 50.0],
+    })
+    fao_values = pd.DataFrame({
+        'area_code_m49': ['010', '030'],
+        'iso3': ['AAA', 'III'],
+        'area_fao': ['Aaaland', 'Iiiland'],
+        'item_code_fao': [200, 27],
+        'item_fao': ['Rye', 'Rice'],
+        'year': [2019, 2019],
+        'total_production_tonnes': [4.0, 30.0],
+        'price_source_agg_level': ['country', 'country'],
+        'value_usd': [2000.0, 30000.0],
+    })
+    aggregates = ['Cereals, primary']
+
+    out = utilities.drop_aggregates_where_components_exist(
+        values, aggregates, 'crop_provision_gep', log=lambda *a: None)
+    out = cp.impute_missing_crop_values(out, fao_values, 2019, {10: 1, 30: 3}, ['Rye', 'Rice'])
+    out = cp.drop_fills_under_group_totals(out, aggregates)
+
+    keyed = out.set_index(['country', 'crop'])
+    assert keyed.at[('Iiiland', 'Cereals, primary'), 'crop_provision_gep'] == 50.0
+    assert ('Iiiland', 'Rice') not in keyed.index
+    assert ('Aaaland', 'Cereals, primary') not in keyed.index
+    assert keyed.at[('Aaaland', 'Rye'), 'crop_provision_gep'] == pytest.approx(2.0)
+    assert out['crop_provision_gep'].sum() == pytest.approx(62.0)
+
+
+def test_area_codes_by_m49_keeps_the_account_row_not_the_aggregate_component():
+    """FAOSTAT's value file carries China (351, M49 159) beside China, mainland (41, M49 156),
+    and the account drops the mainland as an aggregate area. With the successor map sending 159
+    to 156, the map must resolve 156 to the kept row's code, 351."""
+    raw = pd.DataFrame({
+        'Area Code': [351, 41, 1],
+        'Area Code (M49)': ["'159", "'156", "'010"],
+        'Area': ['China', 'China, mainland', 'Aaaland'],
+    })
+    out = cp.area_codes_by_m49(raw, aggregate_areas=['China, mainland'])
+    assert out[156] == 351
+    assert out[10] == 1

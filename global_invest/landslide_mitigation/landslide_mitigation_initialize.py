@@ -97,14 +97,12 @@ def build_gep_service_prediction_task_tree(p):
     p.avoided_mortality_task = p.add_task(landslide_mitigation_tasks.compute_avoided_mortality, creates_dir=False)
 
     # ---------------------------------------------------------------- #
-    # Tables & Figures (landslide_mitigation_tasks.py)
+    # Tables (landslide_mitigation_tasks.py). The three plotting tasks that stood here drew
+    # eight PNGs the results page never showed and nothing else read.
     # ---------------------------------------------------------------- #
     p.tables_figures_task = p.add_task(landslide_mitigation_tasks.tables_figures, creates_dir=True)
     p.zonal_statistics_task = p.add_task(landslide_mitigation_tasks.compute_zonal_statistics, creates_dir=False)
     p.export_regression_tables_task = p.add_task(landslide_mitigation_tasks.export_regression_tables, creates_dir=False)
-    p.plot_global_rasters_png_task = p.add_task(landslide_mitigation_tasks.plot_global_rasters_png, creates_dir=False)
-    p.plot_country_choropleth_maps_task = p.add_task(landslide_mitigation_tasks.plot_country_choropleth_maps, creates_dir=False)
-    p.plot_uglc_fatality_bins_task = p.add_task(landslide_mitigation_tasks.plot_uglc_from_vector, creates_dir=False)
     p.export_results_tables_task = p.add_task(landslide_mitigation_tasks.export_results_tables, creates_dir=False)
     p.export_si_severity_sensitivity_table_task = p.add_task(landslide_mitigation_tasks.export_si_severity_sensitivity_table, creates_dir=False)
     p.export_pi_audit_table_task = p.add_task(landslide_mitigation_tasks.export_pi_audit_table, creates_dir=False)

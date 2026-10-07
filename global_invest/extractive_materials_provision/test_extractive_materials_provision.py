@@ -9,6 +9,7 @@ from types import SimpleNamespace
 import numpy as np
 import pandas as pd
 
+from global_invest import utilities
 from global_invest.extractive_materials_provision import extractive_materials_provision_functions as em
 from global_invest.extractive_materials_provision import extractive_materials_provision_tasks as em_tasks
 
@@ -77,7 +78,7 @@ def test_group_countries_sums_the_value_column_by_year():
     df = pd.DataFrame({'year': [2019, 2018, 2019, 2018],
                        'iso3_r250_label': ['AAA', 'AAA', 'BBB', 'BBB'],
                        'Value': [1.0, 2.0, 10.0, 20.0]})
-    by_year = em.group_countries(df).set_index('year')['Value']
+    by_year = utilities.sum_countries_to_year(df, 'Value').set_index('year')['Value']
     assert list(by_year.index) == [2018, 2019]
     assert by_year.loc[2018] == 22.0
     assert by_year.loc[2019] == 11.0

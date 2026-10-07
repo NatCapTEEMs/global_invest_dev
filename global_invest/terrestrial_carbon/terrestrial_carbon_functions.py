@@ -165,13 +165,15 @@ def zone_labels_from_boundary(regions_df, id_column, endw_column, reg_column, en
 
 
 def dynamic_shock_rows(scenario_by_year, baseline_by_year, baseline_at_base_year, zone_labels,
-                       base_year, sector, scenario):
+                       base_year, sector, scenario, log=None):
     """Anchor-year zone means expanded to one row per zone and year, on both denominators.
 
-    shock_pct is the contemporaneous measure and is what the economic model reads: afeall is a
-    productivity deviation from the baseline path, so it is normalised by the year's own baseline.
-    shock_pct_fixedbase divides the same numerator by the base year's baseline instead, which is
-    the share of base-year value that pollination also reports.
+    Three measures are reported. Two share the numerator `scenario[y] - baseline[y]`, the
+    scenario's departure from the nature-off baseline at the same year: shock_pct divides it by
+    that year's baseline, shock_pct_fixedbase by the base year's. The third, shock_pct_v3, is a
+    different quantity -- `scenario[y] - baseline[base_year]` over the base year, the scenario's
+    own trajectory away from the base year rather than its distance from a contemporaneous
+    baseline. The two answer different questions and do not agree in magnitude or sign.
 
     Args:
         scenario_by_year (dict): anchor year -> pd.Series of per-zone mean carbon density.
@@ -186,12 +188,29 @@ def dynamic_shock_rows(scenario_by_year, baseline_by_year, baseline_at_base_year
     Returns:
         list: dicts, one per zone and year from base_year through the last anchor year.
     """
+    say = log or (lambda *a: None)
     anchor_years = sorted(scenario_by_year)
     all_years = list(range(base_year, anchor_years[-1] + 1))
-    contemporaneous = pd.DataFrame({
-        y: shock_percent(scenario_by_year[y], baseline_by_year[y]) for y in anchor_years}).dropna()
+    contemporaneous_raw = pd.DataFrame({
+        y: shock_percent(scenario_by_year[y], baseline_by_year[y]) for y in anchor_years})
+    contemporaneous = contemporaneous_raw.dropna()
+    # A zone with no baseline quantity has no denominator, so no percentage exists for it and none
+    # is invented -- but it is SAID, because a quietly shorter table is how an undefined ratio and a
+    # zone nobody measured come to look the same. A zone that reaches zero is not this: its
+    # denominator is its own base year, which is present, and its ratio is a defined -100%.
+    undefined = sorted(set(contemporaneous_raw.index) - set(contemporaneous.index))
+    if undefined:
+        say('    %s: %d zone(s) have no defined ratio at one or more anchor years and carry no '
+            'shock: %s%s' % (scenario, len(undefined), undefined[:20],
+                             ' ...' if len(undefined) > 20 else ''))
     fixedbase = (pd.DataFrame({
         y: shock_percent(scenario_by_year[y], baseline_by_year[y], baseline_at_base_year)
+        for y in anchor_years}).dropna()
+        if baseline_at_base_year is not None else None)
+    # Baseline at the base year on BOTH sides, so a scenario at the base year is exactly zero and
+    # the interpolation's pinned zero is the measure's own value rather than an imposed one.
+    own_base = (pd.DataFrame({
+        y: shock_percent(scenario_by_year[y], baseline_at_base_year, baseline_at_base_year)
         for y in anchor_years}).dropna()
         if baseline_at_base_year is not None else None)
 
@@ -206,11 +225,112 @@ def dynamic_shock_rows(scenario_by_year, baseline_by_year, baseline_at_base_year
                                                     fixedbase.loc[zone_id].values, base_year)
         else:
             annual_fixed = [np.nan] * len(all_years)
-        for year, contemp_value, fixed_value in zip(all_years, annual_contemp, annual_fixed):
+        if own_base is not None and zone_id in own_base.index:
+            annual_v3 = interpolate_annual_shock(all_years, anchor_years,
+                                                 own_base.loc[zone_id].values, base_year)
+        else:
+            annual_v3 = [np.nan] * len(all_years)
+        for year, contemp_value, fixed_value, v3_value in zip(all_years, annual_contemp,
+                                                              annual_fixed, annual_v3):
             # Explicit, same-named columns in both ES files (carbon + pollination) for the #14 diagnostic.
             rows.append({'ENDW': endw, 'ACTS': sector, 'REG': reg, 'scenario': scenario,
                          'year': year, 'shock_pct': contemp_value,
-                         'shock_pct_fixedbase': fixed_value, 'shock_pct_contemp': contemp_value})
+                         'shock_pct_fixedbase': fixed_value, 'shock_pct_contemp': contemp_value,
+                         'shock_pct_v3': v3_value})
+    return rows
+
+
+def summed_shock_rows(scenario_by_year_by_scenario, baseline_at_base_year, zone_labels, base_year,
+                      sector, negligible_share=1e-6, log=print):
+    """Regional shocks formed from SUMMED quantities rather than from means of zonal ratios.
+
+    For a measure that can add quantity where the base year had none -- forest biomass on land
+    afforested after the base year -- a zonal ratio is unbounded, and a weighted mean of such
+    ratios is dominated by zones that hold almost nothing. The region's change is instead
+    100 x (sum over its zones of the scenario quantity / the same sum in the base year - 1), so a
+    gain in a zone with no base-year quantity still enters the numerator and no ratio is formed
+    for it. Every zone of a region receives that regional value, which is what the aoall channel
+    reads; the zone rows are kept so the table's shape matches the other services.
+
+    A region whose base-year total is zero, or negligible against the world total, has no
+    denominator: it is logged and left out rather than given a fabricated number.
+
+    Args:
+        scenario_by_year_by_scenario (dict): scenario -> {anchor year -> per-zone quantity}.
+        baseline_at_base_year (pd.Series): per-zone quantity in the base year (the baseline map).
+        zone_labels (dict): zone id -> (ENDW, REG).
+        base_year (int): the year the trajectory starts from, at zero.
+        sector (str): the GTAP activity the shock applies to.
+        negligible_share (float): a region's base-year total below this share of the world total
+            is treated as having no denominator.
+        log (callable): where the excluded regions are reported.
+
+    Returns:
+        list: dicts, one per zone and year, carrying the region's summed-quantity trajectory.
+    """
+    zones_by_region = {}
+    for zone_id, (endw, reg) in zone_labels.items():
+        zones_by_region.setdefault(reg, []).append(zone_id)
+
+    def regional_total(series, region, what):
+        """The region's summed quantity, from EVERY one of its zones.
+
+        A zone absent from the series is a failure, not a zero. Dropping it silently would make a
+        missing measurement arithmetically indistinguishable from a measured zero, in the one
+        direction that matters: a zone missing from a scenario year but present in the base year
+        lowers the ratio exactly as a real loss would. The zonal summaries are asserted complete
+        before they are read, so an absence here means that assertion was bypassed."""
+        ids = zones_by_region[region]
+        absent = [z for z in ids if z not in series.index]
+        if absent:
+            raise ValueError('summed measure: %s is missing %d of region %s\'s %d zones: %s. A '
+                             'missing zone is not a zero; it is an unmeasured one.'
+                             % (what, len(absent), region, len(ids), sorted(absent)))
+        values = series.loc[ids].to_numpy()
+        if not np.isfinite(values).all():
+            raise ValueError('summed measure: %s carries %d non-finite value(s) in region %s'
+                             % (what, int((~np.isfinite(values)).sum()), region))
+        return float(values.sum())
+
+    base_by_region = {reg: regional_total(baseline_at_base_year, reg, 'the base-year quantity')
+                      for reg in zones_by_region}
+    world_base = float(np.nansum([v for v in base_by_region.values() if np.isfinite(v)]))
+    without_base = sorted(reg for reg, v in base_by_region.items()
+                          if not np.isfinite(v) or v <= 0 or (world_base > 0 and v / world_base < negligible_share))
+    if without_base:
+        log('  summed measure: %d region(s) with zero or negligible base-year quantity, not shocked: %s'
+            % (len(without_base), ', '.join(without_base)))
+
+    rows, total_loss = [], []
+    for scenario, by_year in scenario_by_year_by_scenario.items():
+        anchor_years = sorted(by_year)
+        all_years = list(range(base_year, anchor_years[-1] + 1))
+        for reg, zone_ids in zones_by_region.items():
+            if reg in without_base:
+                continue
+            totals = {y: regional_total(by_year[y], reg, '%s %d' % (scenario, y)) for y in anchor_years}
+            # A region that reaches zero has lost ALL its biomass, which is a -100% productivity
+            # factor on every one of its zones for the rest of the horizon. That is a defensible
+            # arithmetic result and an implausible physical one, so it is collected and raised
+            # together below rather than interpolated into annual shocks unexamined. A zone that
+            # reaches zero is not this: its zeros simply stop contributing to the region's sum.
+            for y, total in totals.items():
+                if total <= 0.0:
+                    total_loss.append((scenario, reg, y, total, base_by_region[reg]))
+            anchors = [100.0 * (totals[y] / base_by_region[reg] - 1.0) for y in anchor_years]
+            annual = interpolate_annual_shock(all_years, anchor_years, np.asarray(anchors), base_year)
+            for zone_id in zone_ids:
+                endw, _ = zone_labels[zone_id]
+                for year, value in zip(all_years, annual):
+                    rows.append({'ENDW': endw, 'ACTS': sector, 'REG': reg, 'scenario': scenario,
+                                 'year': year, 'shock_pct': value, 'shock_pct_fixedbase': value,
+                                 'shock_pct_contemp': value, 'shock_pct_v3': value})
+    if total_loss:
+        raise ValueError(
+            'summed measure: %d region-year(s) reach zero or negative total quantity against a '
+            'positive base year, which is a -100%% regional productivity factor held to the end of '
+            'the horizon. This needs review before annual conversion, not interpolation: %s'
+            % (len(total_loss), sorted((s, r, int(y), t, b) for s, r, y, t, b in total_loss)))
     return rows
 
 
@@ -270,7 +390,135 @@ def collapse_regions_to_countries(df_regions, df_price, price_column):
                                   'terrestrial_carbon_gep']]
 
 
-def expand_country_values_to_regions(df_regions, df_gep_by_country):
-    """Each r264 region carrying its COUNTRY's GEP, for the map only. Never sum the result."""
-    return utilities.expand_country_values_to_regions(
-        df_regions, df_gep_by_country, 'terrestrial_carbon_gep')
+
+
+# =============================================================================
+# Scenario valuation at the social cost of carbon. The same arithmetic as the GEP
+# valuation above -- stock x the base-year price -- applied to every scenario map
+# and reported as the change from the base year.
+# =============================================================================
+
+def scc_valuation_rows(stock_by_scenario_year, base_stock, price, base_year, retained=None,
+                       from_year=None, cut_source=None, cut_label=None, baseline_by_year=None):
+    """Carbon stock per country and year, valued at one price, as its change from the base year.
+
+    Args:
+        stock_by_scenario_year (dict): scenario -> {anchor year -> pd.Series of Mg C per country,
+            indexed by iso3_r250_id}.
+        base_stock (pd.Series): Mg C per country in the base year, the same for every scenario.
+        price (float): $ per Mg C, the GEP price convention at the GEP base year.
+        base_year (int): the year every change is measured from.
+        retained, from_year, cut_source, cut_label: the reduced-provision configuration. When all
+            four are given, `cut_label` is derived from `cut_source` by retaining `retained` of its
+            stock from `from_year` on, and any modelled rows under `cut_label` are replaced.
+        baseline_by_year (dict): anchor year -> pd.Series of Mg C per country for the nature-off
+            baseline at the same year. When given, the change from that contemporaneous baseline
+            is reported beside the change from the base year.
+
+    Returns:
+        pd.DataFrame: iso3_r250_id, scenario, year (base_year..last anchor, annual, linear between
+        anchors), stock_mgc, delta_stock_mgc, delta_value_usd, and with a baseline
+        delta_stock_vs_baseline_mgc, delta_value_vs_baseline_usd.
+    """
+    cut = all(x is not None for x in (retained, from_year, cut_source, cut_label))
+    frames = []
+    for scenario, by_year in stock_by_scenario_year.items():
+        if cut and scenario == cut_label:
+            continue
+        anchors = sorted(by_year)
+        years = list(range(base_year, anchors[-1] + 1))
+        table = pd.DataFrame({base_year: base_stock, **{y: by_year[y] for y in anchors}})
+        table = table.dropna()
+        annual = table.reindex(columns=years).interpolate(axis=1, limit_area='inside')
+        long = annual.stack().rename('stock_mgc').reset_index()
+        long.columns = ['iso3_r250_id', 'year', 'stock_mgc']
+        long['scenario'] = scenario
+        frames.append(long)
+        if cut and scenario == cut_source:
+            stressed = long.copy()
+            stressed['scenario'] = cut_label
+            stressed.loc[stressed['year'] >= from_year, 'stock_mgc'] *= retained
+            frames.append(stressed)
+    out = pd.concat(frames, ignore_index=True)
+    base = base_stock.rename('base_stock_mgc').reset_index()
+    base.columns = ['iso3_r250_id', 'base_stock_mgc']
+    out = out.merge(base, on='iso3_r250_id', how='left')
+    out['delta_stock_mgc'] = out['stock_mgc'] - out['base_stock_mgc']
+    out['delta_value_usd'] = out['delta_stock_mgc'] * price
+    columns = ['iso3_r250_id', 'scenario', 'year', 'stock_mgc', 'delta_stock_mgc', 'delta_value_usd']
+    if baseline_by_year is not None:
+        anchors = sorted(baseline_by_year)
+        years = list(range(base_year, anchors[-1] + 1))
+        table = pd.DataFrame({base_year: base_stock, **{y: baseline_by_year[y] for y in anchors}}).dropna()
+        annual = table.reindex(columns=years).interpolate(axis=1, limit_area='inside')
+        long = annual.stack().rename('baseline_stock_mgc').reset_index()
+        long.columns = ['iso3_r250_id', 'year', 'baseline_stock_mgc']
+        out = out.merge(long, on=['iso3_r250_id', 'year'], how='left')
+        out['delta_stock_vs_baseline_mgc'] = out['stock_mgc'] - out['baseline_stock_mgc']
+        out['delta_value_vs_baseline_usd'] = out['delta_stock_vs_baseline_mgc'] * price
+        columns += ['delta_stock_vs_baseline_mgc', 'delta_value_vs_baseline_usd']
+    return out[columns]
+
+
+def plot_scc_valuation(df, attributes, price, price_column, base_year, out_path, aside=None):
+    """Three panels: the world's change in carbon value by scenario from the base year, the same
+    against the nature-off baseline at the same year, and the last year's change by continent.
+
+    Args:
+        df (pd.DataFrame): scc_valuation_rows output.
+        attributes (pd.DataFrame): iso3_r250_id -> continent, one row per country.
+        price (float): the price used, for the title.
+        price_column (str): its convention name, for the title.
+        base_year (int): the year changes are measured from.
+        out_path (str): where the PNG goes.
+        aside (str): a scenario to keep off the panels and report in the caption instead -- the
+            reduced-provision scenario removes a fifth of the stock at a stroke and flattens every
+            other line to the axis when drawn with them.
+    """
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+
+    shown = df if aside is None else df[df['scenario'] != aside]
+    last_year = int(df['year'].max())
+    world = shown.groupby(['scenario', 'year'])['delta_value_usd'].sum().unstack('scenario') / 1e9
+    has_baseline = 'delta_value_vs_baseline_usd' in shown.columns
+    last = shown[shown['year'] == last_year].merge(attributes, on='iso3_r250_id', how='left')
+    by_continent = last.groupby(['continent', 'scenario'])['delta_value_usd'].sum().unstack('scenario') / 1e9
+
+    n = 3 if has_baseline else 2
+    fig, axes = plt.subplots(1, n, figsize=(6 * n, 5.2))
+    ax = axes[0]
+    world.plot(ax=ax, linewidth=1.8)
+    ax.axhline(0, color='0.4', linewidth=0.8)
+    ax.set_title('World: change from %d' % base_year)
+    ax.set_ylabel('billion USD per year')
+    ax.set_xlabel('')
+    ax.legend(title='scenario', fontsize=8, title_fontsize=8, frameon=False)
+    if has_baseline:
+        vs = shown.groupby(['scenario', 'year'])['delta_value_vs_baseline_usd'].sum().unstack('scenario') / 1e9
+        ax = axes[1]
+        vs.plot(ax=ax, linewidth=1.8, legend=False)
+        ax.axhline(0, color='0.4', linewidth=0.8)
+        ax.set_title('World: change from the nature-off baseline, same year')
+        ax.set_ylabel('billion USD per year')
+        ax.set_xlabel('')
+    ax = axes[-1]
+    by_continent.plot(kind='bar', ax=ax, width=0.8, legend=False)
+    ax.axhline(0, color='0.4', linewidth=0.8)
+    ax.set_title('%d: change from %d by continent' % (last_year, base_year))
+    ax.set_ylabel('billion USD per year')
+    ax.set_xlabel('')
+    ax.tick_params(axis='x', rotation=30, labelsize=8)
+    for a in axes[:-1]:
+        a.xaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(lambda v, _: '%d' % v))
+    caption = 'Carbon stock valued at %s: %.2f USD per Mg C per year, held at its %s value' % (
+        price_column, price, 'base-year')
+    if aside is not None and aside in set(df['scenario']):
+        away = df[(df['scenario'] == aside) & (df['year'] == last_year)]['delta_value_usd'].sum() / 1e9
+        caption += '. %s not drawn: %.0f bn per year at %d' % (aside, away, last_year)
+    fig.suptitle(caption, fontsize=10)
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=150)
+    plt.close(fig)
+    return out_path

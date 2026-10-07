@@ -37,7 +37,7 @@ def _raw_faostat_frame():
     """Four FAOSTAT rows: one selected by item code, one by item name, one aggregate area, and
     one whose element is not gross production value. The year columns are the file's full
     Y1961..Y2022 span with a flag column beside each, because the melt reads all of them."""
-    years = range(lp.FAOSTAT_FIRST_YEAR, lp.FAOSTAT_LAST_YEAR + 1)
+    years = range(utilities.FAOSTAT_FIRST_YEAR, utilities.FAOSTAT_LAST_YEAR + 1)
     frame = pd.DataFrame({
         'Area Code': [1, 1, 2, 223],
         'Area Code (M49)': ["'010", "'010", "'020", "'223"],
@@ -58,7 +58,8 @@ def _raw_faostat_frame():
 
 
 def test_clean_crop_values_selects_items_by_code_or_by_name():
-    out = lp.clean_crop_values(_raw_faostat_frame(), items=[1017, 'Raw milk of cattle'],
+    out = utilities.clean_faostat_values(_raw_faostat_frame(), items=[1017, 'Raw milk of cattle'],
+                                         value_column='livestock_provision_gep',
                              aggregate_areas=['World'])
 
     # Both Aaaland rows selected: one by code 1017, one by name. 'World' is an aggregate area
@@ -66,7 +67,7 @@ def test_clean_crop_values_selects_items_by_code_or_by_name():
     assert set(out['country']) == {'Aaaland'}
     assert sorted(out['crop_code'].unique().tolist()) == [882, 1017]
     assert not [c for c in out.columns if c.endswith('F')]      # flag columns dropped
-    n_years = lp.FAOSTAT_LAST_YEAR - lp.FAOSTAT_FIRST_YEAR + 1
+    n_years = utilities.FAOSTAT_LAST_YEAR - utilities.FAOSTAT_FIRST_YEAR + 1
     assert len(out) == 2 * n_years
     values = out.set_index(['crop_code', 'year'])['livestock_provision_gep']
     assert values.loc[(1017, 1961)] == 1.0
@@ -75,14 +76,14 @@ def test_clean_crop_values_selects_items_by_code_or_by_name():
 
 
 def test_clean_crop_values_drops_an_item_matched_by_neither_code_nor_name():
-    out = lp.clean_crop_values(_raw_faostat_frame(), items=[1017], aggregate_areas=['World'])
+    out = utilities.clean_faostat_values(_raw_faostat_frame(), items=[1017], value_column='livestock_provision_gep', aggregate_areas=['World'])
     assert out['crop_code'].unique().tolist() == [1017]
 
 
 def test_clean_crop_values_renames_area_223_to_turkey():
     raw = _raw_faostat_frame()
-    raw.loc[3, 'Element Code'] = lp.FAOSTAT_GROSS_PRODUCTION_VALUE_ELEMENT
-    out = lp.clean_crop_values(raw, items=[1017], aggregate_areas=['World'])
+    raw.loc[3, 'Element Code'] = utilities.FAOSTAT_GROSS_PRODUCTION_VALUE_ELEMENT
+    out = utilities.clean_faostat_values(raw, items=[1017], value_column='livestock_provision_gep', aggregate_areas=['World'])
     assert set(out.loc[out['area_code'] == 223, 'country']) == {'Turkey'}
 
 
@@ -113,7 +114,7 @@ def test_merge_crop_with_coefs_applies_the_decade_in_force_and_leaves_uncovered_
     })
     coefs = pd.DataFrame({'FAO': [1, 1], 'year': [1961, 2011], 'rental_rate': [0.30, 0.35]})
 
-    out = lp.merge_crop_with_coefs(values, coefs).set_index(['area_code', 'year'])['livestock_provision_gep']
+    out = utilities.apply_rental_rates(values, coefs, 'livestock_provision_gep').set_index(['area_code', 'year'])['livestock_provision_gep']
     assert np.isnan(out.loc[(1, 1960)])          # before the first decade: no rate in force
     assert out.loc[(1, 1961)] == 30.0            # 100 x 0.30
     assert out.loc[(1, 2015)] == 70.0            # 200 x 0.35, the 2011-2020 decade
@@ -165,13 +166,13 @@ def test_group_crops_then_group_countries_sum_to_the_same_total():
         'year': [2019, 2019, 2019, 2018],
         'livestock_provision_gep': [30.0, 15.0, 40.0, 1.0],
     })
-    by_country = lp.group_crops(item_rows)
+    by_country = utilities.sum_items_to_country_year(item_rows, 'livestock_provision_gep')
     per_country = by_country.set_index(['iso3_r250_id', 'year'])['livestock_provision_gep']
     assert per_country.loc[(10, 2019)] == 45.0        # two items summed
     assert per_country.loc[(20, 2019)] == 40.0
     assert per_country.loc[(10, 2018)] == 1.0
 
-    by_year = lp.group_countries(by_country).set_index('year')['livestock_provision_gep']
+    by_year = utilities.sum_countries_to_year(by_country, 'livestock_provision_gep').set_index('year')['livestock_provision_gep']
     assert by_year.loc[2019] == 85.0
     assert by_year.loc[2018] == 1.0
 
@@ -186,9 +187,9 @@ def test_normalize_m49_codes_unquotes_casts_and_maps_successors():
 def test_every_successor_maps_to_a_different_live_code():
     """A successor mapping that pointed at itself, or at another dissolved state, would leave
     production stranded."""
-    for dissolved, successor in lp.M49_SUCCESSORS.items():
+    for dissolved, successor in utilities.M49_SUCCESSORS.items():
         assert dissolved != successor
-        assert successor not in lp.M49_SUCCESSORS
+        assert successor not in utilities.M49_SUCCESSORS
 
 
 def test_feed_lambda_is_ecosystem_share_of_total_intake():
@@ -348,3 +349,37 @@ def test_both_value_columns_leave_the_country_join_in_dollars():
     out = lp.attach_countries(df_crop_value, COUNTRIES)
     assert out['livestock_provision_gep'].iloc[0] == pytest.approx(1_000_000.0)
     assert out['gross_production_value'].iloc[0] == pytest.approx(5_000_000.0)
+
+
+def test_the_feed_share_reproduces_the_reference_lambda():
+    """Condition 12 for this service. The reference repository commits no output -- two scripts with
+    hardcoded D: paths and no data -- so there is no table to stage. What it does commit is the
+    formula, in `lambda.py`, and that is short enough to state here and recompute from the same
+    staged GLEAM file. Recomputing it is a check; quoting agreement would not be.
+
+    Their lambda is the share of dry-matter intake that ecosystems grew rather than people:
+    by-products, crop residues, fodder crop and grass and leaves, over that plus grains, oil seed
+    cakes and the two other categories.
+    """
+    import os
+    gleam_path = os.path.join(
+        os.path.expanduser('~'), 'Files', 'base_data', 'global_invest', 'livestock_provision',
+        'gleam3_dmi_dashboard.psv')
+    run_path = os.path.join(
+        os.path.expanduser('~'), 'Files', 'global_invest', 'projects', 'gep_livestock_provision',
+        'intermediate', 'gep_calculation', 'gep_by_country_year.csv')
+    if not (os.path.exists(gleam_path) and os.path.exists(run_path)):
+        pytest.skip('the GLEAM table or a livestock run is not on this machine')
+
+    ecosystem = ['By-products', 'Crop residues', 'Fodder crop', 'Grass and leaves']
+    everything = ecosystem + ['Grains', 'Oil seed cakes', 'Other edible', 'Other non-edible']
+    raw = pd.read_csv(gleam_path, sep='|')
+    theirs = raw.groupby('country_code', dropna=False)[everything].sum().reset_index()
+    theirs['reference_lambda'] = theirs[ecosystem].sum(axis=1) / theirs[everything].sum(axis=1)
+
+    run = pd.read_csv(run_path)
+    ours = run[run['year'] == 2019][['iso3_r250_label', 'feed_share']].dropna()
+    joined = ours.merge(theirs[['country_code', 'reference_lambda']],
+                        left_on='iso3_r250_label', right_on='country_code', how='inner')
+    assert len(joined) > 150
+    assert (joined['feed_share'] - joined['reference_lambda']).abs().max() < 1e-12

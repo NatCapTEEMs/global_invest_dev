@@ -43,7 +43,8 @@ with open(path, encoding='utf-8-sig') as f:
 PY
 }
 
-CONDA_ENV="$(read_row flood_msi_conda_env)"
+CONDA_ENV="${FLOOD_CONDA_ENV:-$(read_row flood_msi_conda_env)}"
+[ -n "$CONDA_ENV" ] || { echo "no environment: set FLOOD_CONDA_ENV or fill the flood_msi_conda_env row in your project's input/es_parameters.csv"; exit 1; }
 PYTHON="$CONDA_ENV/bin/python"
 [ -x "$PYTHON" ] || { echo "no interpreter at $PYTHON"; exit 1; }
 

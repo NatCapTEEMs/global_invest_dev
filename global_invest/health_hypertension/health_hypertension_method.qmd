@@ -1,0 +1,49 @@
+---
+title: "Overview of Ecosystem Service: Physical Health (Hypertension)"
+format:
+  html:
+    embed-resources: true
+    standalone: true
+---
+
+Urban greenspace is valued as the hypertension treatment cost it avoids. Greener urban
+surroundings lower the odds of hypertension, so each city's greenness translates into avoided
+cases among its adults, priced at the country's published cost of treating one case. The base
+year is 2019.
+
+⚠ Coverage is limited to the countries with a refereed treatment-cost study (20, appendix
+Table A1), by construction; every other country carries NA with the absence named. The
+counterfactual is a zero-vegetation city, which does much of the work in the magnitude.
+
+## Quantity
+
+Per urban pixel on WorldPop's 1 km grid: population times annual NDVI (clamped at zero below),
+summed per country over pixels inside the urban settlement mask
+(`health_hypertension_urban_smod_min`). That sum, in 0.1-NDVI increments, times the WHO
+hypertension prevalence among adults 30-79, times one minus the risk ratio, times the 30-79
+population share, is the country's avoided cases. The risk ratio comes from the meta-analytic
+odds ratio (`health_hypertension_odds_ratio`) converted at the country's own prevalence as the
+baseline (Grant 2014).
+
+## Price
+
+The country's per-person hypertension treatment cost in 2019 USD, one refereed study per
+country (appendix Table A1), read from the staged table.
+
+## Valuation
+
+$$
+\text{GEP}_i = c_i \; x_i \, \frac{\sum_{j \in \text{urban}} \text{NDVI}_j \, n_j}{0.1} \left(1 - \text{RR}_i\right) s_i
+$$
+
+with $c_i$ the treatment cost, $x_i$ the prevalence, $\text{RR}_i$ the converted risk ratio,
+$s_i$ the 30-79 population share and $n_j$ the pixel population. The appendix's own Table 6 is
+carried beside the result as the comparison anchor; because the authors' pixel-level choices
+are not fully pinned, agreement is judged at the level-and-rank grade.
+
+## Inputs
+
+All paths and parameters come from `es_parameters.csv` under the `health_hypertension` service
+key: the WorldPop mosaic, the annual NDVI, the GHS-SMOD urban mask and its threshold, the WHO
+prevalence, the 30-79 shares, the cost table, the odds ratio and the appendix reference, each
+with a source row beside it.

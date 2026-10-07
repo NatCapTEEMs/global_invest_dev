@@ -19,6 +19,11 @@ from global_invest import utilities
 from global_invest.water_supply import water_supply_functions as wf
 
 
+# CWoN's capitalization rate, which is es_parameters configuration rather than a module
+# constant now, so the tests name it here instead of importing one that no longer exists.
+CWON_CAPITALIZATION_RATE = 0.04
+
+
 def _base_data_project():
     """A bare ProjectFlow, only for its base_data_dir.
 
@@ -34,7 +39,7 @@ REFERENCE_DIR = utilities.service_data_dir(_base_data_project(), 'water_supply')
 
 
 def test_annuity_identity_matches_the_observed_anchor_ratio():
-    factor = wf.annuity_factor()
+    factor = wf.annuity_factor(0.04)   # CWoN's capitalization rate, now an es_parameters row
     assert np.isclose(factor, 24.504998997, rtol=1e-9)      # sum of 1/1.04^t, t=1..100
     assert np.isclose(1.0 / factor, 0.040808, atol=1e-6)    # the ratio observed in the anchor
 
@@ -43,7 +48,7 @@ def test_exact_replication_of_the_committed_anchor():
     wealth = pd.read_stata(os.path.join(REFERENCE_DIR, 'hydro_wealth_cd.dta'))
     anchor = pd.read_csv(os.path.join(REFERENCE_DIR, 'gep_hydro_directuse_CWONresrent_20260720.csv'))
 
-    rent = wf.hydropower_rent_from_wealth(wealth)
+    rent = wf.hydropower_rent_from_wealth(wealth, CWON_CAPITALIZATION_RATE)
     merged = anchor.merge(rent, on='iso3_r250_label', how='left')
     variant, ref = merged['hydropower_gep_reference_variant'], merged['gep_hydro_cwonresrent_2019usd']
     both = variant.notna() & ref.notna()
@@ -62,7 +67,7 @@ def test_the_reported_value_covers_the_countries_the_reference_drops():
     """The reported column must NOT reproduce the reference's unexplained exclusions. Blanking
     them would fit our number to the anchor, and the discrepancy could never surface."""
     wealth = pd.read_stata(os.path.join(REFERENCE_DIR, 'hydro_wealth_cd.dta'))
-    rent = wf.hydropower_rent_from_wealth(wealth).set_index('iso3_r250_label')
+    rent = wf.hydropower_rent_from_wealth(wealth, CWON_CAPITALIZATION_RATE).set_index('iso3_r250_label')
 
     for label in wf.HYDROPOWER_REFERENCE_EXCLUDED:
         assert pd.notna(rent.loc[label, 'hydropower_gep']), label
@@ -75,7 +80,7 @@ def test_the_reported_value_covers_the_countries_the_reference_drops():
 
 def test_no_wealth_stays_nan_and_the_join_keeps_all_countries():
     wealth = pd.DataFrame({'countrycode': ['AAA'], 'YR2019': [245.05]})
-    hydropower = wf.hydropower_rent_from_wealth(wealth)
+    hydropower = wf.hydropower_rent_from_wealth(wealth, CWON_CAPITALIZATION_RATE)
     countries = pd.DataFrame({'iso3_r250_label': ['AAA', 'BBB'], 'iso3_r250_id': [1, 2]})
     out = wf.water_supply_gep_by_country(hydropower, countries)
     assert len(out) == 2
@@ -159,9 +164,9 @@ def test_water_use_committed_anchors_join_and_total():
     countries = agriculture[['iso3_r250_id', 'iso3_r250_label']].merge(
         all_sector[['iso3_r250_id', 'iso3_r250_label']], how='outer')
     out = wf.water_use_components_by_country(agriculture, all_sector, countries)
-    assert out['water_use_agriculture_gep'].notna().sum() == 145
-    assert out['water_use_all_sector_gep'].notna().sum() == 183
-    assert np.isclose(out['water_use_agriculture_gep'].sum(),
+    assert out['water_use_agriculture_value_added'].notna().sum() == 145
+    assert out['water_use_all_sector_value_added'].notna().sum() == 183
+    assert np.isclose(out['water_use_agriculture_value_added'].sum(),
                       agriculture['wateruse_ag_gep'].sum())
 
 
@@ -170,29 +175,34 @@ def test_water_use_committed_anchors_join_and_total():
 # ---------------------------------------------------------------------------
 
 def _components(rows):
+    # irrigation and domestic are the VALUE ADDED columns: SDG 6.4.1 inverts back to value
+    # added, so that is what the chain produces, and the account's figure is a share of it.
     return pd.DataFrame(rows, columns=['country', 'iso3_r250_id', 'iso3_r250_label', 'year',
-                                       'water_use_agriculture_gep', 'water_use_all_sector_gep'])
+                                       'water_use_agriculture_value_added',
+                                       'water_use_irrigation_value_added',
+                                       'water_use_domestic_value_added',
+                                       'water_use_all_sector_value_added'])
 
 
 def test_two_spellings_of_one_country_collapse_to_a_single_row():
     """The export names Russia twice. Left-merging both onto the country list counted it
     twice in every total, which is what inflated the reported hydropower number."""
     out = wf.one_row_per_country(_components([
-        ['Russian Federation', 643.0, 'RUS', 2015, np.nan, np.nan],
-        ['Russia', 643.0, 'RUS', 2000, 5.0, 7.0],
+        ['Russian Federation', 643.0, 'RUS', 2015, np.nan, np.nan, np.nan, np.nan],
+        ['Russia', 643.0, 'RUS', 2000, 5.0, 5.0, 2.0, 7.0],
     ]))
     assert len(out) == 1
     assert out.iloc[0]['iso3_r250_label'] == 'RUS'
-    assert out.iloc[0]['water_use_agriculture_gep'] == 5.0     # the non-empty spelling wins
-    assert out.iloc[0]['water_use_all_sector_gep'] == 7.0
+    assert out.iloc[0]['water_use_agriculture_value_added'] == 5.0     # the non-empty spelling wins
+    assert out.iloc[0]['water_use_all_sector_value_added'] == 7.0
 
 
 def test_a_country_the_name_join_could_not_resolve_passes_through():
     """An unresolved name keeps its empty id rather than being dropped, so a name drift in
     the export stays visible instead of silently losing a country."""
     out = wf.one_row_per_country(_components([
-        ['Cape Verde', np.nan, np.nan, 2015, 9.0, 9.0],
-        ['Kenya', 404.0, 'KEN', 2015, 1.0, 2.0],
+        ['Cape Verde', np.nan, np.nan, 2015, 9.0, 9.0, 3.0, 12.0],
+        ['Kenya', 404.0, 'KEN', 2015, 1.0, 1.0, 1.0, 2.0],
     ]))
     assert len(out) == 2
     assert set(out['country']) == {'Cape Verde', 'Kenya'}
@@ -202,6 +212,136 @@ def test_two_spellings_that_disagree_on_a_value_raise():
     """Combining them would decide, silently, which number the country gets."""
     with pytest.raises(ValueError, match='disagree'):
         wf.one_row_per_country(_components([
-            ['Russian Federation', 643.0, 'RUS', 2015, 5.0, 7.0],
-            ['Russia', 643.0, 'RUS', 2000, 6.0, 7.0],
+            ['Russian Federation', 643.0, 'RUS', 2015, 5.0, 5.0, 2.0, 7.0],
+            ['Russia', 643.0, 'RUS', 2000, 6.0, 6.0, 1.0, 7.0],
         ]))
+
+
+# ---------------------------------------------------------------------------
+# The water share: the step that turns a denominator into an account figure.
+# ---------------------------------------------------------------------------
+
+def _value_added():
+    return pd.DataFrame({'iso3_r250_label': ['AAA', 'BBB'],
+                         'water_use_irrigation_value_added': [1000.0, 500.0],
+                         'water_use_domestic_value_added': [4000.0, np.nan]})
+
+
+# ---------------------------------------------------------------------------
+# The irrigation premium: what an irrigated hectare earns above the same land rainfed.
+# ---------------------------------------------------------------------------
+
+def _aquastat(rows):
+    return pd.DataFrame(rows, columns=['m49', 'Year', 'VariableCode', 'Value'])
+
+
+def test_the_premium_is_the_difference_per_hectare_not_the_whole_value_added():
+    """AAA: 100 USD of ag value added, 60% of it from 10 ha irrigated, 90 ha rainfed.
+
+    Irrigated earns 60/10 = 6 per ha, rainfed 40/90 = 0.444, so the premium is 5.556 a hectare
+    and 55.56 over the ten hectares. The whole irrigated value added is 60 -- crediting water
+    with that is the error the premium exists to fix, because the 0.444 a hectare rainfed land
+    earns would be earned with or without irrigation.
+    """
+    aq = _aquastat([[1, 2019, wf.AQUASTAT_AG_VALUE_ADDED_CODE, 100.0],
+                    [1, 2019, wf.AQUASTAT_IRRIGATED_GVA_SHARE_CODE, 60.0],
+                    [1, 2019, wf.AQUASTAT_IRRIGATED_AREA_CODE, 0.01]])      # 0.01 x 1000 = 10 ha
+    crop = pd.DataFrame({'m49': [1], 'Year': [2019], 'cropland_1000ha': [0.1]})   # 100 ha
+    out = wf.irrigation_premium_by_country(aq, crop, 2019).set_index('m49')
+    assert out.loc[1, 'irrigated_area_ha'] == pytest.approx(10.0)
+    assert out.loc[1, 'premium_usd_per_ha'] == pytest.approx(6.0 - 40.0 / 90.0)
+    assert out.loc[1, 'irrigation_premium_usd'] == pytest.approx(55.5556, rel=1e-4)
+
+
+def test_the_premium_uses_the_account_year_on_both_sources():
+    """A country reporting a later year is not used for it: the account's year is the account's.
+
+    Taking each country's latest available year instead gives a median vintage of 2022 and a
+    total 26% higher, which is a different year's answer rather than a better one.
+    """
+    aq = _aquastat([[1, 2019, wf.AQUASTAT_AG_VALUE_ADDED_CODE, 100.0],
+                    [1, 2019, wf.AQUASTAT_IRRIGATED_GVA_SHARE_CODE, 60.0],
+                    [1, 2019, wf.AQUASTAT_IRRIGATED_AREA_CODE, 0.01],
+                    [1, 2022, wf.AQUASTAT_AG_VALUE_ADDED_CODE, 999.0],
+                    [1, 2022, wf.AQUASTAT_IRRIGATED_GVA_SHARE_CODE, 60.0],
+                    [1, 2022, wf.AQUASTAT_IRRIGATED_AREA_CODE, 0.01]])
+    crop = pd.DataFrame({'m49': [1, 1], 'Year': [2019, 2022], 'cropland_1000ha': [0.1, 0.1]})
+    out = wf.irrigation_premium_by_country(aq, crop, 2019)
+    assert out['irrigation_premium_usd'].sum() == pytest.approx(55.5556, rel=1e-4)
+
+
+def test_a_country_with_no_rainfed_side_is_dropped_rather_than_dividing_by_zero():
+    # Irrigated area equal to cropland leaves no rainfed hectares to compare against.
+    aq = _aquastat([[1, 2019, wf.AQUASTAT_AG_VALUE_ADDED_CODE, 100.0],
+                    [1, 2019, wf.AQUASTAT_IRRIGATED_GVA_SHARE_CODE, 60.0],
+                    [1, 2019, wf.AQUASTAT_IRRIGATED_AREA_CODE, 0.1]])
+    crop = pd.DataFrame({'m49': [1], 'Year': [2019], 'cropland_1000ha': [0.1]})
+    assert len(wf.irrigation_premium_by_country(aq, crop, 2019)) == 0
+
+
+# ---------------------------------------------------------------------------
+# Domestic: the withdrawn cubic metres are the water; the price turns them into a value.
+# ---------------------------------------------------------------------------
+
+def _withdrawal(rows):
+    return pd.DataFrame(rows, columns=['m49', 'Year', 'VariableCode', 'Value'])
+
+
+def test_domestic_volume_is_municipal_plus_industrial_at_the_account_year():
+    aq = _withdrawal([[1, 2019, wf.AQUASTAT_MUNICIPAL_WITHDRAWAL_CODE, 2.0],    # 2 km3
+                      [1, 2019, wf.AQUASTAT_INDUSTRIAL_WITHDRAWAL_CODE, 3.0],
+                      [1, 2022, wf.AQUASTAT_MUNICIPAL_WITHDRAWAL_CODE, 99.0],   # other year ignored
+                      [2, 2019, wf.AQUASTAT_MUNICIPAL_WITHDRAWAL_CODE, 1.0]])   # industrial missing
+    out = wf.domestic_withdrawal_by_country(aq, 2019).set_index('m49')
+    assert out.loc[1, 'domestic_withdrawal_m3'] == pytest.approx(5e9)
+    # A country reporting one sector keeps that sector rather than being dropped.
+    assert out.loc[2, 'domestic_withdrawal_m3'] == pytest.approx(1e9)
+
+
+def test_no_price_publishes_no_domestic_gep():
+    """A missing price is not a price of zero: the volume is published and no GEP."""
+    aq = _withdrawal([[1, 2019, wf.AQUASTAT_MUNICIPAL_WITHDRAWAL_CODE, 2.0]])
+    out = wf.apply_raw_water_price(wf.domestic_withdrawal_by_country(aq, 2019), None)
+    assert 'water_use_domestic_gep' not in out.columns
+
+
+def test_a_price_values_the_ecosystem_volume_and_a_negative_price_is_refused():
+    aq = _withdrawal([[1, 2019, wf.AQUASTAT_MUNICIPAL_WITHDRAWAL_CODE, 2.0]])
+    vol = wf.domestic_withdrawal_by_country(aq, 2019)
+    out = wf.apply_raw_water_price(vol, 0.05)
+    assert out['water_use_domestic_gep'].iloc[0] == pytest.approx(1e8)
+    with pytest.raises(ValueError, match='cannot be negative'):
+        wf.apply_raw_water_price(vol, -0.05)
+
+
+def test_desalinated_water_is_not_ecosystem_water():
+    """Kuwait's shape: desalination exceeds domestic withdrawal, so the ecosystem provides zero.
+
+    Desalinated water is manufactured. A country whose desal production covers its whole domestic
+    withdrawal gets a floor at zero rather than a negative volume, and a country without desal
+    keeps its withdrawal unchanged.
+    """
+    aq = _withdrawal([[1, 2019, wf.AQUASTAT_MUNICIPAL_WITHDRAWAL_CODE, 1.0],
+                      [1, 2019, wf.AQUASTAT_DESALINATED_CODE, 1.5],
+                      [2, 2019, wf.AQUASTAT_MUNICIPAL_WITHDRAWAL_CODE, 2.0]])
+    out = wf.domestic_withdrawal_by_country(aq, 2019).set_index('m49')
+    assert out.loc[1, 'domestic_ecosystem_m3'] == 0.0
+    assert out.loc[2, 'domestic_ecosystem_m3'] == pytest.approx(2e9)
+    priced = wf.apply_raw_water_price(out.reset_index(), 0.05).set_index('m49')
+    assert priced.loc[1, 'water_use_domestic_gep'] == 0.0
+
+
+def test_irrigation_gep_is_the_premium_times_the_share_with_negatives_clipped():
+    premium = pd.DataFrame({'m49': [1, 2], 'irrigation_premium_usd': [1000.0, -400.0]})
+    out = wf.irrigation_gep_from_premium(premium, 0.332).set_index('m49')
+    assert out.loc[1, 'water_use_irrigation_gep'] == pytest.approx(332.0)
+    # An account cannot report negative provisioning; the negative case is a data question.
+    assert out.loc[2, 'water_use_irrigation_gep'] == 0.0
+    with pytest.raises(ValueError, match='sit in'):
+        wf.irrigation_gep_from_premium(premium, 1.4)
+
+
+def test_the_implied_price_is_what_a_cubic_metre_earns_in_agriculture():
+    assert wf.implied_raw_water_price(200.0, 1000.0) == pytest.approx(0.2)
+    with pytest.raises(ValueError, match='positive'):
+        wf.implied_raw_water_price(200.0, 0.0)

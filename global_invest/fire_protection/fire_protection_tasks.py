@@ -1,6 +1,6 @@
 """Fire-protection (wildfire) GEP tasks: persistence betas -> avoided acres -> avoided damage.
 
-Ported from the GEP wildfire repo's R pipeline in the house shape. Two input modes, decided
+Two input modes, decided
 per task by what is on disk: the FULL calculation reads the ADM2 burned-area panel and the EM-DAT
 extract (panel not yet staged -- its own README says it lives on the drive; the open data
 ask); until then the burned-area and damage-rate columns come from the frozen reference
@@ -137,7 +137,7 @@ def gep_calculation(p):
     df_gep['fire_protection_gep'] = df_gep[f'GEP_wildfire_2019_{FIRE_GEP_PROVISIONAL_VARIANT}']
     keep_cols = attr_cols + ['year', 'GEP_wildfire_2019_baseline', 'GEP_wildfire_2019_nn_hh',
                              'GEP_wildfire_2019_ttn_tth', 'fire_protection_gep']
-    hb.df_write(df_gep[keep_cols], service_results['gep_by_country_base_year'])
+    utilities.write_gep_by_country(p, df_gep[keep_cols], service_results['gep_by_country_base_year'])
 
     for variant in ('baseline', 'nn_hh', 'ttn_tth'):
         hb.log(f'fire_protection GEP {variant}: '

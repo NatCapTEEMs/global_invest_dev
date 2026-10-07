@@ -5,6 +5,7 @@ Nothing here opens a file. The task layer reads the three source tables (IRENA g
 World Bank price series, the CWoN resource rents), hands the frames in and writes back what it
 gets, so every step below can be pinned on a hand-built input in the test suite.
 """
+import numpy as np
 import pandas as pd
 
 # Subservice key -> the 'Group Technology' label IRENA gives that resource. Also the order the
@@ -99,22 +100,66 @@ def renewable_energy_gep(nature_contribution, price_usd_per_gwh, generation_gwh)
     return nature_contribution * price_usd_per_gwh * generation_gwh
 
 
-def valued_generation(priced_frames, df_attribution):
+def regional_attribution_fill(df_attribution, country_regions):
+    """A rent share for the countries the attribution table does not carry, from their region.
+
+    The fill is the unweighted mean of the sub-region's available shares that year, falling back
+    to the region and then the world. A country with a MEASURED non-positive share is not
+    touched: negative rent is an answer, not a gap.
+
+    Args:
+        df_attribution (pd.DataFrame): Country, Year, nat_contrib.
+        country_regions (pd.DataFrame): Country, Sub-region and Region, one row per country.
+
+    Returns:
+        pd.DataFrame: Country, Year, nat_contrib_filled -- a share for every country-region pair
+        and year the attribution table's years cover.
+    """
+    att = df_attribution.merge(country_regions.drop_duplicates('Country'), on='Country', how='left')
+    by_sub = att.groupby(['Sub-region', 'Year'])['nat_contrib'].mean().rename('sub_mean')
+    by_region = att.groupby(['Region', 'Year'])['nat_contrib'].mean().rename('region_mean')
+    by_world = att.groupby('Year')['nat_contrib'].mean().rename('world_mean')
+    frame = country_regions.drop_duplicates('Country').merge(
+        pd.DataFrame({'Year': sorted(df_attribution['Year'].unique())}), how='cross')
+    frame = (frame.merge(by_sub, on=['Sub-region', 'Year'], how='left')
+                  .merge(by_region, on=['Region', 'Year'], how='left')
+                  .merge(by_world, on='Year', how='left'))
+    frame['nat_contrib_filled'] = (frame['sub_mean']
+                                   .fillna(frame['region_mean'])
+                                   .fillna(frame['world_mean']))
+    return frame[['Country', 'Year', 'nat_contrib_filled']]
+
+
+def valued_generation(priced_frames, df_attribution, country_regions=None):
     """The priced resource frames stacked and valued at each country-year's rent share.
 
-    The join onto the CWoN resource-rent table is inner and on the country NAME, which the two
-    sources spell alike, plus the year.
+    The join onto the resource-rent table is on the country NAME, which the two sources spell
+    alike, plus the year. With `country_regions`, a country the attribution table does not carry
+    takes its region's mean share instead of silently dropping out -- the 71 solar and 50 wind
+    generators with no rent row are real generators, and a join is not a valuation decision.
 
     Args:
         priced_frames (list): the merged frames from merge_price_onto_generation.
         df_attribution (pd.DataFrame): Country, Year and nat_contrib, the share of the resource
             rent attributable to nature.
+        country_regions (pd.DataFrame): Country, Sub-region, Region -- enables the regional fill.
+            None preserves the inner-join behaviour.
 
     Returns:
-        pd.DataFrame: every valued row, with renewable_energy_provision_gep added.
+        pd.DataFrame: every valued row, with renewable_energy_provision_gep added and, when the
+        fill is active, `attribution_source` saying which share each row used.
     """
     combined = pd.concat(priced_frames, ignore_index=True)
-    df = combined.merge(df_attribution, on=['Country', 'Year'], how='inner')
+    if country_regions is None:
+        df = combined.merge(df_attribution, on=['Country', 'Year'], how='inner')
+    else:
+        df = combined.merge(df_attribution, on=['Country', 'Year'], how='left')
+        fill = regional_attribution_fill(df_attribution, country_regions)
+        df = df.merge(fill, on=['Country', 'Year'], how='left')
+        df['attribution_source'] = np.where(df['nat_contrib'].notna(), 'country', 'regional mean')
+        df['nat_contrib'] = df['nat_contrib'].fillna(df['nat_contrib_filled'])
+        df = df.drop(columns=['nat_contrib_filled'])
+        df = df[df['nat_contrib'].notna()]
     df['renewable_energy_provision_gep'] = renewable_energy_gep(
         df['nat_contrib'], df[PRICE_COLUMN], df[GENERATION_COLUMN])
     return df

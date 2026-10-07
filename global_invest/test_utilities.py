@@ -1,0 +1,133 @@
+"""Unit tests for the shared utilities.
+
+These cover the parts every service depends on, where a defect is invisible in any one service's
+tests because each one sees only its own configuration.
+"""
+import os
+
+import pandas as pd
+import pytest
+
+from global_invest import utilities
+
+
+def _write(path, records):
+    pd.DataFrame(records).to_csv(path, index=False)
+    return path
+
+
+def test_the_project_copy_takes_rows_columns_and_blanks_the_template_is_ahead_on(tmp_path):
+    # Seeding copies a definitions CSV only when it is absent, so a copy made before a key was
+    # added shadows the template forever. All three ways the template can be ahead are filled.
+    template = _write(tmp_path / 't.csv',
+                      [{'service': 'a', 'parameter': 'p1', 'value': 'TPL', 'note': 'n1'},
+                       {'service': 'a', 'parameter': 'p2', 'value': 'TPL2', 'note': 'n2'}])
+    local = _write(tmp_path / 'l.csv', [{'service': 'a', 'parameter': 'p1', 'value': ''}])
+
+    utilities.add_rows_missing_from_template(str(local), str(template),
+                                             ['service', 'parameter'], log=lambda *a: None)
+
+    out = pd.read_csv(local).set_index('parameter')
+    assert list(out.index) == ['p1', 'p2']          # the absent row was appended
+    assert 'note' in out.columns                    # the absent column was added
+    assert out.at['p1', 'value'] == 'TPL'           # the blank cell was filled
+    assert out.at['p1', 'note'] == 'n1'
+
+
+def test_a_value_the_machine_has_set_is_never_overwritten(tmp_path):
+    # Machine-specific settings ship blank in the template and are filled in the project's copy.
+    # Syncing the schema must not reach into them, or a run would silently use another machine's
+    # ssh host or drive path.
+    template = _write(tmp_path / 't.csv',
+                      [{'service': 'flood', 'parameter': 'vm_ssh_host', 'value': ''},
+                       {'service': 'flood', 'parameter': 'gempack_dir', 'value': ''}])
+    local = _write(tmp_path / 'l.csv',
+                   [{'service': 'flood', 'parameter': 'vm_ssh_host', 'value': 'user@192.168.64.2'},
+                    {'service': 'flood', 'parameter': 'gempack_dir', 'value': 'C:\\GP'}])
+    before = open(local).read()
+
+    utilities.add_rows_missing_from_template(str(local), str(template),
+                                             ['service', 'parameter'], log=lambda *a: None)
+
+    assert open(local).read() == before             # nothing to do, so nothing written
+
+
+def test_a_template_value_does_not_replace_a_different_local_one(tmp_path):
+    """The template's value is a default, not an instruction: a copy that answers differently keeps
+    its answer, because that is the whole reason the copy exists."""
+    template = _write(tmp_path / 't.csv',
+                      [{'service': 'a', 'parameter': 'p1', 'value': 'from_template'}])
+    local = _write(tmp_path / 'l.csv',
+                   [{'service': 'a', 'parameter': 'p1', 'value': 'set_on_this_machine'}])
+
+    utilities.add_rows_missing_from_template(str(local), str(template),
+                                             ['service', 'parameter'], log=lambda *a: None)
+
+    assert pd.read_csv(local).at[0, 'value'] == 'set_on_this_machine'
+
+
+def test_a_missing_file_on_either_side_is_left_alone(tmp_path):
+    """A project without the copy yet is seeded elsewhere; this step has nothing to add to it."""
+    template = _write(tmp_path / 't.csv', [{'service': 'a', 'parameter': 'p1', 'value': 'x'}])
+    absent = tmp_path / 'nothing_here.csv'
+    utilities.add_rows_missing_from_template(str(absent), str(template),
+                                             ['service', 'parameter'], log=lambda *a: None)
+    assert not os.path.exists(absent)
+
+
+def test_writing_identical_content_does_not_touch_the_file(tmp_path):
+    """Reuse downstream is decided on size and mtime, so a task that rewrites an unchanged file
+    tells everything after it that its input moved. Flood's Section C did exactly that and cost
+    Section D a full recompute of 250 countries on every run."""
+    import time
+
+    path = tmp_path / 'x.csv'
+    frame = pd.DataFrame([{'a': 1, 'b': 'x'}, {'a': 2, 'b': 'y'}])
+
+    utilities.write_csv(frame, str(path))
+    first = os.stat(path).st_mtime_ns
+    time.sleep(1.1)
+    utilities.write_csv(frame, str(path))
+
+    assert os.stat(path).st_mtime_ns == first          # same bytes, file untouched
+
+
+def test_writing_changed_content_still_writes(tmp_path):
+    """The skip must not swallow a real change, which would be far worse than a needless rerun."""
+    import time
+
+    path = tmp_path / 'x.csv'
+    utilities.write_csv(pd.DataFrame([{'a': 1}]), str(path))
+    before = os.stat(path).st_mtime_ns
+    time.sleep(1.1)
+    utilities.write_csv(pd.DataFrame([{'a': 9}]), str(path))
+
+    assert os.stat(path).st_mtime_ns != before
+    assert pd.read_csv(path)['a'].tolist() == [9]
+
+
+def test_a_fingerprint_survives_a_touch(tmp_path):
+    """The question reuse asks is whether the bytes changed, not whether the file was written. A
+    restore from backup, an rsync without --times, or a task rewriting its own unchanged output all
+    move the mtime and none of them is a reason to redo the work that read it."""
+    import time
+
+    path = tmp_path / 'raster.bin'
+    path.write_bytes(b'some staged input')
+    before = utilities.file_fingerprint(str(path))
+
+    time.sleep(1.1)
+    os.utime(path, None)                                  # touched, not changed
+    assert utilities.file_fingerprint(str(path)) == before
+
+    path.write_bytes(b'a different input')
+    assert utilities.file_fingerprint(str(path)) != before
+
+
+def test_size_and_mtime_remain_available_for_a_file_too_big_to_read(tmp_path):
+    """Hashing is cheap against a false rebuild, but not against every possible caller, so the old
+    behaviour stays reachable and says so at the call site."""
+    path = tmp_path / 'huge.bin'
+    path.write_bytes(b'x' * 32)
+    cheap = utilities.file_fingerprint(str(path), content=False)
+    assert 'sha256' not in cheap and 'mtime' in cheap

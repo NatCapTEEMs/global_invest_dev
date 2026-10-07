@@ -26,10 +26,17 @@ def test_climate_only_resolution_covers_all_ngfs_production_scenarios():
     ngfs_climate = {'below_2c': 'rcp26', 'net_zero': 'rcp26', 'low_demand': 'rcp26',
                     'ndcs': 'rcp45', 'delayed_transition': 'rcp45',
                     'baseline_ignore_dependencies': 'rcp45',
-                    'current_policies': 'rcp70', 'fragmented_world': 'rcp70', 'stress_test': 'rcp70'}
+                    'current_policies': 'rcp70', 'fragmented_world': 'rcp70', 'stress_test': 'rcp70',
+                    # The es20 variant shares its climate with the policy it varies: it cuts the
+                    # service shock, not the RCP. Absent here, the loop below raised KeyError on it
+                    # rather than checking it, so the one scenario whose header could plausibly have
+                    # been mis-derived was the one the test skipped.
+                    'current_policies-es20': 'rcp70'}
     resolved = {s: resolve_fisheries_header(s, {}, ngfs_climate) for s in ngfs_climate}
     assert set(resolved.values()) == {'FI26', 'FI45', 'FI85'}
     # and where the legacy dict has an opinion, the derivation agrees with it
+    missing = sorted(set(FISH_HEADER_MAP) - set(ngfs_climate))
+    assert not missing, 'the climate fixture does not cover %s, so they go unchecked' % missing
     for scen, hdr in FISH_HEADER_MAP.items():
         assert resolved[scen] == hdr
 

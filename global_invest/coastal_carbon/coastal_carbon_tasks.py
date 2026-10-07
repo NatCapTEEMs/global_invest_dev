@@ -26,8 +26,6 @@ from tqdm import tqdm
 from global_invest import utilities
 from global_invest.coastal_carbon import coastal_carbon_functions as ccf
 
-# The ha_per_cell pyramid every raster stage is gridded on carries this no-data value.
-HA_PER_CELL_NDV = -9999.0
 # Region-id raster: uint16 spans the eemarine_r566 ids, and 0 means "outside every region".
 # Types are GDAL codes because that is the currency hazelbean's raster writers take.
 REGION_ID_GDAL_TYPE = 2   # UInt16
@@ -441,11 +439,10 @@ def salt_marsh_area_within_countries(p):
     gdf_salt_marsh = gpd.read_file(p.salt_marsh_vector_path).to_crs(gdf_regions.crs)
     hb.log(f'Loaded {len(gdf_salt_marsh)} salt marsh polygons, {len(gdf_regions)} marine regions')
 
-    # There used to be a zonal pass over ha_per_cell here, summing hectares per polygon into an
-    # area_ha column and writing salt_marsh_with_area.gpkg "for inspection". Both were dead:
-    # add_equal_area_ha overwrites area_ha with the equal-area geometric area a line later, which
-    # is the measure the other two habitats use and the one that reaches the country table, and
-    # nothing read the gpkg. It cost hours per run to compute a column that was thrown away.
+    # No zonal pass over ha_per_cell here and no "for inspection" gpkg: add_equal_area_ha
+    # overwrites area_ha with the equal-area geometric area a line later -- the measure the other
+    # two habitats use and the one that reaches the country table -- so either would cost hours
+    # per run to compute something nothing reads.
     pieces = ccf.add_equal_area_ha(ccf.intersect_features_with_regions(
         gdf_salt_marsh, gdf_regions, desc='Intersecting salt marsh with countries'))
 
@@ -666,9 +663,11 @@ def gep_calculation(p):
     # valuation (same contract fix as terrestrial_carbon).
 
     final_csv = service_results['gep_by_country_base_year']
-    if hb.path_all_exist(list(service_results.values())):
-        hb.log("gep_calculation: skipped (all registered results exist)")
+    reason = utilities.reuse_reason(p, 'coastal_carbon', list(service_results.values()))
+    if reason is None:
+        hb.log('coastal_carbon reuses its gep outputs: the signature is unchanged.')
         return
+    hb.log('coastal_carbon recomputes its gep, %s' % reason)
 
     r566_csv = service_results['gep_by_country_base_year_r566']
     r566_gpkg = r566_csv.replace('.csv', '.gpkg')
@@ -702,13 +701,14 @@ def gep_calculation(p):
     df_r250_final = ccf.collapse_to_iso3_r250(
         ccf.eez_storage_value_by_iso3(df_gep), hb.df_read(p.df_countries_csv_path))
     # The same shape as every other service's country table: the shared attributes, the year, and
-    # a column named for the service. This used to write a column called `value` alongside all 38
-    # columns of the correspondence, so the account could not read it the way it reads the rest.
+    # a column named for the service: the upstream frame calls it `value`, which the account
+    # cannot read the way it reads the rest.
     df_r250_final = df_r250_final.rename(columns={'value': 'coastal_carbon_gep'})
     df_r250_final['year'] = int(p.gep_base_year)
     attributes = [c for c in utilities.GEP_COUNTRY_ATTRIBUTE_COLUMNS if c in df_r250_final.columns]
     df_r250_final = df_r250_final[attributes + ['year', 'coastal_carbon_gep']]
     hb.df_write(df_r250_final, final_csv)
+    utilities.write_reuse_signature(p, 'coastal_carbon', list(service_results.values()))
     hb.log('Total coastal_carbon GEP for base year %d: %s over %d countries'
            % (int(p.gep_base_year), format(df_r250_final['coastal_carbon_gep'].sum(), ',.2f'),
               int(df_r250_final['coastal_carbon_gep'].notna().sum())))

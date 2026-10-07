@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from global_invest import utilities
 from global_invest.timber_provision import timber_provision_functions as tp
@@ -90,3 +91,200 @@ def test_es_config_and_parameters_rows_hydrate_timber_provision(tmp_path):
     assert p.gep_base_year == 2019
     utilities.hydrate_es_parameters(p, 'timber_provision', log=lambda *a: None)
     assert p.timber_provision_gep_path.endswith('timber_provision_gep.csv')
+
+
+def test_the_flat_sum_is_the_only_reading_the_roundwood_market_can_support():
+    """The units question, settled from outside the pipeline rather than from its own output.
+
+    The value raster is EPSG:4326 at 10 arc-second and carries NO unit metadata, so whether a cell
+    holds a value or a per-hectare density cannot be read off the file. The committed output cannot
+    settle it either, because it was produced by summing the same raster the same way.
+
+    FAOSTAT settles it. World industrial roundwood production in 2019 was 1.985 billion m3, and the
+    world export unit value was $111.01/m3, so the gross value of all industrial roundwood produced
+    on earth was about $220bn. The pipeline's flat sum, $88.74bn, is 40 percent of that -- a high
+    but possible land factor share. Reading the raster as $/ha gives $708bn, which is 321 percent
+    of gross. A land share cannot exceed the gross value it is a share of, so the flat sum is the
+    only reading the market supports.
+    """
+    import os
+    path = os.path.join(os.path.expanduser('~'), 'Files', 'base_data', 'global_invest',
+                        'timber_provision', 'input', 'faostat_forestry_roundwood_2019.csv')
+    if not os.path.exists(path):
+        pytest.skip('the staged FAOSTAT roundwood slice is not on this machine')
+    fao = pd.read_csv(path, encoding='utf-8-sig')
+    world = fao[(fao['Area'] == 'World') & (fao['Item'] == 'Industrial roundwood')]
+    produced = float(world[world['Element'] == 'Production']['Value'].iloc[0])
+    export_q = float(world[world['Element'] == 'Export quantity']['Value'].iloc[0])
+    export_v = float(world[world['Element'] == 'Export value']['Value'].iloc[0]) * 1000.0
+    gross = produced * (export_v / export_q)
+
+    flat, per_hectare = 88_743_966_326.0, 708_472_545_086.0
+    assert flat < gross, 'the flat reading must be a fraction of gross roundwood value'
+    assert per_hectare > 3 * gross, (
+        'the $/ha reading must be impossible, not merely large: it is %.0f%% of gross'
+        % (100 * per_hectare / gross))
+
+
+def test_the_cwon_rent_is_read_from_its_named_series_and_missing_stays_missing():
+    """The rental alternative the issues document recommends, published beside ours.
+
+    CWoN's file is wide by year and carries a `series` label. Reading the year column without
+    checking the label would publish whatever series happened to be in the file under the name
+    `timber_provision_gep_cwon_rent`, which is the failure this guards.
+    """
+    rent = pd.DataFrame({
+        'countrycode': ['AAA', 'BBB'],
+        'series': ['Forest, rents (current US$)'] * 2,
+        'YR2019': [100.0, 250.0],
+    })
+    countries = pd.DataFrame({'iso3_r250_label': ['AAA', 'BBB', 'CCC']})
+    out = tp.cwon_forest_rent_by_country(rent, countries, 2019).set_index('iso3_r250_label')
+    assert out.loc['AAA', 'timber_provision_gep_cwon_rent'] == pytest.approx(100.0)
+    # CWoN does not value CCC; no rent published is not a rent of nothing.
+    assert pd.isna(out.loc['CCC', 'timber_provision_gep_cwon_rent'])
+
+    wrong = rent.assign(series='Coal rents (current US$)')
+    with pytest.raises(ValueError, match='Forest, rents'):
+        tp.cwon_forest_rent_by_country(wrong, countries, 2019)
+
+
+def test_both_timber_valuations_are_published_and_differ_by_the_recorded_ratio():
+    """Publishing one silently would hide a $43bn choice, so every run writes both."""
+    import glob
+    import os
+    pattern = os.path.join(os.path.expanduser('~'), 'Files', 'global_invest', 'projects',
+                           'gep_timber_provision*', '**', 'gep_by_country_base_year.csv')
+    produced = [f for f in glob.glob(pattern, recursive=True)]
+    if not produced:
+        pytest.skip('no timber_provision run on this machine')
+    for path in produced:
+        df = pd.read_csv(path)
+        # timber_provision_gep IS the CWoN rent since 2026-09-02; the spatial estimate is kept
+        # beside it under its own name rather than deleted.
+        assert 'timber_provision_gep' in df.columns
+        assert 'timber_provision_gep_spatial' in df.columns, (
+            '%s publishes only one valuation' % path)
+        spatial = df['timber_provision_gep_spatial'].sum()
+        rental = df['timber_provision_gep'].sum()
+        # 1.49 as measured on 2026-09-02. A wide band, because this pins that the two are the
+        # same order and neither column has silently become the other, not the ratio itself.
+        assert 1.3 < rental / spatial < 1.7, (
+            '%s: rental/spatial is %.2f, not the recorded 1.49' % (path, rental / spatial))
+
+
+def test_the_faostat_bound_is_published_and_neither_valuation_breaks_it_wholesale():
+    """The bound is a third column, not a third estimate.
+
+    A land factor share is a fraction of the gross value of the wood it comes from, so a country
+    whose timber GEP exceeds the gross value of all the roundwood it produced is impossible. A
+    handful of countries do exceed it and are named in the entry: an export unit value is a proxy
+    for a domestic price, so a ratio near 1 is noise. What this asserts is that neither valuation
+    breaks the bound WHOLESALE, which is what would indicate a units error rather than a price one.
+    """
+    import glob
+    import os
+    pattern = os.path.join(os.path.expanduser('~'), 'Files', 'global_invest', 'projects',
+                           'gep_timber_provision*', '**', 'gep_by_country_base_year.csv')
+    produced = glob.glob(pattern, recursive=True)
+    if not produced:
+        pytest.skip('no timber_provision run on this machine')
+    for path in produced:
+        df = pd.read_csv(path)
+        assert 'timber_roundwood_gross_value' in df.columns, '%s lacks the bound' % path
+        priced = df[df['timber_roundwood_gross_value'] > 0]
+        for column in ('timber_provision_gep', 'timber_provision_gep_spatial'):
+            valued = priced[priced[column] > 0]
+            over = valued[valued[column] > valued['timber_roundwood_gross_value']]
+            assert len(over) < 0.1 * len(valued), (
+                '%s: %s exceeds its own gross roundwood value in %d of %d countries, which is a '
+                'units error rather than a price proxy' % (path, column, len(over), len(valued)))
+
+
+def test_every_timber_run_reproduces_the_committed_anchor():
+    """Condition 12: checked against what the RUNS wrote, not against the join alone.
+
+    `test_join_reproduces_the_committed_anchor` reads the staged anchor and joins it, which tests
+    the join. This sums the raster the way the pipeline does and compares every timber run on the
+    machine, cold starts included, against the anchor. Commercial fisheries carried a reproduction
+    claim for weeks on the strength of a function-level test, which is the shape this avoids.
+    """
+    import glob
+    import os
+    anchor_path = os.path.join(REFERENCE_DIR, 'timber_provision_gep.csv')
+    if not os.path.exists(anchor_path):
+        pytest.skip('the committed anchor is not on this machine')
+    anchor = pd.read_csv(anchor_path)['forestry_gep'].sum()
+
+    pattern = os.path.join(os.path.expanduser('~'), 'Files', 'global_invest', 'projects',
+                           'gep_timber_provision*', '**', 'gep_by_country_base_year.csv')
+    produced = glob.glob(pattern, recursive=True)
+    if not produced:
+        pytest.skip('no timber_provision run on this machine')
+    for path in produced:
+        df = pd.read_csv(path)
+        # 1e-7: the raster is float32 and the anchor was written from a separate sum of it.
+        assert df['timber_provision_gep_spatial'].sum() == pytest.approx(anchor, rel=1e-7), (
+            '%s totals %r against the committed anchor %r'
+            % (path, df['timber_provision_gep_spatial'].sum(), anchor))
+        assert int(df['timber_provision_gep_spatial'].gt(0).sum()) == 166, (
+            '%s values %d countries, not the anchor\'s 166'
+            % (path, int(df['timber_provision_gep_spatial'].gt(0).sum())))
+
+
+import pytest
+from affine import Affine
+from rasterio.crs import CRS
+
+from global_invest.timber_provision.timber_provision_tasks import _assert_one_grid
+
+SHAPE = (64800, 129600)
+PIXEL = 0.002777777777777778
+WGS84 = CRS.from_epsg(4326)
+REF = Affine(PIXEL, 0.0, -180.0, 0.0, -PIXEL, 90.0)
+
+
+def grids(other):
+    return {'reference': (SHAPE, REF, WGS84), 'other': (SHAPE, other, WGS84)}
+
+
+def test_the_reported_origin_noise_passes():
+    """1e-14 degrees of y-origin noise -- the case that blocked the timber seam."""
+    noisy = Affine(PIXEL, 0.0, -180.0, 0.0, -PIXEL, 90.00000000000001)
+    _assert_one_grid(grids(noisy))
+
+
+def test_a_meaningful_translation_fails():
+    shifted = Affine(PIXEL, 0.0, -180.0 + PIXEL / 2, 0.0, -PIXEL, 90.0)
+    with pytest.raises(ValueError, match='displaced'):
+        _assert_one_grid(grids(shifted))
+
+
+def test_a_scale_difference_that_accumulates_fails():
+    """One part in 1e9 leaves the origin identical and is invisible there, but reaches ~1e-4 pixels
+    by column 129,600 -- which is exactly why the test is at the corners, not the origin."""
+    stretched = Affine(PIXEL * (1 + 1e-9), 0.0, -180.0, 0.0, -PIXEL, 90.0)
+    with pytest.raises(ValueError, match='displaced'):
+        _assert_one_grid(grids(stretched))
+
+
+def test_a_rotation_term_fails():
+    rotated = Affine(PIXEL, 1e-12, -180.0, 0.0, -PIXEL, 90.0)
+    with pytest.raises(ValueError, match='displaced'):
+        _assert_one_grid(grids(rotated))
+
+
+def test_a_different_shape_fails():
+    with pytest.raises(ValueError, match='is \\(100, 100\\)|needs one grid'):
+        _assert_one_grid({'reference': (SHAPE, REF, WGS84), 'other': ((100, 100), REF, WGS84)})
+
+
+def test_a_different_crs_fails():
+    with pytest.raises(ValueError, match='CRS'):
+        _assert_one_grid({'reference': (SHAPE, REF, WGS84),
+                          'other': (SHAPE, REF, CRS.from_epsg(3857))})
+
+
+def test_noise_far_below_the_tolerance_still_passes_at_every_corner():
+    tiny = Affine(PIXEL, 0.0, -180.0 + 1e-16, 0.0, -PIXEL, 90.0 - 1e-16)
+    _assert_one_grid(grids(tiny))

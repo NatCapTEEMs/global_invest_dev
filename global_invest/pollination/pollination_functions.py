@@ -91,6 +91,33 @@ def zonal_pct_change(diff_arr, baseline_arr, area_arr, zones_arr, zone_labels):
 # (zone, sector, year); these functions are that turn, with no IO in them.
 # =============================================================================
 
+
+def zonal_weighted_sum(value_arr, area_arr, zones_arr, zone_labels):
+    """Area-weighted sum of a value raster per zone, on zonal_pct_change's conventions.
+
+    Used for the PAIRED baseline, the stable-ag-masked 2023 value that forms the numerator's
+    subtrahend. zonal_pct_change already returns the UNPAIRED 2023 sum as its denominator, and the
+    ratio of the two is what a scenario scaling provision needs: the percent change is
+    100*(P - Q) with P and Q both over the unpaired denominator, so scaling provision by f gives
+    f*pct + 100*Q*(f - 1) rather than f*pct + 100*(f - 1).
+
+    Args:
+        value_arr (np.ndarray): the value raster, nodata as NaN.
+        area_arr (np.ndarray): pixel area on the same grid.
+        zones_arr (np.ndarray): burned zone ids on the same grid.
+        zone_labels (dict): zone id to (ENDW, REG).
+
+    Returns:
+        pd.Series: the weighted sum keyed on (ENDW, REG), for every zone in zone_labels. A zone
+        summing to zero KEEPS its zero. zonal_pct_change drops such zones because it divides by
+        them; here the sum is a numerator and zero provision is a real value, not a missing one.
+    """
+    sums = {}
+    for zone_id, key in zone_labels.items():
+        mask = zones_arr == zone_id
+        sums[key] = float(np.nansum(value_arr[mask] * area_arr[mask]))
+    return pd.Series(sums, dtype=float)
+
 def anchor_shock_tables(scenario_pct_by_year, baseline_pct_by_year):
     """The two shock measures at the anchor years, per zone.
 
@@ -119,7 +146,10 @@ def anchor_shock_tables(scenario_pct_by_year, baseline_pct_by_year):
     return fixedbase, fixedbase / base_factor
 
 
-def dynamic_shock_rows(fixedbase, contemporaneous, level_usd, scenario, sectors, base_year):
+def dynamic_shock_rows(fixedbase, contemporaneous, level_usd, scenario, sectors, base_year,
+                       paired_base_by_year=None, paired_scen_by_year=None,
+                       unpaired_denominator=None, growth_by_year=None,
+                       level_usd_by_sector=None, crop_usd_by_sector=None):
     """Anchor-year shocks expanded to one row per zone, sector and year.
 
     The calculation computes a shock only at the years the scenario maps exist for; the economic model
@@ -138,6 +168,16 @@ def dynamic_shock_rows(fixedbase, contemporaneous, level_usd, scenario, sectors,
         scenario (str): the scenario label written into every row.
         sectors (iterable): the GTAP activities the shock applies to.
         base_year (int): the year the ramp starts from, at zero.
+        level_usd_by_sector (dict or None): per-zone baseline value keyed by GTAP activity, from the
+            per-sector value rasters. When given, each sector row carries ITS OWN share rather than
+            the zone total, so summing sectors reproduces the zone total instead of multiplying it.
+            When None the zone total is repeated -- the historical behaviour, safe only because the
+            solver reads shock_pct and never this column.
+        crop_usd_by_sector (dict or None): per-zone baseline CROP value keyed by GTAP activity, from
+            the per-sector crop rasters. The denominator for an output-scaling shock: the change in
+            pollination value as a share of what the sector produces on that land, which is what
+            aoall reads as a percentage of output. Accepted here; the column it feeds is emitted
+            separately.
 
     Returns:
         list: dicts, one per zone, sector and year from base_year through the last anchor year.
@@ -153,13 +193,99 @@ def dynamic_shock_rows(fixedbase, contemporaneous, level_usd, scenario, sectors,
         annual_contemp = np.interp(all_years, interp_years,
                                    [0.0] + list(contemporaneous.loc[zone].values))
         base_usd = float(level_usd.get(zone, float('nan'))) if level_usd is not None else float('nan')
-        for year, fixed_value, contemp_value in zip(all_years, annual, annual_contemp):
+        # The paired baseline is a LEVEL, not a shock, so it is not ramped from zero: the base year
+        # takes the first anchor's value. Years before that anchor are unstressed anyway, so the
+        # extension is never read; carrying it flat avoids inventing a ramp toward zero USD.
+        # The quantity a provision rescaling needs, emitted rather than reconstructed. Scaling the
+        # scenario's paired value by f moves the exported contemporaneous shock to
+        # shock + 100*(f - 1)*paired_scen_over_contemp_denom, exactly at the anchors and, because
+        # every stressed year lies at or after the first anchor, exactly under the existing
+        # interpolation too. Reconstructing it from the emitted shocks would need a division by the
+        # contemporaneous shock, which is near zero in most zones.
+        if paired_scen_by_year and unpaired_denominator is not None and growth_by_year:
+            share_at_anchor = []
+            for y in anchor_years:
+                paired = float(paired_scen_by_year[y].get(zone, float('nan')))
+                unpaired = float(unpaired_denominator.get(zone, float('nan')))
+                # growth_by_year holds one Series per anchor, keyed by zone like everything else
+                # here, so it must be indexed before use. Dividing by the Series silently produced
+                # a Series per row instead of a scalar.
+                growth = growth_by_year[y]
+                growth = float(growth.get(zone, float('nan'))) if hasattr(growth, 'get') else float(growth)
+                share_at_anchor.append(paired / unpaired / growth
+                                       if unpaired and growth else float('nan'))
+            annual_share = np.interp(all_years, interp_years,
+                                     [share_at_anchor[0]] + share_at_anchor)
+        else:
+            annual_share = [float('nan')] * len(all_years)
+
+        if paired_base_by_year:
+            paired_at_anchor = [float(paired_base_by_year[y].get(zone, float('nan')))
+                                for y in anchor_years]
+            annual_paired = np.interp(all_years, interp_years,
+                                      [paired_at_anchor[0]] + paired_at_anchor)
+        else:
+            annual_paired = [float('nan')] * len(all_years)
+
+        # The trajectory away from the base year, not the distance from a contemporaneous
+        # baseline that shock_pct measures. Ratio anchor by anchor and interpolate after:
+        # interpolating the two levels first and dividing gives a different number between anchors.
+        if paired_scen_by_year and paired_base_by_year:
+            v3_at_anchor = []
+            for y in anchor_years:
+                scen_level = float(paired_scen_by_year[y].get(zone, float('nan')))
+                base_level = float(paired_base_by_year[y].get(zone, float('nan')))
+                v3_at_anchor.append(100.0 * (scen_level / base_level - 1.0)
+                                    if base_level else float('nan'))
+            annual_v3 = np.interp(all_years, interp_years, [0.0] + v3_at_anchor)
+        else:
+            annual_v3 = [float('nan')] * len(all_years)
+        for year, fixed_value, contemp_value, paired_value, share_value, v3_value in zip(
+                all_years, annual, annual_contemp, annual_paired, annual_share, annual_v3):
             for sector in sectors:
+                # This sector's own share of the zone's baseline value when the per-sector rasters
+                # exist, and the zone total otherwise. The fallback is the historical behaviour and
+                # is NOT a denominator: summing it across sectors counts the same dollars once per
+                # sector, which is how oilseed pollination value came to exceed oilseed output.
+                sector_usd = base_usd
+                if level_usd_by_sector:
+                    series = level_usd_by_sector.get(str(sector).upper())
+                    if series is not None:
+                        sector_usd = float(series.get(zone, float('nan')))
+                # The output-denominated shock: the same dollar change, as a share of what the
+                # sector produces on that land rather than of the pollination it receives.
+                #   shock_pct_v3      = d_usd / poll_usd   the paper's reference: the scenario's own
+                #                                          trajectory from the base year (paired)
+                #   shock_pct_output  = d_usd / crop_usd   what aoall on output reads
+                # ONE dollar change, d_usd = shock_pct_v3/100 x the sector's base-year pollination
+                # value, so the two differ only by the pollination share of crop value. It is the
+                # v3 numerator, the measure the export selects for pollination -- forming it from
+                # the contemporaneous measure would hand aoall a different quantity than afeall was
+                # given and relabel it. NaN, not zero, when the crop level or the v3 series is
+                # absent -- a zero would read as "no shock" downstream.
+                output_value = float('nan')
+                crop_usd = float('nan')
+                if crop_usd_by_sector:
+                    crop_series = crop_usd_by_sector.get(str(sector).upper())
+                    if crop_series is not None:
+                        crop_usd = float(crop_series.get(zone, float('nan')))
+                        if (np.isfinite(crop_usd) and crop_usd > 0 and np.isfinite(sector_usd)
+                                and np.isfinite(v3_value)):
+                            d_usd = v3_value / 100.0 * sector_usd
+                            output_value = 100.0 * d_usd / crop_usd
                 rows.append({'ENDW': endw, 'ACTS': sector, 'REG': reg, 'scenario': scenario,
                              'year': year, 'shock_pct': contemp_value,
                              'shock_pct_fixedbase': fixed_value,
                              'shock_pct_contemp': contemp_value,
-                             'value_usd_base': base_usd})
+                             'shock_pct_output': output_value,
+                             'value_usd_base': sector_usd,
+                             # The denominator shock_pct_output was formed against, carried so a
+                             # consumer collapsing AEZ can weight by it. Collapsing an output share
+                             # by pollination value would mix the two denominators.
+                             'crop_usd_base': crop_usd,
+                             'paired_base_usd': paired_value,
+                             'paired_scen_over_contemp_denom': share_value,
+                             'shock_pct_v3': v3_value})
     return rows
 
 
@@ -221,22 +347,6 @@ def collapse_regions_to_countries(df_regions):
     return df_countries[utilities.GEP_COUNTRY_ATTR_COLS + ['year', 'pollination_gep']]
 
 
-def expand_country_values_to_regions(df_regions, df_gep_by_country):
-    """Each r264 region carrying its COUNTRY's value, for the map only.
-
-    The sub-region rows repeat the national value rather than splitting it, so this table is
-    never summed. It exists because the choropleth draws r264 polygons.
-
-    Args:
-        df_regions (pd.DataFrame): the zonal summary, one row per r264 region.
-        df_gep_by_country (pd.DataFrame): the collapsed per-country table.
-
-    Returns:
-        pd.DataFrame: df_regions with pollination_gep attached.
-    """
-    return utilities.expand_country_values_to_regions(
-        df_regions, df_gep_by_country, 'pollination_gep')
-
 
 # =============================================================================
 # Driver over the crop_benefits raster chain. Nothing below here is arithmetic
@@ -251,7 +361,10 @@ def configure_sufficiency(p, target_year):
     value tasks. The 5 km template points at the value raster itself, because the valuation needs
     sufficiency and value on one grid and that removes a separate country-raster input.
     """
-    crop_benefits_dir = p.pollination_value_raster_dir
+    # The parameter is named _dir, so CSV hydration leaves it literal -- only *_path columns run
+    # through get_path. Resolve it here or rasterio is handed a path relative to the working
+    # directory, which only happens to exist on a machine that runs from base_data.
+    crop_benefits_dir = p.get_path(p.pollination_value_raster_dir)
     return SufficiencySettings(
         output_dir=str(p.cur_dir),
         value_raster_dir=str(crop_benefits_dir),
@@ -266,7 +379,7 @@ def configure_sufficiency(p, target_year):
 
 @dataclass
 class SufficiencySettings:
-    """What the raster steps below need, in place of the crop_benefits Config they used to read.
+    """What the raster steps below need, in place of the crop_benefits Config the source module reads.
 
     That Config was loaded from a gitignored local.yaml with `validate=False`, so a missing or
     wrong file did not fail up front, it just proceeded. These seven fields are everything the
@@ -279,7 +392,7 @@ class SufficiencySettings:
         country_raster_path (str): the raster defining the 5 km target grid. The valuation needs
             sufficiency and value on one grid, so this points at the value raster itself.
         pa_raster_300m_path (str): the protected-area raster, for the protected-area summary.
-        tile_size (int): rows per block when streaming the 300 m land cover. ⚠⚠ **This changes
+        tile_size (int): rows per block when streaming the 300 m land cover. **This changes
             the result, it is not a performance setting.** The foraging-radius kernel takes its
             latitude from the tile's midpoint and rounds the 2 km radius to an integer pixel
             count, so the tile height decides the kernel. At 2048 our raster agreed with the
@@ -334,16 +447,6 @@ def build_area_km2_raster(meta: dict) -> np.ndarray:
     return np.repeat(area_per_row[:, None], ncols, axis=1).astype(np.float32)
 
 
-def convert_density_to_mass(density_raster: np.ndarray, area_km2_raster: np.ndarray) -> np.ndarray:
-    """
-    Convert density (e.g. tonnes/km²) to mass (e.g. tonnes).
-    
-    mass = density * area
-    """
-    mass = np.full_like(density_raster, np.nan, dtype=np.float32)
-    valid = np.isfinite(density_raster) & (area_km2_raster > 0)
-    mass[valid] = density_raster[valid] * area_km2_raster[valid]
-    return mass
 
 
 def get_compression_profile(
@@ -374,7 +477,7 @@ def get_compression_profile(
 
 @dataclass
 class FaoPriceSettings:
-    """What the FAO price steps need, in place of the crop_benefits Config they used to read.
+    """What the FAO price steps need, in place of the crop_benefits Config the source module reads.
 
     The prices are a base-data input rather than a per-run result: the pipeline reads the FAOSTAT
     production and producer-price bulks, reconstructs local currency where FAOSTAT reports only the
@@ -429,7 +532,6 @@ class FaoPriceSettings:
     qc_bad_share_over_3x: float
 
 
-
 # ---------------------------------------------------------------------------------------------
 # The FAO price path, the parts that hold no file handling. These build the per-crop median
 # producer prices the pollination value raster is priced at.
@@ -448,7 +550,6 @@ _PRICE_ELEMENTS_KEEP = [
     "Producer Price (LCU/tonne)",
     "Producer Price Index (2014-2016 = 100)",
 ]
-
 
 
 
@@ -778,30 +879,15 @@ def _compute_annual_prices(prices: pd.DataFrame, cw: pd.DataFrame) -> tuple[pd.D
     return price_country, price_subregion, price_region, price_world
 
 
-# The CropGrids and yield grid, half a degree at 0.05, which pixel_area_km2 is written for.
-PIXEL_RES_DEG = 0.05
 
 
-def pixel_area_km2_spherical(lat_deg: np.ndarray, res_deg: float = PIXEL_RES_DEG) -> np.ndarray:
-    """Pixel area in km2 on a 6371 km sphere, the convention the source pipeline uses.
-
-    Kept so the replication check against crop_benefits can be run on its own terms. Production
-    calls hazelbean directly, which is WGS84 and agrees with the rest of the account.
-    """
-    R = 6371.0  # Earth radius, km
-    lat_rad = np.deg2rad(lat_deg)
-    dlat = np.deg2rad(res_deg)
-    dlon = np.deg2rad(res_deg)
-    return (R ** 2) * dlon * (
-        np.sin(lat_rad + dlat / 2.0) - np.sin(lat_rad - dlat / 2.0)
-    )
 
 
 # =============================================================================
 # The pollination value raster: production x price x pollination dependence.
 #
-# This is the arithmetic behind poll_value_global_<year>usd.tif, which the GEP
-# valuation used to take as a finished input. Everything here is array and scalar
+# This is the arithmetic behind poll_value_global_<year>usd.tif, built here
+# rather than taken as a finished input. Everything here is array and scalar
 # maths so the task layer can open the per-crop rasters and these functions stay
 # testable without one.
 # =============================================================================
@@ -811,31 +897,13 @@ def price_window_centre_year(price_years):
     """The year the median price is denominated in: the centre of the window it is taken over.
 
     A median over 2017-2021 is 2019 money and needs no deflating for a 2019 account; a median over
-    2018-2022 is 2020 money and does. The window used to be a hardcoded 2018-2022 with the centre
-    written out as a constant called PRODUCTION_RASTER_YEAR, which named neither the thing it was
-    nor the thing it was used for -- the deflator is applied to `price`, never to production.
+    2018-2022 is 2020 money and does. The centre is computed from the window rather than written
+    out as its own constant, because a separate constant can drift from the window it claims to
+    describe -- and the deflator is applied to `price`, never to production.
     """
     years = sorted(int(y) for y in price_years)
     return years[len(years) // 2]
 
-
-def usd_deflator(from_year, to_year, cpi_by_year):
-    """CPI ratio converting dollars of one year into dollars of another.
-
-    Args:
-        from_year (int): the year the value is currently denominated in.
-        to_year (int): the year wanted.
-        cpi_by_year (dict): year to price index, read from the CPI table by the task layer.
-
-    Returns:
-        float: multiply a `from_year` dollar amount by this to get `to_year` dollars.
-
-    Raises:
-        KeyError: if either year is outside the table, which is deliberate. Silently returning
-            1.0 for an unknown year would leave the value undeflated and indistinguishable from
-            a correct one.
-    """
-    return cpi_by_year[int(to_year)] / cpi_by_year[int(from_year)]
 
 
 def crop_pollination_value_density(production_density, price_usd_per_tonne, dependence_ratio):
@@ -867,14 +935,13 @@ def crop_pollination_value_density(production_density, price_usd_per_tonne, depe
 
 
 
-
 def find_source_value_raster(p, gep_base_year):
     """Locate the source author's pollination value raster, preferring the GEP base year.
 
     His files are named `poll_value_global_<year>usd.tif`, one per price year, and he does not
     publish every year. Take the exact year when it exists, which needs no deflation at all.
 
-    ⚠ Otherwise take the LATEST year he publishes, not the nearest. The files are separate vintages
+    Otherwise take the LATEST year he publishes, not the nearest. The files are separate vintages
     of his model, not one raster restated in different dollars: measured on 2026-08-28, his 2024
     file deflates to $386.76bn at 2019 prices while his 2023 file deflates to $398.74bn, a three
     percent spread that a price index cannot produce. The later file is the later method, and it is
@@ -893,7 +960,11 @@ def find_source_value_raster(p, gep_base_year):
     """
     import glob
     import re
+    # The parameter is named _dir, so hydration leaves it literal; resolve a relative one against
+    # the data roots. An already-resolved directory is used as given.
     source_dir = p.pollination_value_raster_dir
+    if not os.path.isdir(str(source_dir)):
+        source_dir = p.get_path(source_dir)
     candidates = {}
     for path in glob.glob(os.path.join(str(source_dir), 'poll_value_global_*usd.tif')):
         match = re.search(r'poll_value_global_(\d{4})usd\.tif$', os.path.basename(path))
@@ -964,6 +1035,16 @@ def local_pollination_share(pollination_value, crop_value):
 # different plants: arabica largely self-pollinates and robusta largely does not.
 COFFEE_ITEM_CODE_FAO = 656
 COFFEE_DEPENDENCE = {'arabica': 0.25, 'robusta': 0.65}
+# The split file carries one row per growing season plus a multi-year summary, so each country
+# appears six times. This names the summary row, the way the fisheries reader names the CWoN
+# columns it needs: it is the source file's own label, not a setting anyone would tune.
+COFFEE_SPLIT_SUMMARY_YEAR = '2021_2025'
+# The file also carries a world-average row, labelled 'Other' under this code, for the coffee
+# countries it does not name individually -- 58 of the 78 that report the crop. The source
+# pipeline falls back to it; we fell back to pure arabica instead, which understated every one of
+# those countries, because arabica needs pollinators for a quarter of its yield where the world
+# blend needs 0.41.
+COFFEE_SPLIT_FALLBACK_CODE = 9999
 
 
 def coffee_dependence_by_country(df_arabica_robusta):
@@ -980,18 +1061,102 @@ def coffee_dependence_by_country(df_arabica_robusta):
     average: Colombia is all arabica and Vietnam is 97 percent robusta, so one global ratio
     would be wrong in opposite directions for the two largest producers.
 
+    The file gives each country five seasons and a `2021_2025` summary, and the author averages
+    over that window. Taking the rows as they come and keeping the last one returns the summary
+    today, because the exporter happens to write it last for all 21 countries -- so the number is
+    right and nothing says why. Re-export the file in another order and a single season would be
+    substituted silently. The summary row is therefore selected by name.
+
     Args:
-        df_arabica_robusta (pd.DataFrame): area_code_m49 and prop_arabica, prop_robusta.
+        df_arabica_robusta (pd.DataFrame): area_code_m49, year, prop_arabica and prop_robusta.
 
     Returns:
         dict: M49 country code (int) to the blended dependence ratio.
+
+    Raises:
+        NameError: if no row carries the summary year, since the alternative is to average
+            whatever rows are present and quietly report a different window than the author.
     """
     import pandas as pd
     df = df_arabica_robusta.dropna(subset=['area_code_m49']).copy()
+    summary = df[df['year'].astype(str) == COFFEE_SPLIT_SUMMARY_YEAR]
+    if summary.empty:
+        raise NameError(
+            'No %r row in the coffee split file; it carries %s. That row is the multi-year '
+            'window the author blends over, so without it the seasons would have to be averaged '
+            'here and the two pipelines would silently differ.'
+            % (COFFEE_SPLIT_SUMMARY_YEAR, sorted(df['year'].astype(str).unique())))
+    df = summary
     blended = (df['prop_arabica'].astype(float) * COFFEE_DEPENDENCE['arabica']
                + df['prop_robusta'].astype(float) * COFFEE_DEPENDENCE['robusta'])
     codes = pd.to_numeric(df['area_code_m49'], errors='coerce').astype('Int64')
-    return dict(zip(codes, blended))
+    # The world-average row is not a country and must not be looked up as one.
+    return {code: value for code, value in zip(codes, blended)
+            if code != COFFEE_SPLIT_FALLBACK_CODE}
+
+
+def coffee_dependence_fallback(df_arabica_robusta):
+    """The blend for a coffee country the split file does not name individually.
+
+    The file carries a world-average row for exactly this, and the source pipeline uses it. We
+    used pure arabica instead, 0.25 against its 0.41, which understated 58 of the 78 countries
+    that report coffee -- every one the file does not name. Reading his file and then ignoring the
+    row he put in it for this purpose is the kind of difference that looks like agreement until
+    somebody compares the two.
+
+    Args:
+        df_arabica_robusta (pd.DataFrame): area_code_m49, year, prop_arabica and prop_robusta.
+
+    Returns:
+        float: the blended dependence ratio to use where a country has no row of its own.
+
+    Raises:
+        NameError: if the world-average row is absent, since falling back to a guess is what this
+            replaces.
+    """
+    import pandas as pd
+    df = df_arabica_robusta
+    codes = pd.to_numeric(df['area_code_m49'], errors='coerce')
+    row = df[(codes == COFFEE_SPLIT_FALLBACK_CODE)
+             & (df['year'].astype(str) == COFFEE_SPLIT_SUMMARY_YEAR)]
+    if len(row) != 1:
+        raise NameError(
+            'The coffee split file should carry exactly one world-average row, area_code_m49 %d '
+            'at %r, and carries %d. That row is what a country the file does not name is valued '
+            'at, and the alternative is to invent one.'
+            % (COFFEE_SPLIT_FALLBACK_CODE, COFFEE_SPLIT_SUMMARY_YEAR, len(row)))
+    return float(row['prop_arabica'].iloc[0] * COFFEE_DEPENDENCE['arabica']
+                 + row['prop_robusta'].iloc[0] * COFFEE_DEPENDENCE['robusta'])
+
+
+def value_weighted_by_sufficiency(value_array, sufficiency_array, value_nodata=None):
+    """The part of the pollination value that the habitat actually present delivers.
+
+    The account's headline is the crop output at stake if pollinators vanished, which is a property
+    of the crop mix and does not move when land use does. Multiplying it by habitat sufficiency
+    gives the other definition on the table: the service the landscape supplies today, which does
+    move. Both are wanted, so both are computed on one grid at one price year.
+
+    Sufficiency is NaN off cropland. That is not zero service, it is no cropland, and those cells
+    carry no value either, so treating it as zero drops them from both sums identically rather than
+    biasing one.
+
+    Args:
+        value_array (np.ndarray): pollination value per cell, at the base year's prices.
+        sufficiency_array (np.ndarray): habitat sufficiency on the same grid, 0 to 1.
+        value_nodata: the value raster's nodata, treated as no value rather than as a number.
+
+    Returns:
+        tuple: (weighted array, unweighted total, weighted total).
+    """
+    import numpy as np
+    value = np.where(np.isfinite(value_array), value_array, 0.0)
+    if value_nodata is not None:
+        value = np.where(value_array == value_nodata, 0.0, value)
+    sufficiency = np.where(np.isfinite(sufficiency_array),
+                           np.clip(sufficiency_array, 0.0, 1.0), 0.0)
+    weighted = value * sufficiency
+    return weighted, float(value.sum()), float(weighted.sum())
 
 
 def dependence_raster_from_country_lookup(country_id_array, dependence_by_country, default):

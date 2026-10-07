@@ -168,14 +168,3 @@ def hectares_by_zone(accessible_forest_ha_block, zone_id_block, n_zones):
     return np.bincount(ids[keep], weights=values[keep], minlength=n_zones + 1)
 
 
-def buffer_mask_by_cells(source_mask, radius_cells):
-    """The source mask grown by a disk of the given radius, which on this grid is kilometres.
-
-    A disk rather than a square: a square would call a cell 14 km away accessible on the
-    diagonal, which is not what a 10 km buffer means.
-    """
-    from scipy import ndimage
-    span = np.arange(-radius_cells, radius_cells + 1)
-    y_offsets, x_offsets = np.meshgrid(span, span, indexing='ij')
-    disk = (y_offsets ** 2 + x_offsets ** 2) <= radius_cells ** 2
-    return ndimage.binary_dilation(source_mask, structure=disk)

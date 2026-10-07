@@ -1,0 +1,52 @@
+---
+title: "Overview of Ecosystem Service: Nature View Amenity"
+format:
+  html:
+    embed-resources: true
+    standalone: true
+---
+
+Urban and coastal nature is valued as the room-price premium hotel guests pay for a natural
+view. Within one hotel on one date, a sea-, mountain-, lake- or garden-view room prices above
+a comparable room without the view; that difference is a market price for the view itself,
+because brand, location, star rating and service difference out inside the hotel. The base
+year is 2019.
+
+⚠ Two of the owner's conventions are kept and named rather than changed: the room prices are
+scraped at the submission's own booking dates and applied to 2019 room-nights, and one uniform
+mean occupancy (from the 106 reporting countries in the UN Tourism table) applies to every
+country. Because the scrape is 2026 money, the published figure deflates it to 2019 by the
+shared US CPI factor; the owner-vintage reading is kept beside it and is what the replication
+anchor holds at.
+
+## Quantity
+
+The country's hotel room-nights carrying a natural view: UN Tourism hotel rooms 2019, times
+the uniform mean occupancy, times 365, times the scenic-room share -- the natural-view share of
+displayed room availability in the sample, over records with a positive price and availability.
+
+## Price
+
+The unit price difference per room-night: within each of the 7,270 comparable groups (same
+hotel, date and room configuration), the mean natural-view price minus the mean comparable
+non-view price. Groups outside three Excel-inclusive interquartile ranges of the log price
+ratio, or with a negative premium, are dropped (`5,213` kept); the country figure weights each
+group's difference by its scenic-room availability.
+
+## Valuation
+
+$$
+\text{GEP}_i = R_i \; \bar{o} \; 365 \; s_i \; d_i
+$$
+
+with $R_i$ the hotel rooms, $\bar{o}$ the uniform mean occupancy, $s_i$ the scenic-room share
+and $d_i$ the unit price difference. A country missing any input carries NA with the absence
+named in a note column, never a silent zero. The owner's results workbook is carried beside
+the result as the replication anchor, and the run log reports the per-country agreement.
+
+## Inputs
+
+All paths and parameters come from `es_parameters.csv` under the `nature_view_amenity` service
+key: the raw room-price sample (read only for the coordinate-to-country mapping), the
+analysis-ready comparable-group workbook, the country mapping, the UN Tourism room inventory
+and the owner's reference, each with a source row beside it.

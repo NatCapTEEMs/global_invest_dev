@@ -1952,16 +1952,23 @@ def build_vsl_raster(p):
             p.vsl_raster_path = out_path
             return p
 
-        # ---- 1. Parse OECD VSL CSV ----
-        # NOTE: has commas/special characters in the name as downloaded, so glob rather
-        # than a brittle hardcoded match.
-        oecd_candidates = glob.glob(os.path.join(p.landslide_input_data_dir, 'oecd_vsl', '*.csv'))
-        if not oecd_candidates:
-            raise FileNotFoundError(f'No CSV found in {p.landslide_input_data_dir}/oecd_vsl/')
-
-        vsl_by_iso3 = lmf.vsl_usd_2019_by_iso3(hb.df_read(oecd_candidates[0]))
-        p.L.info(f'OECD VSL: {len(vsl_by_iso3)} countries with direct estimates (deflated to '
-                 f'2019 constant USD, factor={lmf.DEFLATOR_2022_TO_2019:.4f}).')
+        # ---- 1. The VSL schedule: the shared EPA life-years-lost panel when configured,
+        # the OECD estimates otherwise ----
+        panel_path = getattr(p, 'landslide_mitigation_vsl_panel_path', None)
+        if panel_path:
+            panel = pd.read_csv(str(p.get_path(panel_path)))
+            vsl_by_iso3 = dict(zip(panel['iso3_r250_label'], panel['vsl_usd']))
+            p.L.info(f'VSL from the shared EPA life-years-lost panel: {len(vsl_by_iso3)} '
+                     f'countries, fallback tiers recorded in the panel itself.')
+        else:
+            # NOTE: has commas/special characters in the name as downloaded, so glob rather
+            # than a brittle hardcoded match.
+            oecd_candidates = glob.glob(os.path.join(p.landslide_input_data_dir, 'oecd_vsl', '*.csv'))
+            if not oecd_candidates:
+                raise FileNotFoundError(f'No CSV found in {p.landslide_input_data_dir}/oecd_vsl/')
+            vsl_by_iso3 = lmf.vsl_usd_2019_by_iso3(hb.df_read(oecd_candidates[0]))
+            p.L.info(f'OECD VSL: {len(vsl_by_iso3)} countries with direct estimates (deflated to '
+                     f'2019 constant USD, factor={lmf.DEFLATOR_2022_TO_2019:.4f}).')
 
         # ---- 2. Join to correspondence GPKG ----
         # publish_inputs already resolved this through initialize_country_paths, which every
@@ -2490,274 +2497,6 @@ def export_pi_audit_table(p):
     return p
 
 
-def _plot_raster(p, failures, raster_path, out_png, title, cmap, cbar_format):
-    """One raster to one PNG, downsampled to the plot dimension cap, ranged on the plot
-    percentiles. A missing raster or an unplottable range is recorded in failures rather
-    than stopping the sweep."""
-    if hb.path_exists(out_png):
-        p.L.info(f'Plot already exists: {out_png}')
-        return True
-    if not hb.path_exists(raster_path):
-        msg = f'Raster not found: {raster_path}'
-        p.L.info(f'WARNING: {msg}')
-        failures.append(msg)
-        return False
-
-    try:
-        with rasterio.open(raster_path) as src:
-            max_dim = int(getattr(p, 'plot_raster_max_dim', lmf.PLOT_RASTER_MAX_DIM))
-            scale = max(src.height / max_dim, src.width / max_dim, 1.0)
-            arr = src.read(
-                1,
-                out_shape=(max(1, int(np.ceil(src.height / scale))),
-                           max(1, int(np.ceil(src.width / scale)))),
-                resampling=Resampling.nearest,
-            ).astype(np.float32)
-            ndv = src.nodata
-
-        if ndv is not None:
-            arr = np.where(arr == ndv, np.nan, arr)
-
-        finite = arr[np.isfinite(arr)]
-        if finite.size == 0:
-            msg = f'Raster has no finite data: {raster_path}'
-            p.L.info(f'WARNING: {msg}')
-            failures.append(msg)
-            return False
-
-        vmin, vmax = np.nanpercentile(finite, list(lmf.PLOT_PERCENTILES))
-        if not np.isfinite(vmin) or not np.isfinite(vmax):
-            msg = f'Invalid plotting range: {raster_path}'
-            p.L.info(f'WARNING: {msg}')
-            failures.append(msg)
-            return False
-
-        if vmin == vmax:
-            eps = abs(vmin) * 1e-6 if vmin != 0 else 1e-6
-            vmin -= eps
-            vmax += eps
-
-        fig, ax = plt.subplots(figsize=(9, 4.8), dpi=220)
-        im = ax.imshow(arr, cmap=cmap, vmin=vmin, vmax=vmax)
-        ax.set_axis_off()
-        cbar = plt.colorbar(im, ax=ax, fraction=0.03, pad=0.02, shrink=0.4)
-        cbar.ax.tick_params(labelsize=8)
-        cbar.ax.yaxis.set_major_formatter(mtick.StrMethodFormatter(cbar_format))
-        plt.tight_layout()
-        plt.savefig(out_png, dpi=300, bbox_inches='tight')
-        plt.close(fig)
-        p.L.info(f'Saved figure: {out_png}')
-        return True
-    except Exception as e:
-        msg = f'Failed plotting {os.path.basename(raster_path)}: {e}'
-        p.L.info(f'WARNING: {msg}')
-        failures.append(msg)
-        plt.close('all')
-        return False
-
-
-def plot_global_rasters_png(p):
-    publish_inputs(p)
-    if not p.run_this:
-        return p
-    failures = []
-
-    # Hazard probabilities and expected deaths are per pixel-year and therefore small:
-    # three decimals would show mostly zeros, so those colour bars carry five.
-    for year in p.prediction_years:
-        si_path = p.si_paths.get('observed', {}).get(year)
-        if si_path:
-            p.L.info(f'\nPlotting Stability Index for {year}...')
-            _plot_raster(
-                p, failures,
-                si_path,
-                os.path.join(p.tables_figures_dir, f'si_observed_{year}.png'),
-                f'Stability Index (Observed Forest Cover), {year}',
-                'RdYlGn',  # red=less stable, green=more stable -- intuitive
-                '{x:.2f}',
-            )
-
-        for scenario_name in p.si_paths.keys():
-            p.L.info(f'\nPlotting hazard probability for {year} / {scenario_name}...')
-            _plot_raster(
-                p, failures,
-                os.path.join(p.stitch_tiles_dir, f'hazard_prob_{scenario_name}_{year}.tif'),
-                os.path.join(p.tables_figures_dir, f'hazard_prob_{scenario_name}_{year}.png'),
-                f'Landslide Hazard Probability ({scenario_name}), {year}',
-                'Reds',
-                '{x:.5f}',
-            )
-
-        for scenario_name in p.si_paths.keys():
-            p.L.info(f'\nPlotting expected deaths for {year} / {scenario_name}...')
-            _plot_raster(
-                p, failures,
-                os.path.join(p.stitch_tiles_dir, f'expected_deaths_{scenario_name}_{year}.tif'),
-                os.path.join(p.tables_figures_dir, f'expected_deaths_{scenario_name}_{year}.png'),
-                f'Expected Deaths ({scenario_name}), {year}',
-                'Reds',
-                '{x:.5f}',
-            )
-
-        p.L.info(f'\nPlotting avoided mortality for {year}...')
-        _plot_raster(
-            p, failures,
-            os.path.join(p.valuation_dir, f'avoided_mortality_{year}.tif'),
-            os.path.join(p.tables_figures_dir, f'avoided_mortality_{year}.png'),
-            f'Avoided Landslide Mortality, {year}',
-            'Purples',
-            '{x:.5f}',
-        )
-        _plot_raster(
-            p, failures,
-            os.path.join(p.valuation_dir, f'avoided_mortality_value_{year}.tif'),
-            os.path.join(p.tables_figures_dir, f'avoided_mortality_value_{year}.png'),
-            f'Economic Value of Avoided Mortality, {year}',
-            'Greens',
-            '${x:,.0f}',
-        )
-
-    if failures:
-        p.L.info(f'plot_global_rasters_png completed with {len(failures)} warnings.')
-
-    return p
-
-
-def plot_country_choropleth_maps(p):
-    publish_inputs(p)
-    if p.run_this:
-        for year in p.prediction_years:
-            gpkg_path = os.path.join(p.tables_figures_dir, f'zonal_statistics_{year}.gpkg')
-            if not hb.path_exists(gpkg_path):
-                p.L.warning(f'{gpkg_path} not found, skipping.')
-                continue
-
-            gdf = gpd.read_file(gpkg_path)
-
-            specs = [
-                ('avoided_deaths_sum', None, 'Purples', 'Avoided deaths',
-                 '{:.2f}', f'avoided_mortality_choropleth_{year}.png'),
-                ('avoided_value_sum_usd', lmf.USD_PER_MILLION, 'Greens', 'Value (US$ millions)',
-                 '${:,.2f}M', f'avoided_mortality_value_choropleth_{year}.png'),
-            ]
-
-            for column, divisor, cmap, legend_label, tick_fmt, out_name in specs:
-                out_path = os.path.join(p.tables_figures_dir, out_name)
-                if hb.path_exists(out_path) and not p.force_run:
-                    p.L.info(f'Choropleth already exists: {out_path}')
-                    continue
-
-                bucket_edges = lmf.CHOROPLETH_BUCKET_EDGES
-                num_buckets = len(bucket_edges) - 1
-
-                gdf_plot = gdf[gdf[column].notna()].copy()
-                gdf_plot[column] = pd.to_numeric(gdf_plot[column], errors='coerce')
-                values = gdf_plot[column] / divisor if divisor else gdf_plot[column]
-                gdf_plot['bucket'] = pd.cut(values, bins=bucket_edges, labels=False,
-                                            include_lowest=True)
-
-                fig, ax = plt.subplots(figsize=(12, 6), dpi=220)
-
-                # Every country gets a white base, then the valued ones are coloured over it.
-                gdf.plot(ax=ax, color='white', edgecolor='#cccccc', linewidth=0.3)
-
-                cmap_obj = plt.get_cmap(cmap)
-                colors = [cmap_obj(i / (num_buckets - 1)) for i in range(num_buckets)]
-
-                for bucket_idx in range(num_buckets):
-                    bucket_data = gdf_plot[gdf_plot['bucket'] == bucket_idx]
-                    if not bucket_data.empty:
-                        bucket_data.plot(ax=ax, color=colors[bucket_idx],
-                                         edgecolor='#666666', linewidth=0.3)
-
-                legend_elements = [
-                    mpatches.Patch(color=colors[i], label=label)
-                    for i, label in enumerate(lmf.bucket_legend_labels(bucket_edges, tick_fmt))
-                ]
-                ax.legend(handles=legend_elements, loc='lower left', frameon=False,
-                          fontsize=8, title=legend_label, title_fontsize=9)
-
-                ax.set_axis_off()
-                plt.tight_layout()
-                plt.savefig(out_path, dpi=300, bbox_inches='tight')
-                plt.close(fig)
-                p.L.info(f'Saved choropleth: {out_path}')
-    return p
-
-
-UGLC_MARKER_SIZE = {'1-5': 12, '5-25': 24, '25-100': 44, '100+': 80}
-UGLC_MARKER_COLOR = {'1-5': '#f28e2b', '5-25': '#e15759', '25-100': '#b51d39', '100+': '#5b0f1f'}
-UGLC_LEGEND_MARKER_SIZE = {'1-5': 5, '5-25': 6, '25-100': 7, '100+': 9}
-
-
-def plot_uglc_from_vector(p):
-    """Plot UGLC event geometry as a point map with fatality bins."""
-    publish_inputs(p)
-    if not p.run_this:
-        return p
-
-    out_png = os.path.join(p.tables_figures_dir, 'uglc_events_fatality_bins.png')
-    if hb.path_exists(out_png) and not p.force_run:
-        p.L.info(f'UGLC events plot already exists: {out_png}')
-        return p
-
-    p.L.info(f'Plotting UGLC events from: {p.uglc_path}')
-    gdf = gpd.read_file(p.uglc_path)
-    if gdf.empty:
-        raise ValueError('WARNING: UGLC vector is empty, skipping.')
-
-    # Points already, not buffered polygons
-    points = gdf.to_crs('EPSG:3857').copy()
-
-    fatalities = points['fatality_count'].fillna(0).clip(lower=0)
-    nonfatal = fatalities <= 0
-    bins = lmf.fatality_bin_masks(fatalities)
-
-    fig, ax = plt.subplots(figsize=(8, 4.8), dpi=220)
-    if nonfatal.any():
-        points.loc[nonfatal].plot(
-            ax=ax, color='#6c757d', markersize=6, alpha=0.32, linewidth=0, zorder=2,
-        )
-
-    for label, mask in bins.items():
-        if mask.any():
-            points.loc[mask].plot(
-                ax=ax, color=UGLC_MARKER_COLOR[label], markersize=UGLC_MARKER_SIZE[label],
-                alpha=0.82, linewidth=0, zorder=3,
-            )
-
-    legend_handles = [
-        Line2D([0], [0], marker='o', color='none', label='Nonfatal landslide',
-               markerfacecolor='#6c757d', markeredgecolor='none', markersize=6, alpha=0.4),
-    ] + [
-        Line2D([0], [0], marker='o', color='none', label=f'{label} deaths',
-               markerfacecolor=UGLC_MARKER_COLOR[label], markeredgecolor='none',
-               markersize=UGLC_LEGEND_MARKER_SIZE[label], alpha=0.9)
-        for label in bins
-    ]
-
-    ax.legend(
-        handles=legend_handles, title='Fatality count', loc='lower left',
-        frameon=True, framealpha=0.9, facecolor='white', edgecolor='none',
-        title_fontproperties={'family': 'serif', 'size': 9},
-        prop={'family': 'serif', 'size': 8},
-    )
-
-    if ctx is not None:
-        try:
-            ctx.add_basemap(ax, source=ctx.providers.CartoDB.PositronNoLabels,
-                            crs=points.crs, attribution=False)
-        except Exception as e:
-            p.L.info(f'WARNING: basemap fetch failed ({e}), continuing without it.')
-
-    ax.set_axis_off()
-    plt.tight_layout()
-    plt.savefig(out_png, dpi=300, bbox_inches='tight')
-    plt.close(fig)
-    p.L.info(f'Saved figure: {out_png}')
-    return p
-
-
 def gep_result(p):
     """Render the results report(s). Shared implementation in utilities."""
     publish_inputs(p)
@@ -2799,9 +2538,21 @@ def gep_calculation(p):
             f'staged one at landslide_zonal_statistics_path; neither is present.')
 
     zonal = pd.read_csv(zonal_path)
-    per_country = (zonal.groupby('iso3_r250_label', as_index=False)['avoided_value_sum_usd']
+    # with the shared VSL panel configured, the account prices the zonal deaths itself; the
+    # staged value column (priced upstream at the OECD schedule) stays beside it in the log
+    panel_path = getattr(p, 'landslide_mitigation_vsl_panel_path', None)
+    if panel_path:
+        panel = pd.read_csv(str(p.get_path(panel_path)))
+        zonal = zonal.merge(panel[['iso3_r250_label', 'vsl_usd']], on='iso3_r250_label', how='left')
+        zonal['value_usd'] = zonal['avoided_deaths_sum'] * zonal['vsl_usd']
+        p.L.info('Deaths priced at the shared EPA life-years-lost panel; the staged OECD-priced '
+                 'column sums to %s beside it.'
+                 % format(zonal['avoided_value_sum_usd'].sum(), ',.2f'))
+    else:
+        zonal['value_usd'] = zonal['avoided_value_sum_usd']
+    per_country = (zonal.groupby('iso3_r250_label', as_index=False)['value_usd']
                    .sum(min_count=1)
-                   .rename(columns={'avoided_value_sum_usd': 'landslide_mitigation_gep'}))
+                   .rename(columns={'value_usd': 'landslide_mitigation_gep'}))
 
     df_gep = utilities.country_attributes(p).merge(per_country, on='iso3_r250_label', how='left')
     df_gep['year'] = year

@@ -55,7 +55,10 @@ def gep_calculation(p):
     generation_frames = rf.generation_by_technology(hb.df_read(p.gep_quantity_input_path))
     df_price = rf.price_in_usd_per_gwh(hb.df_read(p.gep_price_input_path))
     priced_frames = rf.merge_price_onto_generation(df_price, generation_frames)
-    df_valued = rf.valued_generation(priced_frames, hb.df_read(p.gep_attribution_input_path))
+    # The region map rides the IRENA table itself, so the fill needs no second source.
+    regions = hb.df_read(p.gep_quantity_input_path)[['Country', 'Sub-region', 'Region']]
+    df_valued = rf.valued_generation(priced_frames, hb.df_read(p.gep_attribution_input_path),
+                                     country_regions=regions)
     df_gep = rf.base_year_valued_rows(df_valued, int(p.gep_base_year))
 
     # The source is keyed by ISO3 strings, so the join matches on the r250 label. One row per
@@ -70,12 +73,27 @@ def gep_calculation(p):
     # Renaming on the way out only: the frame keeps the source's `Year` because the split and the
     # map merge below read it, while the published table uses the lowercase `year` every other
     # service writes.
-    def write_published(df, path):
+    def write_published(df, path, one_row_per_country=False):
         published = df.rename(columns={'Year': 'year'})
-        hb.df_write(published[utilities.published_country_columns(
-            published, 'renewable_energy_provision')], path, index=False)
+        published = published[utilities.published_country_columns(
+            published, 'renewable_energy_provision')]
+        if one_row_per_country:
+            # The combined table carried one row per country PER TECHNOLOGY: 335 rows with 85
+            # countries repeated. The total was right, being the three technologies summed, but
+            # any downstream join on iso3 multiplies the country it lands on.
+            #
+            # Summing on every column it carries does not fix it, because it also carries the
+            # technology, its price and its generation -- which differ per row by construction, so
+            # each group stays a single row. The account's shape is the country, the year and the
+            # value; the per-technology detail is what the three subservice tables are for.
+            keys = [c for c in utilities.GEP_COUNTRY_ATTR_COLS + ['year']
+                    if c in published.columns]
+            published = (published.groupby(keys, dropna=False, as_index=False)
+                         ['renewable_energy_provision_gep'].sum())
+        hb.df_write(published, path, index=False)
 
-    write_published(df_gep, service_results['gep_by_country_base_year'])
+    write_published(df_gep, service_results['gep_by_country_base_year'],
+                    one_row_per_country=True)
     by_resource = rf.split_by_resource(df_gep)
     for subservice, technology in rf.SUBSERVICE_TECHNOLOGIES.items():
         write_published(by_resource[technology],
@@ -96,14 +114,7 @@ def gep_result(p):
     utilities.render_service_results(p)
 
 def gep_results_distribution(p):
-    """Distribute the results of the GEP calculation."""
+    """Copy this service's results into the output directory. Shared implementation in
+    utilities, which is also where the service key stops being written out by hand."""
     publish_inputs(p)
-    # This task is intended to copy the results to the output directory.
-    hb.log("Distributing GEP results...")
-    
-    for key, value in p.results['renewable_energy_provision'].items():
-        output_path = os.path.join(p.output_dir, key)
-        hb.path_copy(value, output_path)
-        hb.log(f"Distributed {key} to {output_path}")
-    
-    hb.log("GEP results distribution complete.")
+    utilities.distribute_results(p, 'renewable_energy_provision')

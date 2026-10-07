@@ -4,7 +4,7 @@ Mirrors the carbon/pollination tasks on the add_<es>_tasks seam, but the source 
 (marine, never from SEALS maps): cwon_shocks.har FI26/FI45/FI85 by RCP, constant across years, FSH only.
 Writes the per-region FSH shock CSV the same way carbon/pollination write theirs, so
 build_combined_afeall reads it identically. Ported verbatim from the old prepare_es_shocks fisheries
-block onto the seam (Chiara's 'static ES go through the seam too' restructuring).
+block onto the seam, so static ES go through the seam too.
 """
 from global_invest import utilities
 import os
@@ -57,7 +57,7 @@ def fisheries_shock(p):
     # RAMP the FI value from 0 at the base year rather than taking the HAR's series as-is: the HAR
     # is a STEP asserting the full RCP impact from 2018, which no reading of the source supports (no
     # warming has accumulated by our base year), and the other three services all start at 0.
-    # ⚠ This IMPOSES a profile the data lacks: state it in methods; provenance is #16.
+    # This IMPOSES a profile the data lacks: state it in methods; provenance is #16.
     # The ramp anchors on the last SEALS anchor year, NOT the run length -- anchoring on the run's
     # own end year would deliver the whole 2050 impact by 2025 on a short test run (~13x). Which
     # horizon the FI number actually belongs to is undocumented upstream (#16); override with
@@ -75,19 +75,18 @@ def fisheries_shock(p):
             [int(y) for y in getattr(p, 'es_shock_years', []) or []] or [es_shock_end_year]))
 
     out = pd.DataFrame(rows)
-    # Assert BEFORE the cap: the clip silently absorbs whatever the CWoN table delivers, so a
-    # contaminated source value would otherwise be clamped to +-2 and look healthy -- the same
-    # silent-failure shape the assertion exists to catch. After the clip the magnitude check
-    # could never fire.
+    # The table is written as the source delivers it: a value the source gets wrong is imputed by
+    # FISH_VALUE_OVERRIDES, which is a stated substitution, rather than clamped to a magnitude that
+    # would look healthy and hide it. The soundness check is therefore the only thing standing
+    # between a contaminated FI value and the solver.
     utilities.assert_shock_table_sound(out, es_shock_scenarios, 'fisheries')
-    if len(out):
-        out['shock_pct'] = out['shock_pct'].clip(-ff.FISH_CAP, ff.FISH_CAP)
     out.to_csv(p.fisheries_shock_output_path, index=False)
-    hb.log('  fisheries shock: %d rows, %d scenarios (%s, capped +-%.0f%%) -> %s'
+    hb.log('  fisheries shock: %d rows, %d scenarios (%s), |shock| up to %.4g%% -> %s'
           % (len(out), out['scenario'].nunique() if len(out) else 0,
              ('per-year' if time_varying else 'constant @%d'
               % int(getattr(p, 'fisheries_constant_year', es_shock_end_year))),
-             ff.FISH_CAP, p.fisheries_shock_output_path))
+             float(out['shock_pct'].abs().max()) if len(out) else 0.0,
+             p.fisheries_shock_output_path))
     return True
 
 
@@ -97,7 +96,7 @@ def fisheries_shock(p):
 # products: the shock reads the FI headers of cwon_shocks.har, the valuation
 # the economic-rent tables of the CWoN 2024 reproducibility package.
 # PROVISIONAL as the account's fisheries GEP until the source choice is
-# blessed (the deck's open question); ported from the author's 2026 script.
+# blessed (the deck's open question).
 # =============================================================================
 
 def publish_inputs(p):
@@ -176,4 +175,84 @@ def fisheries_subsistence_gep(p):
         hb.log('fisheries subsistence GEP (Lynch et al. 2024): %d countries with values, '
                'total %.4g USD' % (out['subsistence_fisheries_gep'].notna().sum(),
                                    out['subsistence_fisheries_gep'].sum()))
+    return True
+
+
+def fisheries_aquaculture_gep(p):
+    """Aquaculture GEP: FAO FishStatJ aquaculture value times GTAP's natural-resource share.
+
+    The third fisheries subgroup. A separate component from commercial capture and from
+    subsistence, and the only one of the three whose valuation rests on GTAP -- commercial reads
+    CWoN's economic-rent table and subsistence reads Lynch et al., so this one rests on a modelled
+    factor-payment split where its siblings rest on observed rents and survey data.
+    """
+    publish_inputs(p)
+    p.fisheries_aquaculture_gep_path = os.path.join(p.cur_dir, 'aquaculture_gep_by_country.csv')
+    if not p.run_this:
+        return
+    if not hb.path_exists(p.fisheries_aquaculture_gep_path):
+        from gtappy.harpy.har_file import HarFileObj
+
+        # The share, from the GTAP base data rather than from the source's workbook. The set
+        # element names come off the header, so an aggregation with different regions or a
+        # renamed sector fails here rather than silently indexing the wrong row.
+        har = HarFileObj(filename=str(p.get_path(p.fisheries_gtap_basedata_path)))
+        evfp = har['EVFP']
+        endowments, activities, regions = [
+            [str(name).strip() for name in axis] for axis in evfp.sets.setElements]
+        share = ff.natural_resource_share_of_fishing(
+            evfp.array, endowments, activities, regions)
+        # CWoN has no aquaculture rent, so aquaculture cannot take CWoN's lambda the way timber,
+        # crop, livestock and the extractives do. What it CAN do is use GTAP's share on CWoN's
+        # denominator, so the figure is at least commensurable with the rest of the account. Same
+        # denominator, different source: that is the best available and the entry says so.
+        share = share.merge(
+            ff.natural_resource_share_of_fishing_gross_output(
+                evfp.array, har['MAKS'].array, endowments, activities, regions),
+            on='gtap_region_label', how='left')
+
+        # The account's own correspondence carries the country-to-GTAP mapping, so the source's
+        # iso3_gtap141_mapping.xlsx is not needed either.
+        # keep_columns, because the GTAP region is not one of the standard attributes and
+        # collapse_countries_to_r250 drops what it is not asked to carry.
+        countries = utilities.collapse_countries_to_r250(
+            p.df_countries, keep_columns=['gtapv7_r50_label'])
+        countries = countries[utilities.GEP_COUNTRY_ATTR_COLS + ['gtapv7_r50_label']].copy()
+        countries['gtap_region_label'] = (
+            countries['gtapv7_r50_label'].astype(str).str.strip().str.lower())
+
+        value = hb.df_read(str(p.get_path(p.fisheries_aquaculture_value_path)))
+        species = hb.df_read(str(p.get_path(p.fisheries_aquaculture_species_groups_path)))
+        exclude_plants = bool(p.fisheries_aquaculture_exclude_aquatic_plants)
+        out = ff.aquaculture_gep_by_country(
+            value, share, countries, int(p.gep_base_year),
+            species_groups_df=species, exclude_aquatic_plants=exclude_plants)
+        # Both figures, always, so the scope choice is visible in the output rather than only in
+        # the configuration: the plants are 5.4 percent of the account and somebody will ask.
+        with_plants = ff.aquaculture_gep_by_country(
+            value, share, countries, int(p.gep_base_year), exclude_aquatic_plants=False)
+        hb.log('aquaculture GEP excluding aquatic plants: %.6g USD; including them: %.6g USD'
+               % (out['aquaculture_gep'].sum(), with_plants['aquaculture_gep'].sum()))
+        # The same natural-resource payments on GTAP's OTHER denominator. FAO's aquaculture value
+        # is a revenue, so multiplying it by a share of VALUE ADDED overstates it by value added
+        # over gross output -- 0.585 on average for fishing and as low as 0.265. Both are published
+        # because the account has not decided which denominator lambda is a share of, and the
+        # difference is $44.6bn. Forestry is the check: GTAP's land share of forestry value added
+        # is 0.589, which on gross output is 0.380, against CWoN's separate rental ratio of 0.376.
+        # The account's aquaculture value is the REVENUE share. FAO gives revenue, so the
+        # share applied to it must be a share of revenue; the value-added share inflates it by
+        # 1/0.596. The value-added figure stays beside it under its own name.
+        out['aquaculture_gep_on_value_added_share'] = out['aquaculture_gep']
+        out['aquaculture_gep'] = (
+            out['aquaculture_value_usd'] * out['natural_resource_share_of_gross_output'])
+        out['year'] = int(p.gep_base_year)
+        hb.df_write(out[utilities.GEP_COUNTRY_ATTR_COLS +
+                        ['year', 'aquaculture_gep', 'aquaculture_gep_on_value_added_share']],
+                    p.fisheries_aquaculture_gep_path, index=False)
+        hb.log('  the superseded value-added-share figure: %.6g USD'
+               % out['aquaculture_gep_on_value_added_share'].sum())
+        hb.log('fisheries aquaculture GEP (FAO FishStatJ value x GTAP natural-resource share, '
+               'aquatic plants %s): %d countries with values, total %.4g USD'
+               % ('excluded' if exclude_plants else 'included',
+                  out['aquaculture_gep'].notna().sum(), out['aquaculture_gep'].sum()))
     return True

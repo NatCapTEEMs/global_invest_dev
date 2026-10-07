@@ -66,6 +66,20 @@ MAX_LINES = 14
 SECTION_PATTERN = re.compile(r'^## (.+?)\s*$', re.M)
 BULLET_PATTERN = re.compile(r'^- \*\*(.+?):\*\*\s*(.*)$', re.M)
 
+# Labelled blocks the qmd carries beyond the sheet's columns: dated examination records and
+# per-service notes that belong in the prose, not in a column. They are skipped, not errors;
+# any label outside this list and the columns still fails the parse, which is the drift guard.
+EXTRA_LABEL_PATTERNS = (
+    re.compile(r'examined', re.I),
+    re.compile(r'^lambda$'),
+    re.compile(r'^which number is which$'),
+    re.compile(r'^what a zero means here, and what an NA means$'),
+    re.compile(r'^checked against the runs, not only the maths'),
+    re.compile(r"^how CWoN and FAOSTAT combine"),
+    re.compile(r'^the CWoN rental alternative'),
+    re.compile(r'^the FAOSTAT bound'),
+)
+
 
 def parse_qmd(path):
     """The qmd's service sections as one row per service.
@@ -87,7 +101,8 @@ def parse_qmd(path):
         chunk = body[match.end():end]
         fields = {m.group(1).strip(): m.group(2).strip() for m in BULLET_PATTERN.finditer(chunk)}
 
-        unknown = set(fields) - known
+        unknown = {label for label in set(fields) - known
+                   if not any(pattern.search(label) for pattern in EXTRA_LABEL_PATTERNS)}
         if unknown:
             problems.append(f'{name}: unknown field(s) {sorted(unknown)}')
         missing = known - set(fields)

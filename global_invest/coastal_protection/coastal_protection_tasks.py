@@ -17,28 +17,15 @@ def read_mangrove_values(path):
         pd.read_excel(path, sheet_name=SOURCE_SHEET_NAME, engine='openpyxl'))
 
 
-def read_deflator_multiplier(path, start_year, end_year):
-    """The World Bank GDP deflator workbook read, melted to long and compounded over the span.
-
-    Source: https://data.worldbank.org/indicator/NY.GDP.DEFL.KD.ZG
-    """
-    df_long = coastal_protection_functions.reshape_gdp_inflation_deflator(
-        pd.read_excel(path, engine='openpyxl'))
-    return coastal_protection_functions.deflator_multiplier_by_country(
-        df_long, start_year, end_year)
-
-
 def publish_inputs(p):
     """Every task's first line: the CWoN coastal-protection valuation's es_config row (defaults layer -- a caller-set value wins)
     plus the shared country references and the results registry."""
     utilities.hydrate_es_config(p, 'coastal_protection', log=hb.log)
     utilities.hydrate_es_parameters(p, 'coastal_protection', log=hb.log)
     utilities.initialize_country_paths(p, simplified='30sec')
-    # Auxiliary science inputs beside the quantity row: the coral-reef workbook (really a second
-    # sheet subgroup) and the GDP deflator (the drive folder spells it 'gdp_inflation_delator',
-    # sic; staged locally under the corrected name, exact case for case-sensitive filesystems).
+    # Auxiliary science input beside the quantity row: the coral-reef workbook (really a second
+    # sheet subgroup).
     p.coral_reef_ref_path = p.get_path(p.coastal_protection_coral_reef_path)
-    p.df_gdp_inflation_deflator_path = p.get_path(p.coastal_protection_gdp_deflator_path)
     if not hasattr(p, 'results'):
         p.results = {}
     return p
@@ -78,16 +65,18 @@ def gep_calculation(p):
     # renamed or rescaled on the way in.
     df_coral_reef_value = pd.read_excel(p.coral_reef_ref_path, sheet_name=SOURCE_SHEET_NAME,
                                         engine='openpyxl')
-    # The coral table is in CORAL_REEF_VALUE_YEAR currency, so inflation is applied from the
-    # year after that through the base year.
-    df_gdp_inflation_deflator = read_deflator_multiplier(
-        p.df_gdp_inflation_deflator_path,
-        coastal_protection_functions.CORAL_REEF_VALUE_YEAR + 1, base_year)
+    # The coral table is in CORAL_REEF_VALUE_YEAR USD, carried to the base year by the shared
+    # CPI series every temporal dollar conversion in the account uses.
+    cpi = pd.read_csv(str(p.get_path(p.coastal_protection_us_cpi_input_path)))
+    coral_deflation = utilities.usd_deflation_factor(
+        cpi, coastal_protection_functions.CORAL_REEF_VALUE_YEAR, base_year)
+    hb.log('  coral values carried from %s to %s USD: the shared CPI factor %.6f'
+           % (coastal_protection_functions.CORAL_REEF_VALUE_YEAR, base_year, coral_deflation))
 
     df_mangrove = coastal_protection_functions.mangrove_gep_by_country(
         p.gdf_countries, df_mangrove_value)
     df_coral_reef = coastal_protection_functions.coral_reef_gep_by_country(
-        p.gdf_countries, df_coral_reef_value, df_gdp_inflation_deflator, base_year)
+        p.gdf_countries, df_coral_reef_value, coral_deflation, base_year)
 
     df_gep_by_country_year = coastal_protection_functions.combine_coastal_components(
         df_mangrove, df_coral_reef)
@@ -101,8 +90,9 @@ def gep_calculation(p):
     df_gep_by_country_base_year = df_gep_by_country_base_year.drop(columns=['Value'], errors='ignore')
 
     # The frame keeps its r264 columns for the map merge below; the published table does not.
-    hb.df_write(df_gep_by_country_base_year[utilities.published_country_columns(
-        df_gep_by_country_base_year, 'coastal_protection')],
+    utilities.write_gep_by_country(
+        p, df_gep_by_country_base_year[utilities.published_country_columns(
+            df_gep_by_country_base_year, 'coastal_protection')],
         p.results['coastal_protection']['gep_by_country_base_year'])
 
     # Map only: the r264-expanded boundaries, each sub-region carrying its country's value.
@@ -120,14 +110,7 @@ def gep_result(p):
     utilities.render_service_results(p)
 
 def gep_results_distribution(p):
-    """Distribute the results of the GEP calculation."""
+    """Copy this service's results into the output directory. Shared implementation in
+    utilities, which is also where the service key stops being written out by hand."""
     publish_inputs(p)
-    # This task is intended to copy the results to the output directory.
-    hb.log("Distributing GEP results...")
-    
-    for key, value in p.results['coastal_protection'].items():
-        output_path = os.path.join(p.output_dir, key)
-        hb.path_copy(value, output_path)
-        hb.log(f"Distributed {key} to {output_path}")
-    
-    hb.log("GEP results distribution complete.")
+    utilities.distribute_results(p, 'coastal_protection')

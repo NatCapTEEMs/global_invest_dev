@@ -18,8 +18,11 @@ import numpy as np
 import pandas as pd
 import re
 
+import tempfile
+import hazelbean as hb
 import pytest
 
+from global_invest import utilities
 from global_invest.flood import flood_functions as ff
 
 
@@ -375,7 +378,7 @@ def test_the_damage_tables_convert_eur2010_to_usd2019_and_give_pasture_the_cropl
     Every value takes one combined factor, the 2010 FX rate times the US inflator to 2019.
     Pasture has no curve of its own in the JRC table, so it takes cropland's.
 
-    ⚠ This is the WIDE input shape, where the depth columns are ALREADY absolute EUR/m2.
+    This is the WIDE input shape, where the depth columns are ALREADY absolute EUR/m2.
     The other shape -- a fractional curve per region times a max damage per country -- is
     build_canonical_from_components, tested below, and 4A does not call it. Which shape the
     real canonical file has decides which is right, and getting it wrong scales every damage
@@ -466,3 +469,126 @@ def test_a_missing_amplification_raster_stops_the_run_rather_than_zeroing_the_ge
         ft._open_amplification_raster(p, 'degraded_bare', 100)
     assert 'degraded_bare' in str(raised.value)
     assert 'exactly zero' in str(raised.value)
+
+
+def test_the_account_country_layer_works_as_the_flood_admin0():
+    """Condition 2. Flood read its country boundary from the author's staged
+    `country_boundary_r250_with_iso3.gpkg`, and the thing stopping the switch was step4D taking
+    `region_wb` off the geometry: the account's layer carries iso3 id, label and name, and no region.
+
+    Step4D now takes the region from the shared country table, so the account's own layer is usable.
+    This checks the three things that have to hold for that, because each has bitten once: the layer
+    resolves one row per country, the ISO3 detector picks the right column out of it, and the region
+    the export needs is available from the table rather than the geometry.
+    """
+    import os
+    import geopandas as gpd
+
+    layer = os.path.join(os.path.expanduser('~'), 'Files', 'base_data', 'cartographic', 'ee',
+                         'ee_r250.gpkg')
+    correspondence = os.path.join(os.path.expanduser('~'), 'Files', 'base_data', 'cartographic',
+                                  'ee', 'ee_r264_correspondence.csv')
+    if not (os.path.exists(layer) and os.path.exists(correspondence)):
+        pytest.skip('the account country layer is not on this machine')
+
+    admin0 = gpd.read_file(layer)
+    assert len(admin0) == 250                                  # one row per country, not 264
+    assert admin0.crs is not None
+
+    # The detector must find the account's own label, not Natural Earth's adm0_a3. Against the r264
+    # correspondence it picks adm0_a3 and would silently key the export on a different vocabulary.
+    iso_col = utilities.pick_iso3_column(admin0)
+    assert iso_col == 'iso3_r250_label', iso_col
+    assert admin0[iso_col].nunique() == 250
+
+    # And the region step4D needs is absent from the geometry and present in the table, which is
+    # the whole reason the export had to stop reading it off the boundary.
+    assert 'region_wb' not in admin0.columns
+    countries = utilities.collapse_countries_to_r250(pd.read_csv(correspondence))
+    assert 'region_wb' in countries.columns
+    region = countries[['iso3_r250_label', 'region_wb']]
+    joined = admin0[[iso_col]].merge(region, left_on=iso_col, right_on='iso3_r250_label', how='left')
+    assert joined['region_wb'].notna().sum() > 200
+
+
+def test_our_flood_gep_reproduces_the_authors_committed_table():
+    """Condition 12. The account's flood GEP is $11,403,596,548 and the author publishes $11.40bn,
+    which is his rounding. Quoting that agreement is not a check; this recomputes it.
+
+    His `flood_gep_for_merge_v2_2024hazard.csv` is the table he named as the one to join against the
+    other services, staged in base_data beside our own run's output so the comparison survives.
+
+    What it proves is narrow, and the entry says so: the module is his pipeline with our path
+    handling and ProjectFlow wiring, so agreement was close to guaranteed. This is a build test --
+    it catches our refactor breaking his arithmetic, and nothing about whether the arithmetic is
+    right."""
+    import os
+    base = os.path.join(os.path.expanduser('~'), 'Files', 'base_data', 'global_invest', 'flood',
+                        'reference')
+    his_path = os.path.join(base, 'flood_gep_for_merge_v2_2024hazard.csv')
+    ours_path = os.path.join(base, 'step4e_flood_gep_USD2019_ours_20260831.csv')
+    if not (os.path.exists(his_path) and os.path.exists(ours_path)):
+        pytest.skip('the staged flood reference or our run output is not on this machine')
+
+    his = pd.read_csv(his_path)
+    ours = pd.read_csv(ours_path)
+    joined = his.merge(ours[['iso3', 'gep_flood_bare_usd2019']],
+                       left_on='iso3_r250_label', right_on='iso3', how='outer', indicator=True)
+    assert (joined['_merge'] == 'both').all()                  # same 250 countries, no strays
+    assert len(joined) == 250
+
+    both = joined[joined['gep_const2019_usd'].notna()]
+    difference = (both['gep_flood_bare_usd2019'] - both['gep_const2019_usd']).abs()
+    assert difference.max() < 0.01, difference.max()           # agrees to the cent, country by country
+    assert ours['gep_flood_bare_usd2019'].sum() == pytest.approx(
+        his['gep_const2019_usd'].sum(), abs=1.0)
+
+    # The one country that differs, named so a change in it is noticed rather than absorbed into a
+    # tolerance: Iceland is NaN in his table and 2.1 cents in ours, which is the whole of the
+    # 162-against-163 positive-country count.
+    iceland = joined[joined['iso3_r250_label'] == 'ISL']
+    assert iceland['gep_const2019_usd'].isna().all()
+    assert (iceland['gep_flood_bare_usd2019'] < 1.0).all()
+
+
+def test_the_water_variant_more_than_doubles_the_flood_headline():
+    """The largest open question in the account, pinned so it cannot drift unnoticed. The run writes
+    four variants and the delivered one removes permanent water; keeping it more than doubles the
+    figure. Which the account intends is not written down anywhere we have found, so this asserts
+    the gap exists rather than which side is right."""
+    import os
+    base = os.path.join(os.path.expanduser('~'), 'Files', 'base_data', 'global_invest', 'flood',
+                        'reference')
+    delivered = os.path.join(base, 'step4e_flood_gep_USD2019_ours_20260831.csv')
+    waterkept = os.path.join(base, 'step4e_flood_gep_USD2019_waterkept_20260831.csv')
+    if not (os.path.exists(delivered) and os.path.exists(waterkept)):
+        pytest.skip('the staged flood variants are not on this machine')
+
+    a = pd.read_csv(delivered)['gep_flood_bare_usd2019'].sum()
+    b = pd.read_csv(waterkept)['gep_flood_bare_usd2019'].sum()
+    assert 1.1e10 < a < 1.2e10, a                              # the delivered variant, ~$11.40bn
+    assert 2.4e10 < b < 2.5e10, b                              # water kept, ~$24.54bn
+    assert b / a > 2.0, b / a
+
+
+def test_every_flood_tree_builder_assembles():
+    """H23 flagged `build_flood_calculation_task_tree` and `build_flood_valuation_task_tree` as
+    defined and never used, which they were: flood publishes a family of composable partial trees
+    and only some of them are reached from the run file.
+
+    They are deliberate API rather than leftovers, so the answer is to exercise them rather than
+    delete them -- an entry point nothing calls and nothing tests is indistinguishable from dead,
+    and this makes the difference visible. Building each tree also proves it assembles, which
+    nothing checked before: a builder naming a task that no longer exists would have failed only
+    when somebody chose that tree.
+    """
+    from global_invest.flood import flood_initialize
+
+    builders = [name for name in dir(flood_initialize)
+                if name.startswith('build_') and name.endswith('_task_tree')]
+    assert len(builders) >= 6, builders
+
+    for name in builders:
+        p = hb.ProjectFlow(project_dir=tempfile.mkdtemp())
+        getattr(flood_initialize, name)(p)
+        assert p.task_names_defined, name

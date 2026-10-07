@@ -14,8 +14,8 @@ def read_crop_values(path, items, aggregate_areas):
 
     The file ships Latin-1 encoded, so it is read as such rather than as UTF-8.
     """
-    return livestock_provision_functions.clean_crop_values(
-        pd.read_csv(path, encoding='ISO-8859-1'), items, aggregate_areas)
+    return utilities.clean_faostat_values(
+        pd.read_csv(path, encoding='ISO-8859-1'), items, 'livestock_provision_gep', aggregate_areas)
 
 
 def read_crop_coefs(path):
@@ -74,14 +74,21 @@ def gep_calculation(p):
     df_crop_value = read_crop_values(
         p.fao_input_path, p.commercial_attribute_subservices,
         utilities.read_column(p.faostat_aggregate_areas_path, 'area_fao'))
+    # FAOSTAT publishes both the individual animal product and the "Livestock" total that adds them
+    # up. The item list carries both, so the total is kept only where no individual item is.
+    df_crop_value = utilities.drop_aggregates_where_components_exist(
+        df_crop_value, utilities.read_column(p.faostat_aggregate_items_path, 'item_fao'),
+        'livestock_provision_gep')
     df_crop_coefs = read_crop_coefs(p.cwon_crop_coefficients_path)
 
-    df_gep_by_country_year_crop = livestock_provision_functions.merge_crop_with_coefs(df_crop_value, df_crop_coefs)
+    df_gep_by_country_year_crop = utilities.apply_rental_rates(
+        df_crop_value, df_crop_coefs, 'livestock_provision_gep')
     df_gep_by_country_year_crop = utilities.normalize_m49_codes(df_gep_by_country_year_crop)
     df_gep_by_country_year_crop = livestock_provision_functions.attach_countries(
         df_gep_by_country_year_crop, p.df_countries)
 
-    df_gep_by_country_year = livestock_provision_functions.group_crops(df_gep_by_country_year_crop)
+    df_gep_by_country_year = utilities.sum_items_to_country_year(
+        df_gep_by_country_year_crop, 'livestock_provision_gep')
 
     # The feed share, beside the rental rate rather than instead of it. GLEAM 3 intake gives
     # the share of what livestock ate that ecosystems grew, which is the factor this service
@@ -96,7 +103,7 @@ def gep_calculation(p):
            'account. Rental-rate and feed-share columns are both written.'
            % (int(df_lambda['lambda'].notna().sum()), len(df_gleam_unmatched)))
 
-    df_gep_by_year = livestock_provision_functions.group_countries(df_gep_by_country_year)
+    df_gep_by_year = utilities.sum_countries_to_year(df_gep_by_country_year, 'livestock_provision_gep')
 
     df_gep_by_country_base_year = df_gep_by_country_year.loc[
         df_gep_by_country_year['year'] == int(p.gep_base_year)].copy()
@@ -104,8 +111,9 @@ def gep_calculation(p):
     # Write to CSVs
     hb.df_write(df_gep_by_country_year_crop, p.results['livestock_provision']['gep_by_country_year_crop'])
     hb.df_write(df_gep_by_country_year, p.results['livestock_provision']['gep_by_country_year'])
-    hb.df_write(df_gep_by_country_base_year[utilities.published_country_columns(
-        df_gep_by_country_base_year, 'livestock_provision')],
+    utilities.write_gep_by_country(
+        p, df_gep_by_country_base_year[utilities.published_country_columns(
+            df_gep_by_country_base_year, 'livestock_provision')],
         p.results['livestock_provision']['gep_by_country_base_year'])
     hb.df_write(df_gep_by_year, p.results['livestock_provision']['gep_by_year'], handle_quotes='all')
     hb.df_write(df_gep_by_year, hb.replace_ext(p.results['livestock_provision']['gep_by_year'], 'xlsx'), handle_quotes='all')
@@ -126,14 +134,7 @@ def gep_result(p):
     utilities.render_service_results(p)
 
 def gep_results_distribution(p):
-    """Distribute the results of the GEP calculation."""
+    """Copy this service's results into the output directory. Shared implementation in
+    utilities, which is also where the service key stops being written out by hand."""
     publish_inputs(p)
-    # This task is intended to copy the results to the output directory.
-    hb.log("Distributing GEP results...")
-    
-    for key, value in p.results['livestock_provision'].items():
-        output_path = os.path.join(p.output_dir, key)
-        hb.path_copy(value, output_path)
-        hb.log(f"Distributed {key} to {output_path}")
-    
-    hb.log("GEP results distribution complete.")
+    utilities.distribute_results(p, 'livestock_provision')

@@ -104,8 +104,43 @@ def test_es_config_and_parameters_rows_hydrate_the_fisheries_gep(tmp_path):
     utilities.hydrate_es_config(p, 'fisheries', log=lambda *a: None)
     assert p.gep_base_year == 2019
     utilities.hydrate_es_parameters(p, 'fisheries', log=lambda *a: None)
-    assert p.fisheries_cwon_cpi_path.endswith('cwon/cpi2019.dta')
-    assert p.fisheries_cwon_econ_rent_path.endswith('cwon/EconRent_Analysis_AllYears.dta')
+    # base_data/global_invest/fisheries is organised by SUBGROUP -- commercial, subsistence,
+    # aquaculture -- because the three read different lineages (CWoN, Lynch, FAO+GTAP) and the
+    # account reasons per subgroup. The reference anchors stay flat at the top of the service
+    # directory. service_data_dir seeds TOP-LEVEL files only, so files under a subgroup
+    # folder are not auto-seeded from a shared root and rely on base_data being synced --
+    # which is how they arrive on every machine we run on.
+    assert p.fisheries_cwon_cpi_path.endswith('commercial/cpi2019.dta')
+    assert p.fisheries_cwon_econ_rent_path.endswith('commercial/EconRent_Analysis_AllYears.dta')
+    assert p.fisheries_aquaculture_value_path.endswith('aquaculture/Aquaculture_Value.csv')
+
+
+def test_commercial_computed_value_reproduces_the_author_csv():
+    """The author's cleaned per-country capture CSV (2026-07-20, staged 2026-10) is the first
+    machine-readable reference this component has had: the full chain recomputed from the
+    staged CWoN inputs lands on his rows at his integer rounding. Same CWoN data on both
+    sides, so agreement tests the two implementations against each other, not the science."""
+    import os
+    data_dir = utilities.service_data_dir(_base_data_project(), 'fisheries')
+    cpi = ff.clean_cwon_cpi(pd.read_stata(os.path.join(data_dir, 'commercial', 'cpi2019.dta')))
+    rent = ff.clean_cwon_econ_rent(
+        pd.read_stata(os.path.join(data_dir, 'commercial', 'EconRent_Analysis_AllYears.dta')))
+    trends = ff.fisheries_rent_trends(ff.deflate_rent_to_2019usd(rent, cpi))
+    reference = pd.read_csv(
+        os.path.join(data_dir, 'author_drive_2026_10', 'fish_provision_capture_gep_20260720.csv'),
+        encoding='utf-8-sig')
+
+    merged = reference.merge(trends.rename(columns={'wb_code': 'iso3_r250_label'}),
+                             on='iso3_r250_label', how='left')
+    ours, ref = merged['positive_resrent_2019_hat'], merged['commfish_provision']
+    both = ours.notna() & ref.notna()
+    assert both.sum() == 165                                   # 107 valued plus 58 floored zeros
+    # The atol is his whole-dollar rounding plus the measured float drift against the staged
+    # run's environment, worst $3.96 (Vanuatu); the rtol covers the large countries at 4e-9.
+    assert np.allclose(ours[both], ref[both], rtol=1e-6, atol=5.0)
+    assert np.isclose(ours[both].sum(), ref[both].sum(), rtol=1e-7)
+    # His blank rows are the countries the chain cannot estimate, never ones we value.
+    assert not (ref.isna() & ours.notna()).any()
 
 
 # --- Subsistence component (Lynch et al. 2024) ---
@@ -116,7 +151,11 @@ def test_subsistence_computed_value_reproduces_the_committed_output():
     no price behind it; those stay empty here, because a value we cannot derive is not a
     measurement of zero, and being zero they take nothing out of the total."""
     import os
-    reference_dir = utilities.service_data_dir(_base_data_project(), 'fisheries')
+    # Organised by subgroup, condition 15: the subsistence lineage -- its input AND the two
+    # anchors it is checked against -- lives under subsistence/ rather than loose beside
+    # commercial's and aquaculture's.
+    reference_dir = os.path.join(
+        utilities.service_data_dir(_base_data_project(), 'fisheries'), 'subsistence')
     lynch = pd.read_excel(os.path.join(reference_dir, 'Rec fish food_20230509_for USGS data release.xlsx'),
                           engine='openpyxl')
     countries = pd.read_csv(os.path.join(reference_dir, 'subsistence_correspondence.csv'))
@@ -145,7 +184,8 @@ def test_subsistence_recompute_matches_the_releases_own_published_total():
     """The release publishes TCUV beside the quantities and prices it was built from. Our sum
     over species must land on it, or one of the two is wrong."""
     import os
-    reference_dir = utilities.service_data_dir(_base_data_project(), 'fisheries')
+    reference_dir = os.path.join(
+        utilities.service_data_dir(_base_data_project(), 'fisheries'), 'subsistence')
     lynch = pd.read_excel(os.path.join(reference_dir, 'Rec fish food_20230509_for USGS data release.xlsx'),
                           engine='openpyxl')
     by_admin = ff.subsistence_value_by_admin(lynch)
@@ -212,6 +252,21 @@ def test_static_shock_rows_apply_the_imputation_override_before_the_ramp():
     assert by_year[2030] == 0.4767     # the imputed value, not the corrupt 13.504
 
 
+def test_static_shock_rows_preserve_supplied_norway_value_without_override():
+    source = 13.503955841064453
+    rows = ff.static_shock_rows(
+        {'FI26': {'nor': _fi_series(source)}}, ['net_zero'],
+        ff.FISH_HEADER_MAP, {}, {}, ('FSH',),
+        base_year=2023, end_year=2050, time_varying=True, constant_year=2050,
+        ramp_to_end=True, ramp_end_year=2050)
+    levels = {row['year']: row['shock_pct'] for row in rows}
+    assert levels[2023] == 0.
+    assert levels[2050] == source
+    factors = [(1 + levels[y] / 100) / (1 + levels[y - 1] / 100)
+               for y in range(2024, 2051)]
+    assert np.isclose(np.prod(factors), 1 + source / 100, atol=1e-12, rtol=0)
+
+
 def test_static_shock_rows_drop_a_scenario_whose_header_the_data_lacks():
     fi_data = {'FI26': {'usa': _fi_series(0.8)}}
     rows = ff.static_shock_rows(
@@ -262,3 +317,147 @@ def test_a_missing_catch_or_cost_leaves_the_rent_undefined_rather_than_zero():
         'FAOFixCost': [50.0, 50.0], 'SubsidyUSD2018': [0.0, 0.0]})
     out = ff.compute_econ_rent(raw)
     assert out['econ_rent'].isna().all()
+
+
+def test_the_natural_resource_share_is_the_fishing_column_not_the_whole_table():
+    """The share is NatRes over the fishing column's total, and a zero column raises.
+
+    Indexing the wrong endowment or the wrong activity gives a plausible number and no error,
+    which is why the set element names are read off the header rather than assumed.
+    """
+    import numpy as np
+    endowments = ['Capital', 'NatRes']
+    activities = ['frs', 'fsh']
+    regions = ['aaa', 'bbb']
+    # (endowment, activity, region): fishing in aaa is 30 capital + 70 natres.
+    evfp = np.zeros((2, 2, 2))
+    evfp[0, 1, 0], evfp[1, 1, 0] = 30.0, 70.0
+    evfp[0, 1, 1], evfp[1, 1, 1] = 90.0, 10.0
+    evfp[0, 0, :], evfp[1, 0, :] = 999.0, 999.0      # forestry, must not enter
+    share = ff.natural_resource_share_of_fishing(evfp, endowments, activities, regions)
+    assert share.set_index('gtap_region_label')['natural_resource_share']['aaa'] == pytest.approx(0.7)
+    assert share.set_index('gtap_region_label')['natural_resource_share']['bbb'] == pytest.approx(0.1)
+
+    evfp[:, 1, 1] = 0.0
+    with pytest.raises(ValueError, match='undefined'):
+        ff.natural_resource_share_of_fishing(evfp, endowments, activities, regions)
+
+
+def test_aquaculture_gep_is_value_times_the_region_share_and_missing_stays_missing():
+    """A country FAO does not value stays NaN, because no data is not no aquaculture."""
+    value = pd.DataFrame({
+        'COUNTRY.UN_CODE': [4, 4, 8],
+        'SPECIES.ALPHA_3_CODE': ['FCY', 'SCN', 'FCY'],
+        'MEASURE': ['V_USD_1000'] * 3,
+        'PERIOD': [2019, 2019, 2019],
+        'VALUE': [100.0, 50.0, 20.0],
+    })
+    share = pd.DataFrame({'gtap_region_label': ['aaa', 'bbb'],
+                          'natural_resource_share': [0.5, 0.25]})
+    countries = pd.DataFrame({
+        'iso3_r250_id': [4, 8, 12],
+        'iso3_r250_label': ['AAA', 'BBB', 'CCC'],
+        'gtap_region_label': ['aaa', 'bbb', 'aaa'],
+    })
+    out = ff.aquaculture_gep_by_country(value, share, countries, 2019,
+                                        exclude_aquatic_plants=False).set_index('iso3_r250_label')
+    # 150 thousand USD -> 150,000 dollars, halved by the share.
+    assert out.loc['AAA', 'aquaculture_gep'] == pytest.approx(75_000.0)
+    assert out.loc['BBB', 'aquaculture_gep'] == pytest.approx(5_000.0)
+    assert pd.isna(out.loc['CCC', 'aquaculture_gep'])
+
+
+def test_only_the_base_year_and_only_the_value_measure_are_summed():
+    """The export is long over species AND years, and carries quantity rows in the same shape."""
+    value = pd.DataFrame({
+        'COUNTRY.UN_CODE': [4, 4, 4],
+        'MEASURE': ['V_USD_1000', 'V_USD_1000', 'Q_tlw'],
+        'PERIOD': [2019, 2018, 2019],
+        'VALUE': [100.0, 999.0, 888.0],
+    })
+    out = ff.aquaculture_value_by_country(value, 2019, exclude_aquatic_plants=False)
+    assert len(out) == 1
+    assert out['aquaculture_value_usd'].iloc[0] == pytest.approx(100_000.0)
+
+
+def test_aquatic_plants_are_dropped_and_dropping_them_needs_the_species_table():
+    """The scope choice that reconciles us with the reference, pinned so it cannot drift silently.
+
+    Seaweed is 5.4 percent of world aquaculture value. Including it gives $116.69bn and excluding
+    it $110.50bn against the reference's $110.68bn -- so this one switch is the whole difference,
+    and it was invisible in the source, whose ISSCAAP mapping keeps division 9 while its exported
+    data evidently did not.
+    """
+    value = pd.DataFrame({
+        'COUNTRY.UN_CODE': [4, 4],
+        'SPECIES.ALPHA_3_CODE': ['FCY', 'SWX'],
+        'MEASURE': ['V_USD_1000'] * 2,
+        'PERIOD': [2019, 2019],
+        'VALUE': [100.0, 40.0],
+    })
+    species = pd.DataFrame({'3A_Code': ['FCY', 'SWX'],
+                            'Major_Group': ['PISCES', 'PLANTAE AQUATICAE']})
+    kept = ff.aquaculture_value_by_country(value, 2019, species, exclude_aquatic_plants=True)
+    assert kept['aquaculture_value_usd'].iloc[0] == pytest.approx(100_000.0)
+    both = ff.aquaculture_value_by_country(value, 2019, species, exclude_aquatic_plants=False)
+    assert both['aquaculture_value_usd'].iloc[0] == pytest.approx(140_000.0)
+
+    # Dropping a species group without the table that says which species they are would be a
+    # silent filter, so it raises instead.
+    with pytest.raises(ValueError, match='species-group table'):
+        ff.aquaculture_value_by_country(value, 2019, None, exclude_aquatic_plants=True)
+
+
+def _fisheries_runs():
+    """Every fisheries project directory on this machine, cold starts included.
+
+    Checking one named directory lets a stale warm run stand in for a fresh one, which is the
+    failure condition 10 exists for. Every run that exists has to agree.
+    """
+    import glob
+    import os
+    pattern = os.path.join(os.path.expanduser('~'), 'Files', 'global_invest', 'projects',
+                           'gep_fisheries*', 'intermediate')
+    return sorted(p for p in glob.glob(pattern) if os.path.isdir(p))
+
+
+def test_every_subsistence_run_reproduces_the_staged_reference_total():
+    """Condition 12 for subsistence: the reproduction is checked against the RUNS, not the maths.
+
+    The three tests above check `subsistence_fisheries_by_country` against the release. That is a
+    check on the function; this is a check on what the pipeline actually wrote, for every run on
+    the machine including the cold start. Commercial fisheries carried a reproduction claim in its
+    entry for weeks with nothing staged and nothing comparing, which is what this shape prevents.
+
+    The two sides agree on the TOTAL to the dollar and not on the count: the release publishes 85
+    countries and we publish 65. The twenty are countries the release gives a value of exactly zero
+    with no quantity and no price behind it. A value we cannot derive is not a measurement of zero,
+    so they stay NA here -- and being zero they take nothing out of the total, which is why the
+    totals still match exactly.
+    """
+    import glob
+    import os
+    reference_path = os.path.join(
+        os.path.expanduser('~'), 'Files', 'base_data', 'global_invest', 'fisheries',
+        'subsistence', 'gep-subsistence-fisheries.csv')
+    if not os.path.exists(reference_path):
+        pytest.skip('the staged reference is not on this machine')
+    reference_total = pd.read_csv(reference_path)['gep_subistence_fish'].sum()
+
+    checked = 0
+    for run in _fisheries_runs():
+        for produced in glob.glob(os.path.join(run, '**', 'subsistence_gep_by_country.csv'),
+                                  recursive=True):
+            ours = pd.read_csv(produced)
+            column = [c for c in ours.columns if c.endswith('_gep')][0]
+            # 1e-9, not tighter: the staged CSV stores its values rounded, and the two totals
+            # differ by $0.24 on $7.92bn -- 3.1e-11 relative, which is that rounding rather than a
+            # disagreement. A tolerance tighter than the reference's own precision tests the file
+            # format, not the science.
+            assert ours[column].sum() == pytest.approx(reference_total, rel=1e-9), (
+                '%s totals %r against the staged reference %r'
+                % (produced, ours[column].sum(), reference_total))
+            assert len(ours) == 250, '%s publishes %d rows' % (produced, len(ours))
+            checked += 1
+    if not checked:
+        pytest.skip('no fisheries run on this machine has written a subsistence table')

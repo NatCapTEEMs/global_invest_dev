@@ -2,9 +2,10 @@
 
 GEP side: the valuation builds the pollination value raster here (pollination_value_raster:
 production times world producer price times each crop's dependence on animal pollination, written
-as USD in the cell) and aggregates it to one row per country on r250. It used to consume a raster
-made elsewhere, which carried USD per square kilometre while this docstring said USD per cell, and
-the zonal sum added the densities: that is where the old $18.28bn came from.
+as USD in the cell) and aggregates it to one row per country on r250. The raster made
+elsewhere carries USD per square kilometre; a zonal sum over that adds densities and yields
+$18.28bn where the area-weighted total is $476.29bn. Building the raster as USD in the cell is
+what makes the zonal sum the total.
 Shock side: consumers (ngfs_pnas, nff_global) call add_pollination_tasks(p) after their SEALS
 stitch task; it dispatches static vs dynamic on p.dynamic_es (mirrors add_terrestrial_carbon_tasks).
 """
@@ -46,6 +47,14 @@ def build_gep_service_calculation_task_tree(p):
         pollination_tasks.pollination_value_independence_check, skip_existing=1)
     p.pollination_value_by_region_task = p.add_task(
         pollination_tasks.pollination_value_by_region, skip_existing=1)
+    # The second definition the account has to choose between. It weights the rebuilt raster, so it
+    # sits after that task and before the calculation that publishes the headline.
+    # No skip_existing: that flag reads an existing task directory as work already done, and the
+    # directory is created before the task body runs, so a run that failed part way through left
+    # an empty directory that every later run took for a finished one. This task checks for the
+    # two files it writes instead, which is the thing that actually says whether it has run.
+    p.pollination_sufficiency_weighted_task = p.add_task(
+        pollination_tasks.pollination_sufficiency_weighted)
     p.gep_calculation_task = p.add_task(pollination_tasks.gep_calculation)
     return p
 

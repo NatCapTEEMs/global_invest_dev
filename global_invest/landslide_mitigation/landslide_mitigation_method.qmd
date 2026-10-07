@@ -204,15 +204,22 @@ where it comes out negative are counted and warned about rather than silently fl
 Avoided deaths are priced at the **value of a statistical life**, per country, in 2019 constant USD
 to match the rest of GEP.
 
-Countries with a published OECD country estimate take it directly. The published figures are 2022 USD
-and are reported with a power-of-ten multiplier, so they are scaled up and then deflated to 2019
-using the PMPRB CPI-based cumulative price-adjustment factor of 1.050 from 2019 to 2022.
+The default schedule is the staged EPA life-years-lost panel
+(`landslide_mitigation_vsl_panel_path`): EPA's adopted $7.9M (2008 USD) carried to $9,876,237 at
+2019 by CPI and real-income growth at elasticity 0.4, transferred to each country by the ratio of
+GDP per capita (PPP) times life years lost, with World Bank region-median and global-median
+fallbacks. All 250 account countries are covered (199 direct, 49 region, 2 global) and each row
+records its tier in a `vsl_source` column.
 
-Countries without a direct estimate take their income group's figure from Table 6.1 of OECD (2025),
-*Mortality Risk Valuation in Policy Assessment*: 7.1 USD million for high-income OECD, 7.9 for
-high-income non-OECD, and 1.1 for the upper-middle, lower-middle and low-income groups. A row whose
-income group is unclassified takes the global figure of 2.7 USD million. These are 2022 USD millions
-and are deflated the same way.
+Blanking that parameter row recovers the OECD schedule. There, countries with a published OECD
+country estimate take it directly; the published figures are 2022 USD with a power-of-ten
+multiplier, scaled up and deflated to 2019 by the PMPRB CPI-based cumulative price-adjustment
+factor of 1.050. Countries without a direct estimate take their income group's figure from Table
+6.1 of OECD (2025), *Mortality Risk Valuation in Policy Assessment*: 7.1 USD million for
+high-income OECD, 7.9 for high-income non-OECD, and 1.1 for the upper-middle, lower-middle and
+low-income groups; a row whose income group is unclassified takes the global figure of 2.7 USD
+million, deflated the same way. The run logs the OECD-priced total beside the panel-priced one, so
+the two schedules stay comparable.
 
 The per-country values are joined onto the EE r264 correspondence and rasterized onto the 1km grid,
 so every pixel carries its country's VSL. The service's value raster is the avoided-death raster

@@ -1,5 +1,7 @@
 """Shared ES-utility tests. resolve_raw_scenario is used by every service's static shock task, so it is
 tested once here rather than duplicated per service."""
+import pytest
+
 from global_invest import utilities
 
 
@@ -167,3 +169,98 @@ def test_assert_join_coverage_raises_when_a_country_drops_out():
     utilities.assert_join_coverage(joined, 'value', expected_rows=2, service='demo', log=lambda *a: None)
     with pytest.raises(ValueError, match='did not match a country'):
         utilities.assert_join_coverage(joined, 'value', expected_rows=3, service='demo', log=lambda *a: None)
+
+
+def test_filter_to_model_domain_holds_back_rows_gtap_has_no_element_for(tmp_path):
+    """AEZ0 is a residual polygon in the r50xAEZ18 boundary with no counterpart in the model AEZS
+    or ENDW sets. Such a row is invalid on membership, so it must be removed no matter how ordinary
+    its value looks -- a magnitude bound cannot see it."""
+    import pandas as pd
+    from global_invest import utilities
+
+    df = pd.DataFrame({
+        'ENDW': ['AEZ0', 'AEZ3', 'AEZ18', 'AEZ0'],
+        'ACTS': ['FRS'] * 4,
+        'REG': ['phl', 'idn', 'bra', 'idn'],
+        'scenario': ['below_2c'] * 4,
+        'year': [2030, 2030, 2030, 2030],
+        'shock_pct': [0.4, 346.7, -2.0, 49.5],
+    })
+    output_path = str(tmp_path / 'terrestrial_carbon_interpolated.csv')
+    kept = utilities.filter_to_model_domain(df, output_path, 'terrestrial_carbon', log=lambda *a: None)
+
+    assert list(kept['ENDW']) == ['AEZ3', 'AEZ18']
+    # the excluded rows survive for diagnostics rather than being silently dropped
+    held = pd.read_csv(str(tmp_path / 'terrestrial_carbon_interpolated_out_of_domain.csv'))
+    assert list(held['ENDW']) == ['AEZ0', 'AEZ0']
+    assert sorted(held['shock_pct']) == [0.4, 49.5]
+    # an in-domain value far above the bound is NOT this function's business: it must survive to
+    # reach assert_shock_table_sound, which is what decides whether it is contamination.
+    assert 346.7 in list(kept['shock_pct'])
+
+
+def test_filter_to_model_domain_leaves_a_region_only_table_alone(tmp_path):
+    """Fisheries shocks are keyed on REG with no endowment dimension, so there is nothing to filter
+    and the table must pass through rather than be emptied."""
+    import pandas as pd
+    from global_invest import utilities
+
+    df = pd.DataFrame({'REG': ['phl', 'idn'], 'scenario': ['below_2c'] * 2,
+                       'year': [2030, 2030], 'shock_pct': [-1.0, 2.0]})
+    kept = utilities.filter_to_model_domain(df, str(tmp_path / 'fisheries_interpolated.csv'),
+                                            'fisheries', log=lambda *a: None)
+    assert len(kept) == 2
+    assert not (tmp_path / 'fisheries_interpolated_out_of_domain.csv').exists()
+
+
+def test_filter_to_model_domain_clears_a_stale_diagnostic_file(tmp_path):
+    """A previous run's excluded rows must not outlive the run that produced them, or a later clean
+    table would still ship an out_of_domain file describing rows that no longer exist."""
+    import pandas as pd
+    from global_invest import utilities
+
+    output_path = str(tmp_path / 'erosion_interpolated.csv')
+    stale = tmp_path / 'erosion_interpolated_out_of_domain.csv'
+    stale.write_text('ENDW,shock_pct\nAEZ0,1.0\n', encoding='utf-8')
+
+    df = pd.DataFrame({'ENDW': ['AEZ1'], 'REG': ['bra'], 'scenario': ['ndcs'],
+                       'year': [2030], 'shock_pct': [1.0]})
+    utilities.filter_to_model_domain(df, output_path, 'erosion', log=lambda *a: None)
+    assert not stale.exists()
+
+
+def test_warp_to_pyramid_sum_conserves_the_total_and_lands_on_the_rung(tmp_path):
+    """Flow rasters carry per-cell visits and dollars, so the published warp must keep the
+    map's global sum equal to the table's; average-style resampling would shrink it by the
+    cell-area ratio (about 17x from 36 to 150 arcseconds)."""
+    import numpy as np
+    import hazelbean as hb
+    from osgeo import gdal, osr
+    from global_invest import utilities
+
+    src_path = str(tmp_path / 'per_cell_quantity_36sec.tif')
+    n_rows, n_cols, cell = 500, 1000, 0.01
+    array = np.zeros((n_rows, n_cols), dtype=np.float32)
+    rng = np.random.default_rng(7)
+    array[rng.integers(0, n_rows, 400), rng.integers(0, n_cols, 400)] = \
+        rng.uniform(1.0, 100.0, 400).astype(np.float32)
+    driver = gdal.GetDriverByName('GTiff')
+    ds = driver.Create(src_path, n_cols, n_rows, 1, gdal.GDT_Float32)
+    ds.SetGeoTransform((0.0, cell, 0.0, 50.0, 0.0, -cell))
+    srs = osr.SpatialReference(); srs.ImportFromEPSG(4326)
+    ds.SetProjection(srs.ExportToWkt())
+    band = ds.GetRasterBand(1); band.SetNoDataValue(-9999.0); band.WriteArray(array)
+    ds = None
+
+    dst_path = str(tmp_path / 'per_cell_quantity_150sec.tif')
+    utilities.warp_raster_to_pyramid_sum(src_path, dst_path, 150)
+
+    info = hb.get_raster_info_hb(dst_path)
+    assert info['pixel_size'][0] == pytest.approx(hb.pyramid_compatible_resolutions[150.0])
+    assert info['bounding_box'] == pytest.approx([-180.0, -90.0, 180.0, 90.0])
+    warped = gdal.Open(dst_path).ReadAsArray()
+    warped_sum = warped[warped != -9999.0].sum()
+    assert warped_sum == pytest.approx(float(array.sum()), rel=1e-5)
+
+    with pytest.raises(ValueError):
+        utilities.warp_raster_to_pyramid_sum(src_path, str(tmp_path / 'bad.tif'), 36)

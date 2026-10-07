@@ -26,7 +26,6 @@ def publish_inputs(p):
 
 
 
-PROJECT_NAME = 'gep_stormwater'
 INVEST_WORKSPACE_DIR_NAME = 'stormwater_invest'
 RETENTION_VOLUME_FILE_NAME = 'retention_volume_urbanstorm_water.tif'
 ZONE_ID_FIELD = 'iso3_r250_id'
@@ -117,7 +116,7 @@ def retention_by_country(p):
 
     The InVEST 3.14 Urban Stormwater Retention run itself happens outside this tree, over the
     staged global inputs; base_data/global_invest/stormwater/run_recipe.md records its
-    configuration. This task is the step after it, and it used to be a script run by hand.
+    configuration. This task is the step after it.
 
     Registered with skip_existing=1 because it costs minutes over a 74,596-pixel-wide grid and
     is deterministic, the same reason erosion's SDR and routing steps skip.

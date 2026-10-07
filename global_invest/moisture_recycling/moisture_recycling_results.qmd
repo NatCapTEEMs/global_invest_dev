@@ -1,0 +1,155 @@
+---
+format:
+  html:
+    embed-resources: true
+    standalone: true
+execute:
+  echo: false          # results report shows tables/figures, not code
+  warning: false
+---
+
+
+# moisture recycling Results
+
+```{python}
+#| output: false
+
+### SETUP CODE: Runs the whole model if it doesn't exist, else loads the results. Doesn't output anything and all debugging surpressed for this QMD.
+
+import os
+import pandas as pd
+import hazelbean as hb
+
+from global_invest.moisture_recycling import moisture_recycling_initialize
+
+# ProjectFlow object
+p = hb.ProjectFlow() # Create a ProjectFlow Object to organize directories and enable parallel processing.
+p.project_name = 'gep_moisture_recycling'  # Determines the folder created to store intermediate and final results.
+local_project_dir = os.path.join(os.path.expanduser('~'), 'Files', 'global_invest', 'projects', p.project_name) # For use if someone is running the qmd directly (rather than being called by a script)
+p.project_dir = os.environ.get('PROJECTFLOW_ROOT', local_project_dir)
+# base_data_dir resolves via ProjectFlow default / machine.env (never hardcoded).
+p.set_project_dir(p.project_dir) # Set the project directory in the ProjectFlow object. Also defines p.input_dir, p.intermediate_dir, and p.output_dir based on the project_dir.
+
+# Task tree
+# CRITICAL AND UNOBVIOUS, you CANNOT run the full service because this includes the generation of the qmd and the render line itself, thus calling this would infinitely loop.
+moisture_recycling_initialize.build_gep_service_calculation_task_tree(p) # Defines the actual logic of the model. Navigate into here to see what the model does.
+
+# Inputs resolve in publish_inputs (one source of truth; shared country block).
+p.results = {}  # All results will be stored here by each child task.
+
+# Run the model. This should be instantaneous if you've run the model before.
+hb.log('Created ProjectFlow object at ' + p.project_dir + '\n    from script ' + p.calling_script + '\n    with base_data set at ' + p.base_data_dir)
+p.execute()
+```
+
+
+```{python}
+#| output: false
+
+from global_invest import utilities
+
+### DISPLAY SETUP CODE: Based on the results in the prior cells, make the objects that will actually get displayed, like smol csvs or gpkg-as-pngs
+
+import matplotlib.pyplot as plt
+import pandas as pd
+import os
+import hazelbean as hb
+
+pd.set_option('display.float_format', '{:,.2f}'.format)
+pd.set_option('display.max_rows', 1000)  # Set max rows to display
+from IPython.display import Image, display
+
+# Service label for this QMD
+service_label = 'moisture_recycling'
+
+# Load the results
+for k, v in p.results[service_label].items():
+    df = hb.df_read(v)
+    setattr(p, k, df)
+
+    if k == 'gep_by_country_base_year':
+        total_moisture_recycling_value = df['moisture_recycling_gep'].sum()
+        export_moisture_recycling_value = df['moisture_recycling_gep_export_part'].sum()
+        p.gep_by_country_base_year_table = df[['iso3_r250_name', 'moisture_recycling_gep',
+                                               'moisture_recycling_gep_own_part',
+                                               'moisture_recycling_gep_export_part']]
+
+        # Group by useful aggregation columns explicitly and assign each as an attribute to p
+        if 'income_grp' in df.columns:
+            p.gep_by_income_grp_base_year_table = df.groupby('income_grp', as_index=False)['moisture_recycling_gep'].sum()
+        if 'region_un' in df.columns:
+            p.gep_by_region_un_base_year_table = df.groupby('region_un', as_index=False)['moisture_recycling_gep'].sum()
+        if 'continent' in df.columns:
+            p.gep_by_continent_base_year_table = df.groupby('continent', as_index=False)['moisture_recycling_gep'].sum()
+        if 'subregion' in df.columns:
+            p.gep_by_subregion_base_year_table = df.groupby('subregion', as_index=False)['moisture_recycling_gep'].sum()
+
+        # Save each plot table as a CSV in the current directory
+        p.gep_by_country_base_year_table.to_csv(os.path.join(utilities.report_dir(), 'gep_by_country_base_year_table.csv'), index=False)
+        hb.df_write(p.gep_by_income_grp_base_year_table, os.path.join(utilities.report_dir(), 'gep_by_income_grp_base_year_table.csv'))
+        hb.df_write(p.gep_by_region_un_base_year_table, os.path.join(utilities.report_dir(), 'gep_by_region_un_base_year_table.csv'))
+        hb.df_write(p.gep_by_continent_base_year_table, os.path.join(utilities.report_dir(), 'gep_by_continent_base_year_table.csv'))
+        hb.df_write(p.gep_by_subregion_base_year_table, os.path.join(utilities.report_dir(), 'gep_by_subregion_base_year_table.csv'))
+
+        # Using the gpkg in gep_calculation, plot the GEP by country on a map
+        import numpy as np
+        import matplotlib as mpl
+
+        gpkg_path = p.results[service_label]['gep_by_country_base_year'].replace('.csv', '.gpkg')
+        gdf = hb.read_vector(gpkg_path)
+        gdf = gdf[['iso3_r250_id', 'iso3_r250_name', 'moisture_recycling_gep', 'geometry']]  # Keep only relevant columns
+
+        # Add country borders for clarity
+        borders = gdf.copy()
+        borders['geometry'] = borders['geometry'].boundary
+
+        # Set up log normalization for color mapping
+        norm = mpl.colors.LogNorm(vmin=gdf['moisture_recycling_gep'][gdf['moisture_recycling_gep'] > 0].min(), vmax=gdf['moisture_recycling_gep'].max())
+
+        fig, ax = plt.subplots(figsize=(15, 10))
+        gdf.plot(column='moisture_recycling_gep', cmap='OrRd', legend=False, norm=norm, ax=ax)
+        borders.plot(ax=ax, color='black', linewidth=0.5)
+
+        # Add colorbar with actual values
+        sm = plt.cm.ScalarMappable(cmap='OrRd', norm=norm)
+        sm._A = []
+        cbar = fig.colorbar(sm, ax=ax, orientation='vertical', fraction=0.03, pad=0.02)
+        cbar.set_label("Gross Economic Product (GEP) in Base Year")
+        cbar.ax.yaxis.set_major_formatter(mpl.ticker.FuncFormatter(lambda x, _: f'{int(x):,}'))
+
+        ax.set_title('GEP by Country in Base Year')
+        ax.set_axis_off()  # Hide the axis
+        plt.savefig(os.path.join(utilities.report_dir(), 'gep_by_country_base_year_map.png'), bbox_inches='tight', dpi=300)
+        plt.close()
+
+```
+
+Moisture recycling re-attributes the terrestrially-sourced share of the water-supply account's irrigation and domestic value to the countries whose evaporation became the rain, giving $`{python} f"{total_moisture_recycling_value:,.2f}"` in the base year, of which $`{python} f"{export_moisture_recycling_value:,.2f}"` crosses a border. It is a re-attribution of the water-supply row, never an addition to it. The tables below aggregate by income group, region and continent, and end with the per-country table the account reads.
+
+## GEP by Country in Base Year, mapped
+
+```{python}
+display(Image(os.path.join(utilities.report_dir(), 'gep_by_country_base_year_map.png')))
+```
+
+## GEP by Income Group in Base Year
+```{python}
+display(p.gep_by_income_grp_base_year_table)
+```
+## GEP by Region in Base Year
+```{python}
+display(p.gep_by_region_un_base_year_table)
+```
+## GEP by Continent in Base Year
+```{python}
+display(p.gep_by_continent_base_year_table)
+```
+## GEP by Subregion in Base Year
+```{python}
+display(p.gep_by_subregion_base_year_table)
+```
+
+## GEP by Country in Base Year
+```{python}
+display(p.gep_by_country_base_year_table)
+```

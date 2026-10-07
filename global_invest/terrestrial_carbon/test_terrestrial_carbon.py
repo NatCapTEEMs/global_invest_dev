@@ -317,3 +317,213 @@ def test_shock_percent_keeps_one_numerator_across_both_denominators():
     scenario, baseline_now, baseline_base = pd.Series([10.0]), pd.Series([80.0]), pd.Series([100.0])
     assert tcf.shock_percent(scenario, baseline_now)[0] == -87.5
     assert tcf.shock_percent(scenario, baseline_now, baseline_base)[0] == -70.0
+
+
+def test_dynamic_shock_rows_v3_measures_the_scenario_against_the_base_year_baseline():
+    """v3 answers a different question from the other two measures, and the answers differ in sign.
+
+    shock_pct and shock_pct_fixedbase share the numerator scenario[y] - baseline[y]: the distance
+    from a contemporaneous baseline. v3's numerator is scenario[y] - baseline[base_year]: the
+    trajectory away from the base year. Pinned because the seam reported only the first pair, and
+    the v3 the paper reports had to be rebuilt outside the tree.
+    """
+    zone_labels = {1: ('AEZ1', 'usa')}
+    baseline_at_base_year = pd.Series({1: 100.0})
+    baseline_by_year = {2030: pd.Series({1: 120.0}), 2040: pd.Series({1: 140.0})}
+    scenario_by_year = {2030: pd.Series({1: 126.0}), 2040: pd.Series({1: 133.0})}
+
+    rows = tcf.dynamic_shock_rows(scenario_by_year, baseline_by_year, baseline_at_base_year,
+                                  zone_labels, 2020, 'FRS', 'net_zero')
+    by_year = pd.DataFrame(rows).set_index('year')
+
+    # Contemporaneous: (126-120)/120 = +5%, then (133-140)/140 = -5%.
+    assert np.isclose(by_year.loc[2030, 'shock_pct'], 5.0)
+    assert np.isclose(by_year.loc[2040, 'shock_pct'], -5.0)
+    # Fixed base: the same numerators over the base year's 100.
+    assert np.isclose(by_year.loc[2030, 'shock_pct_fixedbase'], 6.0)
+    assert np.isclose(by_year.loc[2040, 'shock_pct_fixedbase'], -7.0)
+    # v3: (126-100)/100 = +26%, (133-100)/100 = +33%. Positive where the contemporaneous measure
+    # is negative -- the scenario is above its own base year while below the 2040 baseline.
+    assert np.isclose(by_year.loc[2030, 'shock_pct_v3'], 26.0)
+    assert np.isclose(by_year.loc[2040, 'shock_pct_v3'], 33.0)
+    assert by_year.loc[2020, 'shock_pct_v3'] == 0.0
+    assert np.isclose(by_year.loc[2035, 'shock_pct_v3'], 29.5)
+
+
+def test_dynamic_shock_rows_v3_is_absent_without_a_base_year_baseline():
+    zone_labels = {1: ('AEZ1', 'usa')}
+    rows = tcf.dynamic_shock_rows({2030: pd.Series({1: 126.0})}, {2030: pd.Series({1: 120.0})},
+                                  None, zone_labels, 2029, 'FRS', 'net_zero')
+    assert all(np.isnan(row['shock_pct_v3']) for row in rows)
+
+
+def test_scc_valuation_interpolates_prices_and_derives_the_cut():
+    """Two countries, one scenario with anchors at 2030 and 2050, price 10 $/Mg C."""
+    base = pd.Series({1: 100.0, 2: 50.0})
+    stocks = {'cp': {2030: pd.Series({1: 110.0, 2: 40.0}), 2050: pd.Series({1: 130.0, 2: 40.0})},
+              'cp-es20': {2030: pd.Series({1: 110.0, 2: 40.0}), 2050: pd.Series({1: 130.0, 2: 40.0})}}
+    out = tcf.scc_valuation_rows(stocks, base, price=10.0, base_year=2023, retained=0.8,
+                                 from_year=2030, cut_source='cp', cut_label='cp-es20')
+    cp = out[(out['scenario'] == 'cp') & (out['iso3_r250_id'] == 1)].set_index('year')
+    assert cp.loc[2023, 'delta_value_usd'] == 0.0
+    # linear between 2023 (100) and 2030 (110): 2027 -> 100 + 4/7 * 10
+    assert abs(cp.loc[2027, 'stock_mgc'] - (100 + 40 / 7)) < 1e-9
+    assert abs(cp.loc[2040, 'delta_value_usd'] - (120 - 100) * 10) < 1e-9
+    assert cp.loc[2050, 'delta_value_usd'] == 300.0
+    # the cut: the modelled es20 rows are replaced by 0.8 x cp from 2030, untouched before
+    es20 = out[(out['scenario'] == 'cp-es20') & (out['iso3_r250_id'] == 1)].set_index('year')
+    assert es20.loc[2029, 'stock_mgc'] == cp.loc[2029, 'stock_mgc']
+    assert abs(es20.loc[2030, 'stock_mgc'] - 0.8 * 110) < 1e-9
+    assert abs(es20.loc[2050, 'delta_value_usd'] - (0.8 * 130 - 100) * 10) < 1e-9
+    assert sorted(out['scenario'].unique()) == ['cp', 'cp-es20']
+    assert len(out) == 2 * 2 * 28
+    # against a contemporaneous baseline: 2050 baseline 120 for country 1 -> cp is +10 above it
+    out2 = tcf.scc_valuation_rows(stocks, base, price=10.0, base_year=2023,
+                                  baseline_by_year={2030: pd.Series({1: 105.0, 2: 50.0}), 2050: pd.Series({1: 120.0, 2: 50.0})})
+    cp2 = out2[(out2['scenario'] == 'cp') & (out2['iso3_r250_id'] == 1)].set_index('year')
+    assert abs(cp2.loc[2050, 'delta_value_vs_baseline_usd'] - 100.0) < 1e-9
+    assert abs(cp2.loc[2023, 'delta_value_vs_baseline_usd']) < 1e-9
+
+
+# --- what retaining a measured zero does to a PER-ZONE measure -------------------------------------
+# The summed (D19) measure absorbs a zone's zero into its region's total. The per-zone measures --
+# terrestrial_carbon, pollination, and timber's net_return path -- divide by the zone's own baseline,
+# so a zone whose quantity reaches zero is a -100% shock on that zone rather than a small change in a
+# regional sum. These two tests hold that difference still, because it is the economically material
+# consequence of no longer deleting measured zeros, and it must not drift unnoticed either way.
+
+def test_zone_reaching_zero_gives_a_minus_hundred_percent_per_zone_shock():
+    """A zone that keeps its baseline but loses all its own quantity. The per-zone ratio is -100%.
+
+    While measured zeros were deleted from the zonal summary this zone was simply absent from the
+    scenario series, the subtraction produced NaN, dropna removed it, and a total loss reached the
+    economic model as NO shock at all. It now reaches it as the loss it is.
+    """
+    baseline = pd.Series({1: 100.0, 2: 50.0})
+    scenario_with_explicit_zero = pd.Series({1: 100.0, 2: 0.0})
+    result = tcf.shock_percent(scenario_with_explicit_zero, baseline).dropna()
+    assert result.to_dict() == {1: pytest.approx(0.0), 2: pytest.approx(-100.0)}
+
+
+def test_zone_with_no_baseline_quantity_is_still_dropped_not_shocked():
+    """The other direction is unchanged: a zero DENOMINATOR has no ratio, so the zone carries no
+    shock rather than an infinite one, whether or not it now appears in the summary."""
+    baseline_with_explicit_zero = pd.Series({1: 100.0, 2: 0.0})
+    scenario = pd.Series({1: 100.0, 2: 25.0})
+    result = tcf.shock_percent(scenario, baseline_with_explicit_zero).dropna()
+    assert result.to_dict() == {1: pytest.approx(0.0)}
+
+
+import numpy as np
+import pandas as pd
+import pytest
+
+from global_invest.terrestrial_carbon import terrestrial_carbon_functions as tcf
+
+BASE_YEAR = 2023
+ANCHOR_YEARS = (2030, 2050)
+# Two regions of two zones each, so a region can lose one zone entirely and keep a positive total.
+ZONE_LABELS = {11: ('AEZ1', 'bra'), 12: ('AEZ2', 'bra'),
+               21: ('AEZ1', 'usa'), 22: ('AEZ2', 'usa')}
+
+
+def series(**by_zone):
+    return pd.Series({int(k[1:]): float(v) for k, v in by_zone.items()}, dtype='float64')
+
+
+def shock_at(rows, region, year, scenario='policy'):
+    matching = {r['shock_pct'] for r in rows
+                if r['REG'] == region and r['year'] == year and r['scenario'] == scenario}
+    assert len(matching) == 1, 'region %s year %d gave %d distinct shocks' % (region, year, len(matching))
+    return matching.pop()
+
+
+def run(scenario_by_year, baseline, **kwargs):
+    return tcf.summed_shock_rows({'policy': scenario_by_year}, baseline, ZONE_LABELS, BASE_YEAR,
+                                 sector='frs', log=lambda *a, **k: None, **kwargs)
+
+
+def test_partial_regional_loss_is_the_ratio_of_sums():
+    """Half of one zone's biomass goes: the region's shock is the change in its SUM, and both of
+    its zones carry that same regional number."""
+    baseline = series(z11=100.0, z12=100.0, z21=50.0, z22=50.0)
+    scenario = {2030: series(z11=50.0, z12=100.0, z21=50.0, z22=50.0),
+                2050: series(z11=50.0, z12=100.0, z21=50.0, z22=50.0)}
+    rows = run(scenario, baseline)
+    assert shock_at(rows, 'bra', 2030) == pytest.approx(-25.0)   # 150/200 - 1
+    assert shock_at(rows, 'usa', 2030) == pytest.approx(0.0)
+    per_zone = {r['ENDW']: r['shock_pct'] for r in rows if r['REG'] == 'bra' and r['year'] == 2030}
+    assert per_zone == {'AEZ1': pytest.approx(-25.0), 'AEZ2': pytest.approx(-25.0)}
+
+
+def test_zone_losing_all_forest_is_not_a_minus_one_hundred_shock():
+    """THE CORRECTION. Zone 11 goes to zero. Its region keeps zone 12, so the shock is -50%, and
+    -100% appears nowhere -- not for the emptied zone, not for its region."""
+    baseline = series(z11=100.0, z12=100.0, z21=50.0, z22=50.0)
+    scenario = {2030: series(z11=0.0, z12=100.0, z21=50.0, z22=50.0),
+                2050: series(z11=0.0, z12=100.0, z21=50.0, z22=50.0)}
+    rows = run(scenario, baseline)
+    assert shock_at(rows, 'bra', 2030) == pytest.approx(-50.0)
+    assert min(r['shock_pct'] for r in rows) > -100.0
+
+
+def test_explicit_zero_and_a_dropped_row_are_not_interchangeable():
+    """The zero above must be WRITTEN. Dropping the row instead raises, because a regional sum
+    cannot tell an unmeasured zone from a measured empty one."""
+    baseline = series(z11=100.0, z12=100.0, z21=50.0, z22=50.0)
+    dropped = {2030: series(z12=100.0, z21=50.0, z22=50.0),
+               2050: series(z12=100.0, z21=50.0, z22=50.0)}
+    with pytest.raises(ValueError, match='missing 1 of region bra'):
+        run(dropped, baseline)
+
+
+def test_missing_zone_in_the_base_year_also_raises():
+    """The denominator is held to the same rule as the numerator."""
+    baseline = series(z11=100.0, z21=50.0, z22=50.0)
+    scenario = {2030: series(z11=100.0, z12=100.0, z21=50.0, z22=50.0),
+                2050: series(z11=100.0, z12=100.0, z21=50.0, z22=50.0)}
+    with pytest.raises(ValueError, match='the base-year quantity is missing'):
+        run(scenario, baseline)
+
+
+def test_zero_baseline_zone_gaining_forest_contributes_without_forming_a_ratio():
+    """A zone holding nothing in the base year and afforested later adds its gain to the region's
+    numerator. The unbounded zonal ratio the summed measure exists to avoid is never formed: the
+    region rises by the gain over its own base, not by the zone's own multiple."""
+    baseline = series(z11=100.0, z12=0.0, z21=50.0, z22=50.0)
+    scenario = {2030: series(z11=100.0, z12=50.0, z21=50.0, z22=50.0),
+                2050: series(z11=100.0, z12=50.0, z21=50.0, z22=50.0)}
+    rows = run(scenario, baseline)
+    assert shock_at(rows, 'bra', 2030) == pytest.approx(50.0)    # 150/100 - 1, not an infinite ratio
+    assert np.isfinite([r['shock_pct'] for r in rows]).all()
+
+
+def test_whole_region_reaching_zero_is_raised_for_review():
+    """A region losing ALL its biomass is the only way to -100%, and it stops before annual
+    conversion instead of being interpolated."""
+    baseline = series(z11=100.0, z12=100.0, z21=50.0, z22=50.0)
+    scenario = {2030: series(z11=0.0, z12=0.0, z21=50.0, z22=50.0),
+                2050: series(z11=0.0, z12=0.0, z21=50.0, z22=50.0)}
+    with pytest.raises(ValueError, match='-100% regional productivity factor'):
+        run(scenario, baseline)
+
+
+def test_region_with_no_base_year_biomass_is_reported_not_shocked():
+    """No denominator, so no shock: the region is left out rather than given a fabricated number,
+    and the OTHER region is still shocked normally."""
+    baseline = series(z11=100.0, z12=100.0, z21=0.0, z22=0.0)
+    scenario = {2030: series(z11=50.0, z12=100.0, z21=10.0, z22=10.0),
+                2050: series(z11=50.0, z12=100.0, z21=10.0, z22=10.0)}
+    reported = []
+    rows = tcf.summed_shock_rows({'policy': scenario}, baseline, ZONE_LABELS, BASE_YEAR,
+                                 sector='frs', log=lambda m: reported.append(m))
+    assert {r['REG'] for r in rows} == {'bra'}
+    assert any('usa' in m for m in reported)
+
+
+def test_base_year_is_pinned_at_zero_shock():
+    baseline = series(z11=100.0, z12=100.0, z21=50.0, z22=50.0)
+    scenario = {2030: series(z11=0.0, z12=100.0, z21=50.0, z22=50.0),
+                2050: series(z11=0.0, z12=100.0, z21=50.0, z22=50.0)}
+    rows = run(scenario, baseline)
+    assert shock_at(rows, 'bra', BASE_YEAR) == pytest.approx(0.0)

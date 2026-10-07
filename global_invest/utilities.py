@@ -12,6 +12,7 @@ and the four 2-way splits. A gap of any other shape is a legitimate sum, not thi
 reached terrestrial_carbon + coastal_carbon and not the other five GEP services.
 """
 from osgeo import gdal
+import filecmp
 import json
 import mapclassify
 import matplotlib as mpl
@@ -19,6 +20,7 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Patch
 import shutil
 import subprocess
+import tempfile
 import sys
 import urllib.request
 import zipfile
@@ -31,8 +33,8 @@ import zipfile
 def initialize_country_paths(p, simplified='300sec'):
     """Shared country-boundary references every GEP service needs: the r264 correspondence
     (csv + gpkg + simplified gpkg, all as get_path reference paths) and the loaded df_countries.
-    Called from each service's publish_inputs; the service then adds only its service-specific inputs
-    (this block used to be pasted into every module).
+    Called from each service's publish_inputs; the service then adds only its service-specific
+    inputs.
     """
 
     if getattr(p, 'df_countries', None) is not None:
@@ -120,12 +122,24 @@ def summarize_raster_by_region(value_raster_path, region_boundary_path, out_path
         value_raster_path, region_boundary_path, zone_ids_raster_path=zone_ids_raster,
         id_column_label=id_column, zones_raster_data_type=5, all_touched=False,
         stats_to_retrieve='sums_counts', assert_projections_same=False, verbose=False)
-    stats = stats[(stats.index != 0) & (stats['counts'] > 0)]   # drop background + empty zones
+    # The ONLY test of emptiness is that nothing was measured in the zone: counts == 0. A zone whose
+    # measured quantity comes to exactly zero is kept, with its zero, because for anything that later
+    # forms a regional total or a ratio the alternative is fatal -- an absent row and a real zero are
+    # then the same thing, and a zone that genuinely lost all its forest cannot be told from a zone
+    # nobody measured. Zone 0 is the background outside every polygon.
+    stats = stats[(stats.index != 0) & (stats['counts'] > 0)]
+    measured_zeros = sorted(stats.index[stats['sums'] == 0].tolist())
+    if measured_zeros:
+        print('  %s: %d zone(s) hold valid pixels whose total is exactly zero, retained as measured '
+              'zeros rather than dropped: %s' % (os.path.basename(out_path), len(measured_zeros), measured_zeros))
 
     df = regions.assign(_zid=regions[id_column].astype('int64')).merge(
         stats, left_on='_zid', right_index=True, how='right').drop(columns=['_zid', 'geometry'])
     df = df.rename(columns={'sums': 'total', 'counts': 'count'})
     df['mean'] = df['total'] / df['count']
+    # Carried so a consumer can act on the distinction without re-deriving it, and so a zero in a
+    # finished table says on its own face whether it was measured.
+    df['measured_zero'] = df['total'] == 0
     df['year'] = year
     if 'ee_r50_aez18_id' in df.columns:
         df['region_id'] = df['ee_r50_aez18_id'].astype(int)
@@ -144,6 +158,16 @@ def render_service_results(p):
     The qmd copy and sidecars are removed afterwards so nobody edits a copy expecting the source
     to change.
     """
+
+    # A cluster node has no quarto, and the render is a report over results that already
+    # exist -- so its absence downgrades to a loud skip rather than failing a job whose
+    # calculation succeeded. The report renders on any machine that has quarto, from the same
+    # results.
+    if shutil.which('quarto') is None:
+        hb.log('render_service_results: quarto is not on PATH, so the results page is NOT '
+               'rendered. The calculation results are unaffected; render on a machine with '
+               'quarto.')
+        return
 
     os.environ['QUARTO_PYTHON'] = sys.executable
     module_root = os.path.dirname(os.path.abspath(__file__))
@@ -257,7 +281,7 @@ def resolve_base_scenario(scenario_labels, scenario_map, base_scn, service, log=
 
     Unlike a data scenario, an unresolvable base is FATAL rather than skippable: it is the
     subtraction reference, so without it every shock in the table is meaningless -- an exact-match
-    miss here previously yielded an empty base, an empty output, and a silent GTAP zero.
+    miss here would yield an empty base, an empty output, and a silent GTAP zero.
     """
     raw = resolve_raw_scenario(scenario_labels, scenario_map, base_scn, service, log=log)
     if raw is None:
@@ -302,7 +326,177 @@ def resolve_base_scenario(scenario_labels, scenario_map, base_scn, service, log=
 SHOCK_ABS_MAX = 500.0
 
 
-def assert_shock_table_sound(df, requested_scenarios, label, abs_max=SHOCK_ABS_MAX):
+# GTAP land endowments: exactly the AEZS set, and the land block of ENDW, in the model sets.har
+# (AEZ1-AEZ18; ENDW adds the labour types, Capital and NatRes). The r50xAEZ18 shock boundary also
+# carries an AEZ0 residual polygon that no GTAP element corresponds to, so a shock row on it cannot
+# be consumed whatever its value. Membership, not magnitude, is what makes such a row invalid --
+# AEZ0 rows have sat inside a delivered carbon table at |shock| well under the contamination bound.
+GTAP_LAND_ENDW = tuple("AEZ%d" % i for i in range(1, 19))
+
+
+def filter_to_model_domain(df, output_path, label, valid_endw=GTAP_LAND_ENDW, endw_col='ENDW', log=print):
+    """Drop shock rows GTAP has no element for, keeping them beside the table for diagnostics.
+
+    Applied immediately before assert_shock_table_sound, so validation judges only what will actually
+    be delivered. An out-of-domain row is neither a small value to tolerate nor a large one to
+    reject: it is a row the model cannot consume, and it should not reach a bound check at all.
+
+    Only ENDW is filtered. AEZ1-AEZ18 is fixed across GTAP-AEZ aggregations and can be asserted here;
+    the ACTS and REG sets are aggregation-specific (s26/r50 for today's consumer) and pinning them in
+    a shared science library would bake one consumer aggregation into every other.
+
+    Args:
+        df (pd.DataFrame): the assembled shock table.
+        output_path (str): where the table itself is going. Excluded rows are written beside it as
+            <stem>_out_of_domain.csv; a stale one is removed when nothing is excluded, so the file
+            never outlives the run that produced it.
+        label (str): service name, for the log line.
+        valid_endw (tuple): the endowment elements GTAP accepts.
+        endw_col (str): the endowment column. A table without one (fisheries is region-only) passes
+            through untouched.
+        log (callable): where to report what was excluded.
+
+    Returns:
+        pd.DataFrame: the rows GTAP can consume.
+    """
+    if endw_col not in df.columns or not len(df):
+        return df
+    excluded_path = "%s_out_of_domain.csv" % os.path.splitext(output_path)[0]
+    in_domain = df[endw_col].astype(str).str.strip().isin(set(valid_endw))
+    excluded = df[~in_domain]
+    if not len(excluded):
+        if os.path.exists(excluded_path):
+            os.remove(excluded_path)
+        return df
+    excluded.to_csv(excluded_path, index=False)
+    log('  %s shock: held back %d of %d row(s) outside the GTAP endowment domain (%s) -> %s'
+        % (label, len(excluded), len(df), ', '.join(sorted(excluded[endw_col].astype(str).unique())),
+           excluded_path))
+    return df[in_domain].reset_index(drop=True)
+
+
+# How many (scenario, year, zone) keys a failure message prints in full before it summarises.
+# Generous, because the whole point is that the reader can act on the message without going back to
+# the data: at 470 zones and 28 scenario-years a complete failure is ~13,000 keys, and a cap well
+# above one scenario-year's worth keeps every ordinary failure fully enumerated.
+KEY_ENUMERATION_LIMIT = 600
+
+
+def _enumerate_keys(keys, limit=KEY_ENUMERATION_LIMIT):
+    """Every key, or a bounded sample that SAYS it is one, plus the distinct zones and scenario-years.
+
+    A count paired with an unlabelled excerpt reads as the whole set: 'D19 biomass: 6 ... First few:
+    [five keys]' was acted on as five zones, and the sixth went unexamined (2026-09-24). The distinct
+    zone and scenario-year lists are always complete because they are bounded by the run's own
+    dimensions, and they are what a reader actually acts on.
+    """
+    keys = list(keys)
+    zones = sorted({str(k[2]) for k in keys})
+    scenario_years = sorted({(str(k[0]), k[1]) for k in keys})
+    if len(keys) <= limit:
+        listed = '  all %d: %s' % (len(keys), keys)
+    else:
+        listed = ('  first %d of %d (%d NOT shown): %s'
+                  % (limit, len(keys), len(keys) - limit, keys[:limit]))
+    return ('%s\n  distinct zones (%d, complete): %s\n  distinct scenario-years (%d, complete): %s'
+            % (listed, len(zones), zones, len(scenario_years), scenario_years))
+
+
+def assert_zonal_coverage_complete(frame, expected_scenarios, expected_years, expected_zones, label,
+                                   value_column='total', scenario_column='scenario',
+                                   year_column='year', zone_column='region_id',
+                                   intentional_exclusions=None, log=None):
+    """Raise unless every expected scenario, year and zone carries a finite total.
+
+    A zonal summary that silently loses a scenario-year, or carries NaN where a map failed to
+    produce a value, reaches the economic model as a zero shock rather than as an error. Both
+    failures look identical in a finished table, which is why they are asserted here rather than
+    inspected later.
+
+    Exclusions that are MEANT to be absent -- a zone the model does not cover, a scenario-year a
+    variant deliberately omits -- are declared by the caller and reported on their own, so the
+    distinction between "we chose to leave this out" and "this went missing" survives in the log.
+
+    Args:
+        frame (pd.DataFrame): the assembled zonal totals, one row per scenario, year and zone.
+        expected_scenarios (iterable): every scenario that must appear.
+        expected_years (iterable): every anchor year that must appear.
+        expected_zones (iterable): every zone or country id that must appear.
+        label (str): the service or table name, for the message.
+        value_column (str): the column that must be present and finite.
+        scenario_column, year_column, zone_column (str): the identifying columns.
+        intentional_exclusions (iterable or None): (scenario, year, zone) tuples that are expected to
+            be absent. Reported separately; never counted as missing.
+        log (callable or None): where the exclusion report goes; print when None.
+
+    Raises:
+        ValueError: naming the missing combinations and the non-finite values, with examples.
+    """
+    import numpy as np
+    import pandas as pd
+
+    say = log or print
+    key_columns = [scenario_column, year_column, zone_column]
+    missing_columns = [c for c in key_columns + [value_column] if c not in frame.columns]
+    if missing_columns:
+        raise ValueError('%s: required columns absent: %s' % (label, missing_columns))
+    if frame[key_columns].isna().any().any():
+        raise ValueError('%s: missing identifying keys' % label)
+    normalized_keys = frame[key_columns].copy()
+    normalized_keys[scenario_column] = normalized_keys[scenario_column].astype(str)
+    years_numeric = pd.to_numeric(normalized_keys[year_column], errors='coerce')
+    if (~np.isfinite(years_numeric) | (years_numeric != np.floor(years_numeric))).any():
+        raise ValueError('%s: year keys must be finite integers' % label)
+    normalized_keys[year_column] = years_numeric.astype(int)
+    duplicates = normalized_keys.duplicated(keep=False)
+    if duplicates.any():
+        raise ValueError('%s: duplicate scenario/year/zone keys: %s' %
+                         (label, normalized_keys.loc[duplicates].head(5).to_dict('records')))
+    declared = {(str(s), int(y), z) for s, y, z in (intentional_exclusions or ())}
+    expected = {(str(s), int(y), z) for s in expected_scenarios for y in expected_years
+                for z in expected_zones}
+    required = expected - declared
+
+    if len(frame):
+        present = {(str(r[scenario_column]), int(r[year_column]), r[zone_column])
+                   for _, r in frame[[scenario_column, year_column, zone_column]].iterrows()}
+    else:
+        present = set()
+
+    problems = []
+    missing = sorted(required - present, key=lambda t: (t[0], t[1], str(t[2])))
+    if missing:
+        problems.append('%s: %d of %d required (scenario, year, zone) totals are absent. A missing '
+                        'total is a zero shock in the economic model, not a gap.\n%s'
+                        % (label, len(missing), len(required), _enumerate_keys(missing)))
+
+    if len(frame) and value_column in frame.columns:
+        values = pd.to_numeric(frame[value_column], errors='coerce')
+        bad = frame.loc[~np.isfinite(values)]
+        if len(bad):
+            example = bad.head(3)[[scenario_column, year_column, zone_column, value_column]].to_dict('records')
+            problems.append('%s: %d row(s) carry a non-finite %s. NaN and inf reach the model as a '
+                            'zero or an overflow rather than as a failure. e.g. %s'
+                            % (label, len(bad), value_column, example))
+
+    unexpected_exclusions = sorted(declared - expected, key=lambda t: (t[0], t[1], str(t[2])))
+    if unexpected_exclusions:
+        problems.append('%s: %d declared exclusion(s) are not in the expected set at all, so the '
+                        'declaration is stale or wrong.\n%s'
+                        % (label, len(unexpected_exclusions), _enumerate_keys(unexpected_exclusions)))
+
+    if declared:
+        say('  %s: %d (scenario, year, zone) total(s) excluded by declaration, not missing: %s%s'
+            % (label, len(declared), sorted(declared)[:5],
+               ' ...' if len(declared) > 5 else ''))
+
+    if problems:
+        raise ValueError('\n'.join(problems))
+    say('  %s: %d of %d required zonal totals present and finite' % (label, len(required), len(required)))
+    return True
+
+
+def assert_shock_table_sound(df, requested_scenarios, label, abs_max=SHOCK_ABS_MAX, column='shock_pct'):
     """Raise if the ES shock table `df` violates what must hold before it is written.
 
     Called immediately before to_csv in each <es>_shock / <es>_shock_static, so the failure surfaces where
@@ -334,32 +528,147 @@ def assert_shock_table_sound(df, requested_scenarios, label, abs_max=SHOCK_ABS_M
             problems.append('has %d duplicate row(s) on %s -- any sum over these multiplies. e.g. %s'
                             % (n_dup, keys, example))
 
-    if 'shock_pct' in df.columns and len(df):
-        worst = float(df['shock_pct'].abs().max())
+    # The bound applies to the measure the run exports (`column`); a table's other measures are
+    # informational and can legitimately blow up (a contemporaneous ratio over a baseline that
+    # went to nearly zero in a small zone).
+    if column in df.columns and len(df):
+        worst = float(df[column].abs().max())
         if worst > abs_max:
-            bad = df.loc[df['shock_pct'].abs() > abs_max].head(2)
-            cols = [c for c in ('scenario', 'REG', 'year', 'shock_pct') if c in bad.columns]
-            problems.append('has |shock_pct| up to %.6g, above the %.6g sanity bound -- that is '
-                            'contamination, not signal. e.g. %s'
-                            % (worst, abs_max, bad[cols].to_dict('records')))
+            bad = df.loc[df[column].abs() > abs_max].head(2)
+            cols = [c for c in ('scenario', 'REG', 'year', column) if c in bad.columns]
+            problems.append('has |%s| up to %.6g, above the %.6g sanity bound -- that is contamination, '
+                            'not signal. e.g. %s' % (column, worst, abs_max, bad[cols].to_dict('records')))
 
     if problems:
         raise ValueError('%s shock table is unsound:\n  - %s' % (label, '\n  - '.join(problems)))
     return True
 
 
+def _signature(settings, inputs, light_inputs=()):
+    """The signature dict: settings by value, inputs by content, light inputs by size and mtime."""
+    fingerprints = dict(inputs)
+    for path in light_inputs:
+        fingerprints[str(path)] = file_fingerprint(path, content=False)
+    return {'settings': settings, 'inputs': fingerprints}
+
+
+def _service_settings_and_inputs(p, service):
+    """The service's own es_parameters values and a content fingerprint of each `_path` among them."""
+    prefix = service + '_'
+    settings, inputs = {}, {}
+    for name, value in sorted(vars(p).items()):
+        if not name.startswith(prefix) or callable(value):
+            continue
+        if name.endswith('_path') and isinstance(value, str):
+            inputs[name] = file_fingerprint(value)
+        elif isinstance(value, (str, int, float, bool, list, tuple, type(None))):
+            settings[name] = value
+    return settings, inputs
+
+
+def outputs_reuse_reason(outputs, signature, signature_path):
+    """Why `outputs` cannot be reused, or None when they can.
+
+    An existence check answers "is there an output?" when the question is "was it made from what
+    we are running now?". Four services gate a whole calculation on their final file existing, so
+    a rerun after a fix silently republishes the old answer: flood reported COMPLETED in 2h15m and
+    returned the previous run's figures in every digit. The opposite failure is as real: a pass
+    that recomputes a finished table because nothing recorded what produced it cost the NGFS rerun
+    about an hour and a half on 21 Sep 2026, twice in one day.
+
+    Args:
+        outputs (list): the files reuse would republish.
+        signature (dict): what would produce them now, from `_signature`.
+        signature_path (str): where the previous run recorded its signature.
+
+    Returns:
+        str | None: the reason to recompute, naming what differs, or None to reuse.
+    """
+    missing = [o for o in outputs if not hb.path_exists(o)]
+    if missing:
+        return 'there is no %s to reuse' % os.path.basename(missing[0])
+    if not hb.path_exists(signature_path):
+        return ('the outputs carry no signature, so what produced them is unknown; they predate '
+                'this check')
+    try:
+        old = json.loads(open(signature_path, encoding='utf-8').read())
+    except Exception:
+        return 'the signature beside the outputs cannot be read'
+    settings, inputs = signature['settings'], signature['inputs']
+    changed = sorted(k for k in set(old.get('settings', {})) | set(settings)
+                     if old.get('settings', {}).get(k) != settings.get(k))
+    moved = sorted(k for k in set(old.get('inputs', {})) | set(inputs)
+                   if old.get('inputs', {}).get(k) != inputs.get(k))
+    if changed or moved:
+        return 'the signature changed in %s' % ', '.join(changed + moved)
+    return None
+
+
+def write_outputs_signature(signature, signature_path):
+    """Record what produced a set of outputs, so the next run can tell whether it may reuse them."""
+    hb.write_to_file(json.dumps(signature, indent=2, sort_keys=True, default=str), signature_path)
+
+
+def reuse_reason(p, service, outputs, signature_name='run_signature.json', light_inputs=()):
+    """Why a service task cannot reuse what is on disk, or None when it can.
+
+    The signature is the service's own es_parameters values plus a fingerprint of every input path
+    among them, so any configuration or input change invalidates it without each service listing
+    its dependencies by hand. `light_inputs` are inputs the task reads that are not among its
+    es_parameters -- the scenario land-cover maps, for the shock tasks -- fingerprinted by size and
+    mtime because reading gigabytes of maps is the very cost being avoided; a `touch` on one of them
+    costs a rebuild that was not needed, which is the safe direction.
+
+    Args:
+        p: the ProjectFlow object, already hydrated.
+        service (str): the es_parameters service name.
+        outputs (list): the files reuse would republish.
+        signature_name (str): the signature filename, written beside the first output.
+        light_inputs (iterable): paths fingerprinted by size and mtime.
+
+    Returns:
+        str | None: the reason to recompute, naming what differs, or None to reuse.
+    """
+    settings, inputs = _service_settings_and_inputs(p, service)
+    return outputs_reuse_reason(outputs, _signature(settings, inputs, light_inputs),
+                                os.path.join(os.path.dirname(outputs[0]), signature_name))
+
+
+def write_reuse_signature(p, service, outputs, signature_name='run_signature.json', light_inputs=()):
+    """Record what produced these outputs, so the next run can tell whether it may reuse them."""
+    settings, inputs = _service_settings_and_inputs(p, service)
+    write_outputs_signature(_signature(settings, inputs, light_inputs),
+                            os.path.join(os.path.dirname(outputs[0]), signature_name))
+
+
 def add_rows_missing_from_template(local_path, template_path, key_columns, log=print):
-    """Append template rows whose key is absent from the project's copy. Local values always win.
+    """Bring the project's copy up to the template's schema. A value anyone has set always wins.
 
     A definitions CSV is a schema plus values: the template names every key the code may read,
     and the project's copy supplies this machine's values. Seeding copies the file only when it
     is absent, so a copy made before a key was added keeps shadowing the template forever, and
-    the key reaches the run as a missing attribute rather than as its documented value. Topping
-    up the absent keys keeps the schema current without touching a value anyone has set.
+    the key reaches the run as a missing attribute rather than as its documented value.
+
+    Three ways the template can be ahead, and all three are filled, because a template addition
+    that does not reach `input/` is indistinguishable from one nobody made:
+
+    - a row whose key the copy lacks, appended;
+    - a column the copy lacks, added with the template's values;
+    - a cell the copy leaves blank where the template has a value, filled.
+
+    What is never touched is a cell the copy has filled in. That is the machine's own answer --
+    an ssh host, a scratch path, a drive location -- and the template ships those blank precisely
+    so the copy can own them.
+
+    The third case is the one that bites without saying so. `gep_lulc_input_path` was added to
+    pollination's template row while the project's copy already had that row from an earlier run,
+    so the row was present, the key was present, and the cell was empty: the run reached
+    `p.gep_lulc_input_path` and raised AttributeError on a value the template had been carrying
+    for some time.
 
     Args:
-        local_path (str): the project's input/ copy, modified in place when rows are missing.
-        template_path (str): the tracked template to take absent rows from.
+        local_path (str): the project's input/ copy, modified in place when it is behind.
+        template_path (str): the tracked template to take absent rows, columns and values from.
         key_columns (list): columns that together identify a row, e.g. ['service', 'parameter'].
         log (callable): where to report what was added.
     """
@@ -372,14 +681,46 @@ def add_rows_missing_from_template(local_path, template_path, key_columns, log=p
     def keys_of(df):
         return list(zip(*[df[c].astype(str) for c in key_columns])) if len(df) else []
 
+    def is_blank(value):
+        return value is None or (isinstance(value, float) and pd.isna(value)) \
+            or (isinstance(value, str) and not value.strip()) or pd.isna(value)
+
+    added_columns = [c for c in template.columns if c not in local.columns]
+    for column in added_columns:
+        local[column] = None
+
     present = set(keys_of(local))
     missing = template[[k not in present for k in keys_of(template)]]
-    if missing.empty:
+    if not missing.empty:
+        local = pd.concat([local, missing], ignore_index=True)
+
+    by_key = {k: row for k, row in zip(keys_of(template), template.to_dict('records'))}
+    filled = []
+    for position, key in enumerate(keys_of(local)):
+        source = by_key.get(key)
+        if source is None:
+            continue
+        for column in template.columns:
+            if column in key_columns or column not in local.columns:
+                continue
+            if is_blank(local.at[local.index[position], column]) and not is_blank(source[column]):
+                local.at[local.index[position], column] = source[column]
+                filled.append('%s.%s' % (':'.join(key), column))
+
+    if missing.empty and not added_columns and not filled:
         return
-    hb.df_write(pd.concat([local, missing], ignore_index=True), local_path)
-    named = ', '.join(':'.join(k) for k in keys_of(missing)[:6])
-    log(f'{os.path.basename(local_path)}: added {len(missing)} row(s) the project copy did not '
-        f'have ({named}{", ..." if len(missing) > 6 else ""}).')
+    hb.df_write(local, local_path)
+    parts = []
+    if not missing.empty:
+        named = ', '.join(':'.join(k) for k in keys_of(missing)[:6])
+        parts.append(f'{len(missing)} row(s) ({named}{", ..." if len(missing) > 6 else ""})')
+    if added_columns:
+        parts.append(f'column(s) {", ".join(added_columns)}')
+    if filled:
+        parts.append(f'{len(filled)} blank cell(s) ({", ".join(filled[:6])}'
+                     f'{", ..." if len(filled) > 6 else ""})')
+    log(f'{os.path.basename(local_path)}: took {"; ".join(parts)} from the template, which the '
+        f'project copy was behind on. Values already set were left alone.')
 
 
 def seed_input_template(p, file_name, log=print, required=True, key_columns=None):
@@ -600,7 +941,7 @@ def hydrate_es_scenarios(p, log=print):
 
 def raster_sum(raster_path, block_rows=2048):
     """Nodata-safe sum of a raster's first band, read blockwise so global rasters fit in
-    memory. Promotion candidate to hazelbean (no equivalent found there on 2026-08-21)."""
+    memory. Promotion candidate to hazelbean (no equivalent there)."""
     gdal.UseExceptions()
     ds = gdal.Open(raster_path)
     band = ds.GetRasterBand(1)
@@ -897,6 +1238,72 @@ def is_redundant(column, df):
 GEP_SUMMARY_GROUPINGS = ('income_grp', 'region_un', 'continent', 'subregion')
 
 
+def usd_deflation_factor(cpi_df, from_year, to_year):
+    """The US CPI annual-mean ratio turning nominal from_year USD into to_year USD.
+
+    One series for every temporal dollar conversion in the account, so no two services
+    deflate differently. The frame is FRED's CPIAUCSL as staged (monthly observations).
+
+    Args:
+        cpi_df (pd.DataFrame): observation_date and CPIAUCSL columns.
+        from_year (int): the year the nominal values are denominated in.
+        to_year (int): the year to express them in.
+
+    Returns:
+        float: the multiplicative factor (less than 1 when deflating a later year back).
+    """
+    cpi = cpi_df.copy()
+    cpi['year'] = pd.to_datetime(cpi['observation_date']).dt.year
+    annual = cpi.groupby('year')['CPIAUCSL'].mean()
+    return float(annual.loc[to_year] / annual.loc[from_year])
+
+
+def international_to_usd(df, pli_df, year, value_col, iso3_col='iso3_r250_label'):
+    """Convert per-country international-dollar (PPP) values into market USD of the same year.
+
+    The price level ratio is market-exchange-rate GDP over PPP GDP from the World Bank's two
+    headline series, so the USA is exactly 1 by construction. A country without a ratio for
+    that year carries NA afterwards, never a silent pass-through, and the note names it.
+
+    Args:
+        df (pd.DataFrame): per-country values in international dollars.
+        pli_df (pd.DataFrame): iso3, year, price_level_ratio (the staged series).
+        year (int): the year the PPP values are denominated in.
+        value_col (str): the column to convert.
+        iso3_col (str): the country key in df.
+
+    Returns:
+        pd.DataFrame: df with value_col converted and `price_level_ratio` carried beside it.
+    """
+    ratios = pli_df[pli_df['year'] == year][['iso3', 'price_level_ratio']]
+    out = df.merge(ratios.rename(columns={'iso3': iso3_col}), on=iso3_col, how='left')
+    out[value_col] = out[value_col] * out['price_level_ratio']
+    return out
+
+
+def rasterize_id_column(vector_path, ref_raster_path, id_column, output_path):
+    """Vector id column -> Int32 raster on the reference grid (country ids), ALL_TOUCHED.
+
+    Args:
+        vector_path: the polygon file carrying the id column.
+        ref_raster_path: the raster whose grid (extent, resolution, projection) the ids land on.
+        id_column: the integer attribute to burn.
+        output_path: the raster written, 0 where no polygon touches.
+    """
+    ref = gdal.Open(ref_raster_path)
+    driver = gdal.GetDriverByName('GTiff')
+    out = driver.Create(output_path, ref.RasterXSize, ref.RasterYSize, 1, gdal.GDT_Int32,
+                        options=['COMPRESS=DEFLATE', 'TILED=YES'])
+    out.SetGeoTransform(ref.GetGeoTransform())
+    out.SetProjection(ref.GetProjection())
+    band = out.GetRasterBand(1)
+    band.SetNoDataValue(0)
+    band.Fill(0)
+    gdal.Rasterize(out, vector_path, options=gdal.RasterizeOptions(
+        attribute=id_column, allTouched=True))
+    out.FlushCache()
+
+
 def report_dir():
     """The directory a results page is rendered into, and where its tables and figures belong.
 
@@ -973,6 +1380,79 @@ def published_country_columns(df, service):
     value_columns.sort(key=lambda c: (not c.startswith(service), len(c)))
     supporting = [c for c in rest if '_gep' not in c]
     return attributes + (['year'] if 'year' in df.columns else []) + value_columns + supporting
+
+
+def write_gep_by_country(p, df, path, log=None):
+    """Write a service's per-country table on the account's country list, one row per country.
+
+    Every country appears. A country the service produced no value for gets NA, not a missing row,
+    because those say different things: NA is "we do not know", an absent row is nothing at all,
+    and a reader summing the column cannot tell which countries were considered. It is the
+    authors' items 1 and 4 in one place -- the r250 list, and true zero against missing.
+
+    Eight services were short: wildfire 159 rows, crop 177, livestock 178, pollination 193,
+    extractive materials 216, coastal protection 225, water supply 253. Each had joined its own
+    data against the country list rather than the country list against its data, so a country its
+    source never mentions simply fell out. None of them carried a single NA, which is the tell.
+
+    A true zero is the service's own business and is left alone: coastal protection writing 0 for
+    a landlocked country is correct and must not become NA here.
+
+    Args:
+        p (ProjectFlow): the project, for `df_countries`.
+        df (pd.DataFrame): the service's table, keyed on iso3_r250_label.
+        path: where to write it.
+        log (callable): where to report the reindex.
+
+    Returns:
+        str: the path written.
+    """
+    log = log or hb.log
+    countries = collapse_countries_to_r250(p.df_countries)
+    attributes = [c for c in ('iso3_r250_id', 'iso3_r250_label', 'iso3_r250_name', 'continent',
+                              'region_un', 'region_wb', 'income_grp', 'subregion')
+                  if c in countries.columns]
+    countries = countries[attributes].drop_duplicates('iso3_r250_label')
+    if 'iso3_r250_label' not in df.columns:
+        raise NameError(
+            'The per-country table has no iso3_r250_label, so it cannot be put on the account '
+            'country list; it carries %s.' % list(df.columns)[:12])
+    values = df[[c for c in df.columns if c not in attributes or c == 'iso3_r250_label']]
+    full = countries.merge(values, on='iso3_r250_label', how='left')
+    added = len(full) - df['iso3_r250_label'].nunique()
+    if added:
+        log('Country list: %d rows, %d added as NA that the service produced no value for.'
+            % (len(full), added))
+    return write_csv(full, path)
+
+
+def register_result(p, service, name, path):
+    """Register one output as a result of `service`, from whatever task writes it.
+
+    `begin_gep_calculation`'s `extra_results` covers what `gep_calculation` writes itself. This
+    covers the rest: a map is usually built in its own earlier task, and registering it there --
+    beside the line that writes it -- is what keeps the two from drifting apart.
+
+    Registration is not bookkeeping. `distribute_results` copies what this registry names and
+    nothing else, and it is the only place a raster is converted into a POG. A map that is never
+    registered never leaves `intermediate/`, so nobody outside a run can open it and condition 16
+    has nothing to check -- which is why the library reported clean on the POG condition while
+    six services were each writing a map that went nowhere.
+
+    Args:
+        p (ProjectFlow): the project.
+        service (str): the service's key in p.results.
+        name (str): the file name the result takes in the output directory, extension included.
+        path (str): where the task writes it.
+
+    Returns:
+        str: path, so a caller can register and assign in one line.
+    """
+    if not hasattr(p, 'results'):
+        p.results = {}
+    service_results = p.results.setdefault(service, {})
+    service_results[name] = path
+    return path
 
 
 def begin_gep_calculation(p, service, extra_results=None, log=None):
@@ -1052,9 +1532,9 @@ from rasterio.windows import Window
 def service_data_dir(p, service):
     """Where one service's inputs live under base data, from the ProjectFlow that knows.
 
-    Replication anchors sit here with everything else the service reads. They used to be a
-    `reference/` directory inside the repo, which made them a special kind of input; they are
-    not, they are inputs.
+    Replication anchors sit here with everything else the service reads: a `reference/`
+    directory inside the repo would make them a special kind of input, and they are not, they
+    are inputs.
 
     A missing local directory is seeded once from the machine's shared data roots
     (p.shared_data_dirs, the same tier get_path searches), which mirror base_data's layout.
@@ -1160,9 +1640,9 @@ GEP_COUNTRY_ATTR_COLS = ['iso3_r250_id', 'iso3_r250_label', 'iso3_r250_name',
 def read_column(path, column, cast=str):
     """One column of a small reference table, as a list.
 
-    The tables these read used to be dictionaries and lists in the modules -- 38 ESA codes, 37
-    FLOPROS countries, 178 FAO crop names. A list of facts in a .py is a list nobody can open in a
-    spreadsheet, diff usefully, or correct without a commit.
+    The tables these read are CSVs rather than dictionaries and lists in the modules -- 38 ESA
+    codes, 37 FLOPROS countries, 178 FAO crop names -- because a list of facts in a .py is a list
+    nobody can open in a spreadsheet, diff usefully, or correct without a commit.
     """
     return [cast(v) for v in hb.df_read(path)[column].dropna().tolist()]
 
@@ -1297,17 +1777,41 @@ def sha256_file(path, chunk_size: int = 1024 * 1024) -> str:
     return h.hexdigest()
 
 
-def file_fingerprint(path) -> dict:
+def file_fingerprint(path, content: bool = True) -> dict:
+    """What a file was, for deciding whether work that read it can be reused.
+
+    Content by default, because size and mtime answer a different question than the one being
+    asked. They say whether the file was touched; reuse turns on whether it changed. A restore
+    from backup, an rsync without --times, a `touch`, or a task rewriting its own unchanged output
+    all move the mtime while the bytes stay put, and every one of those invalidates hours of
+    downstream work that did not need redoing.
+
+    Hashing is cheap against what it prevents: 278 MB of land cover is 0.63 seconds on MSI, about
+    440 MB/s, so flood's whole 1.7 GB input set costs about four seconds where a false rebuild of
+    Section D costs two and a half hours.
+
+    Args:
+        path: the file to fingerprint.
+        content (bool): hash the bytes. False keys on size and mtime alone, for a file so large
+            that reading it is itself the cost being avoided.
+
+    Returns:
+        dict: what the file was, comparable across runs.
+    """
     path = str(path)
     if not hb.path_exists(path):
         return {"path": path, "exists": False}
     st = os.stat(path)
-    return {
+    found = {
         "path": str(path),
         "exists": True,
         "size": st.st_size,
-        "mtime": st.st_mtime,
     }
+    if content and os.path.isfile(path):
+        found["sha256"] = sha256_file(path)
+    else:
+        found["mtime"] = st.st_mtime
+    return found
 
 
 # -----------------------------------------------------------------------------
@@ -1341,9 +1845,31 @@ def to_float(x) -> float:
 
 
 def write_csv(df: pd.DataFrame, path):
-    """hb.df_write, plus the parent directory, which it does not create."""
+    """hb.df_write, plus the parent directory, which it does not create.
+
+    A write that would produce the bytes already on disk leaves the file alone, mtime included.
+    Downstream reuse is decided by `file_fingerprint`, which keys on size and mtime, so a task that
+    rewrites an identical file tells everything after it that its input changed. Flood's Section C
+    does exactly that: it skips all 1500 units, rewrites the same global summary, and Section D
+    then recomputes 250 countries because the mtime moved -- about two and a half hours, every run,
+    to arrive at the file it already had.
+
+    Rewriting unchanged output is never what a caller wants, so this is fixed here rather than at
+    the eight places that fingerprint a file.
+    """
     path = str(path)
     hb.create_directories(os.path.dirname(path))
+    if os.path.exists(path):
+        existing = tempfile.mktemp(suffix='.csv')
+        hb.df_write(df, existing)
+        try:
+            if filecmp.cmp(existing, path, shallow=False):
+                return path
+            shutil.move(existing, path)
+            return path
+        finally:
+            if os.path.exists(existing):
+                os.remove(existing)
     hb.df_write(df, path)
     return path
 
@@ -1595,7 +2121,7 @@ def normalize_columns(df):
 def pixel_area_m2(transform) -> float:
     """Nominal pixel area from an affine transform, in square metres.
 
-    ⚠ Nominal: in a conformal projection this is the equatorial value. See mercator_area_scale.
+    Nominal: in a conformal projection this is the equatorial value. See mercator_area_scale.
     """
     return abs(float(transform.a) * float(transform.e))
 
@@ -1609,9 +2135,9 @@ def attach_income_group(df, df_countries, iso3_column="iso3", column="income_gro
     """Join the World Bank income group from the shared country table.
 
     Every service that reports by income group reads the same column, so one country cannot sit in
-    a different group in two accounts. Erosion used to carry a 115-country dict in code and drop
-    every country missing from it, which removed about 77 of its ~192 countries from those figures
-    without saying so.
+    a different group in two accounts. A per-service dict in code drops every country missing
+    from it -- a 115-country list would remove about 77 of erosion's ~192 countries from those
+    figures without saying so.
 
     Args:
         df (DataFrame): rows carrying an ISO3 column.
@@ -1666,8 +2192,10 @@ def income_group_colors(groups):
 FAOSTAT_VALUE_UNIT = '1000 USD'
 FAOSTAT_GROSS_PRODUCTION_VALUE_ELEMENT = 57
 FAOSTAT_THOUSAND_USD = 1000.0
+# What the bulk file spanned when this was written. Kept for the test fixture to build a
+# realistic frame; the reader takes its years from the file it is handed, because these drift.
 FAOSTAT_FIRST_YEAR = 1961
-FAOSTAT_LAST_YEAR = 2022
+FAOSTAT_LAST_YEAR = 2023
 FAOSTAT_TURKIYE_AREA_CODE = 223
 CROP_ID_COLUMNS = ['area_code', 'area_code_M49', 'country', 'crop_code', 'crop']
 
@@ -1689,7 +2217,17 @@ def clean_faostat_values(df_raw, items, value_column, aggregate_areas):
     Returns:
         pd.DataFrame: area_code, area_code_M49, country, crop_code, crop, year, <value_column>.
     """
-    years = range(FAOSTAT_FIRST_YEAR, FAOSTAT_LAST_YEAR + 1)
+    # The years the file actually carries, not a span written down when it was last looked at.
+    # The constants said 1961 to 2022 while the staged file already ran to Y2023, so that year was
+    # never renamed and dropped out without a word. A FAO release adds a year routinely, and a
+    # service that silently ignores it is worse than one that fails.
+    years = sorted(int(c[1:]) for c in df_raw.columns
+                   if len(c) == 5 and c.startswith('Y') and c[1:].isdigit())
+    if not years:
+        raise NameError(
+            'No Y<year> columns in the FAOSTAT frame; it carries %s. The bulk file is wide by '
+            'year and this reads those columns, so a file without them is the wrong file.'
+            % list(df_raw.columns)[:10])
     df = df_raw[(df_raw['Unit'] == FAOSTAT_VALUE_UNIT)
                 & (df_raw['Element Code'] == FAOSTAT_GROSS_PRODUCTION_VALUE_ELEMENT)].copy()
     df = df.drop(columns=[col for col in df.columns if col.endswith('F')])
@@ -1859,7 +2397,7 @@ def collapse_regions_to_countries(df_regions, attribute_columns, value_column, s
 def expand_country_values_to_regions(df_regions, df_by_country, value_column):
     """Each r264 region carrying its COUNTRY's value, for the map only.
 
-    ⚠ The result must never be summed: every sub-region of a split country carries the whole
+    The result must never be summed: every sub-region of a split country carries the whole
     country's value, so a sum counts China six times.
 
     Args:
@@ -1873,3 +2411,178 @@ def expand_country_values_to_regions(df_regions, df_by_country, value_column):
     return df_regions.merge(df_by_country[['iso3_r250_id', value_column]],
                             how='left', on='iso3_r250_id')
 
+
+
+def drop_aggregates_where_components_exist(df, aggregate_items, value_column,
+                                           country_column='area_code', log=None):
+    """FAOSTAT group totals kept only where the items beneath them are missing.
+
+    FAOSTAT publishes crop and livestock value at two levels: the individual item, and the group
+    total that adds those items up for you. "Oilcrops Primary" is oil palm plus coconuts plus the
+    rest; "Livestock" is every animal product. A list holding both counts the same production
+    twice, and it does so invisibly, because the result is a plausible number in the right units.
+
+    Malaysia 2019 is the clearest case: oil palm $10.09bn plus coconuts $0.16bn is exactly
+    Oilcrops Primary at $10.25bn, and counting both put Malaysia at 179% of its own total crop
+    production. Across all countries, 87 of 156 exceeded 100% of what FAOSTAT says they grow;
+    livestock was worse, at 106 of 152.
+
+    Deleting the group totals is not the fix, because this release stopped publishing individual
+    items for many countries -- Argentina and India have no individual crop values at all in 2019,
+    only group totals. So a group total is dropped for a country-year that has any individual item
+    and kept for one that has none, which is the only rule that both avoids the double count and
+    keeps those countries in the account.
+
+    Args:
+        df (pd.DataFrame): the long cleaned FAOSTAT frame.
+        aggregate_items (iterable): the group-total item names.
+        value_column (str): the value column.
+        country_column (str): the column identifying the country.
+        log (callable): where to report what was dropped.
+
+    Returns:
+        pd.DataFrame: the frame with redundant group totals removed.
+    """
+    log = log or hb.log
+    aggregates = set(aggregate_items)
+    if 'crop' not in df.columns:
+        raise NameError('The frame has no item column to identify group totals by; it carries %s.'
+                        % list(df.columns)[:10])
+    is_aggregate = df['crop'].isin(aggregates)
+    if not is_aggregate.any():
+        return df
+
+    valued = df[value_column].notna()
+    has_components = (df[~is_aggregate & valued]
+                      .groupby([country_column, 'year']).size().rename('n').reset_index())
+    marked = df.merge(has_components, on=[country_column, 'year'], how='left')
+    redundant = marked['crop'].isin(aggregates) & marked['n'].notna()
+
+    dropped_value = marked.loc[redundant & marked[value_column].notna(), value_column].sum()
+    kept = marked.loc[marked['crop'].isin(aggregates) & marked['n'].isna(), country_column].nunique()
+    log('Group totals: %d rows dropped where the individual items are present (%.6g in the value '
+        'column), and kept for %d countries that have no individual items at all.'
+        % (int(redundant.sum()), dropped_value, kept))
+    return marked[~redundant].drop(columns='n')
+
+
+def warp_raster_to_pyramid_sum(src_path, dst_path, arcseconds):
+    """Warp a per-cell quantity raster onto the global pyramid grid at `arcseconds`,
+    conserving the global sum (GDAL's overlap-weighted sum resampling).
+
+    For publishing a raster whose native grid is off the pyramid. Counts and currency are
+    per-cell amounts, so average-style resampling would rescale the total by the cell-area
+    ratio; sum keeps the map's total equal to the table's.
+
+    Args:
+        src_path (str): the native-grid raster.
+        dst_path (str): where the pyramid-grid raster is written.
+        arcseconds (float): a pyramid rung (1, 10, 30, 150, 300, 900, 1800, 3600, ...).
+
+    Returns:
+        str: dst_path.
+    """
+    if float(arcseconds) not in hb.pyramid_compatible_resolutions:
+        # The table is keyed both ways, 150.0 and '150', so sorting it whole raises TypeError and
+        # masks this ValueError with one that says nothing about the argument.
+        rungs = sorted(k for k in hb.pyramid_compatible_resolutions if not isinstance(k, str))
+        raise ValueError('arcseconds %r is not a pyramid rung (supported: %s)'
+                         % (arcseconds, rungs))
+    degrees = hb.pyramid_compatible_resolutions[float(arcseconds)]
+    ndv = hb.get_ndv_from_path(src_path)
+    gdal.Warp(dst_path, src_path,
+              xRes=degrees, yRes=degrees,
+              outputBounds=(-180.0, -90.0, 180.0, 90.0),
+              dstSRS='EPSG:4326',
+              resampleAlg='sum',
+              srcNodata=ndv, dstNodata=ndv,
+              creationOptions=['COMPRESS=DEFLATE', 'TILED=YES'])
+    return dst_path
+
+
+def publish_raster_as_pog(path, log=None):
+    """Rewrite a published raster as a POG: a pyramidal COG.
+
+    A result somebody opens should be readable without downloading all of it and should sit on the
+    account's own grid. `hb.is_path_pog` is both of those in one call -- a pyramidal geotransform
+    at a pyramid resolution, with overview levels [3, 15, 30, 90, 180, 360] and exact statistics
+    stored internally, tiled and COG-valid.
+
+    What is usually missing is NOT the grid but the overviews and the internal statistics,
+    which is what `hb.make_path_pog` adds. A raster already on the pyramid still fails without
+    them.
+
+    Rewrites in place and is idempotent: a raster already a POG is left alone, so distributing
+    twice costs nothing.
+
+    Args:
+        path (str): the raster to convert, already copied into the output directory.
+        log (callable): where to report; hazelbean's log by default.
+
+    Returns:
+        bool: True if the file is a POG when this returns, False if it could not be made one --
+        a raster off the pyramid entirely cannot be fixed by adding overviews, and saying so is
+        more useful than raising inside a distribution step that runs last.
+    """
+    log = log or hb.log
+    if hb.is_path_pog(path):
+        return True
+    try:
+        hb.make_path_pog(path, output_raster_path=path)
+    except Exception as error:
+        log('  could not make %s a POG: %s' % (os.path.basename(path), error))
+        return False
+    if hb.is_path_pog(path):
+        log('  wrote %s as a POG' % os.path.basename(path))
+        return True
+    log('  %s is still not a POG: it is not on the pyramid, which overviews cannot fix'
+        % os.path.basename(path))
+    return False
+
+
+def distribute_results(p, service, log=None):
+    """Copy a service's registered results into the project's output directory.
+
+    Five services carried this loop verbatim, differing only in the service key they looked up --
+    which is the shape that goes wrong when a service is renamed and one copy is missed, because
+    `p.results[<wrong key>]` raises in a task that runs last and only on a full tree.
+
+    Args:
+        p (ProjectFlow): the project, inside gep_results_distribution.
+        service (str): the service's key in p.results.
+        log (callable): where to report; hazelbean's log by default.
+    """
+    log = log or hb.log
+    log('Distributing GEP results...')
+    for name, path in p.results.get(service, {}).items():
+        output_path = os.path.join(p.output_dir, name)
+        hb.path_copy(path, output_path)
+        log('Distributed %s to %s' % (name, output_path))
+        # Every raster that leaves as a result leaves as a POG, once, here -- rather than each
+        # service remembering to do it.
+        if str(output_path).lower().endswith(('.tif', '.tiff')):
+            publish_raster_as_pog(output_path, log=log)
+    log('GEP results distribution complete.')
+
+
+def require_workspace_signature(workspace, signature, signature_path, prepared_inputs=()):
+    """Refuse unsigned/changed cached service data; allow interrupted same-input work.
+
+    Record the contract before writing service outputs. An existing result is
+    reusable only under this same contract; this does not certify completion.
+    """
+    reason = outputs_reuse_reason([], signature, signature_path)
+    if reason is None:
+        return
+    artifacts = []
+    allowed = {os.path.abspath(str(p)) for p in prepared_inputs}
+    if os.path.isdir(workspace):
+        for folder, _, names in os.walk(workspace):
+            artifacts.extend(os.path.join(folder, n) for n in names
+                             if n.lower().endswith(('.tif', '.tiff', '.csv', '.parquet'))
+                             and os.path.abspath(os.path.join(folder, n)) not in allowed)
+    if artifacts:
+        raise ValueError('Unverified or changed service workspace %s (%s). Preserve it and use a '
+                         'fresh directory; example cached file: %s' % (workspace, reason, artifacts[0]))
+    os.makedirs(workspace, exist_ok=True)
+    write_outputs_signature(signature, signature_path)

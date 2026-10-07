@@ -19,6 +19,10 @@ def run_project(p):
 
     # Every task publishes its own inputs (publish_inputs in the tasks module): no setup call.
     build_task_tree(p)
+    # Skipping is run configuration, so the CHOICE belongs to the caller and applying it belongs
+    # here. The tree is always built in full, so its structure is identical across variants and
+    # only the run flags differ. A run that sets nothing skips nothing.
+    p.skip_tasks(getattr(p, 'tasks_to_skip', None))
 
     hb.log('Created ProjectFlow object at ' + p.project_dir + '\n    from script ' + p.calling_script)
     p.execute()

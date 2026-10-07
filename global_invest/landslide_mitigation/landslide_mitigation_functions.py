@@ -1,7 +1,6 @@
 """The landslide-mitigation science, as pure functions over arrays and frames.
 
-Ported from m-braaksma/landslide_mitigation v0.2.0 (folded 2026-08-16); every function here
-was previously a closure or an inline block inside landslide_mitigation_tasks.py. Nothing in
+Implements the landslide-mitigation v0.2.0 method. Nothing in
 this module reads or writes a file or touches a ProjectFlow object -- the task module supplies
 the arrays and frames and writes the results, which is what makes the arithmetic testable.
 
@@ -30,8 +29,8 @@ The calculation, in the order the task tree runs it:
                   coefficients_by_term, hurdle_table_rows) and figure binning
                   (fatality_bin_masks, bucket_legend_labels).
 
-The raster and grid drivers that used to sit here have moved to the task layer, so this file
-holds only functions over arrays and frames.
+The raster and grid drivers live in the task layer, so this file holds only functions over
+arrays and frames.
 """
 import numpy as np
 import pandas as pd
@@ -41,7 +40,7 @@ from osgeo import osr
 # Every derived raster in this chain carries the same nodata value.
 NODATA = -9999.0
 
-# METHOD CONSTANTS defining the ported v0.2.0 science (the landslide author's to bless) -- in
+# METHOD CONSTANTS defining the v0.2.0 science (the landslide author's to bless) -- in
 # code so a change costs a reviewed commit. publish_inputs applies them caller-wins, so a
 # deliberate override on p survives.
 DATA_PROCESSING_YEARS = list(range(2007, 2020))  # every year the input rasters are built for
@@ -165,11 +164,8 @@ USD_PER_MILLION = 1e6
 # --- Reporting --------------------------------------------------------------------------
 SIGNIFICANCE_LEVELS = ((0.001, '***'), (0.01, '**'), (0.05, '*'))
 TOP_COUNTRY_COUNT = 15                  # rows in the top-countries results table
-CHOROPLETH_BUCKET_EDGES = [0, 1, 5, 15, 50, 100, float('inf')]
 # UGLC event map: deaths per event, open-ended at the top.
 FATALITY_BINS = (('1-5', 1, 5), ('5-25', 5, 25), ('25-100', 25, 100), ('100+', 100, None))
-PLOT_RASTER_MAX_DIM = 4096              # decimate a global raster to this before plotting
-PLOT_PERCENTILES = (2, 98)              # colour-scale range, robust to the long right tail
 
 
 # ============================================================================ #

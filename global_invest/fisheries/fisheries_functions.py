@@ -26,7 +26,7 @@ def read_fisheries_headers(cwon_path, headers):
 
 
 # NGFS scenario -> fisheries RCP header. RCP2.6=FI26 (below_2c/net_zero/low_demand),
-# RCP4.5=FI45 (ndcs/delayed_transition), RCP7.0=FI85 (current_policies/fragmented_world/stress_test).
+# RCP4.5=FI45 (ndcs/delayed_transition), RCP7.0=FI85 (current_policies/fragmented_world/-es20).
 # RCP -> FI header. The headers ARE RCP-named (FI26=RCP2.6, FI45=RCP4.5, FI85=RCP8.5; FI85 also
 # serves RCP7.0 as the closest available -- provenance #16). When the scenarios CSV carries a
 # climate_label column (hydrate_es_scenarios publishes p.es_shock_climate_labels), the header is
@@ -36,27 +36,24 @@ RCP_FI_MAP = {'rcp26': 'FI26', 'rcp45': 'FI45', 'rcp60': 'FI85', 'rcp70': 'FI85'
 FISH_HEADER_MAP = {
     'below_2c': 'FI26', 'net_zero': 'FI26', 'low_demand': 'FI26',
     'ndcs': 'FI45', 'delayed_transition': 'FI45',
-    'current_policies': 'FI85', 'fragmented_world': 'FI85', 'stress_test': 'FI85',
+    'current_policies': 'FI85', 'fragmented_world': 'FI85', 'current_policies-es20': 'FI85',
 }
-FISH_CAP = 2.0          # +-2% backstop. Every legitimate FI value across FI26/FI45/FI85 is <=1.6%, so real
-                        # signal passes untouched. Kept as a catch-all; known-bad values are now IMPUTED by
-                        # FISH_VALUE_OVERRIDES below rather than merely clipped.
-
 # (header, region) -> imputed value, for entries that are demonstrably corrupt at source.
 #
 # 'nor' FI26 = +13.504 while its FI45 = +0.565 and FI85 = +0.558. A 24x larger gain under the WEAKEST
 # warming inverts the physics -- DBEM's high-latitude gains grow with warming, they do not peak at RCP2.6
-# -- so the value is an error, not signal. Clipping it to the +-2 cap does not fix the problem: with only
-# 50 regions the global mean is dominated by this one cell (RCP2.6 mean +0.3037, of which 'nor' alone
-# contributes +0.270; capped it still supplies ~half the remaining mean), so the SIGN of the below_2c
-# fisheries shock rested on a number we know is wrong.
+# -- so the value is an error, not signal. With only 50 regions the global mean is dominated by this one
+# cell (RCP2.6 mean +0.3037, of which 'nor' alone contributes +0.270), so the SIGN of the below_2c
+# fisheries shock rested on a number we know is wrong. Imputing it is what fixes that; a magnitude clip
+# would leave the same cell supplying about half the remaining mean while looking healthy.
 #
 # Imputed from Norway's OWN other-RCP values by OLS across the other 49 regions:
 #   FI26 ~ FI45 : r=+0.813, slope +0.7411, intercept +0.0583 -> +0.4767   <- used (best correlated)
 #   FI26 ~ FI85 : r=+0.482                                   -> +0.2916
 #   median FI26/FI45 ratio (n=39, |FI45|>0.05) = +0.8902     -> +0.5026   (independent corroboration)
 # Result: nor = +0.477 (2.6), +0.565 (4.5), +0.558 (8.5) -- gains rise then flatten with warming.
-# ⚠ This is an IMPUTATION, not a correction at source. Flag it to Erwin with #16.
+# This is an IMPUTATION, not a correction at source, and is raised with the shock's
+# author as issue #16.
 FISH_VALUE_OVERRIDES = {('FI26', 'nor'): 0.4767}
 
 
@@ -129,8 +126,7 @@ def static_shock_rows(fi_data, scenarios, header_map, climate_labels, overrides,
 
 
 # =============================================================================
-# GEP valuation (commercial capture fisheries, CWoN method). Ported from the
-# source repo's 2026 script (gep_commcapturefisheries_cwonmethod_20260720.R):
+# GEP valuation (commercial capture fisheries, CWoN method):
 # CWoN 2024 (FR_WLD_2024_195) fisheries economic rent, deflated to 2019 USD,
 # per-country OLS trend over 2009-2018 predicting 2019, floored at zero.
 # =============================================================================
@@ -236,8 +232,8 @@ def commfish_gep_by_country(trends_df, countries_df):
 
 
 # =============================================================================
-# Subsistence fisheries GEP (Lynch et al. 2024, USGS data release). Ported from
-# the gep-subsistence-fisheries repo; the committed output CSV is the anchor.
+# Subsistence fisheries GEP (Lynch et al. 2024, USGS data release); the
+# committed output CSV is the anchor.
 # =============================================================================
 # The Lynch et al. release carries the whole valuation, not only its result: a harvested
 # quantity at the price's unit, a price per kilogram in USD, and their product per species.
@@ -284,3 +280,138 @@ def subsistence_fisheries_by_country(lynch_df, countries_df):
     data = subsistence_value_by_admin(lynch_df)
     df = countries_df.merge(data, how='left', left_on='brk_name', right_on='admin')
     return df.drop(columns=['admin'])
+
+
+# =============================================================================
+# Aquaculture. The third fisheries subgroup, beside commercial capture and
+# subsistence.
+#
+# The source values capture and aquaculture as one figure:
+#   GEP_fish := (total_aqua_value_usd1000 + total_cap_value_usd1000) * NatRes_Share
+# (gep_fisheries_02_calc_gep_fish.R). Aquaculture is the first term times the
+# same share, so nothing new is invented here -- one term of a sum is separated.
+#
+# Aquaculture is farmed. What the share values is the natural-resource input to
+# farmed production, not a wild stock, and whether that belongs in the account
+# beside capture is a scope question for the paper rather than a computation.
+# =============================================================================
+AQUACULTURE_VALUE_MEASURE = 'V_USD_1000'   # FAO's own code: value in thousand USD
+# FAO's Major_Group for seaweeds and other aquatic plants. Excluded by default, and the reason is
+# the share rather than the reference: the multiplier is GTAP's natural-resource share of the
+# FISHING sector, and GTAP does not put seaweed farming in fishing. Applying a fishing-sector
+# share to seaweed value prices one sector's output with another's factor structure.
+AQUATIC_PLANTS_MAJOR_GROUP = 'PLANTAE AQUATICAE'
+GTAP_FISHING_SECTOR = 'fsh'
+GTAP_NATURAL_RESOURCE_ENDOWMENT = 'NatRes'
+
+
+def natural_resource_share_of_fishing(evfp_array, endowments, activities, regions,
+                                      sector=GTAP_FISHING_SECTOR,
+                                      endowment=GTAP_NATURAL_RESOURCE_ENDOWMENT):
+    """The natural-resource share of fishing value added, one value per GTAP region.
+
+    GTAP's EVFP is primary factor purchases at purchasers' prices, dimensioned endowment by
+    activity by region, so the share is the natural-resource row over the column's total. This
+    replaces the source's `fsh_endowment_gtap.xlsx`, which is the same quantity read from a
+    workbook nobody sent us; computing it from the base data we already hold means the service
+    does not rest on a file only one machine has.
+
+    Args:
+        evfp_array: the EVFP array, (endowment, activity, region).
+        endowments, activities, regions (list[str]): its set element names, in order.
+
+    Returns:
+        pandas.DataFrame: gtap_region_label and natural_resource_share.
+
+    Raises:
+        ValueError: if a region's fishing sector has no factor payments at all, because a zero
+            denominator would otherwise publish a silent zero share and value the whole sector
+            at nothing.
+    """
+    import numpy as np
+    import pandas as pd
+    e = endowments.index(endowment)
+    a = activities.index(sector)
+    natural_resource = np.asarray(evfp_array)[e, a, :]
+    total = np.asarray(evfp_array)[:, a, :].sum(axis=0)
+    if (total <= 0).any():
+        empty = [regions[i] for i, t in enumerate(total) if t <= 0]
+        raise ValueError('GTAP regions with no %s factor payments, so the share is undefined '
+                         'rather than zero: %s' % (sector, ', '.join(empty)))
+    return pd.DataFrame({'gtap_region_label': regions,
+                         'natural_resource_share': natural_resource / total})
+
+
+def aquaculture_value_by_country(value_df, year, species_groups_df=None,
+                                 exclude_aquatic_plants=True):
+    """FAO FishStatJ aquaculture value for one year, summed over species, area and environment.
+
+    The export is long: one row per country-species-area-environment-year, `VALUE` in thousand
+    USD under the MEASURE code V_USD_1000. Returns whole dollars on the account's country key,
+    since FAO's COUNTRY.UN_CODE is the M49 code that `iso3_r250_id` carries.
+    """
+    df = value_df[value_df['PERIOD'] == int(year)]
+    if 'MEASURE' in df.columns:
+        df = df[df['MEASURE'] == AQUACULTURE_VALUE_MEASURE]
+    if exclude_aquatic_plants:
+        if species_groups_df is None:
+            raise ValueError('excluding aquatic plants needs the species-group table, so that '
+                             'which species were dropped is readable rather than assumed')
+        plants = set(species_groups_df.loc[
+            species_groups_df['Major_Group'] == AQUATIC_PLANTS_MAJOR_GROUP, '3A_Code'])
+        df = df[~df['SPECIES.ALPHA_3_CODE'].isin(plants)]
+    out = df.groupby('COUNTRY.UN_CODE', as_index=False)['VALUE'].sum()
+    out['aquaculture_value_usd'] = out['VALUE'] * 1000.0
+    return out.rename(columns={'COUNTRY.UN_CODE': 'iso3_r250_id'})[
+        ['iso3_r250_id', 'aquaculture_value_usd']]
+
+
+def aquaculture_gep_by_country(value_df, share_df, countries_df, year,
+                               species_groups_df=None, exclude_aquatic_plants=True):
+    """Aquaculture GEP: FAO value times the natural-resource share of the country's GTAP region.
+
+    A country FAO does not value stays NaN rather than zero: no data is not no aquaculture.
+    """
+    values = aquaculture_value_by_country(value_df, year, species_groups_df,
+                                          exclude_aquatic_plants)
+    df = countries_df.merge(values, on='iso3_r250_id', how='left')
+    df = df.merge(share_df, left_on='gtap_region_label', right_on='gtap_region_label', how='left')
+    df['aquaculture_gep'] = df['aquaculture_value_usd'] * df['natural_resource_share']
+    return df
+
+
+def natural_resource_share_of_fishing_gross_output(evfp_array, maks_array, endowments,
+                                                   activities, regions,
+                                                   sector=GTAP_FISHING_SECTOR,
+                                                   endowment=GTAP_NATURAL_RESOURCE_ENDOWMENT):
+    """The same natural-resource payments as a share of GROSS OUTPUT, not of value added.
+
+    Why both exist. `natural_resource_share_of_fishing` divides the natural-resource payment by
+    the sector's total FACTOR payments -- its value added. FAO's aquaculture figure is a REVENUE,
+    which is gross output. Multiplying a revenue by a share of value added overstates it by the
+    ratio between the two, and for fishing that ratio is 0.585 on average and as low as 0.265.
+
+    The check that this is right rather than a preference is forestry, where two independent
+    sources meet: GTAP's land share of forestry value added is 0.589, and 0.589 x 0.644 = 0.380 on
+    gross output, against CWoN's separately-derived forest rental ratio of 0.376. One percent apart.
+
+    The conversion is per region and cannot be a single factor: value added over gross output
+    runs 0.265 to 0.928 across the 50 GTAP regions, so a world average would move small fishing
+    economies by more than the correction itself.
+
+    Returns:
+        pandas.DataFrame: gtap_region_label and natural_resource_share_of_gross_output.
+    """
+    import numpy as np
+    import pandas as pd
+    e = endowments.index(endowment)
+    a = activities.index(sector)
+    evfp = np.asarray(evfp_array)
+    value_added = evfp[:, a, :].sum(axis=0)
+    gross_output = np.asarray(maks_array)[:, a, :].sum(axis=0)
+    if (gross_output <= 0).any():
+        empty = [regions[i] for i, g in enumerate(gross_output) if g <= 0]
+        raise ValueError('GTAP regions with no %s gross output, so the share is undefined rather '
+                         'than zero: %s' % (sector, ', '.join(empty)))
+    return pd.DataFrame({'gtap_region_label': regions,
+                         'natural_resource_share_of_gross_output': evfp[e, a, :] / gross_output})

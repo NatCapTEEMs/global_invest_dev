@@ -205,7 +205,8 @@ def test_collapse_regions_to_countries_sums_a_split_country_once():
 
 def test_expand_country_values_to_regions_repeats_the_national_value_per_sub_region():
     df_regions = _region_frame()
-    out = pf.expand_country_values_to_regions(df_regions, pf.collapse_regions_to_countries(df_regions))
+    out = utilities.expand_country_values_to_regions(
+        df_regions, pf.collapse_regions_to_countries(df_regions), 'pollination_gep')
     assert len(out) == 3
     assert out.set_index('ee_r264_id')['pollination_gep'].loc[[1, 2]].tolist() == [60.0, 60.0]
     # The per-region raster totals are kept beside the national value, not overwritten by it.
@@ -250,7 +251,21 @@ def test_pollination_gep_sums_split_country_once(tmp_path):
     p = SimpleNamespace(run_this=True, cur_dir=str(tmp_path), results={}, gep_base_year=2023,
                         input_dir=str(tmp_path / 'input'),
                         get_path=lambda *a, **k: '/resolved/' + '/'.join(a),
-                        df_countries=pd.DataFrame({'placeholder': [1]}),   # trips the caller-wins guard
+                        # A real country frame, because the published table is now put on the
+                        # account's r250 list: every country appears, and one the service has no
+                        # value for is NA rather than absent. A placeholder cannot express that.
+                        # Shaped like the real correspondence: a split country carries its
+                        # sub-region rows plus the canonical one whose r264 label equals its r250
+                        # label, and that canonical row is the one a country join keeps.
+                        df_countries=pd.DataFrame({
+                            'ee_r264_id': [1, 2, 156, 528],
+                            'ee_r264_label': ['chn_a', 'chn_b', 'CHN', 'NLD'],
+                            'ee_r264_name': ['China A', 'China B', 'China', 'Netherlands'],
+                            'iso3_r250_id': [156, 156, 156, 528],
+                            'iso3_r250_label': ['CHN', 'CHN', 'CHN', 'NLD'],
+                            'iso3_r250_name': ['China', 'China', 'China', 'Netherlands'],
+                            **{c: [m[i] for i in [156, 156, 156, 528]] for c, m in ATTRS.items()
+                               if c not in ('iso3_r250_label', 'iso3_r250_name')}}),
                         # our own raster now, in USD per cell rather than a density from elsewhere
                         pollination_value_raster_path=str(tmp_path / 'poll_value.tif'),
                             pollination_value_raster_rebuilt_path=str(tmp_path / 'poll_value.tif'),
@@ -358,13 +373,20 @@ def test_coffee_dependence_follows_what_each_country_actually_grows():
     # and 0.65. Collapsing on the item code keeps whichever row came first, which valued every
     # coffee country as pure arabica. Colombia really is pure arabica; Vietnam is nearly all
     # robusta, so one global ratio is wrong in opposite directions for two big producers.
-    splits = pd.DataFrame({'area_code_m49': [170, 704, 76],
-                           'prop_arabica': [1.0, 0.034832, 0.626506],
-                           'prop_robusta': [0.0, 0.965168, 0.373494]})
+    # The real file gives each country five seasons and a multi-year summary. Brazil's seasons
+    # bracket its summary, so a reader that took a row by position rather than by name would
+    # still return something plausible -- which is why the season rows are here.
+    splits = pd.DataFrame({
+        'area_code_m49': [170, 704, 76, 76, 76],
+        'year': [pf.COFFEE_SPLIT_SUMMARY_YEAR, pf.COFFEE_SPLIT_SUMMARY_YEAR,
+                 '2021_22', pf.COFFEE_SPLIT_SUMMARY_YEAR, 'Dec_2025_26'],
+        'prop_arabica': [1.0, 0.034832, 0.626506, 0.644762, 0.603175],
+        'prop_robusta': [0.0, 0.965168, 0.373494, 0.355238, 0.396825]})
     by_country = pf.coffee_dependence_by_country(splits)
     assert by_country[170] == pytest.approx(0.25)                      # Colombia, all arabica
     assert by_country[704] == pytest.approx(0.6361, abs=1e-3)          # Vietnam, mostly robusta
-    assert by_country[76] == pytest.approx(0.3994, abs=1e-3)           # Brazil, a real mix
+    # The summary row, not the last row: Brazil's final season would give 0.4087.
+    assert by_country[76] == pytest.approx(0.3921, abs=1e-3)
 
     # And the ratio reaches the pixels through the country raster, with a country we have no
     # split for falling back rather than dropping out.
@@ -375,13 +397,34 @@ def test_coffee_dependence_follows_what_each_country_actually_grows():
     assert ratios[1, 1] == pytest.approx(0.25)                          # unknown -> the default
 
 
-def test_the_deflator_refuses_a_year_it_has_no_index_for():
-    # Returning 1.0 for an unknown year would leave the value undeflated and looking correct.
-    cpi = {2019: 255.7, 2020: 258.8}
-    assert pf.usd_deflator(2020, 2020, cpi) == 1.0
-    assert pf.usd_deflator(2020, 2019, cpi) == pytest.approx(0.98802, abs=1e-5)
-    with pytest.raises(KeyError):
-        pf.usd_deflator(2020, 1850, cpi)
+def test_the_world_average_row_is_the_fallback_and_not_a_country():
+    """The file carries a world-average row under area_code_m49 9999 for the 58 of 78 coffee
+    countries it does not name. It is what those countries are valued at, and it is not itself a
+    country, so it must not appear in the per-country lookup."""
+    splits = pd.DataFrame({
+        'area_code_m49': [170, pf.COFFEE_SPLIT_FALLBACK_CODE],
+        'year': [pf.COFFEE_SPLIT_SUMMARY_YEAR, pf.COFFEE_SPLIT_SUMMARY_YEAR],
+        'prop_arabica': [1.0, 0.603917],
+        'prop_robusta': [0.0, 0.396083]})
+
+    by_country = pf.coffee_dependence_by_country(splits)
+    assert set(by_country) == {170}                       # 9999 is not a country
+    # 0.603917 x 0.25 + 0.396083 x 0.65, the source pipeline's own fallback rather than arabica.
+    assert pf.coffee_dependence_fallback(splits) == pytest.approx(0.4084, abs=1e-4)
+    assert pf.coffee_dependence_fallback(splits) != pytest.approx(0.25, abs=1e-3)
+
+
+def test_the_coffee_blend_refuses_a_file_with_no_multi_year_summary():
+    # Selecting by position returned the summary only because the exporter writes it last. If a
+    # re-export drops it, averaging the seasons here would report a different window than the
+    # author does, and the two pipelines would part by a fraction of a percent with nothing said.
+    seasons = pd.DataFrame({'area_code_m49': [76, 76],
+                            'year': ['2021_22', 'Dec_2025_26'],
+                            'prop_arabica': [0.626506, 0.603175],
+                            'prop_robusta': [0.373494, 0.396825]})
+    with pytest.raises(NameError, match='coffee split file'):
+        pf.coffee_dependence_by_country(seasons)
+
 
 
 def test_the_cpi_table_matches_the_series_the_deflator_used_to_hold():
@@ -448,3 +491,517 @@ def test_the_latest_vintage_wins_when_the_base_year_is_unpublished(tmp_path):
     (tmp_path / 'poll_value_global_2019usd.tif').write_bytes(b'x')
     path, year = pf.find_source_value_raster(FakeProject(), 2019)
     assert year == 2019, 'the exact base year must win when it exists'
+
+
+# =================================================================================================
+# Condition 12: the two reproduction claims, checked rather than asserted.
+#
+# The status entry carried "reproduced to 1.8e-08" and "byte-equal to his csv, 5.6e-17" for weeks.
+# Both were measured once, by hand, and neither survived a change: nothing recomputed them, and the
+# 1.8e-08 comparison had stopped running altogether once the library began building its own raster.
+# These pin what the pipeline can actually re-derive, and they run against every pollination project
+# on the machine so a stale directory cannot stand in for a fresh one.
+# =================================================================================================
+
+def _pollination_runs():
+    """Every pollination project directory on this machine, cold starts included."""
+    import glob
+    pattern = os.path.join(os.path.expanduser('~'), 'Files', 'global_invest', 'projects',
+                           'gep_pollination*', 'intermediate')
+    return sorted(p for p in glob.glob(pattern) if os.path.isdir(p))
+
+
+def test_our_dependence_panel_reproduces_the_authors_published_table():
+    """Our `pollination_1993_2024.parquet` against the author's csv, column by column.
+
+    This is the adoption the entry has to be honest about: reproducing it proves the port carries
+    his FAO-item crosswalk and his blend weights faithfully, and proves nothing about whether those
+    are right. Pinning it is what stops the agreement quietly lapsing the next time either side
+    regenerates.
+    """
+    base = os.path.join(os.path.expanduser('~'), 'Files', 'base_data', 'global_invest', 'pollination')
+    ours_path = os.path.join(base, 'fao', 'pollination', 'pollination_1993_2024.parquet')
+    his_path = os.path.join(base, 'pollination_1993_2024.csv')
+    if not (os.path.exists(ours_path) and os.path.exists(his_path)):
+        pytest.skip('the dependence panel or the author table is not on this machine')
+
+    ours = pd.read_parquet(ours_path)
+    his = pd.read_csv(his_path)
+    assert len(ours) == len(his) == 287285
+
+    for frame in (ours, his):
+        frame['area_code_m49'] = frame['area_code_m49'].astype('int64')
+    shared = [c for c in his.columns if c in ours.columns]
+    assert len(shared) == len(his.columns), 'the author table has a column ours does not carry'
+
+    # The key repeats on 2,477 rows in both files, so ordering on the key alone is not stable
+    # enough to compare row against row. Sorting on every shared column is.
+    o = ours[shared].sort_values(shared).reset_index(drop=True)
+    h = his[shared].sort_values(shared).reset_index(drop=True)
+
+    for column in shared:
+        if pd.api.types.is_numeric_dtype(h[column]):
+            a, b = o[column].astype(float), h[column].astype(float)
+            both = a.notna() & b.notna()
+            relative = ((a[both] - b[both]).abs() / b[both].abs().replace(0, np.nan)).max()
+            assert pd.isna(relative) or relative < 1e-12, column
+            assert (a.isna() == b.isna()).all(), column
+        else:
+            # A missing label reads as None out of parquet and as nan out of csv, which is the file
+            # format and not a difference; every other text value must match exactly.
+            a = o[column].where(o[column].notna(), None).astype(str).replace('None', '')
+            b = h[column].where(h[column].notna(), None).astype(str).replace('None', '')
+            assert (a == b).all(), column
+
+
+def test_our_rebuilt_raster_stays_close_to_the_authors_staged_one():
+    """The independence check, pinned. Ours is built from FAO, CropGrids and Monfreda rather than
+    read from his file, so this is two pipelines meeting rather than one reproducing the other, and
+    the tolerance is set where a real divergence would show without the ordinary difference between
+    two builds tripping it. A drift past a percent and a half, or a correlation falling off, means
+    something moved that nobody decided to move."""
+    checked = 0
+    for run in _pollination_runs():
+        path = os.path.join(run, 'pollination_value_independence_check',
+                            'value_raster_independence.csv')
+        if not os.path.exists(path):
+            continue
+        row = pd.read_csv(path).iloc[0]
+        assert abs(row['pct_difference']) < 1.5, (run, row['pct_difference'])
+        assert row['correlation_where_both'] > 0.99, (run, row['correlation_where_both'])
+        assert row['cells_in_both'] > 2_000_000, (run, row['cells_in_both'])
+        # Both totals are the account's own headline figure and must stay in its neighbourhood.
+        assert 3.5e11 < row['ours_independent_usd'] < 4.2e11, run
+        assert 3.5e11 < row['author_raster_usd'] < 4.2e11, run
+        checked += 1
+    if not checked:
+        pytest.skip('no pollination run with an independence check on this machine')
+
+
+def test_dynamic_shock_rows_v3_is_the_scenario_against_its_own_paired_base():
+    """v3 is a trajectory, not a distance from a contemporaneous baseline.
+
+    Pinned because the two were conflated once: the seam emitted only the contemporaneous and
+    fixed-base measures, and the v3 the paper reports had to be rebuilt from rasters by a separate
+    script. They disagree in magnitude and in sign.
+    """
+    fixedbase = _zone_frame({2030: {ZONE_A: -8.0}, 2040: {ZONE_A: -12.0}})
+    paired_base = {2030: pd.Series({ZONE_A: 200.0}), 2040: pd.Series({ZONE_A: 400.0})}
+    paired_scen = {2030: pd.Series({ZONE_A: 180.0}), 2040: pd.Series({ZONE_A: 300.0})}
+
+    rows = pf.dynamic_shock_rows(fixedbase, fixedbase, None, 'net_zero', ('V_F',), base_year=2020,
+                                 paired_base_by_year=paired_base, paired_scen_by_year=paired_scen)
+    by_year = pd.DataFrame(rows).set_index('year')
+
+    # 180/200 - 1 = -10%;  300/400 - 1 = -25%.
+    assert np.isclose(by_year.loc[2030, 'shock_pct_v3'], -10.0)
+    assert np.isclose(by_year.loc[2040, 'shock_pct_v3'], -25.0)
+    # Pinned at zero at the base year and straight between anchors, like every other measure here.
+    assert by_year.loc[2020, 'shock_pct_v3'] == 0.0
+    assert np.isclose(by_year.loc[2025, 'shock_pct_v3'], -5.0)
+    assert np.isclose(by_year.loc[2035, 'shock_pct_v3'], -17.5)
+    # The ratio is taken anchor by anchor. Interpolating the two LEVELS to 2035 and dividing there
+    # would give 240/300 - 1 = -20%, which is not the same number.
+    assert not np.isclose(by_year.loc[2035, 'shock_pct_v3'], -20.0)
+
+
+def test_dynamic_shock_rows_v3_is_missing_rather_than_infinite_on_a_zero_paired_base():
+    fixedbase = _zone_frame({2030: {ZONE_A: -8.0}})
+    rows = pf.dynamic_shock_rows(fixedbase, fixedbase, None, 'net_zero', ('V_F',), base_year=2029,
+                                 paired_base_by_year={2030: pd.Series({ZONE_A: 0.0})},
+                                 paired_scen_by_year={2030: pd.Series({ZONE_A: 5.0})})
+    by_year = pd.DataFrame(rows).set_index('year')
+    # The anchor is unmeasurable, so it is missing rather than an infinite shock. The base year
+    # stays zero: it is zero by construction, not a measurement the zero denominator could spoil.
+    assert np.isnan(by_year.loc[2030, 'shock_pct_v3'])
+    assert by_year.loc[2029, 'shock_pct_v3'] == 0.0
+
+
+def test_dynamic_shock_rows_v3_is_absent_without_the_paired_halves():
+    fixedbase = _zone_frame({2030: {ZONE_A: -8.0}})
+    rows = pf.dynamic_shock_rows(fixedbase, fixedbase, None, 'net_zero', ('V_F',), base_year=2029)
+    assert all(np.isnan(row['shock_pct_v3']) for row in rows)
+
+
+# ---------------------------------------------------------------------------------------------
+# Crop-to-GTAP-sector split
+#
+# The per-crop loop sums 153 crops into one raster, which destroys the sector identity. Everything
+# downstream then gives each sector the whole zone's value rather than its share -- invisible while
+# only shock_pct is read, and wrong as soon as a value becomes a denominator (oilseed pollination
+# value exceeded oilseed output in 19 of 50 regions before this split existed).
+# ---------------------------------------------------------------------------------------------
+
+def _correspondence_and_crosswalk():
+    """The shipped crop->sector correspondence and the crop list the pollination task iterates."""
+    import glob
+    import os
+
+    import pandas as pd
+
+    corr = glob.glob(os.path.expanduser(
+        '~/Files/gtap_invest/projects/elasticities_assessment/elasticities_assessment/'
+        'input_template/cropgrids_c153_gtapv7_s8_correspondence.csv'))
+    summary = glob.glob(os.path.expanduser(
+        '~/Files/gep_repos/crop_benefits_outputs/rasters_*/pollination/value_*/'
+        'poll_value_summary_*usd.csv'))
+    if not corr or not summary:
+        import pytest
+        pytest.skip('correspondence or value summary not staged on this machine')
+    return (pd.read_csv(corr[0], encoding='utf-8-sig'),
+            pd.read_csv(sorted(summary)[-1], encoding='utf-8-sig'))
+
+
+def test_every_valued_crop_maps_to_a_gtap_sector():
+    """A crop with no sector keeps its value in the total and loses it from every sector raster.
+
+    That is a silent leak: the totals still reconcile, so nothing looks wrong, while the per-sector
+    shares are all quietly too small.
+    """
+    corr, summary = _correspondence_and_crosswalk()
+    mapped = set(corr['cropgrids_label'].astype(str))
+    valued = set(summary['cropgrids_crop'].astype(str))
+    missing = sorted(valued - mapped)
+    assert not missing, (
+        '%d valued crops have no GTAP sector, so their value would vanish from the per-sector '
+        'rasters while remaining in the total: %s' % (len(missing), missing[:10]))
+
+
+def test_sector_split_conserves_total_value():
+    """Summing the sectors must reproduce the ungrouped total, to the cent.
+
+    This is the invariant the split has to preserve: it REDISTRIBUTES value between sectors, it
+    never creates or destroys any.
+    """
+    corr, summary = _correspondence_and_crosswalk()
+    m = summary.merge(corr[['cropgrids_label', 'gtapv7_label']],
+                      left_on='cropgrids_crop', right_on='cropgrids_label', how='left')
+    poll_col = [c for c in summary.columns if c.startswith('total_poll_value')][0]
+    ungrouped = float(summary[poll_col].sum())
+    by_sector = float(m.groupby('gtapv7_label')[poll_col].sum().sum())
+    assert abs(by_sector - ungrouped) < 1.0, (
+        'sector split does not conserve value: %.2f grouped vs %.2f ungrouped'
+        % (by_sector, ungrouped))
+
+
+def test_v_f_and_osd_do_not_own_everything():
+    """The two sectors NGFS writes must not be assumed to hold all pollination value.
+
+    They hold ~92%; the rest sits in OCR, PFB and GRO and currently receives no shock at all. If
+    this ever reads 100%, the correspondence has collapsed and the split is doing nothing.
+    """
+    corr, summary = _correspondence_and_crosswalk()
+    m = summary.merge(corr[['cropgrids_label', 'gtapv7_label']],
+                      left_on='cropgrids_crop', right_on='cropgrids_label', how='left')
+    poll_col = [c for c in summary.columns if c.startswith('total_poll_value')][0]
+    by_sector = m.groupby('gtapv7_label')[poll_col].sum()
+    share_two = by_sector.reindex(['V_F', 'OSD']).fillna(0.0).sum() / by_sector.sum()
+    assert 0.80 < share_two < 0.99, (
+        'V_F+OSD hold %.1f%% of pollination value; outside the expected band, so either the '
+        'correspondence changed or the split collapsed' % (100 * share_two))
+
+
+def test_dynamic_shock_rows_accepts_per_sector_crop_levels_without_changing_shock_pct():
+    """Step 1 of the output-denominated shock: crop levels are delivered, and nothing else moves.
+
+    The point of the test is the second half. Handing a new denominator to the row writer must not
+    change shock_pct, which is what the solver reads; if it did, the published afeall results would
+    shift the moment the crop rasters exist. So: same shock_pct with and without the crop levels,
+    and value_usd_base takes the SECTOR's pollination level rather than the zone total.
+    """
+    import pandas as pd
+
+    from global_invest.pollination import pollination_functions as pf
+
+    zone = ('AEZ3', 'CHL')
+    fixed = pd.DataFrame({2030: [10.0], 2050: [20.0]}, index=pd.MultiIndex.from_tuples([zone]))
+    contemp = fixed.copy()
+    zone_total = pd.Series({zone: 2.0e9})                 # the whole zone, all crops
+    poll_by_sector = {'V_F': pd.Series({zone: 1.7e9}), 'OSD': pd.Series({zone: 0.3e9})}
+    crop_by_sector = {'V_F': pd.Series({zone: 9.0e9}), 'OSD': pd.Series({zone: 0.21e9})}
+
+    without = pf.dynamic_shock_rows(fixed, contemp, zone_total, 'net_zero', ['V_F', 'OSD'], 2023)
+    with_levels = pf.dynamic_shock_rows(fixed, contemp, zone_total, 'net_zero', ['V_F', 'OSD'], 2023,
+                                        level_usd_by_sector=poll_by_sector,
+                                        crop_usd_by_sector=crop_by_sector)
+
+    a = pd.DataFrame(without).sort_values(['ACTS', 'year']).reset_index(drop=True)
+    b = pd.DataFrame(with_levels).sort_values(['ACTS', 'year']).reset_index(drop=True)
+    assert len(a) == len(b) and len(a) > 0
+    # What the solver reads is untouched.
+    assert (a['shock_pct'].values == b['shock_pct'].values).all()
+    # The value column now carries the sector's own share, not the zone total copied twice.
+    vf = b[b['ACTS'] == 'V_F']['value_usd_base'].iloc[0]
+    osd = b[b['ACTS'] == 'OSD']['value_usd_base'].iloc[0]
+    assert vf == 1.7e9 and osd == 0.3e9, (vf, osd)
+    assert abs((vf + osd) - 2.0e9) < 1.0, 'sector shares must reproduce the zone total, not multiply it'
+    # And without the levels, the historical behaviour: zone total on every sector row.
+    assert (a['value_usd_base'] == 2.0e9).all()
+
+
+def test_shock_pct_output_is_the_v3_dollars_over_crop_value():
+    """The output-denominated column is the PAPER'S numerator over the crop-value denominator.
+
+    The export selects shock_pct_v3 for pollination: the scenario's own paired trajectory from the
+    base year, 100 (S_t - S_2023) / S_2023. shock_pct_output must be that same dollar change,
+    d_usd = v3/100 x the sector's base-year pollination value, over the sector's crop value --
+    NOT the contemporaneous measure relabelled. Expected values are hand-computed from the levels
+    below, independently of the function. NaN, never 0, where the crop level or the v3 series is
+    absent.
+    """
+    import math
+
+    import pandas as pd
+
+    from global_invest.pollination import pollination_functions as pf
+
+    zone = ('AEZ3', 'CHL')
+    idx = pd.MultiIndex.from_tuples([zone])
+    # contemporaneous measure deliberately DIFFERENT from v3, so a relabelling would be caught
+    fixed = pd.DataFrame({2030: [10.0], 2050: [20.0]}, index=idx)
+    contemp = pd.DataFrame({2030: [3.0], 2050: [7.0]}, index=idx)
+    # paired levels: base 2.0e9 (S_2023), scenario 2.2e9 at 2030 and 2.5e9 at 2050
+    paired_base = {2030: pd.Series({zone: 2.0e9}), 2050: pd.Series({zone: 2.0e9})}
+    paired_scen = {2030: pd.Series({zone: 2.2e9}), 2050: pd.Series({zone: 2.5e9})}
+    poll = {'V_F': pd.Series({zone: 1.7e9}), 'OSD': pd.Series({zone: 0.3e9})}
+    crop = {'V_F': pd.Series({zone: 9.0e9})}          # OSD deliberately has no crop level
+
+    rows = pd.DataFrame(pf.dynamic_shock_rows(
+        fixed, contemp, pd.Series({zone: 2.0e9}), 'net_zero', ['V_F', 'OSD'], 2023,
+        paired_base_by_year=paired_base, paired_scen_by_year=paired_scen,
+        level_usd_by_sector=poll, crop_usd_by_sector=crop))
+    vf = rows[rows['ACTS'] == 'V_F'].set_index('year')
+
+    # v3 at 2050: 100 (2.5/2.0 - 1) = 25 %; the V_F sector holds 1.7e9 of the zone's 2.0e9, so its
+    # dollar change is 0.25 x 1.7e9 = 0.425e9; over 9.0e9 crop value = 4.7222 %
+    assert abs(vf.loc[2050, 'shock_pct_v3'] - 25.0) < 1e-9
+    assert abs(vf.loc[2050, 'shock_pct_output'] - 100.0 * (0.25 * 1.7e9) / 9.0e9) < 1e-9
+    # at 2030: v3 = 10 %, output share = 0.10 x 1.7 / 9.0 = 1.8889 %
+    assert abs(vf.loc[2030, 'shock_pct_output'] - 100.0 * (0.10 * 1.7e9) / 9.0e9) < 1e-9
+    # between anchors the v3 series is interpolated and the output share follows it: 2040 = 17.5 %
+    assert abs(vf.loc[2040, 'shock_pct_output'] - 100.0 * (0.175 * 1.7e9) / 9.0e9) < 1e-9
+    # the ratio output/v3 IS the pollination share of crop value, and it is NOT the contemp ratio
+    assert abs(vf.loc[2050, 'shock_pct_output'] / vf.loc[2050, 'shock_pct_v3'] - 1.7e9 / 9.0e9) < 1e-12
+    assert abs(vf.loc[2050, 'shock_pct_output'] - vf.loc[2050, 'shock_pct'] * 1.7e9 / 9.0e9) > 1e-3
+    # base year: no shock
+    assert vf.loc[2023, 'shock_pct_output'] == 0.0
+
+    # OSD: no crop level -> NaN
+    osd = rows[(rows['ACTS'] == 'OSD') & (rows['year'] == 2050)].iloc[0]
+    assert math.isnan(osd['shock_pct_output'])
+
+    # No paired levels -> no v3 -> output share NaN throughout, never zero
+    plain = pd.DataFrame(pf.dynamic_shock_rows(
+        fixed, contemp, pd.Series({zone: 2.0e9}), 'net_zero', ['V_F'], 2023,
+        level_usd_by_sector=poll, crop_usd_by_sector=crop))
+    assert plain['shock_pct_output'].isna().all()
+
+
+import ast
+import math
+from pathlib import Path
+from typing import Tuple
+import unittest
+import numpy as np
+from scipy.ndimage import convolve
+
+SOURCE = Path(__file__).with_name('pollination_tasks.py')
+TREE = ast.parse(SOURCE.read_text())
+NS = dict(np=np, math=math, Tuple=Tuple, convolve=convolve)
+HELPERS = {'_compute_radii_pixels', '_make_elliptical_kernel'}
+nodes = [n for n in TREE.body if
+         isinstance(n, ast.FunctionDef) and n.name in HELPERS or
+         isinstance(n, ast.Assign) and any(isinstance(t, ast.Name) and
+         t.id in {'_COS_LAT_FLOOR', '_RADIUS_METERS', '_METERS_PER_DEG_LAT', '_MAX_RY', '_MAX_RX'} for t in n.targets)]
+exec(compile(ast.Module(body=nodes, type_ignores=[]), str(SOURCE), 'exec'), NS)
+worker = next(n for n in TREE.body if isinstance(n, ast.FunctionDef) and n.name == '_process_tile')
+count = next(n for n in ast.walk(worker) if isinstance(n, ast.Assign) and any(isinstance(t, ast.Name) and t.id == 'counts' for t in n.targets))
+EXPR = compile(ast.Expression(count.value), str(SOURCE), 'eval')
+
+def production(mask, kernel):
+    return eval(EXPR, dict(NS, nat_mask=mask, kernel=kernel))
+
+class HabitatCounts(unittest.TestCase):
+    def test_center_matches_exact_neighbor_sum(self):
+        for latitude in (0, 30, 50, 55, 60, 70):
+            with self.subTest(latitude=latitude):
+                ry, rx = NS['_compute_radii_pixels'](latitude, 1/360, 1/360)
+                kernel = NS['_make_elliptical_kernel'](ry, rx)
+                mask = kernel.copy()
+                mask[ry, rx] = 0  # focal pixel is cropland
+                self.assertEqual(int(production(mask, kernel)[ry, rx]), int(mask.sum()))
+
+    def test_habitat_removal_cannot_increase_sufficiency(self):
+        kernel = NS['_make_elliptical_kernel'](7, 12)
+        mask = kernel.copy()
+        mask[7, 12] = 0
+        previous = 1.0
+        for row, col in np.argwhere(mask):
+            mask[row, col] = 0
+            count = int(production(mask, kernel)[7, 12])
+            sufficiency = min(count / int(kernel.sum()) / .3, 1.)
+            self.assertLessEqual(sufficiency, previous)
+            previous = sufficiency
+        self.assertEqual(previous, 0.)
+
+if __name__ == '__main__':
+    unittest.main()
+
+
+import numpy as np
+import pytest
+
+from global_invest.pollination import provision_decomposition as pd_mod
+from global_invest.pollination.retained_value import retained_value_change
+
+
+def test_hectare_components_partition_baseline_cropland():
+    base = np.array([[2, 2, 3], [2, 3, 3]])
+    future = np.array([[2, 3, 2], [2, 3, 3]])
+    ha = np.full((2, 3), 10.0)
+    got = pd_mod.component_hectares(base, future, ha)
+    assert got['retained_ha'] == 20.0            # (0,0) and (1,0)
+    assert got['lost_ha'] == 10.0                # (0,1) crop -> non-crop
+    assert got['new_ha'] == 10.0                 # (0,2) non-crop -> crop
+    assert got['retained_ha'] + got['lost_ha'] == got['base_cropland_ha']
+    assert got['retained_ha'] + got['new_ha'] == got['future_cropland_ha']
+
+
+def test_retained_term_matches_the_fed_measure():
+    """The decomposition must not quietly redefine the estimand it is diagnosing."""
+    value, base_ha, retained_ha = 1000.0, 100.0, 60.0
+    suff_base, suff_future = 0.4, 0.7
+    got = pd_mod.decompose(value, retained_ha, 40.0, 0.0, base_ha, suff_base, suff_future)
+    fed = retained_value_change(value, retained_ha / base_ha, suff_base, suff_future)
+    assert np.isclose(got['retained_change'], fed)
+
+
+def test_identity_reconciles():
+    got = pd_mod.decompose(500.0, 50.0, 30.0, 20.0, 80.0, 0.5, 0.6)
+    summary = pd_mod.reconcile(got)
+    assert np.isclose(summary['total_change'],
+                      summary['retained_change'] + summary['new_provision'] - summary['lost_provision'])
+
+
+def test_new_cropland_without_a_base_rate_is_reported_not_zeroed():
+    """A cell with no baseline cropland cannot yield a value per hectare; the area must survive."""
+    got = pd_mod.decompose(0.0, 0.0, 0.0, 25.0, 0.0, 0.3, 0.9)
+    assert got['new_provision'] == 0.0
+    assert got['unvalued_new_ha'] == 25.0
+    summary = pd_mod.reconcile(got)
+    assert summary['unvalued_new_ha'] == 25.0
+    assert 'no defensible crop value' in summary['caveat']
+
+
+def test_unvalued_assumption_declines_to_value_any_new_land():
+    got = pd_mod.decompose(1000.0, 50.0, 0.0, 50.0, 50.0, 0.5, 0.5,
+                           new_cropland_valuation='unvalued')
+    assert got['new_provision'] == 0.0
+    assert got['unvalued_new_ha'] == 50.0
+
+
+def test_one_sided_sufficiency_coverage_contributes_nothing():
+    """A component computed where only one year has sufficiency would difference against nothing."""
+    got = pd_mod.decompose(1000.0, 50.0, 10.0, 10.0, 60.0, np.nan, 0.8)
+    assert got['retained_change'] == 0.0
+    assert got['lost_provision'] == 0.0
+    assert got['new_provision'] == 0.0
+
+
+def test_components_that_overrun_baseline_cropland_are_rejected():
+    with pytest.raises(ValueError, match='do not partition'):
+        pd_mod.decompose(100.0, 60.0, 60.0, 0.0, 100.0, 0.5, 0.5)
+
+
+def test_unknown_valuation_assumption_is_rejected():
+    with pytest.raises(ValueError, match='unknown new-cropland valuation'):
+        pd_mod.decompose(100.0, 10.0, 0.0, 0.0, 10.0, 0.5, 0.5, new_cropland_valuation='zero')
+
+
+def test_label_says_valued_support_when_some_new_cropland_is_unvalued():
+    got = pd_mod.decompose(0.0, 0.0, 0.0, 25.0, 0.0, 0.3, 0.9)
+    summary = pd_mod.reconcile(got)
+    assert summary['quantity'] == 'provision change on valued support'
+
+
+def test_label_says_total_only_when_everything_is_valued_and_covered():
+    got = pd_mod.decompose(1000.0, 60.0, 40.0, 0.0, 100.0, 0.4, 0.7)
+    summary = pd_mod.reconcile(got)
+    assert summary['quantity'] == 'total provision change'
+    assert summary['unvalued_new_ha'] == 0.0
+    assert summary['excluded_for_missing_sufficiency_ha'] == 0.0
+
+
+def test_area_excluded_for_missing_sufficiency_is_reported_not_dropped():
+    got = pd_mod.decompose(1000.0, 50.0, 10.0, 10.0, 60.0, np.nan, 0.8)
+    summary = pd_mod.reconcile(got)
+    assert summary['excluded_for_missing_sufficiency_ha'] == 70.0
+    assert summary['quantity'] == 'provision change on valued support'
+
+
+import unittest
+import numpy as np
+from retained_raster import _overlap
+
+
+class OverlapTests(unittest.TestCase):
+    def test_coincident_edges_do_not_create_neighbour_slivers(self):
+        weights=_overlap(2,0,1000.+1e-12,1.,0.,1.,1003).toarray()
+        self.assertEqual(np.count_nonzero(weights),2)
+        np.testing.assert_array_equal(weights[1000:1002],np.eye(2))
+
+    def test_real_small_overlap_is_preserved(self):
+        weights=_overlap(1,0,1000.+1e-5,1.,0.,1.,1002).toarray()
+        self.assertEqual(np.count_nonzero(weights),2)
+        self.assertAlmostEqual(weights[1001,0],1e-5,places=10)
+        self.assertAlmostEqual(weights.sum(),1.)
+
+
+if __name__=='__main__': unittest.main()
+
+
+import unittest
+import numpy as np
+from retained_value import retained_value_change, output_share_pct, annual_retained_rows
+
+
+class RetainedValueTests(unittest.TestCase):
+    def test_half_retained_does_not_receive_whole_cell_value(self):
+        # $100 crop value; $20 dependent; half retained; sufficiency .4 -> .6.
+        delta = retained_value_change(20, .5, .4, .6)
+        self.assertAlmostEqual(float(delta), 2.)
+        self.assertAlmostEqual(output_share_pct(delta, 100), 2.)
+
+    def test_turnover_alone_is_not_habitat_productivity_change(self):
+        np.testing.assert_allclose(retained_value_change([20, 20], [0, .5], [.4, .4], [.4, .4]), 0)
+
+    def test_habitat_loss_never_produces_gain(self):
+        delta = retained_value_change([20, 10], [.5, 1], [.8, .5], [.2, .4])
+        self.assertTrue(np.all(delta < 0))
+
+    def test_sector_denominator_includes_all_baseline_crop_value(self):
+        delta = retained_value_change([20, 10], [.5, 0], [.4, np.nan], [.6, np.nan])
+        self.assertAlmostEqual(output_share_pct(delta, [100, 100]), 1.)
+
+    def test_inconsistent_coverage_and_missing_aggregation_refused(self):
+        with self.assertRaises(ValueError):
+            retained_value_change(20, .5, .4, np.nan)
+        with self.assertRaises(ValueError):
+            output_share_pct([1, np.nan], [100, 100])
+
+    def test_common_value_unit_conversion_cancels(self):
+        self.assertAlmostEqual(output_share_pct([2, -1], [100, 50]),
+                               output_share_pct([2000, -1000], [100000, 50000]))
+
+    def test_annual_dollars_allow_zero_baseline_and_preserve_anchor_change(self):
+        import pandas as pd
+        index=pd.MultiIndex.from_tuples([('AEZ1','USA')])
+        zero=pd.Series([0.],index=index); future=pd.Series([2.],index=index)
+        rows=annual_retained_rows({2030:zero},{2030:future},zero,'current_policies',2023,['V_F'])
+        self.assertEqual(rows.iloc[0].delta_pollination_usd,0.)
+        self.assertEqual(rows.iloc[-1].delta_pollination_usd,2.)
+        np.testing.assert_allclose(rows.delta_pollination_usd,np.linspace(0,2,8))
+
+
+if __name__ == '__main__':
+    unittest.main()

@@ -235,10 +235,10 @@ def upstream_prevention_share(accumulated_avoided, accumulated_potential, ndv=-9
 def _required_path(p, attribute, constant_name):
     """The project's value for a path, or a failure that names what is missing.
 
-    These used to read `getattr(p, attribute, SOME_CONSTANT)`, where the constant was an absolute
-    path on the machine the source scripts were written on. A project that did not set the
-    attribute therefore fell back to a directory that does not exist here, and the run failed
-    later with a missing-file error naming somebody else's home directory. Failing here instead
+    A `getattr(p, attribute, SOME_CONSTANT)` default would be an absolute path from the machine
+    the source scripts were written on: a project that did not set the attribute would fall back
+    to a directory that does not exist here, and the run would fail later with a missing-file
+    error naming somebody else's home directory. Failing here instead
     names the parameter to add to es_parameters.csv.
 
     Args:
@@ -254,33 +254,10 @@ def _required_path(p, attribute, constant_name):
     """
     value = getattr(p, attribute, None)
     if value is None:
-        raise NameError('erosion needs %s (%s). Add a row for it to es_parameters.csv; it used to '
-                        'default to a path on the machine the source scripts came from.'
-                        % (attribute, constant_name))
+        raise NameError('erosion needs %s (%s). Add a row for it to es_parameters.csv; there is '
+                        'no default.' % (attribute, constant_name))
     return str(value)
 
-def _output_path(p, attribute, default_name):
-    """Where the run writes something, from the project or under the task's own directory.
-
-    An output is not an input: the project need not be told where to put it, only where to find
-    what it reads. So this defaults into the task directory rather than raising the way
-    _required_path does, and a project that wants the file somewhere else still sets the
-    attribute. Before this, the defaults were absolute paths on the machines the source scripts
-    came from, so outputs of a run here were addressed to a cluster.
-
-    Args:
-        p (ProjectFlow): the project.
-        attribute (str): the attribute a project may set to override the default.
-        default_name (str): the file or directory name under the task directory.
-
-    Returns:
-        str: where to write.
-    """
-    value = getattr(p, attribute, None)
-    if value is not None:
-        return str(value)
-    directory = getattr(p, 'cur_dir', None) or getattr(p, 'project_dir', None) or '.'
-    return os.path.join(str(directory), default_name)
 
 
 
@@ -292,13 +269,13 @@ def _output_path(p, attribute, default_name):
 # 0) PATH CONFIG (CANONICAL)
 # =============================================================================
 # Set by configure_sdr / configure_prevention_shares / configure_maps from the project's
-# es_parameters rows. None until then: these used to hold absolute paths on the machines the
-# source scripts were written on, so a project that forgot a row ran against a directory that
-# does not exist here. _required_path now names the missing row instead.
+# es_parameters rows. None until then: a constant default here would be an absolute path from
+# the machines the source scripts were written on, so a project that forgot a row would run
+# against a directory that does not exist here. _required_path names the missing row instead.
 
 
 
-# ✅ Use MERGED watershed ONLY
+# Use MERGED watershed ONLY
 
 # Sanitized watersheds used to prevent overflow + CRS parse failures in report
 
@@ -435,9 +412,6 @@ def build_args(p, watersheds_path) -> dict:
 # Shock floor (applied only to (0 < shock < floor))
 
 
-# World Bank API toggles
-_HTTP_TIMEOUT = 60
-_RETRY = 4
 
 # Rasterization behavior. False is the centre rule, and configure_prevention_shares defaults to
 # the same thing, so a task that reads this before the run is configured gets the same rule.

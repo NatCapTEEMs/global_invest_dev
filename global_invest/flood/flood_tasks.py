@@ -14,9 +14,9 @@ Settings come from es_parameters and are read off `p` where they are used. `publ
 one place that decides where a file lives, so every task sees the same layout however it is run. The
 task wrappers at the end are the seam `flood_initialize` grafts onto a task tree.
 """
-# The pipeline runs in five sections, A to E. Outputs are named for what they hold; which
-# source script each was folded in from is in reference/output_provenance.csv, which is how
-# an output of ours is lined up against one of the original pipeline's.
+# The pipeline runs in five sections, A to E. Outputs are named for what they hold;
+# reference/output_provenance.csv maps each output to the committed reference file it is
+# compared against.
 from __future__ import annotations
 
 import glob
@@ -315,7 +315,7 @@ def write_lulc_to_sda_mapping(p) -> str:
         "crop": cropland,
         "pasture": pasture,
         "ignore": ignore,
-        # Aliases (clarity / backward compatibility with the original scripts)
+        # Aliases: the committed configuration files use these names for the same classes
         "built_up": built_up,
         "cropland": cropland,
     }
@@ -1364,7 +1364,7 @@ def build_damage_tables(p):
     Cropland's curve is copied to pasture when `flood_set_pasture_equal_crop` is set, which is the
     JRC default: pasture has no curve of its own.
 
-    ⚠ The staged inputs cannot currently price buildings, and the guard below stops the run rather
+    The staged inputs cannot currently price buildings, and the guard below stops the run rather
     than letting it report the shortfall as a number. `jrc_fractional_curves_long.csv` holds a
     zero at all nine depths for `GLOBAL` crossed with `Residential buildings` while every other
     region carries a real curve, and `country_landtype_flood_damage_JRC_EUR_m2.csv` puts all 214
@@ -1457,7 +1457,7 @@ def _open_amplification_raster(p, scenario: str, rp: int):
     Raises:
         FileNotFoundError: if a DEGRADED scenario has no raster. Returning None there would make
             the degraded depths equal the current ones, so that return period's GEP would be
-            exactly zero -- which is what a missing file used to do, behind a warning.
+            exactly zero, behind nothing louder than a warning.
     """
     if scenario == "current":
         return None
@@ -1510,7 +1510,10 @@ def compute_pixel_damages(p, iso3_list: Optional[List[str]] = None,
         raise ValueError(f"scenario must be one of {tuple(SCENARIO_SUFFIX)}")
     suffix = SCENARIO_SUFFIX[scenario]
 
-    utilities.assert_exists(p.flood_sda_damage_wide_path, "Run step 4A (build_damage_tables) first.")
+    utilities.assert_exists(
+        p.flood_sda_damage_wide_path,
+        "Run step 4A (build_damage_tables), or, if flood_skip_damage_tables is true because the "
+        "curves were built elsewhere, name that file in flood_sda_damage_wide_input_path.")
     utilities.assert_exists(p.flood_sda_raster_path, "Global SDA raster is required (Section A).")
 
     curves = load_damage_table_wide(p.flood_sda_damage_wide_path)
@@ -1895,7 +1898,7 @@ def compute_ead_by_country(p, scenario: str = "current") -> pd.DataFrame:
     hb.log(f"[DONE] Step 4C [{scenario}]: ok={n_ok} / {len(iso3_dirs)}, "
           f"total EAD ${total:,.0f}")
 
-    # ⚠ "ok" counts countries that completed, not countries that produced a number. On 2026-08-29
+    # "ok" counts countries that completed, not countries that produced a number. On 2026-08-29
     # this printed ok=250/250 while every country was $0, because the run had hydrated no config
     # and there was nothing to value -- and the zero total flowed all the way into a published
     # published GEP table without anything raising. A whole-world zero is never a real result, so it stops
@@ -2248,12 +2251,16 @@ def compute_flood_gep(p) -> Optional[str]:
     return p.flood_gep_path
 
 
-def run_gep_chain(p, skip_damage_tables: bool = True,
+def run_gep_chain(p, skip_damage_tables: bool,
                   scenarios: Optional[List[str]] = None) -> dict:
     """
     Paired-scenario driver: run 4B/4C for current plus each degraded scenario,
     then difference. Roughly triples Step 4B cost with both degraded scenarios,
     so it is a deliberate separate task rather than part of run_valuation_chain().
+
+    `skip_damage_tables` has no default here, and none in `run_valuation_chain`, because the two
+    carried opposite ones -- True here, False there -- so which curves a run used depended on
+    which chain reached them first. Both callers read it from es_parameters, where it belongs.
     """
     out = {}
     if not skip_damage_tables:
@@ -2269,8 +2276,11 @@ def run_gep_chain(p, skip_damage_tables: bool = True,
     return out
 
 
-def run_valuation_chain(p, df_countries, skip_damage_tables: bool = False) -> dict:
-    """Section D driver: 4A -> 4B -> 4C -> 4D (+ attributed companion export)."""
+def run_valuation_chain(p, df_countries, skip_damage_tables: bool) -> dict:
+    """Section D driver: 4A -> 4B -> 4C -> 4D (+ attributed companion export).
+
+    `skip_damage_tables` is required, for the reason given on `run_gep_chain`.
+    """
     out = {}
     if not skip_damage_tables:
         out["damage_tables"] = build_damage_tables(p)
@@ -2497,93 +2507,7 @@ def publish_inputs(p):
 
 
 
-def _load_country_ead(p) -> pd.DataFrame:
-    utilities.assert_exists(p.flood_country_ead_path, "Run Section D (step 4D) before Section E.")
-    df = pd.read_csv(p.flood_country_ead_path)
-    df["iso3"] = df["iso3"].astype(str).str.upper().str.strip()
-    ead_col = utilities.find_col(df, ("ead_usd2019", "ead usd2019", "ead"))
-    if ead_col is None:
-        raise ValueError(f"No EAD column found in {p.flood_country_ead_path}: {list(df.columns)}")
-    df = df.rename(columns={ead_col: "ead_usd2019"})
-    df["ead_usd2019"] = pd.to_numeric(df["ead_usd2019"], errors="coerce")
-    return df
 
-
-def generate_all_maps_and_figures(p) -> dict:
-    """
-    Section E driver: publication figures from Section D's country table --
-    a global EAD choropleth (Fisher-Jenks), a top-N country bar chart, a
-    regional breakdown, and the mean SPA->SDA service-flow map if Section C ran.
-    """
-    hb.create_directories(p.flood_figures_dir)
-    outputs = {}
-
-    country = _load_country_ead(p)
-    admin0 = load_admin0(p.flood_country_vector_path)
-
-    joined = admin0.merge(country, on="iso3", how="left")
-
-    # 1) Global choropleth of Expected Annual Damage
-    png = os.path.join(p.flood_figures_dir, "map_country_ead_USD2019.png")
-    utilities.plot_publication_choropleth_categorical(
-        joined, value_col="ead_usd2019",
-        title="Expected Annual Flood Damage to Service Demanding Areas",
-        out_png=png, legend_title=p.flood_money_unit_label,
-        scheme="fisher_jenks", k=p.flood_map_k_classes,
-        value_unit="usd_millions", label_format="usd_millions",
-    )
-    outputs["map_country_ead"] = png
-    hb.log(f"[OK] Wrote {png}")
-
-    # 2) Top-N countries by EAD
-    top = utilities.top_n(country, "ead_usd2019", p.flood_top_n).copy()
-    if not top.empty:
-        top["_m"] = top["ead_usd2019"] / p.flood_usd_to_millions
-        fig, ax = plt.subplots(figsize=(10, 8))
-        ax.barh(top["iso3"][::-1], top["_m"][::-1])
-        ax.set_xlabel(p.flood_money_unit_label)
-        ax.set_title(f"Top {p.flood_top_n} countries by Expected Annual Flood Damage")
-        png = os.path.join(p.flood_figures_dir, "bar_top_countries_ead.png")
-        utilities.savefig(png)
-        outputs["bar_top_countries"] = png
-        hb.log(f"[OK] Wrote {png}")
-
-    # 3) Regional breakdown, if Step 4D enriched with a region column
-    if "region_wb" in country.columns:
-        reg = (country.groupby("region_wb", dropna=True)["ead_usd2019"]
-               .sum().sort_values(ascending=False) / p.flood_usd_to_millions)
-        if not reg.empty:
-            fig, ax = plt.subplots(figsize=(10, 6))
-            ax.barh(reg.index[::-1], reg.values[::-1])
-            ax.set_xlabel(p.flood_money_unit_label)
-            ax.set_title("Expected Annual Flood Damage by World Bank region")
-            png = os.path.join(p.flood_figures_dir, "bar_region_ead.png")
-            utilities.savefig(png)
-            outputs["bar_region"] = png
-            hb.log(f"[OK] Wrote {png}")
-
-    # 4) Mean SPA -> SDA service flow by country (Section C output)
-    if hb.path_exists(p.flood_service_flow_path):
-        flow = pd.read_csv(p.flood_service_flow_path)
-        if {"iso3", "mean_spa_ratio_on_sda"}.issubset(flow.columns):
-            agg = (flow.groupby("iso3", as_index=False)["mean_spa_ratio_on_sda"].mean())
-            agg["iso3"] = agg["iso3"].astype(str).str.upper()
-            j2 = admin0.merge(agg, on="iso3", how="left")
-            png = os.path.join(p.flood_figures_dir, "map_mean_service_flow_frac.png")
-            utilities.plot_publication_choropleth_categorical(
-                j2, value_col="mean_spa_ratio_on_sda",
-                title="Mean upstream SPA share serving flood-exposed SDA",
-                out_png=png, legend_title="Service flow fraction (0-1)",
-                scheme="quantiles", k=p.flood_map_k_classes,
-                value_unit="raw", label_format="percent",
-            )
-            outputs["map_service_flow"] = png
-            hb.log(f"[OK] Wrote {png}")
-    else:
-        warnings.warn(f"[WARN] No service-flow summary at {p.flood_service_flow_path}; "
-                      "skipping the service-flow map.")
-
-    return outputs
 
 
 # ---------------------------------------------------------------------------------------------
@@ -2735,6 +2659,73 @@ def task_compute_service_flow(p):
     return True
 
 
+# Section D's outputs depend on more than their own existence. The chain was gated on one file
+# being present, so a rerun after any change to the curves, the depths or the skip flag reused
+# whatever was there: job 17589055 reported COMPLETED in 2h15m and returned the previous run's
+# figures in every digit, because the previous run's expected_annual_damage_by_country file
+# existed. Section B has had a signature for this since the source pipeline; Section D had none.
+SECTION_D_CODE_VERSION = '2026-08-31_valuation_signature'
+
+
+def valuation_signature(p):
+    """What Section D's outputs were produced from, as a comparable dict.
+
+    The damage curves are hashed rather than fingerprinted, because that file is the one a person
+    repoints when a table turns out to be wrong, and a repoint that keeps the size and mtime would
+    otherwise pass.
+
+    Returns:
+        dict: the settings and input fingerprints the valuation depends on.
+    """
+    curves = str(p.flood_sda_damage_wide_path)
+    return {
+        'code_version': SECTION_D_CODE_VERSION,
+        'skip_damage_tables': bool(_required(p, 'flood_skip_damage_tables')),
+        'return_periods': sorted(int(rp) for rp in p.flood_return_periods),
+        'depth_mode': str(getattr(p, 'flood_damage_depth_mode', '')),
+        'depth_dir': str(p.flood_depth_aligned_path),
+        # file_fingerprint hashes by default, so an explicit sha256 here would be the same
+        # call twice.
+        'sda_damage_curves': utilities.file_fingerprint(curves),
+        'service_flow': utilities.file_fingerprint(str(p.flood_service_flow_path)),
+    }
+
+
+def valuation_signature_path(p):
+    return os.path.join(p.flood_global_export_dir, 'valuation_run_signature.json')
+
+
+def valuation_rebuild_reason(p, signature):
+    """Why Section D cannot reuse what is on disk, or None when it can.
+
+    Args:
+        p: the ProjectFlow object.
+        signature (dict): what this run would produce the outputs from.
+
+    Returns:
+        str | None: the reason, naming the fields that differ, or None to reuse.
+    """
+    if not hb.path_exists(p.flood_country_ead_path):
+        return 'there is no per-country expected annual damage to reuse'
+    path = valuation_signature_path(p)
+    if not hb.path_exists(path):
+        return ('the outputs carry no signature, so what produced them is unknown; they predate '
+                'this check')
+    try:
+        old = json.loads(open(path, encoding='utf-8').read())
+    except Exception:
+        return 'the signature beside the outputs cannot be read'
+    changed = sorted(k for k in set(old) | set(signature) if old.get(k) != signature.get(k))
+    if changed:
+        return 'the signature changed in %s' % ', '.join(changed)
+    return None
+
+
+def write_valuation_signature(p, signature):
+    hb.write_to_file(json.dumps(signature, indent=2, sort_keys=True, default=str),
+                     valuation_signature_path(p))
+
+
 def task_compute_flood_damages(p):
     """
     Task wrapper for Section D: the monetary chain 4A -> 4B -> 4C -> 4D.
@@ -2764,7 +2755,15 @@ def task_compute_flood_damages(p):
     p.flood_damage_long_path = os.path.join(p.flood_global_export_dir, 'damage_by_landtype_usd2019_long.csv')
     p.flood_damage_wide_table_path = os.path.join(p.flood_global_export_dir, 'damage_by_landtype_usd2019_wide.csv')
     p.flood_sda_damage_long_path = os.path.join(p.flood_global_export_dir, 'damage_by_sda_usd2019_long.csv')
-    p.flood_sda_damage_wide_path = os.path.join(p.flood_global_export_dir, 'damage_by_sda_usd2019_wide.csv')
+    # The wide SDA table is the exception, because it is only an output while 4A runs.
+    # `flood_skip_damage_tables` says the curves were built elsewhere, which makes this an input.
+    # Assigning it unconditionally overwrote the file es_parameters had already named, so a run
+    # configured to skip 4A looked in 4A's own empty output directory and stopped with "Run step 4A
+    # first" -- the one thing the operator had deliberately not done. A blank row still hydrates to
+    # nothing and falls through to the default, which is what the three tables above rely on.
+    p.flood_sda_damage_wide_path = (getattr(p, 'flood_sda_damage_wide_path', None)
+                                    or os.path.join(p.flood_global_export_dir,
+                                                    'damage_by_sda_usd2019_wide.csv'))
     if not p.run_this:
         return True
     hb.create_directories([p.flood_global_export_dir, p.flood_currency_audit_dir])
@@ -2773,12 +2772,15 @@ def task_compute_flood_damages(p):
     service_results['country_ead_csv'] = p.flood_country_ead_path
     service_results['global_totals_csv'] = p.flood_global_totals_path
 
-    if hb.path_all_exist([service_results['country_ead_csv']]):
-        hb.log("%s already exists. Skipping the flood valuation chain."
-               % os.path.basename(service_results['country_ead_csv']))
-    else:
-        skip_tables = _required(p, 'flood_skip_damage_tables')
-        run_valuation_chain(p, p.df_countries, skip_damage_tables=skip_tables)
+    signature = valuation_signature(p)
+    reason = valuation_rebuild_reason(p, signature)
+    if reason is None:
+        hb.log('Section D reuses its outputs: the signature that produced them is unchanged.')
+        return True
+    hb.log('Section D recomputes, %s' % reason)
+    skip_tables = _required(p, 'flood_skip_damage_tables')
+    run_valuation_chain(p, p.df_countries, skip_damage_tables=skip_tables)
+    write_valuation_signature(p, signature)
 
     return True
 
@@ -2811,21 +2813,6 @@ def task_compute_flood_gep(p):
     return True
 
 
-def task_generate_maps_and_figures(p):
-    """
-    Task wrapper for Section E: publication-ready choropleths and charts built
-    from task_compute_flood_damages()'s and task_compute_service_flow()'s
-    outputs. Originally analyze_step4d_global_results.py.
-    """
-    publish_inputs(p)
-    p.flood_figures_dir = p.cur_dir
-    if not p.run_this:
-        return True
-
-    generate_all_maps_and_figures(p)
-    return True
-
-
 def gep_calculation(p):
     """GEP valuation for flood: the per-country avoided damage the pipeline produces.
 
@@ -2836,7 +2823,7 @@ def gep_calculation(p):
     The author's export is the fallback when that chain has not run. Which was used is recorded in
     the log and in service_results.
 
-    ⚠ This is the GEP, not the expected annual damage the same pipeline reports.
+    This is the GEP, not the expected annual damage the same pipeline reports.
     """
     publish_inputs(p)
     service_results, already_done = utilities.begin_gep_calculation(p, 'flood')

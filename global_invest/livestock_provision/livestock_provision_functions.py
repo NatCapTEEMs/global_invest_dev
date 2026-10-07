@@ -6,13 +6,16 @@ FAOSTAT Value of Production file: gross production value per country, item and y
 to land by the Changing Wealth of Nations 2024 rental rate, which varies by decade and is applied
 by a backward as-of merge on year.
 
-Two differences from crop_provision are deliberate and load-bearing. The item selection is by FAO
-item CODE rather than name (the service owner's convention, robust to FAO renaming items), and
-the values are NOT converted out of FAOSTAT's thousand USD, so this service's totals are in
-thousand USD where every other service reports plain USD. That second one is an open item flagged
-in the tracker, not a decision: see attach_countries.
+One difference from crop_provision is deliberate and load-bearing: the item selection is by FAO
+item CODE rather than name, which is the service owner's convention and is robust to FAO renaming
+items. The values ARE converted out of FAOSTAT's thousand USD, at the same point crop_provision
+converts, so this service reports plain USD like the rest of the library -- see attach_countries.
+Both value columns are in current US dollars, which for a 2019 run is already 2019 dollars, so
+nothing here needs a currency conversion. The reference implementation reads FAOSTAT element 152
+instead, constant 2014-2016 international dollars, which is neither the account's currency nor its
+price base.
 
-Step two of the port, feed_lambda_by_country, computes the ecosystem-provided share of livestock
+feed_lambda_by_country computes the ecosystem-provided share of livestock
 feed from GLEAM 3, wired through the task layer beside the rental-rate attribution.
 
 Every function here is a pure transformation over frames, which is what the tests exercise. The
@@ -28,58 +31,7 @@ from global_invest import utilities
 # FAOSTAT's Value of Production table stacks several elements and units in one file. The
 # valuation reads gross production value in current USD, which the file reports as element 57
 # with unit "1000 USD".
-FAOSTAT_VALUE_UNIT = '1000 USD'
 # FAOSTAT ships value in thousand USD; the library reports plain USD, as crop_provision does.
-FAOSTAT_THOUSAND_USD = 1000.0
-FAOSTAT_GROSS_PRODUCTION_VALUE_ELEMENT = 57
-# The bulk file's year columns run Y1961 to Y2022, each shadowed by a Y<year>F data-quality flag.
-FAOSTAT_FIRST_YEAR = 1961
-FAOSTAT_LAST_YEAR = 2022
-# FAOSTAT area 223 is Turkiye, which recent releases spell several ways. The country join runs on
-# the M49 code, so the name is normalised only to keep the item-level table readable.
-FAOSTAT_TURKIYE_AREA_CODE = 223
-
-# FAOSTAT keeps dissolved states under their own M49 codes. Each maps to the successor the
-# country correspondence uses, so their production joins to a country instead of dropping.
-M49_SUCCESSORS = {
-    159: 156,   # China (mainland) -> China
-    891: 688,   # Serbia and Montenegro -> Serbia
-    200: 203,   # Czechoslovakia -> Czechia
-    230: 231,   # Ethiopia PDR -> Ethiopia
-    736: 729,   # Sudan (former) -> Sudan
-}
-
-# The columns an item-level row is identified by, before the year columns are melted down. The
-# item columns keep crop_provision's names because both services read the same FAOSTAT file.
-CROP_ID_COLUMNS = ['area_code', 'area_code_M49', 'country', 'crop_code', 'crop']
-
-
-def clean_crop_values(df_raw, items, aggregate_areas):
-    """FAOSTAT gross production value, one row per country-item-year. See
-    utilities.clean_faostat_values; this names the value column for the account."""
-    return utilities.clean_faostat_values(df_raw, items, 'livestock_provision_gep', aggregate_areas)
-
-
-
-
-
-
-def merge_crop_with_coefs(df_crop_value, df_crop_coefs):
-    """Production value attributed to land, country by country."""
-    return utilities.apply_rental_rates(df_crop_value, df_crop_coefs, 'livestock_provision_gep')
-
-
-def group_crops(df):
-    """Item rows summed to one row per country and year."""
-    return utilities.sum_items_to_country_year(df, 'livestock_provision_gep')
-
-
-def group_countries(df):
-    """Country-year rows summed to one global row per year."""
-    return utilities.sum_countries_to_year(df, 'livestock_provision_gep')
-
-
-
 
 
 
@@ -110,11 +62,11 @@ def attach_countries(df_crop_value, df_countries):
                       'rental_rate', 'livestock_provision_gep'])
     df = hb.df_merge(ee_r264_to_250, df_crop_value, how='right',
                      left_on='iso3_r250_id', right_on='area_code_M49')
-    df['livestock_provision_gep'] = df['livestock_provision_gep'] * FAOSTAT_THOUSAND_USD
+    df['livestock_provision_gep'] = df['livestock_provision_gep'] * utilities.FAOSTAT_THOUSAND_USD
     if 'gross_production_value' in df.columns:
         # The same conversion, or the feed-share attribution downstream would multiply a share by
         # a figure still in thousands and come out a thousand times too small.
-        df['gross_production_value'] = df['gross_production_value'] * FAOSTAT_THOUSAND_USD
+        df['gross_production_value'] = df['gross_production_value'] * utilities.FAOSTAT_THOUSAND_USD
     return df
 
 
@@ -177,11 +129,6 @@ def feed_lambda_by_country(gleam_dmi_df):
     return grouped[['iso3_r250_id', 'iso3_r250_label', 'lambda', 'lambda_is_upper_bound']]
 
 
-# The dashboard harvest arrives one row per country, species and production system, with the
-# feed columns formatted for display: thousands separated by commas, and an empty cell where a
-# system does not occur. The country column is the dashboard's own code, which is ISO3 for
-# nearly every entry but carries a few territories GLEAM models separately.
-GLEAM_DASHBOARD_ID_COLUMNS = ('country_code', 'species', 'Area', 'Animal', 'LPS')
 
 
 def clean_gleam_dashboard_intake(df_raw, df_countries):

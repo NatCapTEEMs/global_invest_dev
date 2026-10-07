@@ -18,6 +18,7 @@ from rasterio.warp import reproject
 from rasterio.windows import Window
 from scipy.ndimage import convolve
 from tqdm import tqdm
+import dataclasses
 import glob
 import hashlib
 import numpy as np
@@ -105,22 +106,40 @@ def save_parquet(df: pd.DataFrame, path: str | str) -> str:
     return path
 
 
-def baseline_denominator(cfg, baseline_lulc_path, target_year):
+def baseline_denominator(cfg, baseline_lulc_path, target_year, baseline_label):
     """Unpaired 2023 pollination value (the % change denominator), computed once."""
-    run_pollination_sufficiency_300m(cfg, lulc_path=baseline_lulc_path, scenario=p.pollination_shock_baseline_label,
+    run_pollination_sufficiency_300m(cfg, lulc_path=baseline_lulc_path, scenario=baseline_label,
                                      lulc_scheme='seals')
-    run_pollination_sufficiency_5km(cfg, scenario=p.pollination_shock_baseline_label)
-    run_pollination_valuation_5km(cfg, scenario=p.pollination_shock_baseline_label, target_year=target_year)
-    return os.path.join(cfg.output_dir, f'value_pollination_sufficiency_{p.pollination_shock_baseline_label}_5km.tif')
+    run_pollination_sufficiency_5km(cfg, scenario=baseline_label)
+    run_pollination_valuation_5km(cfg, scenario=baseline_label, target_year=target_year)
+    return os.path.join(cfg.output_dir, f'value_pollination_sufficiency_{baseline_label}_5km.tif')
 
 
-def scenario_diff_raster(cfg, scenario, lulc_path, baseline_lulc_path, target_year):
+def paired_scenario_value_path(cfg, scenario):
+    """The stable-ag-masked scenario value raster, the `stab` half of scenario_diff_raster's pair."""
+    return os.path.join(cfg.output_dir,
+                        f'value_pollination_sufficiency_{scenario}_stab_5km.tif')
+
+
+def paired_baseline_value_path(cfg, scenario, baseline_label):
+    """The stable-ag-masked 2023 value raster scenario_diff_raster built for this scenario-year.
+
+    Built inside scenario_diff_raster as the `b_stab` half of the pair, and rebuilt per scenario and
+    per year because the mask is the cropland common to that scenario's map and the 2023 map. It is
+    the subtrahend of the numerator, while the percent change's denominator is the UNPAIRED 2023
+    value, so the two do not cancel and their ratio is needed to rescale provision.
+    """
+    return os.path.join(cfg.output_dir,
+                        f'value_pollination_sufficiency_{baseline_label}_stab_{scenario}_5km.tif')
+
+
+def scenario_diff_raster(cfg, scenario, lulc_path, baseline_lulc_path, target_year, baseline_label):
     """The 5 km scenario-minus-baseline value raster, on cropland stable across the two maps.
 
     Returns the path crop_benefits wrote it to; the task reads it and hands the array to
     zonal_pct_change.
     """
-    stab, b_stab = f'{scenario}_stab', f'{p.pollination_shock_baseline_label}_stab_{scenario}'
+    stab, b_stab = f'{scenario}_stab', f'{baseline_label}_stab_{scenario}'
     for suff_scen, lulc, other in [(stab, lulc_path, baseline_lulc_path),
                                    (b_stab, baseline_lulc_path, lulc_path)]:
         run_pollination_sufficiency_300m_stable_ag(cfg, lulc_path=lulc, other_lulc_path=other,
@@ -130,7 +149,7 @@ def scenario_diff_raster(cfg, scenario, lulc_path, baseline_lulc_path, target_ye
 
     suff_dir = cfg.output_dir
     return run_pollination_diff_5km_pnas(
-        cfg, scenario=scenario, baseline_scenario=p.pollination_shock_baseline_label,
+        cfg, scenario=scenario, baseline_scenario=baseline_label,
         scenario_value_path=os.path.join(suff_dir, f'value_pollination_sufficiency_{stab}_5km.tif'),
         baseline_value_path=os.path.join(suff_dir, f'value_pollination_sufficiency_{b_stab}_5km.tif'))
 
@@ -643,8 +662,8 @@ def _merge_production_value(
 ) -> pd.DataFrame:
     """Production times annual price, falling back country to subregion to region to world.
 
-    Returns the frame. It used to take an output directory and return a path, which put file
-    writing inside what reads as arithmetic and made the fallback untestable without a disk.
+    Returns the frame rather than writing it: file writing inside what reads as arithmetic
+    would make the fallback untestable without a disk.
     """
     logger.info("Merging production × annual prices (Hierarchical)")
 
@@ -819,31 +838,13 @@ def load_fao_classification(cfg: pf.FaoPriceSettings) -> pd.DataFrame:
     return pd.read_csv(path)
 
 
-def load_fao_cropgrids(cfg: pf.FaoPriceSettings) -> pd.DataFrame:
-    """
-    Load the crosswalk that maps CropGrids crop names to FAO item codes.
-
-    Returns a DataFrame with columns "cropgrids_2024" and
-    "item_code_fao" (as string), plus "item_fao".
-    """
-    path = cfg.crosswalk_fao_cropgrids_path
-    logger.info("Loading FAO↔CropGrids crosswalk: %s", path)
-
-    df = pd.read_csv(path)
-
-    df["item_code_fao"] = (
-        df["item_code_fao"].astype("Int64").astype(str)
-    )
-    df["cropgrids_2024"] = df["cropgrids_2024"].astype(str)
-
-    return df
 
 def fao_median_prices(p):
     """Per-crop median producer prices in USD, downloaded and built here rather than taken as given.
 
     The pollination value raster is production times price times each crop's dependence on
-    pollinators. The price half used to arrive as a finished table. This runs the path that makes
-    it: FAOSTAT production and producer prices are downloaded, local currency is reconstructed
+    pollinators. This runs the path that makes the price half rather than taking it as a
+    finished table: FAOSTAT production and producer prices are downloaded, local currency is reconstructed
     where FAOSTAT reports only the discontinued series, USD is built against World Bank exchange
     rates, and a median is taken over the price years.
 
@@ -893,10 +894,9 @@ def fao_median_prices(p):
 
 
 
-def load_cpi_by_year(p):
-    """The US CPI-U annual series, year to index, from the table beside the service."""
-    df = hb.df_read(p.pollination_cpi_path)
-    return {int(r.year): float(r.cpi_u) for r in df.itertuples()}
+def load_shared_cpi(p):
+    """The account's one US CPI series (FRED CPIAUCSL), read where every service reads it."""
+    return pd.read_csv(str(p.get_path(p.pollination_us_cpi_input_path)))
 
 
 def load_excluded_item_codes(p):
@@ -1000,8 +1000,9 @@ def _process_tile(
         lulc_nat = src.read(1, window=nat_win)
         nat_mask = np.isin(lulc_nat, list(nat_classes)).astype(np.uint8)
         
-        # Convolve
-        counts = convolve(nat_mask, weights=kernel, mode="constant", cval=0.0).astype(np.int32)
+        # Accumulate into int32: uint8 output wraps at 256 habitat neighbours.
+        # Casting after convolution is too late to recover the lost counts.
+        counts = convolve(nat_mask, weights=kernel, mode="constant", cval=0.0, output=np.int32)
         
         # Extract core
         nat_row0 = int(nat_win.row_off)
@@ -1368,284 +1369,10 @@ def run_pollination_valuation_5km(cfg: pf.SufficiencySettings, scenario: str,
     return out_total
 
 
-def redistribution_value_to_300m(cfg: pf.SufficiencySettings, scenario: str) -> str:
-    """Redistribute 5 km pollination value back to 300 m pixels.
-
-    Each 300 m pixel receives a share of its parent 5 km cell's value
-    proportional to its sufficiency weight (suff_i / Σ suff).
-    """
-    large_path = os.path.join(cfg.output_dir, f"value_pollination_sufficiency_{scenario}_5km.tif")
-    fine_path = os.path.join(cfg.output_dir, f"pollination_sufficiency_{scenario}_300m.tif")
-    out_path = os.path.join(cfg.output_dir, f"value_pollination_sufficiency_{scenario}_300m.tif")
-
-    logger.info("Redistributing value to 300m...")
-
-    if hb.path_exists(out_path):
-        logger.info("Output already exists, skipping redistribution.")
-        return out_path
-
-    if not hb.path_exists(large_path):
-        raise FileNotFoundError(f"5km value raster missing: {large_path}")
-    
-    with rasterio.open(large_path) as large, rasterio.open(fine_path) as fine:
-        large_vals = large.read(1).astype(np.float64)
-        if large.nodata is not None:
-             large_vals = np.where(large_vals == large.nodata, 0, large_vals)
-        else:
-             large_vals = np.nan_to_num(large_vals, nan=0.0)
-
-        # Area ratio: large pixel area / fine pixel area (in degree² units; cos(lat) cancels).
-        # Multiplying by this converts the redistributed fraction back to USD/km² so that
-        # summing val_300m * area_300m recovers the same total as summing val_5km * area_5km.
-        area_ratio = (abs(large.transform.a) * abs(large.transform.e)) / (
-            abs(fine.transform.a) * abs(fine.transform.e)
-        )
-        logger.info("  Area ratio (5km/300m pixel): %.2f", area_ratio)
-
-        profile = fine.profile.copy()
-        profile.update(dtype="float32", nodata=0.0, **pf.get_compression_profile(cfg, "continuous"))
-
-        block_size = cfg.tile_size
-
-        with rasterio.open(out_path, "w", **profile) as dst:
-             n_blocks = math.ceil(fine.height / block_size) * math.ceil(fine.width / block_size)
-
-             # Downscale the 5km aggregated pollination value back into smaller 300m sections proportionally based on local weights
-             with tqdm(total=n_blocks, desc="300m Redistribution") as pbar:
-                for br in range(0, fine.height, block_size):
-                    bh = min(block_size, fine.height - br)
-                    for bc in range(0, fine.width, block_size):
-                        bw = min(block_size, fine.width - bc)
-                        window = Window(bc, br, bw, bh)
-
-                        suff = fine.read(1, window=window).astype(np.float64)
-                        mask = suff > 0
-                        weights = suff[mask]
-
-                        if weights.size == 0:
-                            dst.write(np.zeros((bh, bw), dtype=np.float32), 1, window=window)
-                            pbar.update(1)
-                            continue
-
-                        # Centroids
-                        fine_r, fine_c = np.where(mask)
-                        # Transform to coords
-                        xs, ys = rasterio.transform.xy(fine.transform, br + fine_r, bc + fine_c, offset='center')
-                        xs = np.array(xs)
-                        ys = np.array(ys)
-
-                        # Parent indices
-                        # row = (y - top) / dy, col = (x - left) / dx
-                        parent_c = np.floor((xs - large.transform.c) / large.transform.a).astype(int)
-                        # large.transform.e is usually negative
-                        parent_r = np.floor((ys - large.transform.f) / large.transform.e).astype(int)
-
-                        parent_r = np.clip(parent_r, 0, large.height - 1)
-                        parent_c = np.clip(parent_c, 0, large.width - 1)
-
-                        # Vectorized attribution
-                        # We need to group by parent pixel to calculate sum_weights per parent
-                        flat_idx = parent_r * large.width + parent_c
-
-                        unique_idx, input_idx = np.unique(flat_idx, return_inverse=True)
-                        parent_vals = large_vals.flatten()[unique_idx]
-
-                        sum_weights = np.zeros(unique_idx.size, dtype=np.float64)
-                        np.add.at(sum_weights, input_idx, weights)
-
-                        # Redistributions
-                        # val_i = (weight_i / sum_weights_parent) * val_parent * area_ratio
-                        # area_ratio converts the fractional density back to USD/km² so that
-                        # Σ(val_300m * area_300m) == Σ(val_5km * area_5km).
-                        # Avoid div by zero
-                        divisor = sum_weights[input_idx]
-                        valid_div = divisor > 0
-
-                        res = np.zeros_like(weights)
-                        if valid_div.any():
-                             res[valid_div] = (weights[valid_div] / divisor[valid_div]) * parent_vals[input_idx][valid_div] * area_ratio
-
-                        out_block = np.zeros((bh, bw), dtype=np.float32)
-                        out_block[mask] = res.astype(np.float32)
-
-                        dst.write(out_block, 1, window=window)
-                        pbar.update(1)
-                        
-    return out_path
 
 
-def mask_protected_areas_300m(cfg: pf.SufficiencySettings, scenario: str) -> str:
-    """
-    Mask pollination value inside protected areas (PA == 1 -> value = 0).
-
-    Reads the 300m pollination-value raster and a binary PA raster,
-    zeroes all pixels that fall inside a protected area, and writes
-    a masked raster together with a summary CSV.
-
-    Returns
-    -------
-    Path
-        Path to the masked output raster.
-    """
-    value_path = os.path.join(
-        cfg.output_dir, f"value_pollination_sufficiency_{scenario}_300m.tif")
-    pa_path = cfg.pa_raster_300m_path
-    out_raster = os.path.join(
-        cfg.output_dir, f"value_pollination_sufficiency_{scenario}_300m_no_agri_in_PA.tif")
-    out_csv = os.path.join(
-        cfg.output_dir, f"summary_300m_no_agri_in_PA_{scenario}.csv")
-
-    logger.info("Masking PA pixels from 300m pollination value...")
-    logger.info("Value input : %s", value_path)
-    logger.info("PA raster   : %s", pa_path)
-
-    if hb.path_exists(out_raster):
-        logger.info("Output already exists, skipping PA masking.")
-        return out_raster
-
-    if not hb.path_exists(value_path):
-        raise FileNotFoundError(f"300m value raster missing: {value_path}")
-    if not hb.path_exists(pa_path):
-        raise FileNotFoundError(f"PA raster missing: {pa_path}")
-
-    with rasterio.open(value_path) as val_src, rasterio.open(pa_path) as pa_src:
-        # Safety checks
-        if val_src.transform != pa_src.transform:
-            raise RuntimeError("Transforms do not match")
-        if val_src.crs != pa_src.crs:
-            raise RuntimeError("CRS does not match")
-        if val_src.width != pa_src.width or val_src.height != pa_src.height:
-            raise RuntimeError("Raster shapes do not match")
-
-        profile = val_src.profile.copy()
-        profile.update(dtype="float32", nodata=0, **pf.get_compression_profile(cfg, "continuous"))
-
-        transform = val_src.transform
-        pixel_lat_deg = abs(transform.e)
-        pixel_lon_deg = abs(transform.a)
-        bounds_top = val_src.bounds.top
-
-        total_before = 0.0
-        total_after = 0.0
-
-        with rasterio.open(out_raster, "w", **profile) as dst:
-            # We process block by block to avoid loading full raster
-            # For each block, exclude or zero-out values located strictly inside designated protected Ecological Boundaries
-            # Force block processing based on output structure
-            for _, window in tqdm(list(dst.block_windows(1)), desc="Masking PA"):
-                # Read
-                value = val_src.read(1, window=window).astype(np.float64)
-                pa = pa_src.read(1, window=window)
-
-                # Check if we have data
-                if value.size == 0:
-                    continue
-
-                # Normalize nodata -> NaN
-                if val_src.nodata is not None:
-                    value[value == val_src.nodata] = np.nan
-
-                # Cell area per ROW, WGS84, so this diagnostic measures a cell the way the
-                # value raster and the rest of the account do. The earlier version used a flat
-                # 111.32 km per degree AND one mid-tile latitude for the whole tile height, so a
-                # tall tile got a single area for rows hundreds of kilometres apart.
-                row_off = window.row_off
-                tile_h = window.height
-                row_lats = bounds_top - (np.arange(row_off, row_off + tile_h) + 0.5) * pixel_lat_deg
-                area_km2 = np.asarray(hb.get_area_of_pixel_column_from_center_lats(
-                    pixel_lat_deg, row_lats.astype('float64')))[:, None] / 1e6
-
-                # Sum before (USD/km² * km² = USD, ignoring NaNs)
-                total_before += float(np.nansum(value * area_km2))
-
-                # Mask: PA == 1 -> 0
-                # Assuming PA=1 is protected
-                if pa_src.nodata is not None:
-                    pass
-
-                value[pa == 1] = 0.0
-
-                # Sum after
-                total_after += float(np.nansum(value * area_km2))
-
-                # Write masked raster (NaN -> 0, nodata = 0)
-                out_data = np.nan_to_num(value, nan=0.0).astype(np.float32)
-                dst.write(out_data, 1, window=window)
-
-    removed = total_before - total_after
-    pct_removed = (removed / total_before * 100) if total_before > 0 else 0.0
-
-    # Summary CSV
-    summary = pd.DataFrame([{
-        "total_value_before_mask": round(total_before, 2),
-        "total_value_after_mask": round(total_after, 2),
-        "value_removed_by_PA": round(removed, 2),
-        "percent_removed": round(pct_removed, 4),
-    }])
-    save_csv(summary, out_csv)
-
-    logger.info("PA masking complete.")
-    logger.info("  Before: %.2f  After: %.2f  Removed: %.4f%%",
-                total_before, total_after, pct_removed)
-    logger.info("Output:  %s", out_raster)
-    logger.info("Summary: %s", out_csv)
-
-    return out_raster
 
 
-def summarize_run(cfg: pf.SufficiencySettings, scenario: str) -> None:
-    """Summarize total values of all generated valuation rasters."""
-    logger = logging.getLogger("poll_suff_pipeline")
-    out_dir = cfg.output_dir
-    summary_path = os.path.join(out_dir, f"pollination_sufficiency_valuation_totals_{scenario}.csv")
-    
-    # Rasters to check (Name -> Description)
-    targets = {
-        f"value_pollination_sufficiency_{scenario}_5km.tif": "5km Valuation (ag_value * sufficiency)",
-        f"value_pollination_sufficiency_{scenario}_300m.tif": "300m Valuation (redistributed)",
-        f"value_pollination_sufficiency_{scenario}_300m_no_agri_in_PA.tif": "300m Valuation (Masked: No Ag in PA)",
-        f"nature_value_pollination_{scenario}_300m.tif": "Nature Attribution (Value provided by Nature pixels)",
-        f"pa_value_pollination_{scenario}_300m.tif": "PA Analysis (Value provided by PA pixels)"
-    }
-    
-    rows = []
-    
-    for fname, desc in targets.items():
-        path = os.path.join(out_dir, fname)
-        if not hb.path_exists(path):
-            continue
-            
-        try:
-            arr, meta = utilities.read_raster(path)
-            
-            # Mask nodata
-            nodata = meta.get("nodata")
-            if nodata is not None:
-                arr[arr == nodata] = np.nan
-            
-            arr[arr < 0] = np.nan
-
-            arr = arr.astype(np.float64) # Ensure precision for sum
-          
-            area_km2 = pf.build_area_km2_raster(meta)
-            mass = pf.convert_density_to_mass(arr, area_km2)
-            total_usd = float(np.nansum(mass))
-            
-            rows.append({
-                "raster_filename": fname,
-                "description": desc,
-                "total_value_usd2024": total_usd,
-                "path": str(path)
-            })
-            logger.info(f"Summary: {fname} = {total_usd/1e9:.3f} B USD")
-            
-        except Exception as e:
-            logger.error(f"Failed to summarize {fname}: {e}")
-
-    if rows:
-        df = pd.DataFrame(rows)
-        df.to_csv(summary_path, index=False)
-        logger.info(f"Saved valuation totals to: {summary_path}")
 
 
 def run_pollination_diff_5km_pnas(
@@ -1804,6 +1531,9 @@ def _zonal_context(p, denominator_path, correspondence_gpkg):
                                           p.pollination_shock_endw_format)
 
 
+POLLINATION_SHOCK_SIGNATURE = 'pollination_shock_signature.json'   # beside the table, in the shared es_shocks dir
+
+
 def pollination_shock(p):
     """Per-scenario 300 m LULC at each SEALS anchor year -> V_F/OSD shock, piecewise-interp to annual.
 
@@ -1830,9 +1560,28 @@ def pollination_shock(p):
 
     if not getattr(p, 'scenario_lulc_paths', None):
         tmpl = p.es_lulc_path_template
-        p.scenario_lulc_paths = {s: {y: glob.glob(tmpl.format(scenario=s, year=y))[0]
-                                     for y in anchor_years if glob.glob(tmpl.format(scenario=s, year=y))}
-                                 for s in [base_scenario] + es_shock_scenarios}
+        # ONE lookup per scenario-year, and every required map must resolve to EXACTLY one file.
+        # The previous form globbed twice and dropped any year whose glob was empty, so a scenario
+        # with no maps silently became {} and failed later as `KeyError: 2030` -- pointing at the
+        # year rather than at the scenario that has no maps at all. A retired scenario left in the
+        # scenarios CSV (stress_test) reached here and cost a 3-hour run.
+        resolved, missing = {}, []
+        for s in dict.fromkeys([base_scenario] + es_shock_scenarios):
+            resolved[s] = {}
+            for y in anchor_years:
+                hits = sorted(glob.glob(tmpl.format(scenario=s, year=y)))
+                if len(hits) != 1:
+                    missing.append('%s %s: %d matches for %s'
+                                   % (s, y, len(hits), tmpl.format(scenario=s, year=y)))
+                    continue
+                resolved[s][y] = hits[0]
+        if missing:
+            raise ValueError(
+                'pollination: %d required scenario-year map(s) did not resolve to exactly one '
+                'file. Every scenario in es_shock_scenarios must have a map for every anchor year; '
+                'a retired scenario left in the scenarios CSV is the usual cause.\n  %s'
+                % (len(missing), '\n  '.join(missing)))
+        p.scenario_lulc_paths = resolved
 
     # base-year SEALS7 map: per-ES override, else the ES-shared attr. NEVER p.base_year_lulc_path, which
     # SEALS OWNS and overwrites at runtime with its raw-ESA source (a raw-ESA base map would make the
@@ -1842,24 +1591,158 @@ def pollination_shock(p):
     if not base_map:
         raise ValueError('pollination base-year LULC not set: point p.es_base_year_lulc_path (or '
                          'p.pollination_base_year_lulc_path) at the SEALS7 base-year map.')
+    # The table is reused when it was made from these very maps and settings; the zonal reads below
+    # cost about twenty minutes per pass and a pass that finds the table must return in seconds.
+    shock_maps = sorted({base_map} | {m for by_year in p.scenario_lulc_paths.values() for m in by_year.values()})
+    shock_outputs = [p.pollination_shock_output_path]
+    accounting = getattr(p, 'pollination_value_accounting', 'legacy')
+    if accounting not in ('legacy', 'retained_value_v1'):
+        raise ValueError('Unknown pollination_value_accounting: ' + str(accounting))
+    if accounting == 'retained_value_v1':
+        if str(getattr(p, 'pollination_pairing', 'base_year')) != 'base_year':
+            raise ValueError('Retained dollar accounting requires base-year pairing')
+        from global_invest.pollination.retained_pipeline import build_retained_table
+        from global_invest.pollination import retained_value, retained_raster, retained_pipeline
+        settings, inputs = utilities._service_settings_and_inputs(p, 'pollination')
+        inputs = {k: v for k, v in inputs.items() if not k.endswith('_output_path')}
+        settings['accounting'] = accounting
+        settings['anchors'] = anchor_years
+        settings['scenarios'] = es_shock_scenarios
+        settings['base_year'] = es_shock_base_year
+        signed = shock_maps + [__file__, pf.__file__, retained_value.__file__,
+                               retained_raster.__file__, retained_pipeline.__file__, p.region_boundary_path]
+        inputs.update({str(path): utilities.file_fingerprint(path) for path in signed})
+        utilities.require_workspace_signature(
+            cfg.output_dir, utilities._signature(settings, inputs),
+            os.path.join(cfg.output_dir, 'retained_workspace_signature.json'))
+        signature_name = 'pollination_retained_value_v1_signature.json'
+        reason = utilities.reuse_reason(p, 'pollination', shock_outputs, signature_name, light_inputs=shock_maps)
+        if reason is None:
+            return True
+        if hb.path_exists(p.pollination_shock_output_path):
+            raise ValueError('Unverified or old pollination table; use a fresh output directory')
+        denominator_path = baseline_denominator(cfg, base_map, es_shock_base_year,
+                                                p.pollination_shock_baseline_label)
+        out = build_retained_table(p, cfg, base_map, denominator_path, anchor_years,
+                                   es_shock_scenarios, es_shock_base_year)
+        out = utilities.filter_to_model_domain(out, p.pollination_shock_output_path, 'pollination', log=hb.log)
+        out.to_csv(p.pollination_shock_output_path, index=False)
+        utilities.write_reuse_signature(p, 'pollination', shock_outputs, signature_name, light_inputs=shock_maps)
+        return True
+    reason = utilities.reuse_reason(p, 'pollination', shock_outputs, POLLINATION_SHOCK_SIGNATURE, light_inputs=shock_maps)
+    if reason is None:
+        hb.log('  pollination shock: reusing %s (same maps, same settings)' % p.pollination_shock_output_path)
+        return True
+    hb.log('  pollination shock: computing because %s' % reason)
     # The denominator (unpaired 2023 value) is year- and scenario-independent, so the fixed side of
     # the zonal step is built once.
-    denominator_path = baseline_denominator(cfg, base_map, es_shock_base_year)
+    denominator_path = baseline_denominator(cfg, base_map, es_shock_base_year,
+                                            p.pollination_shock_baseline_label)
     baseline_arr, area_arr, zones_arr, zone_labels = _zonal_context(p, denominator_path, p.region_boundary_path)
 
     # value[scenario][year] = per-zone % change of that scenario's year-map vs the 2023 baseline (stable
     # ag). level_usd = the denominator of that % change, the per-zone absolute baseline value in base-year
     # USD, emitted so the GEP chain can consume this task instead of rerunning the same rasters.
-    value, level_usd = {}, None
+    # The per-SECTOR baseline levels, when the value task wrote per-sector rasters. Without them the
+    # zone total below is stamped onto every sector row, so summing sectors double-counts and a
+    # sector's value can exceed its own output. These are levels only: shock_pct is unaffected, so
+    # wiring them changes nothing the solver reads.
+    # Two levels per sector: the pollination value (numerator's own base) and the CROP value, which
+    # is the denominator an output-scaling shock needs. Both from the per-sector rasters the value
+    # task writes, read here on the same zones so the ratio between them is formed cell-consistently.
+    level_usd_by_sector = {}
+    crop_usd_by_sector = {}
+    raster_dir = os.path.dirname(denominator_path)
+    for sector in getattr(p, 'pollination_shock_acts', []) or []:
+        key = str(sector).upper()
+        for kind, target in (('poll', level_usd_by_sector), ('crop', crop_usd_by_sector)):
+            sector_raster = os.path.join(
+                raster_dir, '%s_value_per_cell_%s_%dusd.tif' % (kind, key.lower(), es_shock_base_year))
+            if not hb.path_exists(sector_raster):
+                continue
+            sector_arr, _ = _read_masked(sector_raster)
+            _, sector_level = pf.zonal_pct_change(sector_arr, sector_arr, area_arr, zones_arr, zone_labels)
+            target[key] = sector_level
+    if level_usd_by_sector:
+        hb.log('  per-sector baseline levels wired for %s' % ', '.join(sorted(level_usd_by_sector)))
+        # Without the crop side there is nothing to divide by for an output-denominated shock, and
+        # the numerator alone would silently fall back to the service denominator. Say so.
+        missing_crop = sorted(set(level_usd_by_sector) - set(crop_usd_by_sector))
+        if missing_crop:
+            hb.log('  WARNING: crop value rasters missing for %s; no output-denominated shock for them'
+                   % ', '.join(missing_crop))
+    else:
+        hb.log('  no per-sector value rasters found; value_usd_base stays the zone total repeated '
+               'across sectors (do NOT use it as a denominator)')
+
+    value, level_usd, paired_base, paired_scen = {}, None, {}, {}
     for year in anchor_years:
         for scen in [base_scenario] + es_shock_scenarios:
             diff_arr, _ = _read_masked(scenario_diff_raster(
                 cfg, scenario=f'{scen}_{year}', lulc_path=p.scenario_lulc_paths[scen][year],
-                baseline_lulc_path=base_map, target_year=es_shock_base_year))
+                baseline_lulc_path=base_map, target_year=es_shock_base_year,
+                baseline_label=p.pollination_shock_baseline_label))
             pct, level = pf.zonal_pct_change(diff_arr, baseline_arr, area_arr, zones_arr, zone_labels)
             value.setdefault(scen, {})[year] = pct
             if level_usd is None:
                 level_usd = level
+            # The paired baseline, for rescaling provision later. Reading it costs one raster per
+            # scenario-year and no model work: scenario_diff_raster has already written it.
+            paired_path = paired_baseline_value_path(
+                cfg, f'{scen}_{year}', p.pollination_shock_baseline_label)
+            if hb.path_exists(paired_path):
+                paired_arr, _ = _read_masked(paired_path)
+                paired_base.setdefault(scen, {})[year] = pf.zonal_weighted_sum(
+                    paired_arr, area_arr, zones_arr, zone_labels)
+            else:
+                hb.log('  pollination: no paired baseline raster at %s' % paired_path)
+            # The paired SCENARIO value, the other half of the same pair. Over the effective
+            # contemporaneous denominator it is the quantity a provision rescaling needs: the
+            # stressed shock is the original plus 100*(f-1) times it.
+            scen_path = paired_scenario_value_path(cfg, f'{scen}_{year}')
+            if hb.path_exists(scen_path):
+                scen_arr, _ = _read_masked(scen_path)
+                paired_scen.setdefault(scen, {})[year] = pf.zonal_weighted_sum(
+                    scen_arr, area_arr, zones_arr, zone_labels)
+
+    # SAME-YEAR PAIRING (p.pollination_pairing == 'same_year'): pair each scenario map with the
+    # no-damage baseline's map for the SAME year rather than with 2023, so both sides sit on one
+    # common-cropland domain, and divide by the baseline's provision on that same domain. The
+    # base-year pass above still runs -- its rasters already exist, so it costs reads, not model
+    # work -- because it supplies the fixed-base column and the 2023 zero anchor.
+    pairing = str(getattr(p, 'pollination_pairing', 'base_year'))
+    if pairing not in ('base_year', 'same_year'):
+        raise ValueError("p.pollination_pairing must be 'base_year' or 'same_year', got %r" % pairing)
+    same_year = {}
+    if pairing == 'same_year':
+        hb.log('  pollination: SAME-YEAR pairing -- scenario against the no-damage baseline in each '
+               'year, on their common cropland, with that baseline as the denominator')
+        for year in anchor_years:
+            base_lulc = p.scenario_lulc_paths[base_scenario][year]
+            for scen in es_shock_scenarios:
+                label = f'{scen}_{year}_sy'
+                diff_path = scenario_diff_raster(
+                    cfg, scenario=label, lulc_path=p.scenario_lulc_paths[scen][year],
+                    baseline_lulc_path=base_lulc, target_year=es_shock_base_year,
+                    baseline_label=f'{base_scenario}_{year}')
+                diff_arr, _ = _read_masked(diff_path)
+                # The denominator is the baseline's own provision on the SAME common domain, which
+                # is the b_stab half of the pair scenario_diff_raster has just written.
+                denom_path = paired_baseline_value_path(cfg, label, f'{base_scenario}_{year}')
+                if not hb.path_exists(denom_path):
+                    raise NameError('same-year pairing produced no paired baseline raster at %s'
+                                    % denom_path)
+                denom_arr, _ = _read_masked(denom_path)
+                pct, _level = pf.zonal_pct_change(diff_arr, denom_arr, area_arr, zones_arr, zone_labels)
+                # zonal_pct_change drops a zone whose denominator is zero or missing, silently.
+                # Say so: a zone with no baseline provision has no ratio to report, and the count
+                # is the difference between a clean year and one that quietly lost zones.
+                dropped = len(zone_labels) - len(pct)
+                if dropped:
+                    hb.log('    %s %d: %d of %d zones have no baseline provision on the common '
+                           'domain, so no ratio is defined and they are dropped'
+                           % (scen, year, dropped, len(zone_labels)))
+                same_year.setdefault(scen, {})[year] = pct
 
     # The shock numerator is scenario minus nature-off baseline at each anchor. anchor_shock_tables
     # puts it over the two denominators and dynamic_shock_rows expands those to annual rows.
@@ -1868,12 +1751,37 @@ def pollination_shock(p):
         anchor_shock, anchor_contemp = pf.anchor_shock_tables(
             {y: value[scen][y] for y in anchor_years},
             {y: value[base_scenario][y] for y in anchor_years})
+        # The effective contemporaneous denominator is the unpaired 2023 value times the
+        # no-damage baseline's own growth factor, which is what anchor_shock_tables divides by.
+        growth_by_year = {y: 1.0 + value[base_scenario][y] / 100.0 for y in anchor_years}
+        extras = dict(paired_base_by_year=paired_base.get(scen),
+                      paired_scen_by_year=paired_scen.get(scen),
+                      unpaired_denominator=level_usd, growth_by_year=growth_by_year)
+        if pairing == 'same_year':
+            # Replace the rebased measure with the directly paired one, on the zones both
+            # constructions carry. A zone present in one and not the other cannot be compared, so
+            # dropping it is the only honest option -- but it is counted, not silently lost.
+            direct = pd.DataFrame({y: same_year[scen][y] for y in anchor_years}).dropna()
+            shared = anchor_shock.index.intersection(direct.index)
+            if len(shared) < len(anchor_shock.index):
+                hb.log('    %s: %d zone(s) carried by the base-year pairing have no same-year '
+                       'counterpart and are dropped' % (scen, len(anchor_shock.index) - len(shared)))
+            anchor_shock, anchor_contemp = anchor_shock.loc[shared], direct.loc[shared]
+            # paired_scen_over_contemp_denom belongs to the base-year construction: under same-year
+            # pairing the numerator and denominator share one domain, so a provision cut scales the
+            # shock and the stress transform needs no such column. Emitting it would tell
+            # build_stress_variants to apply the additive form to a table that wants the ratio.
+            extras = dict(unpaired_denominator=level_usd)
         rows += pf.dynamic_shock_rows(anchor_shock, anchor_contemp, level_usd, scen,
-                                      p.pollination_shock_acts, es_shock_base_year)
+                                      p.pollination_shock_acts, es_shock_base_year,
+                                      level_usd_by_sector=level_usd_by_sector or None,
+                                      crop_usd_by_sector=crop_usd_by_sector or None, **extras)
 
     out = pd.DataFrame(rows)
+    out = utilities.filter_to_model_domain(out, p.pollination_shock_output_path, 'pollination', log=hb.log)
     utilities.assert_shock_table_sound(out, es_shock_scenarios, 'pollination')
     out.to_csv(p.pollination_shock_output_path, index=False)
+    utilities.write_reuse_signature(p, 'pollination', shock_outputs, POLLINATION_SHOCK_SIGNATURE, light_inputs=shock_maps)
     hb.log('  pollination shock: %d rows, %d scenarios (shock_pct=shock_pct_contemp=/baseline-year value, shock_pct_fixedbase=/2023 value) -> %s'
           % (len(out), out['scenario'].nunique() if rows else 0, p.pollination_shock_output_path))
     # value_usd_base is the GEP hand-off, not read by GTAP (build_combined_afeall takes shock_pct only).
@@ -1940,6 +1848,7 @@ def pollination_shock_static(p):
                                      es_shock_base_year, es_shock_end_year)
 
     out = pd.DataFrame(rows)
+    out = utilities.filter_to_model_domain(out, p.pollination_shock_output_path, 'pollination', log=hb.log)
     utilities.assert_shock_table_sound(out, es_shock_scenarios, 'pollination')
     out.to_csv(p.pollination_shock_output_path, index=False)
     nz = out[(out['year'] == es_shock_end_year) & (out['shock_pct'] != 0)] if len(out) else out
@@ -1982,6 +1891,94 @@ def pollination_value_by_region(p):
     return True
 
 
+def pollination_sufficiency_weighted(p):
+    """Both definitions of the pollination number, on one grid at one price year.
+
+    The account reports the crop output at stake if pollinators vanished. The other definition on
+    the table is the service the habitat currently delivers, which is that value multiplied by
+    300 m habitat sufficiency, and only the second responds to land-use change.
+
+    This exists because we published the second figure while no task computed it. The sufficiency
+    steps were reachable only from `pollination_shock`, so the weighted total came from a script in
+    the project directory that the repository does not carry, and a reader following this repo could
+    reproduce one of the two figures the deck quotes. That is the same defect as reading the
+    author's staged raster, which condition 1 was written for and which this service had already
+    fixed once for the unweighted number.
+
+    The settings come from `configure_sufficiency` so the tile height and worker count are the ones
+    es_parameters sets for the shock side too -- the tile height sets the latitude the foraging
+    kernel uses, so a second copy of it would be a second answer. Two fields are overridden: the
+    output goes to this task's own directory, and the 5 km grid template is our own rebuilt value
+    raster rather than the author's staged one, because the account reads ours and the two must be
+    weighted on the grid they are reported on.
+    """
+    publish_inputs(p)
+    year = int(p.gep_base_year)
+    p.pollination_sufficiency_weighted_raster_path = os.path.join(
+        p.cur_dir, 'poll_value_per_cell_%dusd_x_sufficiency.tif' % year)
+    p.pollination_sufficiency_totals_path = os.path.join(
+        p.cur_dir, 'pollination_totals_with_and_without_sufficiency.csv')
+    if not p.run_this:
+        return True
+
+    value_raster = getattr(p, 'pollination_value_raster_rebuilt_path', None)
+    if not hb.path_exists(value_raster):
+        raise NameError(
+            'No rebuilt value raster at %r, so there is nothing to weight. The account reads the '
+            'raster our own chain builds, and the sufficiency step weights that same raster so the '
+            'two definitions are reported on one grid.' % value_raster)
+    if hb.path_all_exist([p.pollination_sufficiency_weighted_raster_path,
+                          p.pollination_sufficiency_totals_path]):
+        hb.log('Sufficiency-weighted value already built. Skipping.')
+        return True
+
+    settings = dataclasses.replace(pf.configure_sufficiency(p, year),
+                                   output_dir=str(p.cur_dir),
+                                   country_raster_path=str(value_raster))
+    # The scenario string names the output rasters and nothing else; `lulc_scheme` chooses the
+    # class scheme. As one argument, a sufficiency raster built from the 2019 map can come out
+    # labelled 2020 and be compared against the wrong year.
+    scenario = str(year)
+    hb.log('Sufficiency at 300 m from %s' % os.path.basename(str(p.gep_lulc_input_path)))
+    run_pollination_sufficiency_300m(settings, lulc_path=str(p.gep_lulc_input_path),
+                                     scenario=scenario, lulc_scheme='esa')
+    hb.log('Resampling sufficiency onto the %d value grid' % year)
+    sufficiency_5km = run_pollination_sufficiency_5km(settings, scenario=scenario)
+
+    with rasterio.open(str(value_raster)) as value_source, \
+            rasterio.open(str(sufficiency_5km)) as sufficiency_source:
+        value = value_source.read(1).astype('float64')
+        sufficiency = sufficiency_source.read(1).astype('float64')
+        if sufficiency.shape != value.shape:
+            resampled = np.empty(value.shape, dtype='float64')
+            reproject(source=sufficiency, destination=resampled,
+                      src_transform=sufficiency_source.transform, src_crs=sufficiency_source.crs,
+                      dst_transform=value_source.transform, dst_crs=value_source.crs,
+                      resampling=Resampling.average)
+            sufficiency = resampled
+        weighted, unweighted_total, weighted_total = pf.value_weighted_by_sufficiency(
+            value, sufficiency, value_source.nodata)
+        profile = value_source.profile | {'dtype': 'float32', 'compress': 'lzw'}
+        with rasterio.open(p.pollination_sufficiency_weighted_raster_path, 'w', **profile) as dst:
+            dst.write(weighted.astype('float32'), 1)
+
+    # Both the billions the author reports in and the dollars every other service writes. The
+    # billions are for reading; the dollars are what a check can compare against a run without
+    # having to know which unit this particular file chose.
+    utilities.write_csv(pd.DataFrame([
+        {'variant': 'production x price x dependence', 'sufficiency_applied': False,
+         'total_usd_%d_bn' % year: round(unweighted_total / 1e9, 4),
+         'total_usd': unweighted_total},
+        {'variant': 'production x price x dependence x habitat sufficiency',
+         'sufficiency_applied': True,
+         'total_usd_%d_bn' % year: round(weighted_total / 1e9, 4),
+         'total_usd': weighted_total}]),
+        p.pollination_sufficiency_totals_path)
+    hb.log('Pollination without habitat sufficiency %.4g, with it %.4g, a ratio of %.4f.'
+           % (unweighted_total, weighted_total, weighted_total / unweighted_total))
+    return True
+
+
 def gep_calculation(p):
     """GEP valuation for pollination: r264 region values -> ONE row per country (r250)."""
     publish_inputs(p)
@@ -1994,11 +1991,11 @@ def gep_calculation(p):
     #    double-count split countries (see utilities docstring).
     df_q264 = hb.df_read(p.pollination_value_by_region_path)
     df_gep = pf.collapse_regions_to_countries(df_q264)
-    hb.df_write(df_gep, service_results['gep_by_country_base_year'])
+    utilities.write_gep_by_country(p, df_gep, service_results['gep_by_country_base_year'])
 
     # 2. Map only: r264-expanded, each sub-region carries its country's value, never summed
     #    (carbon template; the repo-wide map convention is the open flag-3 decision).
-    df_regions = pf.expand_country_values_to_regions(df_q264, df_gep)
+    df_regions = utilities.expand_country_values_to_regions(df_q264, df_gep, 'pollination_gep')
     gdf = hb.df_merge(p.gdf_countries_simplified, df_regions, how='outer',
                       left_on='ee_r264_id', right_on='ee_r264_id')
     gdf.to_file(service_results['gep_by_country_base_year'].replace('.csv', '.gpkg'), driver='GPKG')
@@ -2151,8 +2148,8 @@ def pollination_source_value_raster(p):
 
     # Absent is not fatal. The account's number comes from the raster our own chain builds, so his
     # is only the other side of the independence check; a machine without it gets a run with one
-    # fewer comparison rather than no run at all. It used to raise here, which made a manual
-    # procedure in somebody else's repository a required step of this pipeline.
+    # fewer comparison rather than no run at all. Raising here would make a manual procedure in
+    # somebody else's repository a required step of this pipeline.
     available = pf.available_source_value_years(p)
     hb.log('No %s in %s (that directory has %s), so the independence check will be skipped. The '
            'account does not depend on it: the GEP value comes from pollination_value_raster_rebuilt.'
@@ -2173,8 +2170,8 @@ def pollination_value_raster(p):
 
     His file is a DENSITY, USD per square kilometre, stated as such in his repo's
     methods_overview.md and confirmed by his own summary CSV, which area-weights before totalling.
-    The GEP path used to sum it directly, giving $18.28bn where the same raster carries $476.29bn
-    area-weighted. So the fix is to multiply by cell area, on the shared WGS84 pyramid like every
+    ⚠ Summing it directly gives $18.28bn where the same raster carries $476.29bn area-weighted,
+    so it is multiplied by cell area, on the shared WGS84 pyramid like every
     other service, and to deflate to the GEP base year when his file is stamped in another year's
     dollars.
 
@@ -2203,7 +2200,7 @@ def pollination_value_raster(p):
     # Prefer his raster for the GEP base year itself; fall back to the nearest year he publishes
     # and deflate, which is exact because the deflator is a scalar on a density.
     source_path, source_year = pf.find_source_value_raster(p, year)
-    deflator = pf.usd_deflator(source_year, year, load_cpi_by_year(p))
+    deflator = utilities.usd_deflation_factor(load_shared_cpi(p), source_year, year)
     hb.log('Pollination value raster from the source author: %s (%d USD), deflator to %d is %.4f'
            % (os.path.basename(source_path), source_year, year, deflator))
 
@@ -2255,9 +2252,9 @@ def pollination_value_raster_rebuilt(p):
         hb.log('Pollination value raster already built. Skipping.')
         return True
 
-    # The production rasters this prices are the ones the tree builds two tasks earlier, at the GEP
-    # base year. Until the yield and production chain was ported it read the author's staged 2020
-    # vintage out of base data, which is why the deflator below used to have a year to cross.
+    # The production rasters this prices are the ones the tree builds two tasks earlier, at the
+    # GEP base year. The author's staged vintage is 2020, which is what gives the deflator below
+    # a year to cross when a run points at it instead.
     production_dir = p.pollination_production_raster_dir
     crosswalk = hb.df_read(p.pollination_crosswalk_fao_cropgrids_path)
     # pd.read_parquet, not hb.df_read: df_read is a CSV reader and reports a parquet as an
@@ -2269,20 +2266,41 @@ def pollination_value_raster_rebuilt(p):
 
     # The deflator is on the PRICE, not on production: the median is taken over a five-year window
     # and is therefore in that window's centre-year dollars.
-    deflator = pf.usd_deflator(pf.price_window_centre_year(p.pollination_price_years),
-                               year, load_cpi_by_year(p))
+    deflator = utilities.usd_deflation_factor(
+        load_shared_cpi(p), pf.price_window_centre_year(p.pollination_price_years), year)
     hb.log('Pricing at %d USD: prices are %d-centred, deflator %.4f'
            % (year, pf.price_window_centre_year(p.pollination_price_years), deflator))
 
     country_ids, _ = utilities.read_raster(str(p.pollination_cropgrids_country_raster_path))
     country_ids = country_ids.astype('int32')
-    coffee_by_country = pf.coffee_dependence_by_country(
-        hb.df_read(p.pollination_coffee_split_path))
-    hb.log('Coffee: blending arabica and robusta dependence over %d countries.'
-           % len(coffee_by_country))
+    coffee_split = hb.df_read(p.pollination_coffee_split_path)
+    coffee_by_country = pf.coffee_dependence_by_country(coffee_split)
+    coffee_fallback = pf.coffee_dependence_fallback(coffee_split)
+    hb.log('Coffee: blending arabica and robusta dependence over %d countries, and %.4f for the '
+           'rest, from the file\'s own world-average row.'
+           % (len(coffee_by_country), coffee_fallback))
+
+    # Which GTAP sector each crop belongs to. Without this the 153 crops are summed into one raster
+    # and the sector identity is gone, so downstream every sector receives the whole zone's value
+    # rather than its own share -- harmless while only shock_pct is read, and wrong the moment a
+    # value is used as a denominator (oilseed pollination value then exceeds oilseed output in 19
+    # of 50 regions). Absent correspondence => no split, and the totals behave exactly as before.
+    crop_sector = {}
+    correspondence_path = getattr(p, 'pollination_crop_sector_correspondence_path', None)
+    if correspondence_path and hb.path_exists(correspondence_path):
+        corr = hb.df_read(correspondence_path)
+        crop_sector = dict(zip(corr['cropgrids_label'].astype(str),
+                               corr['gtapv7_label'].astype(str).str.upper()))
+        hb.log('Crop-to-sector split ON: %d crops over %d GTAP sectors'
+               % (len(crop_sector), len(set(crop_sector.values()))))
+    else:
+        hb.log('Crop-to-sector split OFF: no pollination_crop_sector_correspondence_path; '
+               'per-sector value rasters will not be written')
 
     total_pollination_density = None
     total_crop_density = None
+    sector_pollination_density = {}
+    sector_crop_density = {}
     reference_meta = None
     summary_rows = []
     skipped = {'no_item_code': [], 'no_raster': [], 'no_price': []}
@@ -2312,7 +2330,7 @@ def pollination_value_raster_rebuilt(p):
             # arabica, which is what the source pipeline does and what a like-for-like comparison
             # against it needs; it is worth about $3bn on the world total.
             ratio = pf.dependence_raster_from_country_lookup(
-                country_ids, coffee_by_country, pf.COFFEE_DEPENDENCE['arabica'])
+                country_ids, coffee_by_country, coffee_fallback)
         pollination_density, crop_density = pf.crop_pollination_value_density(
             production_density, float(price) * deflator, ratio)
 
@@ -2327,6 +2345,16 @@ def pollination_value_raster_rebuilt(p):
         total_pollination_density[valid] += pollination_density[valid]
         total_crop_density[valid] += crop_density[valid]
         covered |= valid
+
+        # The same accumulation, kept separate by sector. Allocated lazily so only the sectors this
+        # crosswalk actually reaches cost memory.
+        sector = crop_sector.get(crop_name)
+        if sector:
+            if sector not in sector_pollination_density:
+                sector_pollination_density[sector] = np.zeros(pollination_density.shape, dtype='float64')
+                sector_crop_density[sector] = np.zeros(crop_density.shape, dtype='float64')
+            sector_pollination_density[sector][valid] += pollination_density[valid]
+            sector_crop_density[sector][valid] += crop_density[valid]
 
         summary_rows.append({
             'cropgrids_crop': crop_name, 'item_code_fao': item_code,
@@ -2344,6 +2372,9 @@ def pollination_value_raster_rebuilt(p):
                 pf.value_density_to_per_cell(crop_density, area_km2))),
             'pollination_value_usd': float(np.nansum(
                 pf.value_density_to_per_cell(pollination_density, area_km2))),
+            # Which GTAP activity this crop's value belongs to, so the split is recoverable from the
+            # summary alone without re-reading any raster.
+            'gtap_sector': crop_sector.get(crop_name, ''),
         })
 
     if reference_meta is None:
@@ -2359,6 +2390,23 @@ def pollination_value_raster_rebuilt(p):
     utilities.write_raster(str(p.pollination_value_raster_rebuilt_path),
                  np.where(np.isfinite(value_per_cell), value_per_cell, NODATA_OUT).astype('float32'),
                  out_meta, nodata=NODATA_OUT)
+
+    # Per-sector value rasters, so a zonal step can produce a value per (zone, SECTOR) instead of one
+    # value per zone repeated across sectors. Written beside the total rather than replacing it: the
+    # total is what the existing shock path reads, and this task must not change those numbers.
+    for sector in sorted(sector_pollination_density):
+        for kind, density in (('poll', sector_pollination_density[sector]),
+                              ('crop', sector_crop_density[sector])):
+            per_cell = pf.value_density_to_per_cell(density, area_km2)
+            sector_path = os.path.join(
+                p.cur_dir, '%s_value_per_cell_%s_%dusd.tif' % (kind, sector.lower(), year))
+            utilities.write_raster(
+                sector_path,
+                np.where(np.isfinite(per_cell), per_cell, NODATA_OUT).astype('float32'),
+                out_meta, nodata=NODATA_OUT)
+    if sector_pollination_density:
+        hb.log('  per-sector value rasters: %d sectors (%s)'
+               % (len(sector_pollination_density), ', '.join(sorted(sector_pollination_density))))
 
     df_summary = pd.DataFrame(summary_rows)
     hb.df_write(df_summary, p.pollination_value_summary_rebuilt_path)

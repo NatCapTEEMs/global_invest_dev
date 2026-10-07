@@ -64,9 +64,12 @@ def gep_calculation(p):
     service_results['gep_by_country_year'] = os.path.join(p.cur_dir, "gep_by_country_year.csv")
     service_results['gep_by_year'] = os.path.join(p.cur_dir, "gep_by_year.csv")
 
-    if hb.path_all_exist(list(service_results.values())):
-        hb.log("All results already exist. Skipping GEP calculation for extractive materials provision.")
+    reason = utilities.reuse_reason(p, 'extractive_materials_provision',
+                                    list(service_results.values()))
+    if reason is None:
+        hb.log('extractive_materials_provision reuses its gep outputs: the signature is unchanged.')
         return
+    hb.log('extractive_materials_provision recomputes its gep, %s' % reason)
     hb.log("Starting GEP calculation for extractive materials provision.")
 
     base_year = int(p.gep_base_year)
@@ -91,16 +94,18 @@ def gep_calculation(p):
 
     df_gep_by_country_year = df_gep_by_country_year_mineral.copy()
     df_gep_by_country_base_year = df_gep_by_country_year.loc[df_gep_by_country_year['year'] == base_year].copy()
-    df_gep_by_year = emf.group_countries(df_gep_by_country_year)
+    df_gep_by_year = utilities.sum_countries_to_year(df_gep_by_country_year, 'Value')
 
     # Write to CSVs
     hb.df_write(df_gep_by_country_year_mineral, service_results['gep_by_country_year_mineral'])
     hb.df_write(df_gep_by_country_year, service_results['gep_by_country_year'])
-    hb.df_write(df_gep_by_country_base_year[utilities.published_country_columns(
-        df_gep_by_country_base_year, 'extractive_materials_provision')],
+    utilities.write_gep_by_country(
+        p, df_gep_by_country_base_year[utilities.published_country_columns(
+            df_gep_by_country_base_year, 'extractive_materials_provision')],
         service_results['gep_by_country_base_year'])
     hb.df_write(df_gep_by_year, service_results['gep_by_year'], handle_quotes='all')
     hb.df_write(df_gep_by_year, hb.replace_ext(service_results['gep_by_year'], 'xlsx'), handle_quotes='all')
+    utilities.write_reuse_signature(p, 'extractive_materials_provision', list(service_results.values()))
 
     # Map only: the r264-expanded boundaries, each sub-region carrying its country's value.
     gdf_gep_by_country_base_year = hb.df_merge(p.gdf_countries_simplified, df_gep_by_country_base_year, how='outer', left_on='ee_r264_id', right_on='ee_r264_id')
@@ -116,14 +121,7 @@ def gep_result(p):
     utilities.render_service_results(p)
 
 def gep_results_distribution(p):
-    """Distribute the results of the GEP calculation."""
+    """Copy this service's results into the output directory. Shared implementation in
+    utilities, which is also where the service key stops being written out by hand."""
     publish_inputs(p)
-    # This task is intended to copy the results to the output directory.
-    hb.log("Distributing GEP results...")
-
-    for key, value in p.results['extractive_materials_provision'].items():
-        output_path = os.path.join(p.output_dir, key)
-        hb.path_copy(value, output_path)
-        hb.log(f"Distributed {key} to {output_path}")
-
-    hb.log("GEP results distribution complete.")
+    utilities.distribute_results(p, 'extractive_materials_provision')

@@ -113,3 +113,44 @@ def test_es_config_row_hydrates_renewable_energy(tmp_path):
     p.get_path = lambda *a, **k: '/resolved/' + '/'.join(a)
     utilities.hydrate_es_config(p, 'renewable_energy_provision', log=lambda *a: None)
     assert p.gep_base_year == 2019
+
+
+# ---------------------------------------------------------------------------
+# The regional fill: a country with no rent row takes its region's mean share.
+# ---------------------------------------------------------------------------
+
+def test_a_country_without_a_rent_row_takes_its_subregions_mean_share():
+    """The Netherlands shape: a real generator with no attribution row must not vanish.
+
+    Two neighbours carry shares 0.4 and 0.6, so the missing country fills at 0.5 and its
+    generation is valued rather than dropped. A country WITH a row keeps its own share.
+    """
+    import pandas as pd
+    from global_invest.renewable_energy_provision import renewable_energy_provision_functions as rf
+    priced = [pd.DataFrame({'Country': ['A', 'B', 'C'], 'Year': [2019] * 3,
+                            'ISO3 code': ['AAA', 'BBB', 'CCC'],
+                            'Group Technology': ['Wind energy'] * 3,
+                            'Price (USD/GWh)': [100_000.0] * 3,
+                            'Electricity Generation (GWh)': [10.0, 10.0, 10.0]})]
+    att = pd.DataFrame({'Country': ['A', 'B'], 'Year': [2019, 2019], 'nat_contrib': [0.4, 0.6]})
+    regions = pd.DataFrame({'Country': ['A', 'B', 'C'], 'Sub-region': ['R1'] * 3, 'Region': ['W'] * 3})
+    out = rf.valued_generation(priced, att, country_regions=regions).set_index('Country')
+    assert out.loc['A', 'renewable_energy_provision_gep'] == 400_000.0
+    assert out.loc['C', 'renewable_energy_provision_gep'] == 500_000.0     # filled at 0.5
+    assert out.loc['C', 'attribution_source'] == 'regional mean'
+    assert out.loc['A', 'attribution_source'] == 'country'
+
+
+def test_a_measured_negative_share_is_kept_not_filled():
+    """Negative rent is an answer, not a gap: the fill must not overwrite it."""
+    import pandas as pd
+    from global_invest.renewable_energy_provision import renewable_energy_provision_functions as rf
+    priced = [pd.DataFrame({'Country': ['A', 'B'], 'Year': [2019] * 2,
+                            'ISO3 code': ['AAA', 'BBB'],
+                            'Group Technology': ['Wind energy'] * 2,
+                            'Price (USD/GWh)': [100_000.0] * 2,
+                            'Electricity Generation (GWh)': [10.0, 10.0]})]
+    att = pd.DataFrame({'Country': ['A', 'B'], 'Year': [2019, 2019], 'nat_contrib': [-0.05, 0.6]})
+    regions = pd.DataFrame({'Country': ['A', 'B'], 'Sub-region': ['R1'] * 2, 'Region': ['W'] * 2})
+    out = rf.valued_generation(priced, att, country_regions=regions).set_index('Country')
+    assert out.loc['A', 'nat_contrib'] == -0.05
