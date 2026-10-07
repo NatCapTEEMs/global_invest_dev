@@ -87,9 +87,9 @@ def gep_calculation(p):
     # frame before that rule is kept, because valuing it is what reproduces the reference and a
     # reproduction nobody can re-run is a claim rather than a check (condition 12).
     df_crop_value_with_group_totals = df_crop_value.copy()
+    aggregate_items = utilities.read_column(p.faostat_aggregate_items_path, 'item_fao')
     df_crop_value = utilities.drop_aggregates_where_components_exist(
-        df_crop_value, utilities.read_column(p.faostat_aggregate_items_path, 'item_fao'),
-        'crop_provision_gep')
+        df_crop_value, aggregate_items, 'crop_provision_gep')
     df_crop_coefs = read_crop_coefs(p.cwon_crop_coefficients_path)
 
     # Pairs with production and no current-USD value at the base year are a FAOSTAT price gap,
@@ -103,6 +103,8 @@ def gep_calculation(p):
         df_crop_value, df_fao_values, base_year,
         crop_provision_functions.area_codes_by_m49(df_fao_raw, aggregate_areas),
         p.commercial_attribute_subservices)
+    df_crop_value = crop_provision_functions.drop_fills_under_group_totals(
+        df_crop_value, aggregate_items)
     filled = df_crop_value[df_crop_value['value_source'].astype(str).str.startswith('price_')]
     hb.log('  %d country-crop pairs at %d carried production and no FAOSTAT USD value; filled '
            'from the staged pollination values table (%s), %s thousand USD before the rental rate'

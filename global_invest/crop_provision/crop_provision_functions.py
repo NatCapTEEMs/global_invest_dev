@@ -163,6 +163,29 @@ def impute_missing_crop_values(df_crop_value, df_fao_values, year, area_code_by_
     return pd.concat([df, new_rows], ignore_index=True)
 
 
+def drop_fills_under_group_totals(df_crop_value, aggregate_items, country_column='area_code'):
+    """Remove imputed items in a country-year that FAOSTAT's group totals already value.
+
+    drop_aggregates_where_components_exist keeps a country-year's group totals when it has no
+    individually valued item (India and Argentina in 2019). impute_missing_crop_values then fills
+    individual items for exactly those country-years, so the imputed rice would be counted again on
+    top of "Cereals, primary". The group totals are FAOSTAT's own complete valuation, so they are
+    kept and the fills there are removed; fills in country-years whose totals were dropped stay.
+
+    Args:
+        df_crop_value (pd.DataFrame): the frame after both steps, with crop, year, value_source.
+        aggregate_items (iterable): the group-total item names.
+        country_column (str): the column identifying the country.
+
+    Returns:
+        pd.DataFrame: the frame without the double-counted fills.
+    """
+    keys = pd.MultiIndex.from_frame(df_crop_value[[country_column, 'year']])
+    carried = keys[df_crop_value['crop'].isin(set(aggregate_items)).to_numpy()]
+    filled = df_crop_value['value_source'].astype(str).str.startswith('price_').to_numpy()
+    return df_crop_value[~(filled & keys.isin(carried))]
+
+
 
 
 

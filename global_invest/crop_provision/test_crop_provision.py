@@ -576,6 +576,45 @@ def test_impute_fills_price_gaps_from_the_staged_values_table_and_leaves_valued_
     assert len(out) == 3
 
 
+def test_an_item_filled_under_a_kept_group_total_is_not_counted_twice():
+    """Iiiland has only its group total valued (India 2019), so the total is kept and rice is
+    already inside it; filling rice as well would count it twice. Aaaland has a valued item, so
+    its total is dropped and its empty rye row is filled as usual."""
+    values = pd.DataFrame({
+        'area_code': [1, 1, 1, 3, 3],
+        'area_code_M49': ["'010", "'010", "'010", "'030", "'030"],
+        'country': ['Aaaland', 'Aaaland', 'Aaaland', 'Iiiland', 'Iiiland'],
+        'crop_code': [100, 200, 1717, 27, 1717],
+        'crop': ['Wheat', 'Rye', 'Cereals, primary', 'Rice', 'Cereals, primary'],
+        'year': [2019] * 5,
+        'crop_provision_gep': [10.0, np.nan, 15.0, np.nan, 50.0],
+    })
+    fao_values = pd.DataFrame({
+        'area_code_m49': ['010', '030'],
+        'iso3': ['AAA', 'III'],
+        'area_fao': ['Aaaland', 'Iiiland'],
+        'item_code_fao': [200, 27],
+        'item_fao': ['Rye', 'Rice'],
+        'year': [2019, 2019],
+        'total_production_tonnes': [4.0, 30.0],
+        'price_source_agg_level': ['country', 'country'],
+        'value_usd': [2000.0, 30000.0],
+    })
+    aggregates = ['Cereals, primary']
+
+    out = utilities.drop_aggregates_where_components_exist(
+        values, aggregates, 'crop_provision_gep', log=lambda *a: None)
+    out = cp.impute_missing_crop_values(out, fao_values, 2019, {10: 1, 30: 3}, ['Rye', 'Rice'])
+    out = cp.drop_fills_under_group_totals(out, aggregates)
+
+    keyed = out.set_index(['country', 'crop'])
+    assert keyed.at[('Iiiland', 'Cereals, primary'), 'crop_provision_gep'] == 50.0
+    assert ('Iiiland', 'Rice') not in keyed.index
+    assert ('Aaaland', 'Cereals, primary') not in keyed.index
+    assert keyed.at[('Aaaland', 'Rye'), 'crop_provision_gep'] == pytest.approx(2.0)
+    assert out['crop_provision_gep'].sum() == pytest.approx(62.0)
+
+
 def test_area_codes_by_m49_keeps_the_account_row_not_the_aggregate_component():
     """FAOSTAT's value file carries China (351, M49 159) beside China, mainland (41, M49 156),
     and the account drops the mainland as an aggregate area. With the successor map sending 159
