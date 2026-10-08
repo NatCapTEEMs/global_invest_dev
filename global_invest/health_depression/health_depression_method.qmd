@@ -42,6 +42,10 @@ with $c_i$ the cost per case, $x_i$ the prevalence and $n_j$ the pixel populatio
 author's high-resolution results file is carried beside the result as the comparison point;
 its spatial scope is an open question, so the run log reports the gap rather than anchoring.
 
+## Coverage
+
+The published table is one row for each of the account's 250 countries, base year 2019, in constant 2019 USD. Of the 250, 32 carry a value, 0 are computed zeros, and 218 rows are missing, kept as missing rather than zero because an input carries no data for those countries. A zero means the computation returned zero; a missing row means the data to compute one is absent.
+
 ## Inputs
 
 All paths and parameters come from `es_parameters.csv` under the `health_depression` service

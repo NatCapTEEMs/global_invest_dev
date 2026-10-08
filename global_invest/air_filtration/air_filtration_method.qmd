@@ -14,7 +14,7 @@ Avoided deaths per country per channel, the workbook's `Dep_Deaths` and `Dust_De
 
 ## Price
 
-The workbook's `VSL` column. Where a country has its own VSL the workbook marks `VSL_Source` as `country`. Where it does not, the row is marked `global_avg` and carries the mean of the country-source VSLs. `verify_global_average_fill` asserts that rule at rtol 1e-9 and raises if the workbook stops following it.
+The account's shared value of a statistical life: the rebuilt EPA life-years-lost panel, the same file landslide mitigation reads, covering all 250 countries with each row's fallback tier recorded. The workbook's own `VSL` column no longer prices anything; the run reports how far the panel departs from it, and `verify_global_average_fill` still asserts the workbook's internal fill rule at rtol 1e-9 so a changed workbook cannot slip by unnoticed.
 
 ## Valuation
 
@@ -28,6 +28,10 @@ The tests hold that recomputation to the workbook's own benefit columns. The dep
 ## Joining to countries
 
 `air_quality_gep_by_country` joins the workbook onto the r250 ids by position, because both the workbook and the reference order are the r250 geopackage in row order and the workbook's FID is the geopackage feature id. The join refuses to proceed unless the row counts match and at least `AIR_FILTRATION_MIN_NAME_MATCHES` names are identical. 199 of 250 names are identical, and the rest differ only in sovereign versus territory naming of the same rows.
+
+## Coverage
+
+The published table is one row for each of the account's 250 countries, base year 2019, in constant 2019 USD. Of the 250, 197 carry a value and 53 are computed zeros; no row is missing. A zero means the computation returned zero; a missing row means the data to compute one is absent.
 
 ## Inputs
 
@@ -52,4 +56,4 @@ The science behind the avoided-death columns, a coupled set of process-based emi
 
 ## What is open
 
-The VSL build behind the workbook. The folder's `vsl.R` and its raw CSVs document a US-anchored, GDP- and life-years-adjusted method, and `gdp_adjusted_vsl` ports that method for transparency, scaling the US VSL per life-year lost by GDP and applying it to each country's own life expectancy minus median age. Run against the committed raw data it does not reproduce the workbook's VSL column, which points to a different data vintage. That vintage gap is a named ask.
+The VSL build behind the workbook. The folder's `vsl.R` and its raw CSVs document a US-anchored, GDP- and life-years-adjusted method, and `gdp_adjusted_vsl` ports that method for transparency, scaling the US VSL per life-year lost by GDP and applying it to each country's own life expectancy minus median age. Run against the committed raw data it does not reproduce the workbook's VSL column, which points to a different data vintage. That vintage gap remains a provenance question, and pricing no longer depends on it.

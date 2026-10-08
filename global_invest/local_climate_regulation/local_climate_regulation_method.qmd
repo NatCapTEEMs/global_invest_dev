@@ -53,6 +53,10 @@ Three things verify against staged data. The kilowatt-hour times price identity 
 merged-sum identity against the December 2025 version is exact on every country tested. The
 current final's parse and totals check out.
 
+## Coverage
+
+The published table is one row for each of the account's 250 countries, base year 2019, in constant 2019 USD. Of the 250, 174 carry a value, 3 are computed zeros, and 73 rows are missing, kept as missing rather than zero because an input carries no data for those countries. A zero means the computation returned zero; a missing row means the data to compute one is absent.
+
 ## Inputs
 
 From `es_parameters.csv`, scoped to the `local_climate_regulation` service:

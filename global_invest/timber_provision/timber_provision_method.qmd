@@ -59,6 +59,10 @@ Three checks are recorded against the staged rasters:
   `current_forest_value.tif` inside each r250 country polygon, ratio 1.0000 on all countries
   tested. The raster is per-pixel USD.
 
+## Coverage
+
+The published table is one row for each of the account's 250 countries, base year 2019, in constant 2019 USD. Of the 250, 190 carry a value, 23 are computed zeros, and 37 rows are missing, kept as missing rather than zero because an input carries no data for those countries. A zero means the computation returned zero; a missing row means the data to compute one is absent.
+
 ## Inputs
 
 From `es_parameters.csv`, scoped to the `timber_provision` service:

@@ -43,6 +43,10 @@ by year for the time series.
 Country references are published at 30 arcsecond simplification for this service, rather than the
 300 arcsecond default the other modules use.
 
+## Coverage
+
+The published table is one row for each of the account's 250 countries, base year 2019, in constant 2019 USD. Of the 250, 88 carry a value, 119 are computed zeros, and 43 rows are missing, kept as missing rather than zero because an input carries no data for those countries. A zero means the computation returned zero; a missing row means the data to compute one is absent.
+
 ## Inputs
 
 Both data paths come from `es_config.csv` rather than `es_parameters.csv`. The

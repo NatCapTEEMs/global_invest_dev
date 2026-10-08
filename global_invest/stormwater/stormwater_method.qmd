@@ -35,6 +35,10 @@ $$
 
 The function is in place and unit-tested.
 
+## Coverage
+
+The published table is one row for each of the account's 250 countries, base year 2019, in constant 2019 USD. Of the 250, 104 carry a value and 146 are computed zeros; no row is missing. A zero means the computation returned zero; a missing row means the data to compute one is absent.
+
 ## Inputs
 
 From `es_parameters.csv`, scoped to the `stormwater` service:

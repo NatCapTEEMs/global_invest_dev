@@ -73,3 +73,6 @@ where $Q$ represents the quantity of carbon storage (in metric tons), and $P$ de
 
 # References
 
+## Coverage
+
+The published table is one row for each of the account's 250 countries, base year 2019, in constant 2019 USD. Of the 250, every row carries a value; none is zero and none is missing. A zero means the computation returned zero; a missing row means the data to compute one is absent.

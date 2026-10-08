@@ -58,6 +58,10 @@ the nesting under water supply visible per country.
 before the join, and the published table carries every account country, NA where the matrix has
 no row.
 
+## Coverage
+
+The published table is one row for each of the account's 250 countries, base year 2019, in constant 2019 USD. Of the 250, 210 carry a value, 12 are computed zeros, and 28 rows are missing, kept as missing rather than zero because an input carries no data for those countries. A zero means the computation returned zero; a missing row means the data to compute one is absent.
+
 ## Inputs
 
 All paths and parameters come from `es_parameters.csv` under the `moisture_recycling` service key:

@@ -65,3 +65,7 @@ compiled extract FAO distributes as gleam3_dmi.xlsx, which we have asked for.
    <https://www.fao.org/gleam/en/>
 2. World Bank (2024). *The Changing Wealth of Nations: Revisiting the Measurement of
    Comprehensive Wealth*.
+
+## Coverage
+
+The published table is one row for each of the account's 250 countries, base year 2019, in constant 2019 USD. Of the 250, 142 carry a value, 36 are computed zeros, and 72 rows are missing, kept as missing rather than zero because an input carries no data for those countries. A zero means the computation returned zero; a missing row means the data to compute one is absent.

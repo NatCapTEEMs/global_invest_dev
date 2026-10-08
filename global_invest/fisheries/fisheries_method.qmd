@@ -48,3 +48,7 @@ services which enter as factor-productivity terms.
 
 Trivial, the task reads binary headers and writes a CSV, taking seconds. `run_fisheries.py` runs it
 standalone, needing only `cwon_shocks.har` for the configured aggregation.
+
+## Coverage
+
+The published table is one row for each of the account's 250 countries, base year 2019, in constant 2019 USD. Of the 250, 107 carry a value, 58 are computed zeros, and 85 rows are missing, kept as missing rather than zero because an input carries no data for those countries. A zero means the computation returned zero; a missing row means the data to compute one is absent.

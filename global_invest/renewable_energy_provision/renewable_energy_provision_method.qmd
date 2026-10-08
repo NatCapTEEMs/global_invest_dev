@@ -59,3 +59,7 @@ CSVs giving different values, and which of the two is current is an open questio
 1. IRENA (2023). *Renewable Energy Statistics*. International Renewable Energy Agency.
 2. World Bank (2024). *The Changing Wealth of Nations: Revisiting the Measurement of
    Comprehensive Wealth*.
+
+## Coverage
+
+The published table is one row for each of the account's 250 countries, base year 2019, in constant 2019 USD. Of the 250, 107 carry a value, 5 are computed zeros, and 138 rows are missing, kept as missing rather than zero because an input carries no data for those countries. A zero means the computation returned zero; a missing row means the data to compute one is absent.

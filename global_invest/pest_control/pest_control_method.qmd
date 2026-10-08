@@ -27,6 +27,8 @@ The organic producer price: the country's FAOSTAT 2019 producer price for the cr
 global median where the country reports none), times the organic-to-conventional price premium
 (`pest_control_price_premium`).
 
+Where FAOSTAT reports no yield or producer price for a crop and country that FiBL gives organic area, the missing factor is imputed with the global median across the countries that do report it for the same crop, so a real organic area is not dropped for want of a price; a country missing every factor stays missing rather than imputed into existence.
+
 ## Valuation
 
 Per crop $i$, country $j$:
@@ -46,6 +48,10 @@ The committed `pest_control_gep.csv` is carried beside the result as the compari
 is a Monte Carlo mean from a pipeline that is not on the drive, so the run log reports coverage
 and log-rank agreement rather than a to-the-cent match, and the total scales linearly in $\pi$
 (the committed level corresponds closely to $\pi = 1$).
+
+## Coverage
+
+The published table is one row for each of the account's 250 countries, base year 2019, in constant 2019 USD. Of the 250, 138 carry a value, 2 are computed zeros, and 110 rows are missing, kept as missing rather than zero because an input carries no data for those countries. A zero means the computation returned zero; a missing row means the data to compute one is absent.
 
 ## Inputs
 

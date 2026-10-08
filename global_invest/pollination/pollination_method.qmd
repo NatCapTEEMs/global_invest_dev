@@ -57,6 +57,10 @@ into the shared ES-shock directory (`p.es_shock_dir`). The downstream `build_com
 step consumes it unchanged and is agnostic to whether the shock was computed dynamically (as here) or,
 for other services, read from a precomputed table.
 
+## Coverage
+
+The published table is one row for each of the account's 250 countries, base year 2019, in constant 2019 USD. Of the 250, 193 carry a value, 4 are computed zeros, and 53 rows are missing, kept as missing rather than zero because an input carries no data for those countries. A zero means the computation returned zero; a missing row means the data to compute one is absent.
+
 ## Inputs
 
 | Input | Source |
