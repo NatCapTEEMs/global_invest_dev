@@ -851,8 +851,8 @@ if __name__ == '__main__':
 import numpy as np
 import pytest
 
-from global_invest.pollination import provision_decomposition as pd_mod
-from global_invest.pollination.retained_value import retained_value_change
+from global_invest.pollination import pollination_functions as pd_mod
+from global_invest.pollination.pollination_functions import retained_value_change
 
 
 def test_hectare_components_partition_baseline_cropland():
@@ -939,69 +939,62 @@ def test_area_excluded_for_missing_sufficiency_is_reported_not_dropped():
     assert summary['quantity'] == 'provision change on valued support'
 
 
-import unittest
-import numpy as np
-from retained_raster import _overlap
+from global_invest.pollination.pollination_functions import (_overlap, output_share_pct,
+                                                             annual_retained_rows)
 
 
-class OverlapTests(unittest.TestCase):
-    def test_coincident_edges_do_not_create_neighbour_slivers(self):
-        weights=_overlap(2,0,1000.+1e-12,1.,0.,1.,1003).toarray()
-        self.assertEqual(np.count_nonzero(weights),2)
-        np.testing.assert_array_equal(weights[1000:1002],np.eye(2))
-
-    def test_real_small_overlap_is_preserved(self):
-        weights=_overlap(1,0,1000.+1e-5,1.,0.,1.,1002).toarray()
-        self.assertEqual(np.count_nonzero(weights),2)
-        self.assertAlmostEqual(weights[1001,0],1e-5,places=10)
-        self.assertAlmostEqual(weights.sum(),1.)
+def test_coincident_edges_do_not_create_neighbour_slivers():
+    weights = _overlap(2, 0, 1000. + 1e-12, 1., 0., 1., 1003).toarray()
+    assert np.count_nonzero(weights) == 2
+    np.testing.assert_array_equal(weights[1000:1002], np.eye(2))
 
 
-if __name__=='__main__': unittest.main()
+def test_real_small_overlap_is_preserved():
+    weights = _overlap(1, 0, 1000. + 1e-5, 1., 0., 1., 1002).toarray()
+    assert np.count_nonzero(weights) == 2
+    assert weights[1001, 0] == pytest.approx(1e-5, abs=1e-10)
+    assert weights.sum() == pytest.approx(1.)
 
 
-import unittest
-import numpy as np
-from retained_value import retained_value_change, output_share_pct, annual_retained_rows
+def test_half_retained_does_not_receive_whole_cell_value():
+    # $100 crop value; $20 dependent; half retained; sufficiency .4 -> .6.
+    delta = retained_value_change(20, .5, .4, .6)
+    assert float(delta) == pytest.approx(2.)
+    assert output_share_pct(delta, 100) == pytest.approx(2.)
 
 
-class RetainedValueTests(unittest.TestCase):
-    def test_half_retained_does_not_receive_whole_cell_value(self):
-        # $100 crop value; $20 dependent; half retained; sufficiency .4 -> .6.
-        delta = retained_value_change(20, .5, .4, .6)
-        self.assertAlmostEqual(float(delta), 2.)
-        self.assertAlmostEqual(output_share_pct(delta, 100), 2.)
-
-    def test_turnover_alone_is_not_habitat_productivity_change(self):
-        np.testing.assert_allclose(retained_value_change([20, 20], [0, .5], [.4, .4], [.4, .4]), 0)
-
-    def test_habitat_loss_never_produces_gain(self):
-        delta = retained_value_change([20, 10], [.5, 1], [.8, .5], [.2, .4])
-        self.assertTrue(np.all(delta < 0))
-
-    def test_sector_denominator_includes_all_baseline_crop_value(self):
-        delta = retained_value_change([20, 10], [.5, 0], [.4, np.nan], [.6, np.nan])
-        self.assertAlmostEqual(output_share_pct(delta, [100, 100]), 1.)
-
-    def test_inconsistent_coverage_and_missing_aggregation_refused(self):
-        with self.assertRaises(ValueError):
-            retained_value_change(20, .5, .4, np.nan)
-        with self.assertRaises(ValueError):
-            output_share_pct([1, np.nan], [100, 100])
-
-    def test_common_value_unit_conversion_cancels(self):
-        self.assertAlmostEqual(output_share_pct([2, -1], [100, 50]),
-                               output_share_pct([2000, -1000], [100000, 50000]))
-
-    def test_annual_dollars_allow_zero_baseline_and_preserve_anchor_change(self):
-        import pandas as pd
-        index=pd.MultiIndex.from_tuples([('AEZ1','USA')])
-        zero=pd.Series([0.],index=index); future=pd.Series([2.],index=index)
-        rows=annual_retained_rows({2030:zero},{2030:future},zero,'current_policies',2023,['V_F'])
-        self.assertEqual(rows.iloc[0].delta_pollination_usd,0.)
-        self.assertEqual(rows.iloc[-1].delta_pollination_usd,2.)
-        np.testing.assert_allclose(rows.delta_pollination_usd,np.linspace(0,2,8))
+def test_turnover_alone_is_not_habitat_productivity_change():
+    np.testing.assert_allclose(retained_value_change([20, 20], [0, .5], [.4, .4], [.4, .4]), 0)
 
 
-if __name__ == '__main__':
-    unittest.main()
+def test_habitat_loss_never_produces_gain():
+    delta = retained_value_change([20, 10], [.5, 1], [.8, .5], [.2, .4])
+    assert np.all(delta < 0)
+
+
+def test_sector_denominator_includes_all_baseline_crop_value():
+    delta = retained_value_change([20, 10], [.5, 0], [.4, np.nan], [.6, np.nan])
+    assert output_share_pct(delta, [100, 100]) == pytest.approx(1.)
+
+
+def test_inconsistent_coverage_and_missing_aggregation_refused():
+    with pytest.raises(ValueError):
+        retained_value_change(20, .5, .4, np.nan)
+    with pytest.raises(ValueError):
+        output_share_pct([1, np.nan], [100, 100])
+
+
+def test_common_value_unit_conversion_cancels():
+    assert output_share_pct([2, -1], [100, 50]) == pytest.approx(
+        output_share_pct([2000, -1000], [100000, 50000]))
+
+
+def test_annual_dollars_allow_zero_baseline_and_preserve_anchor_change():
+    import pandas as pd
+    index = pd.MultiIndex.from_tuples([('AEZ1', 'USA')])
+    zero = pd.Series([0.], index=index)
+    future = pd.Series([2.], index=index)
+    rows = annual_retained_rows({2030: zero}, {2030: future}, zero, 'current_policies', 2023, ['V_F'])
+    assert rows.iloc[0].delta_pollination_usd == 0.
+    assert rows.iloc[-1].delta_pollination_usd == 2.
+    np.testing.assert_allclose(rows.delta_pollination_usd, np.linspace(0, 2, 8))
