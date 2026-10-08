@@ -393,7 +393,10 @@ def natural_resource_share_of_fishing_gross_output(evfp_array, maks_array, endow
 
     The check that this is right rather than a preference is forestry, where two independent
     sources meet: GTAP's land share of forestry value added is 0.589, and 0.589 x 0.644 = 0.380 on
-    gross output, against CWoN's separately-derived forest rental ratio of 0.376. One percent apart.
+    gross output, against CWoN's separately-derived forest rental ratio (0.376 in the vintage this
+    was first checked against; CWoN 2024 rebuilds the series and its production-weighted 2019 rate
+    is 0.232). Either vintage sits beside the gross-output share and far below the 0.589
+    value-added share, which is the point of the check.
 
     The conversion is per region and cannot be a single factor: value added over gross output
     runs 0.265 to 0.928 across the 50 GTAP regions, so a world average would move small fishing

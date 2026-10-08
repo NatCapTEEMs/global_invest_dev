@@ -238,7 +238,9 @@ def fisheries_aquaculture_gep(p):
         # over gross output -- 0.585 on average for fishing and as low as 0.265. Both are published
         # because the account has not decided which denominator lambda is a share of, and the
         # difference is $44.6bn. Forestry is the check: GTAP's land share of forestry value added
-        # is 0.589, which on gross output is 0.380, against CWoN's separate rental ratio of 0.376.
+        # is 0.589, which on gross output is 0.380, against CWoN's separate rental ratio (0.376
+        # at the vintage first checked; 0.232 production-weighted in CWoN 2024). Both sit with the
+        # gross-output share, far below the value-added 0.589.
         # The account's aquaculture value is the REVENUE share. FAO gives revenue, so the
         # share applied to it must be a share of revenue; the value-added share inflates it by
         # 1/0.596. The value-added figure stays beside it under its own name.
