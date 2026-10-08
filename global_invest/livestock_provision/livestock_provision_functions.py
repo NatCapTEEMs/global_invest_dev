@@ -86,7 +86,7 @@ GLEAM_TOTAL_FEED_COLS = GLEAM_ECOSYSTEM_FEED_COLS + ("Grains", "Oil seed cakes",
 # categories, while chickens and pigs get "Other edible" and "Other non-edible" and no fodder
 # crop. Harvesting every species and unioning the columns gives the full eight, so a share
 # built from the dashboard is an estimate rather than a bound. The per-species layouts are
-# recorded in howto_harvest_gleam_intake.md.
+# recorded in docs/howto_harvest_gleam_intake.md.
 GLEAM_RUMINANT_FEED_COLS = GLEAM_ECOSYSTEM_FEED_COLS + ("Grains", "Oil seed cakes")
 GLEAM_MONOGASTRIC_FEED_COLS = ("By-products", "Crop residues", "Grains", "Grass and leaves",
                                "Oil seed cakes", "Other edible", "Other non-edible")
