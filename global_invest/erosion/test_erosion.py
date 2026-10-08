@@ -279,7 +279,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from global_invest.erosion.erosion_damage_pipeline import tables_to_seam
+from global_invest.erosion.erosion_tasks import tables_to_seam
 
 ANCHORS = [2030, 2050]
 YEARS = list(range(2023, 2051))
@@ -378,7 +378,7 @@ def test_excluded_zone_reports_its_future_hectares(tmp_path):
 import pandas as pd
 import pytest
 
-from global_invest.erosion.erosion_damage_pipeline import (FUTURE_COVERAGE_EXCLUSIONS,
+from global_invest.erosion.erosion_tasks import (FUTURE_COVERAGE_EXCLUSIONS,
                                                            tables_to_seam)
 
 ANCHORS = [2030, 2050]
@@ -551,7 +551,7 @@ import pandas as pd
 import pytest
 from shapely.geometry import box
 
-from global_invest.erosion.erosion_damage_pipeline import normalise_zone_ids, zone_label_table
+from global_invest.erosion.erosion_tasks import normalise_zone_ids, zone_label_table
 
 
 def _zid_boundary(ids, aez=None, labels=None):
@@ -625,7 +625,7 @@ def test_aez0_is_kept():
 
 import unittest
 import numpy as np
-from global_invest.erosion.erosion_damage import productivity_level, stressed_soil_loss, annual_damage_change, summarize_damage_areas
+from global_invest.erosion.erosion_functions import productivity_level, stressed_soil_loss, annual_damage_change, summarize_damage_areas
 
 
 class DamageTests(unittest.TestCase):
