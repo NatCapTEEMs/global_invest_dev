@@ -91,6 +91,7 @@ hydro_manuscript: "$287.7bn"
 cp_total: "$36.28bn"
 lcr_ours: "$175.56bn"
 lcr_committed: "$14.19bn"
+lcr_cas: "$557.7bn"
 
 format:
     revealjs:
@@ -309,7 +310,7 @@ format:
 | sandstorm_prevention | {{< meta sandstorm_total >}} | yes.  |
 | water_quality | {{< meta wq_usd >}} USD and {{< meta wq_intl >}} intl$ | partially. We recompute the nutrient valuations and reproduce the committed intermediates; the headline international-dollar column is read through |
 | flood | {{< meta flood_total >}} | partially. Our recompute matches the pipeline's table, Morocco excepted |
-| local_climate_regulation | {{< meta lcr_ours >}} ours | no. We compute it from our own city valuations; the committed table's {{< meta lcr_committed >}} differs by a country-varying factor |
+| local_climate_regulation | {{< meta lcr_cas >}} adopted (the CAS method, 2026-10-08) | partly. Their results workbook is the carried figure; the reproduction needs one public MODIS download against their staged pipeline. The old pipeline's {{< meta lcr_ours >}} lineage and the superseded committed {{< meta lcr_committed >}} stay as the record |
 | extractive_energy | {{< meta xe_total >}} (gas + coal + petroleum) | yes.  |
 | timber_provision | {{< meta timber_total >}} | yes. |
 | ntfp | $28.87bn | no. No reference output |
@@ -449,8 +450,8 @@ format:
 
 ## local_climate_regulation
 
-- [Values cooling energy avoided by urban vegetation: an urban cooling model gives each city-month a cooling effect, priced at national electricity prices. We now sum the city files ourselves, {{< meta lcr_ours >}} across 177 countries, instead of reading the committed table.]{.state}
-- **Q1:** is the committed table the `with_country_mc` variant, and can we have `Data/consumption_per_cdd_by_country_iea.csv`? Your `gep_fixing_cooling_valuation_v04.py` computes both, differing by one line: `with_country_mc = without_mc * consumption_per_cdd`, an IEA consumption per cooling-degree-day factor that varies by country. That would explain why the gap between our {{< meta lcr_ours >}} and the committed {{< meta lcr_committed >}} is not a constant, ranging about 2.5 to 766. We cannot check it because the factor table sits in your input directory rather than the shared base data.
+- [Values cooling energy avoided by urban vegetation. The account adopts the CAS method (decided 2026-10-08): avoided cooling energy from vegetation evapotranspiration at country electricity prices, {{< meta lcr_cas >}} over 168 countries from their staged, fully reproducible package, whose only unstaged input is public MODIS imagery. The committed {{< meta lcr_committed >}} and its unrecoverable correction are superseded; our {{< meta lcr_ours >}} city-sum lineage stays as the old pipeline's record.]{.state}
+- **Q1:** can the all-services sheet move to the CAS figure, and does the CAS team want the reproduction run on our side before it does?
 
 ## extractive_energy
 
