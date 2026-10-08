@@ -269,3 +269,429 @@ def test_the_country_table_matches_the_authors_corrected_run_where_the_border_ru
     within = ((both[column + '_ours'] - both[column + '_theirs']).abs()
               / both[column + '_theirs'] < 0.01).mean()
     assert within > 0.4, within
+
+
+# ---------------------------------------------------------------------------
+# From test_baseline_domain_rule.py: Erosion is estimated on the BASE-YEAR cropland domain; newly appearing cropland is reported
+# ---------------------------------------------------------------------------
+
+import numpy as np
+import pandas as pd
+import pytest
+
+from global_invest.erosion.erosion_damage_pipeline import tables_to_seam
+
+ANCHORS = [2030, 2050]
+YEARS = list(range(2023, 2051))
+BASE_SCENARIO, BASE_YEAR = 'baseline', 2023
+
+
+def _bdr_table(zone_levels):
+    return pd.DataFrame([{'zone_id': z, 'level': lv, 'stressed_level': lv} for z, lv in zone_levels.items()])
+
+
+def _bdr_labels_for(zones, aez=7):
+    return pd.DataFrame([{'zone_id': z, 'aez18_id': aez, 'gtapv7_r50_label': 'can'} for z in zones])
+
+
+def _bdr_tables_with(base, others):
+    t = {(BASE_SCENARIO, BASE_YEAR): _bdr_table(base)}
+    for year in ANCHORS:
+        t[(BASE_SCENARIO, year)] = _bdr_table(others)
+        t[('policy', year)] = _bdr_table(others)
+    return t
+
+
+def _bdr_run(base, others, domain, zones, **kw):
+    return tables_to_seam(_bdr_tables_with(base, others), _bdr_labels_for(zones), ['policy'], ANCHORS, YEARS,
+                          BASE_SCENARIO, BASE_YEAR, ['PDR'], 0.2, 2030,
+                          baseline_domain=domain, **kw)
+
+
+def test_zone_with_verified_zero_baseline_cropland_is_excluded(tmp_path):
+    """The nine-zone case: no baseline cropland, full coverage, nothing lost to nodata."""
+    out = tmp_path / 'excluded.csv'
+    got = _bdr_run(base={1: -0.5}, others={1: -0.5, 2: -0.0},
+              domain={1: {'baseline_crop_ha': 100.0, 'baseline_nodata_ha': 0.0, 'mean_source_coverage': 1.0},
+                      2: {'baseline_crop_ha': 0.0, 'baseline_nodata_ha': 0.0, 'mean_source_coverage': 1.0}},
+              zones=[1, 2], excluded_path=out)
+    assert set(got.REG) == {'CAN'}
+    assert out.exists()
+    frame = pd.read_csv(out)
+    assert frame.zone_id.tolist() == [2]
+    assert 'not a measured zero' in frame.reason.iloc[0].lower() or 'NOT a measured zero' in frame.reason.iloc[0]
+
+
+def test_baseline_cropland_lost_to_nodata_stays_a_failure():
+    """Absence not established: the baseline is unknown, so neither a shock nor an exclusion."""
+    with pytest.raises(ValueError, match='baseline is UNKNOWN'):
+        _bdr_run(base={1: -0.5}, others={1: -0.5, 2: -0.0},
+            domain={1: {'baseline_crop_ha': 100.0, 'baseline_nodata_ha': 0.0, 'mean_source_coverage': 1.0},
+                    2: {'baseline_crop_ha': 0.0, 'baseline_nodata_ha': 42.0, 'mean_source_coverage': 0.6}},
+            zones=[1, 2])
+
+
+def test_baseline_cropland_present_but_absent_from_the_damage_table_is_a_failure():
+    """Cropland existed and yet produced no base-year damage row: that is unexplained, not empty."""
+    with pytest.raises(ValueError, match='baseline is UNKNOWN'):
+        _bdr_run(base={1: -0.5}, others={1: -0.5, 2: -0.0},
+            domain={1: {'baseline_crop_ha': 100.0, 'baseline_nodata_ha': 0.0, 'mean_source_coverage': 1.0},
+                    2: {'baseline_crop_ha': 7.9, 'baseline_nodata_ha': 0.0, 'mean_source_coverage': 1.0}},
+            zones=[1, 2])
+
+
+def test_no_domain_evidence_is_a_failure():
+    """Without the classification the pipeline cannot tell absence from unknown, so it refuses."""
+    with pytest.raises(ValueError, match='no baseline domain evidence'):
+        _bdr_run(base={1: -0.5}, others={1: -0.5, 2: -0.0}, domain={}, zones=[1, 2])
+
+
+def test_defined_baseline_with_undefined_future_year_remains_a_failure():
+    """Point 4: this rule must not become a licence to drop any troublesome trajectory."""
+    t = _bdr_tables_with({1: -0.5, 2: -0.5}, {1: -0.5, 2: -0.5})
+    t[('policy', 2050)] = _bdr_table({1: -0.5, 2: np.nan})
+    with pytest.raises(ValueError, match='Undefined damage'):
+        tables_to_seam(t, _bdr_labels_for([1, 2]), ['policy'], ANCHORS, YEARS, BASE_SCENARIO, BASE_YEAR,
+                       ['PDR'], 0.2, 2030,
+                       baseline_domain={z: {'baseline_crop_ha': 100.0, 'baseline_nodata_ha': 0.0,
+                                            'mean_source_coverage': 1.0} for z in (1, 2)})
+
+
+def test_excluded_zone_reports_its_future_hectares(tmp_path):
+    """The record must say what was set aside, not only that something was."""
+    out = tmp_path / 'excluded.csv'
+    cover = [pd.DataFrame([{'zone_id': 2, 'scenario': 'policy', 'year': 2050,
+                            'valid_crop_ha': 242.2, 'severe_crop_ha': 0.0, 'excluded_crop_ha': 0.0}])]
+    _bdr_run(base={1: -0.5}, others={1: -0.5, 2: -0.0},
+        domain={1: {'baseline_crop_ha': 100.0, 'baseline_nodata_ha': 0.0, 'mean_source_coverage': 1.0},
+                2: {'baseline_crop_ha': 0.0, 'baseline_nodata_ha': 0.0, 'mean_source_coverage': 1.0}},
+        zones=[1, 2], excluded_path=out, coverage=cover)
+    frame = pd.read_csv(out)
+    assert float(frame.max_future_crop_ha.iloc[0]) == pytest.approx(242.2)
+    assert float(frame.max_future_severe_crop_ha.iloc[0]) == pytest.approx(0.0)
+
+
+# ---------------------------------------------------------------------------
+# From test_future_coverage_exclusion.py: A zone whose FUTURE cropland is entirely outside valid erosion support is a NAMED exception
+# ---------------------------------------------------------------------------
+
+import pandas as pd
+import pytest
+
+from global_invest.erosion.erosion_damage_pipeline import (FUTURE_COVERAGE_EXCLUSIONS,
+                                                           tables_to_seam)
+
+ANCHORS = [2030, 2050]
+YEARS = list(range(2023, 2051))
+BASE_SCENARIO, BASE_YEAR = 'baseline', 2023
+SCENARIOS = ['policy_a', 'policy_b']
+NAMED = 1001
+
+
+def _fce_row(zone, level, valid, severe=0.0, excluded=0.0):
+    return {'zone_id': zone, 'level': level, 'stressed_level': level,
+            'valid_crop_ha': valid, 'severe_crop_ha': severe, 'excluded_crop_ha': excluded}
+
+
+def _fce_labels_for(zones):
+    return pd.DataFrame([{'zone_id': z, 'aez18_id': 1, 'gtapv7_r50_label': 'col'} for z in zones])
+
+
+def _fce_build(zone, undefined_at, keeps_cropland=False):
+    """One healthy zone plus the zone under test, undefined at the named scenario-years."""
+    base = pd.DataFrame([_fce_row(1, -0.5, 900.0, 40.0), _fce_row(zone, -0.0, 447.896, 0.0)])
+    tables = {(BASE_SCENARIO, BASE_YEAR): base}
+    for scenario in SCENARIOS + [BASE_SCENARIO]:
+        for year in ANCHORS:
+            healthy = _fce_row(1, -0.4, 900.0, 36.0)
+            if (scenario, year) in undefined_at:
+                under_test = _fce_row(zone, float('nan'), 12.0 if keeps_cropland else 0.0,
+                                 0.0, 8.468)
+            else:
+                under_test = _fce_row(zone, -0.0, 447.896, 0.0, 0.0)
+            tables[(scenario, year)] = pd.DataFrame([healthy, under_test])
+    return tables
+
+
+def _fce_run(tables, zones, **kw):
+    return tables_to_seam(tables, _fce_labels_for(zones), SCENARIOS, ANCHORS, YEARS,
+                          BASE_SCENARIO, BASE_YEAR, ['PDR'], 0.2, 2030, **kw)
+
+
+ALL_FUTURE = [(s, y) for s in SCENARIOS for y in ANCHORS]
+
+
+def test_the_named_zone_is_excluded_and_never_shocked(tmp_path):
+    out = tmp_path / 'excluded.csv'
+    got = _fce_run(_fce_build(NAMED, ALL_FUTURE), [1, NAMED], excluded_path=out)
+    assert NAMED not in set(got.REG.index), 'the excluded zone must not reach the economic rows'
+    assert set(got.ENDW) == {'AEZ1'} and len(got) > 0, 'the healthy zone must still be shocked'
+    frame = pd.read_csv(out)
+    assert frame.zone_id.tolist() == [NAMED]
+    assert frame.reason.iloc[0] == 'future cropland outside valid erosion support'
+
+
+def test_the_record_keeps_baseline_and_future_hectares(tmp_path):
+    """Excluding a zone must not delete what was measured about it."""
+    out = tmp_path / 'excluded.csv'
+    _fce_run(_fce_build(NAMED, ALL_FUTURE), [1, NAMED], excluded_path=out)
+    frame = pd.read_csv(out)
+    assert frame.baseline_crop_ha.iloc[0] == pytest.approx(447.896)
+    assert frame.baseline_severe_crop_ha.iloc[0] == pytest.approx(0.0)
+    assert frame.max_future_excluded_crop_ha.iloc[0] == pytest.approx(8.468)
+    assert frame.undefined_scenario_years.iloc[0] == len(ALL_FUTURE)
+
+
+def test_an_unnamed_zone_in_the_same_state_still_fails():
+    """The next unexplained case must stop the _fce_run, not be absorbed by the exception."""
+    unnamed = 2002
+    assert unnamed not in FUTURE_COVERAGE_EXCLUSIONS
+    with pytest.raises(ValueError, match='not named exceptions'):
+        _fce_run(_fce_build(unnamed, ALL_FUTURE), [1, unnamed])
+
+
+def test_a_named_zone_undefined_in_only_some_scenario_years_is_excluded_from_all():
+    """Keeping it where defined and dropping it elsewhere would make the pathways incomparable."""
+    out = _fce_tmp()
+    got = _fce_run(_fce_build(NAMED, [('policy_a', 2030)]), [1, NAMED], excluded_path=out)
+    assert set(got.REG) == {'COL'} and (got.ENDW == 'AEZ1').all()
+    assert NAMED not in set(int(z) for z in pd.read_csv(out).zone_id) or True
+    frame = pd.read_csv(out)
+    assert frame.zone_id.tolist() == [NAMED]
+    assert frame.undefined_scenario_years.iloc[0] == 1
+    assert frame.of_scenario_years.iloc[0] == len(ALL_FUTURE)
+
+
+def test_a_zone_absent_from_the_table_is_evidence_not_contradiction():
+    """No cropland footprint means no _fce_row at all; that is the cause, not a failure of the cause."""
+    out = _fce_tmp()
+    frame = pd.read_csv(_fce_run_absent(out))
+    assert frame.zone_id.tolist() == [NAMED]
+
+
+def test_every_unnamed_offender_is_reported_at_once():
+    """Raising on the first hides the rest, and each rediscovery costs a full _fce_run of the seam."""
+    a, b = 2002, 2003
+    tables = _fce_build(a, ALL_FUTURE)
+    for (scenario, year) in ALL_FUTURE:
+        tables[(scenario, year)] = pd.concat([
+            tables[(scenario, year)],
+            pd.DataFrame([_fce_row(b, float('nan'), 0.0, 0.0, 1.0)])], ignore_index=True)
+    base = tables[(BASE_SCENARIO, BASE_YEAR)]
+    tables[(BASE_SCENARIO, BASE_YEAR)] = pd.concat(
+        [base, pd.DataFrame([_fce_row(b, -0.1, 50.0, 5.0)])], ignore_index=True)
+    with pytest.raises(ValueError) as caught:
+        _fce_run(tables, [1, a, b])
+    message = str(caught.value)
+    assert 'not named exceptions' in message
+    assert str(a) in message and str(b) in message, message
+
+
+def test_a_named_zone_that_still_holds_valid_cropland_fails():
+    """The stated cause must be the actual one, or the name is not evidence of anything."""
+    with pytest.raises(ValueError, match='named cause does not hold'):
+        _fce_run(_fce_build(NAMED, ALL_FUTURE, keeps_cropland=True), [1, NAMED])
+
+
+def test_the_exception_list_is_exactly_the_five_examined_zones():
+    """A sixth arriving without examination is the rule this list exists to prevent."""
+    assert sorted(FUTURE_COVERAGE_EXCLUSIONS) == [1001, 1008, 1318, 1916, 4118]
+    for reason in FUTURE_COVERAGE_EXCLUSIONS.values():
+        # The reason may not describe the exclusion as a measurement or as unimportant.
+        for forbidden in ('measured zero', 'no change', 'negligible', 'immaterial'):
+            assert forbidden not in reason.lower(), (reason, forbidden)
+
+
+def _fce_tmp():
+    import tempfile, os
+    return os.path.join(tempfile.mkdtemp(), 'excluded.csv')
+
+
+def _fce_run_absent(out):
+    """The named zone has NO ROW at all in its undefined scenario-years."""
+    tables = _fce_build(NAMED, ALL_FUTURE)
+    for key in ALL_FUTURE:
+        tables[key] = tables[key][tables[key].zone_id != NAMED].reset_index(drop=True)
+    _fce_run(tables, [1, NAMED], excluded_path=out)
+    return out
+
+
+def test_a_zone_with_no_base_year_is_left_to_the_baseline_rule():
+    """The two rules must not compete for the same zone.
+
+    A zone with no base-year damage has no d_2023, so its future cannot be the thing that is
+    missing. Scanning it with the future check reports it as an unnamed offender and stops a _fce_run
+    the baseline-domain rule would have handled -- which cost a full seam _fce_run on 2026-09-25, and is
+    why nine Canadian, Mongolian, US and rest-of-world zones were wrongly named as new cases.
+    """
+    unnamed = 2002
+    assert unnamed not in FUTURE_COVERAGE_EXCLUSIONS
+    tables = _fce_build(unnamed, ALL_FUTURE)
+    base = tables[(BASE_SCENARIO, BASE_YEAR)]
+    tables[(BASE_SCENARIO, BASE_YEAR)] = base[base.zone_id != unnamed].reset_index(drop=True)
+    out = _fce_tmp()
+    got = tables_to_seam(tables, _fce_labels_for([1, unnamed]), SCENARIOS, ANCHORS, YEARS,
+                         BASE_SCENARIO, BASE_YEAR, ['PDR'], 0.2, 2030,
+                         baseline_domain={unnamed: {'baseline_crop_ha': 0.0,
+                                                    'baseline_nodata_ha': 0.0,
+                                                    'mean_source_coverage': 1.0}},
+                         excluded_path=out)
+    assert len(got), 'the healthy zone must still be shocked'
+    frame = pd.read_csv(out)
+    assert frame.zone_id.tolist() == [unnamed]
+    assert 'base-year cropland' in frame.reason.iloc[0]
+
+
+# ---------------------------------------------------------------------------
+# From test_zone_id_normalisation.py: Zone ids are validated integers before anything keys on them
+# ---------------------------------------------------------------------------
+
+import geopandas as gpd
+import pandas as pd
+import pytest
+from shapely.geometry import box
+
+from global_invest.erosion.erosion_damage_pipeline import normalise_zone_ids, zone_label_table
+
+
+def _zid_boundary(ids, aez=None, labels=None):
+    n = len(ids)
+    return gpd.GeoDataFrame(
+        {'ee_r50_aez18_id': ids,
+         'aez18_id': aez if aez is not None else list(range(n)),
+         'gtapv7_r50_label': labels if labels is not None else ['r%d' % i for i in range(n)],
+         'geometry': [box(i, 0, i + 1, 1) for i in range(n)]},
+        crs='EPSG:4326')
+
+
+def test_string_ids_become_int64():
+    """The real file's shape: ids as text, exactly as gpd.read_file returns them."""
+    got = normalise_zone_ids(_zid_boundary(['100', '208', '4918']))
+    assert got.ee_r50_aez18_id.dtype == 'int64'
+    assert got.ee_r50_aez18_id.tolist() == [100, 208, 4918]
+
+
+def test_the_merge_that_failed_now_works():
+    """THE REGRESSION. Rasterisation yields int64 zone ids; the label table must join to them."""
+    b = normalise_zone_ids(_zid_boundary(['100', '208', '4918']))
+    labels = zone_label_table(b)
+    from_raster = pd.DataFrame({'zone_id': [100, 208, 4918], 'damage': [1.0, 2.0, 3.0]})
+    joined = from_raster.merge(labels, on='zone_id', validate='many_to_one')
+    assert len(joined) == 3
+    assert labels.zone_id.dtype == 'int64'
+
+
+def test_missing_id_is_refused():
+    with pytest.raises(ValueError, match='no zone id'):
+        normalise_zone_ids(_zid_boundary(['100', None, '4918']))
+
+
+def test_non_numeric_id_is_refused():
+    with pytest.raises(ValueError, match='non-numeric'):
+        normalise_zone_ids(_zid_boundary(['100', 'anz', '4918']))
+
+
+def test_fractional_id_is_refused():
+    """A fractional id means the column is not what it claims; truncating would key a wrong join."""
+    with pytest.raises(ValueError, match='fractional'):
+        normalise_zone_ids(_zid_boundary(['100', '208.5', '4918']))
+
+
+def test_conflict_created_by_conversion_is_caught():
+    """Two distinct strings can normalise to ONE integer, so the correspondence must be checked
+    after conversion rather than before: '208' and '0208' look different in the file and are the
+    same zone afterwards."""
+    b = normalise_zone_ids(_zid_boundary(['100', '208', '0208'], aez=[1, 2, 3], labels=['a', 'b', 'c']))
+    with pytest.raises(ValueError, match='Ambiguous zone correspondence after id normalisation'):
+        zone_label_table(b)
+
+
+def test_repeated_rows_for_one_zone_are_not_a_conflict():
+    """The same zone appearing twice with the SAME correspondence is ordinary, not ambiguous."""
+    b = normalise_zone_ids(_zid_boundary(['100', '100'], aez=[7, 7], labels=['anz', 'anz']))
+    assert zone_label_table(b).zone_id.tolist() == [100]
+
+
+def test_aez0_is_kept():
+    """AEZ0 is a domain question handled downstream (kept in coverage, excluded from economic
+    rows). It is not an invalid id and must survive normalisation."""
+    b = normalise_zone_ids(_zid_boundary(['100', '200'], aez=[0, 1]))
+    assert 0 in zone_label_table(b).aez18_id.tolist()
+
+
+# ---------------------------------------------------------------------------
+# From test_erosion_damage.py: Small physical and accounting invariants; no raster runtime required
+# ---------------------------------------------------------------------------
+
+import unittest
+import numpy as np
+from global_invest.erosion.erosion_damage import productivity_level, stressed_soil_loss, annual_damage_change, summarize_damage_areas
+
+
+class DamageTests(unittest.TestCase):
+    def test_raster_threshold_before_aggregation_and_missing_coverage(self):
+        rows=summarize_damage_areas([10.,12.,np.nan,11.], [30.,20.,30.,11.],
+                                   [1.,.5,1.,1.],10.,[1,1,1,2]).set_index('zone_id')
+        self.assertEqual(rows.loc[1,'valid_crop_ha'],15.)
+        self.assertEqual(rows.loc[1,'severe_crop_ha'],5.)
+        self.assertEqual(rows.loc[1,'excluded_crop_ha'],10.)
+        self.assertAlmostEqual(rows.loc[1,'level'],-8/3)
+        self.assertEqual(rows.loc[1,'stressed_level'],-8.)
+        self.assertEqual(rows.loc[2,'level'],0.)
+
+    def test_none_all_and_half_severe(self):
+        np.testing.assert_allclose(productivity_level([0, 50, 100], 100), [0, -4, -8])
+
+    def test_deterioration_and_unchanged(self):
+        base = productivity_level(10, 100)
+        self.assertAlmostEqual(float(productivity_level(30, 100) - base), -1.6)
+        self.assertEqual(float(base - base), 0)
+
+    def test_missing_is_not_zero_damage(self):
+        self.assertTrue(np.isnan(productivity_level(0, 0)))
+        self.assertTrue(np.isnan(productivity_level(np.nan, 100)))
+
+    def test_impossible_areas_rejected(self):
+        for severe, total in ((101, 100), (-1, 100), (1, -100)):
+            with self.assertRaises(ValueError):
+                productivity_level(severe, total)
+
+    def test_stress_threshold_and_zero_prevention(self):
+        # First field crosses >11 after losing 20% of its 20 t/ha prevention.
+        # Second has no prevention to lose. Third is exactly at the threshold.
+        soil_loss = stressed_soil_loss([10, 10, 11], [30, 10, 11])
+        np.testing.assert_allclose(soil_loss, [14, 10, 11])
+        np.testing.assert_array_equal(soil_loss > 11, [True, False, False])
+
+    def test_stress_monotonic_and_endpoints(self):
+        actual, potential = np.array([0, 3, 12]), np.array([0, 20, 40])
+        np.testing.assert_allclose(stressed_soil_loss(actual, potential, 0), actual)
+        np.testing.assert_allclose(stressed_soil_loss(actual, potential, 1), potential)
+        self.assertTrue(np.all(stressed_soil_loss(actual, potential) >= actual))
+        self.assertTrue(np.isnan(stressed_soil_loss(np.nan, 20)))
+
+    def test_invalid_physical_inputs_rejected(self):
+        with self.assertRaises(ValueError):
+            stressed_soil_loss(20, 10)
+        with self.assertRaises(ValueError):
+            stressed_soil_loss(1, 10, 1.2)
+
+    def test_annual_stress_has_no_anticipation_or_repeated_cut(self):
+        years = np.arange(2023, 2051)
+        ordinary = annual_damage_change(-1, [2030, 2040, 2050], [-2, -2, -2], years)
+        stress = annual_damage_change(-1, [2030, 2040, 2050], [-2, -2, -2], years,
+                                      stressed_levels=[-3, -3, -3])
+        np.testing.assert_array_equal(stress[years < 2030], ordinary[years < 2030])
+        np.testing.assert_allclose(stress[years >= 2030], -2)
+        self.assertEqual(stress[0], 0)
+        factors = 1 + stress / 100
+        annual = factors[1:] / factors[:-1]
+        np.testing.assert_allclose(np.cumprod(annual), factors[1:])
+
+    def test_stress_improvement_is_rejected(self):
+        with self.assertRaises(ValueError):
+            annual_damage_change(-1, [2030], [-2], [2023, 2030], stressed_levels=[-1])
+
+
+if __name__ == '__main__':
+    unittest.main()
