@@ -47,12 +47,21 @@ def gep_calculation(p):
         return
 
     city = read_city_savings(p.local_climate_regulation_city_savings_path)
-    ours = lc.city_savings_by_country(city)
+    ours = lc.city_savings_by_country(city).rename(
+        columns={'local_climate_regulation_gep': 'local_climate_regulation_gep_city_sum_lineage'})
 
     attr_cols = ['iso3_r250_id', 'iso3_r250_label', 'iso3_r250_name',
                  'continent', 'region_un', 'region_wb', 'income_grp', 'subregion']
     countries = utilities.collapse_countries_to_r250(p.df_countries)[attr_cols]
-    df_gep = countries.merge(ours, on='iso3_r250_id', how='left')
+
+    # The account's cooling row adopts the CAS method: their 2019 results workbook is the
+    # carried figure, in 2019 USD at their own 2019 electricity prices. The superseded
+    # pipeline's city-sum lineage and its committed table stay beside it as the record.
+    cas = pd.read_excel(str(p.get_path(p.local_climate_regulation_cas_results_path)),
+                        sheet_name='2019 Results')
+    adopted = lc.cas_cooling_by_country(cas, countries)
+    df_gep = countries.merge(adopted, on='iso3_r250_id', how='left')
+    df_gep = df_gep.merge(ours, on='iso3_r250_id', how='left')
 
     anchor = lc.local_climate_gep_by_country(
         hb.df_read(p.local_climate_regulation_final_path), countries[['iso3_r250_label']])
@@ -61,7 +70,15 @@ def gep_calculation(p):
                                'local_climate_regulation_gep_committed'}),
         on='iso3_r250_label', how='left')
     df_gep['year'] = int(p.gep_base_year)
-    hb.df_write(df_gep[attr_cols + ['year', 'local_climate_regulation_gep',
+    total = df_gep['local_climate_regulation_gep'].sum()
+    hb.log('Total local climate regulation GEP (CAS method adopted) for base year %s: %s over '
+           '%d countries; city-sum lineage %s, committed %s beside it'
+           % (p.gep_base_year, f'{total:,.2f}',
+              int(df_gep['local_climate_regulation_gep'].notna().sum()),
+              f"{df_gep['local_climate_regulation_gep_city_sum_lineage'].sum():,.0f}",
+              f"{df_gep['local_climate_regulation_gep_committed'].sum():,.0f}"))
+    hb.df_write(df_gep[attr_cols + ['year', 'local_climate_regulation_gep', 'cooling_kwh',
+                                    'local_climate_regulation_gep_city_sum_lineage',
                                     'local_climate_regulation_gep_committed']],
                 service_results['gep_by_country_base_year'])
 
