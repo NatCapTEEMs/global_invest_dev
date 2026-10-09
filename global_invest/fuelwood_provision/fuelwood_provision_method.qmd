@@ -1,0 +1,50 @@
+---
+title: "Overview of Ecosystem Service: Fuelwood Provision"
+format:
+  html:
+    embed-resources: true
+    standalone: true
+  pdf:
+    toc: false
+---
+
+Fuelwood provision values the woody biomass that households and local economies burn for
+cooking and heating. The account carries the CAS team's per-country results; their staged
+appendix documents the chain, and rebuilding it from the public inputs is the recorded
+later step.
+
+## Quantity
+
+National annual fuelwood harvest volumes from FAO forestry statistics, converted to energy
+content in terajoules, following the CAS methodology appendix.
+
+## Price
+
+The replacement cost of the equivalent energy from substitute fuels, per terajoule, in
+constant 2019 USD, following the same appendix.
+
+## Valuation
+
+$$
+\text{GEP}_i = \text{gross replacement value}_i - \text{human inputs}_i
+$$
+
+the ecosystem-attributable fraction of each country's gross fuelwood value, as the CAS
+appendix defines it. The library reads their per-country results sheet, whose own title
+states the values in thousands of 2019 USD, onto the account's country list.
+
+## Coverage
+
+The published table is one row for each of the account's 250 countries, base year 2019, in
+constant 2019 USD. The CAS sheet values 180 countries; 179 join the account list by ISO3
+and one, the Netherlands Antilles (dissolved 2010), cannot be carried and is written beside
+the table with its value rather than dropped. The remaining rows are missing, not zero: the
+sheet reports no value for them. A zero would mean a computed zero, and the sheet carries
+none.
+
+## Inputs
+
+All paths come from `es_parameters.csv` under the `fuelwood_provision` service key: the CAS
+per-country results sheet, with its source row beside it. The CAS appendix documents
+(methodology, input data, code, output result) are staged beside the account's copy of the
+results in base_data.

@@ -459,3 +459,5 @@ groundwater_recharge,groundwater_recharge_us_cpi_source,"FRED CPIAUCSL monthly, 
 groundwater_recharge,groundwater_recharge_electricity_price_year,2021
 groundwater_recharge,groundwater_recharge_reference_path,global_invest/groundwater_recharge/ground_water_gep.csv
 groundwater_recharge,groundwater_recharge_reference_source,"the owner's committed final (ground_water_gep.csv, 2025-10), the replication anchor"
+fuelwood_provision,fuelwood_provision_results_path,global_invest/fuelwood/author_drive/fuelwood_provision_gep.xlsx
+fuelwood_provision,fuelwood_provision_results_source,"the CAS team's per-country fuelwood results (drive Fuelwood folder, exported 2026-10-08), values in thousands of 2019 USD per the sheet's own title; method in the staged CAS appendix (cas_submission_2026_09/fuelwood/)"

@@ -29,3 +29,4 @@ pest_control,pest_control,,2019.0,organic producer price,computed,computed,compu
 health_hypertension,health_hypertension,,2019.0,avoided treatment cost,computed,computed,computed,,cartographic/ee/ee_r250.gpkg,iso3_r250_id
 health_depression,health_depression,,2019.0,societal cost per case,computed,computed,computed,,cartographic/ee/ee_r250.gpkg,iso3_r250_id
 groundwater_recharge,groundwater_recharge,,2019.0,avoided pumping cost,computed,computed,computed,,n/a,n/a
+fuelwood_provision,fuelwood_provision,,2019.0,substitute-fuel replacement value,computed,computed,computed,,n/a,n/a

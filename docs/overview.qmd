@@ -85,6 +85,7 @@ health_hypertension_extended: "$247.44bn"
 health_depression_gep: "$96.15bn"
 health_depression_ppp: "$97.96bn"
 health_depression_author: "$159.6M"
+fuelwood_total: "$181.14bn"
 nature_view_gep: "$46.09bn"
 nature_view_owner: "$59.73bn"
 hydro_manuscript: "$287.7bn"
@@ -194,7 +195,7 @@ format:
 
 | What the code does | Accounts | Which |
 |---|---|---|
-| Reads a published value | {{< meta cat_reads >}} | urban cooling |
+| Reads a published value | {{< meta cat_reads >}} | urban cooling, fuelwood |
 | Rescales a published rate | {{< meta cat_rescales >}} | mining production, extractive energy |
 | Table arithmetic | {{< meta cat_table >}} | crop, livestock, both fisheries, energy, hydropower, water use, air filtration, sandstorm, wildfires, water quality, coastal protection, moisture recycling, groundwater recharge, pest control, nature view amenity |
 | Raster arithmetic | {{< meta cat_raster >}} | terrestrial carbon, coastal carbon, pollination, ntfp, timber, floods, stormwater, both health strands |
@@ -239,6 +240,7 @@ format:
 | fire_protection | wildfire damage avoided by nature's fire regulation |
 | water_supply | hydropower rent, and water withdrawal priced by sector |
 | ntfp | non-timber forest products from forest within reach of a road or river |
+| fuelwood_provision | household fuelwood valued at substitute-fuel replacement cost |
 | stormwater | stormwater retained by vegetation and soils, not yet masked to urban areas |
 
 : {tbl-colwidths="[30,70]"}
@@ -321,6 +323,7 @@ format:
 | health_hypertension | {{< meta health_hypertension_gep >}} over the 20 countries with a cost study | partly. Rank yes (log-correlation 0.989 on the appendix's {{< meta health_hypertension_appendix >}}), level 42 percent above on named deviations; no pipeline exists on the drive |
 | health_depression | {{< meta health_depression_gep >}} at the method's stated scope | no, deliberately. The author's {{< meta health_depression_author >}} is the same construction at roughly 1/400th of the urban population, so the gap measures the undocumented run scope |
 | nature_view_amenity | {{< meta nature_view_gep >}} hotel room-price premium in 2019 USD | yes. The owner's {{< meta nature_view_owner >}} at the scrape vintage reproduced to the cent in all 124 countries, twice; the published figure deflates it to the base year |
+| fuelwood_provision | {{< meta fuelwood_total >}} carried from the CAS results sheet (thousands of 2019 USD per its own title) | no independent reference exists: the account's figure IS the sheet on the account list, one dissolved-country row reported beside it |
 
 : {tbl-colwidths="[22,32,46]"}
 
@@ -523,6 +526,12 @@ format:
 - **Q3:** what are the sample's provenance details one level deeper -- booking platform, scrape dates, hotels per country?
 
 # Questions for the scenario shocks, not the GEP account
+
+
+## fuelwood_provision
+
+- [Values household fuelwood through its energy content at substitute-fuel replacement prices, the ecosystem share as gross value minus human inputs. Included by decision on 2026-10-09 and built the same day: the library carries the CAS per-country results, {{< meta fuelwood_total >}} in 2019 USD at the sheet's own stated thousands, with the one dissolved-country row reported beside the table. A fresh cold start reproduces it to zero difference.]{.state}
+- **Q1:** can the results file get a fuelwood column, and can the author confirm in one line that the sheet's 1000USD title means thousands of 2019 USD?
 
 ## What this section is {.smaller}
 
