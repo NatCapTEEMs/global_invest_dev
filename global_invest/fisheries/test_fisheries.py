@@ -461,3 +461,34 @@ def test_every_subsistence_run_reproduces_the_staged_reference_total():
             checked += 1
     if not checked:
         pytest.skip('no fisheries run on this machine has written a subsistence table')
+
+
+def test_the_owners_revised_aquaculture_shares_our_distribution():
+    """The owner's 2026-10-09 revision (his gep_aquaculture repo) adopted the gross-output
+    share on the account's own r250 format; this pins the agreement so it cannot lapse.
+    The total gap to our $63.13bn sits in his China and India value rows, a data vintage,
+    not the base."""
+    import glob
+    his_path = os.path.join(os.path.expanduser('~'), 'Files', 'base_data', 'global_invest',
+                            'fisheries', 'author_drive_2026_10', 'aquaculture_gep_2026oct09.csv')
+    # The stable project only: older cold-start directories legitimately predate the
+    # revenue-share decision and would compare a superseded vintage.
+    runs = sorted(glob.glob(os.path.join(
+        os.path.expanduser('~'), 'Files', 'global_invest', 'projects', 'gep_fisheries',
+        'intermediate', 'fisheries_aquaculture_gep', 'aquaculture_gep_by_country.csv')))
+    if not (os.path.exists(his_path) and runs):
+        pytest.skip('the revised owner table or a fisheries run is not on this machine')
+    his = pd.read_csv(his_path)
+    assert his['aquaculture_gep'].sum() == pytest.approx(58_697_376_919, abs=1_000)
+    for ours_path in runs:
+        ours = pd.read_csv(ours_path)
+        merged = ours[['iso3_r250_label', 'aquaculture_gep']].merge(
+            his[['iso3_r250_label', 'aquaculture_gep']], on='iso3_r250_label',
+            suffixes=('_ours', '_his'))
+        both = merged[(merged['aquaculture_gep_ours'] > 0) & (merged['aquaculture_gep_his'] > 0)]
+        assert len(both) >= 190
+        ratio = both['aquaculture_gep_his'] / both['aquaculture_gep_ours']
+        assert ratio.median() == pytest.approx(1.0, abs=0.01)
+        corr = np.corrcoef(np.log(both['aquaculture_gep_ours']),
+                           np.log(both['aquaculture_gep_his']))[0, 1]
+        assert corr > 0.99
