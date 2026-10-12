@@ -427,6 +427,45 @@ def terrestrial_carbon_shock(p):
     return True
 
 
+def _aligned_ha_per_cell(p, density_path):
+    """The hectares-per-cell raster that ALIGNS with this carbon raster.
+
+    Density x hectares is a per-pixel product, so the two rasters must share extent, resolution
+    and geotransform exactly. The global ha_per_cell_10sec was used unconditionally, which is
+    right for a global run and wrong for an AOI subset: on the zaf pilot it paired a (6120,4680)
+    density raster with a (129600,64800) hectares raster and raster_calculator_hb refused --
+    "Input Rasters are not the same dimensions ... {(6120, 4680), (129600, 64800)}" (job 3467106).
+
+    An AOI run already publishes an aligned raster: p.aoi_ha_per_cell_fine_path is the same
+    10-arcsec grid clipped to the AOI, measured on that pilot as (6120,4680) pixel 0.0027777778
+    origin (16.0,-22.0), identical to the density rasters. So the fix is to CHOOSE the aligned
+    input, not to resample either raster: resampling hectares-per-cell would change the areas the
+    carbon stock is computed from, and resampling density would change the stock itself.
+
+    Raises rather than guessing, because a silently misaligned product would still produce a
+    plausible-looking carbon total.
+    """
+    want = hb.get_raster_info_hb(density_path)
+    candidates = [getattr(p, name, None) for name in
+                  ('aoi_ha_per_cell_fine_path', 'ha_per_cell_10sec_path', 'ha_per_cell_fine_path')]
+    tried = []
+    for candidate in candidates:
+        if not candidate or not hb.path_exists(candidate):
+            continue
+        have = hb.get_raster_info_hb(candidate)
+        tried.append((candidate, tuple(have['raster_size'])))
+        same_size = tuple(have['raster_size']) == tuple(want['raster_size'])
+        same_gt = all(abs(a - b) <= 1e-12 for a, b in
+                      zip(have['geotransform'], want['geotransform']))
+        if same_size and same_gt:
+            return candidate
+    raise NameError(
+        'no hectares-per-cell raster aligns with %s, which is %s at geotransform %s. Tried: %s. '
+        'Density x hectares is a per-pixel product, so the grids must match exactly; resampling '
+        'either one would change the areas or the stock rather than fixing the alignment.'
+        % (density_path, tuple(want['raster_size']), tuple(want['geotransform']), tried))
+
+
 def terrestrial_carbon_scc_valuation(p):
     """Every scenario map's carbon stock, valued the way the GEP valuation values the base year.
 
@@ -465,7 +504,7 @@ def terrestrial_carbon_scc_valuation(p):
             raise NameError('the shock task left no density raster for %s %d: %s' % (scenario, year, density_path))
         per_cell_path = os.path.join(p.cur_dir, 'carbon_per_cell_%s_%d.tif' % (scenario, year))
         if not hb.path_exists(per_cell_path):
-            hb.multiply(density_path, p.ha_per_cell_10sec_path, per_cell_path)
+            hb.multiply(density_path, _aligned_ha_per_cell(p, density_path), per_cell_path)
         summary_path = os.path.join(p.cur_dir, 'carbon_by_country_region_%s_%d.csv' % (scenario, year))
         if not hb.path_exists(summary_path):
             tcf.summarize_raster_by_region(per_cell_path, p.gep_regions_input_path, summary_path,
