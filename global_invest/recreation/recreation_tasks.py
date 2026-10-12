@@ -384,7 +384,7 @@ def write_site_table(hq_sites_path, country_id_path, visits_path, value_path, ou
     country_ds = gdal.Open(country_id_path); country_band = country_ds.GetRasterBand(1)
     visits_ds = gdal.Open(visits_path); visits_band = visits_ds.GetRasterBand(1)
     value_ds = gdal.Open(value_path); value_band = value_ds.GetRasterBand(1)
-    site_id_ds = gdal.Open(site_id_path) if site_id_path and os.path.exists(site_id_path) else None
+    site_id_ds = gdal.Open(site_id_path) if hb.path_exists(site_id_path) else None
     site_id_band = site_id_ds.GetRasterBand(1) if site_id_ds is not None else None
 
     chunks = []

@@ -308,7 +308,7 @@ def _value_one_timber_map(job):
     from global_invest.terrestrial_carbon import terrestrial_carbon_functions as tcf
     if hb.path_exists(summary_path) and not _summary_complete(summary_path):
         for stale in (summary_path, summary_path[:-4] + '_zone_ids.tif', raster_path):
-            if os.path.exists(stale):
+            if hb.path_exists(stale):
                 os.remove(stale)
     if not hb.path_exists(raster_path):
         lulc_ndv = hb.get_ndv_from_path(lulc_path)
@@ -328,7 +328,7 @@ def _biomass_one_map(job):
     from global_invest.terrestrial_carbon import terrestrial_carbon_functions as tcf
     if hb.path_exists(summary_path) and not _summary_complete(summary_path):
         for stale in (summary_path, summary_path[:-4] + '_zone_ids.tif', raster_path):
-            if os.path.exists(stale):
+            if hb.path_exists(stale):
                 os.remove(stale)
     if not hb.path_exists(raster_path):
         lulc_ndv = hb.get_ndv_from_path(lulc_path)

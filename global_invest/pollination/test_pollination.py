@@ -998,3 +998,29 @@ def test_annual_dollars_allow_zero_baseline_and_preserve_anchor_change():
     assert rows.iloc[0].delta_pollination_usd == 0.
     assert rows.iloc[-1].delta_pollination_usd == 2.
     np.testing.assert_allclose(rows.delta_pollination_usd, np.linspace(0, 2, 8))
+
+
+def test_retained_fraction_raster_runs_the_folded_path_and_caches(tmp_path):
+    """End-to-end through pollination_tasks.retained_fraction_raster on a 4x4 world.
+
+    Quadrant design makes the expected fractions exact under any latitude weighting:
+    full retention (1.0), full loss (0.0), no cropland (0.0), and column-wise half
+    retention (0.5, the area weights cancel). The second call must hit the signature
+    sidecar instead of recomputing. This is the code path the retained-pipeline fold
+    moved into the tasks module, so the test fails on any unbound name there.
+    """
+    import rasterio
+    base = np.ones((4, 4));  base[:2, :] = 2.;  base[2:, 2:] = 2.
+    future = np.ones((4, 4)); future[:2, :2] = 2.; future[2:, 2] = 2.
+    _write_tif(tmp_path / 'base.tif', base)
+    _write_tif(tmp_path / 'future.tif', future)
+    _write_tif(tmp_path / 'template.tif', np.zeros((2, 2)))
+    out = tmp_path / 'fraction.tif'
+    got = pt.retained_fraction_raster(str(tmp_path / 'base.tif'), str(tmp_path / 'future.tif'),
+                                      str(tmp_path / 'template.tif'), str(out))
+    with rasterio.open(got) as ds:
+        np.testing.assert_allclose(ds.read(1), [[1., 0.], [0., .5]], atol=1e-6)
+    assert os.path.exists(str(out) + '.json')
+    again = pt.retained_fraction_raster(str(tmp_path / 'base.tif'), str(tmp_path / 'future.tif'),
+                                        str(tmp_path / 'template.tif'), str(out))
+    assert again == str(out)

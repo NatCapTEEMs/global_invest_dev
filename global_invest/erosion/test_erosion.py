@@ -281,8 +281,6 @@ import pytest
 
 from global_invest.erosion.erosion_tasks import tables_to_seam
 
-ANCHORS = [2030, 2050]
-YEARS = list(range(2023, 2051))
 BASE_SCENARIO, BASE_YEAR = 'baseline', 2023
 
 

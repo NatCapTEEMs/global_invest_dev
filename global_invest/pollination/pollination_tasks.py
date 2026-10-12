@@ -21,6 +21,8 @@ from tqdm import tqdm
 import dataclasses
 import glob
 import hashlib
+import json
+from pathlib import Path
 import numpy as np
 import pandas as pd
 import hazelbean as hb
@@ -2785,7 +2787,7 @@ def retained_fraction_raster(base_path, future_path, template_path, output_path)
         if any(t.b or t.d for t in (base.transform,target.transform)):
             raise ValueError('Rotated grids are unsupported')
         b, t = base.transform, target.transform
-        wx = _overlap(base.width,0,b.c,b.a,t.c,t.a,target.width)
+        wx = pf._overlap(base.width,0,b.c,b.a,t.c,t.a,target.width)
         denominator = np.zeros(target.shape,dtype=np.float64)
         numerator = np.zeros_like(denominator)
         for y in range(0,base.height,128):
@@ -2798,7 +2800,7 @@ def retained_fraction_raster(base_path, future_path, template_path, output_path)
             retained=crop & (fv.data==2)
             lat=b.f+(np.arange(y,y+h)+.5)*b.e
             ha=np.asarray(hb.get_area_of_pixel_column_from_center_lats(abs(b.a),lat))[:,None]/1e4
-            wy=_overlap(h,y,b.f,b.e,t.f,t.e,target.height)
+            wy=pf._overlap(h,y,b.f,b.e,t.f,t.e,target.height)
             touched=np.unique(wy.nonzero()[0])
             if not len(touched): continue
             small=wy[touched]
