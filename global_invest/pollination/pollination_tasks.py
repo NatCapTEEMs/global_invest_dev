@@ -1988,6 +1988,8 @@ def gep_calculation(p):
     # 1. Per-region (r264) USD value -> one row per COUNTRY (r250), written as the per-country CSV
     #    that is the source of truth for every sum. Summing the r264-expanded table instead would
     #    double-count split countries (see utilities docstring).
+    if not p.run_this:
+        return p
     df_q264 = hb.df_read(p.pollination_value_by_region_path)
     df_gep = pf.collapse_regions_to_countries(df_q264)
     utilities.write_gep_by_country(p, df_gep, service_results['gep_by_country_base_year'])
@@ -2010,6 +2012,8 @@ def gep_load_results(p):
     Fails loudly if absent (run run_pollination.py first). The results-only entry point."""
     publish_inputs(p)
     result_path = os.path.join(p.intermediate_dir, 'gep_calculation', 'gep_by_country_base_year.csv')
+    if not p.run_this:
+        return p
     if not hb.path_exists(result_path):
         raise FileNotFoundError(
             f"pollination GEP results not found at {result_path}. "
@@ -2021,6 +2025,8 @@ def gep_load_results(p):
 def gep_result(p):
     """Render the results report(s). Shared implementation in utilities."""
     publish_inputs(p)
+    if not p.run_this:
+        return p
     utilities.render_service_results(p)
 
 

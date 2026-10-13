@@ -215,6 +215,8 @@ def gep_calculation(p):
     if already_done:
         return
 
+    if not p.run_this:
+        return p
     df_regions = hb.df_read(p.carbon_by_region_base_year_path)
     df_price = pd.read_excel(p.gep_price_input_path)[[p.gep_price_convention, 'year']]
     df_gep = tcf.collapse_regions_to_countries(df_regions, df_price, p.gep_price_convention)
@@ -235,6 +237,8 @@ def gep_calculation(p):
 def gep_result(p):
     """Render the results report(s). Shared implementation in utilities."""
     publish_inputs(p)
+    if not p.run_this:
+        return p
     utilities.render_service_results(p)
 
 def gep_load_results(p):
@@ -244,6 +248,8 @@ def gep_load_results(p):
     """
     publish_inputs(p)
     result_path = os.path.join(p.intermediate_dir, 'gep_calculation', 'gep_by_country_base_year.csv')
+    if not p.run_this:
+        return p
     if not hb.path_exists(result_path):
         raise FileNotFoundError(
             f"terrestrial_carbon GEP results not found at {result_path}. "

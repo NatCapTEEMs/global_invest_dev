@@ -50,6 +50,8 @@ def gep_calculation(p):
     if already_done:
         return
 
+    if not p.run_this:
+        return p
     hydropower = hb.df_read(p.hydropower_rent_path)
     attr_cols = ['iso3_r250_id', 'iso3_r250_label', 'iso3_r250_name',
                  'continent', 'region_un', 'region_wb', 'income_grp', 'subregion']
@@ -93,6 +95,8 @@ def gep_calculation(p):
 def gep_result(p):
     """Render the results report(s). Shared implementation in utilities."""
     publish_inputs(p)
+    if not p.run_this:
+        return p
     utilities.render_service_results(p)
 
 

@@ -74,6 +74,8 @@ def gep_calculation(p):
 
     # keep_default_na: Namibia's alpha-2 code is the literal string NA, which pandas would
     # otherwise read as missing and silently drop the country.
+    if not p.run_this:
+        return p
     mapping = pd.read_excel(str(p.get_path(p.nature_view_amenity_country_mapping_input_path)),
                             keep_default_na=False, na_values=[''])
     iso2_to_iso3 = dict(zip(mapping['ISO Alpha-2'].astype(str).str.strip().str.upper(),
@@ -187,4 +189,6 @@ def gep_calculation(p):
 def gep_result(p):
     """Render the results report(s). Shared implementation in utilities."""
     publish_inputs(p)
+    if not p.run_this:
+        return p
     utilities.render_service_results(p)

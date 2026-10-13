@@ -51,6 +51,8 @@ def gep_preprocess(p):
     We will "promote" the data outputed by a preprocess task to the base_data_dir provided to users.
     """
     publish_inputs(p)
+    if not p.run_this:
+        return p
     pass # NYI
 
 def gep_calculation(p):
@@ -67,6 +69,8 @@ def gep_calculation(p):
     if already_done:
         return
 
+    if not p.run_this:
+        return p
     if not getattr(p, 'livestock_provision_subservices', None):
         p.commercial_attribute_subservices = utilities.read_column(
             p.livestock_provision_owner_value_codes_path, 'item_code_fao', int)
@@ -131,10 +135,14 @@ def gep_calculation(p):
 def gep_result(p):
     """Render the results report(s). Shared implementation in utilities."""
     publish_inputs(p)
+    if not p.run_this:
+        return p
     utilities.render_service_results(p)
 
 def gep_results_distribution(p):
     """Copy this service's results into the output directory. Shared implementation in
     utilities, which is also where the service key stops being written out by hand."""
     publish_inputs(p)
+    if not p.run_this:
+        return p
     utilities.distribute_results(p, 'livestock_provision')

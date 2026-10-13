@@ -36,6 +36,8 @@ def gep_calculation(p):
     if already_done:
         return
 
+    if not p.run_this:
+        return p
     results = pd.read_excel(str(p.get_path(p.fuelwood_provision_results_path)))
     gep, unallocated = fw.fuelwood_gep_by_country(results, p.df_countries)
 
@@ -72,4 +74,6 @@ def gep_calculation(p):
 def gep_result(p):
     """Render the results report(s). Shared implementation in utilities."""
     publish_inputs(p)
+    if not p.run_this:
+        return p
     utilities.render_service_results(p)

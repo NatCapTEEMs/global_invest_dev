@@ -31,6 +31,8 @@ def gep_preprocess(p):
     We will "promote" the data outputed by a preprocess task to the base_data_dir provided to users.
     """
     publish_inputs(p)
+    if not p.run_this:
+        return p
     pass # NYI
 
 def gep_calculation(p):
@@ -45,6 +47,8 @@ def gep_calculation(p):
         for subservice in rf.SUBSERVICE_TECHNOLOGIES}
     service_results['subservices'] = subservices
 
+    if not p.run_this:
+        return p
     output_paths = ([service_results['gep_by_country_base_year']]
                     + [s['gep_by_country_base_year'] for s in subservices.values()])
     if hb.path_all_exist(output_paths):
@@ -111,10 +115,14 @@ def gep_calculation(p):
 def gep_result(p):
     """Render the results report(s). Shared implementation in utilities."""
     publish_inputs(p)
+    if not p.run_this:
+        return p
     utilities.render_service_results(p)
 
 def gep_results_distribution(p):
     """Copy this service's results into the output directory. Shared implementation in
     utilities, which is also where the service key stops being written out by hand."""
     publish_inputs(p)
+    if not p.run_this:
+        return p
     utilities.distribute_results(p, 'renewable_energy_provision')

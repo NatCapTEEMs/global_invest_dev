@@ -663,6 +663,8 @@ def gep_calculation(p):
     # valuation (same contract fix as terrestrial_carbon).
 
     final_csv = service_results['gep_by_country_base_year']
+    if not p.run_this:
+        return p
     reason = utilities.reuse_reason(p, 'coastal_carbon', list(service_results.values()))
     if reason is None:
         hb.log('coastal_carbon reuses its gep outputs: the signature is unchanged.')
@@ -719,4 +721,6 @@ def gep_calculation(p):
 def gep_result(p):
     """Render the results report(s). Shared implementation in utilities."""
     publish_inputs(p)
+    if not p.run_this:
+        return p
     utilities.render_service_results(p)

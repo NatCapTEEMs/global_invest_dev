@@ -2349,6 +2349,8 @@ def prevention_shares(p):
 def gep_result(p):
     """Render the results report via utilities.render_service_results, as every service does."""
     publish_inputs(p)
+    if not p.run_this:
+        return p
     utilities.render_service_results(p)
 
 

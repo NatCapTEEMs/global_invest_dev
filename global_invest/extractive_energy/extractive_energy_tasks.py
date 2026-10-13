@@ -25,6 +25,8 @@ def gep_calculation(p):
     if already_done:
         return
 
+    if not p.run_this:
+        return p
     gas_cwon = pd.read_stata(p.extractive_energy_cwon_gas_path)
     coal_cwon = pd.read_stata(p.extractive_energy_cwon_coal_path)
     oil_cwon = pd.read_stata(p.extractive_energy_cwon_oil_path)
@@ -51,4 +53,6 @@ def gep_calculation(p):
 def gep_result(p):
     """Render the results report(s). Shared implementation in utilities."""
     publish_inputs(p)
+    if not p.run_this:
+        return p
     utilities.render_service_results(p)

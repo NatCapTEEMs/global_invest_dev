@@ -453,6 +453,8 @@ def gep_calculation(p):
     if already_done:
         return
 
+    if not p.run_this:
+        return p
     accessible = hb.df_read(p.ntfp_accessible_forest_path)
     value_per_ha = nf.nwfp_rate_long(hb.df_read(p.ntfp_value_per_ha_path))
     df_gep = nf.ntfp_gep_by_country(accessible, value_per_ha, int(p.gep_base_year))
@@ -471,4 +473,6 @@ def gep_calculation(p):
 def gep_result(p):
     """Render the results report(s). Shared implementation in utilities."""
     publish_inputs(p)
+    if not p.run_this:
+        return p
     utilities.render_service_results(p)

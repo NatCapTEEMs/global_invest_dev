@@ -442,7 +442,7 @@ def test_gep_calculation_eez_only_and_one_row_per_country(tmp_path):
                       'geometry': [box(0, 0, 1, 1), box(1, 0, 2, 1), box(2, 0, 3, 1)]},
                      crs='EPSG:4326').to_file(str(tmp_path / 'marine.gpkg'), driver='GPKG')
 
-    p = SimpleNamespace(cur_dir=str(tmp_path), results={},
+    p = SimpleNamespace(run_this=True, cur_dir=str(tmp_path), results={},
                         input_dir=str(tmp_path / 'input'),
                         get_path=lambda *a, **k: '/resolved/' + '/'.join(a),
                         df_countries=pd.read_csv(tmp_path / 'ee_r264_correspondence.csv'),

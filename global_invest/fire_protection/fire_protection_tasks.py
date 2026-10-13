@@ -119,6 +119,8 @@ def gep_calculation(p):
     if already_done:
         return
 
+    if not p.run_this:
+        return p
     avoided = hb.df_read(p.fire_avoided_acres_path)
     rates = hb.df_read(p.fire_damage_per_acre_path)
     global_average = float(rates['damages_usd_per_acre_country'].mode().iloc[0])
@@ -149,4 +151,6 @@ def gep_calculation(p):
 def gep_result(p):
     """Render the results report(s). Shared implementation in utilities."""
     publish_inputs(p)
+    if not p.run_this:
+        return p
     utilities.render_service_results(p)

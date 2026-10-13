@@ -1939,6 +1939,8 @@ def stitch_tiles(p):
 def valuation(p):
     """Creates p.valuation_dir for the valuation outputs."""
     publish_inputs(p)
+    if not p.run_this:
+        return p
     return p
 
 
@@ -2121,6 +2123,8 @@ except ImportError:
 def tables_figures(p):
     """Creates a directory for tables and figures."""
     publish_inputs(p)
+    if not p.run_this:
+        return p
     return p
 
 
@@ -2500,6 +2504,8 @@ def export_pi_audit_table(p):
 def gep_result(p):
     """Render the results report(s). Shared implementation in utilities."""
     publish_inputs(p)
+    if not p.run_this:
+        return p
     utilities.render_service_results(p)
 
 

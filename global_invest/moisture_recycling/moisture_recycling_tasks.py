@@ -41,6 +41,8 @@ def gep_calculation(p):
     if already_done:
         return
 
+    if not p.run_this:
+        return p
     matrix = mr.moisture_matrix(hb.df_read(str(p.get_path(p.moisture_recycling_sink_fraction_input_path))))
     water = hb.df_read(str(p.get_path(p.moisture_recycling_water_gep_input_path)))
     component_cols = json.loads(p.moisture_recycling_water_gep_component_cols) \
@@ -100,4 +102,6 @@ def gep_calculation(p):
 def gep_result(p):
     """Render the results report(s). Shared implementation in utilities."""
     publish_inputs(p)
+    if not p.run_this:
+        return p
     utilities.render_service_results(p)

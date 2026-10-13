@@ -45,6 +45,8 @@ def gep_preprocess(p):
     We will "promote" the data outputed by a preprocess task to the base_data_dir provided to users.
     """
     publish_inputs(p)
+    if not p.run_this:
+        return p
     pass # NYI
 
 
@@ -58,6 +60,8 @@ def gep_calculation(p):
         return
 
     base_year = coastal_protection_functions.COASTAL_PROTECTION_BASE_YEAR
+    if not p.run_this:
+        return p
     p.gdf_countries = hb.read_vector(p.gdf_countries_vector_path)
 
     df_mangrove_value = read_mangrove_values(p.gep_quantity_input_path)
@@ -107,10 +111,14 @@ def gep_calculation(p):
 def gep_result(p):
     """Render the results report(s). Shared implementation in utilities."""
     publish_inputs(p)
+    if not p.run_this:
+        return p
     utilities.render_service_results(p)
 
 def gep_results_distribution(p):
     """Copy this service's results into the output directory. Shared implementation in
     utilities, which is also where the service key stops being written out by hand."""
     publish_inputs(p)
+    if not p.run_this:
+        return p
     utilities.distribute_results(p, 'coastal_protection')

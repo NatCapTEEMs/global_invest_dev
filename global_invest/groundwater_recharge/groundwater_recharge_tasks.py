@@ -71,6 +71,8 @@ def gep_calculation(p):
     if already_done:
         return
 
+    if not p.run_this:
+        return p
     recharge = hb.df_read(str(p.get_path(p.groundwater_recharge_l_values_input_path)))
 
     aquastat = hb.df_read(str(p.get_path(p.groundwater_recharge_withdrawal_input_path)))
@@ -140,4 +142,6 @@ def gep_calculation(p):
 def gep_result(p):
     """Render the results report(s). Shared implementation in utilities."""
     publish_inputs(p)
+    if not p.run_this:
+        return p
     utilities.render_service_results(p)

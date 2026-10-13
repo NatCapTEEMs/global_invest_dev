@@ -45,6 +45,8 @@ def gep_preprocess(p):
     We will "promote" the data outputed by a preprocess task to the base_data_dir provided to users.
     """
     publish_inputs(p)
+    if not p.run_this:
+        return p
     pass # NYI
 
 def gep_calculation(p):
@@ -64,6 +66,8 @@ def gep_calculation(p):
     service_results['gep_by_country_year'] = os.path.join(p.cur_dir, "gep_by_country_year.csv")
     service_results['gep_by_year'] = os.path.join(p.cur_dir, "gep_by_year.csv")
 
+    if not p.run_this:
+        return p
     reason = utilities.reuse_reason(p, 'extractive_materials_provision',
                                     list(service_results.values()))
     if reason is None:
@@ -118,10 +122,14 @@ def gep_calculation(p):
 def gep_result(p):
     """Render the results report(s). Shared implementation in utilities."""
     publish_inputs(p)
+    if not p.run_this:
+        return p
     utilities.render_service_results(p)
 
 def gep_results_distribution(p):
     """Copy this service's results into the output directory. Shared implementation in
     utilities, which is also where the service key stops being written out by hand."""
     publish_inputs(p)
+    if not p.run_this:
+        return p
     utilities.distribute_results(p, 'extractive_materials_provision')

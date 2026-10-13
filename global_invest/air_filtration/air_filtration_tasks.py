@@ -38,6 +38,8 @@ def gep_calculation(p):
     if already_done:
         return
 
+    if not p.run_this:
+        return p
     workbook = pd.read_excel(p.air_filtration_workbook_path)
     af.verify_global_average_fill(workbook)
 
@@ -73,4 +75,6 @@ def gep_calculation(p):
 def gep_result(p):
     """Render the results report(s). Shared implementation in utilities."""
     publish_inputs(p)
+    if not p.run_this:
+        return p
     utilities.render_service_results(p)

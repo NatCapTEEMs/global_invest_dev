@@ -46,6 +46,8 @@ def gep_calculation(p):
     if already_done:
         return
 
+    if not p.run_this:
+        return p
     city = read_city_savings(p.local_climate_regulation_city_savings_path)
     ours = lc.city_savings_by_country(city).rename(
         columns={'local_climate_regulation_gep': 'local_climate_regulation_gep_city_sum_lineage'})
@@ -95,4 +97,6 @@ def gep_calculation(p):
 def gep_result(p):
     """Render the results report(s). Shared implementation in utilities."""
     publish_inputs(p)
+    if not p.run_this:
+        return p
     utilities.render_service_results(p)

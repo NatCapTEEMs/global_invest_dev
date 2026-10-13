@@ -151,6 +151,8 @@ def gep_calculation(p):
     if already_done:
         return
 
+    if not p.run_this:
+        return p
     fibl = read_fibl_organic_areas(
         str(p.get_path(p.pest_control_fibl_area_input_path)), int(p.gep_base_year))
     fibl['item'] = fibl['crop'].map(FIBL_CROP_TO_FAOSTAT_ITEM)
@@ -253,4 +255,6 @@ def gep_calculation(p):
 def gep_result(p):
     """Render the results report(s). Shared implementation in utilities."""
     publish_inputs(p)
+    if not p.run_this:
+        return p
     utilities.render_service_results(p)

@@ -33,6 +33,8 @@ def gep_calculation(p):
     if already_done:
         return
 
+    if not p.run_this:
+        return p
     value_src = rasterio.open(p.timber_provision_value_raster_path)
     zone_src = rasterio.open(p.timber_provision_zone_raster_path)
     n_zones = 1000
@@ -114,6 +116,8 @@ def gep_calculation(p):
 def gep_result(p):
     """Render the results report(s). Shared implementation in utilities."""
     publish_inputs(p)
+    if not p.run_this:
+        return p
     utilities.render_service_results(p)
 
 

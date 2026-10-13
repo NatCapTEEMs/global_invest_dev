@@ -745,6 +745,8 @@ def gep_calculation(p):
     if already_done:
         return
 
+    if not p.run_this:
+        return p
     daily = pd.read_csv(p.daily_recreation_site_table_path).groupby('iso3_r250_id').agg(
         daily_visits=('visits', 'sum'), daily_value=('value', 'sum')).reset_index()
     tourist = pd.read_csv(p.tourist_recreation_site_table_path).groupby('iso3_r250_id').agg(
@@ -814,6 +816,8 @@ def gep_load_results(p):
     recomputing. Fails loudly if absent (run run_recreation.py first)."""
     publish_inputs(p)
     result_path = os.path.join(p.intermediate_dir, 'gep_calculation', 'gep_by_country_base_year.csv')
+    if not p.run_this:
+        return p
     if not hb.path_exists(result_path):
         raise FileNotFoundError(
             f'recreation GEP results not found at {result_path}. '
@@ -826,10 +830,14 @@ def gep_results_distribution(p):
     """Copy this service's registered results into the output directory. Shared implementation
     in utilities, which converts every raster it copies into a POG."""
     publish_inputs(p)
+    if not p.run_this:
+        return p
     utilities.distribute_results(p, 'recreation')
 
 
 def gep_result(p):
     """Render the results report(s). Shared implementation in utilities."""
     publish_inputs(p)
+    if not p.run_this:
+        return p
     utilities.render_service_results(p)

@@ -113,6 +113,8 @@ def gep_calculation(p):
     if already_done:
         return
 
+    if not p.run_this:
+        return p
     countries = utilities.collapse_countries_to_r250(p.df_countries)
     factor = pd.read_csv(p.health_depression_factor_path)
     df = countries.merge(factor, on='iso3_r250_id', how='left')
@@ -174,4 +176,6 @@ def gep_calculation(p):
 def gep_result(p):
     """Render the results report(s). Shared implementation in utilities."""
     publish_inputs(p)
+    if not p.run_this:
+        return p
     utilities.render_service_results(p)
