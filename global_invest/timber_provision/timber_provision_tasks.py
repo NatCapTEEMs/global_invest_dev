@@ -16,6 +16,7 @@ from global_invest.timber_provision import timber_provision_functions as tp
 
 
 GRID_COVERED_ZONES = 'grid_covered_zones.json'   # measured once per run, beside the workspace
+EXCLUDED_REGIONS = 'timber_provision_excluded_regions.json'   # beside the table, read at the export boundary
 
 
 def _grid_covered_zones(p, summary_path):
@@ -710,10 +711,13 @@ def timber_provision_shock(p):
         # base-year biomass keep contributing their gain to the numerator; no ratio is formed for
         # them, nothing is capped and nothing is excluded. A region whose own total base-year
         # biomass is zero or negligible has no denominator and is reported, not shocked.
+        excluded_regions = []
         rows += tcf.summed_shock_rows(
             {scenario: {y: zone_total(scenario, y) for y in anchor_years} for scenario in scenarios},
             zone_total(base_scenario, es_shock_base_year), zone_labels, es_shock_base_year,
-            p.terrestrial_carbon_shock_acts, log=hb.log)
+            p.terrestrial_carbon_shock_acts, log=hb.log,
+            covered_zones=_grid_covered_zones(p, _timber_summary_path(p, base_scenario, es_shock_base_year)),
+            excluded_out=excluded_regions)
     else:
         for scenario in scenarios:
             rows += tcf.dynamic_shock_rows(
@@ -738,6 +742,24 @@ def timber_provision_shock(p):
     if measure == 'aboveground_carbon':
         out['timber_provision_accounting'] = 'aboveground_carbon_summed_v1'
     out.to_csv(p.timber_provision_shock_output_path, index=False)
+
+    # DECLARE the regions this run could not measure, beside the table. write_afeall_hars fills
+    # np.zeros over the whole AFEL set, so a region merely missing from the table reaches GTAP as a
+    # zero shock -- indistinguishable from a measured no-change. es_shock_export reads this file and
+    # refuses to export a table that carries one, so an unmeasured region cannot become a zero.
+    # A global run measures every region, writes an empty declaration, and exports as before.
+    declared = sorted(set(locals().get('excluded_regions') or ()))
+    if declared:
+        present = set(out['REG'].astype(str)) if len(out) else set()
+        leaked = sorted(r for r in declared if r in present)
+        if leaked:
+            raise ValueError('timber shock: %d region(s) were excluded as unmeasured yet appear in '
+                             'the table: %s' % (len(leaked), leaked))
+        hb.log('  timber shock: DECLARED %d unmeasured region(s), which this run must not export: %s'
+               % (len(declared), ', '.join(declared)))
+    hb.write_to_file(json.dumps({'excluded_regions': declared,
+                                 'reason': 'not fully covered by the run grid'}, indent=2),
+                     os.path.join(os.path.dirname(p.timber_provision_shock_output_path), EXCLUDED_REGIONS))
     utilities.write_reuse_signature(p, 'timber_provision', shock_outputs, TIMBER_SHOCK_SIGNATURE, light_inputs=shock_maps)
     hb.log('  timber shock: %d rows, %d scenarios -> %s'
            % (len(out), out['scenario'].nunique() if rows else 0,

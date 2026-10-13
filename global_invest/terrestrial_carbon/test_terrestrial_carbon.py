@@ -594,3 +594,59 @@ def test_reuse_signature_excludes_its_own_outputs_and_survives_a_json_round_trip
     again, _, _ = tct._reuse_check(
         p, outputs, 'sig.json', extra_settings=dict(pairs={'a': 1, 'b': 2}, seq=(3, 4)))
     assert again is None, 'the signature did not survive being written and read back: %s' % again
+
+
+def _summed_scene():
+    """Two regions of two zones each; only region 'aaa' is fully covered by the grid."""
+    import pandas as pd
+    zone_labels = {101: ('AEZ1', 'aaa'), 102: ('AEZ2', 'aaa'),
+                   201: ('AEZ1', 'bbb'), 202: ('AEZ2', 'bbb')}
+    base = pd.Series({101: 100.0, 102: 100.0})          # only the covered region is measured
+    scen = {2030: pd.Series({101: 90.0, 102: 90.0})}
+    return zone_labels, base, scen
+
+
+def test_bounded_scope_reports_only_fully_covered_regions_and_declares_the_rest():
+    zone_labels, base, scen = _summed_scene()
+    excluded = []
+    rows = tcf.summed_shock_rows({'scn': scen}, base, zone_labels, 2020, 'FRS',
+                                 log=lambda *a, **k: None,
+                                 covered_zones={101, 102}, excluded_out=excluded)
+    assert excluded == ['bbb'], 'the unmeasured region was not declared'
+    reported = {r['REG'] for r in rows}
+    assert reported == {'aaa'}, 'an unmeasured region was reported'
+    # And it must be ABSENT, never present as a zero -- a zero is a measured no-change to GTAP.
+    assert not any(r['REG'] == 'bbb' for r in rows)
+
+
+def test_bounded_scope_still_rejects_a_missing_zone_inside_a_covered_region():
+    zone_labels, base, scen = _summed_scene()
+    short = base.drop(index=102)                         # a zone of the COVERED region goes missing
+    with pytest.raises(ValueError, match='missing zone is not a zero'):
+        tcf.summed_shock_rows({'scn': scen}, short, zone_labels, 2020, 'FRS',
+                              log=lambda *a, **k: None,
+                              covered_zones={101, 102}, excluded_out=[])
+
+
+def test_global_runs_keep_the_full_regional_coverage_requirement():
+    """covered_zones None is the global path: every region required, nothing declared."""
+    zone_labels, base, scen = _summed_scene()
+    with pytest.raises(ValueError, match="missing 2 of region bbb's 2 zones"):
+        tcf.summed_shock_rows({'scn': scen}, base, zone_labels, 2020, 'FRS',
+                              log=lambda *a, **k: None)
+    # Fully measured globally: both regions reported, no exclusions.
+    import pandas as pd
+    full_base = pd.Series({101: 100.0, 102: 100.0, 201: 100.0, 202: 100.0})
+    full_scen = {2030: pd.Series({101: 90.0, 102: 90.0, 201: 80.0, 202: 80.0})}
+    excluded = []
+    rows = tcf.summed_shock_rows({'scn': full_scen}, full_base, zone_labels, 2020, 'FRS',
+                                 log=lambda *a, **k: None, excluded_out=excluded)
+    assert excluded == []
+    assert {r['REG'] for r in rows} == {'aaa', 'bbb'}
+
+
+def test_no_fully_covered_region_is_a_failure_not_an_empty_table():
+    zone_labels, base, scen = _summed_scene()
+    with pytest.raises(ValueError, match='fully covers no GTAP region'):
+        tcf.summed_shock_rows({'scn': scen}, base, zone_labels, 2020, 'FRS',
+                              log=lambda *a, **k: None, covered_zones={101}, excluded_out=[])

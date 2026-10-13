@@ -241,7 +241,8 @@ def dynamic_shock_rows(scenario_by_year, baseline_by_year, baseline_at_base_year
 
 
 def summed_shock_rows(scenario_by_year_by_scenario, baseline_at_base_year, zone_labels, base_year,
-                      sector, negligible_share=1e-6, log=print):
+                      sector, negligible_share=1e-6, log=print,
+                      covered_zones=None, excluded_out=None):
     """Regional shocks formed from SUMMED quantities rather than from means of zonal ratios.
 
     For a measure that can add quantity where the base year had none -- forest biomass on land
@@ -271,6 +272,34 @@ def summed_shock_rows(scenario_by_year_by_scenario, baseline_at_base_year, zone_
     zones_by_region = {}
     for zone_id, (endw, reg) in zone_labels.items():
         zones_by_region.setdefault(reg, []).append(zone_id)
+
+    # REGIONAL SCOPE. With covered_zones None -- every global run -- nothing changes: every region
+    # is required, and a missing zone raises in regional_total below. That is the full coverage
+    # requirement, unaltered.
+    #
+    # A bounded AOI cannot satisfy it: on the zaf fixture 46 of 50 regions have no measured zone at
+    # all. Such a region is reported COMPLETELY or not at all, never partially summed, so the
+    # invariant regional_total protects still holds for every region that IS reported -- within it,
+    # every zone was measured. The excluded regions are handed back so the caller can DECLARE them:
+    # write_afeall_hars builds np.zeros over the whole set, so a region merely absent from the table
+    # is exported to GTAP as a zero shock. Making that impossible is the point of this partition.
+    if covered_zones is not None:
+        covered = {int(z) for z in covered_zones}
+        in_scope, out_of_scope = {}, []
+        for reg, ids in zones_by_region.items():
+            if all(int(z) in covered for z in ids):
+                in_scope[reg] = ids
+            else:
+                out_of_scope.append(reg)
+        if excluded_out is not None:
+            excluded_out.extend(sorted(out_of_scope))
+        if not in_scope:
+            raise ValueError('summed measure: the run grid fully covers no GTAP region, so there is '
+                             'nothing this measure can report. Covered zones: %d' % len(covered))
+        log('  summed measure: %d of %d region(s) fully covered and reported; %d excluded as '
+            'unmeasured, which MUST be declared and never exported as zero: %s'
+            % (len(in_scope), len(zones_by_region), len(out_of_scope), ', '.join(sorted(out_of_scope))))
+        zones_by_region = in_scope
 
     def regional_total(series, region, what):
         """The region's summed quantity, from EVERY one of its zones.
