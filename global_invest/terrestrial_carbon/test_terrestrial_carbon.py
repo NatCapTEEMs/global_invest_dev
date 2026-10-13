@@ -148,11 +148,15 @@ def test_dynamic_shock_per_zone_interpolation_and_both_measures(tmp_path):
     assert b.loc[2030, 'shock_pct'] == approx(0.0)
     assert b.loc[2050, 'shock_pct'] == approx(-45.0)     # (55-100)/100
 
-    # piecewise interpolation: 0 at base_year, linear between anchors
+    # PCHIP between anchors (the 10 October specification), 0 at base_year. The ANCHORS stay exact
+    # -- asserted above -- while intermediate years are no longer the linear midpoint. They are
+    # asserted by the property the specification guarantees, shape preservation, rather than by a
+    # hand-computed number: a value strictly inside the bracketing anchors and no overshoot.
     assert a.loc[2020, 'shock_pct'] == approx(0.0)
-    assert a.loc[2025, 'shock_pct'] == approx(-22.5)     # midpoint 2020->2030
-    assert a.loc[2040, 'shock_pct'] == approx(-66.25)    # midpoint 2030->2050
-    assert b.loc[2040, 'shock_pct'] == approx(-22.5)
+    for year, lo, hi in [(2025, -45.0, 0.0), (2040, -87.5, -45.0)]:
+        assert min(lo, hi) - 1e-9 <= a.loc[year, 'shock_pct'] <= max(lo, hi) + 1e-9
+    assert a.loc[2025, 'shock_pct'] != approx(-22.5), 'reverted to the linear midpoint'
+    assert min(-45.0, 0.0) - 1e-9 <= b.loc[2040, 'shock_pct'] <= max(-45.0, 0.0) + 1e-9
 
     # fixed-base measure divides by the BASE-YEAR baseline density (100), not base_Y
     assert a.loc[2050, 'shock_pct_fixedbase'] == approx(-70.0)   # (10-80)/100
@@ -349,7 +353,11 @@ def test_dynamic_shock_rows_v3_measures_the_scenario_against_the_base_year_basel
     assert np.isclose(by_year.loc[2030, 'shock_pct_v3'], 26.0)
     assert np.isclose(by_year.loc[2040, 'shock_pct_v3'], 33.0)
     assert by_year.loc[2020, 'shock_pct_v3'] == 0.0
-    assert np.isclose(by_year.loc[2035, 'shock_pct_v3'], 29.5)
+    # 2035 is NOT an anchor: under the PCHIP specification it is no longer the linear midpoint of
+    # the 2030 and 2040 anchors. Asserted by shape preservation instead, with the anchors exact.
+    lo, hi = by_year.loc[2030, 'shock_pct_v3'], by_year.loc[2040, 'shock_pct_v3']
+    assert min(lo, hi) - 1e-9 <= by_year.loc[2035, 'shock_pct_v3'] <= max(lo, hi) + 1e-9
+    assert not np.isclose(by_year.loc[2035, 'shock_pct_v3'], 29.5), 'reverted to linear'
 
 
 def test_dynamic_shock_rows_v3_is_absent_without_a_base_year_baseline():
@@ -369,8 +377,15 @@ def test_scc_valuation_interpolates_prices_and_derives_the_cut():
     cp = out[(out['scenario'] == 'cp') & (out['iso3_r250_id'] == 1)].set_index('year')
     assert cp.loc[2023, 'delta_value_usd'] == 0.0
     # linear between 2023 (100) and 2030 (110): 2027 -> 100 + 4/7 * 10
-    assert abs(cp.loc[2027, 'stock_mgc'] - (100 + 40 / 7)) < 1e-9
-    assert abs(cp.loc[2040, 'delta_value_usd'] - (120 - 100) * 10) < 1e-9
+    # The STOCK is PCHIP-interpolated, so 2027 is not the linear value between 2023 and 2030.
+    # The anchors themselves are asserted elsewhere in this test and remain exact.
+    lo, hi = cp.loc[2023, 'stock_mgc'], cp.loc[2030, 'stock_mgc']
+    assert min(lo, hi) - 1e-9 <= cp.loc[2027, 'stock_mgc'] <= max(lo, hi) + 1e-9
+    assert abs(cp.loc[2027, 'stock_mgc'] - (100 + 40 / 7)) > 1e-6, 'reverted to linear'
+    # 2040 is between this fixture's anchors, so its PCHIP stock -- and therefore its value -- is
+    # not the linear one. Bounded by the bracketing anchors; the anchor years stay exact.
+    lo, hi = cp.loc[2030, 'delta_value_usd'], cp.loc[2050, 'delta_value_usd']
+    assert min(lo, hi) - 1e-9 <= cp.loc[2040, 'delta_value_usd'] <= max(lo, hi) + 1e-9
     assert cp.loc[2050, 'delta_value_usd'] == 300.0
     # the cut: the modelled es20 rows are replaced by 0.8 x cp from 2030, untouched before
     es20 = out[(out['scenario'] == 'cp-es20') & (out['iso3_r250_id'] == 1)].set_index('year')

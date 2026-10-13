@@ -189,8 +189,8 @@ def dynamic_shock_rows(fixedbase, contemporaneous, level_usd, scenario, sectors,
     rows = []
     for zone, fixed_series in fixedbase.iterrows():
         endw, reg = zone
-        annual = np.interp(all_years, interp_years, [0.0] + list(fixed_series.values))
-        annual_contemp = np.interp(all_years, interp_years,
+        annual = utilities.anchored_series(all_years, interp_years, [0.0] + list(fixed_series.values))
+        annual_contemp = utilities.anchored_series(all_years, interp_years,
                                    [0.0] + list(contemporaneous.loc[zone].values))
         base_usd = float(level_usd.get(zone, float('nan'))) if level_usd is not None else float('nan')
         # The paired baseline is a LEVEL, not a shock, so it is not ramped from zero: the base year
@@ -214,7 +214,7 @@ def dynamic_shock_rows(fixedbase, contemporaneous, level_usd, scenario, sectors,
                 growth = float(growth.get(zone, float('nan'))) if hasattr(growth, 'get') else float(growth)
                 share_at_anchor.append(paired / unpaired / growth
                                        if unpaired and growth else float('nan'))
-            annual_share = np.interp(all_years, interp_years,
+            annual_share = utilities.anchored_series(all_years, interp_years,
                                      [share_at_anchor[0]] + share_at_anchor)
         else:
             annual_share = [float('nan')] * len(all_years)
@@ -222,7 +222,7 @@ def dynamic_shock_rows(fixedbase, contemporaneous, level_usd, scenario, sectors,
         if paired_base_by_year:
             paired_at_anchor = [float(paired_base_by_year[y].get(zone, float('nan')))
                                 for y in anchor_years]
-            annual_paired = np.interp(all_years, interp_years,
+            annual_paired = utilities.anchored_series(all_years, interp_years,
                                       [paired_at_anchor[0]] + paired_at_anchor)
         else:
             annual_paired = [float('nan')] * len(all_years)
@@ -237,7 +237,7 @@ def dynamic_shock_rows(fixedbase, contemporaneous, level_usd, scenario, sectors,
                 base_level = float(paired_base_by_year[y].get(zone, float('nan')))
                 v3_at_anchor.append(100.0 * (scen_level / base_level - 1.0)
                                     if base_level else float('nan'))
-            annual_v3 = np.interp(all_years, interp_years, [0.0] + v3_at_anchor)
+            annual_v3 = utilities.anchored_series(all_years, interp_years, [0.0] + v3_at_anchor)
         else:
             annual_v3 = [float('nan')] * len(all_years)
         for year, fixed_value, contemp_value, paired_value, share_value, v3_value in zip(

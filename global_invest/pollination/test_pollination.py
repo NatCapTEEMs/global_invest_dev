@@ -598,8 +598,12 @@ def test_dynamic_shock_rows_v3_is_the_scenario_against_its_own_paired_base():
     assert np.isclose(by_year.loc[2040, 'shock_pct_v3'], -25.0)
     # Pinned at zero at the base year and straight between anchors, like every other measure here.
     assert by_year.loc[2020, 'shock_pct_v3'] == 0.0
-    assert np.isclose(by_year.loc[2025, 'shock_pct_v3'], -5.0)
-    assert np.isclose(by_year.loc[2035, 'shock_pct_v3'], -17.5)
+    # 2025 is not an anchor; PCHIP does not put it on the straight line.
+    lo, hi = by_year.loc[2023, 'shock_pct_v3'], by_year.loc[2030, 'shock_pct_v3']
+    assert min(lo, hi) - 1e-9 <= by_year.loc[2025, 'shock_pct_v3'] <= max(lo, hi) + 1e-9
+    assert not np.isclose(by_year.loc[2025, 'shock_pct_v3'], -5.0), 'reverted to linear'
+    lo, hi = by_year.loc[2030, 'shock_pct_v3'], by_year.loc[2040, 'shock_pct_v3']
+    assert min(lo, hi) - 1e-9 <= by_year.loc[2035, 'shock_pct_v3'] <= max(lo, hi) + 1e-9
     # The ratio is taken anchor by anchor. Interpolating the two LEVELS to 2035 and dividing there
     # would give 240/300 - 1 = -20%, which is not the same number.
     assert not np.isclose(by_year.loc[2035, 'shock_pct_v3'], -20.0)
@@ -779,7 +783,11 @@ def test_shock_pct_output_is_the_v3_dollars_over_crop_value():
     # at 2030: v3 = 10 %, output share = 0.10 x 1.7 / 9.0 = 1.8889 %
     assert abs(vf.loc[2030, 'shock_pct_output'] - 100.0 * (0.10 * 1.7e9) / 9.0e9) < 1e-9
     # between anchors the v3 series is interpolated and the output share follows it: 2040 = 17.5 %
-    assert abs(vf.loc[2040, 'shock_pct_output'] - 100.0 * (0.175 * 1.7e9) / 9.0e9) < 1e-9
+    # 2040 lies between this fixture's anchors, so the PCHIP value is not the linear one. The
+    # quantity under test -- v3 dollars over crop value -- is unchanged; only the path between
+    # anchors is.
+    lo, hi = vf.loc[2030, 'shock_pct_output'], vf.loc[2050, 'shock_pct_output']
+    assert min(lo, hi) - 1e-9 <= vf.loc[2040, 'shock_pct_output'] <= max(lo, hi) + 1e-9
     # the ratio output/v3 IS the pollination share of crop value, and it is NOT the contemp ratio
     assert abs(vf.loc[2050, 'shock_pct_output'] / vf.loc[2050, 'shock_pct_v3'] - 1.7e9 / 9.0e9) < 1e-12
     assert abs(vf.loc[2050, 'shock_pct_output'] - vf.loc[2050, 'shock_pct'] * 1.7e9 / 9.0e9) > 1e-3

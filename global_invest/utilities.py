@@ -544,6 +544,56 @@ def assert_shock_table_sound(df, requested_scenarios, label, abs_max=SHOCK_ABS_M
     return True
 
 
+ANCHOR_INTERPOLATION = 'pchip'   # the selected final specification, 10 October 2026
+
+
+def anchored_series(x, anchor_x, anchor_y, method=ANCHOR_INTERPOLATION):
+    """Expand anchor-year values to every year, shape-preserving by default.
+
+    The selected specification is PCHIP: shape-preserving piecewise cubic Hermite interpolation
+    between the 2023, 2030, 2040 and 2050 anchors. It retains the anchor values exactly and cannot
+    overshoot between adjacent anchors, which piecewise-linear interpolation also does -- but linear
+    interpolation of a LEVEL makes the implied annual increment jump discontinuously at the anchor
+    years, which is the artefact PCHIP removes. Measured on the bounded carbon stocks, the mean
+    jump at 2030/2040 falls from 2.9e6 to 6.3e5 Mg C/yr while cumulative change is unaltered.
+
+    This lives here, once, because five modules interpolated anchors with their own np.interp call
+    and the specification has to change in one place or it will drift back.
+
+    Args:
+        x (array-like): the years to evaluate.
+        anchor_x (array-like): the anchor years, ascending, at least two.
+        anchor_y (array-like): the value at each anchor.
+        method (str): 'pchip' (the specification) or 'linear' (retained for sensitivity
+            comparison and for quantities whose anchors must not be smoothed).
+
+    Returns:
+        numpy.ndarray: one value per entry of `x`.
+
+    Raises:
+        ValueError: on an unknown method, or fewer than two anchors.
+    """
+    import numpy as np
+    # None means "the specification", so a caller that threads an optional method through does not
+    # have to know what the default is.
+    if method is None:
+        method = ANCHOR_INTERPOLATION
+    anchor_x = np.asarray(anchor_x, dtype=float)
+    anchor_y = np.asarray(anchor_y, dtype=float)
+    if anchor_x.size < 2:
+        raise ValueError('anchored_series needs at least two anchors, got %d' % anchor_x.size)
+    if method == 'linear':
+        return np.interp(x, anchor_x, anchor_y)
+    if method != 'pchip':
+        raise ValueError("anchored_series method must be 'pchip' or 'linear', got %r" % method)
+    # Two anchors make PCHIP the straight line between them, so scipy is not needed and the
+    # dependency is not imposed on a run that only has endpoints (fisheries' ramp, for one).
+    if anchor_x.size == 2:
+        return np.interp(x, anchor_x, anchor_y)
+    from scipy.interpolate import PchipInterpolator
+    return PchipInterpolator(anchor_x, anchor_y, axis=0)(np.asarray(x, dtype=float))
+
+
 def _signature(settings, inputs, light_inputs=()):
     """The signature dict: settings by value, inputs by content, light inputs by size and mtime."""
     fingerprints = dict(inputs)

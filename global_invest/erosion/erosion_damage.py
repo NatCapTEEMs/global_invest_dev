@@ -92,7 +92,8 @@ def annual_damage_change(base_level, anchor_years, ordinary_levels, years,
         raise ValueError('Requested dates are outside the trajectory')
     if not np.isfinite(base_level) or not np.all(np.isfinite(levels)):
         raise ValueError('Missing damage levels cannot define a trajectory')
-    result = np.interp(dates, np.r_[base_year, anchors], np.r_[base_level, levels])
+    from global_invest import utilities
+    result = utilities.anchored_series(dates, np.r_[base_year, anchors], np.r_[base_level, levels])
     if stressed_levels is not None:
         stress = np.asarray(stressed_levels, dtype=float)
         if stress.shape != levels.shape or not np.all(np.isfinite(stress)):
