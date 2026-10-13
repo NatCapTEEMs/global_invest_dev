@@ -81,3 +81,49 @@ def test_the_clip_is_cached(tmp_path):
     second = _aligned_to_reference(p, source, reference, 'density')
     assert second == first
     assert (os.stat(second).st_mtime_ns, os.stat(second).st_ino) == stamp
+
+
+def test_grid_covered_zones_declares_uncovered_zones_without_hiding_a_lost_one(tmp_path):
+    """A bounded AOI must not require zones its grid never reaches, and must still catch a lost one.
+
+    The D19 assertion required every zone in the boundary file, so the zaf validation fixture failed
+    with 444 of 470 zone totals 'absent' when those zones are simply outside the run. The fix
+    declares the uncovered zones through the assertion's own intentional_exclusions. The second half
+    is what keeps that from becoming a licence: a zone the grid DOES cover, missing from the
+    summary, must still raise.
+    """
+    import json
+    import numpy as np
+    import pandas as pd
+    import pytest
+    from global_invest import utilities
+    from global_invest.timber_provision import timber_provision_tasks as tpt
+
+    summary_path = str(tmp_path / 'timber_value_by_zone_scn_2030.csv')
+    zone_ids_path = str(tmp_path / 'timber_value_by_zone_scn_2030_zone_ids.tif')
+    # The grid holds zones 101 and 102 only; the boundary also declares 201 and 202.
+    with rasterio.open(zone_ids_path, 'w', driver='GTiff', height=2, width=2, count=1,
+                       dtype='int32', crs='EPSG:4326', nodata=0,
+                       transform=from_origin(0.0, 0.0, 1.0, 1.0)) as dst:
+        dst.write(np.array([[101, 101], [102, 0]], dtype=np.int32), 1)
+    p = SimpleNamespace(cur_dir=str(tmp_path))
+    zone_labels = {101: ('AEZ1', 'aaa'), 102: ('AEZ2', 'aaa'),
+                   201: ('AEZ1', 'bbb'), 202: ('AEZ2', 'bbb')}
+
+    covered = tpt._grid_covered_zones(p, summary_path)
+    assert covered == {101, 102}
+    assert json.loads(open(os.path.join(str(tmp_path), tpt.GRID_COVERED_ZONES)).read()) == [101, 102]
+
+    def check(frame):
+        absent = [('scn', 2030, z) for z in zone_labels if int(z) not in covered]
+        return utilities.assert_zonal_coverage_complete(
+            frame, ['scn'], [2030], set(zone_labels), 'D19 biomass',
+            intentional_exclusions=absent, log=lambda *a, **k: None)
+
+    complete = pd.DataFrame({'scenario': ['scn', 'scn'], 'year': [2030, 2030],
+                             'region_id': [101, 102], 'total': [1.0, 2.0]})
+    assert check(complete) is True              # the 2 uncovered zones are declared, not missing
+
+    lost = complete[complete['region_id'] != 102]
+    with pytest.raises(ValueError, match='D19 biomass'):
+        check(lost)                             # a zone the grid COVERS went missing: still fatal

@@ -5,6 +5,7 @@ net-return layer masked and floored, see timber_provision_functions) summed per 
 the 10-arcsecond country-id raster. The committed Forestry CSV stays as the test anchor
 the run is compared against, never as the output."""
 
+import json
 import os
 import numpy as np
 import pandas as pd
@@ -12,6 +13,45 @@ import rasterio
 import hazelbean as hb
 from global_invest import utilities
 from global_invest.timber_provision import timber_provision_functions as tp
+
+
+GRID_COVERED_ZONES = 'grid_covered_zones.json'   # measured once per run, beside the workspace
+
+
+def _grid_covered_zones(p, summary_path):
+    """The zone ids this run's GRID actually contains, from the zone-id raster the zonal step used.
+
+    The D19 coverage assertion requires every zone in the boundary file, which is right for a global
+    run and impossible for a bounded one: the zaf validation fixture covers 26 of the boundary's 470
+    zones and the remaining 444 are absent because the model does not reach them, not because a
+    total went missing. `intentional_exclusions` is the assertion's own mechanism for that
+    distinction, and this supplies the set to declare.
+
+    Read from the RASTER, never from the summaries. A zone the grid covers but a summary lost is
+    still a failure -- that is the defect the assertion exists to catch, and deriving coverage from
+    the summaries would make it vacuous. Zone geometry does not vary by scenario or year, so this is
+    measured once per run and cached: one pass over the zone raster rather than one per
+    scenario-year, which matters because the global grid is 129,600 x 64,800.
+
+    Args:
+        p: the ProjectFlow object, for `cur_dir`.
+        summary_path (str): a scenario-year summary; its `_zone_ids.tif` sibling is what is read.
+
+    Returns:
+        set | None: the covered zone ids, or None when there is no zone raster to read, in which
+        case the caller requires every boundary zone as before.
+    """
+    cache_path = os.path.join(p.cur_dir, GRID_COVERED_ZONES)
+    if hb.path_exists(cache_path):
+        return {int(z) for z in json.loads(open(cache_path, encoding='utf-8').read())}
+    zone_ids_path = os.path.splitext(summary_path)[0] + '_zone_ids.tif'
+    if not hb.path_exists(zone_ids_path):
+        return None
+    covered = sorted({int(v) for v in hb.unique_raster_values_path(zone_ids_path) if int(v) > 0})
+    hb.write_to_file(json.dumps(covered), cache_path)
+    hb.log('  timber: the run grid covers %d zone(s); measured once from %s'
+           % (len(covered), os.path.basename(zone_ids_path)))
+    return set(covered)
 
 
 def publish_inputs(p):
@@ -638,8 +678,12 @@ def timber_provision_shock(p):
         for job in jobs:
             scenario, year = job[:2]
             summary = pd.read_csv(job[-3]).assign(scenario=scenario, year=year)
+            covered = _grid_covered_zones(p, job[-3])
+            absent = None if covered is None else [
+                (scenario, year, zone) for zone in zone_labels if int(zone) not in covered]
             utilities.assert_zonal_coverage_complete(summary, [scenario], [year], set(zone_labels),
-                                                    'D19 biomass', log=hb.log)
+                                                    'D19 biomass', intentional_exclusions=absent,
+                                                    log=hb.log)
             if (summary['total'] < 0).any():
                 raise ValueError('Negative D19 biomass total')
 
