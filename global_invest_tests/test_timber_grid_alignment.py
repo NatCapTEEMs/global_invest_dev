@@ -127,3 +127,47 @@ def test_grid_covered_zones_declares_uncovered_zones_without_hiding_a_lost_one(t
     lost = complete[complete['region_id'] != 102]
     with pytest.raises(ValueError, match='D19 biomass'):
         check(lost)                             # a zone the grid COVERS went missing: still fatal
+
+
+def test_full_grid_coverage_declares_nothing_and_keeps_the_global_check_at_full_strength(tmp_path):
+    """When the grid covers every boundary zone -- the global run -- nothing is excluded.
+
+    The bounded-AOI fix must not quietly relax the global case. Here the zone raster contains all
+    four boundary zones, so the declared-exclusion list must be EMPTY, the required set must stay
+    the full boundary set, and any missing zone must still raise. If this test ever passes with a
+    non-empty exclusion list, the global coverage guarantee has been weakened.
+    """
+    import numpy as np
+    import pandas as pd
+    import pytest
+    from global_invest import utilities
+    from global_invest.timber_provision import timber_provision_tasks as tpt
+
+    summary_path = str(tmp_path / 'timber_value_by_zone_scn_2030.csv')
+    zone_ids_path = str(tmp_path / 'timber_value_by_zone_scn_2030_zone_ids.tif')
+    with rasterio.open(zone_ids_path, 'w', driver='GTiff', height=2, width=2, count=1,
+                       dtype='int32', crs='EPSG:4326', nodata=0,
+                       transform=from_origin(0.0, 0.0, 1.0, 1.0)) as dst:
+        dst.write(np.array([[101, 102], [201, 202]], dtype=np.int32), 1)
+    p = SimpleNamespace(cur_dir=str(tmp_path))
+    zone_labels = {101: ('AEZ1', 'aaa'), 102: ('AEZ2', 'aaa'),
+                   201: ('AEZ1', 'bbb'), 202: ('AEZ2', 'bbb')}
+
+    covered = tpt._grid_covered_zones(p, summary_path)
+    assert covered == {101, 102, 201, 202}
+    absent = [('scn', 2030, z) for z in zone_labels if int(z) not in covered]
+    assert absent == [], 'a fully covered grid declared an exclusion, weakening the global check'
+
+    def check(frame):
+        return utilities.assert_zonal_coverage_complete(
+            frame, ['scn'], [2030], set(zone_labels), 'D19 biomass',
+            intentional_exclusions=absent, log=lambda *a, **k: None)
+
+    rows = [{'scenario': 'scn', 'year': 2030, 'region_id': z, 'total': 1.0} for z in zone_labels]
+    assert check(pd.DataFrame(rows)) is True
+
+    # Every single zone, dropped on its own, must still be fatal -- all four, not a sample.
+    for drop in list(zone_labels):
+        short = pd.DataFrame([r for r in rows if r['region_id'] != drop])
+        with pytest.raises(ValueError, match='D19 biomass'):
+            check(short)
