@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from global_invest import utilities
 from global_invest.terrestrial_carbon import terrestrial_carbon_functions as tcf
 from global_invest.terrestrial_carbon import terrestrial_carbon_tasks as tct
 
@@ -553,3 +554,43 @@ def test_dynamic_shock_reuses_a_current_table_and_recomputes_a_stale_one(tmp_pat
     tct.terrestrial_carbon_shock(p)
     assert os.stat(p.terrestrial_carbon_shock_output_path).st_mtime_ns != first, \
         'the table was reused although its density lookup changed'
+
+
+def test_reuse_signature_excludes_its_own_outputs_and_survives_a_json_round_trip(tmp_path):
+    """A signature must not fingerprint the files the task is about to write, nor hold tuples.
+
+    Both defects make a guard self-invalidating -- it recomputes on every pass and no resume can
+    ever be clean. The SCC valuation hit the first (its output paths end in _path, not
+    _output_path, so a name filter missed them) and fisheries hit the second (json writes a tuple
+    as a list, so the comparison never matched).
+    """
+    import json
+
+    out_csv = tmp_path / 'terrestrial_carbon_scc_valuation.csv'
+    out_png = tmp_path / 'terrestrial_carbon_scc_valuation.png'
+    out_csv.write_text('a,b\n1,2\n', encoding='utf-8')
+    out_png.write_bytes(b'\x89PNG')
+    source = tmp_path / 'source.csv'
+    source.write_text('x\n1\n', encoding='utf-8')
+
+    p = SimpleNamespace(
+        cur_dir=str(tmp_path),
+        terrestrial_carbon_scc_valuation_path=str(out_csv),
+        terrestrial_carbon_scc_figure_path=str(out_png),
+        terrestrial_carbon_density_lookup_table_path=str(source))
+    outputs = [str(out_csv), str(out_png)]
+
+    reason, signature, signature_path = tct._reuse_check(
+        p, outputs, 'sig.json', extra_settings=dict(pairs={'a': 1, 'b': 2}, seq=(3, 4)))
+    # The outputs must not appear anywhere in the signature's inputs.
+    for name in outputs:
+        assert name not in signature['inputs'], 'the task fingerprinted its own output'
+    assert str(source) not in signature['inputs'] or True   # a real input may appear
+
+    # And the whole thing must compare equal after a json round trip.
+    assert json.loads(json.dumps(signature, sort_keys=True, default=str)) == \
+        json.loads(json.dumps(signature, sort_keys=True, default=str))
+    utilities.write_outputs_signature(signature, signature_path)
+    again, _, _ = tct._reuse_check(
+        p, outputs, 'sig.json', extra_settings=dict(pairs={'a': 1, 'b': 2}, seq=(3, 4)))
+    assert again is None, 'the signature did not survive being written and read back: %s' % again

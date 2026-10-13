@@ -388,16 +388,20 @@ def terrestrial_carbon_shock(p):
     # a template string rather than a path-building task.
     scenarios = _resolve_scenario_lulc_paths(p, base_scenario, anchor_years)
 
+    reference_lulc_path = p.scenario_lulc_paths[base_scenario][anchor_years[-1]]
+    _align_zones_to_lulc_grid(p, reference_lulc_path)
+    _inject_base_year_map(p, base_scenario, es_shock_base_year, reference_lulc_path)
+
     # Reuse the table when it was made from these very maps and settings. The zonal means below read
     # every scenario-year map, so a pass that finds the table must return in seconds -- and must not
     # rewrite it, which is work repeated on resume and defeats an unchanged-resume check.
-    # The base-year map is named explicitly rather than read out of scenario_lulc_paths, because
-    # _inject_base_year_map adds it to that dict further down: taking the set before injection and
-    # after it would give two different signatures for the same inputs, and the table would be
-    # rebuilt on every pass that found one written by the other.
-    shock_maps = sorted({m for by_year in p.scenario_lulc_paths.values() for m in by_year.values()}
-                        | {str(m) for m in (getattr(p, 'terrestrial_carbon_base_year_lulc_path', None),
-                                            getattr(p, 'es_base_year_lulc_path', None)) if m})
+    #
+    # This sits AFTER the two calls above, and must stay there. _inject_base_year_map publishes
+    # scenario_lulc_paths[base][base_year], which erosion_damage_pipeline reads later; returning
+    # before it left that entry unset and the erosion damage seam failed with "Missing configured
+    # erosion input baseline_ignore_dependencies 2023: None". A reuse shortcut must skip the work,
+    # never the path publication. Both calls are themselves cached, so this costs nothing.
+    shock_maps = sorted({m for by_year in p.scenario_lulc_paths.values() for m in by_year.values()})
     reason, signature, signature_path = _reuse_check(
         p, [p.terrestrial_carbon_shock_output_path], TERRESTRIAL_CARBON_SHOCK_SIGNATURE,
         extra_settings=dict(scenarios=list(scenarios), anchors=list(anchor_years),
@@ -408,10 +412,6 @@ def terrestrial_carbon_shock(p):
         hb.log('  carbon shock: reusing %s (same maps, same settings)' % p.terrestrial_carbon_shock_output_path)
         return True
     hb.log('  carbon shock: computing because %s' % reason)
-
-    reference_lulc_path = p.scenario_lulc_paths[base_scenario][anchor_years[-1]]
-    _align_zones_to_lulc_grid(p, reference_lulc_path)
-    _inject_base_year_map(p, base_scenario, es_shock_base_year, reference_lulc_path)
 
     density_lookup = tcf.carbon_density_lookup(
         pd.read_csv(p.terrestrial_carbon_density_lookup_table_path, index_col=False))
@@ -482,6 +482,20 @@ def _aligned_ha_per_cell(p, density_path):
         % (density_path, tuple(want['raster_size']), tuple(want['geotransform']), tried))
 
 
+def _stable(value):
+    """A JSON-stable form of a signature value.
+
+    json.dumps writes a tuple as a list, so a signature holding tuples never compares equal to the
+    one read back and the outputs are rebuilt on every pass.
+    """
+    if isinstance(value, (list, tuple, set)):
+        # str() on each element, so a list mixing strings with nested containers still sorts.
+        return sorted(str(_stable(v)) for v in value)
+    if isinstance(value, dict):
+        return sorted('%s=%s' % (k, _stable(v)) for k, v in value.items())
+    return value if isinstance(value, (str, int, float, bool, type(None))) else str(value)
+
+
 TERRESTRIAL_CARBON_SHOCK_SIGNATURE = 'terrestrial_carbon_shock_signature.json'   # beside the table, in the shared es_shocks dir
 
 
@@ -498,10 +512,19 @@ def _reuse_check(p, outputs, signature_name, extra_settings=(), extra_inputs=(),
         tuple: (reason to recompute or None, signature, signature_path).
     """
     settings, inputs = utilities._service_settings_and_inputs(p, 'terrestrial_carbon')
-    settings = {k: v for k, v in settings.items() if not k.endswith('_output_path')}
-    inputs = {k: v for k, v in inputs.items() if not k.endswith('_output_path')}
+    # Drop the task's own outputs by VALUE, not by attribute name. Name-matching missed
+    # terrestrial_carbon_scc_valuation_path and _scc_figure_path, which end in _path rather than
+    # _output_path, so the task fingerprinted the files it was about to write: the signature changed
+    # every time it ran and the outputs could never be reused.
+    own = {str(o) for o in outputs}
+    settings = {k: v for k, v in settings.items() if str(v) not in own}
+    inputs = {k: v for k, v in inputs.items()
+              if str(getattr(p, k, None)) not in own and not k.endswith('_output_path')}
     settings.update(extra_settings)
     inputs.update({str(path): utilities.file_fingerprint(str(path)) for path in extra_inputs})
+    # JSON turns tuples into lists, so a tuple in settings never equals what was recorded. Every
+    # value is normalised to a stable string form instead.
+    settings = {k: _stable(v) for k, v in settings.items()}
     signature = utilities._signature(settings, inputs, light_inputs)
     signature_path = os.path.join(os.path.dirname(outputs[0]), signature_name)
     return utilities.outputs_reuse_reason(outputs, signature, signature_path), signature, signature_path

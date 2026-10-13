@@ -54,10 +54,14 @@ def fisheries_shock(p):
     settings, inputs = utilities._service_settings_and_inputs(p, 'fisheries')
     settings = {k: v for k, v in settings.items() if not k.endswith('_output_path')}
     inputs = {k: v for k, v in inputs.items() if not k.endswith('_output_path')}
-    settings.update(scenarios=es_shock_scenarios, base_year=es_shock_base_year,
+    # Rendered as sorted strings, not as tuples: json.dumps writes a tuple as a list, so a tuple
+    # here never equals what was read back and the table was rebuilt on every pass.
+    settings.update(scenarios=sorted(map(str, es_shock_scenarios)), base_year=es_shock_base_year,
                     end_year=es_shock_end_year,
-                    header_map=sorted(fisheries_header_map.items()),
-                    climate_labels=sorted((getattr(p, 'es_shock_climate_labels', None) or {}).items()))
+                    header_map=sorted('%s=%s' % kv for kv in fisheries_header_map.items()),
+                    climate_labels=sorted(
+                        '%s=%s' % kv for kv in
+                        (getattr(p, 'es_shock_climate_labels', None) or {}).items()))
     inputs[str(cwon_shocks_path)] = utilities.file_fingerprint(str(cwon_shocks_path))
     signature = utilities._signature(settings, inputs)
     signature_path = os.path.join(os.path.dirname(p.fisheries_shock_output_path), FISHERIES_SHOCK_SIGNATURE)
