@@ -4,6 +4,7 @@ Fast and self-contained: the raster functions run on tiny synthetic GeoTIFFs wri
 static shock runs on a small synthetic dependency table -- no base data or full-globe rasters. The shared
 scenario resolver is tested once in global_invest_tests/test_es_utilities.py, not here.
 """
+import os
 from types import SimpleNamespace
 
 import numpy as np
@@ -527,3 +528,28 @@ def test_base_year_is_pinned_at_zero_shock():
                 2050: series(z11=0.0, z12=100.0, z21=50.0, z22=50.0)}
     rows = run(scenario, baseline)
     assert shock_at(rows, 'bra', BASE_YEAR) == pytest.approx(0.0)
+
+
+def test_dynamic_shock_reuses_a_current_table_and_recomputes_a_stale_one(tmp_path):
+    """A second pass must leave a current table alone, and must not reuse a stale one.
+
+    The task rewrote terrestrial_carbon_interpolated.csv on every pass, so a resume that should have
+    been a no-op replaced a current file -- work repeated, and an unchanged-resume check that can
+    never pass. Reuse keyed on existence alone would be the opposite defect, so the second half
+    changes an input and requires the recompute.
+    """
+    p = _shock_scene(tmp_path)
+    tct.terrestrial_carbon_shock(p)
+    first = os.stat(p.terrestrial_carbon_shock_output_path).st_mtime_ns
+
+    tct.terrestrial_carbon_shock(p)
+    assert os.stat(p.terrestrial_carbon_shock_output_path).st_mtime_ns == first, \
+        'the second pass rewrote a table it could have reused'
+
+    # An input the signature covers by content: the table must come back, not be republished.
+    lut = p.terrestrial_carbon_density_lookup_table_path
+    rows = open(lut, encoding='utf-8').read()
+    open(lut, 'w', encoding='utf-8').write(rows.replace('100', '50'))
+    tct.terrestrial_carbon_shock(p)
+    assert os.stat(p.terrestrial_carbon_shock_output_path).st_mtime_ns != first, \
+        'the table was reused although its density lookup changed'

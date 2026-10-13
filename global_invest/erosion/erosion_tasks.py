@@ -252,6 +252,14 @@ def build_seals7_biophysical_table(src_csv, out_csv):
     a `seals_lucode` column, and usle_c/usle_p are CONSTANT within each SEALS class (verified: min == max
     for all 7), so the collapse is unambiguous -- no area weighting to choose. Returns the written path.
     """
+    # The re-key is a deterministic function of src_csv alone, so a run that already produced this
+    # table from this source must leave it alone. Rewriting it replaces a current file for no change,
+    # which is work repeated on resume and makes an unchanged-resume check impossible to satisfy.
+    signature = {'settings': {'builder': 'build_seals7_biophysical_table'},
+                 'inputs': {str(src_csv): utilities.file_fingerprint(str(src_csv))}}
+    signature_path = str(out_csv) + '.signature.json'
+    if utilities.outputs_reuse_reason([str(out_csv)], signature, signature_path) is None:
+        return out_csv
     df = hb.df_read(str(src_csv))
     df.columns = [str(c).strip().lower() for c in df.columns]
     if 'seals_lucode' not in df.columns:
@@ -263,6 +271,7 @@ def build_seals7_biophysical_table(src_csv, out_csv):
              .reset_index().rename(columns={'seals_lucode': 'lucode'}))
     out['description'] = ['seals7_class_%d' % c for c in out['lucode']]
     out.to_csv(out_csv, index=False)
+    utilities.write_outputs_signature(signature, signature_path)
     return out_csv
 
 
