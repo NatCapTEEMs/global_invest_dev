@@ -396,6 +396,51 @@ def _assert_one_grid(grids, tolerance_pixels=GRID_TOLERANCE_PIXELS):
                    label, transform, reference_label, ref_transform))
 
 
+_GDAL_TYPE_BY_DTYPE = {'byte': 1, 'uint8': 1, 'int16': 3, 'uint16': 2, 'int32': 5, 'uint32': 4,
+                       'float32': 6, 'float64': 7}
+
+
+def _aligned_to_reference(p, source_path, reference_path, label):
+    """A copy of `source_path` on the reference's grid, when the two differ only by extent.
+
+    Returns source_path unchanged when the grids already match. Refuses rather than resampling
+    when the pixel sizes differ or the reference's origin does not fall on a source pixel
+    boundary: that case is a genuine regridding decision, not a crop, and it must not be made
+    silently inside a shock measurement.
+
+    Args:
+        p (ProjectFlow): supplies cur_dir for the cached clip.
+        source_path (str): the raster to clip, typically a global layer.
+        reference_path (str): the raster whose grid the run works on.
+        label (str): used in the cached filename and in error messages.
+
+    Returns:
+        str: a path on the reference grid.
+
+    Raises:
+        ValueError: if the grids are not an exact window of one another.
+    """
+    with rasterio.open(source_path) as src, rasterio.open(reference_path) as ref:
+        if src.shape == ref.shape and src.transform == ref.transform:
+            return source_path
+        st, rt = src.transform, ref.transform
+        if abs(st.a - rt.a) > 1e-12 or abs(st.e - rt.e) > 1e-12:
+            raise ValueError('%s is %.10f deg per pixel but the run grid is %.10f; clipping would '
+                             'be a regridding choice, not a crop' % (label, st.a, rt.a))
+        col = (rt.c - st.c) / st.a
+        row = (rt.f - st.f) / st.e
+        if abs(col - round(col)) > 1e-6 or abs(row - round(row)) > 1e-6:
+            raise ValueError('%s does not align with the run grid: offset (%.6f, %.6f) is not whole '
+                             'pixels, so a crop would shift the values' % (label, col, row))
+        source_dtype, source_ndv = src.dtypes[0], src.nodata
+    aligned_path = os.path.join(p.cur_dir, 'timber_%s_aligned.tif' % label)
+    if not hb.path_exists(aligned_path):
+        hb.resample_to_match(source_path, reference_path, aligned_path, resample_method='near',
+                             output_data_type=_GDAL_TYPE_BY_DTYPE[source_dtype],
+                             src_ndv=source_ndv, ndv=source_ndv)
+    return aligned_path
+
+
 def _write_biomass_base_and_new_forest(p, base_lulc_path, base_forest_path, new_forest_path):
     """Once per project: the base-year forest biomass carbon per cell (NaN off the base forest) and
     the carbon zone's mean forest density x cell area the mature-density assumption credits to
@@ -407,6 +452,16 @@ def _write_biomass_base_and_new_forest(p, base_lulc_path, base_forest_path, new_
     for label, path in (('aboveground biomass carbon', density_path), ('carbon zones', zones_path), ('ha per cell', ha_path)):
         if not hb.path_exists(path):
             raise NameError('%s not found at %s' % (label, path))
+    # The base map and carbon zones are on the run's grid, which for a sub-global AOI is a window
+    # of the global pyramid; the biomass density and ha-per-cell rasters are global. Same
+    # resolution and an aligned grid, so nearest is a lossless clip rather than a resample -- the
+    # same reasoning terrestrial_carbon's _align_zones_to_lulc_grid records. Verified for the ZAF
+    # window: identical 10-arcsec pixels, and its origin falls on global pixel (70560, 40320).
+    # The clipped copy keeps the SOURCE's data type and nodata, never the reference's. Taking them
+    # from a match raster is what truncated carbon zone ids 606-620 to a Byte nodata and read
+    # South Africa as zone 0 everywhere.
+    density_path = _aligned_to_reference(p, density_path, base_lulc_path, 'biomass_carbon_density')
+    ha_path = _aligned_to_reference(p, ha_path, base_lulc_path, 'ha_per_cell')
     grids = {}
     for label, path in (('density', density_path), ('zones', zones_path), ('ha', ha_path), ('base map', base_lulc_path)):
         with rasterio.open(path) as src:
