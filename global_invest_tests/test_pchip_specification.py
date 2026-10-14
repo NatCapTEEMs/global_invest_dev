@@ -88,3 +88,41 @@ def test_es20_stress_keeps_its_timing_on_top_of_a_pchip_path():
     before = np.asarray(YEARS) < 2030
     assert np.allclose(stressed[before], (1 + ordinary / 100.0)[before])
     assert stressed[YEARS.index(2030)] == pytest.approx((1 + ordinary[YEARS.index(2030)] / 100.0) * 0.8)
+
+
+def test_the_pollination_path_that_actually_runs_is_on_pchip():
+    """annual_retained_rows is the production pollination path and must not be linear.
+
+    pollination_value_accounting='retained_value_v1' routes here, NOT through
+    pollination_functions.dynamic_shock_rows. Converting that other module left this one on
+    np.interp, and the symptom was silent: the pollination shock table came out byte-identical
+    before and after the conversion while carbon, erosion and timber all changed. This pins the
+    path by its arithmetic, so the gap cannot reopen unnoticed.
+    """
+    import pandas as pd
+    from global_invest.pollination import retained_value
+
+    zones = pd.MultiIndex.from_tuples([('AEZ1', 'aaa')], names=['ENDW', 'REG'])
+    unpaired_base = pd.Series([100.0], index=zones)
+    # Anchors at 2030/2040/2050 with a decelerating path, where PCHIP and linear differ.
+    base_by_year = {2030: pd.Series([100.0], index=zones),
+                    2040: pd.Series([100.0], index=zones),
+                    2050: pd.Series([100.0], index=zones)}
+    future_by_year = {2030: pd.Series([80.0], index=zones),
+                      2040: pd.Series([55.0], index=zones),
+                      2050: pd.Series([50.0], index=zones)}
+    frame = retained_value.annual_retained_rows(
+        base_by_year, future_by_year, unpaired_base, 'scn', 2023, ['V_F'])
+    by_year = frame.set_index('year')['shock_pct']
+
+    # Anchors exact: 100*(future-base)/initial at each supplied anchor year.
+    for year, future in ((2030, 80.0), (2040, 55.0), (2050, 50.0)):
+        assert by_year.loc[year] == pytest.approx(100.0 * (future - 100.0) / 100.0, abs=1e-9), \
+            'anchor %d moved' % year
+
+    # A non-anchor year must NOT sit on the straight line between its bracketing anchors, which is
+    # exactly what this function produced before the fix.
+    lo, hi = by_year.loc[2040], by_year.loc[2050]
+    assert min(lo, hi) - 1e-9 <= by_year.loc[2045] <= max(lo, hi) + 1e-9, 'overshoot between anchors'
+    assert by_year.loc[2045] != pytest.approx((lo + hi) / 2.0, abs=1e-9), \
+        'the production pollination path is still linear'
