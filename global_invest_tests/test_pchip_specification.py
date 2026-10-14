@@ -126,3 +126,33 @@ def test_the_pollination_path_that_actually_runs_is_on_pchip():
     assert min(lo, hi) - 1e-9 <= by_year.loc[2045] <= max(lo, hi) + 1e-9, 'overshoot between anchors'
     assert by_year.loc[2045] != pytest.approx((lo + hi) / 2.0, abs=1e-9), \
         'the production pollination path is still linear'
+
+
+def test_anchor_identity_holds_at_production_magnitude():
+    """Anchor identity has to be exact, not approximate, and the tolerance must be earned.
+
+    test_anchor_values_are_returned_exactly uses anchors of order 10, where evaluating the cubic
+    Hermite at a knot is wrong by about 1e-15 and any sane tolerance hides it. Retained pollination
+    value is order 1e8, where the same round-off is 7.5e-09: a zone whose 2050 anchor is exactly
+    zero came back at -1.4e-14, and the strict non-negativity check on retained value rejected the
+    whole table mid-run. So pin the knots at the magnitude the pipeline actually carries, and pin
+    them exactly -- a tolerance here is the thing that failed.
+    """
+    values = [6.4e8, 3.0e8, 1.0e8, 0.0]
+    out = utilities.anchored_series(YEARS, ANCHORS, values)
+    for year, want in zip(ANCHORS, values):
+        assert out[YEARS.index(year)] == want
+    assert (out >= 0.0).all()
+
+
+def test_anchor_identity_holds_for_a_two_dimensional_table():
+    """Carbon interpolates a whole zone table at once, with the anchors on axis 0."""
+    columns = np.array([[6.4e8, 1.0, 0.0],
+                        [3.0e8, 0.5, 0.0],
+                        [1.0e8, 0.2, 0.0],
+                        [0.0, 0.0, 0.0]])
+    out = utilities.anchored_series(YEARS, ANCHORS, columns)
+    assert out.shape == (len(YEARS), columns.shape[1])
+    for position, year in enumerate(ANCHORS):
+        assert (out[YEARS.index(year)] == columns[position]).all()
+    assert (out >= 0.0).all()

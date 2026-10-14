@@ -591,7 +591,14 @@ def anchored_series(x, anchor_x, anchor_y, method=ANCHOR_INTERPOLATION):
     if anchor_x.size == 2:
         return np.interp(x, anchor_x, anchor_y)
     from scipy.interpolate import PchipInterpolator
-    return PchipInterpolator(anchor_x, anchor_y, axis=0)(np.asarray(x, dtype=float))
+    x = np.asarray(x, dtype=float)
+    values = PchipInterpolator(anchor_x, anchor_y, axis=0)(x)
+    # Evaluating the cubic Hermite at a knot is not bit-exact. A 6.4e8 anchor descending to a 0.0
+    # anchor came back as -7.5e-09, and the strict non-negativity check on retained pollination
+    # value rejected the whole table. The anchors are data, not something to re-derive.
+    for position, anchor in enumerate(anchor_x):
+        values[x == anchor] = anchor_y[position]
+    return values
 
 
 def _signature(settings, inputs, light_inputs=()):
