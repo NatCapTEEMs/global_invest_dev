@@ -6,6 +6,7 @@ cropland hectare within each valuation cell. This module does not alter producti
 exports until the raster-to-table integration has been independently checked.
 """
 import numpy as np
+from global_invest import utilities
 
 
 def retained_value_change(dependent_value, retained_fraction, suff_base, suff_future):
@@ -62,10 +63,15 @@ def annual_retained_rows(base_by_year, future_by_year, unpaired_base, scenario,
     annual_years = np.arange(base_year, years[-1] + 1)
     for zone in zones:
         initial = float(unpaired_base.loc[zone])
-        baselines = np.interp(annual_years, [base_year] + years,
-                              [initial] + [float(base_by_year[y].loc[zone]) for y in years])
-        futures = np.interp(annual_years, [base_year] + years,
-                            [initial] + [float(future_by_year[y].loc[zone]) for y in years])
+        # PCHIP, the selected specification. This is the path the production run actually takes:
+        # pollination_value_accounting = 'retained_value_v1' routes here, NOT through
+        # pollination_functions.dynamic_shock_rows, so converting that module alone left pollination
+        # on linear interpolation while the other services moved. Measured: the pollination table
+        # was byte-identical before and after that conversion, which is how the gap was found.
+        baselines = utilities.anchored_series(annual_years, [base_year] + years,
+                                              [initial] + [float(base_by_year[y].loc[zone]) for y in years])
+        futures = utilities.anchored_series(annual_years, [base_year] + years,
+                                            [initial] + [float(future_by_year[y].loc[zone]) for y in years])
         for y, base, future in zip(annual_years, baselines, futures):
             delta = future - base
             for sector in sectors:
