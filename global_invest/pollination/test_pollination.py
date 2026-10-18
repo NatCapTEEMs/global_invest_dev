@@ -808,28 +808,42 @@ from scipy.ndimage import convolve
 SOURCE = Path(__file__).with_name('pollination_tasks.py')
 TREE = ast.parse(SOURCE.read_text())
 NS = dict(np=np, math=math, Tuple=Tuple, convolve=convolve)
-HELPERS = {'_compute_radii_pixels', '_make_elliptical_kernel'}
+HELPERS = {'_compute_radii_pixels', '_exact_radii_pixels', '_make_elliptical_kernel'}
 nodes = [n for n in TREE.body if
          isinstance(n, ast.FunctionDef) and n.name in HELPERS or
          isinstance(n, ast.Assign) and any(isinstance(t, ast.Name) and
-         t.id in {'_COS_LAT_FLOOR', '_RADIUS_METERS', '_METERS_PER_DEG_LAT', '_MAX_RY', '_MAX_RX'} for t in n.targets)]
+         t.id in {'_COS_LAT_FLOOR', '_RADIUS_METERS', '_WGS84_A_KM', '_WGS84_F',
+                  '_MAX_RY', '_MAX_RX'} for t in n.targets)]
 exec(compile(ast.Module(body=nodes, type_ignores=[]), str(SOURCE), 'exec'), NS)
 worker = next(n for n in TREE.body if isinstance(n, ast.FunctionDef) and n.name == '_process_tile')
 count = next(n for n in ast.walk(worker) if isinstance(n, ast.Assign) and any(isinstance(t, ast.Name) and t.id == 'counts' for t in n.targets))
 EXPR = compile(ast.Expression(count.value), str(SOURCE), 'eval')
 
 def production(mask, kernel):
-    return eval(EXPR, dict(NS, nat_mask=mask, kernel=kernel))
+    # The worker counts per band, slicing nat_mask by s0:s1; the whole mask is one band here.
+    return eval(EXPR, dict(NS, nat_mask=mask, kernel=kernel, s0=0, s1=None))
 
 class HabitatCounts(unittest.TestCase):
     def test_center_matches_exact_neighbor_sum(self):
         for latitude in (0, 30, 50, 55, 60, 70):
             with self.subTest(latitude=latitude):
                 ry, rx = NS['_compute_radii_pixels'](latitude, 1/360, 1/360)
-                kernel = NS['_make_elliptical_kernel'](ry, rx)
+                exact = NS['_exact_radii_pixels'](latitude, 1/360, 1/360)
+                kernel = NS['_make_elliptical_kernel'](ry, rx, exact=exact)
                 mask = kernel.copy()
                 mask[ry, rx] = 0  # focal pixel is cropland
                 self.assertEqual(int(production(mask, kernel)[ry, rx]), int(mask.sum()))
+
+    def test_exact_radius_trims_the_whole_pixel_ellipse(self):
+        # The whole-pixel radii are a ceiling, so the exact 2 km ellipse can only be a subset
+        # of the whole-pixel one, and at the equator it is strictly smaller (6.51 px vs 7).
+        ry, rx = NS['_compute_radii_pixels'](0.0, 1/360, 1/360)
+        exact = NS['_exact_radii_pixels'](0.0, 1/360, 1/360)
+        trimmed = NS['_make_elliptical_kernel'](ry, rx, exact=exact)
+        whole = NS['_make_elliptical_kernel'](ry, rx)
+        self.assertTrue(np.all(whole >= trimmed))
+        self.assertLess(int(trimmed.sum()), int(whole.sum()))
+        self.assertLess(exact[0], ry)
 
     def test_habitat_removal_cannot_increase_sufficiency(self):
         kernel = NS['_make_elliptical_kernel'](7, 12)

@@ -43,7 +43,13 @@ _THRESHOLD = 0.30
 _COS_LAT_FLOOR = 0.1
 _MAX_RX = 2048
 _MAX_RY = 1024
-_METERS_PER_DEG_LAT = 111320.0
+# Rows per latitude band with its own ellipse (512 x 300 m rows ~ 1.4 degrees), so the
+# east-west radius stays close to 2 km across a tile instead of one tile-wide ellipse.
+_BAND_ROWS = 512
+# WGS84 ellipsoid, the same datum the account's cell areas use; the foraging radius is
+# measured in metres per degree at each latitude rather than the spherical 111,320.
+_WGS84_A_KM = 6378.137
+_WGS84_F = 1 / 298.257223563
 
 
 # ---------------------------------------------------------------------------------------------
@@ -54,16 +60,23 @@ _METERS_PER_DEG_LAT = 111320.0
 
 # Helpers the raster steps use.
 
-def _make_elliptical_kernel(ry: int, rx: int) -> np.ndarray:
-    """Create a binary elliptical kernel of half-axes (ry, rx) pixels."""
+def _make_elliptical_kernel(ry: int, rx: int, exact: Tuple[float, float] | None = None) -> np.ndarray:
+    """Create a binary elliptical kernel of half-axes (ry, rx) pixels.
+
+    ``exact`` = (radius_y, radius_x) in fractional pixels, e.g. (6.51, 6.47) for 2 km at the
+    equator. A pixel is inside if its centre is within the exact radius; the whole-pixel
+    (ry, rx) only size the array. Without ``exact`` the whole-pixel radii are the ellipse,
+    which overshoots 2 km by up to a half pixel in each axis.
+    """
     ry = max(1, int(ry))
     rx = max(1, int(rx))
     size_y = ry * 2 + 1
     size_x = rx * 2 + 1
     yy, xx = np.ogrid[:size_y, :size_x]
     cy, cx = ry, rx
-    dy = (yy - cy) / float(ry)
-    dx = (xx - cx) / float(rx)
+    ay, ax = (float(ry), float(rx)) if exact is None else exact
+    dy = (yy - cy) / ay
+    dx = (xx - cx) / ax
     dist = dy * dy + dx * dx
     return (dist <= 1.0).astype(np.uint8)
 
@@ -83,20 +96,30 @@ def _tile_mid_lat(bounds_top: float, transform_e: float, row0: int, h: int) -> f
     return bounds_top + (mid_row + 0.5) * transform_e
 
 
-def _compute_radii_pixels(lat_deg: float, pixel_lat_deg: float, pixel_lon_deg: float) -> Tuple[int, int]:
-    """Convert the ~2 km foraging radius to pixel counts at a given latitude."""
+def _exact_radii_pixels(lat_deg: float, pixel_lat_deg: float, pixel_lon_deg: float) -> Tuple[float, float]:
+    """The 2 km foraging radius in (fractional) pixels at a given latitude: (radius_y, radius_x)."""
     cos_lat = abs(math.cos(math.radians(lat_deg)))
     cos_lat = max(cos_lat, _COS_LAT_FLOOR)
 
-    radius_deg_lat = _RADIUS_METERS / _METERS_PER_DEG_LAT
-    radius_deg_lon = _RADIUS_METERS / (_METERS_PER_DEG_LAT * cos_lat)
+    # Metres per degree on the WGS84 ellipsoid at this latitude
+    e2 = _WGS84_F * (2 - _WGS84_F)
+    w = 1 - e2 * math.sin(math.radians(lat_deg)) ** 2
+    m_per_deg_lat = math.radians(1) * _WGS84_A_KM * 1000 * (1 - e2) / w ** 1.5
+    m_per_deg_lon = math.radians(1) * _WGS84_A_KM * 1000 / math.sqrt(w)
 
-    ry = int(math.ceil(radius_deg_lat / pixel_lat_deg))
-    rx = int(math.ceil(radius_deg_lon / pixel_lon_deg))
+    radius_deg_lat = _RADIUS_METERS / m_per_deg_lat
+    radius_deg_lon = _RADIUS_METERS / (m_per_deg_lon * cos_lat)
 
-    ry = max(1, min(ry, _MAX_RY))
-    rx = max(1, min(rx, _MAX_RX))
-    return ry, rx
+    fy = max(1.0, min(radius_deg_lat / pixel_lat_deg, _MAX_RY))
+    fx = max(1.0, min(radius_deg_lon / pixel_lon_deg, _MAX_RX))
+    return fy, fx
+
+
+def _compute_radii_pixels(lat_deg: float, pixel_lat_deg: float, pixel_lon_deg: float) -> Tuple[int, int]:
+    """The foraging radius as whole pixels (rounded up): kernel array sizes and window padding.
+    The ellipse itself uses the exact radius (_exact_radii_pixels)."""
+    fy, fx = _exact_radii_pixels(lat_deg, pixel_lat_deg, pixel_lon_deg)
+    return int(math.ceil(fy)), int(math.ceil(fx))
 
 
 def save_parquet(df: pd.DataFrame, path: str | str) -> str:
@@ -988,42 +1011,54 @@ def _process_tile(
             out_core[valid] = fill_non_ag
             return window, out_core, 0
 
-        # Calculate kernel for this tile latitude
         # Window off is row_off, col_off
         r0 = int(window.row_off)
-        
-        lat_mid = _tile_mid_lat(bounds_top, transform_e, r0, h)
-        ry, rx = _compute_radii_pixels(lat_mid, pixel_lat_deg, pixel_lon_deg)
-        kernel = _make_elliptical_kernel(ry, rx)
-        kernel_sum = int(kernel.sum())
-        
+
+        # One ellipse per band of _BAND_ROWS rows, from the band's own mid-latitude, so the
+        # east-west radius stays near 2 km across the tile instead of one tile-wide ellipse.
+        bands = [(b0, min(_BAND_ROWS, h - b0)) for b0 in range(0, h, _BAND_ROWS)]
+        radii = [
+            _compute_radii_pixels(_tile_mid_lat(bounds_top, transform_e, r0 + b0, bh),
+                                  pixel_lat_deg, pixel_lon_deg)
+            for b0, bh in bands
+        ]
+        # Pad the read by the largest ellipse in the tile, so every band has full context.
+        pad_y = max(ry for ry, _ in radii)
+        pad_x = max(rx for _, rx in radii)
+
         # Expand window for convolution context
-        nat_win = _window_expand_aniso(window, pad_y=ry, pad_x=rx, height=height, width=width)
+        nat_win = _window_expand_aniso(window, pad_y=pad_y, pad_x=pad_x, height=height, width=width)
         lulc_nat = src.read(1, window=nat_win)
         nat_mask = np.isin(lulc_nat, list(nat_classes)).astype(np.uint8)
-        
-        # Accumulate into int32: uint8 output wraps at 256 habitat neighbours.
-        # Casting after convolution is too late to recover the lost counts.
-        counts = convolve(nat_mask, weights=kernel, mode="constant", cval=0.0, output=np.int32)
-        
-        # Extract core
+
+        # Core position within the expanded window
         nat_row0 = int(nat_win.row_off)
         nat_col0 = int(nat_win.col_off)
         r_off = int(r0 - nat_row0)
         c0 = int(window.col_off)
         c_off = int(c0 - nat_col0)
-        
-        counts_core = counts[r_off:r_off + h, c_off:c_off + w]
-        
-        # Calc sufficiency
-        denom = counts_core[ag_mask]
-        valid = denom > 0
-        
-        frac = np.zeros_like(denom, dtype=np.float32)
-        if valid.any():
-            frac[valid] = denom[valid].astype(np.float32) / float(kernel_sum)
-            
-        suff_vals = np.minimum(frac / np.float32(_THRESHOLD), 1.0)
+
+        # Count natural neighbours band by band: a band's crop pixels use the exact 2 km
+        # ellipse of the band's own latitude (whole-pixel ry, rx only size the array).
+        suff_core = np.zeros((h, w), dtype=np.float32)
+        for (b0, bh), (ry, rx) in zip(bands, radii):
+            if not ag_mask[b0:b0 + bh].any():
+                continue
+            exact = _exact_radii_pixels(
+                _tile_mid_lat(bounds_top, transform_e, r0 + b0, bh), pixel_lat_deg, pixel_lon_deg)
+            kernel = _make_elliptical_kernel(ry, rx, exact=exact)
+            kernel_sum = int(kernel.sum())
+            s0 = max(0, r_off + b0 - ry)
+            s1 = min(nat_mask.shape[0], r_off + b0 + bh + ry)
+            # Accumulate into int32: uint8 output wraps at 256 habitat neighbours.
+            # Casting after convolution is too late to recover the lost counts.
+            counts = convolve(nat_mask[s0:s1], weights=kernel, mode="constant", cval=0.0,
+                              output=np.int32)
+            counts_band = counts[r_off + b0 - s0:r_off + b0 - s0 + bh, c_off:c_off + w]
+            frac = counts_band.astype(np.float32) / np.float32(kernel_sum)
+            suff_core[b0:b0 + bh] = np.minimum(frac / np.float32(_THRESHOLD), 1.0)
+
+        suff_vals = suff_core[ag_mask]
         
         # Write back
         out_core = np.full((h, w), np.nan, dtype=np.float32)
@@ -2051,32 +2086,6 @@ def median_prices_ref_path(price_years):
                         'price_median_usd_tonne_%d_%d.parquet' % (years[0], years[-1]))
 
 
-def world_prices_by_item(df_prices):
-    """One producer price per FAO item, taken from the world rows explicitly.
-
-    The source loader built this dictionary from every row of the price table and let
-    duplicate keys overwrite each other, so the price each crop ended up with was whichever
-    row came last. It happened to be a world row, because the file is written in that order,
-    so the numbers were right; they were right by row order rather than by construction, and
-    the EE spec's rule against relying on position is exactly this case. Our regenerated
-    table has 11,601 rows where theirs had 11,534, so the ordering is not something to
-    inherit on trust.
-
-    Args:
-        df_prices (pd.DataFrame): the median price table, with agg_level, item_code_fao and
-            price_median_usd_tonne.
-
-    Returns:
-        dict: FAO item code (int) to price in USD per tonne.
-    """
-    world = df_prices[df_prices['agg_level'] == 'world']
-    if world.empty:
-        raise ValueError('The price table carries no world rows, so there is no single price '
-                         'per crop to value a global raster at.')
-    codes = pd.to_numeric(world['item_code_fao'], errors='coerce')
-    return dict(zip(codes.astype('Int64'), world['price_median_usd_tonne'].astype(float)))
-
-
 def pollination_dependence_by_item(df_dependence):
     """One pollination dependence ratio per FAO item.
 
@@ -2264,8 +2273,16 @@ def pollination_value_raster_rebuilt(p):
     crosswalk = hb.df_read(p.pollination_crosswalk_fao_cropgrids_path)
     # pd.read_parquet, not hb.df_read: df_read is a CSV reader and reports a parquet as an
     # encoding failure, naming every text encoding it tried.
-    prices = world_prices_by_item(pd.read_parquet(
-        p.get_path(median_prices_ref_path(p.pollination_price_years))))
+    median_prices = pd.read_parquet(
+        p.get_path(median_prices_ref_path(p.pollination_price_years)))
+    # 'country': each pixel is priced at its own country's median, falling back subregion,
+    # region, world, with no-country pixels taking the nearest country. 'world': one world
+    # median everywhere, the source pipeline's pre-2026-10 behaviour, kept for comparisons.
+    price_mode = str(p.pollination_price_mode)
+    if price_mode not in ('country', 'world'):
+        raise ValueError("pollination_price_mode must be 'country' or 'world', got %r"
+                         % price_mode)
+    crosswalk_m49 = hb.df_read(p.get_path(p.pollination_crosswalk_m49_iso3_path))
     dependence = pollination_dependence_by_item(pd.read_parquet(
         p.pollination_dependence_table_path))
 
@@ -2278,6 +2295,9 @@ def pollination_value_raster_rebuilt(p):
 
     country_ids, _ = utilities.read_raster(str(p.pollination_cropgrids_country_raster_path))
     country_ids = country_ids.astype('int32')
+    # Crop pixels outside every country (coastal and border cells) take the nearest country,
+    # for the prices and for the coffee split alike.
+    country_ids_filled = pf.nearest_country_ids(country_ids)
     coffee_split = hb.df_read(p.pollination_coffee_split_path)
     coffee_by_country = pf.coffee_dependence_by_country(coffee_split)
     coffee_fallback = pf.coffee_dependence_fallback(coffee_split)
@@ -2309,6 +2329,7 @@ def pollination_value_raster_rebuilt(p):
     reference_meta = None
     summary_rows = []
     skipped = {'no_item_code': [], 'no_raster': [], 'no_price': []}
+    price_source_value = {'country': 0.0, 'subregion': 0.0, 'region': 0.0, 'world': 0.0}
 
     for crop_name in sorted(crosswalk['cropgrids_2024'].dropna().unique()):
         row = crosswalk[crosswalk['cropgrids_2024'] == crop_name].iloc[0]
@@ -2321,10 +2342,18 @@ def pollination_value_raster_rebuilt(p):
         if not hb.path_exists(raster_path):
             skipped['no_raster'].append(crop_name)
             continue
-        price = prices.get(item_code)
-        if price is None or not np.isfinite(price):
+        price_rows = median_prices[median_prices['item_code_fao'].astype(int) == item_code]
+        if price_rows.empty:
             skipped['no_price'].append(crop_name)
             continue
+        if price_mode == 'country':
+            price_value, price_source = pf.price_raster_by_country(
+                price_rows, country_ids_filled, crosswalk_m49, deflator)
+        else:
+            world_rows = price_rows[price_rows['agg_level'] == 'world']
+            scalar = (float(world_rows['price_median_usd_tonne'].iloc[0]) if not world_rows.empty
+                      else float(price_rows['price_median_usd_tonne'].median()))
+            price_value, price_source = scalar * deflator, None
 
         production_density, meta = utilities.read_raster(str(raster_path))
         ratio = float(dependence.get(item_code, 0.0))
@@ -2335,9 +2364,9 @@ def pollination_value_raster_rebuilt(p):
             # arabica, which is what the source pipeline does and what a like-for-like comparison
             # against it needs; it is worth about $3bn on the world total.
             ratio = pf.dependence_raster_from_country_lookup(
-                country_ids, coffee_by_country, coffee_fallback)
+                country_ids_filled, coffee_by_country, coffee_fallback)
         pollination_density, crop_density = pf.crop_pollination_value_density(
-            production_density, float(price) * deflator, ratio)
+            production_density, price_value, ratio)
 
         if reference_meta is None:
             reference_meta = meta
@@ -2364,7 +2393,12 @@ def pollination_value_raster_rebuilt(p):
         summary_rows.append({
             'cropgrids_crop': crop_name, 'item_code_fao': item_code,
             'item_fao': row.get('item_fao'),
-            'price_usd_per_tonne': float(price) * deflator,
+            # Per-pixel prices make this a grid; the production-weighted mean is the number a
+            # reader wants, the same treatment coffee's per-cell dependence gets below.
+            'price_usd_per_tonne': (
+                float(np.nansum(np.asarray(price_value) * production_density)
+                      / np.nansum(production_density))
+                if np.ndim(price_value) else float(price_value)),
             # Coffee's ratio is a per-cell array rather than a scalar, because item 656 is arabica
             # and robusta blended by what each country grows. Writing the array itself put a
             # stringified 3600x7200 grid in one CSV cell; the production-weighted mean is the
@@ -2381,10 +2415,23 @@ def pollination_value_raster_rebuilt(p):
             # summary alone without re-reading any raster.
             'gtap_sector': crop_sector.get(crop_name, ''),
         })
+        if price_source is not None:
+            # How many of this crop's dollars rest on each price level, so the fallback is
+            # counted rather than implicit (the same reason the yield chain logs provenance).
+            per_cell_crop = pf.value_density_to_per_cell(pollination_density, area_km2)
+            for level_code, level_name in ((pf.PROVENANCE_COUNTRY, 'country'),
+                                           (pf.PROVENANCE_SUBREGION, 'subregion'),
+                                           (pf.PROVENANCE_REGION, 'region'),
+                                           (pf.PROVENANCE_WORLD, 'world')):
+                price_source_value[level_name] += float(
+                    np.nansum(per_cell_crop[price_source == level_code]))
 
     if reference_meta is None:
         raise RuntimeError('No crop produced a value raster, so there is nothing to write. '
                            'Production rasters were looked for in %s' % production_dir)
+    if price_mode == 'country':
+        hb.log('  pollination dollars by price level: ' + ', '.join(
+            '%s %.3fbn' % (name, value / 1e9) for name, value in price_source_value.items()))
 
     # A cell no crop covers is not a cell worth zero, so it stays nodata.
     total_pollination_density[~covered] = np.nan

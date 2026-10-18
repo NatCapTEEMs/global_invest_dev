@@ -1347,6 +1347,45 @@ def lookup_by_country(lookup, country_id_array):
     return lookup[codes]
 
 
+def nearest_country_ids(country_ids):
+    """The country grid with every no-country pixel (0) taking the nearest country's code.
+
+    Crop pixels outside every country -- mostly coastal and border cells -- would otherwise
+    fall through every country-level lookup. One distance transform fills the whole grid at
+    once, the same nearest-pixel rule the source pipeline uses.
+    """
+    from scipy import ndimage
+    no_country = country_ids == 0
+    if not no_country.any() or no_country.all():
+        return country_ids.copy()
+    idx = ndimage.distance_transform_edt(no_country, return_distances=False, return_indices=True)
+    return country_ids[idx[0], idx[1]]
+
+
+def price_raster_by_country(price_rows, country_ids_filled, crosswalk_m49, deflator):
+    """Per-pixel producer price for one crop: own country's median, then subregion, region, world.
+
+    price_rows is the crop's slice of the median-price table (every agg_level); pixels whose
+    country has no price for the crop fall back level by level through build_hierarchical_lookup,
+    and pixels whose code is outside the lookup take the world median. Returns the price grid in
+    target-year dollars and a provenance grid (PROVENANCE_COUNTRY..PROVENANCE_WORLD) so the task
+    can report how many dollars rest on each level rather than leaving the fallback implicit.
+    """
+    world_rows = price_rows[price_rows['agg_level'] == 'world']
+    world_value = (float(world_rows['price_median_usd_tonne'].iloc[0]) if not world_rows.empty
+                   else float(price_rows['price_median_usd_tonne'].median()))
+    lookup, provenance = build_hierarchical_lookup(
+        price_rows, crosswalk_m49, 'price_median_usd_tonne')
+    codes = country_ids_filled.copy()
+    codes[(codes < 0) | (codes >= MAX_M49_CODE)] = 0
+    price = lookup[codes]
+    source = provenance[codes]
+    missing = ~np.isfinite(price)
+    price[missing] = world_value
+    source[missing] = PROVENANCE_WORLD
+    return (price * deflator).astype(np.float32), source
+
+
 def convert_mass_to_density(mass_raster, area_km2_raster):
     """Mass per cell to mass per square kilometre.
 
