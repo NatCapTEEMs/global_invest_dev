@@ -60,6 +60,14 @@ def test_the_staged_classification_covers_every_mapped_item():
     assert not missing, missing
 
 
+# The corrected pair of 2026-10-19: the FAOSTAT China aggregate dropped before the
+# join (it doubled every Chinese crop-country row, $1.96bn). At premium 1.0 this
+# sits within 3 percent of the owner's committed $6.25bn, where the inflated
+# reading sat 20 percent above it.
+PUBLISHED_TOTAL_PREMIUM = 8_376_230_026.52
+PUBLISHED_TOTAL_NO_PREMIUM = 6_069_731_903.28
+
+
 def test_the_pipeline_function_reproduces_the_published_total():
     """The factored frame-level pipeline, driven from the staged inputs exactly as the task
     drives it, returns the account's published figure: $10,338,294,391 at the appendix's
@@ -78,6 +86,7 @@ def test_the_pipeline_function_reproduces_the_published_total():
     name_to_iso3.update(pest_control_tasks.SOURCE_NAME_TO_ISO3)
     cls = pd.read_csv(os.path.join(base, 'FAO_classification.csv'), encoding='utf-8-sig')
     qcl = pd.read_csv(os.path.join(base, 'faostat_qcl_2019.csv'))
+    qcl = qcl[qcl['Area'] != 'China']  # the aggregate beside 'China, mainland'; see the task
     qcl['iso3_r250_label'] = qcl['Area'].map(name_to_iso3)
     yld = qcl[(qcl['Element'] == 'Yield') & (qcl['Unit'] == 'kg/ha')].dropna(
         subset=['iso3_r250_label'])[['iso3_r250_label', 'Item', 'Value']].rename(columns={'Value': 'yield_kg_ha'})
@@ -103,8 +112,24 @@ def test_the_pipeline_function_reproduces_the_published_total():
         fibl, yld, prc, dict(zip(cls['FAO_item'], cls['FAO_group'])), name_to_iso3,
         lnrr, yield_ratio, premium)
     total = float(table['pest_control_value'].sum())
-    assert abs(total - 10_338_294_391.30) < 1.0, total
+    assert abs(total - PUBLISHED_TOTAL_PREMIUM) < 1.0, total
     no_premium, _ = pc.pest_control_by_crop_country(
         fibl, yld, prc, dict(zip(cls['FAO_item'], cls['FAO_group'])), name_to_iso3,
         lnrr, yield_ratio, 1.0)
-    assert abs(float(no_premium['pest_control_value'].sum()) - 7_491_517_675) < 2.0
+    assert abs(float(no_premium['pest_control_value'].sum()) - PUBLISHED_TOTAL_NO_PREMIUM) < 2.0
+
+
+def test_duplicate_faostat_keys_raise_instead_of_doubling():
+    """The China-aggregate class of defect: a duplicated (iso3, Item) in yields or prices
+    would double every matching crop-country at the merge, so the pipeline refuses it."""
+    import pytest
+    fibl = pd.DataFrame({'country': ['X'], 'crop': ['Apples'], 'organic_ha': [10.0]})
+    yields = pd.DataFrame({'iso3_r250_label': ['XXX', 'XXX'], 'Item': ['Apples', 'Apples'],
+                           'yield_kg_ha': [1.0, 2.0]})
+    prices = pd.DataFrame({'iso3_r250_label': ['XXX'], 'Item': ['Apples'], 'price_usd_t': [5.0]})
+    with pytest.raises(ValueError, match='duplicated'):
+        pc.pest_control_by_crop_country(
+            fibl, yields, prices, {'Apples': 'Fruit and nuts'}, {'X': 'XXX'},
+            {'cereals': .5, 'vegetables': .4, 'others': .3},
+            {'cereals': .8, 'fruit_nuts': .9, 'vegetables': .8, 'pulses': .9, 'oilseeds': .8,
+             'stimulants': .9}, 1.0)

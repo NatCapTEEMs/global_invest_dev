@@ -102,6 +102,11 @@ def gep_calculation(p):
     cls = pd.read_csv(str(p.get_path(p.pest_control_fao_classification_input_path)),
                       encoding='utf-8-sig')
     qcl = pd.read_csv(str(p.get_path(p.pest_control_faostat_yield_input_path)))
+    # FAOSTAT publishes 'China' (the aggregate with Taiwan, Hong Kong and Macao) BESIDE
+    # 'China, mainland'; both names map to CHN, so keeping the aggregate doubles every
+    # Chinese (country, item) row at the merge -- $1.96bn of duplicated value when found
+    # on 2026-10-19. The plain name stays in the map because FiBL uses it for the mainland.
+    qcl = qcl[qcl['Area'] != 'China']
     qcl['iso3_r250_label'] = qcl['Area'].map(name_to_iso3)
     yld = qcl[(qcl['Element'] == 'Yield') & (qcl['Unit'] == 'kg/ha')].dropna(
         subset=['iso3_r250_label'])[['iso3_r250_label', 'Item', 'Value']]

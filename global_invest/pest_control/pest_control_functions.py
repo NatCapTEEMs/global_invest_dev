@@ -135,6 +135,15 @@ def pest_control_by_crop_country(fibl, yields, prices, item_to_group, name_to_is
 
     fibl['group'] = fibl['item'].map(item_to_group)
 
+    for name, frame in (('yields', yields), ('prices', prices)):
+        duplicated = frame.duplicated(['iso3_r250_label', 'Item'])
+        if duplicated.any():
+            raise ValueError(
+                '%s holds %d duplicated (iso3_r250_label, Item) rows (e.g. %s); a duplicate '
+                'key doubles every matching crop-country at the merge. FAOSTAT aggregate '
+                'areas beside their parts are the known cause.'
+                % (name, int(duplicated.sum()),
+                   frame.loc[duplicated, ['iso3_r250_label', 'Item']].iloc[0].tolist()))
     d = fibl.merge(yields, left_on=['iso3_r250_label', 'item'],
                    right_on=['iso3_r250_label', 'Item'], how='left').drop(columns=['Item'])
     d = d.merge(prices, left_on=['iso3_r250_label', 'item'],
