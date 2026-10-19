@@ -41,8 +41,11 @@ def build_gep_service_calculation_task_tree(p):
     # number -- the account reports his raster -- but the only check in the library that can
     # disagree with an author on method rather than on transcription, so it runs every time
     # rather than sitting dormant as code nobody executes.
+    # No skip_existing, same reasoning as sufficiency_weighted below: the directory exists
+    # before the body runs, so a part-way failure wedges every later resume. The body's own
+    # output checks say whether the work is done.
     p.pollination_value_raster_rebuilt_task = p.add_task(
-        pollination_tasks.pollination_value_raster_rebuilt, skip_existing=1)
+        pollination_tasks.pollination_value_raster_rebuilt)
     p.pollination_value_independence_check_task = p.add_task(
         pollination_tasks.pollination_value_independence_check, skip_existing=1)
     p.pollination_value_by_region_task = p.add_task(
@@ -71,6 +74,8 @@ def build_gep_service_task_tree(p):
     """Full GEP run: the calculation calculation plus the results/report task."""
     p = build_gep_service_calculation_task_tree(p)
     p.pollination_gep_result_task = p.add_task(pollination_tasks.gep_result)
+    p.pollination_gep_results_distribution_task = p.add_task(
+        pollination_tasks.gep_results_distribution)
     return p
 
 

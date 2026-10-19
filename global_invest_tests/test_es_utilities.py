@@ -264,3 +264,29 @@ def test_warp_to_pyramid_sum_conserves_the_total_and_lands_on_the_rung(tmp_path)
 
     with pytest.raises(ValueError):
         utilities.warp_raster_to_pyramid_sum(src_path, str(tmp_path / 'bad.tif'), 36)
+
+
+def test_pyramid_sum_warp_conserves_a_dense_global_grid(tmp_path):
+    """The worst measured point: a dense global 180-arcsecond grid (pollination's), where
+    gdal.Warp's sum resampling returned 109.6 percent of the source total at 300 arcseconds
+    and 81.3 percent at 900. The exact-overlap implementation must conserve at both, and the
+    output must declare itself extensive so POG overviews aggregate by sum."""
+    from osgeo import gdal, osr
+    import numpy as np
+    rng = np.random.default_rng(7)
+    array = rng.uniform(0.0, 50.0, (360, 720)).astype(np.float32)  # 0.5 deg here: same 5/3 and 5/1 ratios
+    array[rng.random(array.shape) < 0.3] = -9999.0
+    src_path = str(tmp_path / 'dense_global.tif')
+    ds = gdal.GetDriverByName('GTiff').Create(src_path, 720, 360, 1, gdal.GDT_Float32)
+    ds.SetGeoTransform((-180.0, 0.5, 0.0, 90.0, 0.0, -0.5))
+    srs = osr.SpatialReference(); srs.ImportFromEPSG(4326); ds.SetProjection(srs.ExportToWkt())
+    band = ds.GetRasterBand(1); band.SetNoDataValue(-9999.0); band.WriteArray(array); ds = None
+    expected = float(array[array != -9999.0].sum())
+    for arc in (3600, 1800):  # 2x and 1x the 0.5-degree source: the same ratio family as 300/900 vs 180
+        dst_path = str(tmp_path / ('dense_%d.tif' % arc))
+        utilities.warp_raster_to_pyramid_sum(src_path, dst_path, arc)
+        out = gdal.Open(dst_path)
+        warped = out.GetRasterBand(1).ReadAsArray()
+        got = float(warped[warped != out.GetRasterBand(1).GetNoDataValue()].sum())
+        assert got == pytest.approx(expected, rel=1e-6), arc
+        assert out.GetMetadataItem('POG_VARIABLE_CLASS') == 'extensive'

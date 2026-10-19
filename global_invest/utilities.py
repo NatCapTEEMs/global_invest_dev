@@ -12,6 +12,7 @@ and the four 2-way splits. A gap of any other shape is a legitimate sum, not thi
 reached terrestrial_carbon + coastal_carbon and not the other five GEP services.
 """
 from osgeo import gdal
+from osgeo import osr
 import filecmp
 import json
 import mapclassify
@@ -2490,13 +2491,67 @@ def warp_raster_to_pyramid_sum(src_path, dst_path, arcseconds):
                          % (arcseconds, rungs))
     degrees = hb.pyramid_compatible_resolutions[float(arcseconds)]
     ndv = hb.get_ndv_from_path(src_path)
-    gdal.Warp(dst_path, src_path,
-              xRes=degrees, yRes=degrees,
-              outputBounds=(-180.0, -90.0, 180.0, 90.0),
-              dstSRS='EPSG:4326',
-              resampleAlg='sum',
-              srcNodata=ndv, dstNodata=ndv,
-              creationOptions=['COMPRESS=DEFLATE', 'TILED=YES'])
+
+    # Exact overlap aggregation rather than gdal.Warp's sum resampling: measured on the
+    # pollination value raster (180 arcseconds, global), the warp returned 109.6 percent of the
+    # source total at 300 arcseconds and 81.3 percent at 900, so its weights do not conserve.
+    # Each sparse matrix row holds the fraction of every source row (column) covered by one
+    # target row (column); every source cell's fractions sum to one, so the global sum is
+    # conserved by construction rather than by trust in a resampler.
+    from scipy.sparse import coo_matrix
+
+    def overlap(n_src, src_origin, src_step, n_dst, dst_origin, dst_step):
+        dst_lo_all = min(dst_origin, dst_origin + n_dst * dst_step)
+        step = abs(dst_step)
+        rows, cols, vals = [], [], []
+        for j in range(n_src):
+            lo, hi = src_origin + j * src_step, src_origin + (j + 1) * src_step
+            lo, hi = min(lo, hi), max(lo, hi)
+            first = int(np.floor((lo - dst_lo_all) / step))
+            last = int(np.ceil((hi - dst_lo_all) / step))
+            for k in range(max(0, first), min(n_dst, last)):
+                t_lo = dst_lo_all + k * step
+                t_hi = t_lo + step
+                cover = (min(hi, t_hi) - max(lo, t_lo)) / (hi - lo)
+                if cover <= 0:
+                    continue
+                # k counts bands from the low coordinate; map it to the raster index,
+                # which counts from dst_origin in the direction of dst_step.
+                i = k if dst_step > 0 else n_dst - 1 - k
+                rows.append(i); cols.append(j); vals.append(cover)
+        return coo_matrix((vals, (rows, cols)), shape=(n_dst, n_src)).tocsr()
+
+    src = gdal.Open(src_path)
+    gt = src.GetGeoTransform()
+    a = src.GetRasterBand(1).ReadAsArray().astype('float64')
+    valid = np.isfinite(a)
+    if ndv is not None:
+        valid &= (a != ndv)
+    a = np.where(valid, a, 0.0)
+
+    n_dst_y, n_dst_x = int(round(180.0 / degrees)), int(round(360.0 / degrees))
+    wy = overlap(src.RasterYSize, gt[3], gt[5], n_dst_y, 90.0, -degrees)
+    wx = overlap(src.RasterXSize, gt[0], gt[1], n_dst_x, -180.0, degrees)
+    out = wy @ a @ wx.T
+    covered = (wy @ valid.astype('float64') @ wx.T) > 0
+    out_ndv = float(ndv) if ndv is not None else -9999.0
+    out = np.where(covered, out, out_ndv).astype('float32')
+
+    driver = gdal.GetDriverByName('GTiff')
+    ds = driver.Create(dst_path, n_dst_x, n_dst_y, 1, gdal.GDT_Float32,
+                       options=['COMPRESS=DEFLATE', 'TILED=YES'])
+    ds.SetGeoTransform((-180.0, degrees, 0.0, 90.0, 0.0, -degrees))
+    srs = osr.SpatialReference()
+    srs.ImportFromEPSG(4326)
+    ds.SetProjection(srs.ExportToWkt())
+    band = ds.GetRasterBand(1)
+    band.SetNoDataValue(out_ndv)
+    band.WriteArray(out)
+    # Sum-preserved per-cell quantities are extensive by construction; declaring it on the file
+    # is what makes make_path_pog build sum overviews instead of defaulting to covariate means.
+    ds.SetMetadataItem('POG_VARIABLE_CLASS', 'extensive')
+    band.FlushCache()
+    ds = None
     return dst_path
 
 

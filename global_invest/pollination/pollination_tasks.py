@@ -2262,10 +2262,21 @@ def pollination_value_raster_rebuilt(p):
         p.cur_dir, 'poll_value_per_cell_%dusd.tif' % year)
     p.pollination_value_summary_rebuilt_path = os.path.join(
         p.cur_dir, 'poll_value_summary_%dusd.csv' % year)
+    # The published map lives on a pyramid rung. The native 5 km grid is 180 arcseconds, not a
+    # rung, so the per-cell dollars are warped sum-preserving onto 300 arcseconds; registering
+    # it is what sends it through distribute_results, where it becomes a POG (condition 16).
+    # Registration is publication, so it sits before the run_this guard: a skipped task must
+    # still name its results or a resumed distribution silently distributes nothing.
+    p.pollination_value_pyramid_path = utilities.register_result(
+        p, 'pollination', 'pollination_value_per_cell_300sec.tif',
+        os.path.join(p.cur_dir, 'pollination_value_per_cell_300sec.tif'))
     if not p.run_this:
         return
 
     if hb.path_all_exist([p.pollination_value_raster_rebuilt_path, p.pollination_value_summary_rebuilt_path]):
+        if not hb.path_exists(p.pollination_value_pyramid_path):
+            utilities.warp_raster_to_pyramid_sum(
+                p.pollination_value_raster_rebuilt_path, p.pollination_value_pyramid_path, 300)
         hb.log('Pollination value raster already built. Skipping.')
         return True
 
@@ -2466,6 +2477,9 @@ def pollination_value_raster_rebuilt(p):
     df_summary = pd.DataFrame(summary_rows)
     hb.df_write(df_summary, p.pollination_value_summary_rebuilt_path)
 
+    utilities.warp_raster_to_pyramid_sum(
+        p.pollination_value_raster_rebuilt_path, p.pollination_value_pyramid_path, 300)
+
     total = float(np.nansum(value_per_cell))
     hb.log('Pollination value raster: %d crops valued, %.2f bn USD at %d prices.'
            % (len(summary_rows), total / 1e9, year))
@@ -2473,6 +2487,15 @@ def pollination_value_raster_rebuilt(p):
         if crops:
             hb.log('  skipped (%s), %d: %s' % (reason, len(crops), ', '.join(crops[:8])))
     return True
+
+
+def gep_results_distribution(p):
+    """Copy this service's registered results into the output directory. Shared implementation
+    in utilities, which converts every raster it copies into a POG."""
+    publish_inputs(p)
+    if not p.run_this:
+        return p
+    utilities.distribute_results(p, 'pollination')
 
 
 def pollination_value_independence_check(p):
