@@ -560,13 +560,14 @@ def test_our_rebuilt_raster_stays_close_to_the_authors_staged_one():
     the tolerance is set where a real divergence would show without the ordinary difference between
     two builds tripping it.
 
-    The staged author raster is his 2026-08 vintage (world prices, pre-correction crosswalk).
-    Since the 2026-10 adoption of his revisions, a run built on the current rules measures
-    -1.32 percent and correlation 0.9245 against that frozen file -- the price geography moved,
-    not an accident -- so the bands hold BOTH vintages: a comparison row must sit either at the
-    old agreement (the stable pre-adoption runs) or at the measured post-adoption gap. Anything
-    outside both is a drift nobody decided. Restaging his rebuilt 2019 raster restores the single
-    tight band."""
+    The staged author raster is regenerated from his own develop-branch code (2026-10-19, his
+    repo run here with the corrected crosswalk, today's FAO bulks and the staged IMF FX), so
+    both sides carry the October construction and the single tight band holds again: the live
+    comparison measures +0.74 percent at correlation 0.9969, the residual being input vintage
+    (his regeneration reads today's FAO download where ours reads the staged bulks). While his
+    staged raster was still the frozen August vintage, a current-rules build measured -1.32
+    percent at 0.9245 -- the price geography moved by decision -- which is why a correlation
+    collapse is a loud signal, not noise."""
     checked = 0
     for run in _pollination_runs():
         path = os.path.join(run, 'pollination_value_independence_check',
@@ -574,12 +575,8 @@ def test_our_rebuilt_raster_stays_close_to_the_authors_staged_one():
         if not os.path.exists(path):
             continue
         row = pd.read_csv(path).iloc[0]
-        old_vintage_agreement = (abs(row['pct_difference']) < 1.5
-                                 and row['correlation_where_both'] > 0.99)
-        post_adoption_gap = (-1.6 < row['pct_difference'] < -1.0
-                             and 0.90 < row['correlation_where_both'] < 0.95)
-        assert old_vintage_agreement or post_adoption_gap, (
-            run, row['pct_difference'], row['correlation_where_both'])
+        assert abs(row['pct_difference']) < 1.5, (run, row['pct_difference'])
+        assert row['correlation_where_both'] > 0.99, (run, row['correlation_where_both'])
         assert row['cells_in_both'] > 2_000_000, (run, row['cells_in_both'])
         # Both totals are the account's own headline figure and must stay in its neighbourhood.
         assert 3.5e11 < row['ours_independent_usd'] < 4.2e11, run
