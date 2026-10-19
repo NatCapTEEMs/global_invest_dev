@@ -347,7 +347,7 @@ pollination,pollination_fao_production_source_archive_member,Production_Crops_Li
 pollination,pollination_fao_prices_path,global_invest/pollination/fao/bulk/Prices_E_All_Data_(Normalized).csv
 pollination,pollination_fao_prices_source_url,https://bulks-faostat.fao.org/production/Prices_E_All_Data_(Normalized).zip
 pollination,pollination_fao_prices_source_archive_member,Prices_E_All_Data_(Normalized).csv
-pollination,pollination_value_raster_dir,global_invest/pollination/crop_benefits
+pollination,pollination_author_value_dir,global_invest/pollination/crop_benefits
 air_filtration,air_filtration_vsl_path,global_invest/landslide_mitigation/vsl_2026_09/vsl_by_country_2019.csv
 air_filtration,air_filtration_vsl_source,"the account's shared VSL: the rebuilt EPA life-years-lost panel, the same file landslide_mitigation_vsl_panel_path reads, adopted for both mortality services 2026-10-07; the air quality group's raw 221-row vsl.csv it replaces stays staged beside the workbook"
 coastal_protection,coastal_protection_coral_reef_path,global_invest/coastal_protection/coral_reefs_annual_expected_benefit_nfamara.xlsx

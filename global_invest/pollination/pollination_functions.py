@@ -364,7 +364,7 @@ def configure_sufficiency(p, target_year):
     # The parameter is named _dir, so CSV hydration leaves it literal -- only *_path columns run
     # through get_path. Resolve it here or rasterio is handed a path relative to the working
     # directory, which only happens to exist on a machine that runs from base_data.
-    crop_benefits_dir = p.get_path(p.pollination_value_raster_dir)
+    crop_benefits_dir = p.get_path(p.pollination_author_value_dir)
     return SufficiencySettings(
         output_dir=str(p.cur_dir),
         value_raster_dir=str(crop_benefits_dir),
@@ -917,7 +917,8 @@ def crop_pollination_value_density(production_density, price_usd_per_tonne, depe
 
     Args:
         production_density (np.ndarray): tonnes per square kilometre.
-        price_usd_per_tonne (float): producer price, already in the target year's dollars.
+        price_usd_per_tonne (float or np.ndarray): producer price, already in the target
+            year's dollars. An array when each pixel is priced at its own country's median.
         dependence_ratio (float or np.ndarray): the share of this crop's output attributable
             to animal pollination, 0 for a wind-pollinated crop and up to 1 for one that sets
             no fruit without pollinators. An array when the ratio varies over space, which is
@@ -930,7 +931,7 @@ def crop_pollination_value_density(production_density, price_usd_per_tonne, depe
     """
     import numpy as np
     production = np.where(production_density < 0, np.nan, production_density)
-    crop_value_density = production * float(price_usd_per_tonne)
+    crop_value_density = production * np.asarray(price_usd_per_tonne, dtype='float64')
     return crop_value_density * np.asarray(dependence_ratio, dtype='float64'), crop_value_density
 
 
@@ -962,7 +963,7 @@ def find_source_value_raster(p, gep_base_year):
     import re
     # The parameter is named _dir, so hydration leaves it literal; resolve a relative one against
     # the data roots. An already-resolved directory is used as given.
-    source_dir = p.pollination_value_raster_dir
+    source_dir = p.pollination_author_value_dir
     if not os.path.isdir(str(source_dir)):
         source_dir = p.get_path(source_dir)
     candidates = {}
@@ -981,7 +982,7 @@ def find_source_value_raster(p, gep_base_year):
 def available_source_value_years(p):
     """The price years the source author's directory actually holds, for a clear error message."""
     import glob
-    source_dir = p.pollination_value_raster_dir
+    source_dir = p.pollination_author_value_dir
     years = []
     for path in glob.glob(os.path.join(str(source_dir), 'poll_value_global_*usd.tif')):
         match = re.search(r'poll_value_global_(\d{4})usd\.tif$', os.path.basename(path))

@@ -2148,8 +2148,11 @@ def pollination_source_value_raster(p):
     publish_inputs(p)
     year = int(p.gep_base_year)
     file_name = 'poll_value_global_%dusd.tif' % year
-    p.pollination_source_value_raster_path = os.path.join(
-        str(p.pollination_value_raster_dir), file_name)
+    # A _dir parameter is left literal by hydration (only *_path columns run through get_path),
+    # so resolve here; absent stays absent and the task's own handling reports it.
+    p.pollination_source_value_raster_path = str(p.get_path(
+        os.path.join(str(p.pollination_author_value_dir), file_name),
+        raise_error_if_fail=False))
     p.pollination_source_provenance_path = os.path.join(p.cur_dir, 'source_raster_provenance.csv')
     if not p.run_this:
         return
