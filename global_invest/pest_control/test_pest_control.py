@@ -43,7 +43,7 @@ def test_the_crop_map_names_only_real_faostat_items():
         'pest_control')
     qcl = pd.read_csv(os.path.join(base, 'faostat_qcl_2019.csv'))
     items = set(qcl['Item'].unique())
-    mapped = {v for v in pest_control_tasks.FIBL_CROP_TO_FAOSTAT_ITEM.values() if v is not None}
+    mapped = {v for v in pc.FIBL_CROP_TO_FAOSTAT_ITEM.values() if v is not None}
     assert mapped <= items, sorted(mapped - items)
 
 
@@ -55,6 +55,56 @@ def test_the_staged_classification_covers_every_mapped_item():
         'pest_control')
     cls = pd.read_csv(os.path.join(base, 'FAO_classification.csv'), encoding='utf-8-sig')
     groups = dict(zip(cls['FAO_item'], cls['FAO_group']))
-    mapped = {v for v in pest_control_tasks.FIBL_CROP_TO_FAOSTAT_ITEM.values() if v is not None}
+    mapped = {v for v in pc.FIBL_CROP_TO_FAOSTAT_ITEM.values() if v is not None}
     missing = sorted(i for i in mapped if i not in groups)
     assert not missing, missing
+
+
+def test_the_pipeline_function_reproduces_the_published_total():
+    """The factored frame-level pipeline, driven from the staged inputs exactly as the task
+    drives it, returns the account's published figure: $10,338,294,391 at the appendix's
+    premium of 1.38 (and the premium-1.0 reading beside it). This is the import seam the
+    pest engine's no-spread static limit reuses, so the pin is what keeps the two models
+    agreeing on the shared special case."""
+    import os, tempfile, hazelbean as hb
+    from global_invest import utilities
+    p = hb.ProjectFlow(project_dir=os.path.join(tempfile.mkdtemp(), 'anchors'))
+    utilities.initialize_country_paths(p, simplified='30sec')
+    base = utilities.service_data_dir(p, 'pest_control')
+
+    fibl = pest_control_tasks.read_fibl_organic_areas(os.path.join(base, 'Area_org.xlsx'), 2019)
+    names = utilities.collapse_countries_to_r250(p.df_countries)[['iso3_r250_label', 'iso3_r250_name']]
+    name_to_iso3 = dict(zip(names['iso3_r250_name'], names['iso3_r250_label']))
+    name_to_iso3.update(pest_control_tasks.SOURCE_NAME_TO_ISO3)
+    cls = pd.read_csv(os.path.join(base, 'FAO_classification.csv'), encoding='utf-8-sig')
+    qcl = pd.read_csv(os.path.join(base, 'faostat_qcl_2019.csv'))
+    qcl['iso3_r250_label'] = qcl['Area'].map(name_to_iso3)
+    yld = qcl[(qcl['Element'] == 'Yield') & (qcl['Unit'] == 'kg/ha')].dropna(
+        subset=['iso3_r250_label'])[['iso3_r250_label', 'Item', 'Value']].rename(columns={'Value': 'yield_kg_ha'})
+    prc = pd.read_csv(os.path.join(base, 'faostat_pp_2019.csv'))
+    prc['iso3_r250_label'] = prc['Area'].map(name_to_iso3)
+    prc = prc.dropna(subset=['iso3_r250_label'])[['iso3_r250_label', 'Item', 'Value']].rename(columns={'Value': 'price_usd_t'})
+
+    lnrr = {'cereals': 0.52, 'vegetables': 0.41, 'others': 0.26}
+    yield_ratio = {'cereals': 0.82, 'fruit_nuts': 0.92, 'vegetables': 0.81,
+                   'pulses': 0.88, 'oilseeds': 0.84, 'stimulants': 0.92}
+    import csv
+    params = {}
+    with open(os.path.join(os.path.dirname(pest_control_tasks.__file__), '..',
+                           'input_template', 'es_parameters.csv'), encoding='utf-8-sig') as fh:
+        for row in csv.reader(fh):
+            if row and row[0] == 'pest_control':
+                params[row[1]] = row[2]
+    lnrr = {k: float(params['pest_control_effect_lnrr_%s' % k]) for k in lnrr}
+    yield_ratio = {k: float(params['pest_control_yield_ratio_%s' % k]) for k in yield_ratio}
+    premium = float(params['pest_control_price_premium'])
+
+    table, info = pc.pest_control_by_crop_country(
+        fibl, yld, prc, dict(zip(cls['FAO_item'], cls['FAO_group'])), name_to_iso3,
+        lnrr, yield_ratio, premium)
+    total = float(table['pest_control_value'].sum())
+    assert abs(total - 10_338_294_391.30) < 1.0, total
+    no_premium, _ = pc.pest_control_by_crop_country(
+        fibl, yld, prc, dict(zip(cls['FAO_item'], cls['FAO_group'])), name_to_iso3,
+        lnrr, yield_ratio, 1.0)
+    assert abs(float(no_premium['pest_control_value'].sum()) - 7_491_517_675) < 2.0

@@ -21,67 +21,7 @@ from global_invest.pest_control import pest_control_functions as pc
 # FiBL names crops its own way; each name the valuation uses is pinned to one FAOSTAT item so a
 # silent drop cannot occur. A name mapped to None is a FiBL aggregate or wild-collection crop
 # with no FAOSTAT production analogue; its area is reported and excluded, never guessed.
-FIBL_CROP_TO_FAOSTAT_ITEM = {
-    'Almonds': 'Almonds, in shell', 'Andean grains': 'Quinoa', 'Apples': 'Apples',
-    'Apricots': 'Apricots', 'Avocados': 'Avocados', 'Bananas': 'Bananas', 'Barley': 'Barley',
-    'Beans': 'Beans, dry', 'Blackberries': 'Other berries and fruits of the genus vaccinium n.e.c.',
-    'Blueberries': 'Blueberries', 'Buckwheat': 'Buckwheat', 'Cherries': 'Cherries',
-    'Chestnuts': 'Chestnuts, in shell', 'Cocoa': 'Cocoa beans',
-    'Coconuts for oil': 'Coconuts, in shell', 'Coconuts, no details': 'Coconuts, in shell',
-    'Coffee associated with other crops': 'Coffee, green', 'Coffee, no details': 'Coffee, green',
-    'Cotton': 'Seed cotton, unginned', 'Cranberries': 'Cranberries', 'Currants': 'Currants',
-    'Dates': 'Dates', 'Easy peelers': 'Tangerines, mandarins, clementines',
-    'Tangerine': 'Tangerines, mandarins, clementines', 'Figs': 'Figs',
-    'Flax': 'Flax, raw or retted', 'Gooseberries': 'Gooseberries',
-    'Grain maize and corn cob mix': 'Maize (corn)', 'Grapefruit/Pomelos': 'Pomelos and grapefruits',
-    'Grapes, no details': 'Grapes', 'Grapes, other': 'Grapes', 'Grapes, raisins': 'Grapes',
-    'Grapes, table': 'Grapes', 'Grapes, wine': 'Grapes', 'Hazelnuts': 'Hazelnuts, in shell',
-    'Hemp': 'True hemp, raw or retted', 'Hops': 'Hop cones', 'Kiwis': 'Kiwi fruit',
-    'Lemons and limes': 'Lemons and limes', 'Lentils': 'Lentils, dry',
-    'Linseed (oil flax)': 'Linseed', 'Lupine': 'Lupins', 'Mustard': 'Mustard seed',
-    'Nectarines': 'Peaches and nectarines', 'Oats': 'Oats', 'Oil palm': 'Oil palm fruit',
-    'Olives, no details': 'Olives', 'Olives, oil': 'Olives', 'Olives, table': 'Olives',
-    'Oranges': 'Oranges', 'Peaches': 'Peaches and nectarines',
-    'Peaches and nectarines, no details': 'Peaches and nectarines', 'Pears': 'Pears',
-    'Peas': 'Peas, dry', 'Persimmons': 'Persimmons', 'Pineapples': 'Pineapples',
-    'Pistachios': 'Pistachios, in shell', 'Plums': 'Plums and sloes',
-    'Pomegranate': 'Other fruits, n.e.c.', 'Potatoes': 'Potatoes',
-    'Pulses': 'Other pulses n.e.c.', 'Quinces': 'Quinces',
-    'Rape and turnip rape': 'Rape or colza seed', 'Raspberries': 'Raspberries', 'Rice': 'Rice',
-    'Rye': 'Rye', 'Soybeans': 'Soya beans', 'Spelt': 'Wheat', 'Strawberries': 'Strawberries',
-    'Sugar beet': 'Sugar beet', 'Sugarcane': 'Sugar cane', 'Sunflower seed': 'Sunflower seed',
-    'Tea': 'Tea leaves', 'Tobacco': 'Unmanufactured tobacco', 'Triticale': 'Triticale',
-    'Walnuts, with shell': 'Walnuts, in shell', 'Wheat': 'Wheat',
-    'Berries, no details/n.e.c.': 'Other berries and fruits of the genus vaccinium n.e.c.',
-    'Berries, other': 'Other berries and fruits of the genus vaccinium n.e.c.',
-    'Other cereals n.e.c.': 'Cereals n.e.c.', 'Oilseeds, no details': 'Other oil seeds, n.e.c.',
-    'Oilseeds, other, n.e.c': 'Other oil seeds, n.e.c.', 'Brassicas': 'Cabbages',
-    'Black chokeberries': None, 'Buckthorn': None, 'Elder': None, 'Rosehips': None,
-    'Fodder beet': None, 'Fresh vegetables and melons': None,
-    'Fruit, temperate, no details': None, 'Fruit, temperate, other': None,
-    'Fruit, tropical and subtropical, no details': None,
-    'Fruit, tropical and subtropical, other': None, 'Industrial crops, no details': None,
-    'Industrial crops, other': None, 'Nuts, no details': None, 'Nuts, other': None,
-    'Pome fruit, no details': None, 'Pome fruit, other': None,
-    'Protein crops, no details': None, 'Protein crops, other': None, 'Pumpkin seeds': None,
-    'Root crops, no details': None, 'Root crops, other, n.e.c': None,
-    'Stone fruit, no details': None, 'Textile crops, no details': None,
-    'Vegetables and fruit': None, 'Vegetables, fruit': None,
-    'Vegetables, leafy or stalked': None, 'Vegetables, other': None,
-    'Vegetables, root tuber and bulb': None,
-}
 
-# Which effect size and which organic-to-conventional yield ratio each FAO group carries. The
-# vegetable effect extends to oilseeds and pulses and the other-crops effect to stimulants,
-# following the appendix's mapping; groups absent here carry a zero effect, deliberately.
-GROUP_TO_EFFECT = {
-    'Cereals': ('cereals', 'cereals'),
-    'Vegetables': ('vegetables', 'vegetables'),
-    'Oilseeds and oleaginous fruits': ('vegetables', 'oilseeds'),
-    'Pulses (dried leguminous vegetables)': ('vegetables', 'pulses'),
-    'Fruit and nuts': ('others', 'fruit_nuts'),
-    'Stimulant, spice and aromatic crops': ('others', 'stimulants'),
-}
 
 # FAOSTAT and FiBL name countries differently from the account where a state has a long form;
 # the pairs the joins need are spelled out so a silent drop cannot occur.
@@ -155,27 +95,12 @@ def gep_calculation(p):
         return p
     fibl = read_fibl_organic_areas(
         str(p.get_path(p.pest_control_fibl_area_input_path)), int(p.gep_base_year))
-    fibl['item'] = fibl['crop'].map(FIBL_CROP_TO_FAOSTAT_ITEM)
-    unmatched = fibl[fibl['item'].isna()]
-    if len(unmatched):
-        hb.log('  %d FiBL aggregate/wild rows (%.1f%% of area) have no FAOSTAT analogue and are excluded'
-               % (len(unmatched), 100 * unmatched['organic_ha'].sum() / fibl['organic_ha'].sum()))
-    fibl = fibl[fibl['item'].notna()]
-
     names = utilities.collapse_countries_to_r250(p.df_countries)[['iso3_r250_label', 'iso3_r250_name']]
     name_to_iso3 = dict(zip(names['iso3_r250_name'], names['iso3_r250_label']))
     name_to_iso3.update(SOURCE_NAME_TO_ISO3)
-    fibl['iso3_r250_label'] = fibl['country'].map(name_to_iso3)
-    unmapped = sorted(fibl[fibl['iso3_r250_label'].isna()]['country'].unique())
-    if unmapped:
-        hb.log('  %d FiBL countries have no mapping and their areas are dropped: %s'
-               % (len(unmapped), ', '.join(unmapped[:8])))
-    fibl = fibl.dropna(subset=['iso3_r250_label'])
 
     cls = pd.read_csv(str(p.get_path(p.pest_control_fao_classification_input_path)),
                       encoding='utf-8-sig')
-    fibl['group'] = fibl['item'].map(dict(zip(cls['FAO_item'], cls['FAO_group'])))
-
     qcl = pd.read_csv(str(p.get_path(p.pest_control_faostat_yield_input_path)))
     qcl['iso3_r250_label'] = qcl['Area'].map(name_to_iso3)
     yld = qcl[(qcl['Element'] == 'Yield') & (qcl['Unit'] == 'kg/ha')].dropna(
@@ -186,17 +111,6 @@ def gep_calculation(p):
     prc = prc.dropna(subset=['iso3_r250_label'])[['iso3_r250_label', 'Item', 'Value']]
     prc = prc.rename(columns={'Value': 'price_usd_t'})
 
-    d = fibl.merge(yld, left_on=['iso3_r250_label', 'item'],
-                   right_on=['iso3_r250_label', 'Item'], how='left').drop(columns=['Item'])
-    d = d.merge(prc, left_on=['iso3_r250_label', 'item'],
-                right_on=['iso3_r250_label', 'Item'], how='left').drop(columns=['Item'])
-    n_yield_filled = int(d['yield_kg_ha'].isna().sum())
-    n_price_filled = int(d['price_usd_t'].isna().sum())
-    d['yield_kg_ha'] = d['yield_kg_ha'].fillna(d['item'].map(yld.groupby('Item')['yield_kg_ha'].median()))
-    d['price_usd_t'] = d['price_usd_t'].fillna(d['item'].map(prc.groupby('Item')['price_usd_t'].median()))
-    hb.log('  %d yields and %d prices filled with the item\'s global median (the owner imputes with mixed models here)'
-           % (n_yield_filled, n_price_filled))
-
     lnrr = {'cereals': float(p.pest_control_effect_lnrr_cereals),
             'vegetables': float(p.pest_control_effect_lnrr_vegetables),
             'others': float(p.pest_control_effect_lnrr_others)}
@@ -206,11 +120,18 @@ def gep_calculation(p):
                    'pulses': float(p.pest_control_yield_ratio_pulses),
                    'oilseeds': float(p.pest_control_yield_ratio_oilseeds),
                    'stimulants': float(p.pest_control_yield_ratio_stimulants)}
-    d['effect_lnrr'] = d['group'].map(lambda g: lnrr[GROUP_TO_EFFECT[g][0]] if g in GROUP_TO_EFFECT else 0.0)
-    d['yield_ratio'] = d['group'].map(lambda g: yield_ratio[GROUP_TO_EFFECT[g][1]] if g in GROUP_TO_EFFECT else 1.0)
-
     premium = float(p.pest_control_price_premium)
-    d = pc.pest_control_value(d, premium)
+    d, info = pc.pest_control_by_crop_country(
+        fibl, yld, prc, dict(zip(cls['FAO_item'], cls['FAO_group'])), name_to_iso3,
+        lnrr, yield_ratio, premium)
+    if info['n_unmatched_fibl']:
+        hb.log('  %d FiBL aggregate/wild rows (%.1f%% of area) have no FAOSTAT analogue and are excluded'
+               % (info['n_unmatched_fibl'], 100 * info['unmatched_area_share']))
+    if info['unmapped_countries']:
+        hb.log('  %d FiBL countries have no mapping and their areas are dropped: %s'
+               % (len(info['unmapped_countries']), ', '.join(info['unmapped_countries'][:8])))
+    hb.log('  %d yields and %d prices filled with the item\'s global median (the owner imputes with mixed models here)'
+           % (info['n_yield_filled'], info['n_price_filled']))
     d.to_csv(os.path.join(p.cur_dir, 'pest_control_by_crop_country.csv'),
              index=False, encoding='utf-8-sig')
 
