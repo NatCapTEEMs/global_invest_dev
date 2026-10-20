@@ -20,15 +20,23 @@ KG_PER_TONNE = 1000.0
 
 
 def yield_benefit_from_lnrr(lnrr):
-    """The proportional yield benefit implied by a log response ratio: exp(lnRR) - 1.
+    """The share of OBSERVED production the service provides: 1 - exp(-lnRR).
+
+    Boldorini et al.'s lnRR is ln(yield with predators / yield without), and the observed
+    organic yields already have the predators present, so the avoided loss measured from the
+    observed level is 1 - exp(-lnRR). The earlier exp(lnRR) - 1 read the observed yield as the
+    without-enemies yield and overstated the service by the factor exp(lnRR); the orientation
+    was confirmed by the service owner in writing on 2026-10-20, whose own current script
+    (10_biocontrol_effects.R) applies the same share per Monte Carlo draw.
 
     Args:
         lnrr: the meta-analytic log response ratio, elementwise over whatever is passed.
 
     Returns:
-        The proportional benefit (0.13 means yields are 13 percent higher with the service).
+        The share of observed production attributable to the service (0.12 means 12 percent
+        of what is harvested is owed to the predators).
     """
-    return np.exp(lnrr) - 1.0
+    return 1.0 - np.exp(-np.asarray(lnrr))
 
 
 FIBL_CROP_TO_FAOSTAT_ITEM = {

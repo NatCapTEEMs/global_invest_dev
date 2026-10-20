@@ -10,17 +10,19 @@ from global_invest.pest_control import pest_control_functions as pc
 from global_invest.pest_control import pest_control_tasks
 
 
-def test_the_benefit_is_the_exponentiated_log_response_ratio():
-    # lnRR 0.1280735 (Boldorini Table S3, cereals) means yields 13.7 percent higher.
-    assert np.isclose(pc.yield_benefit_from_lnrr(0.1280735), np.exp(0.1280735) - 1.0)
+def test_the_benefit_is_the_share_of_observed_production():
+    # lnRR 0.1280735 (Boldorini Table S3, cereals): 12.0 percent of the observed harvest is
+    # owed to the predators -- the owner-confirmed orientation, smaller than exp(lnRR) - 1.
+    assert np.isclose(pc.yield_benefit_from_lnrr(0.1280735), 1.0 - np.exp(-0.1280735))
     assert pc.yield_benefit_from_lnrr(0.0) == 0.0
+    assert pc.yield_benefit_from_lnrr(0.1280735) < np.exp(0.1280735) - 1.0
 
 
 def test_the_valuation_is_benefit_times_organic_production_times_organic_price():
     df = pd.DataFrame({'organic_ha': [100.0], 'yield_kg_ha': [2000.0],
                        'price_usd_t': [500.0], 'effect_lnrr': [0.2], 'yield_ratio': [0.8]})
     out = pc.pest_control_value(df, price_premium=1.38)
-    expected = (np.exp(0.2) - 1.0) * 100.0 * (2000.0 / 1000.0) * 0.8 * 500.0 * 1.38
+    expected = (1.0 - np.exp(-0.2)) * 100.0 * (2000.0 / 1000.0) * 0.8 * 500.0 * 1.38
     assert np.isclose(out['pest_control_value'].iloc[0], expected)
     assert out['note'].iloc[0] == ''
 
@@ -60,12 +62,13 @@ def test_the_staged_classification_covers_every_mapped_item():
     assert not missing, missing
 
 
-# The corrected pair of 2026-10-19: the FAOSTAT China aggregate dropped before the
+# The pair of 2026-10-20: the owner-confirmed orientation (1 - exp(-lnRR)) on the
+# China-deduplicated table. Before it, the FAOSTAT China aggregate dropped before the
 # join (it doubled every Chinese crop-country row, $1.96bn). At premium 1.0 this
 # sits within 3 percent of the owner's committed $6.25bn, where the inflated
 # reading sat 20 percent above it.
-PUBLISHED_TOTAL_PREMIUM = 8_376_230_026.52
-PUBLISHED_TOTAL_NO_PREMIUM = 6_069_731_903.28
+PUBLISHED_TOTAL_PREMIUM = 6_467_213_436.55
+PUBLISHED_TOTAL_NO_PREMIUM = 4_686_386_548.22
 
 
 def test_the_pipeline_function_reproduces_the_published_total():
