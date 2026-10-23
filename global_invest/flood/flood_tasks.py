@@ -2829,6 +2829,8 @@ def gep_calculation(p):
     service_results, already_done = utilities.begin_gep_calculation(p, 'flood')
     if already_done:
         return
+    if not p.run_this:
+        return
 
     computed = p.flood_gep_path if p.flood_gep_path else None
     if computed is not None and hb.path_exists(computed):

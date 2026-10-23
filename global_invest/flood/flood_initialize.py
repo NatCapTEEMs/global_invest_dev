@@ -42,6 +42,10 @@ def build_flood_task_tree(p):
     p.compute_service_flow_task = p.add_task(flood_tasks.task_compute_service_flow)
     p.compute_flood_damages_task = p.add_task(flood_tasks.task_compute_flood_damages)
     p.compute_flood_gep_task = p.add_task(flood_tasks.task_compute_flood_gep)
+    # The shared-table task is part of the tree: without it the account's
+    # gep_by_country_base_year has no producer, and the stable project was caught carrying a
+    # stale damage-column artifact precisely because nothing could regenerate it.
+    p.flood_gep_calculation_task = p.add_task(flood_tasks.gep_calculation)
     return p
 
 
@@ -57,6 +61,7 @@ def build_flood_accounting_task_tree(p):
     build_flood_task_tree(p)
     p.compute_flood_damages_task.run = 0
     p.compute_flood_gep_task.run = 0
+    p.flood_gep_calculation_task.run = 0
     return p
 
 
@@ -67,6 +72,7 @@ def build_flood_valuation_task_tree(p):
     p.build_sda_task.run = 0
     p.compute_service_flow_task.run = 0
     p.compute_flood_gep_task.run = 0
+    p.flood_gep_calculation_task.run = 0
     return p
 
 
