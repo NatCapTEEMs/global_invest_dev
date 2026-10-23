@@ -29,6 +29,8 @@ import hazelbean as hb
 from global_invest import utilities
 from global_invest.pollination import pollination_functions as pf
 
+POLLINATION_ZONE_SECTOR_SIGNATURE = 'pollination_zone_sector_values_signature.json'
+
 logger = logging.getLogger(__name__)
 
 
@@ -2932,3 +2934,167 @@ def build_retained_table(p, cfg, base_map, denominator_path, anchor_years,
             futures[year]=pf.zonal_weighted_sum(rf,area,zones,labels)
         frames.append(pf.annual_retained_rows(bases,futures,unpaired,scenario,base_year,p.pollination_shock_acts))
     return pd.concat(frames,ignore_index=True)
+
+
+def pollination_zone_sector_values(p):
+    """Base-year pollination and crop value per region-AEZ zone and GTAP sector.
+
+    The economic exporter turns a pollination dollar change into a share of the sector's CROP
+    output, so it needs both dollar quantities per zone-sector at the base year.
+
+    The valuation is the account's own: the same median-price table, the same price mode, the
+    same dependence ratios and the same per-crop value function the value rasters use. Only the
+    last step differs -- the densities are summed into zones here instead of being written out
+    as rasters.
+
+    Zones are the native r50xAEZ polygons burned onto the production grid. Resampling a
+    pre-rasterized zone map onto this grid moves boundary assignments, which can hand a zone
+    provision with no denominator behind it.
+    """
+    publish_inputs(p)
+    p.pollination_zone_sector_values_path = os.path.join(
+        p.cur_dir, 'pollination_zone_sector_values_native_2023usd.csv')
+    p.pollination_zone_sector_crop_inventory_path = os.path.join(
+        p.cur_dir, 'pollination_zone_sector_crop_inventory.csv')
+    if not p.run_this:
+        return
+
+    # Stated, not inherited: gep_base_year tracks a different artifact and a different year.
+    production_year = int(getattr(p, 'pollination_zone_sector_production_year', 2020))
+    dollar_year = int(getattr(p, 'pollination_zone_sector_dollar_year', 2023))
+
+    production_dir = p.get_path(os.path.join(
+        'global_invest', 'pollination', 'cropgrids', 'production_%d' % production_year))
+    production_rasters = sorted(glob.glob(os.path.join(production_dir, '*.tif')))
+    if not production_rasters:
+        raise NameError('no production rasters for %d in %s' % (production_year, production_dir))
+    boundary_path = str(p.region_boundary_path)
+    zone_labels_path = str(p.pollination_zone_labels_path)
+    prices_path = str(p.get_path(median_prices_ref_path(p.pollination_price_years)))
+    correspondence_path = str(p.pollination_crop_sector_correspondence_path)
+
+    outputs = [p.pollination_zone_sector_values_path,
+               p.pollination_zone_sector_crop_inventory_path]
+    # The service's own es_parameters and their input fingerprints come from the shared helper;
+    # light_inputs carries what this task reads that is not among them.
+    light = tuple(production_rasters) + (boundary_path, zone_labels_path, prices_path,
+                                         correspondence_path)
+    reason = utilities.reuse_reason(p, 'pollination', outputs,
+                                    POLLINATION_ZONE_SECTOR_SIGNATURE, light_inputs=light)
+    if reason is None:
+        hb.log('  zone-sector values: reusing %s'
+               % os.path.basename(p.pollination_zone_sector_values_path))
+        return
+    hb.log('  zone-sector values: recomputing (%s)' % reason)
+
+    crosswalk = hb.df_read(p.pollination_crosswalk_fao_cropgrids_path)
+    median_prices = pd.read_parquet(prices_path)
+    price_mode = str(p.pollination_price_mode)
+    if price_mode not in ('country', 'world'):
+        raise ValueError("pollination_price_mode must be 'country' or 'world', got %r" % price_mode)
+    crosswalk_m49 = hb.df_read(p.get_path(p.pollination_crosswalk_m49_iso3_path))
+    dependence = pollination_dependence_by_item(pd.read_parquet(p.pollination_dependence_table_path))
+    deflator = utilities.usd_deflation_factor(
+        load_shared_cpi(p), pf.price_window_centre_year(p.pollination_price_years), dollar_year)
+    corr = hb.df_read(correspondence_path)
+    crop_sector = dict(zip(corr['cropgrids_label'].astype(str),
+                           corr['gtapv7_label'].astype(str).str.upper()))
+    coffee_split = hb.df_read(p.pollination_coffee_split_path)
+    coffee_by_country = pf.coffee_dependence_by_country(coffee_split)
+    coffee_fallback = pf.coffee_dependence_fallback(coffee_split)
+    country_ids, _ = utilities.read_raster(str(p.pollination_cropgrids_country_raster_path))
+    country_ids_filled = pf.nearest_country_ids(country_ids.astype('int32'))
+    hb.log('Zone-sector values: %d crops over %d sectors, %d production priced in %d USD '
+           '(%s prices, deflator %.4f)'
+           % (len(crop_sector), len(set(crop_sector.values())), production_year, dollar_year,
+              price_mode, deflator))
+
+    # The area raster _zonal_context already builds on this grid, rather than a second one here.
+    _, area_km2, zone_array, _ = _zonal_context(p, production_rasters[0], boundary_path)
+    zone_labels = hb.df_read(zone_labels_path)
+    n_zones = max(int(zone_array.max()), int(zone_labels['ee_r50_aez18_id'].max())) + 1
+    zone_flat = np.clip(zone_array.astype('int64').ravel(), 0, n_zones - 1)
+    del zone_array
+
+    sectors = sorted(set(crop_sector.values()))
+    poll = {s: np.zeros(n_zones, dtype='float64') for s in sectors}
+    crop = {s: np.zeros(n_zones, dtype='float64') for s in sectors}
+    inventory = []
+
+    for crop_name in sorted(crosswalk['cropgrids_2024'].dropna().unique()):
+        row = crosswalk[crosswalk['cropgrids_2024'] == crop_name].iloc[0]
+        item_code = pd.to_numeric(row['item_code_fao'], errors='coerce')
+        raster_path = os.path.join(production_dir,
+                                   'production_%s_%d.tif' % (crop_name, production_year))
+        sector = crop_sector.get(crop_name)
+        price_rows = (median_prices[median_prices['item_code_fao'].astype(int) == int(item_code)]
+                      if not pd.isna(item_code) else None)
+        if pd.isna(item_code):
+            why = 'no FAO item code in the crosswalk'
+        elif not hb.path_exists(raster_path):
+            why = 'no production raster for %d' % production_year
+        elif price_rows is None or price_rows.empty:
+            why = 'no median price for the item'
+        elif not sector:
+            why = 'crop absent from the crop-sector correspondence'
+        else:
+            why = None
+        if why is not None:
+            # Named rather than dropped in silence: an omitted crop removes real value from a
+            # denominator, and this inventory is what makes that visible afterwards.
+            inventory.append({'crop': crop_name, 'sector': sector or '',
+                              'included': False, 'reason': why})
+            continue
+
+        item_code = int(item_code)
+        if price_mode == 'country':
+            price_value, _ = pf.price_raster_by_country(
+                price_rows, country_ids_filled, crosswalk_m49, deflator)
+        else:
+            world_rows = price_rows[price_rows['agg_level'] == 'world']
+            scalar = (float(world_rows['price_median_usd_tonne'].iloc[0]) if not world_rows.empty
+                      else float(price_rows['price_median_usd_tonne'].median()))
+            price_value = scalar * deflator
+        ratio = float(dependence.get(item_code, 0.0))
+        if item_code == pf.COFFEE_ITEM_CODE_FAO and p.pollination_blend_coffee_dependence:
+            ratio = pf.dependence_raster_from_country_lookup(
+                country_ids_filled, coffee_by_country, coffee_fallback)
+
+        production_density, _ = utilities.read_raster(raster_path)
+        # The account's own per-crop valuation, so the table and the value rasters cannot drift.
+        # It returns USD per square kilometre, hence the area multiply before summing.
+        pollination_density, crop_density = pf.crop_pollination_value_density(
+            production_density, price_value, ratio)
+        poll[sector] += np.bincount(
+            zone_flat, weights=np.nan_to_num(pollination_density * area_km2).ravel(),
+            minlength=n_zones)
+        crop[sector] += np.bincount(
+            zone_flat, weights=np.nan_to_num(crop_density * area_km2).ravel(),
+            minlength=n_zones)
+        inventory.append({'crop': crop_name, 'sector': sector, 'included': True, 'reason': ''})
+
+    rows = [{'ee_r50_aez18_id': zid, 'ACTS': s,
+             'poll_usd_base_unweighted': poll[s][zid], 'crop_usd_base': crop[s][zid]}
+            for s in sectors for zid in range(1, n_zones)
+            if crop[s][zid] > 0 or poll[s][zid] > 0]
+    out = pd.DataFrame(rows).merge(
+        zone_labels[['ee_r50_aez18_id', 'aez18_id', 'gtapv7_r50_label']],
+        on='ee_r50_aez18_id', how='left')
+    out['ENDW'] = 'AEZ' + out['aez18_id'].astype(int).astype(str)
+    out['REG'] = out['gtapv7_r50_label'].astype(str).str.upper()
+    out = out[['ENDW', 'ACTS', 'REG', 'poll_usd_base_unweighted', 'crop_usd_base']]
+
+    # <name>.tmp then rename, the repo's convention, so a killed run leaves no half-table at the
+    # final path. The signature is written only after BOTH outputs land, so a crash between them
+    # leaves none and the next run recomputes.
+    for frame, target in ((out, p.pollination_zone_sector_values_path),
+                          (pd.DataFrame(inventory), p.pollination_zone_sector_crop_inventory_path)):
+        tmp = target + '.tmp'
+        frame.to_csv(tmp, index=False, encoding='utf-8-sig')
+        os.replace(tmp, target)
+    utilities.write_reuse_signature(p, 'pollination', outputs,
+                                    POLLINATION_ZONE_SECTOR_SIGNATURE, light_inputs=light)
+    included = sum(1 for r in inventory if r['included'])
+    hb.log('  zone-sector values: %d rows over %d sectors from %d of %d crops -> %s'
+           % (len(out), len(sectors), included, len(inventory),
+              os.path.basename(p.pollination_zone_sector_values_path)))

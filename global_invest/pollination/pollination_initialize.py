@@ -94,6 +94,10 @@ def add_pollination_tasks(p, parent=None):
     pollination-specific defaults in the task: the output CSV into p.es_shock_dir, the r50xAEZ
     boundary via p.get_path.
     """
+    # Before the shock task and on both branches: es_shock_export reads this table whichever
+    # pollination shock ran.
+    p.pollination_zone_sector_values_task = p.add_task(
+        pollination_tasks.pollination_zone_sector_values, parent=parent)
     dynamic = 'pollination' in getattr(p, 'dynamic_es', [])
     if not dynamic:   # not requested dynamic -> read the frozen dependency table
         p.pollination_shock_task = p.add_task(pollination_tasks.pollination_shock_static, parent=parent)
