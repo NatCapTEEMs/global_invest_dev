@@ -1049,12 +1049,25 @@ def test_retained_fraction_raster_runs_the_folded_path_and_caches(tmp_path):
 
 
 def test_totals_pair_matches_the_authors_october_revision():
-    """The 2026-10 anchor: both published totals replicate the author's revised pair
-    ($379.5bn and $157.50bn, his email of 2026-10-17) on every run built on the current rules.
-    Pre-adoption runs carry the old pair and are recognised rather than failed, the same
-    two-vintage logic as the raster pin above."""
+    """The anchor pair: $379.5011bn unweighted and $160.2358bn weighted — the author's own
+    revised figure ($160.2bn, his email of 2026-10-23) to his one-decimal rounding.
+
+    His revision adds ESA 160, 170 and 180 (flooded vegetation, the Science-paper habitat set)
+    to the sufficiency class table; nothing else changed. With this code and the previous table
+    the figure is 157.4983 (the 2026-10-19 anchor, which never stopped reproducing), so his
+    change is worth +1.74% here against the +1.71% his email implies, and the pair replicates
+    him exactly at both ends. ⚠ The lesson that cost a day, recorded so it is not relearnt:
+    the environment's editable install points at the MAIN checkout, so a run launched as a
+    script (rather than inline from a worktree cwd) silently imports whatever branch that
+    checkout is on. A 2026-10-23 rerun did exactly that and produced 161.9217/159.1435 — a
+    different code tree's numbers, briefly mistaken for an unexplained drift. Rebuilds must
+    force the import (PYTHONPATH to the intended tree) and assert global_invest.__file__.
+    Pre-revision runs carry the old pairs and are recognised rather than failed, the same
+    multi-vintage logic as the raster pin above; at least one run must carry the CURRENT pair
+    or the pin would pass on history alone."""
     import glob as _glob
     checked = 0
+    current_runs = 0
     for run in _pollination_runs():
         path = os.path.join(run, 'pollination_sufficiency_weighted',
                             'pollination_totals_with_and_without_sufficiency.csv')
@@ -1062,8 +1075,11 @@ def test_totals_pair_matches_the_authors_october_revision():
             continue
         df = pd.read_csv(path).set_index('sufficiency_applied')['total_usd_2019_bn']
         unweighted, weighted = float(df[False]), float(df[True])
+        current = abs(unweighted - 379.5011) < 0.05 and abs(weighted - 160.2358) < 0.05
         october = abs(unweighted - 379.5011) < 0.05 and abs(weighted - 157.4983) < 0.05
         august = abs(unweighted - 388.1426) < 0.05 and abs(weighted - 163.4501) < 0.2
-        assert october or august, (run, unweighted, weighted)
+        assert current or october or august, (run, unweighted, weighted)
         checked += 1
+        current_runs += int(current)
     assert checked >= 1, 'no run on this machine carries the totals pair'
+    assert current_runs >= 1, 'no run carries the current anchor (379.5011 / 160.2358)'
