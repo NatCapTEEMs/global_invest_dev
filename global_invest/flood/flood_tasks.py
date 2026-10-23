@@ -2850,6 +2850,9 @@ def gep_calculation(p):
         df_gep = df_gep.rename(columns={'gep_const2019_usd': 'flood_gep'})
         source = "the author's export (%s)" % os.path.basename(str(p.flood_gep_for_merge_path))
     service_results['flood_gep_source'] = source
+    # Only the key and the value: the source tables carry their own country-name columns, and
+    # merging them in beside the account's produces _x/_y duplicates in the published table.
+    df_gep = df_gep[['iso3_r250_label', 'flood_gep']]
     df_gep['year'] = int(p.gep_base_year)
     # The country attributes every other service's table carries, so this output can be read,
     # grouped and reported the same way.

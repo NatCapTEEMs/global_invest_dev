@@ -58,7 +58,7 @@ air_filtration_total: "$17.48bn"
 sandstorm_total: "$567.71bn"
 wq_usd: "$638.34bn"
 wq_intl: "$655.91bn"
-flood_total: "$112.78bn"
+flood_total: "$11.40bn"
 xe_total: "$1.05T"
 terrestrial_total_r3: "$3.4627T"
 xe_committed: "$1,140.4bn"
@@ -311,7 +311,7 @@ format:
 | air_filtration | {{< meta air_filtration_total >}} | yes.  |
 | sandstorm_prevention | {{< meta sandstorm_total >}} | yes.  |
 | water_quality | {{< meta wq_usd >}} USD and {{< meta wq_intl >}} intl$ | partially. We recompute the nutrient valuations and reproduce the committed intermediates; the headline international-dollar column is read through |
-| flood | {{< meta flood_total >}} | partially. Our recompute matches the pipeline's table, Morocco excepted |
+| flood | {{< meta flood_total >}} avoided damage; the $112.78bn the table carried until 2026-10-24 was expected annual damage, the wrong quantity | partially. Our recompute matches the pipeline's table, Morocco excepted |
 | local_climate_regulation | {{< meta lcr_cas >}} adopted (the CAS method, 2026-10-08) | partly. Their results workbook is the carried figure; the reproduction needs one public MODIS download against their staged pipeline. The old pipeline's {{< meta lcr_ours >}} lineage and the superseded committed {{< meta lcr_committed >}} stay as the record |
 | extractive_energy | {{< meta xe_total >}} (gas + coal + petroleum) | yes.  |
 | timber_provision | {{< meta timber_total >}} | yes. |
