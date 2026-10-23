@@ -167,17 +167,30 @@ def test_subsistence_computed_value_reproduces_the_committed_output():
     ours, ref = merged['subsistence_fisheries_gep'], merged['gep_subistence_fish']
 
     both = ours.notna() & ref.notna()
-    assert both.sum() == 65
+    # 53, not the reference's 65: the twelve territory rows that carried a verbatim copy of
+    # their sovereign's national estimate are NA since 2026-10-23 (Ken Bagstad's double-count
+    # flag, confirmed against the release). The committed reference shares the join's lineage,
+    # so it still carries the copies; agreement is checked on everything except them.
+    assert both.sum() == 53
     assert np.allclose(ours[both], ref[both], rtol=1e-8)
 
+    territory_rows = merged.loc[ours.isna() & ref.notna() & (ref > 0), 'iso3_r250_label']
+    assert sorted(territory_rows) == ['ALA', 'BVT', 'CCK', 'CXR', 'ESH', 'GLP', 'GUF', 'MTQ',
+                                      'MYT', 'REU', 'SJM', 'TKL']
+
     # Where we cannot derive a value the reference states zero, so no money is lost.
-    only_reference = ref.notna() & ours.isna()
+    only_reference = ref.notna() & ours.isna() & (ref == 0)
     assert only_reference.sum() == 20
-    assert (ref[only_reference] == 0).all()
     # And we never invent a country the reference does not value.
     assert not (ours.notna() & ref.isna()).any()
 
-    assert np.isclose(ours.sum(), reference['gep_subistence_fish'].sum(), rtol=1e-8)
+    # The totals differ by exactly the twelve removed copies, and by nothing else. 1e-9, not
+    # tighter: the staged CSV stores rounded values ($0.19 on $7.44bn), the same reason the
+    # run-level pin uses it.
+    removed = merged.loc[merged['iso3_r250_label'].isin(territory_rows), 'gep_subistence_fish']
+    assert np.isclose(ours.sum(), reference['gep_subistence_fish'].sum() - removed.sum(),
+                      rtol=1e-9)
+    assert np.isclose(removed.sum(), 482_173_046, rtol=1e-4)
 
 
 def test_subsistence_recompute_matches_the_releases_own_published_total():
@@ -207,6 +220,25 @@ def test_subsistence_sums_species_rather_than_taking_the_first_published_value()
     out = ff.subsistence_fisheries_by_country(lynch, countries).set_index('iso3_r250_label')
     assert np.isclose(out.loc['ATL', 'subsistence_fisheries_gep'], 40.0)   # 2x5 + 3x10
     assert np.isnan(out.loc['NOW', 'subsistence_fisheries_gep'])           # absent stays NaN
+
+
+def test_subsistence_territories_do_not_inherit_their_sovereigns_estimate():
+    """A territory's brk_name is its sovereign's, so the name join copies the national
+    estimate onto it; only the row that IS the sovereign keeps the value, satellites stay NA
+    (missing, not zero), and a territory with its own row in the release keeps its own."""
+    lynch = pd.DataFrame({'admin': ['Atlantis', 'Freedonia'],
+                          'total_biomass_harv_kg_unitofprice': [2.0, 7.0],
+                          'final_kg_price_USD': [5.0, 2.0],
+                          'TCUV': [10.0, 14.0]})
+    countries = pd.DataFrame({
+        'brk_name': ['Atlantis', 'Atlantis', 'Freedonia'],
+        'ee_r264_id': [1, 2, 3], 'iso3_r250_id': [1, 2, 3],
+        'iso3_r250_label': ['ATL', 'ATI', 'FRE'],
+        'ee_r264_description': ['Atlantis', 'Atlantis Island Territory', 'Freedonia']})
+    out = ff.subsistence_fisheries_by_country(lynch, countries).set_index('iso3_r250_label')
+    assert np.isclose(out.loc['ATL', 'subsistence_fisheries_gep'], 10.0)  # the sovereign keeps it
+    assert np.isnan(out.loc['ATI', 'subsistence_fisheries_gep'])          # the copy is removed
+    assert np.isclose(out.loc['FRE', 'subsistence_fisheries_gep'], 14.0)  # own row, own value
 
 
 # ---------------------------------------------------------------------------
@@ -442,25 +474,40 @@ def test_every_subsistence_run_reproduces_the_staged_reference_total():
         'subsistence', 'gep-subsistence-fisheries.csv')
     if not os.path.exists(reference_path):
         pytest.skip('the staged reference is not on this machine')
-    reference_total = pd.read_csv(reference_path)['gep_subistence_fish'].sum()
+    reference = pd.read_csv(reference_path)
+    reference_total = reference['gep_subistence_fish'].sum()
+    # The twelve territory rows that carried a verbatim copy of their sovereign's national
+    # estimate are NA since 2026-10-23, so a current run totals the reference MINUS those
+    # copies. Pre-fix runs on the machine carry the old total and are recognised rather than
+    # failed; at least one run must carry the current total or the pin passes on history alone.
+    territory_labels = ['ALA', 'BVT', 'CCK', 'CXR', 'ESH', 'GLP', 'GUF', 'MTQ',
+                        'MYT', 'REU', 'SJM', 'TKL']
+    deduplicated_total = reference_total - reference.loc[
+        reference['iso3_r250_label'].isin(territory_labels), 'gep_subistence_fish'].sum()
 
     checked = 0
+    current_runs = 0
     for run in _fisheries_runs():
         for produced in glob.glob(os.path.join(run, '**', 'subsistence_gep_by_country.csv'),
                                   recursive=True):
             ours = pd.read_csv(produced)
             column = [c for c in ours.columns if c.endswith('_gep')][0]
+            total = ours[column].sum()
             # 1e-9, not tighter: the staged CSV stores its values rounded, and the two totals
             # differ by $0.24 on $7.92bn -- 3.1e-11 relative, which is that rounding rather than a
             # disagreement. A tolerance tighter than the reference's own precision tests the file
             # format, not the science.
-            assert ours[column].sum() == pytest.approx(reference_total, rel=1e-9), (
-                '%s totals %r against the staged reference %r'
-                % (produced, ours[column].sum(), reference_total))
+            current = total == pytest.approx(deduplicated_total, rel=1e-9)
+            pre_fix = total == pytest.approx(reference_total, rel=1e-9)
+            assert current or pre_fix, (
+                '%s totals %r against the staged reference %r (deduplicated %r)'
+                % (produced, total, reference_total, deduplicated_total))
             assert len(ours) == 250, '%s publishes %d rows' % (produced, len(ours))
             checked += 1
+            current_runs += int(current)
     if not checked:
         pytest.skip('no fisheries run on this machine has written a subsistence table')
+    assert current_runs >= 1, 'no run carries the deduplicated total'
 
 
 def test_the_owners_revised_aquaculture_shares_our_distribution():

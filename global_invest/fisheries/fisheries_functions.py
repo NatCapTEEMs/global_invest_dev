@@ -276,9 +276,30 @@ def subsistence_fisheries_by_country(lynch_df, countries_df):
 
     The join is on brk_name, and a country absent from the release stays NaN: no data is not
     zero value.
+
+    ⚠ A territory's brk_name is its SOVEREIGN's name (Christmas Island carries 'Australia'),
+    so a bare name join hands every territory a verbatim copy of its parent's whole national
+    estimate — the double count Ken Bagstad's 2026-10-23 LLM screen flagged, worth $482M over
+    twelve territory rows in six sovereignty groups. The removal rests on the rows being
+    copies, not independent estimates: whether the release's national population nominally
+    covers the territories is not stated by the source, but counting one estimate several
+    times is wrong either way. Where several rows share a joined brk_name and one of them IS the name
+    (the sovereign's own row), only that row keeps the value; the satellites become NaN —
+    missing, not zero, per the account's territory rule. A duplicate group with no
+    name-matching row would mean the value cannot be placed at all, so every row in it is
+    blanked rather than guessed.
     """
+    import numpy as np
+    import pandas as pd
     data = subsistence_value_by_admin(lynch_df)
     df = countries_df.merge(data, how='left', left_on='brk_name', right_on='admin')
+    joined = df['subsistence_fisheries_gep'].notna()
+    own_row = df['brk_name'] == df['ee_r264_description']
+    group_sizes = df[joined].groupby('brk_name')['iso3_r250_label'].transform('size')
+    in_duplicate_group = pd.Series(False, index=df.index)
+    in_duplicate_group.loc[group_sizes.index] = group_sizes > 1
+    value_columns = ['subsistence_fisheries_gep', 'subsistence_fisheries_gep_published']
+    df.loc[joined & in_duplicate_group & ~own_row, value_columns] = np.nan
     return df.drop(columns=['admin'])
 
 
