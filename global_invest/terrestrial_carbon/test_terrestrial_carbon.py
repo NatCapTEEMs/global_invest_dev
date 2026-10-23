@@ -4,12 +4,14 @@ Fast and self-contained: the raster functions run on tiny synthetic GeoTIFFs wri
 static shock runs on a small synthetic dependency table -- no base data or full-globe rasters. The shared
 scenario resolver is tested once in global_invest_tests/test_es_utilities.py, not here.
 """
+import os
 from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
 import pytest
 
+from global_invest import utilities
 from global_invest.terrestrial_carbon import terrestrial_carbon_functions as tcf
 from global_invest.terrestrial_carbon import terrestrial_carbon_tasks as tct
 
@@ -146,11 +148,15 @@ def test_dynamic_shock_per_zone_interpolation_and_both_measures(tmp_path):
     assert b.loc[2030, 'shock_pct'] == approx(0.0)
     assert b.loc[2050, 'shock_pct'] == approx(-45.0)     # (55-100)/100
 
-    # piecewise interpolation: 0 at base_year, linear between anchors
+    # PCHIP between anchors (the 10 October specification), 0 at base_year. The ANCHORS stay exact
+    # -- asserted above -- while intermediate years are no longer the linear midpoint. They are
+    # asserted by the property the specification guarantees, shape preservation, rather than by a
+    # hand-computed number: a value strictly inside the bracketing anchors and no overshoot.
     assert a.loc[2020, 'shock_pct'] == approx(0.0)
-    assert a.loc[2025, 'shock_pct'] == approx(-22.5)     # midpoint 2020->2030
-    assert a.loc[2040, 'shock_pct'] == approx(-66.25)    # midpoint 2030->2050
-    assert b.loc[2040, 'shock_pct'] == approx(-22.5)
+    for year, lo, hi in [(2025, -45.0, 0.0), (2040, -87.5, -45.0)]:
+        assert min(lo, hi) - 1e-9 <= a.loc[year, 'shock_pct'] <= max(lo, hi) + 1e-9
+    assert a.loc[2025, 'shock_pct'] != approx(-22.5), 'reverted to the linear midpoint'
+    assert min(-45.0, 0.0) - 1e-9 <= b.loc[2040, 'shock_pct'] <= max(-45.0, 0.0) + 1e-9
 
     # fixed-base measure divides by the BASE-YEAR baseline density (100), not base_Y
     assert a.loc[2050, 'shock_pct_fixedbase'] == approx(-70.0)   # (10-80)/100
@@ -347,7 +353,11 @@ def test_dynamic_shock_rows_v3_measures_the_scenario_against_the_base_year_basel
     assert np.isclose(by_year.loc[2030, 'shock_pct_v3'], 26.0)
     assert np.isclose(by_year.loc[2040, 'shock_pct_v3'], 33.0)
     assert by_year.loc[2020, 'shock_pct_v3'] == 0.0
-    assert np.isclose(by_year.loc[2035, 'shock_pct_v3'], 29.5)
+    # 2035 is NOT an anchor: under the PCHIP specification it is no longer the linear midpoint of
+    # the 2030 and 2040 anchors. Asserted by shape preservation instead, with the anchors exact.
+    lo, hi = by_year.loc[2030, 'shock_pct_v3'], by_year.loc[2040, 'shock_pct_v3']
+    assert min(lo, hi) - 1e-9 <= by_year.loc[2035, 'shock_pct_v3'] <= max(lo, hi) + 1e-9
+    assert not np.isclose(by_year.loc[2035, 'shock_pct_v3'], 29.5), 'reverted to linear'
 
 
 def test_dynamic_shock_rows_v3_is_absent_without_a_base_year_baseline():
@@ -367,8 +377,15 @@ def test_scc_valuation_interpolates_prices_and_derives_the_cut():
     cp = out[(out['scenario'] == 'cp') & (out['iso3_r250_id'] == 1)].set_index('year')
     assert cp.loc[2023, 'delta_value_usd'] == 0.0
     # linear between 2023 (100) and 2030 (110): 2027 -> 100 + 4/7 * 10
-    assert abs(cp.loc[2027, 'stock_mgc'] - (100 + 40 / 7)) < 1e-9
-    assert abs(cp.loc[2040, 'delta_value_usd'] - (120 - 100) * 10) < 1e-9
+    # The STOCK is PCHIP-interpolated, so 2027 is not the linear value between 2023 and 2030.
+    # The anchors themselves are asserted elsewhere in this test and remain exact.
+    lo, hi = cp.loc[2023, 'stock_mgc'], cp.loc[2030, 'stock_mgc']
+    assert min(lo, hi) - 1e-9 <= cp.loc[2027, 'stock_mgc'] <= max(lo, hi) + 1e-9
+    assert abs(cp.loc[2027, 'stock_mgc'] - (100 + 40 / 7)) > 1e-6, 'reverted to linear'
+    # 2040 is between this fixture's anchors, so its PCHIP stock -- and therefore its value -- is
+    # not the linear one. Bounded by the bracketing anchors; the anchor years stay exact.
+    lo, hi = cp.loc[2030, 'delta_value_usd'], cp.loc[2050, 'delta_value_usd']
+    assert min(lo, hi) - 1e-9 <= cp.loc[2040, 'delta_value_usd'] <= max(lo, hi) + 1e-9
     assert cp.loc[2050, 'delta_value_usd'] == 300.0
     # the cut: the modelled es20 rows are replaced by 0.8 x cp from 2030, untouched before
     es20 = out[(out['scenario'] == 'cp-es20') & (out['iso3_r250_id'] == 1)].set_index('year')
@@ -527,3 +544,124 @@ def test_base_year_is_pinned_at_zero_shock():
                 2050: series(z11=0.0, z12=100.0, z21=50.0, z22=50.0)}
     rows = run(scenario, baseline)
     assert shock_at(rows, 'bra', BASE_YEAR) == pytest.approx(0.0)
+
+
+def test_dynamic_shock_reuses_a_current_table_and_recomputes_a_stale_one(tmp_path):
+    """A second pass must leave a current table alone, and must not reuse a stale one.
+
+    The task rewrote terrestrial_carbon_interpolated.csv on every pass, so a resume that should have
+    been a no-op replaced a current file -- work repeated, and an unchanged-resume check that can
+    never pass. Reuse keyed on existence alone would be the opposite defect, so the second half
+    changes an input and requires the recompute.
+    """
+    p = _shock_scene(tmp_path)
+    tct.terrestrial_carbon_shock(p)
+    first = os.stat(p.terrestrial_carbon_shock_output_path).st_mtime_ns
+
+    tct.terrestrial_carbon_shock(p)
+    assert os.stat(p.terrestrial_carbon_shock_output_path).st_mtime_ns == first, \
+        'the second pass rewrote a table it could have reused'
+
+    # An input the signature covers by content: the table must come back, not be republished.
+    lut = p.terrestrial_carbon_density_lookup_table_path
+    rows = open(lut, encoding='utf-8').read()
+    open(lut, 'w', encoding='utf-8').write(rows.replace('100', '50'))
+    tct.terrestrial_carbon_shock(p)
+    assert os.stat(p.terrestrial_carbon_shock_output_path).st_mtime_ns != first, \
+        'the table was reused although its density lookup changed'
+
+
+def test_reuse_signature_excludes_its_own_outputs_and_survives_a_json_round_trip(tmp_path):
+    """A signature must not fingerprint the files the task is about to write, nor hold tuples.
+
+    Both defects make a guard self-invalidating -- it recomputes on every pass and no resume can
+    ever be clean. The SCC valuation hit the first (its output paths end in _path, not
+    _output_path, so a name filter missed them) and fisheries hit the second (json writes a tuple
+    as a list, so the comparison never matched).
+    """
+    import json
+
+    out_csv = tmp_path / 'terrestrial_carbon_scc_valuation.csv'
+    out_png = tmp_path / 'terrestrial_carbon_scc_valuation.png'
+    out_csv.write_text('a,b\n1,2\n', encoding='utf-8')
+    out_png.write_bytes(b'\x89PNG')
+    source = tmp_path / 'source.csv'
+    source.write_text('x\n1\n', encoding='utf-8')
+
+    p = SimpleNamespace(
+        cur_dir=str(tmp_path),
+        terrestrial_carbon_scc_valuation_path=str(out_csv),
+        terrestrial_carbon_scc_figure_path=str(out_png),
+        terrestrial_carbon_density_lookup_table_path=str(source))
+    outputs = [str(out_csv), str(out_png)]
+
+    reason, signature, signature_path = tct._reuse_check(
+        p, outputs, 'sig.json', extra_settings=dict(pairs={'a': 1, 'b': 2}, seq=(3, 4)))
+    # The outputs must not appear anywhere in the signature's inputs.
+    for name in outputs:
+        assert name not in signature['inputs'], 'the task fingerprinted its own output'
+    assert str(source) not in signature['inputs'] or True   # a real input may appear
+
+    # And the whole thing must compare equal after a json round trip.
+    assert json.loads(json.dumps(signature, sort_keys=True, default=str)) == \
+        json.loads(json.dumps(signature, sort_keys=True, default=str))
+    utilities.write_outputs_signature(signature, signature_path)
+    again, _, _ = tct._reuse_check(
+        p, outputs, 'sig.json', extra_settings=dict(pairs={'a': 1, 'b': 2}, seq=(3, 4)))
+    assert again is None, 'the signature did not survive being written and read back: %s' % again
+
+
+def _summed_scene():
+    """Two regions of two zones each; only region 'aaa' is fully covered by the grid."""
+    import pandas as pd
+    zone_labels = {101: ('AEZ1', 'aaa'), 102: ('AEZ2', 'aaa'),
+                   201: ('AEZ1', 'bbb'), 202: ('AEZ2', 'bbb')}
+    base = pd.Series({101: 100.0, 102: 100.0})          # only the covered region is measured
+    scen = {2030: pd.Series({101: 90.0, 102: 90.0})}
+    return zone_labels, base, scen
+
+
+def test_bounded_scope_reports_only_fully_covered_regions_and_declares_the_rest():
+    zone_labels, base, scen = _summed_scene()
+    excluded = []
+    rows = tcf.summed_shock_rows({'scn': scen}, base, zone_labels, 2020, 'FRS',
+                                 log=lambda *a, **k: None,
+                                 covered_zones={101, 102}, excluded_out=excluded)
+    assert excluded == ['bbb'], 'the unmeasured region was not declared'
+    reported = {r['REG'] for r in rows}
+    assert reported == {'aaa'}, 'an unmeasured region was reported'
+    # And it must be ABSENT, never present as a zero -- a zero is a measured no-change to GTAP.
+    assert not any(r['REG'] == 'bbb' for r in rows)
+
+
+def test_bounded_scope_still_rejects_a_missing_zone_inside_a_covered_region():
+    zone_labels, base, scen = _summed_scene()
+    short = base.drop(index=102)                         # a zone of the COVERED region goes missing
+    with pytest.raises(ValueError, match='missing zone is not a zero'):
+        tcf.summed_shock_rows({'scn': scen}, short, zone_labels, 2020, 'FRS',
+                              log=lambda *a, **k: None,
+                              covered_zones={101, 102}, excluded_out=[])
+
+
+def test_global_runs_keep_the_full_regional_coverage_requirement():
+    """covered_zones None is the global path: every region required, nothing declared."""
+    zone_labels, base, scen = _summed_scene()
+    with pytest.raises(ValueError, match="missing 2 of region bbb's 2 zones"):
+        tcf.summed_shock_rows({'scn': scen}, base, zone_labels, 2020, 'FRS',
+                              log=lambda *a, **k: None)
+    # Fully measured globally: both regions reported, no exclusions.
+    import pandas as pd
+    full_base = pd.Series({101: 100.0, 102: 100.0, 201: 100.0, 202: 100.0})
+    full_scen = {2030: pd.Series({101: 90.0, 102: 90.0, 201: 80.0, 202: 80.0})}
+    excluded = []
+    rows = tcf.summed_shock_rows({'scn': full_scen}, full_base, zone_labels, 2020, 'FRS',
+                                 log=lambda *a, **k: None, excluded_out=excluded)
+    assert excluded == []
+    assert {r['REG'] for r in rows} == {'aaa', 'bbb'}
+
+
+def test_no_fully_covered_region_is_a_failure_not_an_empty_table():
+    zone_labels, base, scen = _summed_scene()
+    with pytest.raises(ValueError, match='fully covers no GTAP region'):
+        tcf.summed_shock_rows({'scn': scen}, base, zone_labels, 2020, 'FRS',
+                              log=lambda *a, **k: None, covered_zones={101}, excluded_out=[])

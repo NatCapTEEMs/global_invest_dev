@@ -398,6 +398,27 @@ def terrestrial_carbon_shock(p):
     _align_zones_to_lulc_grid(p, reference_lulc_path)
     _inject_base_year_map(p, base_scenario, es_shock_base_year, reference_lulc_path)
 
+    # Reuse the table when it was made from these very maps and settings. The zonal means below read
+    # every scenario-year map, so a pass that finds the table must return in seconds -- and must not
+    # rewrite it, which is work repeated on resume and defeats an unchanged-resume check.
+    #
+    # This sits AFTER the two calls above, and must stay there. _inject_base_year_map publishes
+    # scenario_lulc_paths[base][base_year], which erosion_damage_pipeline reads later; returning
+    # before it left that entry unset and the erosion damage seam failed with "Missing configured
+    # erosion input baseline_ignore_dependencies 2023: None". A reuse shortcut must skip the work,
+    # never the path publication. Both calls are themselves cached, so this costs nothing.
+    shock_maps = sorted({m for by_year in p.scenario_lulc_paths.values() for m in by_year.values()})
+    reason, signature, signature_path = _reuse_check(
+        p, [p.terrestrial_carbon_shock_output_path], TERRESTRIAL_CARBON_SHOCK_SIGNATURE,
+        extra_settings=dict(scenarios=list(scenarios), anchors=list(anchor_years),
+                            base_year=es_shock_base_year, base_scenario=base_scenario,
+                            mode='dynamic'),
+        extra_inputs=[p.region_boundary_path], light_inputs=shock_maps)
+    if reason is None:
+        hb.log('  carbon shock: reusing %s (same maps, same settings)' % p.terrestrial_carbon_shock_output_path)
+        return True
+    hb.log('  carbon shock: computing because %s' % reason)
+
     density_lookup = tcf.carbon_density_lookup(
         pd.read_csv(p.terrestrial_carbon_density_lookup_table_path, index_col=False))
     zone_labels = tcf.zone_labels_from_boundary(
@@ -422,6 +443,7 @@ def terrestrial_carbon_shock(p):
     out = utilities.filter_to_model_domain(out, p.terrestrial_carbon_shock_output_path, 'terrestrial_carbon', log=hb.log)
     utilities.assert_shock_table_sound(out, scenarios, 'terrestrial_carbon')
     out.to_csv(p.terrestrial_carbon_shock_output_path, index=False)
+    utilities.write_outputs_signature(signature, signature_path)
     hb.log('  carbon shock: %d rows, %d scenarios (shock_pct=shock_pct_contemp=/base_Y, shock_pct_fixedbase=/base_%d) -> %s'
           % (len(out), out['scenario'].nunique() if rows else 0, es_shock_base_year, p.terrestrial_carbon_shock_output_path))
     return True
@@ -464,6 +486,54 @@ def _aligned_ha_per_cell(p, density_path):
         'Density x hectares is a per-pixel product, so the grids must match exactly; resampling '
         'either one would change the areas or the stock rather than fixing the alignment.'
         % (density_path, tuple(want['raster_size']), tuple(want['geotransform']), tried))
+
+
+def _stable(value):
+    """A JSON-stable form of a signature value.
+
+    json.dumps writes a tuple as a list, so a signature holding tuples never compares equal to the
+    one read back and the outputs are rebuilt on every pass.
+    """
+    if isinstance(value, (list, tuple, set)):
+        # str() on each element, so a list mixing strings with nested containers still sorts.
+        return sorted(str(_stable(v)) for v in value)
+    if isinstance(value, dict):
+        return sorted('%s=%s' % (k, _stable(v)) for k, v in value.items())
+    return value if isinstance(value, (str, int, float, bool, type(None))) else str(value)
+
+
+TERRESTRIAL_CARBON_SHOCK_SIGNATURE = 'terrestrial_carbon_shock_signature.json'   # beside the table, in the shared es_shocks dir
+
+
+def _reuse_check(p, outputs, signature_name, extra_settings=(), extra_inputs=(), light_inputs=()):
+    """The reuse signature for one carbon task, and where the last run recorded it.
+
+    The service's own es_parameters (settings by value, `_path` values by content) plus what
+    `_service_settings_and_inputs` cannot see: the es_shock_* settings, which are not prefixed, and
+    inputs named without the prefix (the region boundary, the GEP tables). The task's own output
+    paths are dropped -- a signature that records where it was written changes whenever the project
+    directory moves, which is the path-keyed mistake that already cost one rebuild.
+
+    Returns:
+        tuple: (reason to recompute or None, signature, signature_path).
+    """
+    settings, inputs = utilities._service_settings_and_inputs(p, 'terrestrial_carbon')
+    # Drop the task's own outputs by VALUE, not by attribute name. Name-matching missed
+    # terrestrial_carbon_scc_valuation_path and _scc_figure_path, which end in _path rather than
+    # _output_path, so the task fingerprinted the files it was about to write: the signature changed
+    # every time it ran and the outputs could never be reused.
+    own = {str(o) for o in outputs}
+    settings = {k: v for k, v in settings.items() if str(v) not in own}
+    inputs = {k: v for k, v in inputs.items()
+              if str(getattr(p, k, None)) not in own and not k.endswith('_output_path')}
+    settings.update(extra_settings)
+    inputs.update({str(path): utilities.file_fingerprint(str(path)) for path in extra_inputs})
+    # JSON turns tuples into lists, so a tuple in settings never equals what was recorded. Every
+    # value is normalised to a stable string form instead.
+    settings = {k: _stable(v) for k, v in settings.items()}
+    signature = utilities._signature(settings, inputs, light_inputs)
+    signature_path = os.path.join(os.path.dirname(outputs[0]), signature_name)
+    return utilities.outputs_reuse_reason(outputs, signature, signature_path), signature, signature_path
 
 
 def terrestrial_carbon_scc_valuation(p):
@@ -513,6 +583,26 @@ def terrestrial_carbon_scc_valuation(p):
         # summed on the country id, so a country split across r264 sub-regions counts once
         return regions.groupby('iso3_r250_id')['total'].sum()
 
+    reason, signature, signature_path = _reuse_check(
+        p, [p.terrestrial_carbon_scc_valuation_path, p.terrestrial_carbon_scc_figure_path],
+        'terrestrial_carbon_scc_valuation_signature.json',
+        extra_settings=dict(scenarios=list(scenarios), anchors=list(anchor_years),
+                            base_year=base_year, base_scenario=base_scenario,
+                            price_convention=p.gep_price_convention,
+                            gep_base_year=p.gep_base_year,
+                            retained=getattr(p, 'es_provision_retained', None),
+                            from_year=getattr(p, 'es_provision_from_year', None),
+                            cut_source=getattr(p, 'es_provision_source_scenario', None),
+                            cut_label=getattr(p, 'es_provision_label', None)),
+        extra_inputs=[p.gep_regions_input_path, p.gep_price_input_path],
+        light_inputs=sorted(hb.list_filtered_paths_nonrecursively(density_dir, include_extensions='.tif')
+                            if hb.path_exists(density_dir) else []))
+    if reason is None:
+        hb.log('  carbon SCC valuation: reusing %s (same density rasters, same settings)'
+               % p.terrestrial_carbon_scc_valuation_path)
+        return True
+    hb.log('  carbon SCC valuation: computing because %s' % reason)
+
     base_stock = stock_by_country(base_scenario, base_year)
     baseline_by_year = {y: stock_by_country(base_scenario, y) for y in anchor_years}
     stocks = {s: {y: stock_by_country(s, y) for y in anchor_years} for s in scenarios}
@@ -534,6 +624,7 @@ def terrestrial_carbon_scc_valuation(p):
     tcf.plot_scc_valuation(out, attributes, price, p.gep_price_convention, base_year,
                            p.terrestrial_carbon_scc_figure_path,
                            aside=getattr(p, 'es_provision_label', None))
+    utilities.write_outputs_signature(signature, signature_path)
     world = out.groupby(['scenario', 'year'])['delta_value_usd'].sum()
     last = int(out['year'].max())
     hb.log('  carbon SCC valuation: %d rows, price %.2f USD/Mg C (%s at %s); world change at %d: %s -> %s'
@@ -577,6 +668,18 @@ def terrestrial_carbon_shock_static(p):
         hb.log('  carbon shock: dependency csv not found (%s) -- skipping' % carb_path)
         return
 
+    reason, signature, signature_path = _reuse_check(
+        p, [p.terrestrial_carbon_shock_output_path], TERRESTRIAL_CARBON_SHOCK_SIGNATURE,
+        extra_settings=dict(scenarios=es_shock_scenarios, base_year=es_shock_base_year,
+                            end_year=es_shock_end_year, base_scenario=base_scenario,
+                            scenario_map=sorted(terrestrial_carbon_scenario_map.items()),
+                            mode='static'),
+        extra_inputs=[carb_path])
+    if reason is None:
+        hb.log('  carbon shock: reusing %s (same dependency table, same settings)' % p.terrestrial_carbon_shock_output_path)
+        return True
+    hb.log('  carbon shock: computing because %s' % reason)
+
     df = hb.df_read(carb_path)
     # The base resolves through the same candidate mechanism as the data scenarios (and FATALLY if it
     # can't): the frozen tables spell the nature-off baseline two ways across services, and an
@@ -599,6 +702,7 @@ def terrestrial_carbon_shock_static(p):
     out = utilities.filter_to_model_domain(out, p.terrestrial_carbon_shock_output_path, 'terrestrial_carbon', log=hb.log)
     utilities.assert_shock_table_sound(out, es_shock_scenarios, 'terrestrial_carbon')
     out.to_csv(p.terrestrial_carbon_shock_output_path, index=False)
+    utilities.write_outputs_signature(signature, signature_path)
     nz = out[(out['year'] == es_shock_end_year) & (out['shock_pct'] != 0)] if len(out) else out
     hb.log('  carbon shock: %d rows, %d scenarios, %d nonzero @%d (static, uncapped) -> %s'
           % (len(out), out['scenario'].nunique() if len(out) else 0, len(nz), es_shock_end_year,

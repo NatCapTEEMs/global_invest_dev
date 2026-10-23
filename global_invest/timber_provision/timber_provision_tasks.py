@@ -5,6 +5,7 @@ net-return layer masked and floored, see timber_provision_functions) summed per 
 the 10-arcsecond country-id raster. The committed Forestry CSV stays as the test anchor
 the run is compared against, never as the output."""
 
+import json
 import os
 import numpy as np
 import pandas as pd
@@ -12,6 +13,46 @@ import rasterio
 import hazelbean as hb
 from global_invest import utilities
 from global_invest.timber_provision import timber_provision_functions as tp
+
+
+GRID_COVERED_ZONES = 'grid_covered_zones.json'   # measured once per run, beside the workspace
+EXCLUDED_REGIONS = 'timber_provision_excluded_regions.json'   # beside the table, read at the export boundary
+
+
+def _grid_covered_zones(p, summary_path):
+    """The zone ids this run's GRID actually contains, from the zone-id raster the zonal step used.
+
+    The D19 coverage assertion requires every zone in the boundary file, which is right for a global
+    run and impossible for a bounded one: the zaf validation fixture covers 26 of the boundary's 470
+    zones and the remaining 444 are absent because the model does not reach them, not because a
+    total went missing. `intentional_exclusions` is the assertion's own mechanism for that
+    distinction, and this supplies the set to declare.
+
+    Read from the RASTER, never from the summaries. A zone the grid covers but a summary lost is
+    still a failure -- that is the defect the assertion exists to catch, and deriving coverage from
+    the summaries would make it vacuous. Zone geometry does not vary by scenario or year, so this is
+    measured once per run and cached: one pass over the zone raster rather than one per
+    scenario-year, which matters because the global grid is 129,600 x 64,800.
+
+    Args:
+        p: the ProjectFlow object, for `cur_dir`.
+        summary_path (str): a scenario-year summary; its `_zone_ids.tif` sibling is what is read.
+
+    Returns:
+        set | None: the covered zone ids, or None when there is no zone raster to read, in which
+        case the caller requires every boundary zone as before.
+    """
+    cache_path = os.path.join(p.cur_dir, GRID_COVERED_ZONES)
+    if hb.path_exists(cache_path):
+        return {int(z) for z in json.loads(open(cache_path, encoding='utf-8').read())}
+    zone_ids_path = os.path.splitext(summary_path)[0] + '_zone_ids.tif'
+    if not hb.path_exists(zone_ids_path):
+        return None
+    covered = sorted({int(v) for v in hb.unique_raster_values_path(zone_ids_path) if int(v) > 0})
+    hb.write_to_file(json.dumps(covered), cache_path)
+    hb.log('  timber: the run grid covers %d zone(s); measured once from %s'
+           % (len(covered), os.path.basename(zone_ids_path)))
+    return set(covered)
 
 
 def publish_inputs(p):
@@ -400,6 +441,51 @@ def _assert_one_grid(grids, tolerance_pixels=GRID_TOLERANCE_PIXELS):
                    label, transform, reference_label, ref_transform))
 
 
+_GDAL_TYPE_BY_DTYPE = {'byte': 1, 'uint8': 1, 'int16': 3, 'uint16': 2, 'int32': 5, 'uint32': 4,
+                       'float32': 6, 'float64': 7}
+
+
+def _aligned_to_reference(p, source_path, reference_path, label):
+    """A copy of `source_path` on the reference's grid, when the two differ only by extent.
+
+    Returns source_path unchanged when the grids already match. Refuses rather than resampling
+    when the pixel sizes differ or the reference's origin does not fall on a source pixel
+    boundary: that case is a genuine regridding decision, not a crop, and it must not be made
+    silently inside a shock measurement.
+
+    Args:
+        p (ProjectFlow): supplies cur_dir for the cached clip.
+        source_path (str): the raster to clip, typically a global layer.
+        reference_path (str): the raster whose grid the run works on.
+        label (str): used in the cached filename and in error messages.
+
+    Returns:
+        str: a path on the reference grid.
+
+    Raises:
+        ValueError: if the grids are not an exact window of one another.
+    """
+    with rasterio.open(source_path) as src, rasterio.open(reference_path) as ref:
+        if src.shape == ref.shape and src.transform == ref.transform:
+            return source_path
+        st, rt = src.transform, ref.transform
+        if abs(st.a - rt.a) > 1e-12 or abs(st.e - rt.e) > 1e-12:
+            raise ValueError('%s is %.10f deg per pixel but the run grid is %.10f; clipping would '
+                             'be a regridding choice, not a crop' % (label, st.a, rt.a))
+        col = (rt.c - st.c) / st.a
+        row = (rt.f - st.f) / st.e
+        if abs(col - round(col)) > 1e-6 or abs(row - round(row)) > 1e-6:
+            raise ValueError('%s does not align with the run grid: offset (%.6f, %.6f) is not whole '
+                             'pixels, so a crop would shift the values' % (label, col, row))
+        source_dtype, source_ndv = src.dtypes[0], src.nodata
+    aligned_path = os.path.join(p.cur_dir, 'timber_%s_aligned.tif' % label)
+    if not hb.path_exists(aligned_path):
+        hb.resample_to_match(source_path, reference_path, aligned_path, resample_method='near',
+                             output_data_type=_GDAL_TYPE_BY_DTYPE[source_dtype],
+                             src_ndv=source_ndv, ndv=source_ndv)
+    return aligned_path
+
+
 def _write_biomass_base_and_new_forest(p, base_lulc_path, base_forest_path, new_forest_path):
     """Once per project: the base-year forest biomass carbon per cell (NaN off the base forest) and
     the carbon zone's mean forest density x cell area the mature-density assumption credits to
@@ -411,6 +497,16 @@ def _write_biomass_base_and_new_forest(p, base_lulc_path, base_forest_path, new_
     for label, path in (('aboveground biomass carbon', density_path), ('carbon zones', zones_path), ('ha per cell', ha_path)):
         if not hb.path_exists(path):
             raise NameError('%s not found at %s' % (label, path))
+    # The base map and carbon zones are on the run's grid, which for a sub-global AOI is a window
+    # of the global pyramid; the biomass density and ha-per-cell rasters are global. Same
+    # resolution and an aligned grid, so nearest is a lossless clip rather than a resample -- the
+    # same reasoning terrestrial_carbon's _align_zones_to_lulc_grid records. Verified for the ZAF
+    # window: identical 10-arcsec pixels, and its origin falls on global pixel (70560, 40320).
+    # The clipped copy keeps the SOURCE's data type and nodata, never the reference's. Taking them
+    # from a match raster is what truncated carbon zone ids 606-620 to a Byte nodata and read
+    # South Africa as zone 0 everywhere.
+    density_path = _aligned_to_reference(p, density_path, base_lulc_path, 'biomass_carbon_density')
+    ha_path = _aligned_to_reference(p, ha_path, base_lulc_path, 'ha_per_cell')
     grids = {}
     for label, path in (('density', density_path), ('zones', zones_path), ('ha', ha_path), ('base map', base_lulc_path)):
         with rasterio.open(path) as src:
@@ -587,8 +683,12 @@ def timber_provision_shock(p):
         for job in jobs:
             scenario, year = job[:2]
             summary = pd.read_csv(job[-3]).assign(scenario=scenario, year=year)
+            covered = _grid_covered_zones(p, job[-3])
+            absent = None if covered is None else [
+                (scenario, year, zone) for zone in zone_labels if int(zone) not in covered]
             utilities.assert_zonal_coverage_complete(summary, [scenario], [year], set(zone_labels),
-                                                    'D19 biomass', log=hb.log)
+                                                    'D19 biomass', intentional_exclusions=absent,
+                                                    log=hb.log)
             if (summary['total'] < 0).any():
                 raise ValueError('Negative D19 biomass total')
 
@@ -615,10 +715,13 @@ def timber_provision_shock(p):
         # base-year biomass keep contributing their gain to the numerator; no ratio is formed for
         # them, nothing is capped and nothing is excluded. A region whose own total base-year
         # biomass is zero or negligible has no denominator and is reported, not shocked.
+        excluded_regions = []
         rows += tcf.summed_shock_rows(
             {scenario: {y: zone_total(scenario, y) for y in anchor_years} for scenario in scenarios},
             zone_total(base_scenario, es_shock_base_year), zone_labels, es_shock_base_year,
-            p.terrestrial_carbon_shock_acts, log=hb.log)
+            p.terrestrial_carbon_shock_acts, log=hb.log,
+            covered_zones=_grid_covered_zones(p, _timber_summary_path(p, base_scenario, es_shock_base_year)),
+            excluded_out=excluded_regions)
     else:
         for scenario in scenarios:
             rows += tcf.dynamic_shock_rows(
@@ -643,6 +746,24 @@ def timber_provision_shock(p):
     if measure == 'aboveground_carbon':
         out['timber_provision_accounting'] = 'aboveground_carbon_summed_v1'
     out.to_csv(p.timber_provision_shock_output_path, index=False)
+
+    # DECLARE the regions this run could not measure, beside the table. write_afeall_hars fills
+    # np.zeros over the whole AFEL set, so a region merely missing from the table reaches GTAP as a
+    # zero shock -- indistinguishable from a measured no-change. es_shock_export reads this file and
+    # refuses to export a table that carries one, so an unmeasured region cannot become a zero.
+    # A global run measures every region, writes an empty declaration, and exports as before.
+    declared = sorted(set(locals().get('excluded_regions') or ()))
+    if declared:
+        present = set(out['REG'].astype(str)) if len(out) else set()
+        leaked = sorted(r for r in declared if r in present)
+        if leaked:
+            raise ValueError('timber shock: %d region(s) were excluded as unmeasured yet appear in '
+                             'the table: %s' % (len(leaked), leaked))
+        hb.log('  timber shock: DECLARED %d unmeasured region(s), which this run must not export: %s'
+               % (len(declared), ', '.join(declared)))
+    hb.write_to_file(json.dumps({'excluded_regions': declared,
+                                 'reason': 'not fully covered by the run grid'}, indent=2),
+                     os.path.join(os.path.dirname(p.timber_provision_shock_output_path), EXCLUDED_REGIONS))
     utilities.write_reuse_signature(p, 'timber_provision', shock_outputs, TIMBER_SHOCK_SIGNATURE, light_inputs=shock_maps)
     hb.log('  timber shock: %d rows, %d scenarios -> %s'
            % (len(out), out['scenario'].nunique() if rows else 0,

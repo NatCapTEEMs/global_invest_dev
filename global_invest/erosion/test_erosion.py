@@ -11,6 +11,7 @@ The InVEST SDR run that produces the erosion rasters is not covered here; it is 
 staged data.
 """
 
+import os
 import pandas as pd
 import pytest
 
@@ -693,3 +694,24 @@ class DamageTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+def test_seals7_biophysical_table_is_rebuilt_only_when_its_source_changes(tmp_path):
+    """The re-key is a function of its source, so a second call must not rewrite the table.
+
+    It did, on every SDR pass, which is work repeated on resume and makes an unchanged-resume check
+    impossible to satisfy. An existence check alone would be the opposite defect, so the second half
+    changes the source and requires the rebuild.
+    """
+    src = tmp_path / 'biophysical_esa.csv'
+    src.write_text('lucode,seals_lucode,usle_c,usle_p\n10,2,0.2,1.0\n20,2,0.2,1.0\n60,4,0.01,1.0\n',
+                   encoding='utf-8')
+    out = tmp_path / 'biophysical_table_seals7.csv'
+
+    et.build_seals7_biophysical_table(str(src), str(out))
+    first = os.stat(str(out)).st_mtime_ns
+    et.build_seals7_biophysical_table(str(src), str(out))
+    assert os.stat(str(out)).st_mtime_ns == first, 'the table was rewritten from an unchanged source'
+
+    src.write_text('lucode,seals_lucode,usle_c,usle_p\n10,2,0.3,1.0\n60,4,0.01,1.0\n', encoding='utf-8')
+    et.build_seals7_biophysical_table(str(src), str(out))
+    assert os.stat(str(out)).st_mtime_ns != first, 'the table was reused although its source changed'
+    assert '0.3' in out.read_text(encoding='utf-8')

@@ -14,6 +14,9 @@ import pandas as pd
 
 from global_invest.fisheries import fisheries_functions as ff
 
+FISHERIES_SHOCK_SIGNATURE = 'fisheries_shock_signature.json'   # beside the table, in the shared es_shocks dir
+
+
 def fisheries_shock(p):
     """Static marine-fisheries shock -> FSH, constant across years, mapped by RCP header.
 
@@ -43,6 +46,30 @@ def fisheries_shock(p):
     if not hb.path_exists(cwon_shocks_path):
         hb.log('  fisheries shock: cwon_shocks.har not found (%s) -- skipping' % cwon_shocks_path)
         return
+
+    # Reuse the table when it was made from this HAR and these settings. The read and the ramp are
+    # cheap, but rewriting a current table on every pass is still work repeated on resume, and it
+    # makes an unchanged-resume check impossible to satisfy. The three services that already guard
+    # themselves this way (pollination, erosion, timber) establish the idiom; this one did not.
+    settings, inputs = utilities._service_settings_and_inputs(p, 'fisheries')
+    settings = {k: v for k, v in settings.items() if not k.endswith('_output_path')}
+    inputs = {k: v for k, v in inputs.items() if not k.endswith('_output_path')}
+    # Rendered as sorted strings, not as tuples: json.dumps writes a tuple as a list, so a tuple
+    # here never equals what was read back and the table was rebuilt on every pass.
+    settings.update(scenarios=sorted(map(str, es_shock_scenarios)), base_year=es_shock_base_year,
+                    end_year=es_shock_end_year,
+                    header_map=sorted('%s=%s' % kv for kv in fisheries_header_map.items()),
+                    climate_labels=sorted(
+                        '%s=%s' % kv for kv in
+                        (getattr(p, 'es_shock_climate_labels', None) or {}).items()))
+    inputs[str(cwon_shocks_path)] = utilities.file_fingerprint(str(cwon_shocks_path))
+    signature = utilities._signature(settings, inputs)
+    signature_path = os.path.join(os.path.dirname(p.fisheries_shock_output_path), FISHERIES_SHOCK_SIGNATURE)
+    reason = utilities.outputs_reuse_reason([p.fisheries_shock_output_path], signature, signature_path)
+    if reason is None:
+        hb.log('  fisheries shock: reusing %s (same HAR, same settings)' % p.fisheries_shock_output_path)
+        return True
+    hb.log('  fisheries shock: computing because %s' % reason)
 
     fi_data = ff.read_fisheries_headers(
         cwon_shocks_path, headers=ff.fisheries_headers_to_read(fisheries_header_map))
@@ -81,6 +108,7 @@ def fisheries_shock(p):
     # between a contaminated FI value and the solver.
     utilities.assert_shock_table_sound(out, es_shock_scenarios, 'fisheries')
     out.to_csv(p.fisheries_shock_output_path, index=False)
+    utilities.write_outputs_signature(signature, signature_path)
     hb.log('  fisheries shock: %d rows, %d scenarios (%s), |shock| up to %.4g%% -> %s'
           % (len(out), out['scenario'].nunique() if len(out) else 0,
              ('per-year' if time_varying else 'constant @%d'
