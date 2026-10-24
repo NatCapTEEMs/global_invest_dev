@@ -41,7 +41,9 @@ def clean_mangrove_values(df_raw):
 
     The workbook publishes a finished annual value, but it also carries the two numbers that
     value is made of, so the value is computed here instead of read. A country missing either
-    stays empty rather than becoming zero: no area or no price is not no protection.
+    stays empty rather than becoming zero: no area or no price is not no protection. A zero
+    area is a measured zero even where the rate is missing, because zero habitat earns zero
+    whatever a hectare would have been worth.
 
     Args:
         df_raw (pd.DataFrame): the CWoN mangrove table as shipped, carrying countrycode, year,
@@ -55,6 +57,9 @@ def clean_mangrove_values(df_raw):
     area = pd.to_numeric(df[MANGROVE_AREA_COLUMN], errors='coerce')
     value_per_ha = pd.to_numeric(df[MANGROVE_VALUE_PER_HA_COLUMN], errors='coerce')
     df['Value'] = area * value_per_ha
+    # Zero mapped area is a measured zero whatever the rate column holds (0 x missing must
+    # not read as unknown). A missing area stays missing: no quantity is not no protection.
+    df.loc[area == 0, 'Value'] = 0.0
     df['Value_published'] = pd.to_numeric(df[MANGROVE_PUBLISHED_VALUE_COLUMN], errors='coerce')
     logging.info(f'Finished cleaning up ({df.shape[0]} rows).')
     return df
@@ -67,6 +72,8 @@ def mangrove_gep_by_country(gdf_countries, df_mangrove_value):
     rows; summing on iso3_r250_label is what puts those back together into one country. Countries
     the correspondence does not carry drop out with the inner join, and rows the correspondence
     matched but that carry no country label are dropped rather than summed into a nameless total.
+    A country whose every row carries a missing value sums to missing, not zero (min_count=1);
+    a partially measured country sums its measured rows alone.
 
     Args:
         gdf_countries (pd.DataFrame): the r264 country correspondence.
@@ -77,7 +84,8 @@ def mangrove_gep_by_country(gdf_countries, df_mangrove_value):
         pd.DataFrame: iso3_r250_label, year, coastal_protection_gep_mangrove.
     """
     df = hb.df_merge(gdf_countries, df_mangrove_value, how='inner', on='ee_r264_label')
-    df = (df.groupby(['iso3_r250_label', 'year'], as_index=False, dropna=False)['Value'].sum())
+    df = (df.groupby(['iso3_r250_label', 'year'], as_index=False, dropna=False)['Value']
+            .sum(min_count=1))
     df = df.dropna(subset=['iso3_r250_label'])
     return df.rename(columns={'Value': 'coastal_protection_gep_mangrove'})
 
@@ -115,28 +123,44 @@ def coral_reef_gep_by_country(gdf_countries, df_coral_reef_value, deflation_fact
 
 
 def combine_coastal_components(df_mangrove, df_coral_reef):
-    """The two components on one row per country and year, plus their sum.
+    """The two components on one row per country and year, plus two totals.
 
-    The join is outer because the two tables cover different countries, and a country present in
-    only one of them contributes that component alone rather than dropping out. Only the component
-    the join itself had to invent is zeroed: a component a table carries as missing stays missing
-    and so reports a missing total rather than the other component alone.
+    The join is outer because the two tables cover different countries. A component ABSENT
+    from its table is an absence of habitat and becomes a measured zero -- but only beside a
+    measured partner; beside a carried-missing partner it stays missing, so an unknown
+    country cannot acquire a value-shaped total from an absence fill. A component a table
+    carries as MISSING (area with no rate, or no area at all) stays missing.
+
+    coastal_protection_gep is the known-component total: the sum of what is measured, a lower
+    bound where a component is missing (the missing component column marks which countries),
+    and missing only where nothing is measured. coastal_protection_gep_complete carries the
+    total only where every component is known, so the two columns' sums state the complete
+    and known-component account totals side by side.
 
     Args:
         df_mangrove (pd.DataFrame): iso3_r250_label, year, coastal_protection_gep_mangrove.
         df_coral_reef (pd.DataFrame): iso3_r250_label, year, coastal_protection_gep_coral_reef.
 
     Returns:
-        pd.DataFrame: both components, their sum as coastal_protection_gep, and a Value copy of
-        the sum for the shared reporting templates.
+        pd.DataFrame: both components, the known-component sum as coastal_protection_gep, the
+        complete-countries sum as coastal_protection_gep_complete, and a Value copy of the
+        known-component sum for the shared reporting templates.
     """
     df = pd.merge(df_mangrove, df_coral_reef, how='outer', on=['iso3_r250_label', 'year'],
                   indicator=True)
-    df.loc[df['_merge'] == 'left_only', 'coastal_protection_gep_coral_reef'] = 0.0
-    df.loc[df['_merge'] == 'right_only', 'coastal_protection_gep_mangrove'] = 0.0
+    m, c = 'coastal_protection_gep_mangrove', 'coastal_protection_gep_coral_reef'
+    # A component absent from its table is an absence of habitat, worth a measured zero --
+    # but only beside a measured partner. Beside a carried-missing partner the absence zero
+    # would turn an unknown country into a value-shaped total, so it stays missing there.
+    df.loc[(df['_merge'] == 'left_only') & df[m].notna(), c] = 0.0
+    df.loc[(df['_merge'] == 'right_only') & df[c].notna(), m] = 0.0
     df = df.drop(columns='_merge')
-    df['coastal_protection_gep'] = (df['coastal_protection_gep_mangrove']
-                                    + df['coastal_protection_gep_coral_reef'])
+    # Known-component total: the sum of what is measured, a lower bound where a component is
+    # missing (the missing component column says which); missing only when nothing is measured.
+    df['coastal_protection_gep'] = df[[m, c]].sum(axis=1, min_count=1)
+    # Complete total: only where every component the country carries is known.
+    df['coastal_protection_gep_complete'] = df['coastal_protection_gep'].where(
+        df[m].notna() & df[c].notna())
     df['Value'] = df['coastal_protection_gep']
     return df
 

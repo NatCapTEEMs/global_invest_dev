@@ -104,8 +104,10 @@ def gep_calculation(p):
     gdf_gep_by_country_base_year.to_file(p.results['coastal_protection']['gep_by_country_base_year'].replace('.csv', '.gpkg'), driver='GPKG')
 
     value_gep_base_year = df_gep_by_country_base_year['coastal_protection_gep'].sum()
+    value_gep_complete = df_gep_by_country_base_year['coastal_protection_gep_complete'].sum()
 
     hb.log(f"Total GEP value for base year {base_year}: {value_gep_base_year}")
+    hb.log(f"  complete-countries total (every component known): {value_gep_complete}")
     return value_gep_base_year
 
 def gep_result(p):

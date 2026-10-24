@@ -93,19 +93,20 @@ def test_combine_coastal_components_adds_them_and_keeps_a_country_present_in_onl
     assert out['Value'].tolist() == out['coastal_protection_gep'].tolist()
 
 
-def test_combine_coastal_components_keeps_a_missing_coral_value_missing():
-    """A country whose coral component arrives missing is unvalued, and reporting its mangrove
-    component alone would hide that its coral component is unknown."""
+def test_combine_coastal_components_reports_a_known_component_beside_a_missing_one():
+    """A country whose coral component arrives missing keeps its measured mangrove component as
+    the known-component total -- an explicit lower bound -- while the complete column stays
+    missing, which is what marks the country as partially observed. (Until 2026-10-25 the total
+    itself went missing; the design decision is recorded in combine_coastal_components.)"""
     mangrove = pd.DataFrame({'iso3_r250_label': ['AAA'], 'year': [2019],
                              'coastal_protection_gep_mangrove': [140.0]})
     coral = pd.DataFrame({'iso3_r250_label': ['AAA'], 'year': [2019],
                           'coastal_protection_gep_coral_reef': [np.nan]})
     out = cpf.combine_coastal_components(mangrove, coral).set_index('iso3_r250_label')
 
-    assert np.isnan(out.loc['AAA', 'coastal_protection_gep'])
+    assert out.loc['AAA', 'coastal_protection_gep'] == 140.0
     assert out.loc['AAA', 'coastal_protection_gep_mangrove'] == 140.0
-    # A missing total drops out of the reported sum rather than entering it as a zero.
-    assert out['coastal_protection_gep'].sum() == 0.0
+    assert np.isnan(out.loc['AAA', 'coastal_protection_gep_complete'])
 
 
 def test_attach_country_attributes_gives_one_row_per_country():
@@ -146,3 +147,78 @@ def test_es_config_row_hydrates_coastal_protection(tmp_path):
     utilities.hydrate_es_config(p, 'coastal_protection', log=lambda *a: None)
     assert p.gep_base_year == cpf.COASTAL_PROTECTION_BASE_YEAR
     assert p.gep_quantity_input_path.endswith('data_mangroves_2019.xlsx')
+
+
+def test_unrated_positive_area_sums_to_missing_not_zero():
+    """Positive mangrove area with no rate is an unknown value, and the per-country sum must say
+    so: the 27 real countries in this shape carried 1,529,289 ha and published 0.0 until
+    2026-10-25."""
+    df_raw = pd.DataFrame({
+        'countrycode': ['AAA', 'AAA'], 'year': [2019, 2019],
+        'mangrove_ha': [100.0, 50.0], 'value_per_ha_2019': [np.nan, np.nan],
+        'annual_value_2019': [np.nan, np.nan]})
+    cleaned = cpf.clean_mangrove_values(df_raw)
+    out = cpf.mangrove_gep_by_country(COUNTRIES, cleaned).set_index('iso3_r250_label')
+
+    assert np.isnan(out.loc['AAA', 'coastal_protection_gep_mangrove'])
+
+
+def test_zero_area_is_a_measured_zero_even_with_no_rate():
+    """Zero habitat earns zero whatever a hectare would have been worth, so 0 x missing is a
+    measured zero, not an unknown (landlocked rows arrive exactly like this)."""
+    df_raw = pd.DataFrame({
+        'countrycode': ['AAA'], 'year': [2019],
+        'mangrove_ha': [0.0], 'value_per_ha_2019': [np.nan], 'annual_value_2019': [np.nan]})
+    cleaned = cpf.clean_mangrove_values(df_raw)
+    out = cpf.mangrove_gep_by_country(COUNTRIES, cleaned).set_index('iso3_r250_label')
+
+    assert out.loc['AAA', 'coastal_protection_gep_mangrove'] == 0.0
+
+
+def test_missing_area_stays_missing():
+    """A row with no area at all (the source's Taiwan row) is an unknown, not a zero."""
+    df_raw = pd.DataFrame({
+        'countrycode': ['AAA'], 'year': [2019],
+        'mangrove_ha': [np.nan], 'value_per_ha_2019': [np.nan], 'annual_value_2019': [np.nan]})
+    cleaned = cpf.clean_mangrove_values(df_raw)
+    out = cpf.mangrove_gep_by_country(COUNTRIES, cleaned).set_index('iso3_r250_label')
+
+    assert np.isnan(out.loc['AAA', 'coastal_protection_gep_mangrove'])
+
+
+def test_partial_observation_sums_the_measured_rows_alone():
+    """A split country with one rated and one unrated sub-region keeps the measured part: the
+    sum is a lower bound carried by min_count=1, not a missing value and not a silent claim of
+    completeness (no real country is in this shape today; the rule is pinned so one can be)."""
+    df_raw = pd.DataFrame({
+        'countrycode': ['AAA', 'Z01'], 'year': [2019, 2019],
+        'mangrove_ha': [100.0, 50.0], 'value_per_ha_2019': [2.0, np.nan],
+        'annual_value_2019': [np.nan, np.nan]})
+    cleaned = cpf.clean_mangrove_values(df_raw)
+    out = cpf.mangrove_gep_by_country(COUNTRIES, cleaned).set_index('iso3_r250_label')
+
+    assert out.loc['AAA', 'coastal_protection_gep_mangrove'] == 200.0
+
+
+def test_combine_distinguishes_all_five_cases():
+    """One frame per observation case: both measured, coral absent, mangrove unknown, nothing
+    measured, measured zero -- the two totals and the component markers separate them."""
+    mangrove = pd.DataFrame({
+        'iso3_r250_label': ['A', 'B', 'C', 'D', 'E'], 'year': [2019] * 5,
+        'coastal_protection_gep_mangrove': [10.0, 5.0, np.nan, np.nan, 0.0]})
+    coral = pd.DataFrame({
+        'iso3_r250_label': ['A', 'C'], 'year': [2019, 2019],
+        'coastal_protection_gep_coral_reef': [7.0, 3.0]})
+    out = cpf.combine_coastal_components(mangrove, coral).set_index('iso3_r250_label')
+
+    assert out.loc['A', 'coastal_protection_gep'] == 17.0
+    assert out.loc['A', 'coastal_protection_gep_complete'] == 17.0
+    assert out.loc['B', 'coastal_protection_gep'] == 5.0          # coral absent beside measured
+    assert out.loc['B', 'coastal_protection_gep_complete'] == 5.0
+    assert out.loc['C', 'coastal_protection_gep'] == 3.0          # known-component lower bound
+    assert np.isnan(out.loc['C', 'coastal_protection_gep_mangrove'])
+    assert np.isnan(out.loc['C', 'coastal_protection_gep_complete'])
+    assert np.isnan(out.loc['D', 'coastal_protection_gep'])       # nothing measured
+    assert np.isnan(out.loc['D', 'coastal_protection_gep_complete'])
+    assert out.loc['E', 'coastal_protection_gep'] == 0.0          # measured zero
+    assert out.loc['E', 'coastal_protection_gep_complete'] == 0.0
