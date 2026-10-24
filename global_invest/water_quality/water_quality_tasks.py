@@ -36,12 +36,12 @@ def gep_calculation(p):
     df_gep = wq.water_quality_gep_by_country(retention, international, countries)
     df_gep['year'] = int(p.gep_base_year)
     hb.df_write(df_gep[attr_cols + ['year', 'nitrogen_gep_usd', 'phosphorus_gep_usd',
-                                    'water_quality_gep_usd', 'water_quality_gep']],
+                                    'water_quality_gep', 'water_quality_gep_international_dollars']],
                 service_results['gep_by_country_base_year'])
 
     hb.log(f'Total water_quality GEP for base year {p.gep_base_year}: '
-           f'{df_gep["water_quality_gep_usd"].sum():,.2f} USD; '
-           f'{df_gep["water_quality_gep"].sum():,.2f} international dollars (the committed '
+           f'{df_gep["water_quality_gep"].sum():,.2f} USD (the account column); '
+           f'{df_gep["water_quality_gep_international_dollars"].sum():,.2f} international dollars (the committed '
            f'accounting value; conversion stage unidentified).')
     return True
 

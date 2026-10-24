@@ -12,9 +12,9 @@ per the drive's method note. That conversion stage is NOT identified: it is not 
 (per-country ratios up to ~11x), and the single-factor XR/PPP hypothesis was tested against
 the WDI series and rejected (median 36 percent off) -- the harmonization uses per-source-year
 cost inputs the folder does not carry. The committed international-dollar values are carried
-as the provisional account column; the conversion script and its inputs are the open ask.
-This also raises a cross-cutting question flagged on the deck: every other service values in
-2019 market USD.
+BESIDE the account column (decided 2026-10-25: the account prices in 2019 market dollars
+everywhere, so the recomputed treatment-cost valuation is the account column); the
+conversion script and its inputs remain the open ask.
 """
 import numpy as np
 
@@ -40,13 +40,20 @@ def element_service_values(retention_df):
 
 
 def water_quality_gep_by_country(retention_df, international_df, countries_df):
-    """One row per country: the recomputed USD components plus the committed
-    international-dollar accounting value (conversion stage unidentified; see module docstring)."""
+    """One row per country: the account column in 2019 market dollars, the committed
+    international-dollar table beside it.
+
+    Decided 2026-10-25: the account prices every service in 2019 market dollars, so
+    water_quality_gep is the recomputed treatment-cost valuation (nitrogen plus phosphorus).
+    The water team's committed international-dollar value is carried beside it as
+    water_quality_gep_international_dollars; its conversion stage remains unidentified (see
+    the module docstring), which is one more reason it cannot be the account column."""
     usd = element_service_values(retention_df)[
         ['iso3_r250_label', 'n_gep_usd', 'p_gep_usd']].rename(
         columns={'n_gep_usd': 'nitrogen_gep_usd', 'p_gep_usd': 'phosphorus_gep_usd'})
-    usd['water_quality_gep_usd'] = usd['nitrogen_gep_usd'] + usd['phosphorus_gep_usd']
+    usd['water_quality_gep'] = usd['nitrogen_gep_usd'] + usd['phosphorus_gep_usd']
     df = countries_df.merge(usd, on='iso3_r250_label', how='left')
-    df = df.merge(international_df[['iso3_r250_label', 'water_quality_gep']],
+    df = df.merge(international_df[['iso3_r250_label', 'water_quality_gep']].rename(
+                      columns={'water_quality_gep': 'water_quality_gep_international_dollars'}),
                   on='iso3_r250_label', how='left')
     return df

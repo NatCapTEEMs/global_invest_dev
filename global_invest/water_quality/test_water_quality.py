@@ -72,8 +72,11 @@ def test_country_join_keeps_all_countries_and_carries_both_currencies():
     countries = final[['iso3_r250_id', 'iso3_r250_label']]
     out = wq.water_quality_gep_by_country(retention, final, countries)
     assert len(out) == 250
-    assert out['water_quality_gep_usd'].notna().sum() == 209
-    assert out['water_quality_gep'].notna().sum() == 178
+    assert out['water_quality_gep'].notna().sum() == 209
+    assert out['water_quality_gep_international_dollars'].notna().sum() == 178
+    # Decided 2026-10-25: the account column is the 2019 market-dollar valuation; the
+    # committed international-dollar table rides beside it.
+    assert abs(out['water_quality_gep'].sum() - 638_339_000_000) < 1e9
 
 
 def test_es_config_and_parameters_rows_hydrate_water_quality(tmp_path):

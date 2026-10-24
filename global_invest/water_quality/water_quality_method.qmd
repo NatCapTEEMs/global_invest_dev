@@ -35,7 +35,7 @@ $$
 
 `element_service_values` recomputes both identities per nutrient and compares them against the
 committed columns at rtol 1e-9, raising if either breaks. `water_quality_gep_by_country` sums the
-two nutrients into `water_quality_gep_usd` and joins the result onto the country list, then
+two nutrients into `water_quality_gep` and joins the result onto the country list, then
 attaches the committed international-dollar column beside it.
 
 ## Inputs
@@ -51,7 +51,7 @@ From `es_parameters.csv`, scoped to the `water_quality` service:
 
 `gep_calculation` writes `gep_by_country_base_year.csv` into its own task directory, holding the
 r250 identifiers and attributes, `year`, `nitrogen_gep_usd`, `phosphorus_gep_usd`,
-`water_quality_gep_usd` and `water_quality_gep`. Both totals are logged, the market-USD sum and
+`water_quality_gep` and `water_quality_gep_international_dollars`. Both totals are logged, the market-USD sum (the account column, decided 2026-10-25) and
 the international-dollar sum.
 
 ## Method constants

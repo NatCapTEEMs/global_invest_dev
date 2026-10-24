@@ -54,8 +54,8 @@ pd.set_option('display.max_rows', 1000)
 service_label = 'water_quality'
 
 df = hb.df_read(p.results[service_label]['gep_by_country_base_year'])
-total_usd = df['water_quality_gep_usd'].sum()
-total_intl = df['water_quality_gep'].sum()
+total_usd = df['water_quality_gep'].sum()
+total_intl = df['water_quality_gep_international_dollars'].sum()
 p.gep_by_country_base_year_table = df[['iso3_r250_name', 'nitrogen_gep_usd', 'phosphorus_gep_usd', 'water_quality_gep']]
 ```
 
