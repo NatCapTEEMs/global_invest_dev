@@ -25,6 +25,7 @@ import numpy as np
 
 AIR_FILTRATION_VSL_USA = 9_900_000    # the method's US anchor VSL (vsl.R)
 AIR_FILTRATION_MIN_NAME_MATCHES = 190  # positional-join sanity floor (199 observed)
+AIR_FILTRATION_FID_START = 1  # the workbook's FID is the gpkg feature id, 1..250 in file order
 
 # How closely the VSL rebuilt from the group's country table must match the workbook's own
 # column before the difference is worth reporting. The two are the same build, so a country that
@@ -117,10 +118,34 @@ def air_quality_gep_by_country(workbook_df, r250_order_df, vsl=None):
     names do not.
 
     A name-equality floor guards it: fewer than AIR_FILTRATION_MIN_NAME_MATCHES identical names
-    means the order changed and the join must not proceed. That is what stands between this and
-    every country taking its neighbour's deaths."""
+    means the order changed and the join must not proceed -- but a floor alone cannot see a
+    two-row swap, so two per-row guards sit in front of it: the FID column must be the file
+    order itself (any whole-row reorder breaks it), and no mismatched position may carry a
+    name the r250 list knows (any data-column reorder among real countries breaks it). The
+    known blind spot, recorded in the tests: a data-only swap between two VARIANT rows (for
+    example Mayotte and Tokelau) leaves no name or FID signal and only a keyed workbook from
+    the air group would close it."""
     if len(workbook_df) != len(r250_order_df):
         raise ValueError(f'row-count mismatch: workbook {len(workbook_df)} vs r250 {len(r250_order_df)}')
+    fid = workbook_df['FID'].to_numpy()
+    expected = np.arange(AIR_FILTRATION_FID_START, AIR_FILTRATION_FID_START + len(workbook_df))
+    if not (fid == expected).all():
+        moved = workbook_df.loc[fid != expected, 'Country'].tolist()
+        raise ValueError(f'positional join refused: the workbook rows are not in FID order '
+                         f'(first moved rows: {moved[:5]}) -- the file was reordered.')
+    # Per-row guard: at a position where the names differ, a workbook name that exists anywhere
+    # in the r250 list means a real country's row sits at the wrong position. A swap of whole
+    # rows carries its FID and is caught above; a swap of the data columns alone is caught here.
+    # The workbook's duplicated name (Serbia, whose second row is Kosovo's by FID order) is the
+    # recorded exception; spelling and territory variants never appear in the r250 list --
+    # measured 2026-10-25, zero hits on the shipped file.
+    w = workbook_df['Country'].astype(str).to_numpy()
+    b = r250_order_df['brk_name'].astype(str).to_numpy()
+    duplicated = set(workbook_df['Country'][workbook_df['Country'].duplicated(keep=False)])
+    displaced = [w[i] for i in np.where(w != b)[0] if w[i] in set(b) and w[i] not in duplicated]
+    if displaced:
+        raise ValueError(f'positional join refused: known country names sit at the wrong '
+                         f'positions: {displaced[:5]} -- the data columns were reordered.')
     matches = int((workbook_df['Country'].values == r250_order_df['brk_name'].values).sum())
     if matches < AIR_FILTRATION_MIN_NAME_MATCHES:
         raise ValueError(f'positional join refused: only {matches} identical names '

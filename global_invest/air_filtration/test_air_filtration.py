@@ -112,3 +112,52 @@ def test_vsl_comes_from_the_shared_panel_and_a_missing_country_raises():
     assert list(repriced['iso3']) == ['XKX']
     with pytest.raises(ValueError):
         af.vsl_from_shared_panel(workbook, order, panel[panel['iso3_r250_label'] != 'TUR'])
+
+
+def _mini_workbook_and_order():
+    """Four rows in gpkg order, one duplicated name whose second row is another country's by
+    position (the Serbia/Kosovo shape), plus a variant name the r250 list does not carry."""
+    workbook = pd.DataFrame({
+        'FID': [1, 2, 3, 4],
+        'Country': ['Aaa', 'Bbb', 'Mayotte', 'Aaa'],
+        'Dep_Deaths': [10.0, 20.0, 30.0, 40.0],
+        'Dust_Deaths': [1.0, 2.0, 3.0, 4.0],
+        'VSL': [2.0, 2.0, 2.0, 2.0],
+    })
+    order = pd.DataFrame({
+        'brk_name': ['Aaa', 'Bbb', 'France', 'Kkk'],
+        'iso3_r250_id': [1, 2, 3, 4],
+        'iso3_r250_label': ['AAA', 'BBB', 'MYT', 'KKK'],
+    })
+    return workbook, order
+
+
+def test_positional_join_accepts_the_shipped_order_and_the_duplicate_name(monkeypatch):
+    monkeypatch.setattr(af, 'AIR_FILTRATION_MIN_NAME_MATCHES', 2)
+    workbook, order = _mini_workbook_and_order()
+    out = af.air_quality_gep_by_country(workbook, order).set_index('iso3_r250_label')
+    assert out.loc['KKK', 'air_filtration_gep'] == 80.0   # the duplicate row lands by position
+
+
+def test_positional_join_refuses_a_two_row_swap(monkeypatch):
+    """Swapping two whole rows carries their FIDs with them; until 2026-10-25 the floor accepted
+    this and both countries silently took each other's deaths (reproduced on the real file with
+    Slovakia and Zambia)."""
+    monkeypatch.setattr(af, 'AIR_FILTRATION_MIN_NAME_MATCHES', 1)
+    workbook, order = _mini_workbook_and_order()
+    workbook.iloc[[0, 1]] = workbook.iloc[[1, 0]].values
+    with pytest.raises(ValueError, match='not in FID order'):
+        af.air_quality_gep_by_country(workbook, order)
+
+
+def test_positional_join_refuses_a_data_column_swap_with_fids_left_in_place(monkeypatch):
+    """Reordering only the data columns preserves the FID sequence, so the per-row name guard is
+    what refuses it: a known country name at the wrong position. A data-only swap between two
+    VARIANT rows (names the r250 list does not carry) leaves no signal at all -- that blind spot
+    is recorded here rather than asserted away."""
+    monkeypatch.setattr(af, 'AIR_FILTRATION_MIN_NAME_MATCHES', 1)
+    workbook, order = _mini_workbook_and_order()
+    cols = ['Country', 'Dep_Deaths', 'Dust_Deaths', 'VSL']
+    workbook.loc[[0, 1], cols] = workbook.loc[[1, 0], cols].values
+    with pytest.raises(ValueError, match='wrong'):
+        af.air_quality_gep_by_country(workbook, order)
