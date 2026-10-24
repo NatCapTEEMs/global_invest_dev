@@ -6,6 +6,7 @@ construction promises are both stated as executable facts.
 """
 import numpy as np
 import pandas as pd
+import pytest
 
 from global_invest.moisture_recycling import moisture_recycling_functions as mr
 
@@ -91,3 +92,24 @@ def test_a_destination_absent_from_the_matrix_is_dropped_not_invented():
     out = mr.reattributed_water_value(m, water, ecosystem_share=1.0)
     assert 'DDD' not in set(out['iso3_r250_label'])
     assert np.isclose(out['moisture_recycling_gep'].sum(), 0.1 * 100 + 0.2 * 1000 + 0.3 * 1000)
+
+
+def test_own_part_is_the_labelled_diagonal_under_any_column_order():
+    """The own/export split must not depend on the matrix's column order: until 2026-10-25 a
+    column-reordered matrix silently returned an all-zero own part (the headline column was
+    always label-aligned and unaffected)."""
+    matrix = pd.DataFrame([[0.5, 0.2, 0.0], [0.1, 0.6, 0.1], [0.0, 0.1, 0.7]],
+                          index=['AAA', 'BBB', 'CCC'], columns=['AAA', 'BBB', 'CCC'])
+    value = pd.Series({'AAA': 100.0, 'BBB': 200.0, 'CCC': 300.0})
+    ordered = mr.reattributed_water_value(matrix, value, 1.0).set_index('iso3_r250_label')
+    shuffled = mr.reattributed_water_value(matrix[['BBB', 'CCC', 'AAA']], value, 1.0
+                                            ).set_index('iso3_r250_label')
+    assert ordered['moisture_recycling_gep_own_part'].tolist() == [50.0, 120.0, 210.0]
+    pd.testing.assert_frame_equal(ordered, shuffled)
+
+
+def test_duplicated_matrix_labels_are_refused():
+    matrix = pd.DataFrame([[0.5, 0.2], [0.1, 0.6]], index=['AAA', 'AAA'], columns=['AAA', 'BBB'])
+    value = pd.Series({'AAA': 100.0, 'BBB': 200.0})
+    with pytest.raises(ValueError, match='duplicated country labels'):
+        mr.reattributed_water_value(matrix, value, 1.0)

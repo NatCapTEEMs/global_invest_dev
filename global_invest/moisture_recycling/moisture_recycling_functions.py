@@ -95,8 +95,17 @@ def reattributed_water_value(matrix, water_value, ecosystem_share):
     filled = matrix.fillna(0.0)
     value = water_value.reindex(filled.columns).fillna(0.0) * float(ecosystem_share)
     attributed = filled.to_numpy() @ value.to_numpy()
-    own = np.diag(filled.to_numpy()) * value.reindex(filled.index).fillna(0.0).to_numpy() \
-        if list(filled.index) == list(filled.columns) else np.zeros(len(filled.index))
+    if not (filled.index.is_unique and filled.columns.is_unique):
+        raise ValueError('the sink-fraction matrix carries duplicated country labels; '
+                         'the own/export split needs unique labels.')
+    # The own-country fraction is the LABELLED diagonal -- cell [label, label] -- so a matrix
+    # whose columns arrive in a different order still splits correctly; a row label with no
+    # matching column has no own-column in the data and carries 0.0. Until 2026-10-25 this
+    # read the diagonal by position and silently zeroed the split when the order differed.
+    own_fracs = pd.Series(0.0, index=filled.index)
+    common = filled.index.intersection(filled.columns)
+    own_fracs.loc[common] = [float(filled.at[label, label]) for label in common]
+    own = (own_fracs * value.reindex(filled.index).fillna(0.0)).to_numpy()
     out = pd.DataFrame({
         'iso3_r250_label': list(matrix.index),
         'moisture_recycling_gep': attributed,
