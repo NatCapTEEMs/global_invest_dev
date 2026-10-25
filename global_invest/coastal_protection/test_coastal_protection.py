@@ -186,18 +186,41 @@ def test_missing_area_stays_missing():
     assert np.isnan(out.loc['AAA', 'coastal_protection_gep_mangrove'])
 
 
-def test_partial_observation_sums_the_measured_rows_alone():
+def test_partial_observation_sums_the_measured_rows_alone_and_is_not_complete():
     """A split country with one rated and one unrated sub-region keeps the measured part: the
-    sum is a lower bound carried by min_count=1, not a missing value and not a silent claim of
-    completeness (no real country is in this shape today; the rule is pinned so one can be)."""
+    sum is a lower bound carried by min_count=1, not a missing value -- and not a claim of
+    completeness: through the combine, the complete column stays missing (until 2026-10-25 it
+    carried a value here). No real country is in this shape today; the rule is pinned so one
+    can be."""
     df_raw = pd.DataFrame({
         'countrycode': ['AAA', 'Z01'], 'year': [2019, 2019],
         'mangrove_ha': [100.0, 50.0], 'value_per_ha_2019': [2.0, np.nan],
         'annual_value_2019': [np.nan, np.nan]})
     cleaned = cpf.clean_mangrove_values(df_raw)
-    out = cpf.mangrove_gep_by_country(COUNTRIES, cleaned).set_index('iso3_r250_label')
+    mang = cpf.mangrove_gep_by_country(COUNTRIES, cleaned)
+    assert mang.set_index('iso3_r250_label').loc['AAA', 'coastal_protection_gep_mangrove'] == 200.0
 
-    assert out.loc['AAA', 'coastal_protection_gep_mangrove'] == 200.0
+    coral = pd.DataFrame({'iso3_r250_label': ['AAA'], 'year': [2019],
+                          'coastal_protection_gep_coral_reef': [7.0]})
+    out = cpf.combine_coastal_components(mang, coral).set_index('iso3_r250_label')
+    assert out.loc['AAA', 'coastal_protection_gep'] == 207.0
+    assert np.isnan(out.loc['AAA', 'coastal_protection_gep_complete'])
+
+
+def test_a_missing_area_row_blocks_the_complete_total():
+    """A country with one measured row and one no-area row is partially observed: the known
+    components stand, the complete column does not."""
+    df_raw = pd.DataFrame({
+        'countrycode': ['AAA', 'Z01'], 'year': [2019, 2019],
+        'mangrove_ha': [100.0, np.nan], 'value_per_ha_2019': [2.0, np.nan],
+        'annual_value_2019': [np.nan, np.nan]})
+    cleaned = cpf.clean_mangrove_values(df_raw)
+    mang = cpf.mangrove_gep_by_country(COUNTRIES, cleaned)
+    coral = pd.DataFrame({'iso3_r250_label': ['AAA'], 'year': [2019],
+                          'coastal_protection_gep_coral_reef': [7.0]})
+    out = cpf.combine_coastal_components(mang, coral).set_index('iso3_r250_label')
+    assert out.loc['AAA', 'coastal_protection_gep'] == 207.0
+    assert np.isnan(out.loc['AAA', 'coastal_protection_gep_complete'])
 
 
 def test_combine_distinguishes_all_five_cases():

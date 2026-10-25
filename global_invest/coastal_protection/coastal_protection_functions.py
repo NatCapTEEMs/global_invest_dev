@@ -73,7 +73,9 @@ def mangrove_gep_by_country(gdf_countries, df_mangrove_value):
     the correspondence does not carry drop out with the inner join, and rows the correspondence
     matched but that carry no country label are dropped rather than summed into a nameless total.
     A country whose every row carries a missing value sums to missing, not zero (min_count=1);
-    a partially measured country sums its measured rows alone.
+    a partially measured country sums its measured rows alone. `mangrove_fully_measured` says
+    whether every row the country contributed carried a value -- a partially measured country
+    keeps its measured sum but is not complete.
 
     Args:
         gdf_countries (pd.DataFrame): the r264 country correspondence.
@@ -84,8 +86,9 @@ def mangrove_gep_by_country(gdf_countries, df_mangrove_value):
         pd.DataFrame: iso3_r250_label, year, coastal_protection_gep_mangrove.
     """
     df = hb.df_merge(gdf_countries, df_mangrove_value, how='inner', on='ee_r264_label')
-    df = (df.groupby(['iso3_r250_label', 'year'], as_index=False, dropna=False)['Value']
-            .sum(min_count=1))
+    df = (df.groupby(['iso3_r250_label', 'year'], as_index=False, dropna=False)
+            .agg(Value=('Value', lambda v: v.sum(min_count=1)),
+                 mangrove_fully_measured=('Value', lambda v: bool(v.notna().all()))))
     df = df.dropna(subset=['iso3_r250_label'])
     return df.rename(columns={'Value': 'coastal_protection_gep_mangrove'})
 
@@ -158,9 +161,14 @@ def combine_coastal_components(df_mangrove, df_coral_reef):
     # Known-component total: the sum of what is measured, a lower bound where a component is
     # missing (the missing component column says which); missing only when nothing is measured.
     df['coastal_protection_gep'] = df[[m, c]].sum(axis=1, min_count=1)
-    # Complete total: only where every component the country carries is known.
+    # Complete total: only where every component the country carries is known, down to the
+    # row level -- a partially measured country shows its known-component total and no
+    # complete one. A coral-only country has no mangrove rows; absence is knowledge.
+    fully = (df['mangrove_fully_measured'].fillna(True)
+             if 'mangrove_fully_measured' in df.columns else pd.Series(True, index=df.index))
     df['coastal_protection_gep_complete'] = df['coastal_protection_gep'].where(
-        df[m].notna() & df[c].notna())
+        df[m].notna() & df[c].notna() & fully)
+    df = df.drop(columns=['mangrove_fully_measured'], errors='ignore')
     df['Value'] = df['coastal_protection_gep']
     return df
 
