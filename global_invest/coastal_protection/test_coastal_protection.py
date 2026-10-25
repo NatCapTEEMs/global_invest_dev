@@ -245,3 +245,35 @@ def test_combine_distinguishes_all_five_cases():
     assert np.isnan(out.loc['D', 'coastal_protection_gep_complete'])
     assert out.loc['E', 'coastal_protection_gep'] == 0.0          # measured zero
     assert out.loc['E', 'coastal_protection_gep_complete'] == 0.0
+
+
+def test_a_carried_missing_coral_row_is_unknown_not_absent():
+    """A coral row whose value the table carries as missing is an unknown, not an absence:
+    the component stays missing, the total is the measured mangrove alone (a lower bound) and
+    the complete column stays missing. Until 2026-10-25 the missing row was dropped, which read
+    as absence and earned a measured zero beside a complete-labelled total."""
+    coral_raw = pd.DataFrame({'ee_r264_name': ['Aaaland'], 'coral_reef_value': [np.nan],
+                              'year': [2010]})
+    coral = cpf.coral_reef_gep_by_country(COUNTRIES, coral_raw, 1.1, base_year=2019)
+    mangrove = pd.DataFrame({'iso3_r250_label': ['AAA'], 'year': [2019],
+                             'coastal_protection_gep_mangrove': [140.0],
+                             'mangrove_fully_measured': [True]})
+    out = cpf.combine_coastal_components(mangrove, coral).set_index('iso3_r250_label')
+    assert np.isnan(out.loc['AAA', 'coastal_protection_gep_coral_reef'])
+    assert out.loc['AAA', 'coastal_protection_gep'] == 140.0
+    assert np.isnan(out.loc['AAA', 'coastal_protection_gep_complete'])
+
+
+def test_partial_coral_observation_keeps_the_measured_sum_and_is_not_complete():
+    """One valued and one missing coral row for the same country: the measured sum stands and
+    the complete column does not (no real country is in this shape today; the table is clean)."""
+    coral_raw = pd.DataFrame({'ee_r264_name': ['Aaaland', 'Aaaland'],
+                              'coral_reef_value': [100.0, np.nan], 'year': [2010, 2010]})
+    coral = cpf.coral_reef_gep_by_country(COUNTRIES, coral_raw, 1.0, base_year=2019)
+    mangrove = pd.DataFrame({'iso3_r250_label': ['AAA'], 'year': [2019],
+                             'coastal_protection_gep_mangrove': [140.0],
+                             'mangrove_fully_measured': [True]})
+    out = cpf.combine_coastal_components(mangrove, coral).set_index('iso3_r250_label')
+    assert out.loc['AAA', 'coastal_protection_gep_coral_reef'] == 100.0
+    assert out.loc['AAA', 'coastal_protection_gep'] == 240.0
+    assert np.isnan(out.loc['AAA', 'coastal_protection_gep_complete'])

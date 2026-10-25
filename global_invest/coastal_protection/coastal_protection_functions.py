@@ -115,13 +115,17 @@ def coral_reef_gep_by_country(gdf_countries, df_coral_reef_value, deflation_fact
         pd.DataFrame: iso3_r250_label, year, coastal_protection_gep_coral_reef.
     """
     df = hb.df_merge(gdf_countries, df_coral_reef_value, how='inner', on='ee_r264_name')
-    df = df.dropna(subset=['coral_reef_value'])
     df = df.drop_duplicates(subset=['iso3_r250_label', 'year', 'coral_reef_value'])
 
     df['coral_reef_value'] = df['coral_reef_value'] * deflation_factor
     df['year'] = base_year
-    df = (df.groupby(['iso3_r250_label', 'year'], as_index=False, dropna=False)['coral_reef_value']
-          .sum())
+    # A value the table carries as missing stays missing: the country keeps a missing
+    # component (min_count=1) rather than disappearing into absence, and the flag says
+    # whether every surviving row carried a value. Until 2026-10-25 missing rows were
+    # dropped, which read as absence and earned a measured zero in the combine.
+    df = (df.groupby(['iso3_r250_label', 'year'], as_index=False, dropna=False)
+            .agg(coral_reef_value=('coral_reef_value', lambda v: v.sum(min_count=1)),
+                 coral_fully_measured=('coral_reef_value', lambda v: bool(v.notna().all()))))
     return df.rename(columns={'coral_reef_value': 'coastal_protection_gep_coral_reef'})
 
 
@@ -164,11 +168,13 @@ def combine_coastal_components(df_mangrove, df_coral_reef):
     # Complete total: only where every component the country carries is known, down to the
     # row level -- a partially measured country shows its known-component total and no
     # complete one. A coral-only country has no mangrove rows; absence is knowledge.
-    fully = (df['mangrove_fully_measured'].fillna(True)
-             if 'mangrove_fully_measured' in df.columns else pd.Series(True, index=df.index))
+    fully = pd.Series(True, index=df.index)
+    for flag in ('mangrove_fully_measured', 'coral_fully_measured'):
+        if flag in df.columns:
+            fully &= df[flag].fillna(True)
     df['coastal_protection_gep_complete'] = df['coastal_protection_gep'].where(
         df[m].notna() & df[c].notna() & fully)
-    df = df.drop(columns=['mangrove_fully_measured'], errors='ignore')
+    df = df.drop(columns=['mangrove_fully_measured', 'coral_fully_measured'], errors='ignore')
     df['Value'] = df['coastal_protection_gep']
     return df
 
