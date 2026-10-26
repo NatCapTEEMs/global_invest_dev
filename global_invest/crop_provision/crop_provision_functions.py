@@ -4,7 +4,7 @@
 The quantity-and-price stage is fused in the source data where FAOSTAT fused it: the Value of
 Production bulk reports gross production value per country, crop and year. Where FAOSTAT's
 current-USD series carries production and no value -- its USD value stops wherever its own USD
-producer-price series stops -- the pair is filled from production tonnes times the median USD
+producer-price series stops -- the pair is filled from production tonnes times that year's USD
 producer price the pollination chain stages, at the deepest level that table resolves (country,
 subregion, region, world). Attribution is the Changing Wealth of Nations 2024 land rental rate,
 a per-country share that varies by decade, applied by an as-of merge so each year takes the
