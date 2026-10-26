@@ -22,26 +22,105 @@ This is a final product that enters the economy via the agricultural sector. Fur
 
 ## Data and Methods
 
-We estimate gross ecosystem product (GEP) for crop provision for the year 2019 as:\
+This section describes the implemented commercial crop account. The separate subsistence
+calculation is not included in the formula below.
+
+For country $c$, retained crop item $k$ and year $t$, the account calculates
+
 $$
-\mathrm{GEP crop}_{\text{c,k,t}} = \sum_{c,k,t} \left( \mathrm{GPV}_{c,k,t} \cdot \lambda_{c,t10} \right)
-$$ , where
+E_{c,k,t} = V_{c,k,t}\,r_{c,d(t)}, \qquad
+E_{c,t} = \sum_{k\in K_{c,t}} E_{c,k,t}.
+$$
 
-GEP crop c,k,t is the agricultural ecosystem contribution for country c, crop item k and given year t,
+Here $V$ is gross production value in US dollars, $r$ is the dimensionless CWoN cropland
+rental share, and $d(t)$ is the most recent available decade starting no later than $t$.
+$K_{c,t}$ is the set of items retained by the selection and aggregate rules below. The
+base-year account uses 2019 values, expressed in 2019 USD. Summing the country values gives
+the global total for that year; years are not summed together.
 
-GPVk,t is the FAO’s gross production value for country c, crop item k and given year ,
+The rental share attributes part of crop revenue to land, following the CWoN approach.
+It does not separately identify the contributions of water, soil, pollination or other
+inputs. It should therefore not be interpreted as a measured share attributable to any
+one of those services.
 
-λc,t10 is the CWON land rent representing ecosystem contribution for country c, decade t10,
+### Reported values and item selection
 
-This value is aggregated at the national level for a given year (in this case, 2019). The summation can represent global GEP for food provision when aggregated across all countries, crop items and year.
+The calculation reads the staged FAOSTAT Value of Production bulk, retaining element 57
+(gross production value in current thousand US dollars), the configured crop-item list,
+and countries rather than FAOSTAT regional aggregates. The item list determines the
+commercial crop scope; it is not a selection of all items in the FAOSTAT file.
 
-FAOSTAT's gross production value in current US dollars stops wherever its own US-dollar producer-price series stops, so a country-crop pair can carry production and no value (India's rice in 2019 is one). At the base year those pairs take GPV from the values table the pollination module stages (`fao_values_1993_2024.csv`): production tonnes times that year's US-dollar producer price, the price falling back from the country's own to the FAO subregion, region and world medians. No price arithmetic happens in this module. The same lambda then applies to filled and read pairs alike, and each filled row records which level priced it.
+FAOSTAT reports both individual items and group totals. The implemented rule drops all
+configured group-total rows in a country-year when any non-group item has a nonmissing
+value. It retains group totals when no individual item is valued. This is a country-year
+rule, not a separate completeness check for each crop group. A retained group total cannot
+be treated as an observed value for each crop within it.
 
-This formula and method follows the Changing Wealth of Nations method presented in the [2024 report](https://documents1.worldbank.org/curated/en/099100824155021548/pdf/P178446-7dfe6e92-9cf0-4d24-ad25-20b1320904c2.pdf) (World Bank, 2024). Lambda (λ) is “proxied by land cost shares provided by the International Agricultural Productivity database for each country and each decade. For countries where rental rates vary across decades, annual values are assumed to be constant within each decade” (World Bank, 2024). Agricultural land is further subdivided into pasture or cropland, therefore land rates are disaggregated into livestock or crop production. We do not distinguish between organic and non-organic farming, as well as intensive/extensive types of farming. In the CWON report of 2021 (Source: CWON 2021: Methods and Data, p. 48) the pastures were divided into intensive and extensive pastureland and the rental rates for extensive pasture were twice as high as for intensive. The rental rates for intensive pasture and cropland were the same. However, the data was provided by regions of several countries clustered together. Therefore, the CWON 2024 methodology constitutes a major improvement in terms of accuracy and timeframe, losing the artificially doubling the rent for extensive pastureland.
+### Filling missing values
+
+At the base year, a selected country-crop pair without a reported value can take a positive
+value from the staged `fao_values_1993_2024.csv` table. Existing nonmissing FAOSTAT values,
+including zeros, are retained. The fill table is produced by the pollination module's FAO
+preprocessing: annual production in tonnes multiplied by an annual producer price in
+USD per tonne, with price fallbacks from country to subregion, region and world.
+
+This annual-price table is distinct from the 2017–2021 median-price table used in the
+pollination raster valuation. Sharing the preprocessing code does not make the two price
+constructions identical. Crop provision also retains FAOSTAT's reported gross values
+where they exist, rather than repricing all production with either table.
+
+A fill requires a country code that can be linked to the rental-rate lookup. Filled rows
+record the price level in `value_source`; reported values are marked `faostat`. After
+filling, the code removes all price-filled rows in any country-year that still carries a
+configured group-total row. This avoids adding fills alongside retained totals, but does
+not establish that every removed item belongs to a particular retained group.
+
+### Rental shares, units and outputs
+
+The same CWoN rental share applies to reported and filled values. A missing rental share
+leaves the item value missing. The calculation converts thousand USD to USD and aggregates
+items to country-year totals using the account's country correspondence. Country sums
+include available item values; a numeric country total does not establish complete crop
+coverage.
+
+The outputs include country-crop-year, country-year and base-year country CSVs. The country
+GeoPackage attaches national values to country geometries for mapping; it is not a spatial
+disaggregation within countries. A reference column carries the pre-aggregate-removal,
+unfilled construction through the same rental-rate calculation for comparison. It is not
+proof of the producing run behind a historical spreadsheet value.
+
+### Relationship to the CropGrids rasters
+
+The separate production-raster pipeline is implemented in
+`../pollination/pollination_tasks.py`. It combines CropGrids harvested areas with a
+Monfreda spatial yield pattern adjusted to FAO country yields, with documented fallback
+rules where inputs are missing. Production is written as tonnes per square kilometre on
+the CropGrids grid. Multiplying by cell area is necessary to obtain tonnes per cell.
+These production rasters do not separate irrigated and rainfed production.
+
+The pollination valuation applies prices and crop-specific pollination dependence to
+production. Its pollination-value raster is therefore not a total crop-value raster or a
+commercial crop-rent raster. The crop-provision task does not currently allocate its final
+country-crop values to CropGrids cells.
+
+A spatial allocation of this account would need to preserve its country totals, crop scope,
+reported-value and fill rules, group-total handling and missing-value conventions.
+Multiplying the existing production rasters by median prices and rental shares is a
+different construction unless reconciled to those values. Such an allocation has not been
+validated here.
 
 ## Validation
 
-The applied method follows the CWON methodology for estimating the value of natural capital rents. For agriculture, the natural resource is land and the crop rents represent ecosystem contribution. We compared our results with the CWON 2024 for global results for the year 2019. CWON’s results are about 5% lower than ours, even though we use the same input data and values for lambda.
+The implementation can be traced through `gep_calculation` in `crop_provision_tasks.py`,
+`impute_missing_crop_values` and `drop_fills_under_group_totals` in
+`crop_provision_functions.py`, and the selection, aggregate and rental-rate helpers in
+`../utilities.py`. The annual-price construction is in `run_fao_values` and
+`_merge_production_value` in `../pollination/pollination_tasks.py`.
+
+The earlier version of this note reported a global total about 5% above CWoN. That comparison
+is not established for the current selection and gap-filling rules and is not used here as
+validation. Numerical reproduction of the account does not independently validate the
+rental-share assumption or the completeness of every country's crop coverage.
 
 ## References
 
