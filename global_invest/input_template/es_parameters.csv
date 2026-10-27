@@ -178,7 +178,13 @@ water_supply,water_use_cropland_area_input_source_url,https://bulks-faostat.fao.
 water_supply,water_use_withdrawal_by_sector_input_path,global_invest/water_supply/water_use/data/Raw/aquastat/aquastat_withdrawal_by_sector.csv
 water_supply,water_use_withdrawal_by_sector_input_source_url,"https://api.data.apps.fao.org/api/v2/bigquery?sql_url=https://data.apps.fao.org/catalog/dataset/945666e6-7803-4621-b8ef-cfd885a84596/resource/4a000a1b-24f0-4328-aab6-b9b525892090/download/query_en.sql&area=World&variable=4250,4251,4252,4253&year=2000,...,2022&type=country"
 water_supply,water_use_raw_water_price_usd_per_m3,
+water_supply,water_supply_crop_values_path,
+water_supply,water_supply_crop_values_relative_file,../gep_crop_provision/intermediate/gep_calculation/gep_by_country_year_crop.csv
+water_supply,water_supply_agriculture_lambda_path,global_invest/water_supply/agriculture/shunkei_e229f881/lambda_jr_tbl_CropGBWater.csv
+water_supply,water_supply_agriculture_spam_path,global_invest/water_supply/agriculture/shunkei_e229f881/spam_cropgbwater_share.csv
+water_supply,water_supply_agriculture_correspondence_path,global_invest/water_supply/agriculture/shunkei_e229f881/CropGBWater_FAOSTAT_GPV_crop_correspondence.csv
 water_supply,water_use_withdrawal_path,global_invest/water_supply/water_use/data/water_withdraw.csv
+water_supply,water_supply_agriculture_source,"Shunkei3/GEP-WaterUse-Agriculture @ e229f881, final stage (Code/5): the pinned lambda, SPAM-share and crop-correspondence tables, with the provenance README beside them in base_data"
 air_filtration,air_filtration_workbook_path,global_invest/air_filtration/air_filtration_gep.xlsx
 water_quality,water_quality_retention_path,global_invest/water_quality/Results/EstimationOutput/retention_estimates.csv
 water_quality,water_quality_international_path,global_invest/water_quality/water_quality_gep.csv
@@ -305,6 +311,8 @@ landslide_mitigation,landslide_zonal_statistics_path,global_invest/landslide_mit
 crop_provision,fao_input_path,global_invest/crop_provision/Value_of_Production_E_All_Data.csv
 crop_provision,faostat_aggregate_areas_path,global_invest/fao/faostat_aggregate_areas.csv
 crop_provision,faostat_aggregate_items_path,global_invest/fao/faostat_aggregate_items.csv
+crop_provision,faostat_item_groups_path,global_invest/fao/faostat_item_groups.csv
+crop_provision,faostat_item_groups_source,"FAOSTAT Definitions and Standards, Item Group listing, exported 2026-10-27 from fao.org/faostat #definitions (all domains, 9,544 mapping rows); QV rows give each group total's member item codes"
 crop_provision,crop_provision_default_items_path,global_invest/crop_provision/fao_crop_items.csv
 crop_provision,crop_provision_fao_values_table_path,global_invest/pollination/fao/fao_values_1993_2024.csv
 crop_provision,crop_provision_fao_values_table_source,"built by pollination's fao_median_prices task (the ported crop_benefits chain): production tonnes x that year's USD producer price, the price falling back country to subregion to region to world, with the level in price_source_agg_level"
@@ -328,6 +336,7 @@ crop_provision,crop_subsistence_reference_delivered_path,global_invest/crop_prov
 livestock_provision,fao_input_path,global_invest/livestock_provision/Value_of_Production_E_All_Data.csv
 livestock_provision,faostat_aggregate_areas_path,global_invest/fao/faostat_aggregate_areas.csv
 livestock_provision,faostat_aggregate_items_path,global_invest/fao/faostat_aggregate_items.csv
+livestock_provision,faostat_item_groups_path,global_invest/fao/faostat_item_groups.csv
 livestock_provision,livestock_provision_owner_value_codes_path,global_invest/livestock_provision/fao_owner_livestock_value_codes.csv
 livestock_provision,fao_input_source_url,https://bulks-faostat.fao.org/production/Value_of_Production_E_All_Data.zip
 livestock_provision,fao_input_source_archive_member,Value_of_Production_E_All_Data.csv
@@ -365,7 +374,8 @@ pollination,pollination_cropgrids_country_raster_path,global_invest/pollination/
 pollination,pollination_fao_production_table_path,global_invest/pollination/fao/fao_production_1993_2024.csv
 pollination,pollination_dependence_table_path,global_invest/pollination/fao/pollination/pollination_1993_2024.parquet
 pollination,pollination_coffee_split_path,global_invest/pollination/coffee_types_distribution/prop_arabica_robusta.csv
-pollination,pollination_price_years,"[2017, 2018, 2019, 2020, 2021]"
+pollination,pollination_price_years,"[2019]"
+pollination,pollination_price_temporal_window_years,5
 pollination,pollination_us_cpi_input_path,socioeconomic/fred_cpiaucsl/CPIAUCSL.csv
 pollination,pollination_us_cpi_source,"FRED CPIAUCSL monthly, annual means; the account's ONE temporal dollar series"
 pollination,pollination_excluded_item_codes_path,global_invest/pollination/fao_excluded_item_codes.csv
@@ -392,7 +402,7 @@ pollination,pollination_fao_start_year,1993
 pollination,pollination_fao_end_year,2024
 pollination,pollination_yield_method,"target"
 pollination,pollination_yield_early_years,"[1998, 1999, 2000, 2001, 2002]"
-pollination,pollination_yield_late_years,"[2017, 2018, 2019, 2020, 2021]"
+pollination,pollination_yield_late_years,"[2019]"
 erosion,erosion_gdp_csv_source_url,https://api.worldbank.org/v2/country/all/indicator/NY.GDP.MKTP.CD?format=json&per_page=20000
 erosion,erosion_reference_country_gep_path,global_invest/erosion/reference/integrated_country_gep_corrected_20260829.csv
 renewable_energy_provision,gep_quantity_input_source_url,https://pxweb.irena.org/pxweb/en/IRENASTAT (Power Capacity and Generation)

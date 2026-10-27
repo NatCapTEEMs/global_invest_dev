@@ -163,27 +163,47 @@ def impute_missing_crop_values(df_crop_value, df_fao_values, year, area_code_by_
     return pd.concat([df, new_rows], ignore_index=True)
 
 
-def drop_fills_under_group_totals(df_crop_value, aggregate_items, country_column='area_code'):
-    """Remove imputed items in a country-year that FAOSTAT's group totals already value.
+def drop_fills_under_group_totals(df_crop_value, aggregate_items, membership_df,
+                                  country_column='area_code', value_column='crop_provision_gep'):
+    """Remove imputed items that a retained FAOSTAT group total already values.
 
-    drop_aggregates_where_components_exist keeps a country-year's group totals when it has no
-    individually valued item (India and Argentina in 2019). impute_missing_crop_values then fills
-    individual items for exactly those country-years, so the imputed rice would be counted again on
-    top of "Cereals, primary". The group totals are FAOSTAT's own complete valuation, so they are
-    kept and the fills there are removed; fills in country-years whose totals were dropped stay.
+    drop_aggregates_where_components_exist keeps a country-year's group totals where none of
+    their members is individually valued (India and Argentina in 2019). impute_missing_crop_values
+    then fills individual items for such country-years, so an imputed rice would be counted again
+    on top of a retained "Cereals, primary". A fill is therefore removed exactly when its item is
+    a MEMBER of a retained group total with a nonmissing value in the same country-year. A fill of
+    an item no retained group contains stays: India's wheat is not inside "Roots and Tubers,
+    Total", and a group row whose value is missing values nothing.
 
     Args:
-        df_crop_value (pd.DataFrame): the frame after both steps, with crop, year, value_source.
+        df_crop_value (pd.DataFrame): the frame after both steps, with crop, crop_code, year,
+            value_source and the value column.
         aggregate_items (iterable): the group-total item names.
+        membership_df (pd.DataFrame): the FAOSTAT item-group membership, as staged or normalized.
         country_column (str): the column identifying the country.
+        value_column (str): the value column that decides whether a group total is nonmissing.
 
     Returns:
         pd.DataFrame: the frame without the double-counted fills.
     """
-    keys = pd.MultiIndex.from_frame(df_crop_value[[country_column, 'year']])
-    carried = keys[df_crop_value['crop'].isin(set(aggregate_items)).to_numpy()]
-    filled = df_crop_value['value_source'].astype(str).str.startswith('price_').to_numpy()
-    return df_crop_value[~(filled & keys.isin(carried))]
+    from global_invest import utilities
+    members = utilities.faostat_item_group_members(membership_df)
+    df = df_crop_value.reset_index(drop=True)
+    codes = pd.to_numeric(df['crop_code'], errors='coerce')
+    carried = df['crop'].isin(set(aggregate_items)) & df[value_column].notna()
+    covered = (df.loc[carried, [country_column, 'year']]
+               .assign(item_group_code=codes[carried])
+               .dropna(subset=['item_group_code']))
+    covered['item_group_code'] = covered['item_group_code'].astype(int)
+    covered = (covered.merge(members, on='item_group_code')
+               [[country_column, 'year', 'item_code']].drop_duplicates())
+    filled = df['value_source'].astype(str).str.startswith('price_')
+    fill_rows = (df.loc[filled, [country_column, 'year']]
+                 .assign(item_code=codes[filled]).dropna(subset=['item_code']))
+    fill_rows['item_code'] = fill_rows['item_code'].astype(int)
+    fill_rows['row'] = fill_rows.index
+    to_drop = fill_rows.merge(covered, on=[country_column, 'year', 'item_code'])['row']
+    return df[~df.index.isin(to_drop)]
 
 
 

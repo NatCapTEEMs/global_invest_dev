@@ -556,6 +556,7 @@ def _add_iso3_and_fx(
 def _save_price_outputs(
     pp_usd: pd.DataFrame,
     outdir: str,
+    cfg: pf.FaoPriceSettings,
 ) -> str:
     """Rename columns and save final price panel."""
     os.makedirs(outdir, exist_ok=True)
@@ -609,21 +610,28 @@ def _compute_median_prices(
     price_years: list[int],
     outdir: str,
     cw: pd.DataFrame,
+    temporal_window_years: int,
+    cpi_df: pd.DataFrame,
 ) -> pd.DataFrame:
-    """Compute median price per hierarchical level over the price window."""
-    logger.info("Computing median prices over years %s", price_years)
+    """Median own-country price over the window, with the temporal fallback and no other level.
+
+    The account prices a country's crop with that country's OWN price. A country-item with no
+    price inside the window takes the same country-item's price from the nearest year within
+    the temporal window around the window's centre, converted into centre-year dollars with the
+    shared CPI, the donor year recorded; one with no own price at all stays absent, so the value
+    raster carries no value there rather than another country's price.
+    """
+    logger.info("Computing median prices over years %s (own-country only)", price_years)
 
     if "region_fao" not in prices.columns:
         prices = prices.merge(cw[["area_code_m49", "region_fao", "subregion_fao"]], on="area_code_m49", how="left")
 
-    parent_frame = prices[
-        prices["year"].isin(price_years)
-        & prices["price_usd_tonne"].notna()
-        & (prices["price_usd_tonne"] > 0)
-    ].copy()
+    centre_year = int(pf.price_window_centre_year(price_years))
+    valid = prices[prices["price_usd_tonne"].notna() & (prices["price_usd_tonne"] > 0)].copy()
+    in_window = valid[valid["year"].isin(price_years)]
 
     price_country = (
-        parent_frame.groupby(
+        in_window.groupby(
             ["area_code_m49", "iso3", "region_fao", "subregion_fao", "item_code_fao", "item_fao"],
             as_index=False, dropna=False
         )
@@ -633,66 +641,58 @@ def _compute_median_prices(
         )
     )
     price_country["agg_level"] = "country"
+    price_country["price_donor_year"] = np.nan
 
-    price_subregion = (
-        price_country.dropna(subset=["subregion_fao"])
-        .groupby(["subregion_fao", "item_code_fao"], as_index=False)
-        .agg(
-            item_fao=("item_fao", "first"),
-            price_median_usd_tonne=("price_median_usd_tonne", "median"),
-            years_used=("years_used", "mean"),
-        )
-    )
-    price_subregion["agg_level"] = "subregion"
-
-    price_region = (
-        price_country.dropna(subset=["region_fao"])
-        .groupby(["region_fao", "item_code_fao"], as_index=False)
-        .agg(
-            item_fao=("item_fao", "first"),
-            price_median_usd_tonne=("price_median_usd_tonne", "median"),
-            years_used=("years_used", "mean"),
-        )
-    )
-    price_region["agg_level"] = "region"
-
-    price_world = (
-        price_country.groupby("item_code_fao", as_index=False)
-        .agg(
-            item_fao=("item_fao", "first"),
-            price_median_usd_tonne=("price_median_usd_tonne", "median"),
-            years_used=("years_used", "mean"),
-        )
-    )
-    price_world["agg_level"] = "world"
-    price_world["area_code_m49"] = "999"
-    price_world["iso3"] = "WOR"
-    price_world["item_code_fao"] = price_world["item_code_fao"].astype(int)
-
-    median_prices = pd.concat([price_country, price_subregion, price_region, price_world], ignore_index=True)
+    # The temporal fallback: country-items absent from the window take their own nearest-year
+    # price within the temporal window around the centre year, ties to the earlier year.
+    covered = set(map(tuple, price_country[["area_code_m49", "item_code_fao"]].values))
+    outside = valid[~valid[["area_code_m49", "item_code_fao"]].apply(tuple, axis=1).isin(covered)].copy()
+    outside["distance"] = (outside["year"] - centre_year).abs()
+    outside = outside[outside["distance"] <= temporal_window_years]
+    outside = outside.sort_values(["area_code_m49", "item_code_fao", "distance", "year"])
+    donors = outside.groupby(["area_code_m49", "item_code_fao"], as_index=False).first()
+    if len(donors):
+        factors = {int(y): utilities.usd_deflation_factor(cpi_df, int(y), centre_year)
+                   for y in donors["year"].unique()}
+        donors["price_median_usd_tonne"] = donors.apply(
+            lambda r: r["price_usd_tonne"] * factors[int(r["year"])], axis=1)
+        donors["price_donor_year"] = donors["year"]
+        donors["years_used"] = 1
+        donors["agg_level"] = "country"
+        donors = donors[["area_code_m49", "iso3", "region_fao", "subregion_fao", "item_code_fao",
+                         "item_fao", "price_median_usd_tonne", "years_used", "agg_level",
+                         "price_donor_year"]]
+    median_prices = pd.concat([price_country, donors], ignore_index=True) if len(donors) \
+        else price_country
 
     os.makedirs(outdir, exist_ok=True)
     yr_start, yr_end = min(price_years), max(price_years)
     pq_out = os.path.join(outdir, f"price_median_usd_tonne_{yr_start}_{yr_end}.parquet")
     save_parquet(median_prices, pq_out)
 
-    logger.info("Median prices: %d rows", len(median_prices))
+    logger.info("Median prices: %d country rows (%d from temporal donors); no geographic levels",
+                len(median_prices), len(donors))
     return median_prices
 
 
 def _merge_production_value(
     prod: pd.DataFrame,
     price_country: pd.DataFrame,
-    price_subregion: pd.DataFrame,
-    price_region: pd.DataFrame,
-    price_world: pd.DataFrame,
+    temporal_window_years: int,
+    cpi_df: pd.DataFrame,
 ) -> pd.DataFrame:
-    """Production times annual price, falling back country to subregion to region to world.
+    """Production times annual price, with the own-country temporal fallback and nothing else.
+
+    A row missing its own country's price for its year takes the SAME country-item's price from
+    the nearest year within the window, converted into the row's dollars with the shared CPI;
+    equidistant donors tie to the earlier year, and the donor year is recorded. No other
+    country's price, at any aggregation level, is ever substituted — a country-item with no own
+    price in the window stays missing.
 
     Returns the frame rather than writing it: file writing inside what reads as arithmetic
     would make the fallback untestable without a disk.
     """
-    logger.info("Merging production × annual prices (Hierarchical)")
+    logger.info("Merging production × annual prices (own-country, temporal fallback)")
 
     prod_q = prod[prod["element"] == "Production"].copy()
     if "value" in prod_q.columns:
@@ -705,58 +705,35 @@ def _merge_production_value(
         how="left",
     )
 
-    # 2. Merge subregion prices
-    if "subregion_fao" in merged.columns:
-        merged = merged.merge(
-            price_subregion[["year", "subregion_fao", "item_code_fao", "subreg_price_usd_tonne"]],
-            on=["year", "subregion_fao", "item_code_fao"],
-            how="left"
-        )
-    else:
-        merged["subreg_price_usd_tonne"] = np.nan
-
-    # 3. Merge region prices
-    if "region_fao" in merged.columns:
-        merged = merged.merge(
-            price_region[["year", "region_fao", "item_code_fao", "reg_price_usd_tonne"]],
-            on=["year", "region_fao", "item_code_fao"],
-            how="left"
-        )
-    else:
-        merged["reg_price_usd_tonne"] = np.nan
-
-    # 4. Merge world prices
-    merged = merged.merge(
-        price_world[["year", "item_code_fao", "world_price_usd_tonne"]],
-        on=["year", "item_code_fao"],
-        how="left"
-    )
-
-    # Apply fallbacks
+    # 2. Own-country temporal fallback: the same country-item's price from the nearest year
+    # within the window, in the row's dollars, ties to the earlier year.
     merged["price_source_agg_level"] = "country"
-    
-    # Subregion fallback
-    miss_ctry = merged["price_usd_tonne"].isna()
-    merged.loc[miss_ctry, "price_usd_tonne"] = merged.loc[miss_ctry, "subreg_price_usd_tonne"]
-    merged.loc[miss_ctry & merged["subreg_price_usd_tonne"].notna(), "price_source_agg_level"] = "subregion"
-    
-    # Region fallback
-    miss_subreg = merged["price_usd_tonne"].isna()
-    merged.loc[miss_subreg, "price_usd_tonne"] = merged.loc[miss_subreg, "reg_price_usd_tonne"]
-    merged.loc[miss_subreg & merged["reg_price_usd_tonne"].notna(), "price_source_agg_level"] = "region"
-    
-    # World fallback
-    miss_reg = merged["price_usd_tonne"].isna()
-    merged.loc[miss_reg, "price_usd_tonne"] = merged.loc[miss_reg, "world_price_usd_tonne"]
-    merged.loc[miss_reg & merged["world_price_usd_tonne"].notna(), "price_source_agg_level"] = "world"
-    
-    # Missing everywhere
+    merged["price_donor_year"] = np.nan
+    missing = merged["price_usd_tonne"].isna()
+    if missing.any():
+        donors = price_country[["year", "area_code_m49", "item_code_fao", "price_usd_tonne"]].rename(
+            columns={"year": "price_donor_year", "price_usd_tonne": "donor_price_usd_tonne"})
+        candidates = (merged.loc[missing, ["year", "area_code_m49", "item_code_fao"]]
+                      .reset_index()
+                      .merge(donors, on=["area_code_m49", "item_code_fao"]))
+        candidates["distance"] = (candidates["price_donor_year"] - candidates["year"]).abs()
+        candidates = candidates[(candidates["distance"] > 0)
+                                & (candidates["distance"] <= temporal_window_years)]
+        candidates = candidates.sort_values(["index", "distance", "price_donor_year"])
+        best = candidates.groupby("index").first()
+        if len(best):
+            factors = {(int(d), int(y)): utilities.usd_deflation_factor(cpi_df, int(d), int(y))
+                       for d, y in best[["price_donor_year", "year"]].drop_duplicates().itertuples(index=False)}
+            converted = best.apply(lambda r: r["donor_price_usd_tonne"]
+                                   * factors[(int(r["price_donor_year"]), int(r["year"]))], axis=1)
+            merged.loc[best.index, "price_usd_tonne"] = converted
+            merged.loc[best.index, "price_donor_year"] = best["price_donor_year"]
+            merged.loc[best.index, "price_source_agg_level"] = "country_temporal"
+
+    # Missing everywhere within the window: stays missing, never another country's price.
     merged.loc[merged["price_usd_tonne"].isna(), "price_source_agg_level"] = "missing"
 
     merged["value_usd"] = merged["total_production_tonnes"] * merged["price_usd_tonne"]
-    
-    # Cleanup
-    merged = merged.drop(columns=["subreg_price_usd_tonne", "reg_price_usd_tonne", "world_price_usd_tonne"])
 
     logger.info(
         "Price sources: %s",
@@ -764,8 +741,6 @@ def _merge_production_value(
     )
     logger.info("Rows with value_usd: %d", merged["value_usd"].notna().sum())
 
-    os.makedirs(outdir, exist_ok=True)
-    
     # Drop element column if present (it's always 'Production')
     if "element" in merged.columns:
         merged = merged.drop(columns=["element"])
@@ -784,22 +759,25 @@ def run_fao_values(cfg: pf.FaoPriceSettings) -> str:
 
     prod, prices = _load_production_and_prices(cfg)
 
-    # Side-effect: generate smoothed median prices for rasters (2018-2022)
+    # Side-effect: generate the own-country median prices the value raster reads
     cw = pd.read_csv(cfg.crosswalk_m49_iso3_path)
     cw["area_code_m49"] = cw["area_code_m49"].astype(str).str.zfill(3)
-    
+    cpi_df = pd.read_csv(cfg.us_cpi_path)
+
     _ = _compute_median_prices(
         prices,
         cfg.price_years,
         os.path.join(cfg.output_dir, 'median_prices'),
         cw,
+        cfg.price_temporal_window_years,
+        cpi_df,
     )
 
-    # Main pipeline: use annual prices
-    price_country, price_subregion, price_region, price_world = pf._compute_annual_prices(prices, cw)
+    # Main pipeline: annual own-country prices with the temporal fallback
+    price_country, _, _, _ = pf._compute_annual_prices(prices, cw)
 
     merged = _merge_production_value(
-        prod, price_country, price_subregion, price_region, price_world)
+        prod, price_country, cfg.price_temporal_window_years, cpi_df)
 
     # The writing is the task layer's, which is what keeps the merge testable without a disk.
     os.makedirs(cfg.output_dir, exist_ok=True)
@@ -912,7 +890,9 @@ def fao_median_prices(p):
         global_median_max_times_off=float(p.pollination_price_global_median_max_times_off),
         qc_min_overlap=int(p.pollination_price_qc_min_overlap),
         qc_bad_median_times_off=float(p.pollination_price_qc_bad_median_times_off),
-        qc_bad_share_over_3x=float(p.pollination_price_qc_bad_share_over_3x))
+        qc_bad_share_over_3x=float(p.pollination_price_qc_bad_share_over_3x),
+        price_temporal_window_years=int(p.pollination_price_temporal_window_years),
+        us_cpi_path=str(p.get_path(p.pollination_us_cpi_input_path)))
     run_fao_production(settings)
     run_fao_prices(settings)
     run_fao_values(settings)

@@ -79,10 +79,13 @@ def gep_calculation(p):
         p.fao_input_path, p.commercial_attribute_subservices,
         utilities.read_column(p.faostat_aggregate_areas_path, 'area_fao'))
     # FAOSTAT publishes both the individual animal product and the "Livestock" total that adds them
-    # up. The item list carries both, so the total is kept only where no individual item is.
+    # up. The item list carries both, so a total is kept except where its own members are
+    # individually valued (per the staged item-group membership).
+    item_groups = pd.read_csv(p.faostat_item_groups_path)
+    item_groups = item_groups[item_groups['Domain Code'] == 'QV']
     df_crop_value = utilities.drop_aggregates_where_components_exist(
         df_crop_value, utilities.read_column(p.faostat_aggregate_items_path, 'item_fao'),
-        'livestock_provision_gep')
+        'livestock_provision_gep', item_groups)
     df_crop_coefs = read_crop_coefs(p.cwon_crop_coefficients_path)
 
     df_gep_by_country_year_crop = utilities.apply_rental_rates(

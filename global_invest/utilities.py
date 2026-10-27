@@ -1316,6 +1316,67 @@ def usd_deflation_factor(cpi_df, from_year, to_year):
     return float(annual.loc[to_year] / annual.loc[from_year])
 
 
+def fill_base_year_gaps_from_adjacent_years(df, base_year, cpi_df, value_label,
+                                            country_column='countrycode'):
+    """A wide CWoN panel's base-year column with source gaps filled from the adjacent years.
+
+    A gap is a base-year cell that is missing, or zero while an adjacent year (the year before
+    or the year after) is positive: the CWoN current-dollar panels read zero or NaN for
+    country-years the edition did not value, and a resource earning rent either side of the base
+    year did not earn nothing in it. Everything else is preserved: a zero flanked by nonpositive
+    neighbours is a genuine zero, a NONZERO base-year value is never replaced, and a gap with no
+    positive neighbour stays missing -- flagged in the provenance table, never filled from
+    another source such as WDI.
+
+    The donor is the mean of the positive adjacent values, each converted into base-year dollars
+    with the account's shared CPI (usd_deflation_factor); with one positive neighbour, that year
+    alone. Symmetric, deterministic, and using only the panel's own local information.
+
+    Args:
+        df (pd.DataFrame): the CWoN panel with YR<year> columns.
+        base_year (int): the account's base year.
+        cpi_df (pd.DataFrame): the shared FRED CPIAUCSL frame.
+        value_label (str): what the panel holds, for the provenance rows.
+        country_column (str): the panel's country key.
+
+    Returns:
+        tuple: (the frame with the base-year column repaired, a provenance DataFrame with one
+        row per repair or flag: country, value_label, original, reason, donor years, nominal
+        donor values, conversion factors and replacement).
+    """
+    base = 'YR%d' % base_year
+    years = [base_year - 1, base_year + 1]
+    out = df.copy()
+    for column in [base] + ['YR%d' % y for y in years]:
+        out[column] = pd.to_numeric(out.get(column), errors='coerce')
+    factors = {y: usd_deflation_factor(cpi_df, y, base_year) for y in years}
+    records = []
+    for i, row in out.iterrows():
+        original = row[base]
+        positives = [(y, float(row['YR%d' % y])) for y in years
+                     if pd.notna(row['YR%d' % y]) and row['YR%d' % y] > 0]
+        if pd.notna(original) and original != 0:
+            continue
+        if original == 0 and not positives:
+            continue  # a genuine zero: nonpositive on both sides
+        record = {'country': row[country_column], 'value': value_label,
+                  'original': original,
+                  'donor_years': ' '.join(str(y) for y, _ in positives),
+                  'donor_nominal': ' '.join('%r' % v for _, v in positives),
+                  'conversion_factors': ' '.join('%r' % factors[y] for y, _ in positives)}
+        if not positives:
+            record['reason'], record['replacement'] = 'missing_no_donor', np.nan
+        else:
+            record['reason'] = 'missing_2019' if pd.isna(original) else 'zero_with_positive_neighbour'
+            record['replacement'] = float(np.mean([v * factors[y] for y, v in positives]))
+            out.loc[i, base] = record['replacement']
+        records.append(record)
+    provenance = pd.DataFrame(records, columns=['country', 'value', 'original', 'reason',
+                                                'donor_years', 'donor_nominal',
+                                                'conversion_factors', 'replacement'])
+    return out, provenance
+
+
 def international_to_usd(df, pli_df, year, value_col, iso3_col='iso3_r250_label'):
     """Convert per-country international-dollar (PPP) values into market USD of the same year.
 
@@ -2471,9 +2532,32 @@ def expand_country_values_to_regions(df_regions, df_by_country, value_column):
 
 
 
-def drop_aggregates_where_components_exist(df, aggregate_items, value_column,
+def faostat_item_group_members(membership_df, domain=None):
+    """The FAOSTAT item-group membership as a two-column integer frame.
+
+    Args:
+        membership_df (pd.DataFrame): the staged Definitions and Standards Item Group listing,
+            with `Domain Code`, `Item Group Code` and `Item Code` columns (or already-normalized
+            `item_group_code`/`item_code`).
+        domain (str): restrict to one FAOSTAT domain, e.g. 'QV' for Value of Production.
+
+    Returns:
+        pd.DataFrame: unique (item_group_code, item_code) integer pairs.
+    """
+    m = membership_df.copy()
+    if domain is not None and 'Domain Code' in m.columns:
+        m = m[m['Domain Code'] == domain]
+    m = m.rename(columns={'Item Group Code': 'item_group_code', 'Item Code': 'item_code'})
+    for column in ('item_group_code', 'item_code'):
+        m[column] = pd.to_numeric(m[column], errors='coerce')
+    m = m.dropna(subset=['item_group_code', 'item_code'])
+    return (m[['item_group_code', 'item_code']].astype(int).drop_duplicates()
+            .reset_index(drop=True))
+
+
+def drop_aggregates_where_components_exist(df, aggregate_items, value_column, membership_df,
                                            country_column='area_code', log=None):
-    """FAOSTAT group totals kept only where the items beneath them are missing.
+    """FAOSTAT group totals kept except where their OWN members are individually valued.
 
     FAOSTAT publishes crop and livestock value at two levels: the individual item, and the group
     total that adds those items up for you. "Oilcrops Primary" is oil palm plus coconuts plus the
@@ -2485,16 +2569,22 @@ def drop_aggregates_where_components_exist(df, aggregate_items, value_column,
     production. Across all countries, 87 of 156 exceeded 100% of what FAOSTAT says they grow;
     livestock was worse, at 106 of 152.
 
-    Deleting the group totals is not the fix, because this release stopped publishing individual
+    Deleting every group total is not the fix, because this release stopped publishing individual
     items for many countries -- Argentina and India have no individual crop values at all in 2019,
-    only group totals. So a group total is dropped for a country-year that has any individual item
-    and kept for one that has none, which is the only rule that both avoids the double count and
-    keeps those countries in the account.
+    only group totals. And dropping a group because the country has ANY individual item is not the
+    fix either: a country can carry "Roots and Tubers, Total" beside an individually valued Wheat,
+    which the group never contained. So a group total is dropped exactly for a country-year where
+    at least one of ITS OWN MEMBERS (per the FAOSTAT item-group definitions) is individually
+    valued, and kept otherwise. A dropped group with only some members valued loses its unvalued
+    members' share, which the log reports; whether to allocate such remainders is an accounting
+    decision, not this function's.
 
     Args:
-        df (pd.DataFrame): the long cleaned FAOSTAT frame.
+        df (pd.DataFrame): the long cleaned FAOSTAT frame, with `crop` and `crop_code`.
         aggregate_items (iterable): the group-total item names.
         value_column (str): the value column.
+        membership_df (pd.DataFrame): the item-group membership, as staged or normalized
+            (see faostat_item_group_members).
         country_column (str): the column identifying the country.
         log (callable): where to report what was dropped.
 
@@ -2510,18 +2600,37 @@ def drop_aggregates_where_components_exist(df, aggregate_items, value_column,
     if not is_aggregate.any():
         return df
 
-    valued = df[value_column].notna()
-    has_components = (df[~is_aggregate & valued]
-                      .groupby([country_column, 'year']).size().rename('n').reset_index())
-    marked = df.merge(has_components, on=[country_column, 'year'], how='left')
-    redundant = marked['crop'].isin(aggregates) & marked['n'].notna()
+    members = faostat_item_group_members(membership_df)
+    out = df.reset_index(drop=True)
+    is_aggregate = out['crop'].isin(aggregates)
+    codes = pd.to_numeric(out['crop_code'], errors='coerce')
+    valued = out[value_column].notna()
 
-    dropped_value = marked.loc[redundant & marked[value_column].notna(), value_column].sum()
-    kept = marked.loc[marked['crop'].isin(aggregates) & marked['n'].isna(), country_column].nunique()
-    log('Group totals: %d rows dropped where the individual items are present (%.6g in the value '
-        'column), and kept for %d countries that have no individual items at all.'
-        % (int(redundant.sum()), dropped_value, kept))
-    return marked[~redundant].drop(columns='n')
+    valued_pairs = (out.loc[~is_aggregate & valued, [country_column, 'year']]
+                    .assign(item_code=codes[~is_aggregate & valued])
+                    .dropna(subset=['item_code']).drop_duplicates())
+    valued_pairs['item_code'] = valued_pairs['item_code'].astype(int)
+    group_rows = (out.loc[is_aggregate, [country_column, 'year']]
+                  .assign(item_group_code=codes[is_aggregate])
+                  .dropna(subset=['item_group_code']))
+    group_rows['item_group_code'] = group_rows['item_group_code'].astype(int)
+    group_rows['row'] = group_rows.index
+    expanded = group_rows.merge(members, on='item_group_code')
+    hits = expanded.merge(valued_pairs, on=[country_column, 'year', 'item_code'])
+    redundant = out.index.isin(hits['row'])
+
+    n_members_hit = hits.groupby('row').size()
+    n_members = members.groupby('item_group_code').size()
+    partial = sum(1 for row in n_members_hit.index
+                  if n_members_hit[row] < n_members.get(int(codes[row]), 0))
+    dropped_value = out.loc[redundant & valued, value_column].sum()
+    kept = out.loc[is_aggregate & ~redundant, country_column].nunique()
+    log('Group totals: %d rows dropped where their own members are individually valued '
+        '(%.6g in the value column; %d of them with only PARTIAL member coverage, whose '
+        'unvalued members\' share is lost with them), and kept in %d countries whose groups '
+        'have no individually valued member.'
+        % (int(redundant.sum()), dropped_value, partial, kept))
+    return out[~redundant]
 
 
 def warp_raster_to_pyramid_sum(src_path, dst_path, arcseconds):

@@ -81,7 +81,14 @@ rather than a second one:
    for the crop items in the FAO classification (`run_fao_production`).
 2. **Yield-change ratios.** Median FAO yield in a window at the base year over a window at 2000,
    per country and crop, with subregion, region and world medians alongside for the countries FAO
-   does not report (`fao_yield_change`).
+   does not report (`fao_yield_change`). A country-crop FAO reports in only one window keeps that
+   window's yield with no ratio: the target normalization reads the base-year yield alone, so a
+   missing 2000-window yield no longer demotes a country to its subregion median (upstream
+   crop_benefits adopted the same fix). The base-year window is the single year 2019, as are the
+   producer prices — the group's adopted rule, with no surrounding-year fallback; the early
+   window keeps its five years around 2000, which is its Monfreda-matching role and serves only
+   the ratio method. The country-to-subregion-to-region-to-world GEOGRAPHIC fallback is a
+   different mechanism and is unchanged.
 3. **Yield rasters.** Monfreda's 2000 yields aligned to the CropGrids grid, gaps filled from the
    nearest valid cell in the same country, then each country rescaled so its area-weighted mean
    matches the FAO number for the base year (`pollination_yield_rasters`).

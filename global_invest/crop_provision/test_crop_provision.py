@@ -601,11 +601,13 @@ def test_an_item_filled_under_a_kept_group_total_is_not_counted_twice():
         'value_usd': [2000.0, 30000.0],
     })
     aggregates = ['Cereals, primary']
+    membership = pd.DataFrame({'item_group_code': [1717, 1717, 1717],
+                               'item_code': [100, 200, 27]})
 
     out = utilities.drop_aggregates_where_components_exist(
-        values, aggregates, 'crop_provision_gep', log=lambda *a: None)
+        values, aggregates, 'crop_provision_gep', membership, log=lambda *a: None)
     out = cp.impute_missing_crop_values(out, fao_values, 2019, {10: 1, 30: 3}, ['Rye', 'Rice'])
-    out = cp.drop_fills_under_group_totals(out, aggregates)
+    out = cp.drop_fills_under_group_totals(out, aggregates, membership)
 
     keyed = out.set_index(['country', 'crop'])
     assert keyed.at[('Iiiland', 'Cereals, primary'), 'crop_provision_gep'] == 50.0
@@ -627,3 +629,52 @@ def test_area_codes_by_m49_keeps_the_account_row_not_the_aggregate_component():
     out = cp.area_codes_by_m49(raw, aggregate_areas=['China, mainland'])
     assert out[156] == 351
     assert out[10] == 1
+
+
+def test_group_totals_and_fills_are_judged_by_membership_not_by_any_item():
+    """India 2019 in miniature: FAOSTAT values only three group totals (roots, oilcrops, sugar),
+    none of which contains wheat or rice. The groups must be KEPT (no member is individually
+    valued), wheat and rice fills must SURVIVE (no retained group contains them), and a potato
+    fill must be removed (Roots and Tubers, Total already values it). Unrelatedland has a valued
+    Banana beside an Oilcrops total: the total stays, because bananas are not oilcrops. A group
+    row whose value is missing values nothing, so fills under it stay. Partialland's Oilcrops
+    total is dropped although only one of its two members is valued."""
+    membership = pd.DataFrame({
+        'item_group_code': [1720, 1720, 1730, 1730, 1723, 1717, 1717],
+        'item_code':       [116,  125,  254,  249,  156,  15,   27]})
+    aggregates = ['Roots and Tubers, Total', 'Oilcrops Primary', 'Sugar Crops Primary']
+    values = pd.DataFrame({
+        'area_code': [9, 9, 9, 7, 7, 5, 5, 3, 3],
+        'country': ['Indialike'] * 3 + ['Unrelatedland'] * 2 + ['Missingland'] * 2 + ['Partialland'] * 2,
+        'crop_code': [1720, 1730, 1723, 486, 1730, 1730, 254, 1730, 254],
+        'crop': ['Roots and Tubers, Total', 'Oilcrops Primary', 'Sugar Crops Primary',
+                 'Bananas', 'Oilcrops Primary', 'Oilcrops Primary', 'Oil palm fruit',
+                 'Oilcrops Primary', 'Oil palm fruit'],
+        'year': [2019] * 9,
+        'crop_provision_gep': [2.9, 7.6, 2.4, 5.0, 10.0, np.nan, np.nan, 11.0, 4.0],
+    })
+    out = utilities.drop_aggregates_where_components_exist(
+        values, aggregates, 'crop_provision_gep', membership, log=lambda *a: None)
+    keyed = out.set_index(['country', 'crop'])
+    assert ('Indialike', 'Roots and Tubers, Total') in keyed.index
+    assert ('Indialike', 'Oilcrops Primary') in keyed.index
+    assert ('Unrelatedland', 'Oilcrops Primary') in keyed.index, 'a banana is not an oilcrop'
+    assert ('Partialland', 'Oilcrops Primary') not in keyed.index, 'one valued member suffices'
+    assert ('Missingland', 'Oilcrops Primary') in keyed.index, 'nothing valued under it'
+
+    fills = pd.DataFrame({
+        'area_code': [9, 9, 9, 5],
+        'country': ['Indialike'] * 3 + ['Missingland'],
+        'crop_code': [15, 27, 116, 254],
+        'crop': ['Wheat', 'Rice', 'Potatoes', 'Oil palm fruit'],
+        'year': [2019] * 4,
+        'crop_provision_gep': [8.3, 20.4, 1.0, 2.0],
+        'value_source': ['price_country'] * 4,
+    })
+    frame = pd.concat([out.assign(value_source='None'), fills], ignore_index=True)
+    kept = cp.drop_fills_under_group_totals(frame, aggregates, membership)
+    keyed = kept.set_index(['country', 'crop'])
+    assert ('Indialike', 'Wheat') in keyed.index, 'no retained group contains wheat'
+    assert ('Indialike', 'Rice') in keyed.index
+    assert ('Indialike', 'Potatoes') not in keyed.index, 'the retained roots total values it'
+    assert ('Missingland', 'Oil palm fruit') in keyed.index, 'a missing group total values nothing'

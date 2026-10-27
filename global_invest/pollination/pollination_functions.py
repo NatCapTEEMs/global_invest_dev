@@ -530,6 +530,11 @@ class FaoPriceSettings:
     qc_min_overlap: int
     qc_bad_median_times_off: float
     qc_bad_share_over_3x: float
+    # The account's price-fallback rule: a missing own-country price falls back ACROSS YEARS
+    # within the same country and crop, never across countries at any aggregation. The window
+    # bounds the donor search; the CPI converts the donor into the row's dollars.
+    price_temporal_window_years: int
+    us_cpi_path: str
 
 
 # ---------------------------------------------------------------------------------------------
@@ -593,7 +598,7 @@ def _reshape_prices(pp_raw: pd.DataFrame) -> pd.DataFrame:
     return pp_wide
 
 
-def _reconstruct_slc_lcu(pp_wide: pd.DataFrame) -> pd.DataFrame:
+def _reconstruct_slc_lcu(pp_wide: pd.DataFrame, cfg) -> pd.DataFrame:
     """Steps 4-7: base SLC, fill SLC, LCU/SLC ratios, fill LCU."""
 
     # 4) Base SLC at index = 100
@@ -694,6 +699,7 @@ def _reconstruct_slc_lcu(pp_wide: pd.DataFrame) -> pd.DataFrame:
 def _build_usd_with_qc(
     pp3: pd.DataFrame,
     fx: pd.DataFrame,
+    cfg,
 ) -> pd.DataFrame:
     """Merge FX, compute USD, apply 4 QC filters."""
 
@@ -1213,8 +1219,9 @@ def yield_change_ratios(production_df, crosswalk_m49, early_years, late_years):
     the early one. Medians rather than means, so one drought or one bumper harvest does not set
     the factor.
 
-    A country-crop pair FAO does not report gets no row, so the table also carries subregion,
-    region and world medians for `build_hierarchical_lookup` to fall back through.
+    A country-crop pair FAO reports in only one window keeps that window's yield with a NaN
+    ratio; a pair in neither window gets no row. The table also carries subregion, region and
+    world medians for `build_hierarchical_lookup` to fall back through.
 
     Args:
         production_df (pd.DataFrame): FAO production rows, with `element`, `area_code_m49`,
@@ -1245,13 +1252,20 @@ def yield_change_ratios(production_df, crosswalk_m49, early_years, late_years):
     early = window_yield(df[df['year'].isin(list(early_years))], 'early')
     late = window_yield(df[df['year'].isin(list(late_years))], 'late')
 
-    merged = early.merge(late, on=['area_code_m49', 'item_code_fao'], how='inner',
+    # Outer, not inner: a pair FAO reports in only one window keeps that window's yield. The
+    # target method reads late_yield alone, so an inner join was silently demoting late-only
+    # countries to their subregion median.
+    merged = early.merge(late, on=['area_code_m49', 'item_code_fao'], how='outer',
                          suffixes=('_x', '_y'))
     if 'item_fao_y' in merged.columns:
+        merged['item_fao_x'] = merged['item_fao_x'].fillna(merged['item_fao_y'])
         merged = merged.drop(columns=['item_fao_y']).rename(columns={'item_fao_x': 'item_fao'})
 
     merged['yield_ratio'] = merged['late_yield'] / merged['early_yield']
-    merged = merged[np.isfinite(merged['yield_ratio'])]
+    # No ratio where a window is missing or zero: the row stays for its own window's yield, and
+    # every consumer falls back through NaN (the lookup checks isfinite at each level, and the
+    # aggregate medians skip NaN), so the ratio method's results are unchanged.
+    merged.loc[~np.isfinite(merged['yield_ratio']), 'yield_ratio'] = np.nan
 
     crosswalk = crosswalk_m49.copy()
     crosswalk['area_code_m49'] = crosswalk['area_code_m49'].astype(str).str.zfill(3)
@@ -1364,17 +1378,15 @@ def nearest_country_ids(country_ids):
 
 
 def price_raster_by_country(price_rows, country_ids_filled, crosswalk_m49, deflator):
-    """Per-pixel producer price for one crop: own country's median, then subregion, region, world.
+    """Per-pixel producer price for one crop: the pixel's own country's price, or nothing.
 
-    price_rows is the crop's slice of the median-price table (every agg_level); pixels whose
-    country has no price for the crop fall back level by level through build_hierarchical_lookup,
-    and pixels whose code is outside the lookup take the world median. Returns the price grid in
-    target-year dollars and a provenance grid (PROVENANCE_COUNTRY..PROVENANCE_WORLD) so the task
-    can report how many dollars rest on each level rather than leaving the fallback implicit.
+    price_rows is the crop's slice of the median-price table, which carries country rows only
+    (own-window medians plus own-country temporal donors). A pixel whose country has no own
+    price for the crop stays NaN with PROVENANCE_NONE — the account never prices one country's
+    production with another country's price, at any aggregation. Returns the price grid in
+    target-year dollars and the provenance grid so the task reports how many dollars rest on a
+    temporal donor rather than leaving the fallback implicit.
     """
-    world_rows = price_rows[price_rows['agg_level'] == 'world']
-    world_value = (float(world_rows['price_median_usd_tonne'].iloc[0]) if not world_rows.empty
-                   else float(price_rows['price_median_usd_tonne'].median()))
     lookup, provenance = build_hierarchical_lookup(
         price_rows, crosswalk_m49, 'price_median_usd_tonne')
     codes = country_ids_filled.copy()
@@ -1382,8 +1394,8 @@ def price_raster_by_country(price_rows, country_ids_filled, crosswalk_m49, defla
     price = lookup[codes]
     source = provenance[codes]
     missing = ~np.isfinite(price)
-    price[missing] = world_value
-    source[missing] = PROVENANCE_WORLD
+    price[missing] = np.nan
+    source[missing] = PROVENANCE_NONE
     return (price * deflator).astype(np.float32), source
 
 

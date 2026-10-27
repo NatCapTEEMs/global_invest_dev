@@ -1091,3 +1091,80 @@ def test_totals_pair_matches_the_authors_october_revision():
         current_runs += int(current)
     assert checked >= 1, 'no run on this machine carries the totals pair'
     assert current_runs >= 1, 'no run carries the current anchor (379.5011 / 160.2358)'
+
+
+def test_yield_change_keeps_late_only_country_yields_for_the_target_method():
+    rows = []
+    for code, year, value in [('001', 2000, 10.0), ('001', 2019, 20.0),
+                              ('002', 2019, 30.0), ('003', 2000, 5.0)]:
+        rows.append({'element': 'Yield', 'area_code_m49': code, 'item_code_fao': 1,
+                     'year': year, 'value': value, 'item_fao': 'Crop'})
+    crosswalk = pd.DataFrame({'area_code_m49': ['001', '002', '003'],
+                              'iso3': ['AAA', 'BBB', 'CCC'],
+                              'region_fao': ['R'] * 3, 'subregion_fao': ['S'] * 3})
+    ratios = pf.yield_change_ratios(pd.DataFrame(rows), crosswalk, [2000], [2019])
+    country = ratios[ratios['agg_level'] == 'country'].set_index('area_code_m49')
+    # a complete pair is untouched by the gate removal
+    assert country.loc['001', 'yield_ratio'] == pytest.approx(2.0)
+    assert country.loc['001', 'late_yield'] == pytest.approx(20.0)
+    # a late-only pair keeps its own 2019 yield, with no invented ratio
+    assert country.loc['002', 'late_yield'] == pytest.approx(30.0)
+    assert np.isnan(country.loc['002', 'yield_ratio'])
+    # an early-only pair still has no late yield
+    assert np.isnan(country.loc['003', 'late_yield'])
+    late_lookup, provenance = pf.build_hierarchical_lookup(ratios, crosswalk, 'late_yield')
+    assert late_lookup[2] == pytest.approx(30.0) and provenance[2] == pf.PROVENANCE_COUNTRY
+    # the early-only country falls back to the subregion median of (20, 30)
+    assert late_lookup[3] == pytest.approx(25.0) and provenance[3] == pf.PROVENANCE_SUBREGION
+    # the ratio method is unchanged: the NaN-ratio country falls back exactly as when dropped
+    ratio_lookup, ratio_provenance = pf.build_hierarchical_lookup(ratios, crosswalk, 'yield_ratio')
+    assert ratio_lookup[2] == pytest.approx(2.0) and ratio_provenance[2] == pf.PROVENANCE_SUBREGION
+
+
+def test_annual_values_fall_back_across_years_within_the_same_country_only():
+    """A missing own-country price takes the same country-item's nearest-year price in the row's
+    dollars (equidistant donors tie to the earlier year), and NEVER another country's price: a
+    country with no own price in the window stays missing although its neighbour has one."""
+    prod = pd.DataFrame({
+        'element': ['Production'] * 3,
+        'year': [2019] * 3,
+        'area_code_m49': ['004', '008', '012'],
+        'item_code_fao': [515] * 3,
+        'value': [100.0, 50.0, 70.0]})
+    price_country = pd.DataFrame({
+        'year': [2019, 2017, 2021, 2019],
+        'area_code_m49': ['004', '008', '008', '999'],
+        'item_code_fao': [515] * 4,
+        'price_usd_tonne': [10.0, 20.0, 30.0, 99.0]})
+    cpi = pd.DataFrame({'observation_date': ['%d-01-01' % y for y in range(2014, 2025)],
+                        'CPIAUCSL': [100.0] * 3, }) if False else pd.DataFrame({
+        'observation_date': ['%d-01-01' % y for y in range(2014, 2025)],
+        'CPIAUCSL': [100, 100, 100, 100, 105, 110, 112, 118, 125, 128, 130]})
+    merged = pt._merge_production_value(prod, price_country, 5, cpi)
+    keyed = merged.set_index('area_code_m49')
+    assert keyed.at['004', 'price_source_agg_level'] == 'country'
+    assert keyed.at['004', 'price_usd_tonne'] == pytest.approx(10.0)
+    # 008: 2017 and 2021 are equidistant from 2019 -> the earlier year wins, CPI 100 -> 110
+    assert keyed.at['008', 'price_source_agg_level'] == 'country_temporal'
+    assert keyed.at['008', 'price_donor_year'] == 2017
+    assert keyed.at['008', 'price_usd_tonne'] == pytest.approx(20.0 * 110.0 / 100.0)
+    assert keyed.at['008', 'value_usd'] == pytest.approx(50.0 * 22.0)
+    # 012 has no own price anywhere: missing, never the neighbour's or the world's
+    assert keyed.at['012', 'price_source_agg_level'] == 'missing'
+    assert np.isnan(keyed.at['012', 'price_usd_tonne'])
+
+
+def test_price_raster_prices_a_pixel_with_its_own_country_or_nothing():
+    rows = pd.DataFrame({
+        'agg_level': ['country', 'country'],
+        'area_code_m49': ['002', '003'],
+        'region_fao': ['R', 'R'], 'subregion_fao': ['S', 'S'],
+        'price_median_usd_tonne': [40.0, 60.0]})
+    crosswalk = pd.DataFrame({'area_code_m49': ['002', '003', '004'],
+                              'region_fao': ['R'] * 3, 'subregion_fao': ['S'] * 3})
+    ids = np.array([[2, 3], [4, 0]])
+    price, source = pf.price_raster_by_country(rows, ids, crosswalk, 1.0)
+    assert price[0, 0] == pytest.approx(40.0) and source[0, 0] == pf.PROVENANCE_COUNTRY
+    assert price[0, 1] == pytest.approx(60.0)
+    assert np.isnan(price[1, 0]) and source[1, 0] == pf.PROVENANCE_NONE, 'no own price, no price'
+    assert np.isnan(price[1, 1])
