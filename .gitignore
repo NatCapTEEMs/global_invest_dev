@@ -237,3 +237,6 @@ docs/gep_issues_*.md
 # the account stands. Chiara decides what goes out and to whom.
 docs/note_*.md
 docs/gep_open_decisions*.md
+
+# Working material (publishing scripts, review docs, status pages): local, never pushed.
+/docs/
