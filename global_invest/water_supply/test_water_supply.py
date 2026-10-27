@@ -8,6 +8,7 @@ from the CWoN wealth table (both shipped in reference/). The water-use tests pin
 two-script calculation against its two committed intermediates (cleaning bit-exact, products to the
 anchor's own CSV rounding) and the adopted per-country outputs' joins and totals.
 """
+import hashlib
 import os
 from types import SimpleNamespace
 
@@ -345,3 +346,211 @@ def test_the_implied_price_is_what_a_cubic_metre_earns_in_agriculture():
     assert wf.implied_raw_water_price(200.0, 1000.0) == pytest.approx(0.2)
     with pytest.raises(ValueError, match='positive'):
         wf.implied_raw_water_price(200.0, 0.0)
+
+
+# --- Agriculture (Shunkei replication): pinned reference, final-stage reproduction ---
+# These tests reproduce the author's final valuation and aggregation stage from his own
+# processed inputs (theta x GPV 2020). They do not reproduce the upstream lambda, SPAM or
+# crop-mapping construction and are not scientific validation.
+AGRICULTURE_REFERENCE_DIR = os.path.join(REFERENCE_DIR, 'agriculture', 'shunkei_e229f881')
+AGRICULTURE_REFERENCE_SHA256 = {
+    'lambda_jr_tbl_CropGBWater.csv': '01a245c7f9d492560d95c736e9274fb846a001a921e08a9fe21c582c4e058f4c',
+    'spam_cropgbwater_share.csv': '1d83e570f7dd097d2d616087170ba4925e4e3dbb01d87dbf68364ffee0336df8',
+    'GPV_rainfed_irrigated_CropGBWater_2020.csv': 'a7b22fd4d9cbcfcc4c4227d90642362f89b0725361921859179201254d477e46',
+    'theta_table_final.csv': 'bd75d855fbf1422dbfeb5a1af59345324f3502f09eee374732012bf4a74d4069',
+    'CropGBWater_FAO_Ky_Kc.csv': 'c782e9b21aa09fdb777239729253bb49cb24a8a6d6abddf328efa8c5a4ee3ae0',
+    'CropGBWater_FAOSTAT_GPV_crop_correspondence.csv': 'e2803bedd0adcc0bd476c8f947283fa13e325a489be07f5b2b7973d9f3e0e5d4',
+    'gep_agwater_country_source.csv': 'c83c721debce654d357d168335dd010d05ee648db38d5fce37bda78c003cd0e5',
+    'gep_agwater_crop_country_source.csv': 'a1391945ce768df217fa3ef3959e31478b2ac3afd76a14aaa1ae468af4880fcb',
+}
+# Comparing float64 arithmetic reordered between R and pandas, in the files' own unit
+# (thousand current US$): measured worst deviations are 7e-8 (crop rows) and 6e-7
+# (country rows) thousand USD, so atol admits a tenth of a dollar and rtol a billionth
+# of the value. A reference cell of exactly zero is compared through atol alone.
+AGRICULTURE_RTOL = 1e-9
+AGRICULTURE_ATOL_THOUSAND_USD = 1e-4
+
+
+def _agriculture_reference(file_name):
+    path = os.path.join(AGRICULTURE_REFERENCE_DIR, file_name)
+    assert os.path.exists(path), (
+        f'agriculture reference not staged: {path}. The reproduction cannot be claimed '
+        'without it, so this is a failure, not a skip.')
+    return pd.read_csv(path)
+
+
+def test_agriculture_reference_files_match_their_pinned_hashes():
+    for file_name, expected in AGRICULTURE_REFERENCE_SHA256.items():
+        path = os.path.join(AGRICULTURE_REFERENCE_DIR, file_name)
+        assert os.path.exists(path), f'agriculture reference not staged: {path}'
+        with open(path, 'rb') as f:
+            digest = hashlib.sha256(f.read()).hexdigest()
+        assert digest == expected, f'{file_name} differs from the pinned 2026-10-27 retrieval'
+
+
+def _agriculture_reference_valuation():
+    lam = _agriculture_reference('lambda_jr_tbl_CropGBWater.csv').rename(columns={'iso3': 'iso3_r250_label'})
+    gpv = _agriculture_reference('GPV_rainfed_irrigated_CropGBWater_2020.csv').rename(columns={'iso3': 'iso3_r250_label'})
+    theta = _agriculture_reference('theta_table_final.csv').rename(columns={'iso3': 'iso3_r250_label'})
+    assert not theta.duplicated('iso3_r250_label').any(), 'theta must be one row per country'
+    keys = ['CropGBWater_crop', 'iso3_r250_label']
+    assert not lam.duplicated(keys).any() and not gpv.duplicated(keys).any()
+    basis = gpv.merge(theta[['iso3_r250_label', 'theta']], on='iso3_r250_label', how='inner')
+    basis['basis_rain'] = basis['theta'] * basis['GPV_rain_jr']
+    basis['basis_irr'] = basis['theta'] * basis['GPV_irr_jr']
+    lambda_cols = list(wf.AGRICULTURE_LAMBDA_COLUMNS) + list(wf.AGRICULTURE_VMR_LAMBDA_COLUMNS)
+    return wf.agriculture_gep_from_lambda(lam[keys + lambda_cols],
+                                          basis[keys + ['basis_rain', 'basis_irr']])
+
+
+def _assert_column_reproduced(merged, ours, reference):
+    a, b = merged[ours], merged[reference]
+    assert (a.isna() == b.isna()).all(), f'{ours}: missing pattern differs from the reference'
+    both = a.notna()
+    assert np.isfinite(a[both]).all() and np.isfinite(b[both]).all()
+    close = np.isclose(a[both], b[both], rtol=AGRICULTURE_RTOL, atol=AGRICULTURE_ATOL_THOUSAND_USD)
+    assert close.all(), f'{ours}: {int((~close).sum())} rows outside tolerance'
+
+
+def test_agriculture_valuation_reproduces_reference_crop_rows():
+    reference = _agriculture_reference('gep_agwater_crop_country_source.csv')
+    keys = ['CropGBWater_crop', 'iso3_r250_label']
+    assert not reference.duplicated(keys).any()
+    actual = _agriculture_reference_valuation()
+    assert not actual.duplicated(keys).any()
+    assert len(actual) == len(reference) == 1612
+    merged = actual.merge(reference, on=keys, how='outer', indicator=True,
+                          validate='one_to_one')
+    assert (merged['_merge'] == 'both').all(), 'row coverage differs from the reference merge filters'
+    for ours, his in [('GEP_gn_rf', 'GEP_gn_rf_jr'), ('GEP_gn_ir', 'GEP_gn_irr_jr'),
+                      ('GEP_bl_irr', 'GEP_bl_irr_jr'), ('GEP_total_irr', 'GEP_total_irr_jr'),
+                      ('GEP_gn_rf_vmr', 'GEP_gn_rf_vmr_jr'), ('GEP_gn_ir_vmr', 'GEP_gn_irr_vmr_jr'),
+                      ('GEP_total', 'GEP_total_jr')]:
+        _assert_column_reproduced(merged, ours, his)
+
+
+def test_agriculture_country_aggregation_reproduces_reference():
+    country = wf.aggregate_agriculture_gep_to_country(_agriculture_reference_valuation())
+    reference = _agriculture_reference('gep_agwater_country_source.csv')
+    assert not reference.duplicated('iso3_r250_label').any()
+    assert not country.duplicated('iso3_r250_label').any()
+    assert len(country) == len(reference) == 145
+    merged = country.merge(reference, on='iso3_r250_label', how='outer',
+                           suffixes=('_ours', '_reference'), indicator=True)
+    assert (merged['_merge'] == 'both').all(), 'country coverage differs from the reference'
+    for column in ['GEP_gn_rf', 'GEP_gn_ir', 'GEP_bl_irr', 'GEP_total_irr',
+                   'GEP_gn_rf_vmr', 'GEP_gn_ir_vmr', 'GEP_total']:
+        _assert_column_reproduced(merged, column + '_ours', column + '_reference')
+    assert (merged['n_crop_ours'] == merged['n_crop_reference']).all()
+    # the global check reads the UNROUNDED sum from the staged reference itself
+    assert np.isclose(country['GEP_total'].sum(), reference['GEP_total'].sum(),
+                      rtol=AGRICULTURE_RTOL, atol=AGRICULTURE_ATOL_THOUSAND_USD)
+
+
+def test_agriculture_basis_conserves_shared_items_and_preserves_missing():
+    values = pd.DataFrame({
+        'iso3_r250_label': ['AAA'] * 5, 'year': [2019] * 5,
+        'crop': ['Wheat', 'Beans', 'Beans', 'Missing', 'Unmapped'],
+        'crop_provision_gep': [100., 40., np.nan, np.nan, 50.]})
+    corr = pd.DataFrame({'FAOSTAT_Item': ['Wheat', 'Wheat', 'Beans', 'Missing'],
+                         'CropGBWater_crop': ['Spring', 'Winter', 'Beans', 'Missing']})
+    spam = pd.DataFrame({'iso3_r250_label': ['AAA'] * 4,
+                         'CropGBWater_crop': ['Spring', 'Winter', 'Beans', 'Missing'],
+                         'Q_total_for_share': [1., 3., 2., 2.],
+                         'share_prod_rain': [.6] * 4, 'share_prod_irr': [.4] * 4})
+    basis, diagnostics = wf.agriculture_basis_from_crop_values(
+        values, corr, spam, 2019, 'crop_provision_gep')
+    indexed = basis.set_index('CropGBWater_crop')
+    assert indexed.loc['Spring', 'basis_total'] == 25.
+    assert indexed.loc['Winter', 'basis_total'] == 75.
+    assert indexed.loc['Beans', 'basis_total'] == 40.
+    assert np.isnan(indexed.loc['Missing', 'basis_total'])
+    assert diagnostics['basis_value_total'] == pytest.approx(140.)
+    assert diagnostics['unmapped_items']['sum'].sum() == 50.
+    bad = pd.concat([values, values.iloc[[1]].assign(crop_provision_gep=41.)])
+    with pytest.raises(ValueError, match='conflicting duplicate'):
+        wf.agriculture_basis_from_crop_values(bad, corr, spam, 2019, 'crop_provision_gep')
+    with pytest.raises(ValueError, match='unique crop-country'):
+        wf.agriculture_basis_from_crop_values(values, corr, pd.concat([spam, spam.iloc[[0]]]),
+                                              2019, 'crop_provision_gep')
+
+
+def test_agriculture_task_recomputes_changed_inputs_and_registers_paths(tmp_path, monkeypatch):
+    from global_invest.water_supply import water_supply_tasks as wt
+    monkeypatch.setattr(wt, 'publish_inputs', lambda p: p)
+    p = SimpleNamespace(cur_dir=str(tmp_path), project_dir=str(tmp_path), run_this=True,
+                        gep_base_year=2019, results={})
+    frames = {
+        'crop_values': pd.DataFrame({'iso3_r250_label': ['AAA'], 'crop': ['Beans'],
+                                     'year': [2019], 'crop_provision_gep': [100.]}),
+        'agriculture_correspondence': pd.DataFrame({'CropGBWater_crop': ['Beans'],
+                                                    'FAOSTAT_Item': ['Beans']}),
+        'agriculture_spam': pd.DataFrame({'iso3': ['AAA'], 'CropGBWater_crop': ['Beans'],
+                                         'Q_total_for_share': [10.],
+                                         'share_prod_rain': [.6], 'share_prod_irr': [.4]}),
+        'agriculture_lambda': pd.DataFrame({'iso3': ['AAA'], 'CropGBWater_crop': ['Beans'],
+                                           'lambda_gn_rf': [.5], 'lambda_gn_ir': [.25],
+                                           'lambda_bl_ir': [.5], 'lambda_total_ir': [.75]})}
+    for name, frame in frames.items():
+        path = str(tmp_path / (name + '.csv'))
+        frame.to_csv(path, index=False)
+        setattr(p, 'water_supply_' + name + '_path', path)
+    wt.agriculture_water(p)
+    first = pd.read_csv(p.water_supply_agriculture_country_path)
+    assert first.loc[0, 'water_use_agriculture_gep'] == pytest.approx(60.)
+    assert first.loc[0, 'water_use_irrigation_gep'] == pytest.approx(60.)
+    assert first.loc[0, 'water_use_irrigated_total_gep'] == pytest.approx(30.)
+    frames['crop_values']['crop_provision_gep'] = 200.
+    frames['crop_values'].to_csv(p.water_supply_crop_values_path, index=False)
+    wt.agriculture_water(p)
+    second = pd.read_csv(p.water_supply_agriculture_country_path)
+    assert second.loc[0, 'water_use_agriculture_gep'] == pytest.approx(120.)
+    p.run_this = False
+    wt.agriculture_water(p)
+    assert os.path.isfile(p.water_supply_agriculture_country_path)
+
+
+def test_water_country_output_replaces_old_agriculture_but_preserves_domestic(tmp_path, monkeypatch):
+    from global_invest.water_supply import water_supply_tasks as wt
+    monkeypatch.setattr(wt, 'publish_inputs', lambda p: p)
+    monkeypatch.setattr(utilities, 'collapse_countries_to_r250', lambda df: df)
+    monkeypatch.setattr(utilities, 'write_gep_by_country', lambda p, df, path: df.to_csv(path, index=False))
+    countries = pd.DataFrame({'iso3_r250_label': ['AAA', 'BBB'], 'iso3_r250_id': [1, 2],
+                              'iso3_r250_name': ['A', 'B'], 'continent': ['X', 'X'],
+                              'region_un': ['X', 'X'], 'region_wb': ['X', 'X'],
+                              'income_grp': ['X', 'X'], 'subregion': ['X', 'X']})
+    p = SimpleNamespace(cur_dir=str(tmp_path), run_this=True, results={}, gep_base_year=2019,
+                        df_countries=countries)
+    frames = {
+        'hydropower_rent': pd.DataFrame({'iso3_r250_label': ['AAA'], 'hydropower_gep': [10.],
+                                         'hydropower_gep_reference_variant': [10.]}),
+        'water_use_components': pd.DataFrame({'iso3_r250_label': ['AAA', 'BBB'],
+                                              'iso3_r250_id': [1, 2],
+                                              'water_use_irrigation_gep': [999., 999.],
+                                              'water_use_domestic_gep': [7., 8.]}),
+        'water_supply_agriculture_country': pd.DataFrame({'iso3_r250_label': ['AAA'],
+                                                          'year': [2019],
+                                                          'water_use_agriculture_gep': [60.],
+                                                          'water_use_irrigation_gep': [60.]})}
+    for name, df in frames.items():
+        path = str(tmp_path / (name + '.csv'))
+        df.to_csv(path, index=False)
+        setattr(p, name + '_path', path)
+    # A stale published output must not bypass the new calculation.
+    (tmp_path / 'gep_by_country_base_year.csv').write_text('old\n999\n')
+    wt.gep_calculation(p)
+    result = pd.read_csv(p.results['water_supply']['gep_by_country_base_year'])
+    assert result['water_use_domestic_gep'].tolist() == [7., 8.]
+    assert result.loc[0, 'water_use_irrigation_gep'] == 60.
+    assert np.isnan(result.loc[1, 'water_use_irrigation_gep'])
+    assert result.loc[0, 'water_supply_gep'] == 10.
+
+
+def test_water_task_tree_includes_agriculture_and_accepts_parent():
+    from global_invest.water_supply import water_supply_initialize as wi
+    registered = []
+    p = SimpleNamespace(add_task=lambda fn, **kwargs: registered.append((fn.__name__, kwargs)))
+    wi.add_water_supply_tasks(p, parent='parent')
+    assert [name for name, _ in registered] == [
+        'hydropower_rent', 'water_use_components', 'agriculture_water', 'gep_calculation']
+    assert all(kw['parent'] == 'parent' for _, kw in registered)

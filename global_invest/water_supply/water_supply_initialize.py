@@ -1,21 +1,21 @@
-"""Water-supply wiring: GEP task trees (global_invest module layout).
-
-GEP-only service; the hydropower component is built (CWoN resource-rent method), agriculture
-and household join beside it when their science surfaces.
-"""
+"""Register country-level water valuations and the optional report."""
 from global_invest.water_supply import water_supply_tasks
 
 
-def build_gep_service_calculation_task_tree(p):
-    """GEP calculation tree: hydropower rent -> r250 one-row-per-country valuation."""
-    p.hydropower_rent_task = p.add_task(water_supply_tasks.hydropower_rent)
-    p.water_use_components_task = p.add_task(water_supply_tasks.water_use_components)
-    p.gep_calculation_task = p.add_task(water_supply_tasks.gep_calculation)
+def add_water_supply_tasks(p, parent=None):
+    """Add separate hydropower, domestic and agricultural calculations."""
+    p.hydropower_rent_task = p.add_task(water_supply_tasks.hydropower_rent, parent=parent)
+    p.water_use_components_task = p.add_task(water_supply_tasks.water_use_components, parent=parent)
+    p.agriculture_water_task = p.add_task(water_supply_tasks.agriculture_water, parent=parent)
+    p.water_supply_gep_calculation_task = p.add_task(water_supply_tasks.gep_calculation, parent=parent)
     return p
 
 
-def build_gep_service_task_tree(p):
-    """Full GEP run: the calculation calculation plus the results/report task."""
-    p = build_gep_service_calculation_task_tree(p)
-    p.water_supply_gep_result_task = p.add_task(water_supply_tasks.gep_result)
+def build_gep_service_calculation_task_tree(p, parent=None):
+    return add_water_supply_tasks(p, parent=parent)
+
+
+def build_gep_service_task_tree(p, parent=None):
+    add_water_supply_tasks(p, parent=parent)
+    p.water_supply_gep_result_task = p.add_task(water_supply_tasks.gep_result, parent=parent)
     return p

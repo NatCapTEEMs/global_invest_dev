@@ -63,6 +63,58 @@ Both of the R calculation's own outputs replicate. The cleaned efficiency table 
 country-year GEP table matches to the anchor CSV's own 15-significant-digit rounding, maximum
 relative difference 3e-15.
 
+## Agricultural water
+
+### Quantity and price
+
+The quantity side is Shunkei's crop-level water accounting: per CropGBWater crop, country and
+water source, a lambda coefficient in [0, 1] — the Ky-weighted mean of growth-stage
+water-satisfaction ratios — for rainfed green water, irrigated green water and irrigated blue
+water, with a VMR pair reported beside the green components, never netted against them. The
+price side is the value of the crop: lambda times a rainfed/irrigated value basis gives the
+water-attributable share of that value.
+
+### Valuation
+
+`agriculture_basis_from_crop_values` rebuilds the author's value preparation (his Code/1-4) on
+the account's own crop values. FAOSTAT items map to CropGBWater crops through his
+correspondence, many-to-one items sum, the two shared items (Wheat and Millet) allocate by his
+SPAM production-quantity weights within country and item, and SPAM rainfed/irrigated shares
+split each crop-country value into `basis_rain` and `basis_irr`, with his own split-status
+labels where the SPAM row is absent or zero. One departure is documented in the docstring: an
+all-missing group stays missing instead of his na.rm zero, because the account's table carries
+genuine gaps and a fabricated zero would read as measured.
+
+`agriculture_gep_from_lambda` is his final stage (Code/5): the three lambda-times-basis
+products, their VMR pair, and `GEP_total` as the rowwise sum over the three components with
+missing treated as zero — replicated from the author, partial totals included.
+`aggregate_agriculture_gep_to_country` is his sum-if-any country aggregation.
+
+The replication and the account run are not the same calculation. The test suite feeds the two
+functions the author's own theta x GPV 2020 basis in thousand current US$ and reproduces his
+September 21 crop-country and country results within measured float-reordering noise. The
+`agriculture_water` task instead feeds the account's 2019 commercial crop-provision values in
+current USD, with the CWoN rental rate already applied, so no theta and no rental
+re-application, split rainfed/irrigated by his SPAM shares. The 2019 substitution is the
+account's decision, not his output. His upstream lambda, SPAM, crop-mapping and theta
+derivations are taken as given, and matching his final-stage outputs proves fidelity, not
+correctness.
+
+2019 is the monetary year only; the physical inputs carry their own vintages. The SPAM shares
+are SPAM 2020 v2r2 (his Code/1-3, the Harvard Dataverse release), and lambda is built on a
+representative 365-day daily ET0 profile averaged over 2018-2022 (his Code/3).
+
+Under the meeting convention this value is an intermediate contribution: the basis is the
+crop-provision GEP itself, so the agricultural-water figure is the water-attributable share of
+value already counted in crop provision. It is reported for attribution and is never added to a
+GEP total beside crop provision.
+
+Coverage is disclosed rather than repaired. Items with no correspondence row stay out of the
+basis and are written to `agriculture_unmapped_items.csv` — rice is the largest. Crop-country
+values whose SPAM row is absent or zero stay unsplit and carry their status. Split basis rows
+with no lambda coefficients are written to `agriculture_missing_coefficients.csv`, and
+`agriculture_coverage.csv` summarizes the value at each stage.
+
 ## Inputs
 
 From `es_parameters.csv`, scoped to the `water_supply` service:
@@ -75,15 +127,32 @@ From `es_parameters.csv`, scoped to the `water_supply` service:
 - `water_use_withdrawal_path`, the withdrawal table.
 - `water_use_agriculture_path` and `water_use_all_sector_path`, the drive's committed per-country
   tables, held as comparison anchors.
+- `water_supply_agriculture_lambda_path`, `water_supply_agriculture_spam_path` and
+  `water_supply_agriculture_correspondence_path`, the author's pinned processed tables under
+  `agriculture/shunkei_e229f881/` in base_data, with a `water_supply_agriculture_source` row
+  and a provenance README beside the files.
+- `water_supply_crop_values_path`, the commercial crop country-item table in USD, blank by
+  default: the task falls back to the crop_provision results registry, then to
+  `water_supply_crop_values_relative_file` against the project directory. Reading the
+  producer's own path removes the copy, not the staleness: the table is only as fresh as the
+  last crop_provision run, so the agriculture figure's provenance includes the crop_provision
+  run that wrote it, and a crop_provision change requires regenerating that table before this
+  service's figure is quoted.
 
 ## Outputs
 
 - `hydropower_rent.csv` from the `hydropower_rent` task.
 - `aquastat_water_efficiency_cleaned.csv`, `water_use_gep_by_country_year.csv` and
   `water_use_components.csv` from the `water_use_components` task.
+- `agriculture_by_country.csv` and `agriculture_by_crop_country.csv` from the
+  `agriculture_water` task, with `agriculture_basis.csv`, `agriculture_coverage.csv` and the
+  diagnostic tables (unmapped items, missing coefficients, unallocated shared value, unsplit
+  statuses) beside them.
 - `gep_by_country_base_year.csv` from `gep_calculation`, holding the r250 identifiers and
-  attributes, `year`, `hydropower_gep`, `water_use_agriculture_gep`,
-  `water_use_all_sector_gep` and `water_supply_gep`.
+  attributes, `year`, the hydropower pair, the water-use value-added and domestic columns, the
+  agriculture component columns (`water_use_agriculture_gep` with its rainfed/irrigated and VMR
+  parts, and `water_use_irrigation_gep` now equal to the agriculture component), and
+  `water_supply_gep`.
 
 ## Method constants
 
@@ -119,8 +188,9 @@ encoded to reproduce the reference, the reason is an ask on the deck, and changi
 reviewed-commit decision.
 
 The drive's per-country water-use tables are not this calculation's outputs and are held as anchors
-rather than adopted. The agriculture table equals 1000 times `GEP_total` from a separate crop-water
-valuation whose scripts are not on the drive. The all-sector table was computed on a newer AQUASTAT
+rather than adopted. The agriculture table equals 1000 times `GEP_total` from the crop-water
+valuation whose scripts are now identified and pinned: the Shunkei repository this module
+replicates. The all-sector table was computed on a newer AQUASTAT
 vintage with the appendix's deflate-to-2015 step, and only 3 of 183 countries reproduce from the
 staged inputs, with a median committed to computed-at-2019 ratio of 0.36 over a range of 0 to 1.25.
 
@@ -128,7 +198,17 @@ Script 02's lookup countries keep their AQUASTAT names, so their efficiency and 
 share an iso code but never a country name. The merge leaves them as half-rows with no products,
 including USA, RUS and TUR. The anchor commits that behaviour and the port reproduces it.
 
-`water_supply_gep` stays the hydropower component alone. How, and whether, the water-use components
-combine with it is the account's subgroup question, flagged on the deck. The agriculture and
-household components named on the group's sheet are not yet built anywhere we have seen, and the
-module is laid out to receive them beside hydropower.
+`water_supply_gep` stays the hydropower component alone. How, and whether, the water-use and
+agriculture components combine with it is the account's subgroup question, flagged on the deck.
+The water-use chain's domestic calculation is preserved and published unchanged; what stays open
+for municipal water is scope and method — the withdrawal series mixes municipal with industrial
+use, and the price follow-up is assigned on the review — not the existence of a calculation.
+
+The domestic raw-water price is still implied by the OLD premium-based irrigation GEP, not by
+the agriculture component that replaced that column in the published table. Repricing domestic
+water on the new component is its own reviewed change, not a side effect of this one.
+
+The agriculture correspondence covers 28 crops. The account's crop table carries value on items
+outside it — rice is the largest single item — which the author's method never valued and this
+port therefore leaves out of the basis, disclosed in `agriculture_unmapped_items.csv`. Whether
+the correspondence should be extended is an author question, not a port decision.

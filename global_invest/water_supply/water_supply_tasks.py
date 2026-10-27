@@ -1,9 +1,4 @@
-"""Water-supply GEP tasks. First component: hydropower (CWoN resource-rent method).
-
-The hydropower rent derives from CWoN 2024's capitalized wealth (see the functions module for
-the identified method and its anchor); the agriculture and household components join here when
-their science surfaces.
-"""
+"""Country valuations for hydropower, agricultural water and domestic water."""
 import os
 
 import pandas as pd
@@ -42,12 +37,14 @@ def hydropower_rent(p):
 
 
 def gep_calculation(p):
-    """GEP valuation for water_supply: the hydropower component on the r250 country list,
-    one row per country. water_supply_gep currently equals the hydropower component; the
-    agriculture and household components add columns here when they arrive."""
+    """Separate hydropower, agriculture and domestic values on the r250 country list."""
     publish_inputs(p)
     service_results, already_done = utilities.begin_gep_calculation(p, 'water_supply')
-    if already_done:
+    dependencies = [p.hydropower_rent_path, p.water_use_components_path,
+                    p.water_supply_agriculture_country_path, __file__, wf.__file__]
+    outputs = [service_results['gep_by_country_base_year']]
+    if already_done and utilities.reuse_reason(
+            p, 'water_supply', outputs, light_inputs=dependencies) is None:
         return
 
     if not p.run_this:
@@ -64,23 +61,32 @@ def gep_calculation(p):
     else:
         df_gep['water_use_agriculture_value_added'] = float('nan')
         df_gep['water_use_all_sector_value_added'] = float('nan')
+    agriculture = pd.read_csv(p.water_supply_agriculture_country_path)
+    # The premium remains an input to the unchanged domestic price only.
+    df_gep = df_gep.drop(columns=['water_use_irrigation_gep'], errors='ignore')
+    df_gep = df_gep.merge(agriculture.drop(columns=['year']),
+                          on='iso3_r250_label', how='left', validate='one_to_one')
     df_gep['year'] = int(p.gep_base_year)
     # water_supply_gep stays the hydropower component alone: how (and whether) the water-use
     # components combine with it is the account's subgroup question, flagged on the deck.
     df_gep['water_supply_gep'] = df_gep['hydropower_gep']
-    # The irrigation and domestic columns are VALUE ADDED unless a water share is set, in which
-    # case the `_gep` pair appears beside them. Listing only what is present is what keeps the two
-    # apart: a fixed list would either drop the denominator or invent an answer.
+    # The value-added columns are denominators. water_use_domestic_gep appears when the old
+    # chain could price the volume; water_use_irrigation_gep is the agriculture component
+    # (agriculture_water), no longer the premium x share product. Listing only what is present
+    # keeps denominators and answers apart.
     water_use_cols = [c for c in ('water_use_irrigation_value_added',
                                   'water_use_domestic_value_added',
                                   'water_use_irrigation_gep', 'water_use_domestic_gep',
                                   'water_use_agriculture_value_added', 'water_use_all_sector_value_added')
                       if c in df_gep.columns]
+    water_use_cols += [c for c in agriculture.columns
+                       if c.startswith('water_use_') and c not in water_use_cols]
     utilities.write_gep_by_country(
         p, df_gep[attr_cols + ['year', 'hydropower_gep', 'hydropower_gep_reference_variant']
                   + water_use_cols + ['water_supply_gep']],
         service_results['gep_by_country_base_year'])
 
+    utilities.write_reuse_signature(p, 'water_supply', outputs, light_inputs=dependencies)
     ours = df_gep['hydropower_gep'].sum()
     reference = df_gep['hydropower_gep_reference_variant'].sum()
     n_extra = int(df_gep['hydropower_gep'].notna().sum()
@@ -216,4 +222,78 @@ def water_use_components(p):
         hb.log('committed anchors: agriculture %.4g USD, all-sector %.4g USD -- different source '
                'chains (see the functions module), compared in the test suite' % (
                    committed_ag['wateruse_ag_gep'].sum(), committed_all['wateruse_gep'].sum()))
+    return True
+
+
+def agriculture_water(p):
+    """Apply Shunkei's processed coefficients to the account's crop-rent values in USD."""
+    publish_inputs(p)
+    p.water_supply_agriculture_country_path = os.path.join(p.cur_dir, 'agriculture_by_country.csv')
+    p.water_supply_agriculture_crop_path = os.path.join(p.cur_dir, 'agriculture_by_crop_country.csv')
+    if not p.run_this:
+        return
+    crop_path = getattr(p, 'water_supply_crop_values_path', None)
+    if crop_path is None:
+        crop_path = p.results.get('crop_provision', {}).get('gep_by_country_year_crop')
+    if crop_path is None:
+        crop_path = os.path.normpath(os.path.join(
+            p.project_dir, p.water_supply_crop_values_relative_file))
+    if not os.path.isfile(crop_path):
+        raise FileNotFoundError('Agricultural water requires the commercial crop country-item '
+                                f'table in USD: {crop_path}. Run crop_provision first or set '
+                                'water_supply_crop_values_path.')
+    p.water_supply_crop_values_path = crop_path
+    outputs = [p.water_supply_agriculture_country_path, p.water_supply_agriculture_crop_path,
+               os.path.join(p.cur_dir, 'agriculture_basis.csv'),
+               os.path.join(p.cur_dir, 'agriculture_coverage.csv')]
+    outputs += [os.path.join(p.cur_dir, 'agriculture_' + name + '.csv') for name in
+                ['missing_coefficients', 'unmapped_items', 'shared_value_unallocated',
+                 'unsplit_value_by_status', 'correspondence_items_absent']]
+    dependencies = [__file__, wf.__file__]
+    if utilities.reuse_reason(p, 'water_supply', outputs, light_inputs=dependencies) is None:
+        return
+    values = pd.read_csv(crop_path)
+    correspondence = pd.read_csv(p.water_supply_agriculture_correspondence_path)
+    spam = pd.read_csv(p.water_supply_agriculture_spam_path).rename(
+        columns={'iso3': 'iso3_r250_label'})
+    coefficients = pd.read_csv(p.water_supply_agriculture_lambda_path).rename(
+        columns={'iso3': 'iso3_r250_label'})
+    basis, diagnostics = wf.agriculture_basis_from_crop_values(
+        values, correspondence, spam, int(p.gep_base_year), 'crop_provision_gep')
+    crop = wf.agriculture_gep_from_lambda(coefficients, basis)
+    country = wf.aggregate_agriculture_gep_to_country(crop).rename(columns={
+        'GEP_gn_rf': 'water_use_rainfed_green_gep',
+        'GEP_gn_ir': 'water_use_irrigated_green_gep',
+        'GEP_bl_irr': 'water_use_irrigated_blue_gep',
+        'GEP_total_irr': 'water_use_irrigated_total_gep',
+        'GEP_total': 'water_use_agriculture_gep',
+        'GEP_gn_rf_vmr': 'water_use_rainfed_vmr_gep',
+        'GEP_gn_ir_vmr': 'water_use_irrigated_vmr_gep',
+        'n_crop': 'water_use_agriculture_crop_count'})
+    # Compatibility with the existing comparison sheet. This is all agricultural water.
+    country['water_use_irrigation_gep'] = country['water_use_agriculture_gep']
+    country['year'] = int(p.gep_base_year)
+    country.to_csv(outputs[0], index=False)
+    crop.to_csv(outputs[1], index=False)
+    basis.to_csv(outputs[2], index=False)
+    covered = basis.merge(coefficients, on=['CropGBWater_crop', 'iso3_r250_label'],
+                          how='left', validate='one_to_one')
+    missing = covered[list(wf.AGRICULTURE_LAMBDA_COLUMNS)].isna().all(axis=1)
+    covered.loc[missing].to_csv(os.path.join(p.cur_dir, 'agriculture_missing_coefficients.csv'),
+                               index=False)
+    summary = {'mapped_value_usd': diagnostics['mapped_value_total'],
+               'split_value_usd': diagnostics['split_value_total'],
+               'allocated_basis_usd': diagnostics['basis_value_total'],
+               'split_basis_without_coefficients_usd':
+                   covered.loc[missing, ['basis_rain', 'basis_irr']].sum().sum(),
+               'agriculture_gep_usd': country['water_use_agriculture_gep'].sum(),
+               'valued_countries': len(country), 'valued_crop_country_rows': len(crop)}
+    pd.DataFrame([summary]).to_csv(outputs[3], index=False)
+    for name in ['unmapped_items', 'shared_value_unallocated', 'unsplit_value_by_status']:
+        diagnostics[name].to_csv(os.path.join(p.cur_dir, f'agriculture_{name}.csv'),
+                                 index=name == 'unsplit_value_by_status')
+    pd.DataFrame({'crop': diagnostics['correspondence_items_absent']}).to_csv(
+        os.path.join(p.cur_dir, 'agriculture_correspondence_items_absent.csv'), index=False)
+    utilities.write_reuse_signature(p, 'water_supply', outputs, light_inputs=dependencies)
+    hb.log(f'Agricultural water: {summary}')
     return True

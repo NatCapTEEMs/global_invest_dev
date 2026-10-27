@@ -518,3 +518,181 @@ def one_row_per_country(df_components):
                  .groupby('iso3_r250_id', as_index=False)
                  .agg({c: 'last' for c in df_components.columns if c != 'iso3_r250_id'}))
     return pd.concat([collapsed, unresolved], ignore_index=True)[list(df_components.columns)]
+
+
+# The agriculture component: Shunkei's crop-water valuation (GEP-WaterUse-Agriculture at
+# e229f881, Code/5-GEP-ag-rain-irr.qmd). Each component is a water-contribution coefficient
+# times the monetary basis of the production it supports. The basis is the CALLER's: the
+# author's reference basis is theta x GPV 2020, and the account's agreed basis is the 2019
+# commercial crop-provision values with SPAM's irrigated and rainfed shares retained --
+# same arithmetic, different basis frame, so the reference reproduction and the account
+# valuation are the same function.
+AGRICULTURE_LAMBDA_COLUMNS = ('lambda_gn_rf', 'lambda_gn_ir', 'lambda_bl_ir', 'lambda_total_ir')
+AGRICULTURE_VMR_LAMBDA_COLUMNS = ('lambda_gn_rf_vmr', 'lambda_gn_ir_vmr')
+
+
+def agriculture_gep_from_lambda(lambda_df, basis_df):
+    """Crop-country agriculture water GEP: coefficient times monetary basis, per source.
+
+    Rainfed green water applies to the rainfed basis, irrigated green and blue water to the
+    irrigated basis. Rows missing every coefficient, or both basis sides, leave the frame,
+    which is the author's merge filter. The crop total sums the three components treating a
+    missing component as zero, the author's rowSums(na.rm = TRUE): a crop with production
+    on one side only carries a one-sided total. That construction is the author's and is
+    replicated, not repaired, so blue, green-rainfed and green-irrigated stay separate
+    columns for any later scoping.
+
+    Args:
+        lambda_df (pd.DataFrame): one row per CropGBWater_crop and iso3_r250_label carrying
+            the AGRICULTURE_LAMBDA_COLUMNS and, when present, the VMR pair.
+        basis_df (pd.DataFrame): one row per CropGBWater_crop and iso3_r250_label with
+            basis_rain and basis_irr, the monetary basis in the unit the GEP should carry.
+
+    Returns:
+        pd.DataFrame: the merged rows with GEP_gn_rf, GEP_gn_ir, GEP_bl_irr, GEP_total_irr
+        and GEP_total, plus GEP_gn_rf_vmr and GEP_gn_ir_vmr when the coefficients carry
+        them. Column names follow the author's country table so the replication comparison
+        reads one to one; the account-facing names are the task layer's concern.
+    """
+    keys = ['CropGBWater_crop', 'iso3_r250_label']
+    df = basis_df.merge(lambda_df, on=keys, how='inner', validate='one_to_one')
+    df = df[~df[list(AGRICULTURE_LAMBDA_COLUMNS)].isna().all(axis=1)]
+    df = df[~df[['basis_rain', 'basis_irr']].isna().all(axis=1)].copy()
+    df['GEP_gn_rf'] = df['lambda_gn_rf'] * df['basis_rain']
+    df['GEP_gn_ir'] = df['lambda_gn_ir'] * df['basis_irr']
+    df['GEP_bl_irr'] = df['lambda_bl_ir'] * df['basis_irr']
+    df['GEP_total_irr'] = df['lambda_total_ir'] * df['basis_irr']
+    if all(c in df.columns for c in AGRICULTURE_VMR_LAMBDA_COLUMNS):
+        df['GEP_gn_rf_vmr'] = df['lambda_gn_rf_vmr'] * df['basis_rain']
+        df['GEP_gn_ir_vmr'] = df['lambda_gn_ir_vmr'] * df['basis_irr']
+    df['GEP_total'] = df[['GEP_gn_rf', 'GEP_gn_ir', 'GEP_bl_irr']].sum(axis=1)
+    return df
+
+
+def aggregate_agriculture_gep_to_country(crop_country_df):
+    """Country rows from the crop-country frame, with the author's missing rule.
+
+    A country's component sums its crops where any crop carries a value and stays missing
+    where none does (the author's sum_if_any), and n_crop counts the crop rows that
+    survived the merge filters. Grouping is by iso3_r250_label alone; the task layer
+    attaches the country attributes.
+    """
+    value_cols = [c for c in crop_country_df.columns if c.startswith('GEP_')]
+    grouped = crop_country_df.groupby('iso3_r250_label')
+    out = grouped[value_cols].sum(min_count=1)
+    out['n_crop'] = grouped.size()
+    return out.reset_index()
+
+
+def agriculture_basis_from_crop_values(crop_values_df, correspondence_df, spam_share_df,
+                                       year, value_column):
+    """The basis frame for agriculture_gep_from_lambda from a per-crop country value table.
+
+    Traces the author's GPV preparation (Code/1-4-prep-FAO-GPV-table.qmd at e229f881) with
+    the caller's values in place of FAOSTAT GPV: items mapped one-to-one or many-to-one sum
+    into their CropGBWater crop; an item shared by several crops (Wheat, Millet) is
+    allocated by each crop's Q_total_for_share within the country and item, undefined when
+    the sharing crops' production sums to zero; the rainfed and irrigated sides are the
+    crop total times the SPAM production shares, left missing where the SPAM row is absent
+    or its production is zero, with the author's status labels. No theta and no rental rate
+    are applied: the value column arrives already on the account's basis, and the output is
+    in the caller's units. One departure from the author: his direct sum uses na.rm = TRUE,
+    so a country-item group holding only missing values would print zero, and here it stays
+    missing, because the account's table carries genuinely missing values and a fabricated
+    zero would read as a measured one.
+
+    Args:
+        crop_values_df (pd.DataFrame): iso3_r250_label, crop (the FAOSTAT item name), year
+            and the value column. Historical area aliases may duplicate a country-item pair;
+            they collapse to the single value present, and two DIFFERENT values for one pair
+            raise, because which one the account means is undecided.
+        correspondence_df (pd.DataFrame): CropGBWater_crop, FAOSTAT_Item.
+        spam_share_df (pd.DataFrame): iso3_r250_label, CropGBWater_crop, Q_total_for_share,
+            share_prod_rain, share_prod_irr.
+        year (int): the account year to read from crop_values_df.
+        value_column (str): the column holding the monetary value.
+
+    Returns:
+        tuple: (basis_df, diagnostics). basis_df carries CropGBWater_crop, iso3_r250_label,
+        basis_total, basis_rain, basis_irr and split_status. diagnostics is a dict naming
+        what the basis does NOT carry: 'unmapped_items' (items without a correspondence row,
+        with their total value -- rice among them until the group maps it),
+        'correspondence_items_absent' (mapped items the value table lacks),
+        'shared_value_unallocated' (shared item-country values with no sharing crop in SPAM),
+        'unsplit_value_by_status' (mapped value that received no rain/irr split), and the
+        scalars 'mapped_value_total', 'split_value_total' and 'basis_value_total', the last
+        two equal when the split conserves value.
+
+    Raises:
+        ValueError: if one country-item pair carries two different non-missing values.
+    """
+    keys = ['CropGBWater_crop', 'iso3_r250_label']
+    if spam_share_df.duplicated(keys).any():
+        raise ValueError('SPAM shares must have unique crop-country keys')
+    values = crop_values_df[crop_values_df['year'] == int(year)]
+    if values.empty:
+        raise ValueError(f'no crop-provision values for {year}')
+    item_keys = ['iso3_r250_label', 'crop']
+    distinct = values.groupby(item_keys)[value_column].nunique(dropna=True)
+    conflicted = distinct[distinct > 1]
+    if len(conflicted):
+        raise ValueError(f'conflicting duplicate values at {year} for {conflicted.index.tolist()}')
+    # max over a group whose non-missing values are identical is that value; all-missing stays NaN
+    item_values = values.groupby(item_keys)[value_column].max().reset_index()
+
+    corr = correspondence_df[['CropGBWater_crop', 'FAOSTAT_Item']].drop_duplicates()
+    per_item = corr.groupby('FAOSTAT_Item')['CropGBWater_crop'].nunique()
+    shared_items = set(per_item[per_item > 1].index)
+    mapped = item_values.merge(corr, left_on='crop', right_on='FAOSTAT_Item', how='inner')
+
+    keys = ['CropGBWater_crop', 'iso3_r250_label']
+    direct = (mapped[~mapped['FAOSTAT_Item'].isin(shared_items)]
+              .groupby(keys)[value_column].sum(min_count=1).rename('basis_total').reset_index())
+
+    shared_spam = spam_share_df.merge(corr[corr['FAOSTAT_Item'].isin(shared_items)],
+                                      on='CropGBWater_crop', how='inner')
+    denominator = shared_spam.groupby(['iso3_r250_label', 'FAOSTAT_Item'])['Q_total_for_share'].transform('sum')
+    shared_spam['allocation_share'] = np.where(denominator > 0,
+                                               shared_spam['Q_total_for_share'] / denominator, np.nan)
+    shared_source = item_values[item_values['crop'].isin(shared_items)].rename(
+        columns={'crop': 'FAOSTAT_Item', value_column: 'source_value'})
+    shared = shared_spam.merge(shared_source, on=['iso3_r250_label', 'FAOSTAT_Item'], how='inner')
+    shared['basis_total'] = shared['source_value'] * shared['allocation_share']
+
+    basis = pd.concat([direct, shared[keys + ['basis_total']]], ignore_index=True)
+    if basis.duplicated(keys).any():
+        raise ValueError('the correspondence produced duplicate crop-country rows')
+    basis = basis.merge(spam_share_df[['iso3_r250_label', 'CropGBWater_crop', 'Q_total_for_share',
+                                       'share_prod_rain', 'share_prod_irr']], on=keys, how='left')
+    basis['basis_rain'] = basis['basis_total'] * basis['share_prod_rain']
+    basis['basis_irr'] = basis['basis_total'] * basis['share_prod_irr']
+    positive = basis['basis_total'] > 0
+    basis['split_status'] = np.select(
+        [positive & basis['Q_total_for_share'].isna(),
+         positive & (basis['Q_total_for_share'] == 0),
+         positive & basis['share_prod_rain'].notna() & basis['share_prod_irr'].notna(),
+         basis['basis_total'] == 0],
+        ['missing_SPAM_row', 'zero_SPAM_production', 'split_available', 'zero_value'],
+        default='other')
+    unsplit = basis['split_status'].isin(('missing_SPAM_row', 'zero_SPAM_production'))
+    basis.loc[unsplit, ['basis_rain', 'basis_irr']] = np.nan
+
+    allocated_items = shared.loc[shared['allocation_share'].notna(),
+                                 ['iso3_r250_label', 'FAOSTAT_Item']].drop_duplicates()
+    unallocated = shared_source.merge(allocated_items, on=['iso3_r250_label', 'FAOSTAT_Item'],
+                                      how='left', indicator=True)
+    unallocated = unallocated[(unallocated['_merge'] == 'left_only')
+                              & unallocated['source_value'].notna()]
+    split = basis['split_status'] == 'split_available'
+    diagnostics = {
+        'unmapped_items': (item_values[~item_values['crop'].isin(set(corr['FAOSTAT_Item']))]
+                           .groupby('crop')[value_column].agg(['sum', 'count'])
+                           .sort_values('sum', ascending=False).reset_index()),
+        'correspondence_items_absent': sorted(set(corr['FAOSTAT_Item']) - set(item_values['crop'])),
+        'shared_value_unallocated': unallocated[['iso3_r250_label', 'FAOSTAT_Item', 'source_value']],
+        'unsplit_value_by_status': basis[~split].groupby('split_status')['basis_total'].agg(['sum', 'count']),
+        'mapped_value_total': mapped.drop_duplicates(item_keys)[value_column].sum(),
+        'split_value_total': basis.loc[split, 'basis_total'].sum(),
+        'basis_value_total': basis[['basis_rain', 'basis_irr']].sum().sum(),
+    }
+    return basis[keys + ['basis_total', 'basis_rain', 'basis_irr', 'split_status']], diagnostics
