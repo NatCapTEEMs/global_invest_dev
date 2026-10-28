@@ -376,6 +376,7 @@ pollination,pollination_dependence_table_path,global_invest/pollination/fao/poll
 pollination,pollination_coffee_split_path,global_invest/pollination/coffee_types_distribution/prop_arabica_robusta.csv
 pollination,pollination_price_years,"[2019]"
 pollination,pollination_price_temporal_window_years,5
+pollination,pollination_reported_variant,habitat_sufficiency
 pollination,pollination_us_cpi_input_path,socioeconomic/fred_cpiaucsl/CPIAUCSL.csv
 pollination,pollination_us_cpi_source,"FRED CPIAUCSL monthly, annual means; the account's ONE temporal dollar series"
 pollination,pollination_excluded_item_codes_path,global_invest/pollination/fao_excluded_item_codes.csv

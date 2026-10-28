@@ -2835,16 +2835,14 @@ def gep_calculation(p):
     computed = p.flood_gep_path if p.flood_gep_path else None
     if computed is not None and hb.path_exists(computed):
         df_gep = hb.df_read(str(computed))
-        column = next((c for c in ('gep_flood_bare_usd2019', 'gep_flood_insitu_usd2019')
-                       if c in df_gep.columns), None)
-        if column is None:
+        if 'gep_flood_bare_usd2019' not in df_gep.columns:
             raise NameError(
-                'No gep_flood column in %s; found %s. The counterfactual chain writes '
-                'gep_flood_bare_usd2019 and gep_flood_insitu_usd2019, and bare is the one the '
-                'combined table with erosion uses, so a file without either has not run it.'
+                'The computed table %s carries no gep_flood_bare_usd2019 (columns: %s). The '
+                'account reports the bare counterfactual, so an insitu-only file is refused '
+                'rather than silently published under the bare description.'
                 % (computed, list(df_gep.columns)))
-        df_gep = df_gep.rename(columns={column: 'flood_gep'})
-        source = 'computed here (%s, %s)' % (os.path.basename(str(computed)), column)
+        df_gep = df_gep.rename(columns={'gep_flood_bare_usd2019': 'flood_gep'})
+        source = 'computed here (%s, gep_flood_bare_usd2019)' % os.path.basename(str(computed))
     else:
         df_gep = hb.df_read(p.flood_gep_for_merge_path)
         df_gep = df_gep.rename(columns={'gep_const2019_usd': 'flood_gep'})

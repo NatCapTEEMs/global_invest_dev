@@ -48,16 +48,17 @@ def build_gep_service_calculation_task_tree(p):
         pollination_tasks.pollination_value_raster_rebuilt)
     p.pollination_value_independence_check_task = p.add_task(
         pollination_tasks.pollination_value_independence_check, skip_existing=1)
-    p.pollination_value_by_region_task = p.add_task(
-        pollination_tasks.pollination_value_by_region, skip_existing=1)
-    # The second definition the account has to choose between. It weights the rebuilt raster, so it
-    # sits after that task and before the calculation that publishes the headline.
+    # The weighting sits BEFORE the regional summary: the account's selected variant is the
+    # sufficiency-weighted raster, and the country table is built from whichever raster
+    # pollination_reported_variant names, so the weighted raster must exist first.
     # No skip_existing: that flag reads an existing task directory as work already done, and the
     # directory is created before the task body runs, so a run that failed part way through left
     # an empty directory that every later run took for a finished one. This task checks for the
     # two files it writes instead, which is the thing that actually says whether it has run.
     p.pollination_sufficiency_weighted_task = p.add_task(
         pollination_tasks.pollination_sufficiency_weighted)
+    p.pollination_value_by_region_task = p.add_task(
+        pollination_tasks.pollination_value_by_region, skip_existing=1)
     p.gep_calculation_task = p.add_task(pollination_tasks.gep_calculation)
     return p
 

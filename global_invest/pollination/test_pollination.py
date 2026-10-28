@@ -268,7 +268,8 @@ def test_pollination_gep_sums_split_country_once(tmp_path):
                                if c not in ('iso3_r250_label', 'iso3_r250_name')}}),
                         # our own raster now, in USD per cell rather than a density from elsewhere
                         pollination_value_raster_path=str(tmp_path / 'poll_value.tif'),
-                            pollination_value_raster_rebuilt_path=str(tmp_path / 'poll_value.tif'),
+                        pollination_value_raster_rebuilt_path=str(tmp_path / 'poll_value.tif'),
+                        pollination_reported_variant='unweighted',
                         gep_quantity_input_path=str(tmp_path / 'poll_value.tif'),
                         gep_regions_input_path=str(tmp_path / 'regions.gpkg'),
                         gep_regions_id_col='ee_r264_id',
@@ -562,12 +563,11 @@ def test_our_rebuilt_raster_stays_close_to_the_authors_staged_one():
 
     The staged author raster is regenerated from his own develop-branch code (2026-10-19, his
     repo run here with the corrected crosswalk, today's FAO bulks and the staged IMF FX), so
-    both sides carry the October construction and the single tight band holds again: the live
-    comparison measures +0.74 percent at correlation 0.9969, the residual being input vintage
-    (his regeneration reads today's FAO download where ours reads the staged bulks). While his
-    staged raster was still the frozen August vintage, a current-rules build measured -1.32
-    percent at 0.9245 -- the price geography moved by decision -- which is why a correlation
-    collapse is a loud signal, not noise."""
+    the comparison now measures a DESIGNED divergence: the account prices with own-country
+    2019 prices and the temporal fallback, never another country's price, while his raster
+    keeps the five-year window and the geographic hierarchy. The 2026-10-28 build measures
+    -7.79 percent at correlation 0.9754; earlier same-rules builds sat at +0.74 percent and
+    0.9969. A correlation collapse below the pinned floor is a loud signal, not noise."""
     checked = 0
     for run in _pollination_runs():
         path = os.path.join(run, 'pollination_value_independence_check',
@@ -575,11 +575,11 @@ def test_our_rebuilt_raster_stays_close_to_the_authors_staged_one():
         if not os.path.exists(path):
             continue
         row = pd.read_csv(path).iloc[0]
-        assert abs(row['pct_difference']) < 1.5, (run, row['pct_difference'])
-        assert row['correlation_where_both'] > 0.99, (run, row['correlation_where_both'])
+        assert abs(row['pct_difference']) < 10.0, (run, row['pct_difference'])
+        assert row['correlation_where_both'] > 0.97, (run, row['correlation_where_both'])
         assert row['cells_in_both'] > 2_000_000, (run, row['cells_in_both'])
-        # Both totals are the account's own headline figure and must stay in its neighbourhood.
-        assert 3.5e11 < row['ours_independent_usd'] < 4.2e11, run
+        # Ours under the account's price rule; his under the geographic hierarchy.
+        assert 3.3e11 < row['ours_independent_usd'] < 4.2e11, run
         assert 3.5e11 < row['author_raster_usd'] < 4.2e11, run
         checked += 1
     if not checked:
@@ -1056,15 +1056,17 @@ def test_retained_fraction_raster_runs_the_folded_path_and_caches(tmp_path):
     assert again == str(out)
 
 
-def test_totals_pair_matches_the_authors_october_revision():
-    """The anchor pair: $379.5011bn unweighted and $160.2358bn weighted — the author's own
-    revised figure ($160.2bn, his email of 2026-10-23) to his one-decimal rounding.
-
-    His revision adds ESA 160, 170 and 180 (flooded vegetation, the Science-paper habitat set)
-    to the sufficiency class table; nothing else changed. With this code and the previous table
-    the figure is 157.4983 (the 2026-10-19 anchor, which never stopped reproducing), so his
-    change is worth +1.74% here against the +1.71% his email implies, and the pair replicates
-    him exactly at both ends. ⚠ The lesson that cost a day, recorded so it is not relearnt:
+def test_totals_pair_matches_the_account_anchor():
+    """The anchor pair: $347.3652bn unweighted and $146.1518bn weighted — the account's own
+    figures under the adopted 2019-only windows with the own-country temporal price fallback
+    (prices never cross countries), built 2026-10-28. The account now DIVERGES from the
+    author's pair by design: his $379.5011/$160.2358 (2026-10-23 revision, ESA 160/170/180 in
+    the sufficiency classes) used the five-year windows and the geographic price hierarchy,
+    and is recognised below as history, not failed. The pair is a PIN of the account's first
+    build under the adopted rule, not an independently derived expectation: the direction and
+    size are consistent with the measured coverage change (3,552 geographically priced 2019
+    pairs lose that pricing; 404 have own-country donors), and the exact window, statistic and
+    deflator of the temporal fallback remain provisional pending the group's ratification. ⚠ The lesson that cost a day, recorded so it is not relearnt:
     the environment's editable install points at the MAIN checkout, so a run launched as a
     script (rather than inline from a worktree cwd) silently imports whatever branch that
     checkout is on. A 2026-10-23 rerun did exactly that and produced 161.9217/159.1435 — a
@@ -1083,14 +1085,15 @@ def test_totals_pair_matches_the_authors_october_revision():
             continue
         df = pd.read_csv(path).set_index('sufficiency_applied')['total_usd_2019_bn']
         unweighted, weighted = float(df[False]), float(df[True])
-        current = abs(unweighted - 379.5011) < 0.05 and abs(weighted - 160.2358) < 0.05
+        current = abs(unweighted - 347.3652) < 0.05 and abs(weighted - 146.1518) < 0.05
+        author_rev = abs(unweighted - 379.5011) < 0.05 and abs(weighted - 160.2358) < 0.05
         october = abs(unweighted - 379.5011) < 0.05 and abs(weighted - 157.4983) < 0.05
         august = abs(unweighted - 388.1426) < 0.05 and abs(weighted - 163.4501) < 0.2
-        assert current or october or august, (run, unweighted, weighted)
+        assert current or author_rev or october or august, (run, unweighted, weighted)
         checked += 1
         current_runs += int(current)
     assert checked >= 1, 'no run on this machine carries the totals pair'
-    assert current_runs >= 1, 'no run carries the current anchor (379.5011 / 160.2358)'
+    assert current_runs >= 1, 'no run carries the current anchor (347.3652 / 146.1518)'
 
 
 def test_yield_change_keeps_late_only_country_yields_for_the_target_method():
@@ -1168,3 +1171,48 @@ def test_price_raster_prices_a_pixel_with_its_own_country_or_nothing():
     assert price[0, 1] == pytest.approx(60.0)
     assert np.isnan(price[1, 0]) and source[1, 0] == pf.PROVENANCE_NONE, 'no own price, no price'
     assert np.isnan(price[1, 1])
+
+
+def test_price_tables_carry_no_geographic_levels():
+    """The account's price rule, checked on the artifacts themselves: the median table holds
+    country rows only, and every priced row in the values table is the country's own price
+    (same-year or temporal donor). A subregion, region or world row anywhere is a regression."""
+    median_path = os.path.join(_base_data_project().base_data_dir,
+                               'global_invest', 'pollination', 'fao', 'median_prices',
+                               'price_median_usd_tonne_2019_2019.parquet')
+    if not os.path.exists(median_path):
+        pytest.skip('no 2019-window median table on this machine')
+    medians = pd.read_parquet(median_path)
+    assert set(medians['agg_level']) == {'country'}, sorted(set(medians['agg_level']))
+    values_path = os.path.join(os.path.dirname(median_path), '..', 'fao_values_1993_2024.csv')
+    values = pd.read_csv(values_path, low_memory=False)
+    assert set(values['price_source_agg_level']) <= {'country', 'country_temporal', 'missing'}, \
+        sorted(set(values['price_source_agg_level']))
+    donors = values[values['price_source_agg_level'] == 'country_temporal']
+    assert donors['price_donor_year'].notna().all(), 'a temporal donor must record its year'
+
+
+def test_weighted_variant_is_bounded_by_the_unweighted_and_reconciles_to_the_country_table():
+    """Habitat sufficiency is a 0..1 weight, so the weighted total can never exceed the
+    unweighted one. The published country table must be the weighted raster's own zonal sum:
+    conservation is pinned at 99.5 percent (measured 99.86; the remainder is boundary pixels
+    outside every region polygon), so a wrong-raster export or a zonal regression trips it."""
+    checked = 0
+    for run in _pollination_runs():
+        totals_path = os.path.join(run, 'pollination_sufficiency_weighted',
+                                   'pollination_totals_with_and_without_sufficiency.csv')
+        country_path = os.path.join(run, 'gep_calculation', 'gep_by_country_base_year.csv')
+        if not (os.path.exists(totals_path) and os.path.exists(country_path)):
+            continue
+        totals = pd.read_csv(totals_path).set_index('sufficiency_applied')['total_usd']
+        assert totals[True] <= totals[False], run
+        country_sum = pd.read_csv(country_path)['pollination_gep'].sum()
+        weighted_ratio = country_sum / totals[True]
+        unweighted_ratio = country_sum / totals[False]
+        # A run reconciles with exactly one of its own rasters; historical runs carried the
+        # unweighted variant and are recognised, not failed.
+        is_weighted = 0.995 <= weighted_ratio <= 1.001
+        is_historical_unweighted = 0.995 <= unweighted_ratio <= 1.001
+        assert is_weighted or is_historical_unweighted, (run, weighted_ratio, unweighted_ratio)
+        checked += int(is_weighted)
+    assert checked >= 1, 'no run publishes the weighted variant within conservation tolerance'

@@ -11,20 +11,18 @@ they would otherwise be, and the damage those floods cause is smaller. That redu
 is what this account values.
 
 The scope is river flooding only. Coastal flooding, storm surge and pluvial flooding lie outside
-it, following the hazard product the account uses. Coverage is 250 countries at 537 m, reported
-in USD 2019.
+it, following the hazard product the account uses. The published table carries all 250 account
+rows at 537 m in USD 2019; 162 countries carry an estimate and 88 carry none.
 
 ## Method
 
 Valuing this service requires answering a question that cannot be observed: how much flood damage
-would occur if landscapes stopped absorbing rain. The account simulates a counterfactual world in
-which ecosystems no longer retain water, routes the same storms through it, and takes the
+would occur if the landscape's vegetation no longer held water back. The account simulates a
+counterfactual world with degraded retention, routes the same storms through it, and takes the
 difference.
 
 Everything turns on one number per location, the **depth amplification**: the ratio of flood depth
-in the degraded world to flood depth in the current one. Hydrology has no standard name for it,
-because it has not previously been needed -- it exists here only because there is a paired
-counterfactual world to run.
+in the degraded world to flood depth in the current one.
 
 ### Step 1, how absorbent each piece of land is
 
@@ -65,8 +63,9 @@ is swept over 0.3 to 0.5.
 
 **Bare soil** removes land cover entirely, setting curve numbers to the fallow values of the
 reference tables. This is the world a gross product asks about, and it is the reference the
-erosion account uses, so the two services are measured against one hypothetical landscape and can
-be summed.
+erosion account uses, so the two services are measured against one hypothetical landscape. That
+makes their figures comparable on a common baseline; whether they can be added is an overlap
+question the shared baseline does not settle by itself.
 
 **In-situ degradation** raises curve numbers less: soils compacted and canopy thinned, the land
 still present. Closer to what realistic degradation would produce, and reported alongside rather
@@ -104,9 +103,12 @@ paths.
 
 ## Before trusting any rerun of the pipeline
 
-The account as it stands does **not** rerun the pipeline: `gep_calculation` reads the author's own
-per-country export, so the number here is his verified one. This section matters only if that
-changes.
+`gep_calculation` publishes the computed bare-counterfactual table when the chain has produced
+one — a computed table without the bare column is refused rather than silently substituted — and
+the author's per-country export otherwise, recording which was used. The saved published table
+matches the author's export on all 250 rows (162 with an estimate, 88 missing, identical
+missingness, largest numeric difference 3.73e-9). This section is the warning label for anyone
+rerunning the upstream pipeline.
 
 ### The failure that made this account wrong twice
 
@@ -129,21 +131,22 @@ problem. Both were found because a country looked implausible. Recovering them r
 set believed complete, so it detects regressions — a lost file, a partial copy, an interrupted
 extraction — **but not a package that was never downloaded**, which was the original failure.
 
-A missing amplification raster behaves the same way: the pipeline warns, falls back to current
-depths and returns a GEP of zero, so the job completes and the number is wrong. `RUN.md` carries a
+A missing amplification raster is refused: `_open_amplification_raster` raises rather than
+falling back to current depths, because that fallback completed the job with a wrong zero.
+`RUN.md` carries a
 three-line check that the mosaic resolves, and `msi/final_run.sbatch` verifies the totals itself and
 prints ALL MATCH or the quantity that differs.
 
-### The account should compute this itself
+### Archived run evidence, 2026-09-01 cold start
 
-**The account computes this figure rather than reading it.** That was not true until 2026-09-01
-and this page said so; it is true now.
-
-Four of the six tasks run here: `task_compute_service_flow`, `task_compute_flood_damages`,
+What follows records that archived run; the current publisher rule is above. Four of the six tasks ran: `task_compute_service_flow`, `task_compute_flood_damages`,
 `task_compute_flood_gep` and `task_generate_maps_and_figures`. The GEP chain with the
-counterfactuals gives **$11,403,596,548** across 250 rows, positive in 163, against the author's
-published $11.40bn -- his rounding to one decimal, and his committed table agrees with ours to the
-cent, 250 of 250 countries, largest per-country difference $0.000000. `gep = ead_bare - ead_current`
+counterfactuals gave **$11,403,596,548** across 250 rows, positive in 163: that run valued
+Iceland at $0.021 where the author's table carries NA, so its NA mask differed by one country,
+and the agreement to the cent held on the 162 rows both sides value — shared nonmissing
+agreement, not a 250-of-250 match. The CURRENT published table instead matches the author's
+export exactly in coverage (162 positive, 88 missing, identical missingness, largest numeric
+difference 3.73e-9). `gep = ead_bare - ead_current`
 holds to 1.2e-07 on every row, and the damage side reproduces at $887,827,659,820 /
 $194,256,309,530 / $551,051,565,602.
 

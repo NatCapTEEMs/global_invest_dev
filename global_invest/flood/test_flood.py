@@ -5,9 +5,9 @@ difference, and the share that difference is of the degraded world. These run on
 a handful of countries and a few return periods rather than on a global grid,
 because the functions they touch take arrays and frames and return them.
 
-No test here replaces a file reader. Where the flood module still mixes file
-handling into a calculation -- most of `flood_functions` does -- that function is
-not tested here, and moving it is what would make it testable.
+No test here replaces a file reader: `flood_functions` holds the equations over
+arrays and frames and opens nothing, so the science is tested directly and the
+file handling stays in `flood_tasks`.
 
 The InVEST-scale work is not covered: the amplification mosaic takes two weeks of
 flow accumulation and is verified against staged data, and the depth-damage
@@ -592,3 +592,31 @@ def test_every_flood_tree_builder_assembles():
         p = hb.ProjectFlow(project_dir=tempfile.mkdtemp())
         getattr(flood_initialize, name)(p)
         assert p.task_names_defined, name
+
+
+def test_gep_calculation_requires_the_bare_counterfactual_in_a_computed_table(tmp_path, monkeypatch):
+    """A computed table without gep_flood_bare_usd2019 is refused — the account never silently
+    publishes the insitu column under the bare description — and a valid bare table is used
+    exactly as before."""
+    from types import SimpleNamespace
+    from global_invest.flood import flood_tasks as ft
+    monkeypatch.setattr(ft, 'publish_inputs', lambda p: p)
+    out_path = str(tmp_path / 'gep_by_country_base_year.csv')
+    monkeypatch.setattr(utilities, 'begin_gep_calculation',
+                        lambda p, s: ({'gep_by_country_base_year': out_path}, False))
+    monkeypatch.setattr(utilities, 'collapse_countries_to_r250', lambda df: df)
+    countries = pd.DataFrame({'iso3_r250_label': ['AAA'], 'iso3_r250_id': [1],
+                              'iso3_r250_name': ['A'], 'continent': ['X'], 'region_un': ['X'],
+                              'region_wb': ['X'], 'income_grp': ['X'], 'subregion': ['X']})
+    computed = tmp_path / 'flood_gep_usd2019.csv'
+    p = SimpleNamespace(run_this=True, gep_base_year=2019, df_countries=countries,
+                        flood_gep_path=str(computed), flood_gep_for_merge_path=None)
+    pd.DataFrame({'iso3_r250_label': ['AAA'],
+                  'gep_flood_insitu_usd2019': [5.0]}).to_csv(computed, index=False)
+    with pytest.raises(NameError, match='bare'):
+        ft.gep_calculation(p)
+    pd.DataFrame({'iso3_r250_label': ['AAA'], 'gep_flood_bare_usd2019': [7.0],
+                  'gep_flood_insitu_usd2019': [5.0]}).to_csv(computed, index=False)
+    ft.gep_calculation(p)
+    published = pd.read_csv(out_path)
+    assert published.loc[0, 'flood_gep'] == pytest.approx(7.0)

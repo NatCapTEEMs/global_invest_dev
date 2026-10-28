@@ -1883,27 +1883,37 @@ def pollination_shock_static(p):
 # =============================================================================
 
 def pollination_value_by_region(p):
-    """GEP quantity stage: per-region sum of the pollination value raster (USD per cell) on the
-    service's aggregation surface (the gep_regions cells)."""
+    """GEP quantity stage: per-region sum of the REPORTED pollination value raster (USD per cell)
+    on the service's aggregation surface (the gep_regions cells).
+
+    Which raster is the reported one is configuration (`pollination_reported_variant`):
+    `habitat_sufficiency` is the account's selected variant — the crop value at stake weighted by
+    300 m habitat sufficiency, the definition that responds to land-use change — and `unweighted`
+    is production x price x dependence alone. Both totals stay published side by side by
+    pollination_sufficiency_weighted; this task decides only what the COUNTRY TABLE carries."""
     publish_inputs(p)
     p.pollination_value_by_region_path = os.path.join(p.cur_dir, "pollination_value_by_region.csv")
     if not p.run_this:
         return
-    # The raster our own chain builds, in USD per cell, so this sum is a sum of money. Between
-    # 2026-08-28 and 2026-08-30 it was the author's staged file: the yield and production steps had
-    # no port, so no run here could produce the value raster from source. They do now, and the
-    # account reports what our code computes. His raster is still built and read alongside, by
-    # pollination_value_raster, and the two are differenced in the independence check.
+    variant = str(p.pollination_reported_variant)
+    if variant == 'habitat_sufficiency':
+        reported_raster = p.pollination_sufficiency_weighted_raster_path
+    elif variant == 'unweighted':
+        reported_raster = p.pollination_value_raster_rebuilt_path
+    else:
+        raise NameError("pollination_reported_variant must be 'habitat_sufficiency' or "
+                        "'unweighted', not %r." % variant)
+    hb.log('pollination country table carries the %s variant (%s).'
+           % (variant, os.path.basename(str(reported_raster))))
     utilities.summarize_raster_by_region(
-        value_raster_path=p.pollination_value_raster_rebuilt_path,
+        value_raster_path=reported_raster,
         region_boundary_path=p.gep_regions_input_path,
         out_path=p.pollination_value_by_region_path,
         year=p.gep_base_year, id_column=p.gep_regions_id_col)
-    # Full-scale conservation: the region sums must add up to the raster's own total
-    # (verified at 100.0000% on the real raster when this check was added).
+    # Full-scale conservation: the region sums must add up to the raster's own total.
     df_regions = hb.df_read(p.pollination_value_by_region_path)
     utilities.assert_zonal_conservation(df_regions['total'].sum(),
-                                        p.pollination_value_raster_rebuilt_path, 'pollination')
+                                        reported_raster, 'pollination')
     return True
 
 
