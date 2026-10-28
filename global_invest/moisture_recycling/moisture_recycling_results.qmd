@@ -69,10 +69,10 @@ for k, v in p.results[service_label].items():
 
     if k == 'gep_by_country_base_year':
         total_moisture_recycling_value = df['moisture_recycling_gep'].sum()
-        export_moisture_recycling_value = df['moisture_recycling_gep_export_part'].sum()
+        export_moisture_recycling_value = df['moisture_recycling_source_attributed_export_part'].sum()
         p.gep_by_country_base_year_table = df[['iso3_r250_name', 'moisture_recycling_gep',
-                                               'moisture_recycling_gep_own_part',
-                                               'moisture_recycling_gep_export_part']]
+                                               'moisture_recycling_source_attributed',
+                                               'moisture_recycling_source_attributed_export_part']]
 
         # Group by useful aggregation columns explicitly and assign each as an attribute to p
         if 'income_grp' in df.columns:
@@ -124,7 +124,7 @@ for k, v in p.results[service_label].items():
 
 ```
 
-Moisture recycling re-attributes the terrestrially-sourced share of the water-supply account's irrigation and domestic value to the countries whose evaporation became the rain, giving $`{python} f"{total_moisture_recycling_value:,.2f}"` in the base year, of which $`{python} f"{export_moisture_recycling_value:,.2f}"` crosses a border. It is a re-attribution of the water-supply row, never an addition to it. The tables below aggregate by income group, region and continent, and end with the per-country table the account reads.
+Rainfall pattern regulation values the crop output supported by vegetation-derived moisture (Shunkei's VMR share of crop water satisfaction, on the corrected 2019 crop-provision basis), reported at the RECEIVING country: $`{python} f"{total_moisture_recycling_value:,.2f}"` in the base year. It is an intermediate contribution already inside crop provision, never an addition. The source-side diagnostic beside it re-attributes the same value to the countries whose evaporation became the rain, of which $`{python} f"{export_moisture_recycling_value:,.2f}"` crosses a border. The tables below aggregate by income group, region and continent, and end with the per-country table the account reads.
 
 ## GEP by Country in Base Year, mapped
 
