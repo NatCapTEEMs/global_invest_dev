@@ -19,6 +19,8 @@ def run_project(p):
     # Every task publishes its own inputs (publish_inputs in the tasks module): no setup call.
     build_task_tree(p)
 
+    p.skip_tasks(p.tasks_to_skip)
+
     hb.log('Created ProjectFlow object at ' + p.project_dir + '\n    from script ' + p.calling_script)
     p.execute()
 
@@ -28,7 +30,7 @@ def run_project(p):
 if __name__ == '__main__':
 
     # Create ProjectFlow object
-    p = hb.ProjectFlow(project_name='gep_flood', run_mode='check')
+    p = hb.ProjectFlow(project_name='gep_flood_control', run_mode='check')
 
     # Run the project
     run_project(p)

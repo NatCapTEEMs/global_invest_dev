@@ -18,6 +18,8 @@ def run_project(p):
     # there is no setup call here: open the workspace, build the tree, go.
     build_task_tree(p)
 
+    p.skip_tasks(p.tasks_to_skip)
+
     hb.log('Created ProjectFlow object at ' + p.project_dir + '\n    from script ' + p.calling_script)
 
     p.execute()

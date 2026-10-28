@@ -10,6 +10,8 @@ def build_task_tree(p):
 
 def run_project(p):
     build_task_tree(p)
+
+    p.skip_tasks(p.tasks_to_skip)
     hb.log('Created ProjectFlow object at ' + p.project_dir + '\n    from script ' + p.calling_script)
     p.execute()
     return p
