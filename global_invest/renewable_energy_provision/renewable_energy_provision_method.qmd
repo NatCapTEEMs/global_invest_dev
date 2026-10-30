@@ -15,7 +15,15 @@ format:
 
 Renewable energy provision values the electricity a country generates from wind, sun and
 geothermal heat, and attributes to nature the part of that value the resource itself provided
-rather than the turbines, panels and grid that capture it. The base year is 2019.
+rather than the turbines, panels and grid that capture it. The base year is 2019. Solar, wind and
+geothermal are three rows of the account, computed in this one module.
+
+## Source
+
+The write-up is `Renewable_Energy_Provisions.docx` in the shared folder of current write-ups
+(version of 28 October 2026). The registered author code is
+`jacob-harr/gep_renewable_energy_production` at `cead3eb` (6 October 2026). The library does not
+port that revision's share, as the section on the rent share explains.
 
 ## Data and Methods
 
@@ -41,9 +49,10 @@ maintenance and the grid. The part attributable to the resource is what economis
 resource rent: what is left after every other factor of production has been paid. A wind farm's
 rent is what the wind contributes, once the turbines and the operators have been covered.
 
-$\lambda_c$ is that share, taken from the Changing Wealth of Nations resource-rent tables, joined
-on country name and year. It is the same idea as the land rental rate crop provision uses, applied
-to an energy resource instead of to land.
+$\lambda_c$ is that share, computed by the module author with the Changing Wealth of Nations
+HYDROPOWER rent method (rent over revenue per country-year) and applied to all three
+technologies as a proxy, joined on country name and year. It is the same idea as the land rental
+rate crop provision uses, applied to an energy resource instead of to land.
 
 A country can come out at zero or below. That comes from the rent attribution, not from
 generation, so it is a country whose renewable generation earned no rent that year rather than a
@@ -51,8 +60,26 @@ country that generated nothing. Those rows are dropped.
 
 ## Validation
 
-A fresh run reproduces the committed reference table. The drive also holds a set of reference
-CSVs giving different values, and which of the two is current is an open question.
+A fresh run on the cached inputs reproduces the saved tables: the 28 October 2026 regeneration
+left every valued country and all three per-technology tables byte-identical, changing only the
+combined table's fabricated zeros to missing. Three vintages of per-technology tables now exist
+and no two agree. The author repository's current outputs (revision cead3eb) carry the
+normalized-capacity-factor lambda: $193.2bn over 183 countries against this module's $173.5bn
+over 143, overlap correlations 0.90–0.93 per technology, every country this module values also
+valued there. The reference_outputs staged in base_data match neither (solar $80.0bn over 172,
+wind $45.6bn over 121, geothermal $9.0bn over 26). Which revision produced them is not
+determined. Which construction the account adopts is the open question below.
+
+## What is open
+
+The October meeting rejected the borrowed hydropower share and asked the author for supported
+resource rents, with explicit treatment of operating and capital costs (decision M10). The
+author's current code and write-up instead derive $\lambda$ from a per-technology normalised
+capacity factor, a third construction. The write-up does not state how a capacity factor maps to
+a rent share, and the document's own review comments question the premise. The supplied inputs
+carry no operating or capital costs, so a resource rent cannot yet be computed from them. Steve
+reviews the nature share in the tracker. Jacob was asked on 28 October, and the follow-up is held
+for that review. This module's numbers stay as they are until the share is decided.
 
 ## References
 
@@ -62,4 +89,11 @@ CSVs giving different values, and which of the two is current is an open questio
 
 ## Coverage
 
-The published table is one row for each of the account's 250 countries, base year 2019, in constant 2019 USD. Of the 250, 107 carry a value, 5 are computed zeros, and 138 rows are missing, kept as missing rather than zero because an input carries no data for those countries. A zero means the computation returned zero; a missing row means the data to compute one is absent.
+The published combined table is one row for each of the account's 250 countries, base year 2019,
+in 2019 USD. 143 carry a value, totalling \$173,493,644,889.46, and 107 have no retained positive
+estimate. The valuation keeps positive values only. The 2019 check found 48 negative technology
+rows dropped (23 solar, 20 wind, 5 geothermal), so a missing row does not say whether the inputs
+were absent or an estimate was computed and excluded. The table holds no zeros.
+
+The three technology tables list only their valued countries: solar 142 (\$54,410,978,171.74),
+wind 98 (\$112,524,374,333.31) and geothermal 21 (\$6,558,292,384.42).

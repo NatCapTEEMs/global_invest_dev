@@ -1,4 +1,4 @@
-"""Unit tests for the NTFP skeleton (valuation function + configuration rows)."""
+"""Unit tests for NTFP: the valuation, the configuration rows and the accessibility stage."""
 import inspect
 from types import SimpleNamespace
 
@@ -42,9 +42,8 @@ def test_source_script_constants_are_pinned():
     assert ntfp_functions.NDVI_NODATA == -9999
 
     # ntfp_tasks.py: the analysis grid is the account's own, so there is no second projection and
-    # no grid constant to pin. What is pinned is that none came back -- the machinery, not the
-    # word, because the comments still say why Mollweide was dropped and that history is the
-    # point of them.
+    # no grid constant to pin. What is pinned is that the Mollweide machinery stays out -- by name,
+    # not by the word, which the comments use to say why the account's grid is used instead.
     for gone in ('MOLLWEIDE_WKT', 'MOLLWEIDE_BBOX', 'HECTARES_PER_CELL',
                  'ACCESSIBILITY_CELL_SIZE_M', 'reproject_vector', 'buffer_and_union_access'):
         assert not hasattr(ntfp_tasks, gone), '%s came back' % gone
@@ -193,7 +192,7 @@ def test_burning_the_country_id_matches_zonal_statistics_over_the_same_polygons(
 def test_the_reach_widens_with_latitude_because_a_cell_narrows(tmp_path):
     """A 100 km reach must cover twice as many columns at 60 N as at the equator.
 
-    This is the whole reason the old Mollweide grid existed and the reason it is gone. A cell on
+    Growing the reach in metres is what makes an equal-area grid unnecessary. A cell on
     the account's grid is the same height everywhere and 309*cos(latitude) metres wide, so a
     fixed reach in metres has to cross more of them the further north it runs. Buffering in
     degrees would give the same column count at both latitudes, which is a 10 km buffer at the
@@ -233,10 +232,10 @@ def test_the_reach_widens_with_latitude_because_a_cell_narrows(tmp_path):
 def test_burning_in_stripes_gives_the_same_raster_as_one_call(tmp_path):
     """Striping is an implementation detail and must not change a single cell.
 
-    The one-call version segfaulted on MSI: 21,438,033 road features into an 8.4-billion-cell
-    target, held at once. Stripes bound what GDAL holds, and each stripe's spatial filter means
-    it only sees the features inside it -- so the burn has to come out identical either way, or
-    the fix has quietly changed the answer.
+    A one-call burn segfaults on the global grid: 21,438,033 road features into an
+    8.4-billion-cell target, held at once. Stripes bound what GDAL holds, and each stripe's
+    spatial filter means it only sees the features inside it -- so the burn has to come out
+    identical either way, or striping has quietly changed the answer.
     """
     gpd = pytest.importorskip('geopandas')
     from osgeo import gdal, osr

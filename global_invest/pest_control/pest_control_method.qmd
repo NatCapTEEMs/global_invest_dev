@@ -9,10 +9,17 @@ format:
 Biological pest control is valued as the extra yield natural enemies provide on organically
 managed cropland, at the organic producer price. The base year is 2019.
 
-⚠ The scope is organic agriculture only, by design: the underlying evidence measures the yield
+The scope is organic agriculture only, by design: the underlying evidence measures the yield
 effect of predators where synthetic pesticides are absent, and no comparable estimate exists
-for conventional systems. The full value is attributed to nature -- no human-input adjustment
-(lambda) is applied, unlike the neighbouring crop rows.
+for conventional systems. The full value is attributed to nature, with no human-input share
+taken out (λ = 1), unlike the neighbouring crop rows.
+
+## Source
+
+The write-up is `Pest_Control.docx` (26 October 2026) in the shared folder of current write-ups.
+The effect sizes are Boldorini et al. (2024), Table S3. The authors' current scripts are not yet
+received, so the library follows the write-up's appendix where it can and departs from it in
+the three places listed under What is open.
 
 ## Quantity
 
@@ -27,7 +34,10 @@ The organic producer price: the country's FAOSTAT 2019 producer price for the cr
 global median where the country reports none), times the organic-to-conventional price premium
 (`pest_control_price_premium`).
 
-Where FAOSTAT reports no yield or producer price for a crop and country that FiBL gives organic area, the missing factor is imputed with the global median across the countries that do report it for the same crop, so a real organic area is not dropped for want of a price; a country missing every factor stays missing rather than imputed into existence.
+Where FAOSTAT reports no yield or producer price for a crop and country that FiBL gives organic
+area, the missing factor is imputed with the global median across the countries that do report
+it for the same crop, so a real organic area is not dropped for want of a price. A country
+missing every factor stays missing rather than imputed into existence.
 
 ## Valuation
 
@@ -41,17 +51,24 @@ where $\text{lnRR}_{g(i)}$ is the crop group's meta-analytic log response ratio
 (`pest_control_effect_lnrr_*`: the cereal effect for cereals, the vegetable effect for
 vegetables, oilseeds and pulses, the other-crops effect for fruit, nuts and stimulants, zero
 for every other group), $A$ the organic area, $y$ the conventional yield, $r$ the yield ratio,
-$p$ the producer price and $\pi$ the price premium. Countries sum over crops; the published
-table carries all 250 account countries with NA where nothing is valued.
+$p$ the producer price and $\pi$ the price premium, 1.38. Countries sum over crops, and the
+published table carries all 250 account countries with NA where nothing is valued.
 
 The committed `pest_control_gep.csv` is carried beside the result as the comparison anchor. It
 is a Monte Carlo mean from a pipeline that is not on the drive, so the run log reports coverage
-and log-rank agreement rather than a to-the-cent match, and the total scales linearly in $\pi$
-(the committed level corresponds closely to $\pi = 1$).
+and the Pearson correlation of log values over the countries both tables value, rather than a
+to-the-cent match. The total scales linearly in $\pi$. On the
+132 countries both tables value, the library's total is 3.4% above the committed one at
+$\pi = 1.38$, and 25% below it at $\pi = 1$.
 
 ## Coverage
 
-The published table is one row for each of the account's 250 countries, base year 2019, in constant 2019 USD. Of the 250, 138 carry a value, 2 are computed zeros, and 110 rows are missing, kept as missing rather than zero because an input carries no data for those countries. A zero means the computation returned zero; a missing row means the data to compute one is absent.
+The published table is one row for each of the account's 250 countries, base year 2019, in 2019
+USD. Of the 250, 138 carry a value, totalling \$6,467,213,436.55, 2 are computed zeros (Mali and
+Tajikistan), and 110 rows are missing, kept as missing rather than zero because an input carries
+no data for those countries. A zero means the computation returned zero. A missing row means
+the data to compute one is absent. The library values eight countries the committed table does
+not (AND, GIN, GMB, LIE, MLI, MUS, REU, TJK).
 
 ## Inputs
 
@@ -59,3 +76,23 @@ All paths and parameters come from `es_parameters.csv` under the `pest_control` 
 the FiBL area extract, the FAOSTAT 2019 yield and price slices, the FAO/CPC crop
 classification, the three effect sizes, the six yield ratios, the price premium and the
 committed reference, each with a source row beside it.
+
+## Output
+
+`gep_calculation` writes `gep_by_country_base_year.csv` into its own task directory, holding the
+r250 identifiers and attributes, `year`, `pest_control_gep` and `pest_control_gep_reference`,
+and `pest_control_by_crop_country.csv` beside it with the per-crop rows.
+
+## What is open
+
+The write-up differs from the implementation in three places, and alignment waits on the
+authors' cleaned scripts:
+
+- Cereals. The write-up leaves them unvalued because their effect is not significantly different
+  from zero. The library values them at the cereal effect, \$718,037,931.97 over 79 countries,
+  11.1% of the total.
+- Missing prices and yields. The write-up imputes them with a mixed-effects model on log prices.
+  The library takes the crop's global median.
+- The price premium. The write-up uses a ratio per crop from matched USDA GATS pairs, with the
+  FAO crop group's mean as the fallback. The library applies the overall mean, 1.38, to every
+  crop.

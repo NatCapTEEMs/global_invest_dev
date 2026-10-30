@@ -97,8 +97,8 @@ class TestESSeams(unittest.TestCase):
     def test_timber_seam_registers_its_two_tasks(self):
         """Timber is the FRS alternative to carbon, so it must graft like any other seam.
 
-        It registers two tasks rather than one: the value-density lookup has to exist before the
-        shock can read it, and carbon builds its equivalent in a separate task for the same reason.
+        Under the default net-return measure it registers two tasks: the class x zone value-density
+        table, built the way carbon builds its own, and the shock.
         """
         p = FakeProjectFlow()
         timber_provision_initialize.add_timber_provision_shock_tasks(p)
@@ -113,7 +113,8 @@ class TestESSeams(unittest.TestCase):
         def assigned_output(fn):
             # The CODE lines only: a docstring naming the other seam is prose, not a destination.
             # Parity of triple quotes, not a split on the last one: a helper defined inside the
-            # function carries its own docstring, which hid the assignment (22 Sep 2026).
+            # function carries its own docstring, and splitting on its closing quotes hides every
+            # line above it, the assignment included.
             src = inspect.getsource(fn)
             lines, in_doc = [], False
             for line in src.splitlines():

@@ -2,13 +2,15 @@
 
 Everything is on the account's own grid, WGS84 at 10 arcsec, the grid `ha_per_cell_10sec.tif`
 defines. Accessibility is the reach grown 10 km from the road and river lines, and the forest
-mask is screened by a five-year mean NDVI. The roads and rivers are the source module's own
-layers, and the screens, thresholds and class ranges are its choices, pinned by tests.
+mask is screened by a five-year mean NDVI. The roads (`ntfp_roads_vector_path`) and rivers
+(`ntfp_rivers_path`, Natural Earth 10 m centre lines) are the configured inputs. They carry the file
+names the registered source code reads, and their identity with the authors' files is not verified.
+The screens, thresholds and class ranges are the source module's choices, pinned by tests.
 
-The source module worked on a second grid, Mollweide at 300 m, because equal-area made a cell
-a flat 9.0 hectares. The area that bought is already exact on the pyramid, read from ha_per_cell,
-and the projection cost the map: `hb.make_path_pog` refuses a Mollweide raster, so nothing this
-service produced could be published or compared with another service cell for cell.
+The source module works on a second grid, Mollweide at 300 m, because equal-area makes a cell
+a flat 9.0 hectares. That area is already exact on the pyramid, read from ha_per_cell, and the
+projection costs the map: `hb.make_path_pog` refuses a Mollweide raster, so nothing on that grid
+can be published or compared with another service cell for cell.
 """
 import os
 from osgeo import gdal, ogr
@@ -29,13 +31,6 @@ COUNTRY_ID_MAX = 900
 # defines and every other service works on. A cell is about 309 m tall everywhere and
 # 309*cos(latitude) m wide, so its area is not a constant and is read from `ha_per_cell` rather
 # than assumed -- which is the house rule, and is exact where a fixed hectares-per-cell is not.
-#
-# This replaced a second grid, Mollweide at 300 m, carried over from the source module.
-# Equal-area made the hectares a constant 9.0, which is why it was chosen, and it cost the map:
-# `hb.make_path_pog` refuses a Mollweide raster outright, because the account's pyramid is
-# defined in degrees. Nothing this service produced could be published, and its cells could not
-# be compared with any other service's. The area a projection was buying is already exact on the
-# pyramid, so there was nothing left on the other side of the trade.
 GTIFF_CREATION_OPTIONS = ('TILED=YES', 'COMPRESS=DEFLATE', 'BIGTIFF=YES')
 # How far to grow the reach in one pass. A band takes the cell width of its own middle latitude,
 # so what has to stay small is the LATITUDE the band spans, not the number of rows: half a degree
@@ -109,9 +104,9 @@ def reachable_mask_on_pyramid(vector_paths, template_path, out_path, distance_m,
                               log=None):
     """The reachable area, grown from the road and river lines on the account's own grid.
 
-    The source module buffered the geometries in Mollweide and burned the dissolved polygon.
+    The source module buffers the geometries in Mollweide and burns the dissolved polygon.
     That buffer is only as round as the projection is conformal, and Mollweide is not: it holds
-    area, not distance, so a nominal 10 km stretched further the further it sat from the central
+    area, not distance, so a nominal 10 km stretches further the further it sits from the central
     meridian. Growing the reach on the pyramid instead makes the distance explicit -- the cell
     is 309 m tall everywhere and 309*cos(latitude) m wide -- and removes the second grid.
 
@@ -142,13 +137,8 @@ def reachable_mask_on_pyramid(vector_paths, template_path, out_path, distance_m,
     lines_path = hb.suri(out_path, 'lines')
     if not hb.path_exists(lines_path):
         # all_touched, because a road is narrower than a cell everywhere. Burning on the centre
-        # rule would drop most of the network before anything was grown from it.
-        #
-        # Burned in LATITUDE STRIPES, not in one call: handing RasterizeLayer the whole
-        # 129,600 x 64,800 byte raster and the roads layer's 21,438,033 line features at once
-        # segfaults. A stripe at a time bounds what GDAL holds, and a spatial filter means each
-        # stripe only sees the features that fall in it. SPARSE_OK, because a line raster is
-        # almost entirely empty and unwritten blocks then cost nothing on disk.
+        # rule would drop most of the network before anything was grown from it. Burned in
+        # LATITUDE STRIPES, not in one call; burn_lines_in_stripes says why.
         log('  burning the road and river lines onto the grid, in stripes')
         burn_lines_in_stripes(vector_paths, template_path, lines_path, log=log)
 
@@ -259,8 +249,8 @@ def warp_to_analysis_grid(src_path, out_path, template_path, resample_algorithm,
     `ha_per_cell_10sec.tif` rather than from the input.
 
     Reading them off the template is what keeps every raster the same shape so the arrays can be
-    combined cell by cell. Deriving them per input is what produced a country raster of all zeros
-    and an NDVI raster 56 rows short of the land cover, neither of which announced itself.
+    combined cell by cell. Deriving them per input can produce a country raster of all zeros or
+    an NDVI raster rows short of the land cover, and neither announces itself.
     """
     template = gdal.Open(template_path)
     transform = template.GetGeoTransform()
@@ -291,8 +281,7 @@ def accessible_forest_hectares_by_country(lulc_path, access_path, country_id_pat
     an NDVI raster is given, it carries enough live vegetation to yield a product.
 
     A cell's area is READ, from `ha_per_cell_10sec.tif`, not assumed. On the account's grid it
-    runs from about 9.5 hectares at the equator to nearly nothing at the poles, where the old
-    equal-area grid made it a flat 9.0 everywhere.
+    runs from about 9.5 hectares at the equator to nearly nothing at the poles.
 
     The rasters are read a few hundred rows at a time. A single band on this grid is 8.4 billion
     cells, so the five this needs cannot be held at once, and the totals accumulate across blocks
@@ -337,9 +326,8 @@ def publish_inputs(p):
     utilities.hydrate_es_config(p, 'ntfp', log=hb.log)
     utilities.hydrate_es_parameters(p, 'ntfp', log=hb.log)
     utilities.initialize_country_paths(p)
-    # The grid every raster here now lands on. coastal_carbon and terrestrial_carbon publish it
-    # the same way; a service that resolves the pyramid for itself is how two of them drifted
-    # onto different grids without anyone noticing.
+    # The grid every raster here lands on, published the way coastal_carbon and terrestrial_carbon
+    # publish it, so no service resolves the pyramid for itself and drifts onto a different grid.
     utilities.initialize_pyramid_paths(p)
     if not hasattr(p, 'results'):
         p.results = {}

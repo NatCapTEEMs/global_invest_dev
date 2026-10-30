@@ -1,20 +1,17 @@
-"""landslide_mitigation ProjectFlow tasks (folded from m-braaksma/landslide_mitigation v0.2.0).
+"""landslide_mitigation ProjectFlow tasks, ported from m-braaksma/landslide_mitigation v0.2.0.
 
-One tasks module per the service template; the source repo's five stage files survive as the
+One tasks module per the service template; the source repo's five stage files appear as the
 section banners below (input data -> preprocessing -> stability model -> valuation ->
 tables/figures). Each task publishes its inputs, resolves its own paths, guards on the outputs
-already existing, and then calls the science: the arithmetic itself lives in
+already existing, and then calls the science: the arithmetic lives in
 landslide_mitigation_functions.py as pure functions over arrays and frames, and the raster drivers
-in landslide_mitigation_functions.py.
+that apply it block-wise sit at the top of this module.
 """
 import glob
 import json
 import os
 
 import geopandas as gpd
-import matplotlib.patches as mpatches
-import matplotlib.pyplot as plt
-import matplotlib.ticker as mtick
 import numpy as np
 import pandas as pd
 import pygeoprocessing as pygeo
@@ -22,9 +19,7 @@ import pygeoprocessing.routing as routing
 import rasterio
 import statsmodels.api as sm
 import statsmodels.formula.api as smf
-from matplotlib.lines import Line2D
 from osgeo import gdal, osr
-from rasterio.enums import Resampling
 
 import hazelbean as hb
 from global_invest import utilities
@@ -54,14 +49,13 @@ def compute_si_global(
     the arithmetic.
 
     c_root_max is a plain scalar closed over by si_op (not passed through raster_calculator):
-    0.0 for the 'full_impacts' bound, C_ROOT_MAX_KPA otherwise (see
-    compute_si_scenarios in the tasks module).
+    0.0 for the 'full_impacts' bound, C_ROOT_MAX_KPA otherwise (see compute_si_scenarios).
 
     min_slope_deg excludes near-flat terrain entirely -- infinite-slope theory does not apply
     there, and the exclusion is standard in SHALSTAB/SINMAP/TRIGRS. It is not just a div/0
     guard: without it both the friction and hydrological terms blow up near beta = 0 and swamp
-    the real forest-cover signal (the median observed-vs-full_impacts difference was exactly
-    zero before this exclusion was added).
+    the real forest-cover signal, to the point that the median observed-vs-full_impacts
+    difference is exactly zero.
     """
     paths = [
         friction_angle_path, cohesion_soil_path, forest_share_path,
@@ -191,8 +185,8 @@ def warp_to_reference(
         outputType=output_type if output_type is not None else gdal.GDT_Unknown,
         multithread=True,
         warpOptions=[f'NUM_THREADS={n_threads}', 'UNIFIED_SRC_NODATA=YES'],
-        # UNIFIED_SRC_NODATA=YES avoids including nodata pixels as if they were valid data
-        # confirmed on the DEM's coastlines.
+        # UNIFIED_SRC_NODATA=YES keeps nodata pixels out of the resampling instead of averaging
+        # them in as valid data (visible on the DEM's coastlines).
         creationOptions=list(creation_options),
         callback=gdal.TermProgress_nocb if show_progress else None,
     )
@@ -246,8 +240,7 @@ def publish_inputs(p):
     the iterator knobs at build time."""
     utilities.hydrate_es_config(p, 'landslide_mitigation', log=hb.log)
     utilities.hydrate_es_parameters(p, 'landslide_mitigation', log=hb.log)
-    # The shared country list, which gep_calculation joins its per-country table to. Every other
-    # service does this here; landslide did not, because until now it had no gep_calculation.
+    # The shared country list, which gep_calculation joins its per-country table to.
     utilities.initialize_country_paths(p)
     if getattr(p, 'landslide_input_data_dir', None) is None:
         p.landslide_input_data_dir = p.gep_quantity_input_path   # the module's descriptive alias
@@ -434,9 +427,8 @@ def reproject_esacci_forest_share(p):
 
 def reproject_uglc_events(p):
     """Load UGLC, clean/filter, transform points to EASE-Grid x/y (meters).
-    Real schema confirmed from the prior pipeline's preprocess_uglc:
-    pipe-delimited, WKT_GEOM geometry column, ACCURACY/START DATE/END DATE/
-    FATALITIES fields. This task ONLY produces a clean point table --
+    The source CSV is pipe-delimited, with a WKT_GEOM geometry column and
+    ACCURACY/START DATE/END DATE/FATALITIES fields. This task ONLY produces a clean point table --
     the annual binary/mortality raster panels are built separately by
     build_uglc_annual_panels(), which consumes p.uglc_path (this task's output).
     """
@@ -497,7 +489,7 @@ def reproject_uglc_events(p):
         gdf_ease['ease_x'] = gdf_ease.geometry.x
         gdf_ease['ease_y'] = gdf_ease.geometry.y
 
-        # BUG FIX: non-finite coordinates (invalid/empty source geometries)
+        # Drop events with non-finite coordinates (invalid/empty source geometries).
         before_finite = len(gdf_ease)
         gdf_ease = gdf_ease[
             np.isfinite(gdf_ease['ease_x']) & np.isfinite(gdf_ease['ease_y'])
@@ -1946,7 +1938,8 @@ def valuation(p):
 
 def build_vsl_raster(p):
     """A per-pixel value of a statistical life (2019 USD), rasterized from the country
-    correspondence with the OECD estimates and their income-group fallback."""
+    correspondence: the staged EPA life-years-lost panel when configured, the OECD estimates and
+    their income-group fallback otherwise."""
     publish_inputs(p)
     if p.run_this:
         out_path = os.path.join(p.valuation_dir, 'vsl_usd_2019_1km.tif')
@@ -2112,12 +2105,6 @@ def compute_avoided_mortality(p):
 # =============================================================================
 # SECTION: tables figures tasks (was tables_figures_tasks.py in the source repo)
 # =============================================================================
-
-# optional, map still renders without a basemap
-try:
-    import contextily as ctx
-except ImportError:
-    ctx = None
 
 
 def tables_figures(p):
@@ -2515,11 +2502,7 @@ def gep_calculation(p):
     compute_zonal_statistics writes a table per prediction year on the r264 boundary, where a
     country split into territories appears once per territory. The account reads
     gep_by_country_base_year.csv with one row per country and a single <service>_gep column, so
-    the sub-region rows are summed rather than any one of them taken: taking one is how
-    terrestrial carbon once overstated its total by 23.5 percent.
-
-    Without this the service's value sat in a zonal-statistics file that nothing downstream
-    reads, which is why landslide was the one service with a run and no report.
+    the sub-region rows are summed rather than any one of them taken.
     """
     publish_inputs(p)
     service_results, already_done = utilities.begin_gep_calculation(
@@ -2556,9 +2539,7 @@ def gep_calculation(p):
                  % format(zonal['avoided_value_sum_usd'].sum(), ',.2f'))
     else:
         zonal['value_usd'] = zonal['avoided_value_sum_usd']
-    per_country = (zonal.groupby('iso3_r250_label', as_index=False)['value_usd']
-                   .sum(min_count=1)
-                   .rename(columns={'value_usd': 'landslide_mitigation_gep'}))
+    per_country = lmf.country_values_from_zonal(zonal, 'value_usd')
 
     df_gep = utilities.country_attributes(p).merge(per_country, on='iso3_r250_label', how='left')
     df_gep['year'] = year

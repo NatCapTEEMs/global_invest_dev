@@ -22,7 +22,25 @@ Per urban pixel on WorldPop's 1 km grid: observed depression cases (WHO prevalen
 population) times the prevented-cases factor $e^{-10 \ln(\text{RR}) \, \text{NDVI}} - 1$, the
 InVEST model's dose-response at the pixel's annual NDVI, summed per country over the urban
 settlement mask. The risk ratio comes from the Liu et al. 2023 meta-analytic odds ratio
-(`health_depression_odds_ratio`) converted at the country's own prevalence (Zhang and Yu 1998).
+(`health_depression_odds_ratio`, 0.931) converted by Zhang and Yu 1998 at the authors'
+reference-group risk p0 = 0.115 (`health_depression_prevalence_nonexposed`), one value for every
+country: RR = 0.931 / (1 − 0.115 + 0.115 × 0.931) = 0.938447 per 0.1 NDVI. p0 is the
+health-record depression share in the lowest residential-NDVI quartile of Hystad et al. 2019, as
+the write-up's equation 5 and the authors' run file both set it. The country's prevalence enters
+only the case count.
+
+⚠ Two points of the authors' method are not yet settled, and this note follows neither choice
+silently:
+
+- **Baseline prevalence for the case count.** The write-up specifies each country's GBD
+  2023-release prevalence of depressive disorders for estimate year 2019 (all ages, both sexes,
+  crude). The authors' script uses 5% in every country. That GBD table is not staged here, so the
+  WHO 2015 country prevalence stays in place until the authors share the exact table.
+- **The dose-response sign.** The authors' code computes PF = 1 − RR^(10 ΔNE), with ΔNE the 2019
+  NDVI minus the no-vegetation NDVI. The write-up's prose defines ΔNE the same way, but its
+  equation 4 defines it as scenario minus baseline. Its equation 2, PF = 1/RR − 1, then gives a
+  different number under each definition. This note keeps $e^{-10 \ln(\text{RR}) \, \text{NDVI}} - 1$
+  until the authors confirm the intended equation.
 
 ## Price
 
@@ -35,16 +53,18 @@ account's shared series) and then by the US CPI factor from the cost year to 201
 ## Valuation
 
 $$
-\text{GEP}_i = c_i \; x_i \sum_{j \in \text{urban}} n_j \left(e^{-10 \ln(\text{RR}_i)\,\text{NDVI}_j} - 1\right)
+\text{GEP}_i = c_i \; x_i \sum_{j \in \text{urban}} n_j \left(e^{-10 \ln(\text{RR})\,\text{NDVI}_j} - 1\right)
 $$
 
-with $c_i$ the cost per case, $x_i$ the prevalence and $n_j$ the pixel population. The
+with $c_i$ the cost per case, $x_i$ the prevalence, $n_j$ the pixel population and RR the one
+risk ratio at p0. The urban sums carry RR inside the exponential, so a sum built at another
+conversion cannot be rescaled; the run refuses a saved sum whose signature does not match. The
 author's high-resolution results file is carried beside the result as the comparison point;
 its spatial scope is an open question, so the run log reports the gap rather than anchoring.
 
 ## Coverage
 
-The published table is one row for each of the account's 250 countries, base year 2019, in constant 2019 USD. Of the 250, 32 carry a value, 0 are computed zeros, and 218 rows are missing, kept as missing rather than zero because an input carries no data for those countries. A zero means the computation returned zero; a missing row means the data to compute one is absent.
+The published table is one row for each of the account's 250 countries, base year 2019, in constant 2019 USD. Of the 250, 32 carry a value, 0 are computed zeros, and 218 rows are missing, kept as missing rather than zero because an input carries no data for those countries. A zero means the computation returned zero. A missing row means the data to compute one is absent.
 
 ## Inputs
 

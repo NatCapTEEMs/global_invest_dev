@@ -14,7 +14,7 @@ seals test run ship as input_template fixtures, so this runs self-contained; to 
 put them in the project's input/ (or base_data) under the CSV's references.
 
 The raw-Spawn density build (scale to Mg/ha, add aboveground+belowground, reproject to the LULC grid)
-is a one-off base-data job, not part of this shock -- see howto/rebuild_spawn_total_carbon_density.md.
+is a one-off base-data job, not part of this shock -- see gep_preprocess in terrestrial_carbon_tasks.py.
 Requires base_data/global_invest/terrestrial_carbon/ (carbon_zones_rasterized.tif and the SEALS7
 density lookup, both resolved inside the task via p.get_path) plus SEALS 300 m maps for the base
 scenario and each scenario x anchor year.

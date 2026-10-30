@@ -1,16 +1,17 @@
-"""Pollination science: the sufficiency and value calculation, plus the
-frame and array arithmetic the two shock tasks and the GEP valuation share.
+"""Pollination science: the frame and array arithmetic the two shock tasks and the GEP
+valuation share.
 
-The raster science (300 m sufficiency, 5 km valuation, PNAS diff) lives here rather than in an
-outside package, so the module needs nothing beyond this repo; a test blocks that import and
-asserts the module still loads. The driver functions at the bottom run
-that science per scenario on our SEALS maps, and the task layer reads the rasters it leaves
-behind. Nothing here opens a file: the zonal step takes arrays in and hands per-zone series back,
-which is what the tests exercise.
+Zonal and shock arithmetic, the settings for the raster steps, the FAO price path's pure steps,
+the value-raster arithmetic (production x price x dependence), the yield and production chain and
+the retained-cropland accounting. The raster steps that read and write files (300 m sufficiency,
+5 km valuation, PNAS diff) live in pollination_tasks; both modules need nothing beyond this repo,
+and a test blocks the crop_benefits import and asserts they still load. Nothing here opens a
+file: the zonal step takes arrays in and hands per-zone series back, which is what the tests
+exercise.
 
-What crop_benefits still supplies is data, not code. The shock path resamples a precomputed
-baseline value raster from base_data/crop_benefits/, declared in es_parameters like any other
-input.
+What crop_benefits still supplies is data, not code. The shock path weights a precomputed
+baseline value raster from base_data/global_invest/pollination/crop_benefits/
+(pollination_author_value_dir), declared in es_parameters like any other input.
 """
 from __future__ import annotations
 import os
@@ -153,8 +154,8 @@ def dynamic_shock_rows(fixedbase, contemporaneous, level_usd, scenario, sectors,
     """Anchor-year shocks expanded to one row per zone, sector and year.
 
     The calculation computes a shock only at the years the scenario maps exist for; the economic model
-    reads one value per year, so the anchors are joined by straight lines with the base year
-    pinned at no shock. shock_pct is the contemporaneous measure, matching carbon: afeall is a
+    reads one value per year, so the anchors are interpolated (utilities.anchored_series) with the
+    base year pinned at no shock. shock_pct is the contemporaneous measure, matching carbon: afeall is a
     productivity deviation from the baseline path, so it is normalised by the year's own baseline
     rather than by the fixed base-year value.
 
@@ -171,8 +172,8 @@ def dynamic_shock_rows(fixedbase, contemporaneous, level_usd, scenario, sectors,
         level_usd_by_sector (dict or None): per-zone baseline value keyed by GTAP activity, from the
             per-sector value rasters. When given, each sector row carries ITS OWN share rather than
             the zone total, so summing sectors reproduces the zone total instead of multiplying it.
-            When None the zone total is repeated -- the historical behaviour, safe only because the
-            solver reads shock_pct and never this column.
+            When None the zone total is repeated, which is safe only because the solver reads
+            shock_pct and never this column.
         crop_usd_by_sector (dict or None): per-zone baseline CROP value keyed by GTAP activity, from
             the per-sector crop rasters. The denominator for an output-scaling shock: the change in
             pollination value as a share of what the sector produces on that land, which is what
@@ -208,8 +209,8 @@ def dynamic_shock_rows(fixedbase, contemporaneous, level_usd, scenario, sectors,
                 paired = float(paired_scen_by_year[y].get(zone, float('nan')))
                 unpaired = float(unpaired_denominator.get(zone, float('nan')))
                 # growth_by_year holds one Series per anchor, keyed by zone like everything else
-                # here, so it must be indexed before use. Dividing by the Series silently produced
-                # a Series per row instead of a scalar.
+                # here, so it must be indexed before use; dividing by the Series would give a
+                # Series per row instead of a scalar.
                 growth = growth_by_year[y]
                 growth = float(growth.get(zone, float('nan'))) if hasattr(growth, 'get') else float(growth)
                 share_at_anchor.append(paired / unpaired / growth
@@ -244,9 +245,9 @@ def dynamic_shock_rows(fixedbase, contemporaneous, level_usd, scenario, sectors,
                 all_years, annual, annual_contemp, annual_paired, annual_share, annual_v3):
             for sector in sectors:
                 # This sector's own share of the zone's baseline value when the per-sector rasters
-                # exist, and the zone total otherwise. The fallback is the historical behaviour and
-                # is NOT a denominator: summing it across sectors counts the same dollars once per
-                # sector, which is how oilseed pollination value came to exceed oilseed output.
+                # exist, and the zone total otherwise. The fallback is NOT a denominator: summing it
+                # across sectors counts the same dollars once per sector, so a sector's pollination
+                # value can exceed its output.
                 sector_usd = base_usd
                 if level_usd_by_sector:
                     series = level_usd_by_sector.get(str(sector).upper())
@@ -349,8 +350,8 @@ def collapse_regions_to_countries(df_regions):
 
 
 # =============================================================================
-# Driver over the crop_benefits raster chain. Nothing below here is arithmetic
-# this module owns; it runs the imported science and names what it left behind.
+# Settings for the sufficiency and value raster steps (ported from the
+# crop_benefits raster chain), and the grid helpers they share.
 # =============================================================================
 
 def configure_sufficiency(p, target_year):
@@ -379,12 +380,11 @@ def configure_sufficiency(p, target_year):
 
 @dataclass
 class SufficiencySettings:
-    """What the raster steps below need, in place of the crop_benefits Config the source module reads.
+    """What the raster steps need, in place of the crop_benefits Config the source module reads.
 
-    That Config was loaded from a gitignored local.yaml with `validate=False`, so a missing or
-    wrong file did not fail up front, it just proceeded. These seven fields are everything the
-    four raster modules ever read off it, and the pollination task fills them from the
-    ProjectFlow object.
+    That Config loads from a gitignored local.yaml with `validate=False`, so a missing or wrong
+    file does not fail up front, it just proceeds. These seven fields are everything the raster
+    steps read off it, and the pollination task fills them from the ProjectFlow object.
 
     Attributes:
         output_dir (str): where the sufficiency and value rasters are written, the task's own dir.
@@ -419,6 +419,51 @@ COMPRESSION_PROFILES = {
                     'blockxsize': 256, 'blockysize': 256, 'BIGTIFF': 'IF_SAFER'},
     'defaults': {'compress': 'DEFLATE', 'tiled': True, 'BIGTIFF': 'IF_SAFER'},
 }
+
+
+def nominal_grid_transform(transform):
+    """The exact latitude-longitude grid a float32-rounded transform stands for.
+
+    CropGrids stores its cell centres as float32, so the transform fitted to them, which every
+    5 km raster here inherits, sits up to 6e-6 degrees off the 0.05-degree grid it describes. The
+    cell size is snapped to the nearest 1/n of a degree. The origin is snapped to the nearest whole
+    number of cells from the global grid of that cell size, as hazelbean defines it, so a global
+    template lands on that global grid and a cropped one keeps its own extent on the same lattice.
+    A transform further from such a grid than float32 rounding explains is a different grid, and
+    raises rather than being moved.
+
+    Args:
+        transform (affine.Affine): the stored transform of a north-up latitude-longitude raster.
+
+    Returns:
+        affine.Affine: the same grid with its cell size and origin at their exact values.
+
+    Raises:
+        ValueError: if the grid is rotated or not north-up, if a cell size is not a float32
+            rounding of 1/n degree, or if the origin is not a float32 rounding of a whole number
+            of cells.
+    """
+    import hazelbean as hb
+    from affine import Affine
+    if transform.b != 0 or transform.d != 0 or transform.a <= 0 or transform.e >= 0:
+        raise ValueError('Not a north-up latitude-longitude grid: %r' % (transform,))
+    sizes = []
+    for size in (transform.a, -transform.e):
+        per_degree = round(1.0 / size)
+        if per_degree < 1 or abs(size - 1.0 / per_degree) > 1e-6 * size:
+            raise ValueError('Cell size %r is not a float32 rounding of 1/n degree' % size)
+        sizes.append(1.0 / per_degree)
+    width, height = sizes
+    west = Affine.from_gdal(*hb.get_global_geotransform_from_resolution(width)).c
+    north = Affine.from_gdal(*hb.get_global_geotransform_from_resolution(height)).f
+    # The global edges are whole numbers of cells from zero, so counting cells from them and
+    # multiplying the total once gives the same float the nearest grid line has.
+    x0 = (round(west / width) + round((transform.c - west) / width)) * width
+    y0 = (round(north / height) - round((north - transform.f) / height)) * height
+    if abs(x0 - transform.c) > 1e-3 * width or abs(y0 - transform.f) > 1e-3 * height:
+        raise ValueError('Origin (%r, %r) is not a float32 rounding of a whole number of cells'
+                         % (transform.c, transform.f))
+    return Affine(width, 0.0, x0, 0.0, -height, y0)
 
 
 def build_area_km2_raster(meta: dict) -> np.ndarray:
@@ -458,7 +503,7 @@ def get_compression_profile(
 
     Parameters
     ----------
-    cfg : Config
+    cfg : SufficiencySettings
         Pipeline configuration.
     profile_name : str
         Name of the profile (e.g., 'continuous', 'categorical', 'defaults').
@@ -509,9 +554,7 @@ class FaoPriceSettings:
     fx_lcu_per_usd_path: str
     output_dir: str
     # No defaults on the three windows: es_parameters is the only place they are set, so a run
-    # at a different base year cannot silently inherit one built for another. price_years kept a
-    # 2018-2022 default through the move to a 2019 account, which is what put the price window
-    # two years off the base year and made a deflator necessary to hide it.
+    # at a different base year cannot silently inherit one built for another.
     fao_start_year: int
     fao_end_year: int
     price_years: tuple
@@ -521,8 +564,8 @@ class FaoPriceSettings:
     excluded_item_codes: set
     fx_inherit_iso3: dict
     imf_fao_names: dict
-    # Price quality-control tolerances. _QC_START_YEAR was a separate constant holding 1993,
-    # the same value as fao_start_year, so the panel's span and the QC window could disagree.
+    # Price quality-control tolerances. The QC window starts at fao_start_year, so the panel's
+    # span and the QC window cannot disagree.
     tol_near_equal_lcu_slc: float
     anchor_max_year_dist: int
     anchor_max_times_off: float
@@ -530,11 +573,6 @@ class FaoPriceSettings:
     qc_min_overlap: int
     qc_bad_median_times_off: float
     qc_bad_share_over_3x: float
-    # The account's price-fallback rule: a missing own-country price falls back ACROSS YEARS
-    # within the same country and crop, never across countries at any aggregation. The window
-    # bounds the donor search; the CPI converts the donor into the row's dollars.
-    price_temporal_window_years: int
-    us_cpi_path: str
 
 
 # ---------------------------------------------------------------------------------------------
@@ -543,9 +581,8 @@ class FaoPriceSettings:
 # ---------------------------------------------------------------------------------------------
 
 # Two bulks, two element vocabularies. Upstream keeps these in separate modules, where both are
-# called _ELEMENTS_KEEP; flattening those modules into this one let the price list overwrite the
-# production list, so the production filter kept price elements from a production bulk and the
-# panel came out empty.
+# called _ELEMENTS_KEEP; in one module they need distinct names, or the price list overwrites the
+# production list and the production filter keeps price elements, leaving the panel empty.
 _PRODUCTION_ELEMENTS_KEEP = {"Yield", "Production"}
 
 
@@ -658,7 +695,7 @@ def _reconstruct_slc_lcu(pp_wide: pd.DataFrame, cfg) -> pd.DataFrame:
             pp3["lcu_tonne"].isna() & pp3["slc_filled"].notna() & pp3["lcu_per_slc_year_country"].notna(),
             pp3["lcu_tonne"].isna() & pp3["slc_filled"].notna()
             & pp3["lcu_per_slc_year_country"].isna() & pp3["lcu_per_slc_country"].notna()
-            & (pp3["lcu_per_slc_country"] - 1).abs() <= cfg.tol_near_equal_lcu_slc,
+            & ((pp3["lcu_per_slc_country"] - 1).abs() <= cfg.tol_near_equal_lcu_slc),
             pp3["lcu_tonne"].isna() & pp3["slc_filled"].notna()
             & pp3["lcu_per_slc_year_country"].isna() & pp3["lcu_per_slc_country"].notna(),
             pp3["lcu_tonne"].isna() & pp3["slc_filled"].notna(),
@@ -679,7 +716,7 @@ def _reconstruct_slc_lcu(pp_wide: pd.DataFrame, cfg) -> pd.DataFrame:
             pp3["lcu_tonne"].isna() & pp3["slc_filled"].notna() & pp3["lcu_per_slc_year_country"].notna(),
             pp3["lcu_tonne"].isna() & pp3["slc_filled"].notna()
             & pp3["lcu_per_slc_year_country"].isna() & pp3["lcu_per_slc_country"].notna()
-            & (pp3["lcu_per_slc_country"] - 1).abs() <= cfg.tol_near_equal_lcu_slc,
+            & ((pp3["lcu_per_slc_country"] - 1).abs() <= cfg.tol_near_equal_lcu_slc),
             pp3["lcu_tonne"].isna() & pp3["slc_filled"].notna()
             & pp3["lcu_per_slc_year_country"].isna() & pp3["lcu_per_slc_country"].notna(),
             pp3["lcu_tonne"].isna() & pp3["slc_filled"].notna(),
@@ -949,8 +986,8 @@ def find_source_value_raster(p, gep_base_year):
     publish every year. Take the exact year when it exists, which needs no deflation at all.
 
     Otherwise take the LATEST year he publishes, not the nearest. The files are separate vintages
-    of his model, not one raster restated in different dollars: measured on 2026-08-28, his 2024
-    file deflates to $386.76bn at 2019 prices while his 2023 file deflates to $398.74bn, a three
+    of his model, not one raster restated in different dollars: his 2024 file deflates to
+    $386.76bn at 2019 prices while his 2023 file deflates to $398.74bn, a three
     percent spread that a price index cannot produce. The later file is the later method, and it is
     the one that lands on the figure he reports for 2019. Choosing by proximity would silently pick
     the older model whenever the base year sits below the newest release.
@@ -1047,10 +1084,9 @@ COFFEE_DEPENDENCE = {'arabica': 0.25, 'robusta': 0.65}
 # columns it needs: it is the source file's own label, not a setting anyone would tune.
 COFFEE_SPLIT_SUMMARY_YEAR = '2021_2025'
 # The file also carries a world-average row, labelled 'Other' under this code, for the coffee
-# countries it does not name individually -- 58 of the 78 that report the crop. The source
-# pipeline falls back to it; we fell back to pure arabica instead, which understated every one of
-# those countries, because arabica needs pollinators for a quarter of its yield where the world
-# blend needs 0.41.
+# countries it does not name individually -- 58 of the 78 that report the crop. Those countries
+# take that row's blend, 0.41, as the author's pipeline does (crop_benefits@f949314, coffee.py).
+# Pure arabica would give them 0.25.
 COFFEE_SPLIT_FALLBACK_CODE = 9999
 
 
@@ -1059,20 +1095,19 @@ def coffee_dependence_by_country(df_arabica_robusta):
 
     Arabica depends on pollinators for a quarter of its yield and robusta for near two
     thirds, and FAO files both under item 656. A lookup keyed on the item code therefore has
-    two values for coffee, and the source pipeline's `drop_duplicates` kept whichever came
-    first, which was arabica: every coffee-growing country was valued as though it grew no
-    robusta. Globally that puts coffee's pollination value at $5.55bn where the crops
-    actually grown put it at $9.39bn.
+    two values for coffee, and keeping either one values every coffee-growing country as
+    though it grew a single type. Pure arabica puts coffee's pollination value at $5.55bn
+    globally, where the crops actually grown put it at $9.39bn. The author's pipeline splits
+    coffee by country too (crop_benefits@f949314, coffee.py).
 
     Blending by country rather than globally matters because the mix is not a detail of the
     average: Colombia is all arabica and Vietnam is 97 percent robusta, so one global ratio
     would be wrong in opposite directions for the two largest producers.
 
     The file gives each country five seasons and a `2021_2025` summary, and the author averages
-    over that window. Taking the rows as they come and keeping the last one returns the summary
-    today, because the exporter happens to write it last for all 21 countries -- so the number is
-    right and nothing says why. Re-export the file in another order and a single season would be
-    substituted silently. The summary row is therefore selected by name.
+    over that window. The summary row is selected by name: keeping the last row per country
+    returns it only because the exporter writes it last, and a re-export in another order would
+    substitute a single season silently.
 
     Args:
         df_arabica_robusta (pd.DataFrame): area_code_m49, year, prop_arabica and prop_robusta.
@@ -1105,11 +1140,9 @@ def coffee_dependence_by_country(df_arabica_robusta):
 def coffee_dependence_fallback(df_arabica_robusta):
     """The blend for a coffee country the split file does not name individually.
 
-    The file carries a world-average row for exactly this, and the source pipeline uses it. We
-    used pure arabica instead, 0.25 against its 0.41, which understated 58 of the 78 countries
-    that report coffee -- every one the file does not name. Reading his file and then ignoring the
-    row he put in it for this purpose is the kind of difference that looks like agreement until
-    somebody compares the two.
+    The file carries a world-average row for exactly this, and the author's pipeline uses it.
+    It covers 58 of the 78 countries that report coffee, every one the file does not name, at a
+    dependence of 0.41 where pure arabica would give 0.25.
 
     Args:
         df_arabica_robusta (pd.DataFrame): area_code_m49, year, prop_arabica and prop_robusta.
@@ -1118,8 +1151,8 @@ def coffee_dependence_fallback(df_arabica_robusta):
         float: the blended dependence ratio to use where a country has no row of its own.
 
     Raises:
-        NameError: if the world-average row is absent, since falling back to a guess is what this
-            replaces.
+        NameError: if the world-average row is absent, since the alternative is a guessed
+            fallback.
     """
     import pandas as pd
     df = df_arabica_robusta
@@ -1139,14 +1172,16 @@ def coffee_dependence_fallback(df_arabica_robusta):
 def value_weighted_by_sufficiency(value_array, sufficiency_array, value_nodata=None):
     """The part of the pollination value that the habitat actually present delivers.
 
-    The account's headline is the crop output at stake if pollinators vanished, which is a property
-    of the crop mix and does not move when land use does. Multiplying it by habitat sufficiency
-    gives the other definition on the table: the service the landscape supplies today, which does
-    move. Both are wanted, so both are computed on one grid at one price year.
+    The crop output at stake if pollinators vanished is a property of the crop mix and does not
+    move when land use does. Multiplying it by habitat sufficiency gives the other definition on
+    the table: the service the landscape supplies today, which does move and is the account's
+    selected variant. Both are wanted, so both are computed on one grid at one price year.
 
-    Sufficiency is NaN off cropland. That is not zero service, it is no cropland, and those cells
-    carry no value either, so treating it as zero drops them from both sums identically rather than
-    biasing one.
+    A cell with no crop value (nodata or non-finite) stays MISSING in the weighted grid: the
+    weighting cannot invent a zero where nothing was valued. A VALUED cell whose sufficiency is
+    missing also stays missing, because unknown habitat is not confirmed absence. A valued cell
+    with sufficiency zero is a genuine zero. The two totals are sums over the cells each side
+    actually values, so neither is moved by the missing cells.
 
     Args:
         value_array (np.ndarray): pollination value per cell, at the base year's prices.
@@ -1154,16 +1189,20 @@ def value_weighted_by_sufficiency(value_array, sufficiency_array, value_nodata=N
         value_nodata: the value raster's nodata, treated as no value rather than as a number.
 
     Returns:
-        tuple: (weighted array, unweighted total, weighted total).
+        tuple: (weighted array with NaN where either side is missing, unweighted total,
+        weighted total).
     """
     import numpy as np
-    value = np.where(np.isfinite(value_array), value_array, 0.0)
+    value = value_array.astype('float64', copy=True)
+    missing_value = ~np.isfinite(value)
     if value_nodata is not None:
-        value = np.where(value_array == value_nodata, 0.0, value)
-    sufficiency = np.where(np.isfinite(sufficiency_array),
-                           np.clip(sufficiency_array, 0.0, 1.0), 0.0)
+        missing_value |= (value_array == value_nodata)
+    missing_sufficiency = ~np.isfinite(sufficiency_array)
+    sufficiency = np.clip(np.where(missing_sufficiency, np.nan, sufficiency_array), 0.0, 1.0)
     weighted = value * sufficiency
-    return weighted, float(value.sum()), float(weighted.sum())
+    weighted[missing_value | missing_sufficiency] = np.nan
+    unweighted_total = float(value[~missing_value].sum())
+    return weighted, unweighted_total, float(np.nansum(weighted))
 
 
 def dependence_raster_from_country_lookup(country_id_array, dependence_by_country, default):
@@ -1253,7 +1292,7 @@ def yield_change_ratios(production_df, crosswalk_m49, early_years, late_years):
     late = window_yield(df[df['year'].isin(list(late_years))], 'late')
 
     # Outer, not inner: a pair FAO reports in only one window keeps that window's yield. The
-    # target method reads late_yield alone, so an inner join was silently demoting late-only
+    # target method reads late_yield alone, so an inner join would silently demote late-only
     # countries to their subregion median.
     merged = early.merge(late, on=['area_code_m49', 'item_code_fao'], how='outer',
                          suffixes=('_x', '_y'))
@@ -1264,7 +1303,7 @@ def yield_change_ratios(production_df, crosswalk_m49, early_years, late_years):
     merged['yield_ratio'] = merged['late_yield'] / merged['early_yield']
     # No ratio where a window is missing or zero: the row stays for its own window's yield, and
     # every consumer falls back through NaN (the lookup checks isfinite at each level, and the
-    # aggregate medians skip NaN), so the ratio method's results are unchanged.
+    # aggregate medians skip NaN), so the ratio method treats the pair as having no row.
     merged.loc[~np.isfinite(merged['yield_ratio']), 'yield_ratio'] = np.nan
 
     crosswalk = crosswalk_m49.copy()
@@ -1378,15 +1417,17 @@ def nearest_country_ids(country_ids):
 
 
 def price_raster_by_country(price_rows, country_ids_filled, crosswalk_m49, deflator):
-    """Per-pixel producer price for one crop: the pixel's own country's price, or nothing.
+    """Per-pixel producer price for one crop: own country's median, then subregion, region, world.
 
-    price_rows is the crop's slice of the median-price table, which carries country rows only
-    (own-window medians plus own-country temporal donors). A pixel whose country has no own
-    price for the crop stays NaN with PROVENANCE_NONE — the account never prices one country's
-    production with another country's price, at any aggregation. Returns the price grid in
-    target-year dollars and the provenance grid so the task reports how many dollars rest on a
-    temporal donor rather than leaving the fallback implicit.
+    price_rows is the crop's slice of the median-price table (every agg_level); pixels whose
+    country has no price for the crop fall back level by level through build_hierarchical_lookup,
+    and pixels whose code is outside the lookup take the world median. Returns the price grid in
+    target-year dollars and a provenance grid (PROVENANCE_COUNTRY..PROVENANCE_WORLD) so the task
+    can report how many dollars rest on each level rather than leaving the fallback implicit.
     """
+    world_rows = price_rows[price_rows['agg_level'] == 'world']
+    world_value = (float(world_rows['price_median_usd_tonne'].iloc[0]) if not world_rows.empty
+                   else float(price_rows['price_median_usd_tonne'].median()))
     lookup, provenance = build_hierarchical_lookup(
         price_rows, crosswalk_m49, 'price_median_usd_tonne')
     codes = country_ids_filled.copy()
@@ -1394,8 +1435,8 @@ def price_raster_by_country(price_rows, country_ids_filled, crosswalk_m49, defla
     price = lookup[codes]
     source = provenance[codes]
     missing = ~np.isfinite(price)
-    price[missing] = np.nan
-    source[missing] = PROVENANCE_NONE
+    price[missing] = world_value
+    source[missing] = PROVENANCE_WORLD
     return (price * deflator).astype(np.float32), source
 
 
@@ -1556,8 +1597,8 @@ def align_to_reference(src_data, src_meta, ref_meta, resampling=None, dst_nodata
 # 
 # Inputs are aligned arrays of cell totals, NOT monetary densities. Convert densities
 # to totals with cell area before calling. Crop value is assumed uniform per baseline
-# cropland hectare within each valuation cell. This module does not alter production
-# exports until the raster-to-table integration has been independently checked.
+# cropland hectare within each valuation cell. The accounting is opt-in
+# (pollination_value_accounting = 'retained_value_v1'); the default export does not use it.
 def retained_value_change(dependent_value, retained_fraction, suff_base, suff_future):
     """Return dollar change; missing data remain missing rather than becoming zero."""
     value, fraction, base, future = np.broadcast_arrays(*[
@@ -1652,8 +1693,8 @@ def _overlap(n, offset, origin, step, target_origin, target_step, target_n):
 # --- Provision-change decomposition (diagnostic; the fed measure is unchanged) ---
 # Decompose the change in pollination provision into retained, lost and new cropland.
 # 
-# A DIAGNOSTIC. The fed measure is unchanged: retained_value_v1 continues to report the habitat effect
-# on cropland that is present in both years, and nothing here alters it. This exists to answer a
+# A DIAGNOSTIC. The fed measure is unchanged: retained_value_v1 reports the habitat effect on
+# cropland that is present in both years, and nothing here alters it. This exists to answer a
 # different question -- where does the total change in provision come from -- and the identity it
 # reconciles is
 # 

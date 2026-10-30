@@ -11,8 +11,6 @@ rather than from the hazard maps, so it survives a change of hazard product and 
 able to skip. build_flood_accounting_task_tree stops before the valuation for that reason.
 """
 
-import hazelbean as hb
-
 from global_invest.flood import flood_tasks
 
 
@@ -21,8 +19,9 @@ def add_flood_tasks(p):
     Standard entry point (the house convention: each service module exposes at
     least one add_<service>_tasks(p)) for building the full
     flood-control task tree: input preparation -> SDA delineation ->
-    SPA-to-SDA service flow -> monetary valuation -> maps & figures.
-    This is what run_flood.py calls by default.
+    SPA-to-SDA service flow -> monetary valuation -> the counterfactual GEP ->
+    the shared table -> the results report. run_flood.py reaches the same tree
+    through build_gep_service_task_tree.
     """
     return build_gep_service_task_tree(p)
 
@@ -40,11 +39,12 @@ def build_flood_task_tree(p):
     p.prepare_flood_inputs_task = p.add_task(flood_tasks.task_prepare_flood_inputs)
     p.build_sda_task = p.add_task(flood_tasks.task_build_sda)
     p.compute_service_flow_task = p.add_task(flood_tasks.task_compute_service_flow)
+    # The SDA damage table Section D and the GEP chain read, rebuilt by the authors' recipe.
+    p.rebuild_damage_table_task = p.add_task(flood_tasks.task_rebuild_damage_table)
     p.compute_flood_damages_task = p.add_task(flood_tasks.task_compute_flood_damages)
     p.compute_flood_gep_task = p.add_task(flood_tasks.task_compute_flood_gep)
     # The shared-table task is part of the tree: without it the account's
-    # gep_by_country_base_year has no producer, and the stable project was caught carrying a
-    # stale damage-column artifact precisely because nothing could regenerate it.
+    # gep_by_country_base_year has no producer, and a stale copy could never be regenerated.
     p.flood_gep_calculation_task = p.add_task(flood_tasks.gep_calculation)
     return p
 
@@ -59,6 +59,7 @@ def build_flood_accounting_task_tree(p):
     """The SEEA-EA physical account on its own: SDA delineation and the SPA-to-SDA service flow,
     no monetary valuation. Useful when the JRC damage tables are not available or not wanted."""
     build_flood_task_tree(p)
+    p.rebuild_damage_table_task.run = 0
     p.compute_flood_damages_task.run = 0
     p.compute_flood_gep_task.run = 0
     p.flood_gep_calculation_task.run = 0
@@ -102,10 +103,12 @@ def build_flood_results_task_tree(p):
 # the whole set does not have to know which service it is invoking.
 # ---------------------------------------------------------------------------------------------
 def build_gep_service_calculation_task_tree(p):
-    """GEP calculation tree: inputs, SDA, service flow, then the counterfactual valuation.
+    """GEP calculation tree: the paired counterfactual and the shared table, against the SDA,
+    service-flow and damage outputs of an earlier run.
 
-    No maps or figures. This is the tree a pipeline runs when it wants the numbers and will do its
-    own reporting."""
+    The upstream tasks stay in the tree with run=0, so the paths they publish still resolve. No
+    report. This is the tree a pipeline runs when it wants the numbers and will do its own
+    reporting."""
     return build_flood_gep_task_tree(p)
 
 
@@ -115,5 +118,7 @@ def build_gep_service_results_task_tree(p):
 
 
 def build_gep_service_task_tree(p):
-    """Full GEP run: the whole calculation chain."""
-    return build_flood_task_tree(p)
+    """Full GEP run: the whole calculation chain, then the results report."""
+    p = build_flood_task_tree(p)
+    p.flood_gep_result_task = p.add_task(flood_tasks.gep_result)
+    return p

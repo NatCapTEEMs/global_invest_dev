@@ -15,21 +15,28 @@ The accommodation tourists stay in and the international air travel that brings 
 country are valued as separate additive components and published beside the total, exactly as
 the source reports them. The base year is 2019.
 
+## Source
+
+The registered author code is `m-braaksma/gep_recreation` at `540f7af` (11 September 2026). No
+current write-up for this service is in the shared folder of current write-ups.
+
 ## Quantity
 
 **Sites.** Six SEALS7 land-cover class shares plus the accessible protected-area share
-combine into a 0-3 environment class; urban share and distance-to-road combine into a 1-5
-accessibility class; the two cross into a 1-9 site rank, of which rank 9 is a high-quality
-site. Contiguous high-quality pixels dissolve into discrete sites by 8-connected labelling,
-so one large park is one destination rather than many independent site pixels.
+combine into a 0-3 environment class. Urban share and distance-to-road combine into a 1-5
+accessibility class. The two cross into a 1-9 site rank, of which rank 9 is a high-quality
+site. The flows treat each high-quality pixel as a destination. Within each distance band,
+trips are divided equally among reachable high-quality pixels. Contiguous high-quality pixels
+are then labelled into discrete sites (8-connected) for reporting, and each site's visits and value are
+the sums over its pixels.
 
 **Trips.** Each population pixel carries an annual trip budget: population times a
 participation level, split over distance bands within a fixed 50 km cutoff by a closed-form
 exponential decay. Participation and decay rate come per country from the demand-parameter
-table (his documented calibration: one worldwide group). A band's fixed budget divides evenly
-across the sites its ring reaches; a band with no reachable site, and all demand beyond the
-cutoff, is tracked as unmet rather than discarded. Residents travel from their home pixels
-(WorldPop) with the full annual rate; tourists travel from their accommodation, each
+table (the author's documented calibration, one worldwide group). A band's fixed budget divides evenly
+across the high-quality pixels its ring reaches. A band with no high-quality pixel in reach, and
+all demand beyond the cutoff, is tracked as unmet rather than discarded. Residents travel from their home pixels
+(WorldPop) with the full annual rate. Tourists travel from their accommodation, each
 person-night carrying the rate's daily share (a/365), built by allocating each country's
 UNWTO overnight stays over its national hotel stock, with the nearest reported year standing
 in where 2019 is unreported and a country with no overnights data in any year kept missing
@@ -44,11 +51,11 @@ economy of 7.1 litres per hundred kilometres (the staged table's own cost-per-km
 applies that economy per kilometre, one hundred times too high, so the price column is read
 instead). A country without fuel-price data keeps its visits and gets a missing value,
 never free travel. **Accommodation**: overnight stays times
-the hotel price per person per night from the author's hybrid price surface; a price gap is
+the hotel price per person per night from the author's hybrid price surface. A price gap is
 missing, not free, and each country's price-coverage share is published beside the value.
 **Air travel**: arrivals by origin region times the staged region-to-region round-trip 2019
-airfare matrix (the author's hub-pair scrape deflated by the jet-fuel producer price index;
-this module reads it as a staged input and makes no network request).
+airfare matrix (the author's hub-pair scrape deflated by the jet-fuel producer price index.
+This module reads it as a staged input and makes no network request).
 
 ## Valuation
 
@@ -65,16 +72,16 @@ them. One row per country on the r250 list.
 A tourist person-night carries the daily share of the annual participation rate, a/365 or
 about 0.28 visits per night at zero distance. This is the author's correction of the
 delivered construction, which priced each night at the full annual rate of 102.5 visits.
-The demand parameters are his documented calibration, one worldwide group (a 102.50 annual
-visits per capita, decay 0.167 per km) from the England, Tel Aviv and Beijing surveys;
-country-specific groups are the outstanding task his methods page names.
+The demand parameters are the author's documented calibration, one worldwide group (a 102.50 annual
+visits per capita, decay 0.167 per km) from the England, Tel Aviv and Beijing surveys.
+Country-specific groups are the outstanding task the author's methods page names.
 
 ## Implementation notes
 
-The flow engine windows by country where the source windows by parameter group; the maths is
+The flow engine windows by country where the source windows by parameter group. The maths is
 pixel-local within the 50 km cutoff and country ids partition each group's pixels, so the two
 give the same flows, pinned by a test that computes both formulations on one toy grid. The
-source also computes a distance-to-site transform its engine never reads; that step is not
+source also computes a distance-to-site transform its engine never reads. That step is not
 ported.
 
 ## Inputs
@@ -84,3 +91,42 @@ the six land-cover share rasters, the protected-area share, distance-to-road, th
 reference grid, WorldPop, the fuel-cost table, the UNWTO all-data workbook, the hotel-points
 vector, the demand-parameter table, the hotel-price surface, the region crosswalk and the
 staged airfare matrix, each with a source row beside it.
+
+## Output
+
+`gep_calculation` writes `gep_by_country_base_year.csv` into its own task directory, holding the
+r250 identifiers and attributes, `year`, `daily_visits`, `daily_value`, `tourist_visits`,
+`tourist_value`, `accommodation_value` with `price_coverage_share`, `air_travel_value` with
+`arrivals_coverage_share`, and `recreation_gep`.
+
+## Coverage
+
+The published table is one row for each of the account's 250 countries, base year 2019, in 2019
+USD. `recreation_gep` carries 133 values, totalling \$82,305,148,173.38, and 117 are missing,
+with no zeros. 88 of the missing have no ground-travel value, and 29 have one
+(\$14,456,703,834.16 in all) but no overnights data, so their total is unknown. Beside the total,
+ground travel of residents is \$95,333,386,483.97 over 162 countries, of tourists
+\$1,428,465,523.58 over 133, accommodation \$981,749,274,587.38 over 161 and air travel
+\$526,782,449,494.52 over 191.
+
+## Reproduction
+
+The saved site tables, summed by country with the missing-cost and overnights masks applied,
+reproduce all 250 published rows. That checks the last step only. The site ranks, population
+and flow rasters are not rebuilt.
+
+## What is open
+
+Three losses of value, each measured on the saved site tables, are with the authors (open
+question 18):
+
+- Trips from origin countries with no fuel price carry zero value into destinations that are
+  otherwise valued and published. Its size is not measured.
+- 853 sites whose pixels lie mostly outside every country are dropped, \$2.10bn of ground travel
+  and \$0.06bn of tourist travel.
+- A country missing its overnights data loses its whole total, \$14.46bn of ground travel in 29
+  countries.
+
+A site that crosses a border goes wholly to the country holding most of its pixels, as in the
+author's code. 4,179 of 86,145 sites cross a border, moving \$0.76bn of ground travel between
+country pairs, largely offsetting.

@@ -1,9 +1,8 @@
 """es_parameters.csv hydration: per-service key-value parameters as a DEFAULTS layer.
 
-The ngfs parameters.csv pattern brought into the library (Chiara's call, 2026-08-20): machine
-keys ship blank and are skipped until a machine fills its input/ copy; method knobs ship with
-defaults and parse as JSON (ints, lists, dicts, booleans). Pins landslide's full knob set --
-the literals its initialize used to carry -- and the blank-machine-key contract that
+The ngfs parameters.csv pattern in the library: machine keys ship blank and are skipped until a
+machine fills its input/ copy; method knobs ship with defaults and parse as JSON (ints, lists,
+dicts, booleans). Pins landslide's full knob set and the blank-machine-key contract that
 erosion_gep_root relies on.
 """
 import types
@@ -57,7 +56,7 @@ def test_caller_set_values_win_and_other_services_rows_are_ignored(tmp_path):
 
 def test_shock_quantity_default_agrees_with_the_gep_cell():
     # The shock and the GEP valuation must consume the SAME carbon-zones raster. Both are data
-    # cells now (es_config gep_quantity_input_path; es_parameters terrestrial_quantity_input_path),
+    # cells (es_config gep_quantity_input_path; es_parameters terrestrial_quantity_input_path),
     # so their agreement is a checked fact, not a docstring claim.
     import os
     import pandas as pd

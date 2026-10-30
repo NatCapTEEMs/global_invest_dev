@@ -115,8 +115,7 @@ def test_nearest_year_fallback_prefers_closer_then_later_years():
 
 def test_overnight_allocation_splits_national_totals_by_hotel_share():
     # The denominator is the NATIONAL hotel count handed in, so a raster block holding only
-    # part of a country's hotels allocates only that part's share -- the per-block closure
-    # it replaces handed the full national total to every such block (Spain: exactly 22x).
+    # part of a country's hotels allocates only that part's share of the national total.
     hotels = np.array([1, 1, 2, 0], dtype='float32')
     countries = np.array([1, 1, 1, 2], dtype='float32')
     out = rf.allocate_overnights_array(hotels, countries, {1: 400.0, 2: 999.0}, {1: 8.0})

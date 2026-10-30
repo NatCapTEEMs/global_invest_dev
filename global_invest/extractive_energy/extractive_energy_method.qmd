@@ -72,3 +72,9 @@ Kosovo it overrides the CWoN table's own coal value. CWoN carries no rows at all
 six. The module therefore computes from the CWoN tables, one country one row, rather than
 adopting the committed CSVs. `gep_calculation` logs the computed total beside the committed total
 so the gap stays visible on every run.
+
+The committed CSVs also leave South Sudan empty, in oil ($3,132,215,611 in CWoN) and in coal
+(zero in CWoN). Their join matches CWoN's country code against the correspondence's `adm0_a3`,
+which is `SDS` for South Sudan, and the same key gives each territory its sovereign's code,
+which is how the eight duplicates arise. The module reads the CWoN code directly and carries
+South Sudan in both fuels.

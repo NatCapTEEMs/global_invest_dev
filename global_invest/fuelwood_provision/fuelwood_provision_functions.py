@@ -1,13 +1,12 @@
 """Fuelwood-provision science: the CAS per-country results onto the account's country list.
 
-The CAS team's method (their staged appendix: methodology, input data, code, output result)
-values national fuelwood harvest volumes through their energy content at substitute-fuel
-replacement prices, with the ecosystem share taken as gross value minus human inputs. The
-library carries their per-country results; rebuilding the chain from FAO volumes is the
-recorded later step.
+The CAS team's method (their September 2026 package: methodology, input data, a code description
+and the output result) values 2019 fuelwood consumption from the Global Forest Products Model
+through its energy content at the prices of the substitute fuels it replaces, adds export
+revenue, and keeps the share left after the labour cost of collection. The library carries
+their per-country results. The package supplies no executable code or complete input tables,
+so the chain is not rebuilt here.
 """
-import numpy as np
-import pandas as pd
 
 # The results sheet's own title is '1000USD ($2019 USD)', so the values are thousands of
 # constant-2019 dollars.

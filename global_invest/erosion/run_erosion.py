@@ -1,10 +1,9 @@
-"""Full erosion GEP run: InVEST SDR -> prevention-share valuation -> maps/figures.
+"""Full erosion GEP run: InVEST SDR -> prevention-share valuation -> results report.
 
 Thin runner: one tree, executed. The calculation is cluster-scale (global InVEST SDR); the SDR input/
-output locations and table paths are set on p here or by the submitting script -- the configure_*
-functions in erosion_functions.py read them off p at run time (their defaults point at the source
-repo's cluster layout). The ES-shock runner is run_erosion_shock.py -- a separate tree, a separate
-thin runner, no mode switch.
+output locations and table paths are es_parameters rows that each task hydrates through
+publish_inputs, and a submitting script may set them on p first. The ES-shock runner is
+run_erosion_shock.py -- a separate tree, a separate thin runner, no mode switch.
 """
 import hazelbean as hb
 

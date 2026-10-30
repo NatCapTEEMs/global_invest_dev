@@ -148,8 +148,8 @@ def test_dynamic_shock_per_zone_interpolation_and_both_measures(tmp_path):
     assert b.loc[2030, 'shock_pct'] == approx(0.0)
     assert b.loc[2050, 'shock_pct'] == approx(-45.0)     # (55-100)/100
 
-    # PCHIP between anchors (the 10 October specification), 0 at base_year. The ANCHORS stay exact
-    # -- asserted above -- while intermediate years are no longer the linear midpoint. They are
+    # PCHIP between anchors (the selected specification), 0 at base_year. The ANCHORS stay exact
+    # -- asserted above -- while intermediate years are not the linear midpoint. They are
     # asserted by the property the specification guarantees, shape preservation, rather than by a
     # hand-computed number: a value strictly inside the bracketing anchors and no overshoot.
     assert a.loc[2020, 'shock_pct'] == approx(0.0)
@@ -229,7 +229,7 @@ def test_static_shock_base_resolves_across_spellings(tmp_path):
     # The frozen tables spell the nature-off baseline two ways. With the base rows labelled
     # 'baseline_ignore_damages' and the config saying 'baseline_ignore_dependencies', the
     # consumer's scenario_map carries both candidates and the base must resolve -- an exact-match
-    # miss here used to give an empty base -> empty output -> silent GTAP zero.
+    # miss here would give an empty base -> empty output -> silent GTAP zero.
     dep = tmp_path / 'carbon_storage_dependency.csv'
     pd.DataFrame({
         'scenario': ['baseline_ignore_damages', 'baseline_ignore_damages', 'scn_a', 'scn_a'],
@@ -273,15 +273,15 @@ def test_static_shock_base_resolves_across_spellings(tmp_path):
 
 def test_static_shock_missing_scenario_is_fatal_at_the_write(tmp_path):
     # CONTRACT (invariant, assert_shock_table_sound): a requested scenario absent from the dependency
-    # table used to warn-and-skip, leaving GTAP a silent zero. It still warns during the loop, but the
-    # write now REFUSES, naming the scenario. The loud skip is the diagnostic; the raise is the stop.
+    # table must not leave GTAP a silent zero. The loop warns and skips it, and the write REFUSES,
+    # naming the scenario. The loud skip is the diagnostic; the raise is the stop.
     dep = _static_dep_table(tmp_path)
     out = tmp_path / 'terrestrial_carbon_interpolated.csv'
     p = SimpleNamespace(run_this=True, input_dir=str(tmp_path / 'input'),
                         get_path=lambda *a, **k: '/resolved/' + '/'.join(a),
                         es_shock_base_year=2020, es_shock_end_year=2050,
                         es_shock_base_scenario='baseline_ignore_dependencies',
-                        es_shock_scenarios=['scn_a', 'scn_b'],   # net_zero absent from table
+                        es_shock_scenarios=['scn_a', 'scn_b'],   # scn_b absent from table
                         terrestrial_carbon_dependency_path=str(dep),
                         terrestrial_carbon_shock_output_path=str(out))
 
@@ -305,8 +305,8 @@ def test_shock_percent_is_the_departure_from_baseline():
 
 
 def test_interpolate_annual_shock_starts_at_zero_and_passes_through_the_anchors():
-    """The base year carries no shock, the anchor years carry theirs, and the years between
-    are straight lines."""
+    """The base year carries no shock, the anchor years carry theirs, and with collinear anchors
+    the years between fall on the straight line."""
     from global_invest.terrestrial_carbon import terrestrial_carbon_functions as tcf
 
     years = [2020, 2021, 2022, 2023, 2024]
@@ -330,8 +330,8 @@ def test_dynamic_shock_rows_v3_measures_the_scenario_against_the_base_year_basel
 
     shock_pct and shock_pct_fixedbase share the numerator scenario[y] - baseline[y]: the distance
     from a contemporaneous baseline. v3's numerator is scenario[y] - baseline[base_year]: the
-    trajectory away from the base year. Pinned because the seam reported only the first pair, and
-    the v3 the paper reports had to be rebuilt outside the tree.
+    trajectory away from the base year. Pinned because the paper reports v3, so the seam must
+    carry it beside the other two.
     """
     zone_labels = {1: ('AEZ1', 'usa')}
     baseline_at_base_year = pd.Series({1: 100.0})
@@ -353,7 +353,7 @@ def test_dynamic_shock_rows_v3_measures_the_scenario_against_the_base_year_basel
     assert np.isclose(by_year.loc[2030, 'shock_pct_v3'], 26.0)
     assert np.isclose(by_year.loc[2040, 'shock_pct_v3'], 33.0)
     assert by_year.loc[2020, 'shock_pct_v3'] == 0.0
-    # 2035 is NOT an anchor: under the PCHIP specification it is no longer the linear midpoint of
+    # 2035 is NOT an anchor: under the PCHIP specification it is not the linear midpoint of
     # the 2030 and 2040 anchors. Asserted by shape preservation instead, with the anchors exact.
     lo, hi = by_year.loc[2030, 'shock_pct_v3'], by_year.loc[2040, 'shock_pct_v3']
     assert min(lo, hi) - 1e-9 <= by_year.loc[2035, 'shock_pct_v3'] <= max(lo, hi) + 1e-9
@@ -376,9 +376,9 @@ def test_scc_valuation_interpolates_prices_and_derives_the_cut():
                                  from_year=2030, cut_source='cp', cut_label='cp-es20')
     cp = out[(out['scenario'] == 'cp') & (out['iso3_r250_id'] == 1)].set_index('year')
     assert cp.loc[2023, 'delta_value_usd'] == 0.0
-    # linear between 2023 (100) and 2030 (110): 2027 -> 100 + 4/7 * 10
-    # The STOCK is PCHIP-interpolated, so 2027 is not the linear value between 2023 and 2030.
-    # The anchors themselves are asserted elsewhere in this test and remain exact.
+    # The STOCK is PCHIP-interpolated, so 2027 is not the linear value between 2023 (100) and
+    # 2030 (110), 100 + 4/7 * 10. The anchors themselves are asserted elsewhere in this test and
+    # remain exact.
     lo, hi = cp.loc[2023, 'stock_mgc'], cp.loc[2030, 'stock_mgc']
     assert min(lo, hi) - 1e-9 <= cp.loc[2027, 'stock_mgc'] <= max(lo, hi) + 1e-9
     assert abs(cp.loc[2027, 'stock_mgc'] - (100 + 40 / 7)) > 1e-6, 'reverted to linear'
@@ -407,14 +407,15 @@ def test_scc_valuation_interpolates_prices_and_derives_the_cut():
 # terrestrial_carbon, pollination, and timber's net_return path -- divide by the zone's own baseline,
 # so a zone whose quantity reaches zero is a -100% shock on that zone rather than a small change in a
 # regional sum. These two tests hold that difference still, because it is the economically material
-# consequence of no longer deleting measured zeros, and it must not drift unnoticed either way.
+# consequence of retaining measured zeros, and it must not drift unnoticed either way.
 
 def test_zone_reaching_zero_gives_a_minus_hundred_percent_per_zone_shock():
     """A zone that keeps its baseline but loses all its own quantity. The per-zone ratio is -100%.
 
-    While measured zeros were deleted from the zonal summary this zone was simply absent from the
-    scenario series, the subtraction produced NaN, dropna removed it, and a total loss reached the
-    economic model as NO shock at all. It now reaches it as the loss it is.
+    The zonal summary retains the measured zero, so the zone stays in the scenario series and a
+    total loss reaches the economic model as the loss it is. Were the zero dropped, the
+    subtraction would give NaN, dropna would remove the zone, and the loss would reach the model
+    as NO shock at all.
     """
     baseline = pd.Series({1: 100.0, 2: 50.0})
     scenario_with_explicit_zero = pd.Series({1: 100.0, 2: 0.0})
@@ -423,8 +424,8 @@ def test_zone_reaching_zero_gives_a_minus_hundred_percent_per_zone_shock():
 
 
 def test_zone_with_no_baseline_quantity_is_still_dropped_not_shocked():
-    """The other direction is unchanged: a zero DENOMINATOR has no ratio, so the zone carries no
-    shock rather than an infinite one, whether or not it now appears in the summary."""
+    """The other direction: a zero DENOMINATOR has no ratio, so the zone carries no shock rather
+    than an infinite one, whether or not it appears in the summary."""
     baseline_with_explicit_zero = pd.Series({1: 100.0, 2: 0.0})
     scenario = pd.Series({1: 100.0, 2: 25.0})
     result = tcf.shock_percent(scenario, baseline_with_explicit_zero).dropna()
@@ -438,7 +439,6 @@ import pytest
 from global_invest.terrestrial_carbon import terrestrial_carbon_functions as tcf
 
 BASE_YEAR = 2023
-ANCHOR_YEARS = (2030, 2050)
 # Two regions of two zones each, so a region can lose one zone entirely and keep a positive total.
 ZONE_LABELS = {11: ('AEZ1', 'bra'), 12: ('AEZ2', 'bra'),
                21: ('AEZ1', 'usa'), 22: ('AEZ2', 'usa')}
@@ -474,7 +474,7 @@ def test_partial_regional_loss_is_the_ratio_of_sums():
 
 
 def test_zone_losing_all_forest_is_not_a_minus_one_hundred_shock():
-    """THE CORRECTION. Zone 11 goes to zero. Its region keeps zone 12, so the shock is -50%, and
+    """THE POINT OF THE SUMMED MEASURE. Zone 11 goes to zero. Its region keeps zone 12, so the shock is -50%, and
     -100% appears nowhere -- not for the emptied zone, not for its region."""
     baseline = series(z11=100.0, z12=100.0, z21=50.0, z22=50.0)
     scenario = {2030: series(z11=0.0, z12=100.0, z21=50.0, z22=50.0),
@@ -549,10 +549,9 @@ def test_base_year_is_pinned_at_zero_shock():
 def test_dynamic_shock_reuses_a_current_table_and_recomputes_a_stale_one(tmp_path):
     """A second pass must leave a current table alone, and must not reuse a stale one.
 
-    The task rewrote terrestrial_carbon_interpolated.csv on every pass, so a resume that should have
-    been a no-op replaced a current file -- work repeated, and an unchanged-resume check that can
-    never pass. Reuse keyed on existence alone would be the opposite defect, so the second half
-    changes an input and requires the recompute.
+    Rewriting terrestrial_carbon_interpolated.csv on every pass turns a no-op resume into repeated
+    work and makes an unchanged-resume check impossible to pass. Reuse keyed on existence alone
+    would be the opposite defect, so the second half changes an input and requires the recompute.
     """
     p = _shock_scene(tmp_path)
     tct.terrestrial_carbon_shock(p)
@@ -574,10 +573,10 @@ def test_dynamic_shock_reuses_a_current_table_and_recomputes_a_stale_one(tmp_pat
 def test_reuse_signature_excludes_its_own_outputs_and_survives_a_json_round_trip(tmp_path):
     """A signature must not fingerprint the files the task is about to write, nor hold tuples.
 
-    Both defects make a guard self-invalidating -- it recomputes on every pass and no resume can
-    ever be clean. The SCC valuation hit the first (its output paths end in _path, not
-    _output_path, so a name filter missed them) and fisheries hit the second (json writes a tuple
-    as a list, so the comparison never matched).
+    Either defect makes a guard self-invalidating -- it recomputes on every pass and no resume can
+    ever be clean. The SCC valuation's output paths end in _path, not _output_path, so a name
+    filter misses them; json writes a tuple as a list, so a tuple never compares equal after a
+    round trip.
     """
     import json
 

@@ -14,7 +14,7 @@ The base-year map MUST be SEALS7-classified (classes 1-7), not raw ESA: the suff
 the SEALS class scheme whenever the scenario label is not the literal "2020", so an ESA-coded raster
 would be silently misread. The shipped fixture is SEALS7.
 
-Requires (Track 2) under base_data/crop_benefits/:
+Requires (Track 2) under base_data/global_invest/pollination/crop_benefits/ (pollination_author_value_dir):
   - poll_value_global_<base_year>usd.tif      baseline pollination value raster (fixed, all scenarios)
 """
 import hazelbean as hb

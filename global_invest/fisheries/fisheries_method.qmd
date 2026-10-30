@@ -1,7 +1,259 @@
 ---
-title: "Marine-fisheries ecosystem-service shock"
+title: "Fisheries: commercial capture, subsistence and aquaculture GEP, and the marine productivity shock"
 format: html
 ---
+
+This note covers four separate outputs of the fisheries module. Three are GEP tables, each its
+own service: commercial capture fisheries (`fisheries_gep`), subsistence fisheries and
+aquaculture. The fourth is the marine productivity shock for the economic model, which does not
+enter the GEP.
+
+# Commercial capture fisheries GEP (base year 2019)
+
+## Source and units
+
+The rent comes from the World Bank's Changing Wealth of Nations 2024 reproducibility package
+(`FR_WLD_2024_195`), staged as two tables named in `es_parameters.csv`:
+
+- `fisheries_cwon_econ_rent_path`: `EconRent_Analysis_AllYears.dta`, fisheries rent by country
+  and year.
+- `fisheries_cwon_cpi_path`: `cpi2019.dta`, country CPI with 2019 = 100.
+
+Annual rent is built from its parts:
+
+$$
+R_{i,t} = L_{i,t} - \left(C^{var}_{i,t} + C^{fix}_{i,t}\right) - S_{i,t},
+$$
+
+with landed value $L$ (`FAO_landval2018`), variable and fixed fishing costs (`FAOVarCost`,
+`FAOFixCost`) and subsidies $S$ (`SubsidyUSD2018`). A missing subsidy is set to zero. That is a
+convention, which CWoN's own rent column follows, not an observed absence of subsidies: 448 rows
+carry no subsidy figure. In the raw table (4,732 rows), CWoN's `FAOEconRent` equals
+`FAO_landval2018` − `FAOTotCost` − `SubsidyUSD2018`, with that zero, to storage precision on the
+4,648 rows where a rent can be compared. The other 84 have no rent. Using the two cost parts in
+place of their total moves no country's result by more than $17.62.
+
+Each year's rent is converted to 2019 USD with the country's CPI, $R^{2019}_{i,t} = R_{i,t}
+\times 100 / CPI_{i,t}$, which is the write-up's equation 3.
+
+The source does not state what the "2018" in `FAO_landval2018` means. Over 2005–2017 its
+ratio to `FAO_landval` is constant within each country (median 1.054, range 0.53 to 1.54, 1.150
+for the United States), and in 2018 it is exactly 1. A constant ratio does not establish the
+price basis, which stays unverified. It does leave a level step at 2018 inside the trend window
+for every country whose factor differs from 1. This is open with the author.
+
+## CPI gaps
+
+A missing country CPI takes that year's cross-country mean, the author's convention. Over
+2009–2019, 370 country-years in 37 countries are missing. 270 of them, in 27 countries, fall in
+the 2009–2018 rent window.
+
+## Exclusions
+
+As in the author's script, Cyprus (CYP), Saint Martin (MAF) and the West Bank and Gaza (PSE)
+are dropped, along with Curaçao's 2009 and 2010 rents.
+
+## Projection to 2019
+
+CWoN's series ends in 2018. Each country's real rent over 2009–2018 is fitted by OLS on year,
+and the 2019 value is
+
+$$
+\widehat{R}_{i,2019} = \bar{R}_i + \hat{\beta}_i \, (2019 - \bar{t}_i),
+$$
+
+with $\bar{R}_i$ the country's mean real rent over its window years and $\bar{t}_i$ the mean of
+those years, so the estimate is the country's own OLS line at 2019. With all ten years
+$\bar{t}_i$ is 2013.5, the fixed midpoint of the author's code and the write-up's equation 6, and
+165 of the 166 countries with a trend have all ten.
+
+Curaçao has eight (2011–2018), so its mean year is 2014.5. The author's fixed midpoint projects
+it one year past its own line, to \$57,457,120.86. The library publishes the line's value,
+\$54,236,503.46, \$3,220,617.40 (one slope) lower and 0.011% of the total. No other country
+changes. The trend table carries `mean_year` for every country.
+
+## Floor and missing values
+
+A negative projection is floored at zero, which applies to 58 countries. This follows the
+author's script, although the write-up does not state the floor.
+
+A country CWoN does not cover stays missing, never zero. A country with fewer than two years in
+the window also stays missing, though none has fewer at present.
+
+The Channel Islands (CWoN code CHI, $8,384,331.06) have no row on the account's 250-country
+list and are not published.
+
+## Valuation
+
+$\lambda = 1$, because the rent already deducts labour, capital and subsidies:
+
+$$
+GEP_i = \max\left(\widehat{R}_{i,2019},\, 0\right).
+$$
+
+The total is $28,993,461,978.08: 107 countries positive, 58 zero and 85 missing.
+
+## Coverage
+
+The published table is one row for each of the account's 250 countries, base year 2019, in
+constant 2019 USD. Of the 250, 107 carry a value, 58 are computed zeros, and 85 rows are
+missing, kept as missing rather than zero because CWoN carries no rent for those countries. A
+zero means the computation returned zero. A missing row means the data to compute one is absent.
+
+## Reproduction
+
+The published table reproduces the author's saved output within $17.62 per country for every
+country but Curaçao, whose value is the author's minus one slope, as above. Before the Curaçao
+correction an independent rebuild from the raw tables matched within $33.21 in total, with
+identical missing masks. The residual is the rent column, `FAOEconRent` against the rent rebuilt
+from its parts. This establishes fidelity to the author's computation, apart from the one
+corrected country. It is not a scientific validation of the rent approach.
+
+## Source
+
+- The write-up is `Fish_Provision_Commercial.docx`, Drive `1CAt6w0DFgWRJFx_9_v6DBKqjq4JUQJPS`,
+  modified 2026-10-27T20:37:33Z, md5 `4b5fb036ea1fdfd70bb2a63261f028aa`. It still carries open
+  tracked suggestions, including the subsidy term in its equation 2 and the λ = 1 statement.
+- The author code is `lifengren95/gep_fisheries` at
+  `2f7148dcbe9de056b0109d1ababba7b31c2c57d8`.
+- The library code is `fisheries_functions.py` (`clean_cwon_cpi` through
+  `commfish_gep_by_country`), together with the `fisheries_rent_trends` and `gep_calculation`
+  tasks.
+
+# Subsistence fisheries GEP
+
+## Source and units
+
+The value is the consumptive-use value of inland recreational harvest eaten as food, from Lynch
+et al. (2024) and its USGS data release (DOI 10.5066/P9WO91SZ). The staged file is the release
+dated 20230509 (`fisheries_subsistence_lynch_path`), one row per admin and species, 575 rows over
+81 admins. The registered author code is `mcwayrm/gep-subsistence-fisheries` at `cc72437`, which
+reads the same file and joins its published value to countries by name.
+
+Prices were collected from November 2021 to February 2022 and converted to US dollars at the
+exchange rate of the collection date (the paper's methods, p. 9). By value, 98.6% is priced in
+2021. The table is therefore in late-2021 US dollars and is not deflated to 2019.
+
+## Valuation
+
+$$
+GEP_a = \sum_{s} Q_{a,s} \, P_{a,s},
+$$
+
+with $Q$ the harvest in kilograms at the unit of price (`total_biomass_harv_kg_unitofprice`) and
+$P$ the price per kilogram in US dollars (`final_kg_price_USD`), summed over the species $s$ of
+admin $a$. No fishing cost is deducted, so λ = 1. An admin whose species all lack a quantity or a
+price stays missing. The release's own value, `TCUV`, is carried beside the result as
+`subsistence_fisheries_gep_published`. The 58 valued admins agree with it within $0.004.
+
+## Joining to countries
+
+Admins join the account's canonical country rows by Natural Earth name (`brk_name`). A
+territory's `brk_name` is its sovereign's, so a bare join copies a national value onto every
+territory. Where several rows share a joined name, only the sovereign's own row keeps the value
+and the copies stay missing (12 territory rows, $482,173,045.78). Five valued admins whose
+release names match no `brk_name` are placed by `LYNCH_ADMIN_TO_ISO3` on their one row: Bosnia
+and Herzegovina, Czechia, the Republic of Korea, Serbia and the United States, together
+$2,513,951,351.19. The task refuses to write a table whose total differs from the release's.
+
+## Coverage
+
+`fisheries_subsistence_gep` writes `subsistence_gep_by_country.csv` into its own task directory,
+one row per country with `subsistence_fisheries_gep` and `subsistence_fisheries_gep_published`.
+58 countries carry a value, totalling \$9,952,528,093.60, the release's quantity-times-price sum
+to the cent. 192 are missing, with no zeros. The release gives a zero `TCUV` to 22 admins whose
+rows carry no quantity and no price. The paper's total sums only the 58 measured countries, so
+those zeros mark absent measurements and publish as missing.
+
+## Reproduction
+
+The author's national table, rebuilt from the author's own inputs, matches the committed file
+within \$0.16 per country. It differs from the library's on 17 valued rows, all explained: the 12
+territory copies and the 5 unplaced names above. Both defects came from the name join and are
+corrected here. The author's table also carries 20 of the release's zeros, which publish here as
+missing.
+
+## What is open
+
+- No current write-up for this service is in the shared folder of current write-ups.
+- The price year: the table is late-2021 US dollars. Whether to deflate it to 2019 is the
+  group's decision (open question 13).
+- The scope: the source measures inland recreational harvest eaten as food. Whether that is the
+  account's subsistence fishing is open.
+- The source version: the USGS release is at v1.2 (January 2026). The staged file is the 20230509
+  release, and the two are not yet compared.
+
+# Aquaculture GEP
+
+## Source and units
+
+The method is the authors' write-up `Aquaculture.docx` (modified 27 October 2026) and their code,
+`lifengren95/gep_aquaculture` at `2b25bd0`. The production value is FAO's FishStatJ global
+aquaculture value, release 2024.1.0, the release the authors' values use and the write-up cites
+("1950-2022"), which the authors confirmed on 30 October. It is read from FAO's bulk archive
+`Aquaculture_2024.1.0.zip` (sha256 `ccde626f…`), whose value table
+(`fisheries_aquaculture_value_path`) is checked against its recorded sha256 before it is read.
+Values are for 2019, in thousand current US dollars, converted to dollars, summed over species,
+area and environment, with aquatic plants left out (FAO major group `PLANTAE AQUATICAE`,
+`fisheries_aquaculture_exclude_aquatic_plants`). Release 2025.1.0 stays staged beside it,
+unused.
+
+## Valuation
+
+$$
+GEP_i = \lambda_{r(i)} \, V_i, \qquad
+\lambda_r = \frac{EVFP(\text{NatRes}, \text{fsh}, r)}{\sum_c MAKS(c, \text{fsh}, r)},
+$$
+
+with $V_i$ the country's aquaculture value and $\lambda_r$ the natural-resource payment of the
+GTAP fishing sector over its gross output, in the GTAP region $r(i)$ that holds country $i$. The
+shares are computed from the configured GTAP base data (`gtapv7-aez-rd`, `v12-s26-r50`), not read
+from a workbook. GTAP's `fsh` sector combines capture fisheries and aquaculture, so the share is a
+proxy for aquaculture, as the write-up states. CWoN has no aquaculture rent to use instead.
+
+The same payment over the sector's value added, the share an earlier version applied, is written
+beside the result as `aquaculture_gep_on_value_added_share`. FAO's value is a revenue, so the
+account uses the gross-output share.
+
+## Coverage
+
+`fisheries_aquaculture_gep` writes `aquaculture_gep_by_country.csv` into its own task directory,
+holding the r250 identifiers and attributes, `year`, `aquaculture_gep` and
+`aquaculture_gep_on_value_added_share`. 203 countries carry a value, totalling
+\$58,734,867,845.49: 197 positive and 6 zeros FAO reports (BES, DMA, FLK, SPM, SYC, TCA). 47 are
+missing. FAO does not list 45 of them for 2019, and the other two, Tonga and Saint Vincent and
+the Grenadines, list only aquatic plants. On the value-added share the total is
+\$103,722,115,372.99. The run logs the total with aquatic plants included, and the table is
+reused only while its inputs and settings are unchanged.
+
+## Reproduction
+
+The shares match the authors' saved table in all 50 GTAP regions within 1.4e-8, and their
+country table at 1e-7. On release 2024.1.0 the library's values equal the authors' in every
+country they both value, within \$34, apart from the three shell items below. With those items
+left out and the authors' shares, the total is \$58,697,376,968.43, \$49.04 from their
+\$58,697,376,919.39. The library's \$58,734,867,845.49 is \$37,490,926.10 above theirs: the
+shell items account for \$37,490,201.25 and the two share tables for the remaining \$724.85.
+
+Moving from release 2025.1.0 to 2024.1.0 lowered the total by \$4,399,231,566.34, almost all of
+it China (\$3.43bn) and India (\$0.96bn). Guernsey, Jersey and the Maldives, valued in 2025.1.0,
+are not listed in 2024.1.0 and are missing.
+
+## What is open
+
+- The shell items. The authors' data leaves out pearl oyster shells (OSH), blacklip pearl oyster
+  (PNM) and freshwater mussel shells (FSH), which the write-up's "all aquaculture species except
+  aquatic plants" does not mention. The library keeps them until the authors say otherwise. They
+  are worth \$37,490,201.25 of GEP (Japan \$26.66M, French Polynesia \$9.62M, China \$1.22M).
+- Zero or missing for countries FAO does not list. The authors code 34 of them as zero, and the
+  library publishes them as missing. Tonga and Saint Vincent and the Grenadines, whose only 2019
+  aquaculture is aquatic plants, are missing here too. No value effect.
+- The GTAP citation. The write-up cites the GTAP 10 Data Base, and the shares come from the
+  account's v12 base data, identical to the authors' saved shares.
+- The rent share. Whether aquaculture takes a GTAP share while most services take CWoN's, and
+  whether the fishing-sector share is an acceptable proxy, are group decisions.
+
+# Marine productivity shock (a separate output, not part of the GEP)
 
 ## Purpose
 
@@ -12,8 +264,8 @@ model responds to how climate alters marine fish productivity along each scenari
 
 The other three services are computed from the pipeline's own 300 m SEALS land-use maps. Fisheries is
 **marine**: its productivity is not a function of terrestrial land cover, so nothing in the SEALS output
-can inform it. It therefore has no dynamic-from-maps variant, and `dynamic_es` does not apply to it , 
-the seam grafts one task either way.
+can inform it. It therefore has no dynamic-from-maps variant, and `dynamic_es` does not apply to it.
+The seam grafts one task either way.
 
 This is a property of the service, not a gap in the implementation. A shock keyed to sea-surface
 conditions cannot be derived from a land-cover map.
@@ -27,7 +279,7 @@ for the climate crop-yield shock, so the marine and terrestrial climate signals 
 
 Values are read per year over the horizon rather than frozen at an endpoint. For the current data this
 is equivalent to a constant, because the underlying series steps once and then plateaus across
-2023–2050; time-varying projections would flow through unchanged.
+2023–2050. Time-varying projections flow through unchanged.
 
 ## Capping
 
@@ -48,7 +300,3 @@ services which enter as factor-productivity terms.
 
 Trivial, the task reads binary headers and writes a CSV, taking seconds. `run_fisheries.py` runs it
 standalone, needing only `cwon_shocks.har` for the configured aggregation.
-
-## Coverage
-
-The published table is one row for each of the account's 250 countries, base year 2019, in constant 2019 USD. Of the 250, 107 carry a value, 58 are computed zeros, and 85 rows are missing, kept as missing rather than zero because an input carries no data for those countries. A zero means the computation returned zero; a missing row means the data to compute one is absent.

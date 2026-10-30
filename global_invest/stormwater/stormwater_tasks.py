@@ -4,6 +4,7 @@ The InVEST urban stormwater retention run happens outside this tree; retention_b
 sums its raster inside each country, and gep_calculation prices the result."""
 import os
 
+import geopandas as gpd
 import numpy as np
 import pyproj
 import rasterio
@@ -170,7 +171,7 @@ def gep_calculation(p):
     df_gep = sf.stormwater_gep_by_country(retention, sf.STORMWATER_PRICE_PER_M3_PLACEHOLDER)
     df_gep['year'] = int(p.gep_base_year)
     # Carry the country attributes every other service's table carries, so this output can be
-    # read, grouped and reported the same way. Without them the report cannot even name a country.
+    # read, grouped and reported the same way, including by country name.
     attribute_columns = ['iso3_r250_id', 'iso3_r250_name', 'continent', 'region_un',
                          'region_wb', 'income_grp', 'subregion']
     countries = utilities.collapse_countries_to_r250(p.df_countries)[attribute_columns]

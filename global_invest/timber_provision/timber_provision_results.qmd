@@ -13,30 +13,28 @@ execute:
 ```{python}
 #| output: false
 
-### SETUP CODE: Runs the whole model if it doesn't exist, else loads the results.
+### SETUP CODE: loads the published table. Rendering is driven by the gep_result task, which
+### passes the project it is reporting on through PROJECTFLOW_ROOT; the home path is the fallback
+### for someone opening this qmd directly.
 
 import os
 import pandas as pd
 import hazelbean as hb
 
-from global_invest.timber_provision import timber_provision_initialize
+from global_invest.timber_provision import timber_provision_tasks
 
 if __name__ == '__main__':
 
-    p = hb.ProjectFlow()
-    p.project_name = 'gep_timber_provision'
-    # The rendering task passes the project it is reporting on; the home path is the
-    # fallback for someone opening this qmd directly.
-    p.project_dir = os.environ.get('PROJECTFLOW_ROOT', os.path.join(
-        os.path.expanduser('~'), 'Files', 'global_invest', 'projects', p.project_name))
-    p.set_project_dir(p.project_dir)
-
-    timber_provision_initialize.build_gep_service_calculation_task_tree(p)
-
-    p.results = {}
-
-    hb.log('Created ProjectFlow object at ' + p.project_dir + '\n    from script ' + p.calling_script + '\n    with base_data set at ' + p.base_data_dir)
-    p.execute()
+    project_dir = os.environ.get('PROJECTFLOW_ROOT', os.path.join(
+        os.path.expanduser('~'), 'Files', 'global_invest', 'projects', 'gep_timber_provision'))
+    p = hb.ProjectFlow(project_dir=project_dir)
+    # The es_parameters references (the Forestry anchor among them) and the country layer.
+    timber_provision_tasks.publish_inputs(p)
+    gep_table_path = os.path.join(project_dir, 'intermediate', 'gep_calculation',
+                                  'gep_by_country_base_year.csv')
+    if not hb.path_exists(gep_table_path):
+        raise FileNotFoundError('No published timber table at ' + gep_table_path
+                                + '. Run the timber provision GEP tree first.')
 ```
 
 ```{python}
@@ -53,12 +51,27 @@ pd.set_option('display.max_rows', 1000)
 
 service_label = 'timber_provision'
 
-df = hb.df_read(p.results[service_label]['gep_by_country_base_year'])
-total_tp = df['timber_provision_gep'].sum()
+df = hb.df_read(gep_table_path)
+headline = df['timber_provision_gep']
+total_tp = headline.sum()
+n_positive, n_zero, n_missing = int((headline > 0).sum()), int((headline == 0).sum()), int(headline.isna().sum())
+fuelwood_part = df['timber_provision_gep_fuelwood_part'].sum()
+industrial_part = df['timber_provision_gep_industrial_part'].sum()
+spatial = df['timber_provision_gep_spatial']
+total_spatial = spatial.sum()
+n_spatial_positive = int((spatial > 0).sum())
+# The spatial column against its anchor, the committed Forestry per-country table. A country the
+# anchor does not cover is stored as zero in the spatial column, which is not a measured zero.
+anchor = hb.df_read(str(p.get_path(p.timber_provision_gep_path))).set_index('iso3_r250_label')['forestry_gep']
+spatial_by_label = df.set_index('iso3_r250_label')['timber_provision_gep_spatial']
+n_no_anchor = int(anchor.reindex(spatial_by_label.index).isna().sum())
+anchor_max_difference = (spatial_by_label - anchor.reindex(spatial_by_label.index)).abs().max()
 p.gep_by_country_base_year_table = df[['iso3_r250_name', 'timber_provision_gep']]
 ```
 
-The analysis values timber harvests at their net return after harvest and transport costs. The value raster is recomputed here from the drive's net-return layer and summed per country, totalling $`{python} f"{total_tp:,.0f}"` for the base year across 166 countries. The committed per-country table from the Forestry pipeline is kept as the comparison anchor, and every country matches it.
+The account's timber value, `timber_provision_gep`, is the World Bank's Changing Wealth of Nations 2024 forest rent for 2019: $`{python} f"{total_tp:,.0f}"` across `{python} f"{n_positive}"` countries with a value, `{python} f"{n_zero}"` zeros where CWoN publishes a rent of zero, and `{python} f"{n_missing}"` countries left missing because CWoN publishes no rent for them. CWoN builds this rent from the revenue of wood fuel and industrial roundwood together, so fuelwood is already inside it. An approximate split puts $`{python} f"{fuelwood_part:,.0f}"` on fuelwood and $`{python} f"{industrial_part:,.0f}"` on industrial roundwood. The map and tables below show this figure.
+
+The spatial construction the shared sheet carried before the account adopted the CWoN rent is kept beside it as a comparison column, `timber_provision_gep_spatial`. It is the zonal sum of the Forestry pipeline's value raster, the net return after harvest and transport costs, and it totals $`{python} f"{total_spatial:,.0f}"` across `{python} f"{n_spatial_positive}"` countries. It stores zero for the `{python} f"{n_no_anchor}"` countries its anchor, the committed Forestry per-country table, does not cover. Those zeros mark missing coverage, not a measured absence of timber value. On the countries the anchor covers, the column agrees with it within recorded precision, not exactly: the largest per-country difference is $`{python} f"{anchor_max_difference:,.2f}"`. It is not the account's figure, and the two columns must not be added.
 
 ## GEP by Country in Base Year, mapped
 

@@ -7,7 +7,8 @@ The organic areas are FiBL's survey extract and are taken as given; the yields a
 prices are FAOSTAT 2019 slices; the effect sizes and ratios are parameters with their sources
 beside them in es_parameters. The committed `pest_control_gep.csv` is carried beside the result
 as the comparison anchor -- it is a Monte Carlo mean from a pipeline that is not on the drive,
-so the run log reports coverage and rank agreement rather than a to-the-cent match.
+so the run log reports coverage and the Pearson correlation of log values over the countries both
+tables value, rather than a to-the-cent match.
 """
 import os
 
@@ -17,11 +18,6 @@ import pandas as pd
 
 from global_invest import utilities
 from global_invest.pest_control import pest_control_functions as pc
-
-# FiBL names crops its own way; each name the valuation uses is pinned to one FAOSTAT item so a
-# silent drop cannot occur. A name mapped to None is a FiBL aggregate or wild-collection crop
-# with no FAOSTAT production analogue; its area is reported and excluded, never guessed.
-
 
 # FAOSTAT and FiBL name countries differently from the account where a state has a long form;
 # the pairs the joins need are spelled out so a silent drop cannot occur.
@@ -84,7 +80,8 @@ def gep_calculation(p):
     """GEP valuation for pest control: the yield benefit on organic crops, per country.
 
     Effect size times organic production times organic producer price, summed over crops,
-    compared per country against the committed table (coverage and rank, not to the cent).
+    compared per country against the committed table (coverage and the correlation of log
+    values, not to the cent).
     """
     publish_inputs(p)
     service_results, already_done = utilities.begin_gep_calculation(p, 'pest_control')
@@ -104,8 +101,8 @@ def gep_calculation(p):
     qcl = pd.read_csv(str(p.get_path(p.pest_control_faostat_yield_input_path)))
     # FAOSTAT publishes 'China' (the aggregate with Taiwan, Hong Kong and Macao) BESIDE
     # 'China, mainland'; both names map to CHN, so keeping the aggregate doubles every
-    # Chinese (country, item) row at the merge -- $1.96bn of duplicated value when found
-    # on 2026-10-19. The plain name stays in the map because FiBL uses it for the mainland.
+    # Chinese (country, item) row at the merge. The plain name stays in the map because FiBL
+    # uses it for the mainland.
     qcl = qcl[qcl['Area'] != 'China']
     qcl['iso3_r250_label'] = qcl['Area'].map(name_to_iso3)
     yld = qcl[(qcl['Element'] == 'Yield') & (qcl['Unit'] == 'kg/ha')].dropna(

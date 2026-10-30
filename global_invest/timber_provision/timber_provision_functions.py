@@ -96,9 +96,9 @@ def timber_gep_from_zone_sums(zone_sums, countries_df):
 # The CWoN rental alternative. The issues document recommends valuing this service from FAOSTAT and
 # CWoN rather than from the staged value raster, and CWoN publishes the answer rather than the
 # ingredients: `Forest, rents (current US$)`, the same reproducibility package the gas, oil, coal
-# and hydropower rents come from. Both figures are published side by side because the choice
-# between them is live: the raster is spatial and cannot be rebuilt here, the rent is a country
-# table with no spatial detail and is the source every other rent-based service already uses.
+# and hydropower rents come from. The rent is the account's figure: a country table with no
+# spatial detail, from the source every other rent-based service uses. The raster estimate is
+# spatial and cannot be rebuilt here, and is published beside it.
 CWON_FOREST_RENT_SERIES = 'Forest, rents (current US$)'
 
 
@@ -134,17 +134,19 @@ def cwon_forest_rent_by_country(rent_df, countries_df, year):
 
 
 def roundwood_gross_value_by_country(fao_df, countries_df, year):
-    """FAOSTAT roundwood production priced at each country's own export unit value.
+    """FAOSTAT roundwood production priced at an industrial-roundwood export unit value.
 
-    Not a third estimate of the service: a BOUND. A land factor share, however derived, is a
-    fraction of the gross value of the wood it comes from, so a country whose timber GEP exceeds
-    the gross value of all the roundwood it produced is saying something impossible. Publishing
-    the bound beside the two valuations lets that be seen per country rather than argued globally.
+    Not a third estimate of the service: a proxy DIAGNOSTIC. A land factor share is a fraction of
+    the gross value of the wood it comes from, so a country whose timber GEP exceeds this column
+    is flagged for a look, at the rent, at the price proxy or at both. It is not a strict bound:
+    export unit values stand in for domestic prices they can sit well above or below. Publishing
+    it beside the two valuations lets a flag be seen per country rather than argued globally.
 
-    The price is the country's own industrial-roundwood export unit value where FAOSTAT reports
-    one, and the world export unit value otherwise. A country's own price matters: the world value
-    is about $111/m3 and tropical hardwood exporters are several times that, so a single global
-    price manufactures exceedances that are only a price error.
+    All roundwood production, wood fuel included, is priced at the country's own
+    industrial-roundwood export unit value where FAOSTAT reports one between $5 and $3,000 per m3
+    (a chosen band), and at the world industrial-roundwood export unit value otherwise. The own value is used where
+    it exists because the world value is about $111/m3 and tropical hardwood exporters are several
+    times that, so a single global price would flag countries for a price difference alone.
 
     Args:
         fao_df (pd.DataFrame): the staged FAOSTAT forestry slice, normalized long.
@@ -168,8 +170,9 @@ def roundwood_gross_value_by_country(fao_df, countries_df, year):
     quantity = industrial[industrial['Element'] == 'Export quantity'].groupby('iso3_r250_id')['Value'].sum()
     value = industrial[industrial['Element'] == 'Export value'].groupby('iso3_r250_id')['Value'].sum() * 1000.0
     own = (value / quantity).replace([np.inf, -np.inf], np.nan).dropna()
-    # A unit value outside this band is a reporting artifact rather than a price, and using it
-    # would move the bound further than the thing it is meant to catch.
+    # The band is a chosen filter: an own unit value outside it is treated as unreliable and the
+    # world value is used instead. It is a judgement about barely-traded flows, not a proof that
+    # each excluded value is a reporting artifact.
     own = own[(own > 5) & (own < 3000)]
 
     produced = (countries[(countries['Element'] == 'Production') & (countries['Item'] == 'Roundwood')]
@@ -199,10 +202,10 @@ def fuelwood_share_of_forest_rent(fao_df, countries_df, year):
 
         fuelwood_part = timber_gep x (wf_rev / (wf_rev + irw_rev))
 
-    Revenue is production times the country's own export unit value, the world value where FAOSTAT
-    reports none -- the same pricing the gross-value bound uses, and for the same reason: wood fuel
-    is about $67/m3 against industrial roundwood's $111, so a single price would misallocate the
-    split rather than merely blur it.
+    Revenue is each product's production times that product's WORLD export unit value: wood fuel
+    is about $67/m3 against industrial roundwood's $111, so one price for both would misallocate
+    the split, and own-country prices make the ratio measure pricing rather than the mix (see
+    `revenue` below). This is not the pricing the gross-value diagnostic uses.
 
     Returns:
         pd.DataFrame: countries_df with fuelwood_share_of_rent added, NaN where FAOSTAT prices
@@ -219,13 +222,13 @@ def fuelwood_share_of_forest_rent(fao_df, countries_df, year):
     def revenue(item):
         """Production at the WORLD export unit value, the same basis for both products.
 
-        Country-own prices are NOT used here and made the share wrong. The share
-        is a RATIO between two revenues, so both sides have to be priced the same way or the ratio
-        measures the pricing rather than the mix. India is the case that exposed it: it exports 309
-        cubic metres of wood fuel for $234,000, an implied $757/m3 against a world $67, and 6,096
-        cubic metres of industrial roundwood at an implied $9,189 against a world $111. A filter
-        that accepted prices under $3,000 took the absurd fuelwood price and rejected the absurd
-        industrial one, so India's fuelwood share came out at 97.6 percent instead of 78.7.
+        Country-own prices are NOT used here. The share is a RATIO between two revenues, so both
+        sides have to be priced the same way or the ratio measures the pricing rather than the mix.
+        India shows why: it exports 309 cubic metres of wood fuel for $234,000, an implied $757/m3
+        against a world $67, and 6,096 cubic metres of industrial roundwood at an implied $9,189
+        against a world $111. A filter accepting prices under $3,000 keeps the absurd fuelwood price
+        and rejects the absurd industrial one, putting India's fuelwood share at 97.6 percent
+        instead of 78.7.
 
         Neither product's own price is usable for this: barely-traded volumes set them. CWoN faces
         the same problem and solves it with outlier-trimmed REGIONAL mean export unit values; one
@@ -248,13 +251,13 @@ def fuelwood_share_of_forest_rent(fao_df, countries_df, year):
 
 
 def wood_fuel_gross_value_by_country(fao_df, countries_df, year):
-    """FAOSTAT wood fuel production priced at each country's own WOOD FUEL export unit value.
+    """FAOSTAT wood fuel production priced at the WORLD wood-fuel export unit value.
 
-    Not the fuelwood share of roundwood gross, which was the first attempt and was wrong by
-    almost three times: roundwood gross uses each country's roundwood price, which is dominated by
-    industrial timber at about $111/m3 against wood fuel's $67, so scaling it by a revenue share
-    prices fuelwood as though it were sawlogs. Wood fuel has its own production and its own export
-    unit value in the same table, so it is priced directly here.
+    Not the fuelwood share of roundwood gross, which is wrong by almost three times: roundwood
+    gross prices at an industrial-roundwood unit value, about $111/m3
+    against wood fuel's $67, so scaling it by a revenue share prices fuelwood as though it were
+    sawlogs. Wood fuel has its own production and its own export unit value in the same table, so
+    it is priced directly here, at one world value for every country (the comment below says why).
     """
     import numpy as np
     import pandas as pd
@@ -267,11 +270,11 @@ def wood_fuel_gross_value_by_country(fao_df, countries_df, year):
     fuel = d[(d['Area'] != 'World') & (d['Item'] == 'Wood fuel')]
     produced = fuel[fuel['Element'] == 'Production'].groupby('iso3_r250_id')['Value'].sum()
     # ONE world price for every country, which is the opposite of what the industrial-roundwood
-    # bound does, and deliberately. Fuelwood is overwhelmingly NOT traded: it is collected and
+    # gross-value diagnostic does, and deliberately. Fuelwood is overwhelmingly NOT traded: it is collected and
     # burned where it grows, so a country's export unit value is set by a tiny specialty flow and
-    # says nothing about the price of the rest. Using own prices here gave $368bn against a world
+    # says nothing about the price of the rest. Own prices give $368bn against a world
     # export-priced $131bn, because a country exporting a hundred cubic metres at a high unit value
-    # had that price applied to fifty million cubic metres of domestic burning. Industrial
+    # has that price applied to fifty million cubic metres of domestic burning. Industrial
     # roundwood is genuinely traded and its own prices are informative; this is not.
     out = pd.DataFrame({'wood_fuel_m3': produced,
                         'wood_fuel_gross_value': produced * world_price})
@@ -307,8 +310,7 @@ def timber_value_on_forest(eligible_value, lulc, forest_ids=(SEALS7_FOREST_ID,),
 
     This is deliberately not a class-mean lookup: a class mean over all cells of a class dilutes
     forest by unmanaged forest and gives non-forest classes value wherever the management mask
-    overlaps them, so afforestation lowered the measure and deforestation raised it (the 2050
-    transition decomposition of 21 Sep 2026).
+    overlaps them, so afforestation lowers the measure and deforestation raises it.
 
     Args:
         eligible_value (np.ndarray): from timber_eligible_value, on the same grid as `lulc`.
@@ -329,7 +331,7 @@ def timber_value_on_forest(eligible_value, lulc, forest_ids=(SEALS7_FOREST_ID,),
 
 
 # --- D19: the timber resource measured as aboveground forest biomass carbon ----------------------
-# An alternative proxy construction (22 Sep 2026) that changes both the resource measure and the
+# An alternative proxy construction that changes both the resource measure and the
 # footprint: living aboveground biomass carbon (Spawn & Gibbs 2020, Mg C/ha) on the cells that are
 # forest in EACH scenario map, instead of base-year net return on the fixed 2023 managed footprint.
 # Converted forest leaves with its observed density; forest gained after the base year enters at

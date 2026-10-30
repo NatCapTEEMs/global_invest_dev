@@ -371,9 +371,9 @@ def test_eez_only_is_a_strict_subset_of_all_rows():
 
     The r566 surface carries a country's coast more than once: an `_EEZ` row plus land and
     territorial rows over the same habitat. Valuing every row therefore returns a strictly
-    larger total than valuing the EEZ rows, and the gap is exactly the non-EEZ rows -- which is
-    why the module reports the EEZ-only figure and the all-rows figure as two numbers, not as a
-    number and a rounding error.
+    larger total than valuing the EEZ rows, and the gap is exactly the non-EEZ rows: the
+    EEZ-only figure the module writes and the all-rows figure the r566 table sums to are two
+    different numbers, not a number and a rounding error.
     """
     df_r566 = _r566_frame()
     eez = ccf.eez_storage_value_by_iso3(df_r566)
@@ -421,8 +421,8 @@ def test_gep_calculation_eez_only_and_one_row_per_country(tmp_path):
 
     pd.DataFrame({'year': [2019], 'p': [2.0]}).to_excel(tmp_path / 'carbon_prices.xlsx', index=False)
 
-    # The storage_value tasks own stock x price; gep_calculation MERGES their totals (the
-    # restructure). Values here = the fixture stocks x price 2.0.
+    # The storage_value tasks own stock x price and gep_calculation merges their totals.
+    # Values here = the fixture stocks x price 2.0.
     for eco, stocks in (('mangrove', [50.0, 5.0, 50.0]), ('salt_marsh', [30.0, 3.0, 30.0]),
                         ('seagrass', [20.0, 2.0, 20.0])):
         pd.DataFrame({ID: [1, 2, 3],

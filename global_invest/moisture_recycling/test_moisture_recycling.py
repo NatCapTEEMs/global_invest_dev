@@ -1,9 +1,12 @@
-"""Unit tests for moisture_recycling's re-attribution.
+"""Unit tests for moisture_recycling's source-side diagnostic.
 
 Every function is pinned on a hand-built three-country matrix, so the orientation convention
-(columns are the destination whose precipitation is being sourced) and the conservation the
-construction promises are both stated as executable facts.
+(columns are the destination whose precipitation is being sourced) and the agreement of the
+diagnostic's source-side and sink-side totals are both stated as executable facts. That
+agreement is one double sum computed two ways, not a conservation of the headline.
 """
+import os
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -58,7 +61,7 @@ def test_value_moves_upstream_and_nothing_is_lost():
     # CCC's water is ocean-fed and its land sends nothing, so it holds no value on either side.
     assert out.loc['CCC', 'moisture_recycling_gep'] == 0.0
     assert out.loc['CCC', 'moisture_recycling_sink_side_value'] == 0.0
-    # Conservation: the source-side and sink-side views are the same money.
+    # The diagnostic's source-side and sink-side totals agree: one double sum computed two ways.
     assert np.isclose(out['moisture_recycling_gep'].sum(),
                       out['moisture_recycling_sink_side_value'].sum())
 
@@ -95,9 +98,8 @@ def test_a_destination_absent_from_the_matrix_is_dropped_not_invented():
 
 
 def test_own_part_is_the_labelled_diagonal_under_any_column_order():
-    """The own/export split must not depend on the matrix's column order: until 2026-10-25 a
-    column-reordered matrix silently returned an all-zero own part (the headline column was
-    always label-aligned and unaffected)."""
+    """The own/export split must not depend on the matrix's column order: the own part is read
+    from the labelled diagonal, so a column-reordered matrix gives the same frame."""
     matrix = pd.DataFrame([[0.5, 0.2, 0.0], [0.1, 0.6, 0.1], [0.0, 0.1, 0.7]],
                           index=['AAA', 'BBB', 'CCC'], columns=['AAA', 'BBB', 'CCC'])
     value = pd.Series({'AAA': 100.0, 'BBB': 200.0, 'CCC': 300.0})
@@ -113,3 +115,89 @@ def test_duplicated_matrix_labels_are_refused():
     value = pd.Series({'AAA': 100.0, 'BBB': 200.0})
     with pytest.raises(ValueError, match='duplicated country labels'):
         mr.reattributed_water_value(matrix, value, 1.0)
+
+
+def test_the_water_input_is_resolved_and_pinned(tmp_path):
+    """The resolved path lands on p as moisture_recycling_water_gep_path, which is what puts the
+    table's content fingerprint into the run signature; an explicit setting wins unchanged."""
+    import os
+    from types import SimpleNamespace
+    from global_invest.moisture_recycling import moisture_recycling_tasks as mt
+
+    p = SimpleNamespace(project_dir=str(tmp_path),
+                        moisture_recycling_water_gep_relative_file='intermediate/x/gep.csv')
+    path = mt.water_input_path(p)
+    assert path == os.path.normpath(os.path.join(str(tmp_path), 'intermediate/x/gep.csv'))
+    assert p.moisture_recycling_water_gep_path == path
+    water = os.path.join(str(tmp_path), 'water.csv')
+    explicit = SimpleNamespace(moisture_recycling_water_gep_path=water)
+    assert mt.water_input_path(explicit) == water
+
+
+def test_rainfall_reuse_decision_tracks_the_live_water_table(tmp_path):
+    """The four cases of the caching contract, on temporary tables through the task's own
+    resolution and the shared signature machinery: an output with no prior signature cannot be
+    reused; unchanged inputs reuse; a content change at the same path recomputes; a path change
+    with identical bytes recomputes (the fingerprint carries the path)."""
+    from types import SimpleNamespace
+    from global_invest import utilities
+    from global_invest.moisture_recycling import moisture_recycling_tasks as mt
+    from global_invest.moisture_recycling import moisture_recycling_functions as mr_f
+
+    out_dir = os.path.join(str(tmp_path), 'gep_calculation')
+    os.makedirs(out_dir)
+    output = os.path.join(out_dir, 'gep_by_country_base_year.csv')
+    pd.DataFrame({'iso3_r250_label': ['nor'], 'moisture_recycling_gep': [1.0]}).to_csv(
+        output, index=False)
+    water = os.path.join(str(tmp_path), 'water_gep_by_country.csv')
+    with open(water, 'w') as f:
+        f.write('iso3_r250_label,water_use_rainfed_vmr_gep\nnor,2.0\n')
+    p = SimpleNamespace(project_dir=str(tmp_path),
+                        moisture_recycling_water_gep_path=water,
+                        moisture_recycling_ecosystem_share=0.5)
+    mt.water_input_path(p)
+    outputs = [output]
+    dependencies = [mt.__file__, mr_f.__file__]
+
+    # absent prior signature: what produced the output is unknown, so it cannot be reused
+    reason = utilities.reuse_reason(p, 'moisture_recycling', outputs, light_inputs=dependencies)
+    assert reason is not None and 'signature' in reason
+
+    utilities.write_reuse_signature(p, 'moisture_recycling', outputs, light_inputs=dependencies)
+    # unchanged inputs: reuse
+    assert utilities.reuse_reason(p, 'moisture_recycling', outputs,
+                                  light_inputs=dependencies) is None
+
+    # content change at the SAME path: recompute, and the reason names the water table
+    with open(water, 'w') as f:
+        f.write('iso3_r250_label,water_use_rainfed_vmr_gep\nnor,3.0\n')
+    reason = utilities.reuse_reason(p, 'moisture_recycling', outputs, light_inputs=dependencies)
+    assert reason is not None and 'moisture_recycling_water_gep_path' in reason
+
+    # path change with IDENTICAL bytes: still recompute -- which table was read is part of
+    # what produced the output
+    utilities.write_reuse_signature(p, 'moisture_recycling', outputs, light_inputs=dependencies)
+    moved = os.path.join(str(tmp_path), 'water_gep_by_country_moved.csv')
+    with open(water) as src, open(moved, 'w') as dst:
+        dst.write(src.read())
+    p.moisture_recycling_water_gep_path = moved
+    reason = utilities.reuse_reason(p, 'moisture_recycling', outputs, light_inputs=dependencies)
+    assert reason is not None and 'moisture_recycling_water_gep_path' in reason
+
+
+def test_the_task_resolves_and_checks_reuse_before_the_early_return_and_records_after_writing():
+    """Source order, the shock-table house pattern: the water input is resolved and the signature
+    consulted BEFORE any output-exists return, and the signature is recorded after the outputs
+    are written. A bare `if already_done: return` is exactly the stale-rainfall defect."""
+    import inspect
+    from global_invest.moisture_recycling import moisture_recycling_tasks as mt
+
+    src = inspect.getsource(mt.gep_calculation)
+    assert 'if already_done:' not in src, 'the output-exists return must consult the signature'
+    resolve = src.index('water_input_path(')
+    check = src.index('already_done and utilities.reuse_reason(')
+    heavy = src.index('moisture_matrix(')
+    record = src.index('utilities.write_reuse_signature(')
+    write = src.index('write_gep_by_country(')
+    assert resolve < check < heavy, 'resolve the live input, decide, only then read anything heavy'
+    assert write < record, 'the signature must describe outputs that exist'

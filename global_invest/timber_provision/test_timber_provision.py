@@ -93,19 +93,21 @@ def test_es_config_and_parameters_rows_hydrate_timber_provision(tmp_path):
     assert p.timber_provision_gep_path.endswith('timber_provision_gep.csv')
 
 
-def test_the_flat_sum_is_the_only_reading_the_roundwood_market_can_support():
-    """The units question, settled from outside the pipeline rather than from its own output.
+def test_the_units_plausibility_diagnostic_favours_the_flat_sum_over_a_per_hectare_reading():
+    """A recorded plausibility diagnostic on the raster's units, not a proof of them.
 
     The value raster is EPSG:4326 at 10 arc-second and carries NO unit metadata, so whether a cell
     holds a value or a per-hectare density cannot be read off the file. The committed output cannot
     settle it either, because it was produced by summing the same raster the same way.
 
-    FAOSTAT settles it. World industrial roundwood production in 2019 was 1.985 billion m3, and the
-    world export unit value was $111.01/m3, so the gross value of all industrial roundwood produced
-    on earth was about $220bn. The pipeline's flat sum, $88.74bn, is 40 percent of that -- a high
-    but possible land factor share. Reading the raster as $/ha gives $708bn, which is 321 percent
-    of gross. A land share cannot exceed the gross value it is a share of, so the flat sum is the
-    only reading the market supports.
+    FAOSTAT gives an outside comparison. World industrial roundwood production in 2019 was 1.985
+    billion m3, and the world export unit value was $111.01/m3, so the gross value of industrial
+    roundwood at that proxy price was about $220bn. The pipeline's flat sum, $88.74bn, is 40
+    percent of that, a plausible land factor share. Reading the raster as $/ha gives $708bn, 321
+    percent of it, which a land share of the gross value is not expected to reach. The check
+    records that the flat sum sits below the proxy gross and the per-hectare reading above three
+    times it. It favours the flat reading. It does not prove the units, because the comparison
+    rests on an export-price proxy.
     """
     import os
     path = os.path.join(os.path.expanduser('~'), 'Files', 'base_data', 'global_invest',
@@ -120,14 +122,14 @@ def test_the_flat_sum_is_the_only_reading_the_roundwood_market_can_support():
     gross = produced * (export_v / export_q)
 
     flat, per_hectare = 88_743_966_326.0, 708_472_545_086.0
-    assert flat < gross, 'the flat reading must be a fraction of gross roundwood value'
+    assert flat < gross, 'the recorded diagnostic expects the flat reading below the proxy gross'
     assert per_hectare > 3 * gross, (
-        'the $/ha reading must be impossible, not merely large: it is %.0f%% of gross'
-        % (100 * per_hectare / gross))
+        'the recorded diagnostic expects the $/ha reading above three times the proxy gross: it '
+        'is %.0f%% of it' % (100 * per_hectare / gross))
 
 
 def test_the_cwon_rent_is_read_from_its_named_series_and_missing_stays_missing():
-    """The rental alternative the issues document recommends, published beside ours.
+    """The CWoN rent, the account's timber figure, read from its named series.
 
     CWoN's file is wide by year and carries a `series` label. Reading the year column without
     checking the label would publish whatever series happened to be in the file under the name
@@ -150,7 +152,7 @@ def test_the_cwon_rent_is_read_from_its_named_series_and_missing_stays_missing()
 
 
 def test_both_timber_valuations_are_published_and_differ_by_the_recorded_ratio():
-    """Publishing one silently would hide a $43bn choice, so every run writes both."""
+    """Every run writes both valuations, so the gap between them stays visible."""
     import glob
     import os
     pattern = os.path.join(os.path.expanduser('~'), 'Files', 'global_invest', 'projects',
@@ -160,27 +162,29 @@ def test_both_timber_valuations_are_published_and_differ_by_the_recorded_ratio()
         pytest.skip('no timber_provision run on this machine')
     for path in produced:
         df = pd.read_csv(path)
-        # timber_provision_gep IS the CWoN rent since 2026-09-02; the spatial estimate is kept
-        # beside it under its own name rather than deleted.
+        # timber_provision_gep IS the CWoN rent; the spatial estimate is kept beside it under its
+        # own name.
         assert 'timber_provision_gep' in df.columns
         assert 'timber_provision_gep_spatial' in df.columns, (
             '%s publishes only one valuation' % path)
         spatial = df['timber_provision_gep_spatial'].sum()
         rental = df['timber_provision_gep'].sum()
-        # 1.49 as measured on 2026-09-02. A wide band, because this pins that the two are the
-        # same order and neither column has silently become the other, not the ratio itself.
+        # The recorded ratio is 1.49. A wide band, because this pins that the two are the same
+        # order and neither column has silently become the other, not the ratio itself.
         assert 1.3 < rental / spatial < 1.7, (
             '%s: rental/spatial is %.2f, not the recorded 1.49' % (path, rental / spatial))
 
 
-def test_the_faostat_bound_is_published_and_neither_valuation_breaks_it_wholesale():
-    """The bound is a third column, not a third estimate.
+def test_the_faostat_gross_diagnostic_is_published_and_neither_valuation_exceeds_it_wholesale():
+    """The gross-value diagnostic is a third column, not a third estimate.
 
     A land factor share is a fraction of the gross value of the wood it comes from, so a country
-    whose timber GEP exceeds the gross value of all the roundwood it produced is impossible. A
+    whose timber GEP exceeds the proxy gross value of the roundwood it produced is flagged. A
     handful of countries do exceed it and are named in the entry: an export unit value is a proxy
-    for a domestic price, so a ratio near 1 is noise. What this asserts is that neither valuation
-    breaks the bound WHOLESALE, which is what would indicate a units error rather than a price one.
+    for a domestic price, so an exceedance is a flag and a ratio near 1 is noise. What this asserts
+    is a recorded plausibility diagnostic: fewer than 10 percent of the valued countries in each
+    valuation sit above the proxy gross. More than that would flag the column for review. It
+    would not by itself establish a units error or a bound.
     """
     import glob
     import os
@@ -191,14 +195,14 @@ def test_the_faostat_bound_is_published_and_neither_valuation_breaks_it_wholesal
         pytest.skip('no timber_provision run on this machine')
     for path in produced:
         df = pd.read_csv(path)
-        assert 'timber_roundwood_gross_value' in df.columns, '%s lacks the bound' % path
+        assert 'timber_roundwood_gross_value' in df.columns, '%s lacks the gross-value diagnostic' % path
         priced = df[df['timber_roundwood_gross_value'] > 0]
         for column in ('timber_provision_gep', 'timber_provision_gep_spatial'):
             valued = priced[priced[column] > 0]
             over = valued[valued[column] > valued['timber_roundwood_gross_value']]
             assert len(over) < 0.1 * len(valued), (
-                '%s: %s exceeds its own gross roundwood value in %d of %d countries, which is a '
-                'units error rather than a price proxy' % (path, column, len(over), len(valued)))
+                '%s: %s exceeds the proxy gross roundwood value in %d of %d countries, above the '
+                'recorded 10 percent plausibility diagnostic' % (path, column, len(over), len(valued)))
 
 
 def test_every_timber_run_reproduces_the_committed_anchor():
@@ -206,8 +210,7 @@ def test_every_timber_run_reproduces_the_committed_anchor():
 
     `test_join_reproduces_the_committed_anchor` reads the staged anchor and joins it, which tests
     the join. This sums the raster the way the pipeline does and compares every timber run on the
-    machine, cold starts included, against the anchor. Commercial fisheries carried a reproduction
-    claim for weeks on the strength of a function-level test, which is the shape this avoids.
+    machine, cold starts included, against the anchor.
     """
     import glob
     import os
@@ -249,7 +252,7 @@ def grids(other):
 
 
 def test_the_reported_origin_noise_passes():
-    """1e-14 degrees of y-origin noise -- the case that blocked the timber seam."""
+    """1e-14 degrees of y-origin noise: representation noise, not misalignment."""
     noisy = Affine(PIXEL, 0.0, -180.0, 0.0, -PIXEL, 90.00000000000001)
     _assert_one_grid(grids(noisy))
 

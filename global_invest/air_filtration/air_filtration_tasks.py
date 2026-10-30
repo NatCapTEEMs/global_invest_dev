@@ -2,8 +2,8 @@
 
 air_filtration_gep is the deposition channel (the sheet's air_filtration service);
 sandstorm_prevention_gep is the dust channel (the sheet's sandstorm prevention service) --
-one workbook, one module, two sheet rows. See the functions module for the identified rules
-and the VSL vintage gap.
+one workbook, one module, two sheet rows, priced at the account's shared VSL panel. See the
+functions module for the workbook's identified properties and its VSL provenance gap.
 """
 import os
 
@@ -55,7 +55,12 @@ def gep_calculation(p):
            'column, the largest by %.0f%%.'
            % (len(r250_order), len(repriced), 100 * max_departure))
 
-    df = af.air_quality_gep_by_country(workbook, r250_order, vsl=vsl)
+    # The countries the source states it could not estimate publish as missing, not as the
+    # zero deaths the workbook stores for them.
+    not_estimated = hb.df_read(p.air_filtration_not_estimated_path)['iso3_r250_label']
+    df = af.air_quality_gep_by_country(workbook, r250_order, vsl=vsl,
+                                       not_estimated_labels=not_estimated)
+    hb.log('%d countries the source did not estimate publish as missing.' % len(not_estimated))
 
     attr_cols = ['iso3_r250_id', 'iso3_r250_label', 'iso3_r250_name',
                  'continent', 'region_un', 'region_wb', 'income_grp', 'subregion']

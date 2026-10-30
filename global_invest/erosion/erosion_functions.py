@@ -28,14 +28,9 @@ import os
 
 import hazelbean as hb
 
-from global_invest import utilities
 import sys
-import time
 import logging
-import warnings
 import geopandas as gpd
-import rasterio
-import rasterio.features
 import xarray as xr
 from rasterio.enums import Resampling
 from rasterio.crs import CRS as rioCRS
@@ -191,11 +186,12 @@ def country_gep(df_shock, df_crop_gpv, df_gdp, component):
 
     Returns:
         pandas.DataFrame: the shock columns plus `crop_gpv_const2019_2019`,
-        `gdp_const2019_2019`, `gep_const2019_usd` and `gdp_loss_pct`.
+        `gdp_const2019_2019`, `gep_const2019_usd` and `gdp_loss_pct`. A country missing its crop
+        gross production value or its shock has a missing value, not a zero. A zero comes only
+        from a present zero price or a present zero shock.
     """
     out = df_shock.merge(df_crop_gpv, on='iso3', how='left').merge(df_gdp, on='iso3', how='left')
-    out['gep_const2019_usd'] = (out['crop_gpv_const2019_2019'].fillna(0.0)
-                                * out['erosion_shock_share'].fillna(0.0))
+    out['gep_const2019_usd'] = out['crop_gpv_const2019_2019'] * out['erosion_shock_share']
     out['gdp_loss_pct'] = np.where(
         out['gdp_const2019_2019'].notna() & (out['gdp_const2019_2019'] > 0),
         100.0 * out['gep_const2019_usd'] / out['gdp_const2019_2019'],
@@ -232,54 +228,13 @@ def upstream_prevention_share(accumulated_avoided, accumulated_potential, ndv=-9
 
 
 
-def _required_path(p, attribute, constant_name):
-    """The project's value for a path, or a failure that names what is missing.
-
-    A `getattr(p, attribute, SOME_CONSTANT)` default would be an absolute path from the machine
-    the source scripts were written on: a project that did not set the attribute would fall back
-    to a directory that does not exist here, and the run would fail later with a missing-file
-    error naming somebody else's home directory. Failing here instead
-    names the parameter to add to es_parameters.csv.
-
-    Args:
-        p (ProjectFlow): the project.
-        attribute (str): the attribute the project should carry.
-        constant_name (str): what this path is, for the error message.
-
-    Returns:
-        str: the resolved path.
-
-    Raises:
-        NameError: when the project does not carry the attribute.
-    """
-    value = getattr(p, attribute, None)
-    if value is None:
-        raise NameError('erosion needs %s (%s). Add a row for it to es_parameters.csv; there is '
-                        'no default.' % (attribute, constant_name))
-    return str(value)
-
-
-
 
 
 
 # =============================================================================
 # SECTION A — InVEST SDR run (from step1_sdr_invest_run.ipynb)
 # =============================================================================
-# 0) PATH CONFIG (CANONICAL)
-# =============================================================================
-# Set by configure_sdr / configure_prevention_shares / configure_maps from the project's
-# es_parameters rows. None until then: a constant default here would be an absolute path from
-# the machines the source scripts were written on, so a project that forgot a row would run
-# against a directory that does not exist here. _required_path names the missing row instead.
 
-
-
-# Use MERGED watershed ONLY
-
-# Sanitized watersheds used to prevent overflow + CRS parse failures in report
-
-# Optional drainage raster (leave empty to disable)
 
 
 # =============================================================================
@@ -376,51 +331,10 @@ def build_args(p, watersheds_path) -> dict:
     }
 
 
-# ==============================
-# 1) CONFIG — EDIT AS NEEDED
-# ==============================
-
 # =============================================================================
 # SECTION B -- On-farm + upstream erosion prevention-share GEP valuation
 #              (from Combine_PS_SES11_3_3_2026.ipynb)
 # =============================================================================
-
-# Primary erosion inputs (SDR-derived)
-
-# Precomputed upstream prevention share raster (from your DEM+D8 workflow)
-
-# Optional upstream LULC attribution shares (diagnostics only)
-
-# Boundary with ISO3 column
-
-# Optional DEM used ONLY for threshold policy (low-elevation rule). If not present, rule is skipped.
-
-# Crops: SPAM2020 stacks
-
-# Elasticity table (used only in valuation Option A)
-
-# Valuation inputs
-
-# Output directory
-
-# -------- Scientific knobs --------
-
-# If True: PS is computed only for severe pixels on cropland (recommended)
-
-# Elasticity fallback if crop not found
-
-# Shock floor (applied only to (0 < shock < floor))
-
-
-
-# Rasterization behavior. False is the centre rule, and configure_prevention_shares defaults to
-# the same thing, so a task that reads this before the run is configured gets the same rule.
-
-# Crops-only filter for FAO GPV
-
-# DEM validity rules (prevents low-elevation misclassification)
-
-# -------- Enforce equal-area analysis CRS --------
 
 # Reprojection strategies
 RESAMPLE_USLE_AVOID = Resampling.average
@@ -434,8 +348,8 @@ RESAMPLE_DEM        = Resampling.average
 # 3) Elasticity loader (with SPAM support)
 # ==========================================================
 # The alias map is passed in, not read from a module constant (exact FAO item names
-# first; the source repo's stem-only aliases never exact-matched the FAO names, so every crop
-# silently took the 0.08 fallback).
+# first; the source repo's stem-only aliases never exact-match the FAO names, so there every crop
+# silently takes the 0.08 fallback).
 
 
 def get_elasticity_for_crop(crop_key: str, elast_map: dict, fallback: float,
@@ -459,65 +373,74 @@ def compute_country_areas_km2(gdf: gpd.GeoDataFrame) -> pd.Series:
 # ==========================================================
 # 5) FAO GPV loader + crops-only filter + fallback
 # ==========================================================
-def _filter_crops_only(df: pd.DataFrame) -> pd.DataFrame:
-    cols = df.columns
-    item_col = "item" if "item" in cols else ("item name" if "item name" in cols else None)
-    group_col = "domain" if "domain" in cols else None
-    if not item_col and not group_col:
-        warnings.warn("FAO GPV: no item/domain labels; cannot restrict to crops — using all rows.")
-        return df
+# FAOSTAT's own definition of a crop: the members of its QV item group 2041, "Crops".
+FAOSTAT_QV_CROPS_GROUP = '2041'
 
-    def _s(s): return s.astype(str).str.lower()
 
-    include = pd.Series(False, index=df.index)
-    if item_col:
-        s = _s(df[item_col])
-        include = include | s.str.contains(r"\bcrop", na=False)
-        include = include | s.str.contains(
-            "apple|apricot|barley|bean|cabbage|carrot|cereal|cherr|chilli|cocoa|coffee|cotton|"
-            "cucumber|date|eggplant|fig|fruit|grape|lentil|maize|melon|millet|nut|oat|onion|pea|peanut|"
-            "pepper|potato|rice|rye|sesame|sorghum|soy|sunflower|tomato|vegetable|wheat|yuca|cassava",
-            na=False
-        )
-    if group_col:
-        s = _s(df[group_col])
-        include = include | s.str.contains(r"\bcrop", na=False)
+def crop_item_codes(item_groups):
+    """FAOSTAT's crop item codes: the members of the QV item group "Crops" (2041).
 
-    neg = pd.Series(False, index=df.index)
-    for col in [c for c in [item_col, group_col] if c]:
-        s = _s(df[col])
-        neg = neg | s.str.contains("livestock|animal|fish|fisher|forestry|forest", na=False)
-        neg = neg | (s.str.contains("agriculture", na=False) & ~s.str.contains("crop", na=False))
-        neg = neg | s.str.contains("crops? and livestock", na=False)
+    Args:
+        item_groups (pd.DataFrame): FAOSTAT's item-group definitions, with `Domain Code`,
+            `Item Group Code` and `Item Code`.
 
-    out = df[include & ~neg].copy()
-    if out.empty:
-        warnings.warn("FAO GPV: crops-only filter removed all rows — falling back to original dataset.")
-        return df
+    Returns:
+        set: the integer item codes of the crop group. A code that is itself a QV group total
+        (Crops, Cereals primary and the like) is never returned: its value repeats its members'
+        values, so counting it would count them twice.
+
+    Raises:
+        ValueError: if the table has no QV "Crops" members, since filtering on an empty set
+            would value no crop at all.
+    """
+    qv = item_groups[item_groups['Domain Code'].astype(str) == 'QV']
+    rows = qv[qv['Item Group Code'].astype(str).str.strip() == FAOSTAT_QV_CROPS_GROUP]
+    codes = set(pd.to_numeric(rows['Item Code'], errors='coerce').dropna().astype(int))
+    codes -= set(pd.to_numeric(qv['Item Group Code'], errors='coerce').dropna().astype(int))
+    if not codes:
+        raise ValueError('FAOSTAT item groups carry no QV "Crops" (2041) members.')
+    return codes
+
+
+def crop_item_mask(df, crop_codes):
+    """True on the rows of a FAOSTAT table whose item code is a crop.
+
+    Args:
+        df (pd.DataFrame): rows with `item_code_fao` (normalized column names).
+        crop_codes (set): `crop_item_codes`' output.
+
+    Returns:
+        pd.Series: a boolean mask. A row without a numeric item code is not a crop.
+    """
+    return pd.to_numeric(df['item_code_fao'], errors='coerce').isin(crop_codes)
+
+
+def crop_items_only(df, crop_codes):
+    """The rows of a FAOSTAT value table whose item code is a crop.
+
+    The code decides, not the item name. A name pattern misses sugar cane, oranges, bananas and
+    other crops, and its "oat" also keeps goat meat.
+
+    Args:
+        df (pd.DataFrame): FAOSTAT rows with `item_code_fao` (normalized column names).
+        crop_codes (set): `crop_item_codes`' output.
+
+    Returns:
+        pd.DataFrame: the crop rows. A row without a numeric item code is not a crop.
+
+    Raises:
+        ValueError: if a country lists the same crop twice, because summing both rows would
+            double that crop's value in the country total.
+    """
+    out = df[crop_item_mask(df, crop_codes)].copy()
+    if 'iso3' in out.columns:
+        repeated = out[out.duplicated(['iso3', 'item_code_fao'], keep=False)]
+        if not repeated.empty:
+            raise ValueError('FAOSTAT crop value listed twice for country-item pairs: %s'
+                             % sorted(set(zip(repeated['iso3'], repeated['item_code_fao'])))[:5])
     return out
 
 
-
-    # False is the centre rule: a cell goes to the country covering its centre point, so it has
-    # exactly one owner and the answer depends on geography alone. Under True every country whose
-    # outline touches a cell claims it, and because the claims are burned into one id raster the
-    # country rasterised LAST keeps it, which puts a country's value at the mercy of its row order
-    # in the boundary file. This is the rule utilities.py already aggregates on.
-
-
-# =============================================================================
-# SECTION C — Maps & figures (from combined_maps_figures_SES_final.ipynb)
-# =============================================================================
-
-# =============================================================================
-# 0) CONFIG
-# =============================================================================
-
-# (no mkdir at import -- configure_maps re-resolves FIG_DIR from p and creates it at run time)
-
-
-
-    # Shared plotting constants (module globals since the utils fold).
 
 # ---------------------------------------------------------------------------------------------
 # Helpers the rest of the module shares: array cleaning, formatting and column picking.

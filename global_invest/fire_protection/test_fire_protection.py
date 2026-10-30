@@ -1,9 +1,9 @@
 """Unit tests for the fire_protection port.
 
-The centerpiece is EXACT REPLICATION: reference/ carries the source repo's committed
-regression results (the calculation's input) and its committed per-country output (the anchor),
-so the whole calculation -- betas, avoided acres, valuation -- is verified against an
-external anchor on every test run, no staged data needed. The synthetic tests pin the pieces
+The centerpiece is EXACT REPLICATION: the service's base-data directory carries the source repo's
+committed regression results (the calculation's input) and its committed per-country output (the
+anchor), so the whole calculation -- betas, avoided acres, valuation -- is verified against an
+external anchor on every test run, without the ADM2 panel. The synthetic tests pin the pieces
 whose failure modes replication alone would not localize.
 """
 import os
@@ -159,8 +159,8 @@ def _gep_rows(rows):
 
 
 def test_gadm_subregions_sum_into_their_country():
-    """India's value arrives as three GADM units. Joining on the label alone dropped Z01 and
-    Z07, which left their value on a row with no country and still inside the total."""
+    """India's value arrives as three GADM units, and all three must sum into IND rather than
+    leave Z01 and Z07 on rows with no country while still counting in the total."""
     out = ffn.attach_countries(_gep_rows([
         ['IND', 1.0, 2.0, 3.0],
         ['Z01', 10.0, 20.0, 30.0],

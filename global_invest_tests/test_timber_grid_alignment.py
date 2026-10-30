@@ -1,8 +1,7 @@
 """The timber biomass measure needs one grid, and a sub-global AOI is a window of the global one.
 
-timber_provision_shock had never run in the bounded ZAF fixture, so this was unreachable: the
-biomass density and ha-per-cell rasters are global 10-arcsec while the base map and carbon zones
-are on the run's AOI grid, and _assert_one_grid refused the mismatch. For the ZAF window the
+The biomass density and ha-per-cell rasters are global 10-arcsec while the base map and carbon
+zones are on the run's AOI grid, a mismatch _assert_one_grid refuses. For the ZAF window the
 pixels are identical and the origin falls on global pixel (70560, 40320), so a nearest clip is a
 lossless subset rather than a regridding choice.
 """
@@ -45,8 +44,8 @@ def test_a_global_source_is_clipped_to_the_reference_window(tmp_path):
     with rasterio.open(out) as got, rasterio.open(reference) as ref:
         assert got.shape == ref.shape
         assert got.transform == ref.transform
-        # The SOURCE's type and nodata survive. Taking them from the reference is what truncated
-        # carbon zone ids 606-620 to a Byte nodata and read South Africa as zone 0 everywhere.
+        # The SOURCE's type and nodata survive. Taking them from the reference truncates values its
+        # type cannot hold: carbon zone ids 606-620 in a Byte raster become nodata, zone 0.
         assert got.dtypes[0] == 'float32', got.dtypes[0]
         assert got.nodata is None or np.isnan(got.nodata), got.nodata
 
@@ -86,11 +85,9 @@ def test_the_clip_is_cached(tmp_path):
 def test_grid_covered_zones_declares_uncovered_zones_without_hiding_a_lost_one(tmp_path):
     """A bounded AOI must not require zones its grid never reaches, and must still catch a lost one.
 
-    The D19 assertion required every zone in the boundary file, so the zaf validation fixture failed
-    with 444 of 470 zone totals 'absent' when those zones are simply outside the run. The fix
-    declares the uncovered zones through the assertion's own intentional_exclusions. The second half
-    is what keeps that from becoming a licence: a zone the grid DOES cover, missing from the
-    summary, must still raise.
+    Zones outside the run's grid are declared through the assertion's own intentional_exclusions
+    rather than reported absent. The second half is what keeps that from becoming a licence: a zone
+    the grid DOES cover, missing from the summary, must still raise.
     """
     import json
     import numpy as np
@@ -132,7 +129,7 @@ def test_grid_covered_zones_declares_uncovered_zones_without_hiding_a_lost_one(t
 def test_full_grid_coverage_declares_nothing_and_keeps_the_global_check_at_full_strength(tmp_path):
     """When the grid covers every boundary zone -- the global run -- nothing is excluded.
 
-    The bounded-AOI fix must not quietly relax the global case. Here the zone raster contains all
+    The bounded-AOI exclusion must not quietly relax the global case. Here the zone raster contains all
     four boundary zones, so the declared-exclusion list must be EMPTY, the required set must stay
     the full boundary set, and any missing zone must still raise. If this test ever passes with a
     non-empty exclusion list, the global coverage guarantee has been weakened.

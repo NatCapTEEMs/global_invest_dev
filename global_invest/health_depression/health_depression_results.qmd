@@ -112,7 +112,7 @@ for k, v in p.results[service_label].items():
         sm = plt.cm.ScalarMappable(cmap='OrRd', norm=norm)
         sm._A = []
         cbar = fig.colorbar(sm, ax=ax, orientation='vertical', fraction=0.03, pad=0.02)
-        cbar.set_label("Gross Economic Product (GEP) in Base Year")
+        cbar.set_label("Gross Ecosystem Product (GEP) in Base Year")
         cbar.ax.yaxis.set_major_formatter(mpl.ticker.FuncFormatter(lambda x, _: f'{int(x):,}'))
 
         ax.set_title('GEP by Country in Base Year')

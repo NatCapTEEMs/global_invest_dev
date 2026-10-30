@@ -1,26 +1,25 @@
 # -*- coding: utf-8 -*-
 """The flood-control account: the equations, over arrays and frames.
 
-Everything here takes arrays or frames and returns them. Nothing opens a file, reads a raster or
-consults a module global set somewhere else, which is what lets the account's science be tested on
-four countries and a handful of return periods rather than on a global grid. The file handling
-lives in `flood_tasks`, and that separation is the reason `test_flood` needs no monkeypatched
-readers: a test that has to replace a file reader is testing the wiring.
+Everything here takes arrays or frames and returns them. Nothing opens a file or consults a module
+global set somewhere else, which is what lets the account's science be tested on four countries
+and a handful of return periods rather than on a global grid. The one helper that reads raster
+data, `reproject_pop_to_target`, resamples from a population raster the task layer has already
+opened (the optional population layer, off in es_parameters). The file handling lives in
+`flood_tasks`, and that separation is the reason `test_flood` needs no monkeypatched readers: a
+test that has to replace a file reader is testing the wiring.
 
 What the account rests on is small. The depth-damage lookup, the expected-damage integral and its
 two boundary assumptions, the truncation that splits damage at a country's design standard, and
-the country valuation. The rest of the module -- fifteen hundred lines of it -- is preparing
-inputs, windowing rasters and writing results, and none of that changes an answer.
+the country valuation. The rest of this module normalises labels and column names and bins
+depths. Preparing inputs, windowing rasters and writing results live in `flood_tasks`.
 """
 from __future__ import annotations
 
-import os
 import re
 import warnings
-from datetime import datetime
 from typing import Dict, List, Optional
 
-import geopandas as gpd
 import hazelbean as hb
 import rasterio
 from rasterio.warp import reproject, Resampling
@@ -337,9 +336,6 @@ def mercator_area_scale(transform, row_off: int, height: int) -> np.ndarray:
     return (np.cos(lat) ** 2).astype("float32").reshape(-1, 1)
 
 
-# -----------------------------------------------------------------------------
-# Admin0 / ISO3 handling
-# -----------------------------------------------------------------------------
 
 
 
@@ -348,21 +344,17 @@ def mercator_area_scale(transform, row_off: int, height: int) -> np.ndarray:
 
 def integrate_trapezoid(y: np.ndarray, x: np.ndarray) -> float:
 
-    """
+    """Trapezoidal integral, with the x axis sorted first.
 
-    Trapezoidal integral, with the x axis sorted first.
     np.trapezoid weights each segment by diff(x). Handing it a descending or
     unordered x makes backwards segments contribute negatively, and the partial
     cancellation returns a small number of the wrong sign rather than an error.
 
     In this pipeline x is exceedance probability derived from return periods,
     which arrive in descending-p order naturally, so the sort is not optional.
-
-    Both current call sites happen to sort beforehand -- one by argsort, one via
-    a pandas groupby whose sorted-key behaviour is a default rather than a
-    guarantee. Sorting here makes the property hold by construction. Sorting an
-    already-sorted array is a no-op, so this cannot change existing results.
-
+    Sorting here makes the property hold by construction rather than relying on
+    callers (one of which sorts through a pandas groupby, whose sorted keys are
+    a default rather than a guarantee).
     """
 
     x = np.asarray(x, dtype="float64")
@@ -457,8 +449,8 @@ def normalize_landtype_label(x: str) -> str:
     - Fraction curves landtypes include:
       'Agriculture', 'Residential buildings', 'Commercial buildings',
       'Industrial buildings', 'Infrastructure - roads', 'Transport'
-    - Max damages (your rebuilt file) uses 'Residential' and 'Agriculture' etc.
-      We standardize to the fraction landtypes as much as possible.
+    - The max-damage file uses 'Residential', 'Agriculture' etc.
+      Labels are standardized to the fraction-curve land types where possible.
     """
     if x is None or (isinstance(x, float) and np.isnan(x)):
         return ""
@@ -540,9 +532,69 @@ def landtype_to_sda(landtype: str) -> Optional[str]:
     return None
 
 
+# The authors' rebuild of the SDA depth-damage table (global_flood_gep c0e49dd,
+# global_invest/flood/counterfactual/rebuild_damage_table.py, at its defaults): urban land takes
+# the Residential curve on the land-use basis, cropland the Agriculture curve, pasture cropland's,
+# and a land type a country lacks contributes a zero curve. No roads class is priced.
+SDA_LANDTYPE_FOR_REBUILT_TABLE = {'artif': 'Residential', 'crop': 'Agriculture'}
+# The source's Agriculture curves are EUR per hectare; every other land type is EUR per m2.
+AGRICULTURE_M2_PER_HA = 10_000.0
 
-# Section B: the run signature that decides whether a country can be skipped,
-# the depth-raster discovery and the return-period map.
+
+def sda_curves_from_landtype_depth_table(src: pd.DataFrame, multiplier: float,
+                                         depth_bins: list) -> pd.DataFrame:
+    """The SDA depth-damage table, USD2019 per m2, from the JRC country land-type curves.
+
+    Args:
+        src (pd.DataFrame): country_landtype_depth_damage as shipped, one row per country and
+            land type, with ISO3, LandType and a column per depth ('0m', '0.5m', ...) in EUR2010
+            (Agriculture per hectare).
+        multiplier (float): the EUR2010 to USD2019 factor.
+        depth_bins (list): the depths to carry, in metres.
+
+    Returns:
+        pd.DataFrame: iso3, sda_type (artif, crop, pasture) and a column per depth, sorted by
+        iso3 then sda_type, in the shape `load_damage_table_wide` reads.
+
+    Raises:
+        ValueError: if a depth column is missing, or if every artif curve is zero, which would
+            value urban land at nothing.
+    """
+    cols = [_fmt_depth_col(d) for d in depth_bins]
+    missing = [c for c in cols if c not in src.columns]
+    if missing:
+        raise ValueError(f'the land-type depth table lacks depth columns {missing}')
+    src = src.copy()
+    agriculture = src['LandType'] == 'Agriculture'
+    src.loc[agriculture, cols] = src.loc[agriculture, cols] / AGRICULTURE_M2_PER_HA
+    wide = src.pivot_table(index='ISO3', columns='LandType', values=cols, aggfunc='first')
+
+    def curve(land_type):
+        out = pd.DataFrame(index=wide.index)
+        for c in cols:
+            key = (c, land_type)
+            out[c] = wide[key] if key in wide.columns else 0.0
+        return out.fillna(0.0)
+
+    frames = {sda_type: curve(land_type)
+              for sda_type, land_type in SDA_LANDTYPE_FOR_REBUILT_TABLE.items()}
+    frames['pasture'] = frames['crop'].copy()
+    rows = []
+    for sda_type, frame in frames.items():
+        table = (frame * multiplier).reset_index()
+        table.insert(1, 'sda_type', sda_type)
+        rows.append(table)
+    out = pd.concat(rows, ignore_index=True).rename(columns={'ISO3': 'iso3'})
+    out['iso3'] = out['iso3'].astype(str).str.upper().str.strip()
+    out = out.sort_values(['iso3', 'sda_type']).reset_index(drop=True)[['iso3', 'sda_type'] + cols]
+    if not (out.loc[out['sda_type'] == 'artif', cols].abs().sum(axis=1) > 0).any():
+        raise ValueError('every artif curve is zero, so urban land would take no damage')
+    return out
+
+
+
+# Section B helpers: population resampling onto a country clip and the depth-bin
+# index.
 # =============================================================================
 
 
@@ -558,9 +610,6 @@ def landtype_to_sda(landtype: str) -> Optional[str]:
 
 
 
-# -----------------------------------------------------------------------------#
-# Depth RP map builders
-# -----------------------------------------------------------------------------#
 
 
 

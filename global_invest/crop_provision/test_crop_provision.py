@@ -361,28 +361,55 @@ def _crop_provision_runs():
     return sorted(p for p in glob.glob(pattern) if os.path.isdir(p))
 
 
-def test_the_commercial_figure_matches_the_reference_output_country_by_country():
-    """The claim that crop_provision reproduces its reference was carried in the status table for
-    weeks while the reference sat in nobody's repository and no test looked at it. It is staged
-    now, so this compares against it -- for every run on the machine, not one chosen directory.
+def _reference_by_m49(path):
+    """A staged reference summed onto the M49 code.
+
+    FAOSTAT carries dissolved states beside their successors -- "Ethiopia PDR" next to Ethiopia,
+    "Serbia and Montenegro" next to Serbia -- under one M49 code each. The reference leaves those
+    rows stranded at zero; this library maps them to the successor, which is one of the two fixes
+    crop_provision documents. So the reference is summed onto the M49 code before comparing,
+    which is the same collapse, and comparing row for row would count Ethiopia twice.
+    """
+    reference = pd.read_csv(path, encoding='utf-8-sig')
+    return reference.groupby('area_code_M49', as_index=False).agg(
+        crop_provision_gep_reference=('crop_provision_gep_reference', 'sum'))
+
+
+def _reproduces(run_table, reference):
+    """Whether a run's reference column equals a staged reference country by country."""
+    joined = reference.merge(
+        run_table[['iso3_r250_id', 'crop_provision_gep_reference']].rename(
+            columns={'crop_provision_gep_reference': 'crop_provision_gep'}),
+        left_on='area_code_M49', right_on='iso3_r250_id', how='inner')
+    if len(joined) != len(reference):
+        return False
+    relative = ((joined['crop_provision_gep'] - joined['crop_provision_gep_reference']).abs()
+                / joined['crop_provision_gep_reference'].abs().replace(0, np.nan))
+    return bool(relative.max() < 1e-12) and np.isclose(
+        joined['crop_provision_gep'].sum(), joined['crop_provision_gep_reference'].sum(), rtol=1e-12)
+
+
+def test_the_commercial_figure_matches_the_reference_output_country_by_country(tmp_path):
+    """The reported values alone, valued at the CWoN shares, must reproduce a staged reference --
+    the authors' code on its own inputs, which values no gap -- for every run on the machine, not
+    one chosen directory.
+
+    Two reference versions are staged: the current one (the authors' code without the group
+    totals) and the superseded one (their January 2026 list, which carries them). Every run must
+    reproduce one of them exactly, so an old run is classified rather than rewritten, and the
+    canonical project must reproduce the current one.
 
     Skips rather than fails when base_data or a run is absent, because a machine without either is
     not a machine this can speak about."""
     import os
-    reference_path = os.path.join(
-        os.path.expanduser('~'), 'Files', 'base_data', 'global_invest', 'crop_provision',
-        'reference', 'gep_by_country_2019_reference.csv')
-    if not os.path.exists(reference_path):
-        pytest.skip('the staged reference is not on this machine')
-
-    # FAOSTAT carries dissolved states beside their successors -- "Ethiopia PDR" next to Ethiopia,
-    # "Serbia and Montenegro" next to Serbia -- under one M49 code each. The reference leaves those
-    # rows stranded at zero; this library maps them to the successor, which is one of the two fixes
-    # crop_provision documents. So the reference is summed onto the M49 code before comparing,
-    # which is the same collapse, and comparing row for row would count Ethiopia twice.
-    reference = pd.read_csv(reference_path, encoding='utf-8-sig')
-    reference = reference.groupby('area_code_M49', as_index=False).agg(
-        crop_provision_gep_reference=('crop_provision_gep_reference', 'sum'))
+    import hazelbean as hb
+    p = hb.ProjectFlow(project_dir=str(tmp_path / 'reference'))
+    utilities.hydrate_es_parameters(p, 'crop_provision', log=lambda *a: None)
+    versions = {'current': p.crop_provision_reference_by_country_path,
+                'superseded': p.crop_provision_reference_superseded_by_country_path}
+    if not all(hb.path_exists(path) for path in versions.values()):
+        pytest.skip('the staged references are not on this machine')
+    versions = {name: _reference_by_m49(path) for name, path in versions.items()}
 
     checked = 0
     for run in _crop_provision_runs():
@@ -391,17 +418,11 @@ def test_the_commercial_figure_matches_the_reference_output_country_by_country()
             continue
         ours = pd.read_csv(project_path)
         if 'crop_provision_gep_reference' not in ours.columns:
-            continue                      # a run from before the reproduction was published
-        joined = reference.merge(
-            ours[['iso3_r250_id', 'crop_provision_gep_reference']].rename(
-                columns={'crop_provision_gep_reference': 'crop_provision_gep'}),
-            left_on='area_code_M49', right_on='iso3_r250_id', how='inner')
-        assert len(joined) == len(reference), run
-        relative = ((joined['crop_provision_gep'] - joined['crop_provision_gep_reference']).abs()
-                    / joined['crop_provision_gep_reference'].abs().replace(0, np.nan))
-        assert relative.max() < 1e-12, run
-        assert joined['crop_provision_gep'].sum() == pytest.approx(
-            joined['crop_provision_gep_reference'].sum(), rel=1e-12), run
+            continue                      # a run whose table carries no reproduction column
+        matched = [name for name, reference in versions.items() if _reproduces(ours, reference)]
+        assert len(matched) == 1, (run, matched)
+        if os.path.basename(os.path.dirname(run)) == 'gep_crop_provision':
+            assert matched == ['current'], run
         checked += 1
     if not checked:
         pytest.skip('no crop_provision run on this machine')
@@ -482,8 +503,8 @@ def test_the_imputation_never_reaches_above_lower_middle_income():
 def test_the_ppp_factor_is_faostats_own_two_publications_of_the_same_output():
     """The account reports 2019 US dollars and reads FAOSTAT's current-year values as already being
     that. It holds for the Value of Production table and not for the production intensity, which
-    FAOSTAT publishes only in international dollars -- so that one component was in the wrong
-    currency and no current-US$ version exists to read instead.
+    FAOSTAT publishes only in international dollars -- so unconverted, that one component is in the
+    wrong currency, and no current-US$ version exists to read instead.
 
     The conversion needs no external table: agricultural land times the intensity is total
     agricultural output in international dollars, and Value of Production reports the same output
@@ -576,45 +597,65 @@ def test_impute_fills_price_gaps_from_the_staged_values_table_and_leaves_valued_
     assert len(out) == 3
 
 
-def test_an_item_filled_under_a_kept_group_total_is_not_counted_twice():
-    """Iiiland has only its group total valued (India 2019), so the total is kept and rice is
-    already inside it; filling rice as well would count it twice. Aaaland has a valued item, so
-    its total is dropped and its empty rye row is filled as usual."""
-    values = pd.DataFrame({
-        'area_code': [1, 1, 1, 3, 3],
-        'area_code_M49': ["'010", "'010", "'010", "'030", "'030"],
-        'country': ['Aaaland', 'Aaaland', 'Aaaland', 'Iiiland', 'Iiiland'],
-        'crop_code': [100, 200, 1717, 27, 1717],
-        'crop': ['Wheat', 'Rye', 'Cereals, primary', 'Rice', 'Cereals, primary'],
-        'year': [2019] * 5,
-        'crop_provision_gep': [10.0, np.nan, 15.0, np.nan, 50.0],
+def test_group_totals_never_enter_and_their_member_crops_are_filled_instead():
+    """Iiiland has only its group total valued (India 2019). The total leaves the item list in
+    every country, so it is neither read nor filled, and Iiiland's rice, which carries production
+    and no value, is filled like any other gap. Aaaland's valued wheat and its rye gap are
+    unaffected."""
+    raw = pd.DataFrame({
+        'Area Code': [1, 1, 1, 3, 3],
+        'Area Code (M49)': ["'010", "'010", "'010", "'030", "'030"],
+        'Area': ['Aaaland', 'Aaaland', 'Aaaland', 'Iiiland', 'Iiiland'],
+        'Item Code': [100, 200, 1717, 27, 1717],
+        'Item Code (CPC)': ['x'] * 5,
+        'Item': ['Wheat', 'Rye', 'Cereals, primary', 'Rice', 'Cereals, primary'],
+        'Element Code': [57] * 5,
+        'Element': ['Gross Production Value (current thousand US$)'] * 5,
+        'Unit': ['1000 USD'] * 5,
+        'Y2019': [10.0, np.nan, 15.0, np.nan, 50.0],
     })
     fao_values = pd.DataFrame({
-        'area_code_m49': ['010', '030'],
-        'iso3': ['AAA', 'III'],
-        'area_fao': ['Aaaland', 'Iiiland'],
-        'item_code_fao': [200, 27],
-        'item_fao': ['Rye', 'Rice'],
-        'year': [2019, 2019],
-        'total_production_tonnes': [4.0, 30.0],
-        'price_source_agg_level': ['country', 'country'],
-        'value_usd': [2000.0, 30000.0],
+        'area_code_m49': ['010', '030', '030'],
+        'iso3': ['AAA', 'III', 'III'],
+        'area_fao': ['Aaaland', 'Iiiland', 'Iiiland'],
+        'item_code_fao': [200, 27, 1717],
+        'item_fao': ['Rye', 'Rice', 'Cereals, primary'],
+        'year': [2019, 2019, 2019],
+        'total_production_tonnes': [4.0, 30.0, 30.0],
+        'price_source_agg_level': ['country', 'country', 'country'],
+        'value_usd': [2000.0, 30000.0, 99999.0],
     })
-    aggregates = ['Cereals, primary']
-    membership = pd.DataFrame({'item_group_code': [1717, 1717, 1717],
-                               'item_code': [100, 200, 27]})
+    items = cp.items_without_group_totals(
+        ['Wheat', 'Rye', 'Rice', 'Cereals, primary'], ['Cereals, primary'])
+    assert items == ['Wheat', 'Rye', 'Rice']
 
-    out = utilities.drop_aggregates_where_components_exist(
-        values, aggregates, 'crop_provision_gep', membership, log=lambda *a: None)
-    out = cp.impute_missing_crop_values(out, fao_values, 2019, {10: 1, 30: 3}, ['Rye', 'Rice'])
-    out = cp.drop_fills_under_group_totals(out, aggregates, membership)
+    reported = utilities.clean_faostat_values(raw, items, 'crop_provision_gep', [])
+    out = cp.impute_missing_crop_values(
+        reported[reported['year'] == 2019], fao_values, 2019, {10: 1, 30: 3}, items)
 
+    assert 'Cereals, primary' not in set(out['crop'])
     keyed = out.set_index(['country', 'crop'])
-    assert keyed.at[('Iiiland', 'Cereals, primary'), 'crop_provision_gep'] == 50.0
-    assert ('Iiiland', 'Rice') not in keyed.index
-    assert ('Aaaland', 'Cereals, primary') not in keyed.index
+    assert keyed.at[('Iiiland', 'Rice'), 'crop_provision_gep'] == pytest.approx(30.0)
+    assert keyed.at[('Iiiland', 'Rice'), 'value_source'] == 'price_country'
+    assert keyed.at[('Aaaland', 'Wheat'), 'crop_provision_gep'] == 10.0
     assert keyed.at[('Aaaland', 'Rye'), 'crop_provision_gep'] == pytest.approx(2.0)
-    assert out['crop_provision_gep'].sum() == pytest.approx(62.0)
+    assert out['crop_provision_gep'].sum() == pytest.approx(42.0)
+
+
+def test_the_staged_item_list_less_the_group_totals_is_the_158_item_crop_list(tmp_path):
+    """The configured list is FAOSTAT's 161 crop items including three group totals (codes 1730,
+    1720, 1723 in the Value of Production file). The account values the other 158 and never the
+    three."""
+    import hazelbean as hb
+    p = hb.ProjectFlow(project_dir=str(tmp_path / 'items'))
+    utilities.hydrate_es_parameters(p, 'crop_provision', log=lambda *a: None)
+    configured = utilities.read_column(p.crop_provision_default_items_path, 'item_fao')
+    groups = utilities.read_column(p.faostat_aggregate_items_path, 'item_fao')
+    items = cp.items_without_group_totals(configured, groups)
+    assert len(configured) == 161
+    assert {'Oilcrops Primary', 'Roots and Tubers, Total', 'Sugar Crops Primary'} <= set(groups)
+    assert len(items) == 158
+    assert not set(items) & set(groups)
 
 
 def test_area_codes_by_m49_keeps_the_account_row_not_the_aggregate_component():
@@ -631,14 +672,12 @@ def test_area_codes_by_m49_keeps_the_account_row_not_the_aggregate_component():
     assert out[10] == 1
 
 
-def test_group_totals_and_fills_are_judged_by_membership_not_by_any_item():
-    """India 2019 in miniature: FAOSTAT values only three group totals (roots, oilcrops, sugar),
-    none of which contains wheat or rice. The groups must be KEPT (no member is individually
-    valued), wheat and rice fills must SURVIVE (no retained group contains them), and a potato
-    fill must be removed (Roots and Tubers, Total already values it). Unrelatedland has a valued
-    Banana beside an Oilcrops total: the total stays, because bananas are not oilcrops. A group
-    row whose value is missing values nothing, so fills under it stay. Partialland's Oilcrops
-    total is dropped although only one of its two members is valued."""
+def test_the_shared_group_total_rule_is_judged_by_membership_not_by_any_item():
+    """The shared group-total helper in utilities (crop provision itself removes its group totals
+    everywhere): a group total is kept only where none of ITS members is valued.
+    Unrelatedland has a valued Banana beside an Oilcrops total: the total stays, because bananas
+    are not oilcrops. A group row whose value is missing stays. Partialland's Oilcrops total is
+    dropped although only one of its two members is valued."""
     membership = pd.DataFrame({
         'item_group_code': [1720, 1720, 1730, 1730, 1723, 1717, 1717],
         'item_code':       [116,  125,  254,  249,  156,  15,   27]})
@@ -662,19 +701,45 @@ def test_group_totals_and_fills_are_judged_by_membership_not_by_any_item():
     assert ('Partialland', 'Oilcrops Primary') not in keyed.index, 'one valued member suffices'
     assert ('Missingland', 'Oilcrops Primary') in keyed.index, 'nothing valued under it'
 
-    fills = pd.DataFrame({
-        'area_code': [9, 9, 9, 5],
-        'country': ['Indialike'] * 3 + ['Missingland'],
-        'crop_code': [15, 27, 116, 254],
-        'crop': ['Wheat', 'Rice', 'Potatoes', 'Oil palm fruit'],
-        'year': [2019] * 4,
-        'crop_provision_gep': [8.3, 20.4, 1.0, 2.0],
-        'value_source': ['price_country'] * 4,
+
+def test_a_country_year_with_no_valued_item_stays_missing():
+    """Pins the missing-data rule: a bare country-year sum turns a country whose every item value
+    is missing into a published zero. All-missing stays missing, a genuine zero stays zero, a
+    partially valued country sums its valued items."""
+    import numpy as np
+    crop_rows = pd.DataFrame({
+        'iso3_r250_id': [10, 10, 20, 30, 30, 40],
+        'iso3_r250_label': ['AAA', 'AAA', 'BBB', 'CCC', 'CCC', 'DDD'],
+        'year': [2019] * 6,
+        'crop_provision_gep': [np.nan, np.nan,   # all items missing
+                               0.0,              # a measured zero
+                               np.nan, 500.0,    # partially valued
+                               700.0],           # fully valued
     })
-    frame = pd.concat([out.assign(value_source='None'), fills], ignore_index=True)
-    kept = cp.drop_fills_under_group_totals(frame, aggregates, membership)
-    keyed = kept.set_index(['country', 'crop'])
-    assert ('Indialike', 'Wheat') in keyed.index, 'no retained group contains wheat'
-    assert ('Indialike', 'Rice') in keyed.index
-    assert ('Indialike', 'Potatoes') not in keyed.index, 'the retained roots total values it'
-    assert ('Missingland', 'Oil palm fruit') in keyed.index, 'a missing group total values nothing'
+    by_country = utilities.sum_items_to_country_year(crop_rows, 'crop_provision_gep')
+    per = by_country.set_index('iso3_r250_id')['crop_provision_gep']
+    assert pd.isna(per.loc[10]), 'all-missing must stay missing, not become zero'
+    assert per.loc[20] == 0.0, 'a measured zero stays zero'
+    assert per.loc[30] == 500.0
+    assert per.loc[40] == 700.0
+
+
+def test_country_gross_value_covers_valued_rows_so_the_rent_identity_holds():
+    """Pins the dissolved-source-area rule: an alias row carrying gross value with no rental rate
+    must not enter the country's gross_production_value, or the identity
+    value = rate x gross x 1000 fails. The item rows stay."""
+    import numpy as np
+    crop_rows = pd.DataFrame({
+        'iso3_r250_id': [10, 10, 10],
+        'iso3_r250_label': ['AAA', 'AAA', 'AAA'],
+        'year': [2019] * 3,
+        # two current valid rows and one dissolved-area row (gross value, no rent, no gep)
+        'crop_provision_gep': [315.0, 630.0, np.nan],
+        'gross_production_value': [1.0, 2.0, 50.0],
+    })
+    by_country = utilities.sum_items_to_country_year(crop_rows, 'crop_provision_gep')
+    row = by_country.iloc[0]
+    assert row['crop_provision_gep'] == 945.0
+    assert row['gross_production_value'] == 3.0, 'alias gross value must not enter the sum'
+    # identity with rate 0.315 and thousand-USD gross: 0.315 * 3.0 * 1000 = 945
+    assert row['crop_provision_gep'] == pytest.approx(0.315 * row['gross_production_value'] * 1000)

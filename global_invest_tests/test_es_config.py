@@ -1,9 +1,8 @@
 """The es_config.csv hydration (wide: one row per service, one column per attribute): fills a service's configuration as a DEFAULTS layer.
 
 Pins the three contract properties: attributes arrive with the csv's values (paths resolved
-through get_path, integers typed), a value the caller already set is never overridden, and
-hydration equals the literals it replaced in terrestrial's initialize (the pilot's
-no-behavior-change proof).
+through get_path, integers typed), a value the caller already set is never overridden, and the
+shipped template seeds into an empty input dir and hydrates terrestrial_carbon's values.
 """
 import types
 

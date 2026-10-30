@@ -19,20 +19,54 @@ def publish_inputs(p):
     return p
 
 
+HYDROPOWER_RENT_SIGNATURE = 'hydropower_rent_signature.json'
+
+
 def hydropower_rent(p):
-    """CWoN capitalized hydropower wealth -> the implied constant annual rent per country."""
+    """The hydropower table: the CWoN-wealth annual value the account reports, and beside it the
+    authors' 2019 resource rent, revenues minus total costs from the World Bank's hydropower
+    valuation workbook, with its sign and a status per country.
+
+    The workbook is not public. Where it is staged it is checked against its recorded sha256;
+    where it is not, the run goes on with the revenue-minus-cost columns missing and says so.
+    """
     publish_inputs(p)
     p.hydropower_rent_path = os.path.join(p.cur_dir, 'hydropower_rent.csv')
     if not p.run_this:
         return
-    if not hb.path_exists(p.hydropower_rent_path):
-        wealth = pd.read_stata(p.water_supply_cwon_hydro_wealth_path)
-        # The rate is configuration rather than a module constant, so the one number the
-        # hydropower figure turns on is visible beside every other service's parameters.
-        wf.hydropower_rent_from_wealth(
-            wealth,
-            capitalization_rate=float(p.water_supply_hydropower_capitalization_rate),
-        ).to_csv(p.hydropower_rent_path, index=False)
+    wealth_path = str(p.water_supply_cwon_hydro_wealth_path)
+    workbook_path = str(p.water_supply_cwon_hydro_workbook_path)
+    staged = hb.path_exists(workbook_path)
+    if staged:
+        found = utilities.sha256_file(workbook_path)
+        if found != str(p.water_supply_cwon_hydro_workbook_sha256).strip().lower():
+            raise ValueError('%s has sha256 %s, not the recorded water_supply_cwon_hydro_workbook_sha256 %s'
+                             % (workbook_path, found, p.water_supply_cwon_hydro_workbook_sha256))
+    # The rate is configuration rather than a module constant, so the one number the
+    # wealth-based figure turns on is visible beside every other service's parameters.
+    rate = float(p.water_supply_hydropower_capitalization_rate)
+    inputs = {'wealth': utilities.file_fingerprint(wealth_path)}
+    if staged:
+        inputs['workbook'] = utilities.file_fingerprint(workbook_path)
+    signature = utilities._signature({'capitalization_rate': rate, 'workbook_staged': staged}, inputs)
+    signature_path = os.path.join(p.cur_dir, HYDROPOWER_RENT_SIGNATURE)
+    reason = utilities.outputs_reuse_reason([p.hydropower_rent_path], signature, signature_path)
+    if reason is None:
+        hb.log('  hydropower: reusing %s (same inputs, same settings)' % p.hydropower_rent_path)
+        return True
+    hb.log('  hydropower: computing because %s' % reason)
+    database = None
+    if staged:
+        database = pd.read_excel(workbook_path, sheet_name=wf.HYDROPOWER_WORKBOOK_SHEET)
+    else:
+        hb.log('  hydropower: the valuation workbook is not staged at %s, so the revenue-minus-cost '
+               'columns are missing' % workbook_path)
+    table = wf.hydropower_rent_table(pd.read_stata(wealth_path), rate, database)
+    table.to_csv(p.hydropower_rent_path, index=False)
+    utilities.write_outputs_signature(signature, signature_path)
+    counts = table['hydropower_rent_status'].value_counts().to_dict()
+    hb.log('  hydropower: wealth-based value %.2f over %d countries; revenue minus cost by status %s'
+           % (table['hydropower_gep'].sum(), int(table['hydropower_gep'].notna().sum()), counts))
     return True
 
 
@@ -61,22 +95,27 @@ def gep_calculation(p):
     else:
         df_gep['water_use_agriculture_value_added'] = float('nan')
         df_gep['water_use_all_sector_value_added'] = float('nan')
+    # The domestic value is the authors' final municipal table (their least-cost replacement
+    # model). The water-use chain's implied-price construction stays beside it as a variant.
+    df_gep = df_gep.rename(columns={'water_use_domestic_gep': 'water_use_domestic_gep_implied_price_variant'})
+    municipal = wf.municipal_gep_by_country(pd.read_csv(p.water_supply_municipal_results_path), countries)
+    df_gep = df_gep.merge(municipal, on='iso3_r250_label', how='left', validate='one_to_one')
     agriculture = pd.read_csv(p.water_supply_agriculture_country_path)
-    # The premium remains an input to the unchanged domestic price only.
+    # The premium remains an input to the implied-price variant only.
     df_gep = df_gep.drop(columns=['water_use_irrigation_gep'], errors='ignore')
     df_gep = df_gep.merge(agriculture.drop(columns=['year']),
                           on='iso3_r250_label', how='left', validate='one_to_one')
     df_gep['year'] = int(p.gep_base_year)
-    # water_supply_gep stays the hydropower component alone: how (and whether) the water-use
-    # components combine with it is the account's subgroup question, flagged on the deck.
+    # water_supply_gep is the hydropower component alone: whether and how the water-use
+    # components combine with it is an open question for the account's subgroups.
     df_gep['water_supply_gep'] = df_gep['hydropower_gep']
-    # The value-added columns are denominators. water_use_domestic_gep appears when the old
-    # chain could price the volume; water_use_irrigation_gep is the agriculture component
-    # (agriculture_water), no longer the premium x share product. Listing only what is present
-    # keeps denominators and answers apart.
+    # The value-added columns are denominators. water_use_irrigation_gep is the agriculture
+    # component from agriculture_water, not the premium x share product dropped above. Listing
+    # only what is present keeps denominators and answers apart.
     water_use_cols = [c for c in ('water_use_irrigation_value_added',
                                   'water_use_domestic_value_added',
                                   'water_use_irrigation_gep', 'water_use_domestic_gep',
+                                  'water_use_domestic_gep_implied_price_variant',
                                   'water_use_agriculture_value_added', 'water_use_all_sector_value_added')
                       if c in df_gep.columns]
     water_use_cols += [c for c in agriculture.columns
@@ -95,6 +134,8 @@ def gep_calculation(p):
            f'{ours:,.2f}')
     hb.log(f'  reference-matching variant {reference:,.2f} over {n_extra} fewer countries; '
            f'the gap is the reference exclusions, which the reported value does not apply')
+    hb.log(f'  municipal (the authors\' final table): {df_gep["water_use_domestic_gep"].sum():,.2f} '
+           f'over {int(df_gep["water_use_domestic_gep"].notna().sum())} countries')
     return True
 
 
@@ -180,9 +221,11 @@ def water_use_components(p):
             hb.log('water_use: no rent share set, so the account publishes the premium and no '
                    'irrigation GEP.')
 
-        # Domestic GEP: the ecosystem-provided cubic metres times a raw-water price. An explicit
-        # price in es_parameters wins; absent one, the price is IMPLIED by irrigation -- what a
-        # cubic metre earns in a field bounds what a city would have paid for it.
+        # The implied-price domestic value, published by gep_calculation as the comparison
+        # variant beside the authors' municipal table: the ecosystem-provided cubic metres times a
+        # raw-water price. An explicit price in es_parameters wins; absent one, the price is
+        # IMPLIED by irrigation -- what a cubic metre earns in a field bounds what a city would
+        # have paid for it.
         withdrawal_path = getattr(p, 'water_use_withdrawal_by_sector_input_path', None)
         if hb.path_exists(withdrawal_path):
             withdrawal = pd.read_csv(withdrawal_path)
@@ -226,7 +269,8 @@ def water_use_components(p):
 
 
 def agriculture_water(p):
-    """Apply Shunkei's processed coefficients to the account's crop-rent values in USD."""
+    """Apply the GEP-WaterUse-Agriculture processed coefficients to the account's crop-rent
+    values in USD."""
     publish_inputs(p)
     p.water_supply_agriculture_country_path = os.path.join(p.cur_dir, 'agriculture_by_country.csv')
     p.water_supply_agriculture_crop_path = os.path.join(p.cur_dir, 'agriculture_by_crop_country.csv')

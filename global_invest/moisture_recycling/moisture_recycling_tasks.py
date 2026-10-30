@@ -1,11 +1,14 @@
-"""Moisture-recycling GEP tasks: the water-supply value re-attributed to the rain's source countries.
+"""Moisture-recycling GEP tasks: the VMR crop value at the receiving country, with a source-side diagnostic.
 
 This layer owns every file read and write. The science it calls lives in
 moisture_recycling_functions, which never opens a file.
 
-The published total is a re-attribution of a SUBSET of the water-supply row (its irrigation and
-domestic components, scaled by each destination's terrestrial-origin precipitation share). It is
-never added to water supply; the two rows partition the same money.
+The published total is the VMR crop value at the receiving country, read live from the
+water_supply run, and it does not use the WAM2layers matrix. The source-side diagnostic
+beside it credits the land-sourced part of that value to the countries whose evaporation
+supplied the rain. Both are intermediate contributions carved out of crop-provision value:
+they overlap crop provision, agricultural water and each other, so none of them may be added
+to crop provision or to one another without explicit overlap treatment.
 """
 import json
 import os
@@ -28,32 +31,53 @@ def publish_inputs(p):
     return p
 
 
+def water_input_path(p):
+    """Resolve and PIN the water_supply country table the calculation reads.
+
+    An explicit `moisture_recycling_water_gep_path` wins; otherwise the relative file against the
+    project dir. Pinning the resolved path on p is what puts the table's CONTENT fingerprint into
+    the run signature (the signature fingerprints every service `_path` attribute), so a fresh
+    water_supply run at the same path invalidates the saved rainfall table -- the
+    agriculture_water convention. Must run BEFORE any reuse decision.
+    """
+    path = getattr(p, 'moisture_recycling_water_gep_path', None) or None
+    if path is None:
+        path = os.path.normpath(os.path.join(
+            p.project_dir, p.moisture_recycling_water_gep_relative_file))
+    p.moisture_recycling_water_gep_path = str(path)
+    return str(path)
+
+
 def gep_calculation(p):
     """GEP valuation for rainfall pattern regulation: the VMR crop value at the receiving country.
 
-    The quantity is Shunkei's vegetation-derived-moisture (VMR) share of crop water satisfaction,
-    valued on the corrected 2019 crop-provision basis in the water_supply run, and REPORTED AT THE
-    RECEIVING COUNTRY — the agreed paper approach. The published figure is an intermediate
-    contribution already inside crop provision, like agricultural water, never an addition.
+    The headline is the two VMR components the water_supply run computes (the VMR
+    coefficients times the rainfed and irrigated 2019 crop-provision values), summed per
+    country and REPORTED AT THE RECEIVING COUNTRY, the paper's approach. It is an
+    intermediate contribution already inside crop provision, like agricultural water, never an
+    addition.
 
-    The WAM2layers source-side re-attribution (where would that value go if attributed to the
-    countries whose evaporation supplied the rain?) is computed BESIDE the headline as the
-    `moisture_recycling_source_attributed` diagnostic. It is a different construction from the
-    retired supply-country one, which re-attributed irrigation and domestic water GEP; that
-    construction is no longer published under any name.
+    The WAM2layers source-side diagnostic is computed BESIDE the headline as
+    `moisture_recycling_source_attributed`. The matrix columns sum below one, so it credits only
+    the land-sourced part of the value, and its source-side and sink-side totals agree with each
+    other, not with the headline. The matrix's missing rows, its untracked destinations and the
+    ecosystem share touch the diagnostic only.
     """
     publish_inputs(p)
     service_results, already_done = utilities.begin_gep_calculation(p, 'moisture_recycling')
-    if already_done:
+    # The live water input is resolved BEFORE the reuse decision. An output-exists return that
+    # never looks at the table it was computed from republishes a stale rainfall figure after
+    # every fresh water_supply run -- the exact failure the run signature exists for.
+    water_path = water_input_path(p)
+    outputs = [service_results['gep_by_country_base_year']]
+    dependencies = [__file__, mr.__file__]
+    if already_done and utilities.reuse_reason(
+            p, 'moisture_recycling', outputs, light_inputs=dependencies) is None:
         return
 
     if not p.run_this:
         return p
     matrix = mr.moisture_matrix(hb.df_read(str(p.get_path(p.moisture_recycling_sink_fraction_input_path))))
-    water_path = getattr(p, 'moisture_recycling_water_gep_path', None) or None
-    if water_path is None:
-        water_path = os.path.normpath(os.path.join(
-            p.project_dir, p.moisture_recycling_water_gep_relative_file))
     if not os.path.isfile(str(water_path)):
         raise FileNotFoundError('Rainfall regulation requires the water_supply country table with '
                                 f'the VMR components: {water_path}. Run water_supply first or set '
@@ -82,8 +106,8 @@ def gep_calculation(p):
                % (len(untracked), ', '.join(untracked),
                   f'{water_value.reindex(untracked).fillna(0.0).sum():,.0f}'))
 
-    # The source-side DIAGNOSTIC: the same VMR value re-attributed to the countries whose
-    # evaporation supplied the rain. Published beside the headline, never as it.
+    # The source-side DIAGNOSTIC: a WAM-weighted source-side diagnostic, not a redistribution
+    # of the full headline. Published beside the headline, never as it.
     df_source = mr.reattributed_water_value(matrix, water_value.fillna(0.0),
                                             float(p.moisture_recycling_ecosystem_share))
     df_source = df_source.rename(columns={
@@ -93,9 +117,9 @@ def gep_calculation(p):
     source_total = df_source['moisture_recycling_source_attributed'].sum()
     sink_total = df_source['moisture_recycling_sink_side_value'].sum()
     if abs(source_total - sink_total) > 1.0:
-        raise NameError('moisture recycling lost money in the re-attribution: source side %r '
-                        'against sink side %r. The matrix and the value series disagree on the '
-                        'country set.' % (source_total, sink_total))
+        raise NameError('the moisture-recycling source-side diagnostic does not balance: source '
+                        'side %r against sink side %r. The matrix and the value series disagree on '
+                        'the country set.' % (source_total, sink_total))
 
     # The full collapse frame keeps ee_r264_id: the published table drops it through
     # published_country_columns, and the map merge is what needs it.
@@ -117,13 +141,15 @@ def gep_calculation(p):
     gdf = hb.df_merge(p.gdf_countries_simplified, df_gep, how='outer',
                       left_on='ee_r264_id', right_on='ee_r264_id')
     gdf.to_file(service_results['gep_by_country_base_year'].replace('.csv', '.gpkg'), driver='GPKG')
+    utilities.write_reuse_signature(p, 'moisture_recycling', outputs, light_inputs=dependencies)
 
     headline_total = df_gep['moisture_recycling_gep'].sum()
     hb.log(f'Total moisture_recycling (rainfall regulation) GEP for base year {p.gep_base_year}: '
            f'{headline_total:,.2f} at the receiving country — an intermediate contribution '
            f'already inside crop provision, never an addition.')
-    hb.log('  source-side diagnostic: the same value re-attributed upstream sums to %s '
-           '(sink side %s); %s serves the source country itself and %s is exported as rain.'
+    hb.log('  WAM-weighted source-side diagnostic, not a redistribution of the full headline: '
+           'sums to %s (sink side %s); %s serves the source country itself and %s is exported '
+           'as rain.'
            % (f'{source_total:,.2f}', f'{sink_total:,.2f}',
               f'{df_gep["moisture_recycling_source_attributed_own_part"].sum():,.2f}',
               f'{df_gep["moisture_recycling_source_attributed_export_part"].sum():,.2f}'))

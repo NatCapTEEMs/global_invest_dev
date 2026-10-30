@@ -128,7 +128,7 @@ for k, v in p.results[service_label].items():
         sm = plt.cm.ScalarMappable(cmap='OrRd', norm=norm)
         sm._A = []
         cbar = fig.colorbar(sm, ax=ax, orientation='vertical', fraction=0.03, pad=0.02)
-        cbar.set_label("Gross Economic Product (GEP) in Base Year")
+        cbar.set_label("Gross Ecosystem Product (GEP) in Base Year")
         cbar.ax.yaxis.set_major_formatter(mpl.ticker.FuncFormatter(lambda x, _: f'{int(x):,}'))
 
         ax.set_title('GEP by Country in Base Year')
@@ -149,14 +149,14 @@ for k, v in p.results[service_label].items():
         plt.plot(p.gep_by_year_table['year'], p.gep_by_year_table['Value'], marker='o')
         plt.title('GEP by Year')  
         plt.xlabel('Year')
-        plt.ylabel('Gross Economic Product (GEP)')
+        plt.ylabel('Gross Ecosystem Product (GEP)')
         plt.grid(True)
         plt.savefig(os.path.join(utilities.report_dir(), 'gep_by_year_plot.png'), dpi=300)
         plt.close()
 
 ```
 
-Mineral extraction is valued at the resource-rent share of mining output, giving $`{python} f"{total_extractive_materials_provision_value:,.2f}"` in the base year. The tables below aggregate that by income group, region and continent, and end with the per-country table the account reads.
+Mineral extraction is valued at the World Bank's mineral rents, a share of GDP times GDP in current US dollars, times the factor 0.49. That gives $`{python} f"{total_extractive_materials_provision_value:,.2f}"` in the base year, in 2019 US dollars. The tables below aggregate that by income group, region, continent and subregion, show the annual totals, and end with the per-country table the account reads.
 
 ## GEP by Country in Base Year, mapped
 

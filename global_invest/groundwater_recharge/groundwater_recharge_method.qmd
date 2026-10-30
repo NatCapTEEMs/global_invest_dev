@@ -7,20 +7,28 @@ format:
 ---
 
 Groundwater recharge is valued as the pumping energy it saves. Recharge keeps the water table
-higher, so every cubic metre withdrawn is lifted a shorter distance; the service value is that
-avoided lift, priced at the country's electricity tariff. The base year is 2019.
+higher, so every cubic metre withdrawn is lifted a shorter distance. The service value is that
+avoided lift, priced at the country's electricity tariff. The base year is 2019. The write-up
+sets λ = 1 and treats the service as intermediate to water supply, reported but not added.
 
-⚠ The construction values ONE year's recharge as a one-year head increment on that year's
+The construction values one year's recharge as a one-year head increment on that year's
 withdrawals, which is why the totals are millions where neighbouring services are billions: the
 marginal metre of lift costs a fraction of a cent per cubic metre. The magnitude is the method's
-own, not an error.
+own, not an arithmetic error.
+
+## Source
+
+The write-up is `Groundwater_Recharge.docx` (28 October 2026) in the shared folder of current
+write-ups. The authors' code is `Shunkei3/GEP_GWR` at `169289f`, whose final step,
+`Code/5_GEP_calculation.qmd`, the library reproduces. The library adds one step the authors' code
+does not take, deflating the 2021 tariffs to 2019.
 
 ## Quantity
 
 Two quantities. The country's mean local recharge depth (`l_mean_mm`), the seasonal water yield
-model's output read from the staged country table -- the model itself runs elsewhere, per
+model's output read from the staged country table. The model itself runs elsewhere, per
 watershed, and is taken as given. And the country's fresh groundwater withdrawal, FAO AQUASTAT,
-in billions of cubic metres at the year set by `groundwater_recharge_withdrawal_year`.
+in billions of cubic metres at the year set by `groundwater_recharge_withdrawal_year`, 2020.
 
 ## Price
 
@@ -39,12 +47,52 @@ $$
 $$
 
 where $e_i$ is the electricity tariff, $\bar{L}_i$ the mean recharge depth in metres and $Q_i$
-the withdrawal volume in cubic metres. A country missing any input carries NA with the absence
-named in a note column, never a silent zero. The committed `ground_water_gep.csv` is carried
-beside the result as the replication anchor, and the run log reports the per-country agreement.
+the withdrawal volume in cubic metres. A country in the recharge table that lacks a withdrawal
+figure or a tariff carries NA with the absence named in the `note` column, never a silent zero.
+The committed `ground_water_gep.csv` is carried beside the result as the replication anchor,
+and the run log reports the per-country agreement.
 
 ## Inputs
 
 All paths and parameters come from `es_parameters.csv` under the `groundwater_recharge` service
 key: the recharge table, the AQUASTAT withdrawal extract, the electricity price table, the pump
 efficiency and the committed reference, each with a source row beside it.
+
+## Output
+
+`gep_calculation` writes `gep_by_country_base_year.csv` into its own task directory, holding the
+r250 identifiers and attributes, `year`, `groundwater_recharge_gep`,
+`groundwater_recharge_gep_reference`, the recharge depth in millimetres and metres, the
+withdrawal, the deflated tariff and `note`.
+
+## Coverage
+
+The published table is one row for each of the account's 250 countries, base year 2019, in 2019
+USD. 106 carry a positive value, totalling \$6,803,550.52, and 3 are computed zeros: Bhutan and
+Saint Vincent and the Grenadines report zero withdrawal, and the Philippines has a zero recharge
+depth in the staged table. 141 are missing. 82 of them are not in the recharge table, and their
+`note` is blank because they join at the country list, after the note is written. The other 59
+lack a withdrawal figure (51), a tariff (1) or both (7).
+
+## Reproduction
+
+The library reproduces the authors' final step on their staged inputs. Against the committed
+table the library's total is 0.91 times the reference on the 107 countries both value. With the
+CPI factor (0.9435) taken out, the median country ratio is 1.00 and 32 countries agree within
+1%. The rest differ because the staged inputs are a different vintage from the committed
+table's. The saved reference column carries \$7,511,112.78 over 109 countries. The current code also keeps 14 countries only
+the committed table values, for \$7,565,447.41, and the saved table takes that on its next run.
+
+## What is open
+
+- The head change. The write-up defines ΔR as the change in water-table depth, and both codes set
+  it to one year's recharge depth of water. The two are equal only if the aquifer's specific
+  yield is 1, which bears on the magnitude.
+- The tariffs. The write-up cites IEA 2019, and the code reads a 2021 global pricing table whose
+  publisher is not established. The library deflates it to 2019.
+- The withdrawal year, 2020 in both codes, is not stated in the write-up.
+- The inputs. The staged recharge table is not the vintage behind the committed table: the
+  Philippines, for example, is zero here and \$141,980.41 there. The authors' final file is
+  needed.
+- Whether the service belongs in the account at all. The code register's feasibility note says
+  groundwater recharge is not suitable as an ecosystem service flow.

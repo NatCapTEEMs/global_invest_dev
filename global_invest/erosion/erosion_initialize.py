@@ -4,7 +4,7 @@ add_erosion_tasks dispatches STATIC (read the pre-computed erosion dependency ta
 (recompute from the SEALS maps via InVEST SDR) on whether 'erosion' is listed in p.dynamic_es.
 Consumers set the shared es_shock_* config on p, then call add_erosion_tasks(p) alongside the
 other seams. The GEP valuation (InVEST SDR -> on-farm/upstream prevention shares -> per-country
-GEP -> maps/figures) is exposed through the template builders (build_gep_service_*); that calculation
+GEP -> results report) is exposed through the template builders (build_gep_service_*); that calculation
 is cluster-scale (global InVEST SDR).
 """
 from global_invest.erosion import erosion_tasks
@@ -73,15 +73,15 @@ def add_erosion_tasks(p, parent=None):
     #
     # NO skip_existing ON THE CHAIN. Resumability is real -- InVEST SDR and the D8 routing each cost
     # minutes per scenario-year -- but it belongs INSIDE each task, keyed on the rasters that task
-    # produces, and that is where it now lives (erosion_tasks: each of sdr/upstream/exposure skips a
-    # scenario-year whose outputs are already present). The task-level flag was strictly worse in
-    # three ways, all of which were paid for:
+    # produces, and that is where it lives (erosion_tasks: each of sdr/upstream/exposure skips a
+    # scenario-year whose outputs are already present). The task-level flag is strictly worse in
+    # three ways:
     #   * it keys on the task DIRECTORY, so a run killed mid-write leaves a dir that looks complete
-    #     and is skipped forever -- the old comment here predicted exactly that;
-    #   * it is all-or-nothing, so a chain missing ONE scenario-year cannot be completed. That is
-    #     what made erosion_method='service_threshold' unbuildable: nothing ever produced the
-    #     base-year severe mask, and every relaunch skipped the tasks that would have;
-    #   * it forced consumers to reach into the tree and flip the flag back off to make progress,
+    #     and is skipped forever;
+    #   * it is all-or-nothing, so a chain missing ONE scenario-year cannot be completed: for
+    #     erosion_method='service_threshold' nothing would produce the base-year severe mask, and
+    #     every relaunch would skip the tasks that should;
+    #   * it forces consumers to reach into the tree and flip the flag back off to make progress,
     #     which is configuration living in a runner rather than in the tree.
     # With the inner guards, a task that runs on a complete tree re-solves nothing: the static solve
     # grid, the repaired watersheds and the re-keyed biophysical table are all cached too, so the

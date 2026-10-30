@@ -1,9 +1,10 @@
-"""Timber-provision GEP tasks: the value raster summed to countries in the library.
+"""Timber-provision GEP tasks, and the timber scenario ES shock.
 
-The reported number is OUR run: the pipeline's value raster (verified equal to the
-net-return layer masked and floored, see timber_provision_functions) summed per country on
-the 10-arcsecond country-id raster. The committed Forestry CSV stays as the test anchor
-the run is compared against, never as the output."""
+The account's figure, `timber_provision_gep`, is CWoN's published forest rent. Beside it is OUR
+spatial estimate, `timber_provision_gep_spatial`: the pipeline's value raster (verified equal to
+the net-return layer masked and floored, see timber_provision_functions) summed per country on
+the 10-arcsecond country-id raster. The committed Forestry CSV stays as the test anchor the
+spatial sum is compared against, never as the output."""
 
 import json
 import os
@@ -40,7 +41,7 @@ def _grid_covered_zones(p, summary_path):
 
     Returns:
         set | None: the covered zone ids, or None when there is no zone raster to read, in which
-        case the caller requires every boundary zone as before.
+        case the caller requires every boundary zone.
     """
     cache_path = os.path.join(p.cur_dir, GRID_COVERED_ZONES)
     if hb.path_exists(cache_path):
@@ -68,7 +69,8 @@ def publish_inputs(p):
 
 
 def gep_calculation(p):
-    """GEP valuation for timber provision: the value raster summed per country."""
+    """GEP valuation for timber provision: CWoN's forest rent per country, with the value-raster
+    sum, the fuelwood split and the roundwood gross-value diagnostic beside it."""
     publish_inputs(p)
     service_results, already_done = utilities.begin_gep_calculation(p, 'timber_provision')
     if already_done:
@@ -92,17 +94,19 @@ def gep_calculation(p):
     df_gep = tp.timber_gep_from_zone_sums(zone_sums, countries)
     df_gep['year'] = int(p.gep_base_year)
 
-    # Both valuations, side by side, because the choice between them is live and the issues
-    # document recommends the second. Publishing one silently would hide a $43bn decision.
+    # Both valuations, side by side: the issues document recommends the CWoN rent, which is the
+    # account's figure (below), and publishing it alone would hide how far it sits from the
+    # spatial estimate.
     df_gep = tp.cwon_forest_rent_by_country(
         # pd.read_stata, like extractive_energy and fisheries: hb.df_read is csv-only and a
         # .dta reaches it as a malformed csv rather than as the wrong reader.
         pd.read_stata(str(p.get_path(p.timber_provision_cwon_forest_rent_path))),
         df_gep, int(p.gep_base_year))
-    # And the bound: FAOSTAT roundwood priced at each country's own export unit value. Not a
-    # third estimate -- a land share is a fraction of the gross value of the wood it comes from,
-    # so a country whose GEP exceeds its own gross is saying something impossible, and that is
-    # visible per country here rather than argued globally.
+    # And the proxy diagnostic: FAOSTAT roundwood priced at the country's own industrial-roundwood
+    # export unit value where one is reported, the world value otherwise. Not a third estimate: a
+    # land share is a fraction of the gross value of the wood it comes from, so a country whose GEP
+    # exceeds this column is flagged per country for a look. Export unit values are a proxy for
+    # domestic prices, so an exceedance is a flag, not proof of an impossible value.
     df_gep = tp.roundwood_gross_value_by_country(
         hb.df_read(str(p.get_path(p.timber_provision_faostat_roundwood_path))),
         df_gep, int(p.gep_base_year))
@@ -176,8 +180,8 @@ def fuelwood_gep(p):
     - `fuelwood_gep_from_forest_rent`  the fuelwood part of CWoN's rent, published in the timber
       table as `timber_provision_gep_fuelwood_part`. This is the figure consistent with every other
       rent-based service in the account.
-    - `fuelwood_gep_gross_at_export_price`  FAOSTAT wood fuel production times the country's own
-      export unit value, with NO lambda. The upper bound, and the shape the reference has.
+    - `fuelwood_gep_gross_at_export_price`  FAOSTAT wood fuel production times the world wood-fuel
+      export unit value, with NO lambda: a gross value, the shape the reference has.
     - `fuelwood_gep_reference`  the author's committed output, staged from the drive.
 
     The reference applies no ecosystem share at all: across the 178 countries FAOSTAT also
@@ -202,9 +206,9 @@ def fuelwood_gep(p):
         rent['fuelwood_gep_from_forest_rent'] = (
             rent['timber_provision_gep_cwon_rent'] * rent['fuelwood_share_of_rent'])
 
-        # the no-lambda upper bound, which is the shape the reference has. Wood fuel priced with
-        # ITS OWN export unit value, not the fuelwood share of roundwood gross -- see the note on
-        # wood_fuel_gross_value_by_country.
+        # the no-lambda gross value, which is the shape the reference has. Wood fuel priced at
+        # the world wood-fuel export unit value, not as the fuelwood share of roundwood gross --
+        # see the note on wood_fuel_gross_value_by_country.
         gross = tp.wood_fuel_gross_value_by_country(faostat, countries, int(p.gep_base_year))
         rent = rent.merge(gross[['iso3_r250_id', 'wood_fuel_gross_value']],
                           on='iso3_r250_id', how='left')
@@ -240,20 +244,20 @@ def fuelwood_gep(p):
 #
 # These tasks add timber BESIDE carbon rather than replacing it, so the two can be compared on the
 # same scenarios and the size of the proxy's error is measurable instead of argued. Carbon's seam is
-# untouched; a run that does not build the timber tree behaves exactly as before.
+# separate; a run that does not build the timber tree is unaffected by it.
 #
-# The machinery is carbon's, deliberately. generate_carbon_density_raster and dynamic_shock_rows
-# take a DENSITY LOOKUP (lulc_id x zone_id -> value) and know nothing about carbon, so timber needs
-# its own lookup table and nothing else. Reimplementing them here would fork a verified path to
-# change one input raster.
+# The machinery is carbon's, deliberately: the zonal summaries and the shock arithmetic
+# (summarize_raster_by_region, dynamic_shock_rows, summed_shock_rows) know nothing about carbon,
+# so timber supplies its own layer and nothing else. Reimplementing them here would fork a
+# verified path to change one input raster.
 # ---------------------------------------------------------------------------------------------
 
 def timber_value_density_table(p):
-    """Mean timber value density per (land-cover class, zone), the lookup the shock reads.
+    """Mean timber value density per (land-cover class, zone).
 
     The same construction as terrestrial_carbon's density table, over the timber value raster
-    instead of the carbon density raster, so the two shocks differ in their layer and in nothing
-    else.
+    instead of the carbon density raster. timber_provision_shock does not read it: its docstring
+    says why a class x zone mean is the wrong measure for timber.
     """
     publish_inputs(p)
     p.timber_value_density_lookup_table_path = os.path.join(
@@ -268,7 +272,7 @@ def timber_value_density_table(p):
     # Keyed on SEALS7 classes, because that is what the scenario maps carry. Carbon's shock lookup
     # (carbon_density_lookup_seals7_spawn.csv) is built the same way; its GEP lookup is keyed on the
     # 37 ESA classes and applied to a SEALS7 map matches zero cells -- the library refuses that
-    # outright, which is how the first attempt at this table was caught.
+    # outright.
     #
     # The base-year SEALS7 map is the one the ES shocks form their 2023 denominator from, under the
     # project's own fine_processed_inputs. The timber value raster and the carbon zones are on its
@@ -394,12 +398,11 @@ GRID_TOLERANCE_PIXELS = 1e-7
 def _assert_one_grid(grids, tolerance_pixels=GRID_TOLERANCE_PIXELS):
     """Every raster must lie on one grid. Shape and CRS exactly; geometry to a pixel tolerance.
 
-    Exact equality of the affine transform was too strict: a base map carrying 90.00000000000001 as
+    Exact equality of the affine transform is too strict: a base map can carry 90.00000000000001 as
     its y origin instead of 90.0 -- a difference of 1e-14 degrees, about a nanometre on the ground and
-    4e-12 of a pixel -- failed a check meant to catch genuinely different grids, and blocked the
-    timber seam (2026-09-24). Representation noise is not misalignment.
+    4e-12 of a pixel. Representation noise is not misalignment.
 
-    Comparing origins alone would be the wrong repair. A tiny difference in pixel size or a rotation
+    Comparing origins alone is not enough either. A tiny difference in pixel size or a rotation
     term leaves the origin identical and accumulates across 129,600 columns into a real offset, so
     the test is the displacement at ALL FOUR CORNERS, in pixel units. That catches translation,
     scale and rotation with one criterion, and it fails where it should: a half-pixel shift, or a
@@ -503,8 +506,8 @@ def _write_biomass_base_and_new_forest(p, base_lulc_path, base_forest_path, new_
     # same reasoning terrestrial_carbon's _align_zones_to_lulc_grid records. Verified for the ZAF
     # window: identical 10-arcsec pixels, and its origin falls on global pixel (70560, 40320).
     # The clipped copy keeps the SOURCE's data type and nodata, never the reference's. Taking them
-    # from a match raster is what truncated carbon zone ids 606-620 to a Byte nodata and read
-    # South Africa as zone 0 everywhere.
+    # from a match raster truncates values its type cannot hold: carbon zone ids 606-620 in a Byte
+    # raster become nodata, zone 0.
     density_path = _aligned_to_reference(p, density_path, base_lulc_path, 'biomass_carbon_density')
     ha_path = _aligned_to_reference(p, ha_path, base_lulc_path, 'ha_per_cell')
     grids = {}
@@ -553,9 +556,9 @@ def timber_provision_shock(p):
     written in parallel (p.num_workers). The task logs how much base-year managed value the
     intersection with the base-year map excludes.
 
-    The class x zone mean lookup this task read before 21 Sep 2026 (timber_value_density_table) is
-    no longer used: it diluted forest by unmanaged forest and gave non-forest classes value where
-    the mask overlapped them, so afforestation lowered the measure and deforestation raised it.
+    The class x zone mean lookup (timber_value_density_table) is not read here: it dilutes forest
+    by unmanaged forest and gives non-forest classes value where the mask overlaps them, so
+    afforestation lowers the measure and deforestation raises it.
 
     NOT wired into any GTAP pass by default; the run file routes it.
     """
@@ -706,11 +709,11 @@ def timber_provision_shock(p):
 
     rows = []
     if measure == 'aboveground_carbon':
-        # SUMS, NOT MEANS OF RATIOS (D19, 22 Sep 2026). This measure credits forest gained after
-        # the base year, so a zone holding almost no forest in the base year and afforested later
-        # has an unbounded ratio -- China AEZ18 went from 116 to 532,000 Mg C, a ratio of
-        # +459,000 %, and eighteen such zones pulled the land-payment-weighted world mean to
-        # +1.2 % while the aggregate biomass change was -2.8 %. The region's shock is therefore
+        # SUMS, NOT MEANS OF RATIOS (D19). This measure credits forest gained after the base
+        # year, so a zone holding almost no forest in the base year and afforested later has an
+        # unbounded ratio -- China AEZ18 goes from 116 to 532,000 Mg C, a ratio of +459,000 %, and
+        # eighteen such zones pull the land-payment-weighted world mean to +1.2 % while the
+        # aggregate biomass change is -2.8 %. The region's shock is therefore
         # the change in its SUMMED biomass: 100 x (sum scenario / sum baseline - 1). Zones with no
         # base-year biomass keep contributing their gain to the numerator; no ratio is formed for
         # them, nothing is capped and nothing is excluded. A region whose own total base-year
@@ -751,7 +754,7 @@ def timber_provision_shock(p):
     # np.zeros over the whole AFEL set, so a region merely missing from the table reaches GTAP as a
     # zero shock -- indistinguishable from a measured no-change. es_shock_export reads this file and
     # refuses to export a table that carries one, so an unmeasured region cannot become a zero.
-    # A global run measures every region, writes an empty declaration, and exports as before.
+    # A global run measures every region, writes an empty declaration, and exports normally.
     declared = sorted(set(locals().get('excluded_regions') or ()))
     if declared:
         present = set(out['REG'].astype(str)) if len(out) else set()

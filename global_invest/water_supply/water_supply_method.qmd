@@ -6,10 +6,12 @@ format:
     standalone: true
 ---
 
-Water supply is built one component at a time. Hydropower direct use is complete and is what
-`water_supply_gep` currently carries. A water-use calculation covering agriculture, industry and
-municipal withdrawals is ported and reported beside it as separate columns. The price convention
-recorded in `es_config.csv` is `resource rent (CWoN 2024)`, and the base year is 2019.
+Water supply is built one component at a time. Hydropower direct use is computed and is what
+`water_supply_gep` currently carries, with its treatment of negative rents still open. The agricultural and municipal components are reported
+beside it as separate columns. The municipal value, `water_use_domestic_gep`, is the authors'
+final table. The price convention recorded in `es_config.csv`, `resource rent (CWoN 2024)`,
+describes the hydropower component. The municipal component is a replacement cost, described
+below. The base year is 2019.
 
 ## Hydropower
 
@@ -30,11 +32,39 @@ $$
 and `hydropower_rent_from_wealth` divides each country's `YR2019` wealth by it. Countries without
 wealth stay NaN, because no data is not zero rent.
 
-The method was identified by reverse-engineering against the drive's committed 2019 output, whose
-script is not on the drive. It is exact across all 94 valued countries, with the ratio constant to
-1e-10. The test suite asserts the annuity identity and the exact replication. An earlier
-direct-use script on the drive, price times quantity from EIA and World Bank series dated November
-2024, is superseded by this method and is not ported.
+This wealth-based value is what the account reports while the treatment of negative rents is
+undecided. Beside it, `hydropower_rent_from_revenue_and_cost` computes the authors' 2019 resource
+rent directly: revenues (column W) minus total costs (column Y) of the hydropower rows of the
+World Bank's CWoN 2024 hydropower valuation workbook, sheet `Database`, in nominal USD (equal to
+2019 USD for 2019). The sign is kept in `hydropower_rent_signed_usd`, and
+`hydropower_rent_status` says positive, negative, zero or missing. Countries are keyed by the
+CWoN wealth table's own names and codes, with three newer World Bank names (Czechia, North
+Macedonia, Türkiye) mapped to that table's earlier ones. An earlier direct-use script on the
+drive, price times quantity from EIA and World Bank series dated November 2024, is superseded and
+is not ported.
+
+### Source
+
+The write-up is `Hydropower_Provision.docx` in the shared folder of current write-ups (version of
+27 October 2026). It values the rent as max(0, rent), with no separate λ because the rent already
+nets costs out of price times quantity. The registered author code is `lifengren95/gep_hydropower`
+at `7f45eb4`. It imports a prepared CWoN rent table in 2019 USD. The authors confirmed on 30
+October that the table is the valuation workbook's 2019 revenues minus total costs, computed in
+Excel, with no script. The workbook (rev4, sha256 `e7c6e7f6…`) was provided by World Bank staff,
+is not in the public reproducibility package and is not to be redistributed. It is staged only
+where authorised and checked against its recorded hash. Without it the run proceeds and the
+revenue-minus-cost columns are missing, with status "workbook not staged".
+
+### Coverage
+
+`hydropower_gep` carries 107 positive values, totalling \$146,075,770,382.38, 5 zeros where the
+CWoN wealth is zero, and 138 missing countries with no wealth figure.
+The workbook gives 112 countries a 2019 rent: 95 positive, \$144,680,445,647.89, and 17 negative,
+−\$1,518,729,566.45. `hydropower_gep_reference_variant` is the positive rents with the rest left
+missing, the convention of the authors' output. It exists for comparison and is not the reported
+value. It equals the authors' 95 rents in every country, within \$1 because their file stores whole
+dollars, with the same 17 left blank. The wealth-based value equals the workbook's rent in the 95
+positive countries. `water_supply_gep` is `hydropower_gep`.
 
 ## Water use
 
@@ -68,52 +98,117 @@ relative difference 3e-15.
 ### Quantity and price
 
 The quantity side is Shunkei's crop-level water accounting: per CropGBWater crop, country and
-water source, a lambda coefficient in [0, 1] — the Ky-weighted mean of growth-stage
-water-satisfaction ratios — for rainfed green water, irrigated green water and irrigated blue
+water source, a lambda coefficient in [0, 1], the Ky-weighted mean of growth-stage
+water-satisfaction ratios, for rainfed green water, irrigated green water and irrigated blue
 water, with a VMR pair reported beside the green components, never netted against them. The
 price side is the value of the crop: lambda times a rainfed/irrigated value basis gives the
 water-attributable share of that value.
 
+Lambda is biophysical, a Ky-weighted mean of growth-stage water-satisfaction ratios, not a share
+of water volume or of value. Multiplying it by a monetary value attributes that value to water
+in proportion, which is an assumption of the method, not a measured water rent. The author
+first applied it to crop value added (gross production value times θ, the
+agricultural value-added share) and confirmed on 28 October 2026 that the monetary base is now
+commercial-agriculture GEP, the crop rent this account uses.
+
 ### Valuation
 
-`agriculture_basis_from_crop_values` rebuilds the author's value preparation (his Code/1-4) on
-the account's own crop values. FAOSTAT items map to CropGBWater crops through his
-correspondence, many-to-one items sum, the two shared items (Wheat and Millet) allocate by his
+`agriculture_basis_from_crop_values` rebuilds the author's value preparation (the author's Code/1-4) on
+the account's own crop values. FAOSTAT items map to CropGBWater crops through the author's
+correspondence, many-to-one items sum, the two shared items (Wheat and Millet) allocate by the author's
 SPAM production-quantity weights within country and item, and SPAM rainfed/irrigated shares
-split each crop-country value into `basis_rain` and `basis_irr`, with his own split-status
+split each crop-country value into `basis_rain` and `basis_irr`, with the author's own split-status
 labels where the SPAM row is absent or zero. One departure is documented in the docstring: an
-all-missing group stays missing instead of his na.rm zero, because the account's table carries
+all-missing group stays missing instead of the author's na.rm zero, because the account's table carries
 genuine gaps and a fabricated zero would read as measured.
 
-`agriculture_gep_from_lambda` is his final stage (Code/5): the three lambda-times-basis
+`agriculture_gep_from_lambda` is the author's final stage (Code/5): the three lambda-times-basis
 products, their VMR pair, and `GEP_total` as the rowwise sum over the three components with
-missing treated as zero — replicated from the author, partial totals included.
-`aggregate_agriculture_gep_to_country` is his sum-if-any country aggregation.
+missing treated as zero, replicated from the author with partial totals included.
+`aggregate_agriculture_gep_to_country` is the author's sum-if-any country aggregation.
 
 The replication and the account run are not the same calculation. The test suite feeds the two
-functions the author's own theta x GPV 2020 basis in thousand current US$ and reproduces his
+functions the author's own theta x GPV 2020 basis in thousand current US$ and reproduces the author's
 September 21 crop-country and country results within measured float-reordering noise. The
 `agriculture_water` task instead feeds the account's 2019 commercial crop-provision values in
 current USD, with the CWoN rental rate already applied, so no theta and no rental
-re-application, split rainfed/irrigated by his SPAM shares. The 2019 substitution is the
-account's decision, not his output. His upstream lambda, SPAM, crop-mapping and theta
-derivations are taken as given, and matching his final-stage outputs proves fidelity, not
+re-application, split rainfed/irrigated by the author's SPAM shares. The 2019 substitution is the
+account's decision, not the author's output. The author's upstream lambda, SPAM, crop-mapping and theta
+derivations are taken as given, and matching the author's final-stage outputs proves fidelity, not
 correctness.
 
-2019 is the monetary year only; the physical inputs carry their own vintages. The SPAM shares
-are SPAM 2020 v2r2 (his Code/1-3, the Harvard Dataverse release), and lambda is built on a
-representative 365-day daily ET0 profile averaged over 2018-2022 (his Code/3).
+2019 is the monetary year only. The physical inputs carry their own vintages. The SPAM shares
+are SPAM 2020 v2r2 (the author's Code/1-3, the Harvard Dataverse release), and lambda is built on a
+representative 365-day daily ET0 profile averaged over 2018-2022 (the author's Code/3).
 
 Under the meeting convention this value is an intermediate contribution: the basis is the
 crop-provision GEP itself, so the agricultural-water figure is the water-attributable share of
 value already counted in crop provision. It is reported for attribution and is never added to a
-GEP total beside crop provision.
+GEP total beside crop provision. That classification keeps water from being counted twice. It
+does not make the value a water-only rent: the crop rent prices land and water together, so the
+figure is the water-attributable part of a joint rent.
 
 Coverage is disclosed rather than repaired. Items with no correspondence row stay out of the
-basis and are written to `agriculture_unmapped_items.csv` — rice is the largest. Crop-country
+basis and are written to `agriculture_unmapped_items.csv`. Rice is the largest. Crop-country
 values whose SPAM row is absent or zero stay unsplit and carry their status. Split basis rows
 with no lambda coefficients are written to `agriculture_missing_coefficients.csv`, and
 `agriculture_coverage.csv` summarizes the value at each stage.
+
+## Municipal water
+
+The published municipal value is the authors' final table: their `Results/dr02` output at
+commit `f94e33a4` of `lifengren95/gep_domestic_water_supply`. They confirmed it as final. It
+matches column N of the group's 2026_10_01 values sheet within the sheet's reported precision:
+each country agrees within 4.4e-9 relative, and the totals are $9,231,821,271.88 in the table
+against $9,231,821,270.68 in the sheet. The library imports it rather than recomputing it, and
+it has not rerun the authors' city optimisation. `municipal_gep_by_country` checks the labels, refuses an unknown or repeated
+label and a negative value, and leaves a country without a value missing.
+
+### Quantity and price
+
+Each city is a GHSL 2025 urban centre of at least 50,000 people. Its demand is its population
+times the country's 2019 AQUASTAT municipal withdrawal per person. Without a 2019 AQUASTAT
+rate the model cannot estimate a territory's demand, so it cannot value it, and such
+territories are missing, not zero. Sixteen territories with 52 urban centres are in that
+position, the largest being Taiwan (21), Hong Kong (6) and Kosovo (6). The model values
+municipal demand only: industrial withdrawals, which the earlier construction counted, are not
+valued in this row. The authors then cost the
+cheapest way to meet that demand from nearby rivers, lakes and reservoirs (RiverATLAS and
+LakeATLAS, within 100 km, 30% of mean flow, intakes in protected areas excluded) and from
+groundwater (SuperWell).
+
+- Pipeline costs come from EPA cost curves, using FABDEM elevations.
+- Pumping is priced at World Bank 2019 electricity prices.
+- Infrastructure is annualised at a 2% discount rate.
+
+### Valuation
+
+$$
+\text{GEP}_i = C_i^{\text{replacement}} - C_i^{\text{baseline}}
+$$
+
+per city. The replacement problem removes two things and solves again with everything else
+unchanged:
+
+- the surface-water sources selected in the baseline, together with the candidates recorded as
+  drawing on the same flow path,
+- groundwater, if the baseline used it.
+
+A city is valued only where both the baseline and the replacement problem are feasible. A city
+whose demand cannot be met stays undefined, and the model has no desalination.
+
+The country value sums the valued cities only (the authors'
+`Analysis/10_country_municipal_replacement_cost.qmd` aggregates
+`y_city_shared_flowpath_replacement_30.csv` and keeps the coverage counts). A country with some
+cities unvalued therefore carries a partial total, not the value of all its municipal demand.
+The table holds 160 countries and $9,231,821,271.88 in total.
+
+### The earlier construction, kept as a variant
+
+`water_use_domestic_gep_implied_price_variant` is the water-use chain's earlier stand-in: ecosystem-provided
+cubic metres (withdrawal net of desalination) times a raw-water price implied by the old
+irrigation premium ($0.0852/m³). It is $95.62bn over 183 countries. It is kept for comparison
+only and is not the account's figure.
 
 ## Inputs
 
@@ -122,6 +217,9 @@ From `es_parameters.csv`, scoped to the `water_supply` service:
 - `water_supply_cwon_hydro_wealth_path`, the CWoN `hydro_wealth_cd` table, with a `_source_url`
   row for the World Bank reproducibility archive and a `_source_archive_member` row naming the
   file inside it.
+- `water_supply_cwon_hydro_workbook_path` and `water_supply_cwon_hydro_workbook_sha256`, the
+  private valuation workbook and its hash, with a `_source` row on where it comes from and that
+  it is not to be redistributed.
 - `water_use_efficiency_input_path`, the raw AQUASTAT export, with a `_source_url` row for the
   AQUASTAT data API.
 - `water_use_withdrawal_path`, the withdrawal table.
@@ -131,6 +229,9 @@ From `es_parameters.csv`, scoped to the `water_supply` service:
   `water_supply_agriculture_correspondence_path`, the author's pinned processed tables under
   `agriculture/shunkei_e229f881/` in base_data, with a `water_supply_agriculture_source` row
   and a provenance README beside the files.
+- `water_supply_municipal_results_path`, the authors' final municipal table under
+  `municipal/lifeng_f94e33a4_dr02/` in base_data, with a `water_supply_municipal_results_source`
+  row and a provenance README beside the file.
 - `water_supply_crop_values_path`, the commercial crop country-item table in USD, blank by
   default: the task falls back to the crop_provision results registry, then to
   `water_supply_crop_values_relative_file` against the project directory. Reading the
@@ -149,8 +250,9 @@ From `es_parameters.csv`, scoped to the `water_supply` service:
   diagnostic tables (unmapped items, missing coefficients, unallocated shared value, unsplit
   statuses) beside them.
 - `gep_by_country_base_year.csv` from `gep_calculation`, holding the r250 identifiers and
-  attributes, `year`, the hydropower pair, the water-use value-added and domestic columns, the
-  agriculture component columns (`water_use_agriculture_gep` with its rainfed/irrigated and VMR
+  attributes, `year`, the hydropower pair, the water-use value-added columns, the municipal value
+  `water_use_domestic_gep` (the authors' table) with `water_use_domestic_gep_implied_price_variant`
+  beside it, the agriculture component columns (`water_use_agriculture_gep` with its rainfed/irrigated and VMR
   parts, and `water_use_irrigation_gep` now equal to the agriculture component), and
   `water_supply_gep`.
 
@@ -159,18 +261,18 @@ From `es_parameters.csv`, scoped to the `water_supply` service:
 - `water_supply_hydropower_capitalization_rate = 0.04` in `es_parameters`, the rate CWoN
   capitalized their wealth figure with.
 
-  ⚠ **This is not the account's discount rate and must not be harmonized onto it.** The account
-  discounts future benefits at 2 percent, with sensitivity at 1 and 3. This rate is doing the
-  opposite job: CWoN published a *capitalized* wealth figure, and hydropower GEP is the annual
-  rent inside it, so the module runs their capitalization backwards. Inverting with any rate but
-  the one they capitalized with returns a rent CWoN never capitalized — the number would become
-  wrong in the act of making it look consistent. The two quantities share a word and nothing else.
-  The consistency gate knows the difference and reports both.
+  This is not the account's discount rate. The account discounts future benefits at 2 percent,
+  with sensitivity at 1 and 3. This rate does the opposite job: CWoN published a *capitalized*
+  wealth figure, and hydropower GEP is the annual rent inside it, so the module runs their
+  capitalization backwards. Inverting with any other rate returns a rent CWoN never capitalized.
+  The consistency gate reports both rates. A review comment proposes 2 percent here, which is
+  open (see below).
 - `HYDROPOWER_HORIZON_YEARS = 100`, the CWoN capitalisation horizon.
 - `HYDROPOWER_GEP_YEAR = 2019`, the wealth column the rent is read from. Current USD equals real
   2019 USD in the 2019 base year, and this is the only variant that covers Venezuela.
-- `HYDROPOWER_REFERENCE_EXCLUDED`, seventeen iso3 codes set to NaN to reproduce the reference:
-  AZE, BGR, DOM, GRC, GTM, HTI, KAZ, LBR, MAR, MKD, NIC, POL, PRT, SLV, TJK, UKR and ZAF.
+- `HYDROPOWER_WORKBOOK_SHEET`, `HYDROPOWER_WORKBOOK_REVENUE` and `HYDROPOWER_WORKBOOK_COST`,
+  the workbook's sheet and the headers of columns W and Y, which the code checks sit in those
+  columns, and `HYDROPOWER_WORKBOOK_RENAMES`, the three name mappings above.
 - `WATER_USE_YEARS = (2000, 2005, 2010, 2015)`, the AQUASTAT survey years the calculation keeps.
 - `WATER_USE_EFFICIENCY_SERIES`, `WATER_USE_COUNTRY_RENAMES`, `WATER_USE_ISO_LOOKUP` and
   `WATER_USE_REGIONS_DROPPED`, which reproduce script 02's name surgery verbatim.
@@ -181,11 +283,15 @@ CWoN's own hydropower wealth estimate, and the AQUASTAT efficiency and withdrawa
 
 ## What is open
 
-The seventeen excluded countries are the largest open item. The reference output leaves them empty
-although the CWoN wealth table values them, and no available material explains the drop, because
-the 2026 script is not on the drive and the package lacks its raw workbook. The exclusion is
-encoded to reproduce the reference, the reason is an ask on the deck, and changing the list is a
-reviewed-commit decision.
+Hydropower, two open points:
+
+- Negative rents. The workbook's 2019 rent is negative in 17 countries. The authors' output
+  leaves them blank, the write-up floors them at zero, and the wealth-based value the account
+  reports gives 12 of them \$1,395,324,734.50 in all, because their CWoN wealth is positive (the
+  other 5 have zero wealth and report zero). Which treatment the account uses is undecided, so the
+  library keeps the signed rent and does not choose.
+- The capitalisation rate. The wealth-based value inverts at CWoN's 4 percent. A review comment
+  proposes 2 percent, which is under review.
 
 The drive's per-country water-use tables are not this calculation's outputs and are held as anchors
 rather than adopted. The agriculture table equals 1000 times `GEP_total` from the crop-water
@@ -200,15 +306,16 @@ including USA, RUS and TUR. The anchor commits that behaviour and the port repro
 
 `water_supply_gep` stays the hydropower component alone. How, and whether, the water-use and
 agriculture components combine with it is the account's subgroup question, flagged on the deck.
-The water-use chain's domestic calculation is preserved and published unchanged; what stays open
-for municipal water is scope and method — the withdrawal series mixes municipal with industrial
-use, and the price follow-up is assigned on the review — not the existence of a calculation.
 
-The domestic raw-water price is still implied by the OLD premium-based irrigation GEP, not by
-the agriculture component that replaced that column in the published table. Repricing domestic
-water on the new component is its own reviewed change, not a side effect of this one.
+The municipal table is carried, not reproduced: the library has not rerun the authors' city
+optimisation. Their write-up still has open review comments, including a λ section and why 2025
+population serves the 2019 base year.
 
-The agriculture correspondence covers 28 crops. The account's crop table carries value on items
-outside it — rice is the largest single item — which the author's method never valued and this
-port therefore leaves out of the basis, disclosed in `agriculture_unmapped_items.csv`. Whether
-the correspondence should be extended is an author question, not a port decision.
+The agriculture correspondence is read as an input of the author's pipeline (Code/1-4). No
+generating script for it was found in the inspected revision. It covers 28 crops, and the three
+inspected coefficient and share tables (`lambda_jr_tbl_CropGBWater.csv`,
+`CropGBWater_FAO_Ky_Kc.csv`, `spam_cropgbwater_share.csv`) carry exactly those 28. The account's
+crop table carries value on items outside them, rice above all, which therefore cannot enter
+the basis with the supplied tables, disclosed in `agriculture_unmapped_items.csv`. Extending the
+set needs correspondence rows AND coefficients produced with the author's pipeline. No local
+mapping change can do it.

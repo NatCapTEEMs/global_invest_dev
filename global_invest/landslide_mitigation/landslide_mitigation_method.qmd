@@ -12,10 +12,11 @@ removed entirely. Everything else -- terrain, soil, rainfall, population, roads,
 statistical models -- is identical between the two, so the difference in predicted deaths is
 attributable to root reinforcement alone.
 
-This note describes what the code in `global_invest/landslide_mitigation/` does. The science is a
-fold of `m-braaksma/landslide_mitigation` v0.2.0 (folded 2026-08-16); the arithmetic lives in
-`landslide_mitigation_chain.py` as pure functions, the raster drivers in
-`landslide_mitigation_functions.py`, and the pipeline in `landslide_mitigation_tasks.py`.
+This note describes what the code in `global_invest/landslide_mitigation/` does. The death
+calculation is a fold of `m-braaksma/landslide_mitigation` v0.2.0 (folded 2026-08-16). The authors'
+current release is v0.2.1 (14 September 2026), and the account prices the deaths with its
+value-of-life panel (see Valuation). The arithmetic lives in `landslide_mitigation_functions.py` as
+pure functions, and the pipeline and raster drivers in `landslide_mitigation_tasks.py`.
 
 ## Grid and inputs
 
@@ -227,9 +228,18 @@ times the VSL raster, and country totals are the zonal sums of both rasters over
 polygons.
 
 Note that the r264 correspondence splits large countries into sub-regions. Each sub-region carries
-its country's ISO3 and therefore its national VSL, which is what the rasterization needs; a
-one-row-per-country table has to sum the sub-regions back together, which is what the results report
-does.
+its country's ISO3 and therefore its national VSL, which is what the rasterization needs. The
+country table sums the sub-regions back together in `gep_calculation` (`country_values_from_zonal`).
+
+## What the account reports
+
+The default GEP run does not recompute the rasters. `gep_calculation` reads the zonal table of the
+v0.2.0 port's cluster run (21 August 2026, staged as `landslide_zonal_statistics_path`), prices its
+avoided deaths at the EPA panel and sums the r264 sub-regions to countries. A sub-region with no
+valid pixel has no estimate: every cell it touches is near-flat, lacks an input or lies outside the
+grid. It is left missing before the sum, so a country with no valid pixel anywhere is missing, not
+zero. On the staged table this gives $657,753,718.76 in 2019 USD, with 227 countries valued, 6
+measured zeros (valid pixels and no avoided deaths) and 17 missing.
 
 ## What the module does not do
 
@@ -239,8 +249,16 @@ does.
   probability, not a per-storm one.
 - Transmissivity units are flagged as unverified in the code and have not been checked against the
   HiHydroSoil documentation here.
-- The module has been run end to end once on the cluster, but its numbers have not been replicated
-  against a machine-readable v0.2.0 output from the author, so they remain provisional.
+- The death calculation has been run end to end once on the cluster, as the v0.2.0 port. Against
+  the authors' v0.2.1 table it gives 570.66 avoided deaths to their 632.02 (9.7% fewer) and
+  $657,753,718.76 to their $707,155,816 at the same value-of-life panel. The gap is not yet
+  isolated: the port reads raw inputs where v0.2.1 reads the submitted base-data files. The numbers
+  remain provisional.
+- The prevalence behind the case-control intercept correction counts event pixels, marked only
+  where a pixel centre lies within an event's accuracy radius, while the cases are one per pixel
+  holding an event point. The two counts differ by about 2.5-fold. Whether they should use the
+  same eligibility rules, and the effect on hazard, deaths and value, have not been established.
+  The authors' code does the same. This is a question for the authors, and the code is unchanged.
 
 ## References
 

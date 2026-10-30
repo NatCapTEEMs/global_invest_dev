@@ -9,12 +9,11 @@ import hazelbean as hb
 import pandas as pd
 
 from global_invest import utilities
-from global_invest.extractive_materials_provision import extractive_materials_provision_initialize
 from global_invest.extractive_materials_provision import extractive_materials_provision_functions as emf
 
-# Applied to (mineral rents share x GDP) in the valuation. Provenance UNDOCUMENTED as of 2026-08-16:
-# no source in the code, the drive submission, or its raw_data notes -- open question for the service
-# owner. Do not change without an owner-blessed source; the staged reference output embeds it.
+# Applied to (mineral rents share x GDP) in the valuation. Its provenance is UNDOCUMENTED: no
+# source in the code, the drive submission or its raw_data notes. Do not change it without a
+# documented source, because the staged reference output embeds it.
 MINERAL_RENT_GEP_FACTOR = 0.49
 # The World Bank CSVs ship UTF-8 with a byte-order mark, which -sig strips (EE spec).
 WORLD_BANK_CSV_ENCODING = 'utf-8-sig'
@@ -38,11 +37,11 @@ def extractive_materials_provision(p):
     pass  # Inputs resolve in publish_inputs.
 
 def gep_preprocess(p):
-    """
-    Preprocessing tasks are assumed NOT to be run by the user. Instead, it is assumed that the output of a preprocess
-    task is an input to the actual model, saved at the canonical project attribute p.extractive_materials_provision_input_path.
-    These are preprocessing tasks are still provided for reference, but are not intended to be run directly by the user.
-    We will "promote" the data outputed by a preprocess task to the base_data_dir provided to users.
+    """Preprocessing placeholder, not implemented and not meant to be run by users.
+
+    A preprocess task's output is an input to the model, saved at the canonical project
+    attribute p.extractive_materials_provision_input_path and promoted to the base_data_dir
+    users receive.
     """
     publish_inputs(p)
     if not p.run_this:
@@ -128,7 +127,7 @@ def gep_result(p):
 
 def gep_results_distribution(p):
     """Copy this service's results into the output directory. Shared implementation in
-    utilities, which is also where the service key stops being written out by hand."""
+    utilities."""
     publish_inputs(p)
     if not p.run_this:
         return p

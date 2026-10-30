@@ -13,30 +13,27 @@ execute:
 ```{python}
 #| output: false
 
-### SETUP CODE: Runs the whole model if it doesn't exist, else loads the results.
+### SETUP CODE: loads the published table. Rendering is driven by the gep_result task, which
+### passes the project it is reporting on through PROJECTFLOW_ROOT; the home path is the fallback
+### for someone opening this qmd directly.
 
 import os
 import pandas as pd
 import hazelbean as hb
 
-from global_invest.water_quality import water_quality_initialize
+from global_invest import utilities
 
 if __name__ == '__main__':
 
-    p = hb.ProjectFlow()
-    p.project_name = 'gep_water_quality'
-    # The rendering task passes the project it is reporting on; the home path is the
-    # fallback for someone opening this qmd directly.
-    p.project_dir = os.environ.get('PROJECTFLOW_ROOT', os.path.join(
-        os.path.expanduser('~'), 'Files', 'global_invest', 'projects', p.project_name))
-    p.set_project_dir(p.project_dir)
-
-    water_quality_initialize.build_gep_service_calculation_task_tree(p)
-
-    p.results = {}
-
-    hb.log('Created ProjectFlow object at ' + p.project_dir + '\n    from script ' + p.calling_script + '\n    with base_data set at ' + p.base_data_dir)
-    p.execute()
+    project_dir = os.environ.get('PROJECTFLOW_ROOT', os.path.join(
+        os.path.expanduser('~'), 'Files', 'global_invest', 'projects', 'gep_water_quality'))
+    p = hb.ProjectFlow(project_dir=project_dir)
+    utilities.initialize_country_paths(p)
+    gep_table_path = os.path.join(project_dir, 'intermediate', 'gep_calculation',
+                                  'gep_by_country_base_year.csv')
+    if not hb.path_exists(gep_table_path):
+        raise FileNotFoundError('No published water quality table at ' + gep_table_path
+                                + '. Run the water quality GEP tree first.')
 ```
 
 ```{python}
@@ -53,13 +50,19 @@ pd.set_option('display.max_rows', 1000)
 
 service_label = 'water_quality'
 
-df = hb.df_read(p.results[service_label]['gep_by_country_base_year'])
-total_usd = df['water_quality_gep'].sum()
-total_intl = df['water_quality_gep_international_dollars'].sum()
-p.gep_by_country_base_year_table = df[['iso3_r250_name', 'nitrogen_gep_usd', 'phosphorus_gep_usd', 'water_quality_gep']]
+df = hb.df_read(gep_table_path)
+gep = df['water_quality_gep']
+total_usd = gep.sum()
+n_positive, n_zero, n_missing = int((gep > 0).sum()), int((gep == 0).sum()), int(gep.isna().sum())
+# The split over the countries that carry a value, so the two parts add up to the total: a
+# country with one nutrient missing has no value, though its other nutrient's column is filled.
+valued = gep.notna()
+total_n, total_p = df.loc[valued, 'nitrogen_gep_usd'].sum(), df.loc[valued, 'phosphorus_gep_usd'].sum()
+p.gep_by_country_base_year_table = df[['iso3_r250_name', 'price_n_usd_per_kg', 'price_p_usd_per_kg',
+                                       'nitrogen_gep_usd', 'phosphorus_gep_usd', 'water_quality_gep']]
 ```
 
-The analysis values water purification as nutrient retention priced at treatment cost: nitrogen and phosphorus retention per country, scaled by the AQUASTAT domestic-water-use fraction and priced per kg, totalling $`{python} f"{total_usd:,.0f}"` in 2019 USD across 209 countries. The committed accounting output expresses the service in 2019 INTERNATIONAL dollars ($`{python} f"{total_intl:,.0f}"` across 178 countries) and that conversion stage is not yet identified from the available material; the USD calculation replicates the committed intermediates exactly.
+The analysis values water purification as nutrient retention priced at treatment cost. Nitrogen and phosphorus retention per country, allocated to domestic use by the AQUASTAT domestic share of withdrawals (an allocation proxy, not a measured delivery), is priced per kg at each country's predicted treatment cost: the conditional median of one pooled benefit-transfer regression of observed costs, in 2019 US dollars, on GDP per capita, with a phosphorus term. A negative retention estimate counts as missing. The total is $`{python} f"{total_usd:,.0f}"` in 2019 USD, of which $`{python} f"{total_n:,.0f}"` is nitrogen and $`{python} f"{total_p:,.0f}"` phosphorus, across `{python} f"{n_positive}"` countries with a value, `{python} f"{n_zero}"` with zero retention and `{python} f"{n_missing}"` missing.
 
 ## GEP by Country in Base Year, mapped
 

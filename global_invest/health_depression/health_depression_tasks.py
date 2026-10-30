@@ -4,11 +4,12 @@ This layer owns every file read and write. The science it calls lives in
 health_depression_functions, which never opens a file.
 
 The raster work is one number per country: the prevented-cases factor times population summed
-over urban pixels, computed blockwise on WorldPop's grid with the country's own risk ratio
-looked up per pixel. The rasters are the ones the hypertension strand stages (same NDVI, same
-urban mask, same population); only the disease tables differ. The author's high-resolution
-results file is carried beside the result as the comparison point -- its spatial scope is an
-open question, so the log reports the gap rather than judging it.
+over urban pixels, computed blockwise on WorldPop's grid at one risk ratio for every country,
+converted from the odds ratio at the authors' reference-group risk p0. The rasters are the ones
+the hypertension strand stages (same NDVI, same urban mask, same population); only the disease
+tables differ. The author's high-resolution results file is carried beside the result as the
+comparison point -- its spatial scope is an open question, so the log reports the gap rather
+than judging it.
 """
 import os
 
@@ -39,42 +40,108 @@ def publish_inputs(p):
     return p
 
 
+def factor_reuse_reason(p):
+    """Why the saved urban factor sums cannot be used, or None when these inputs made them.
+
+    The sums carry the risk ratio inside an exponential, so a table built at one odds ratio or
+    reference risk cannot be rescaled to another: any change to the conversion, the urban
+    threshold, a raster or the code means the global pass again.
+
+    Returns:
+        tuple: (the reason or None, the signature to record once the sums are rebuilt).
+    """
+    settings = {name: getattr(p, name) for name in (
+        'health_depression_odds_ratio', 'health_depression_prevalence_nonexposed',
+        'health_depression_urban_smod_min')}
+    inputs = {str(p.get_path(path)): utilities.file_fingerprint(str(p.get_path(path))) for path in (
+        p.health_depression_population_input_path, p.health_depression_ndvi_input_path,
+        p.health_depression_urban_input_path, p.gep_regions_input_path)}
+    for code in (__file__, hd.__file__):
+        inputs[code] = utilities.file_fingerprint(code, content=False)
+    signature = {'settings': settings, 'inputs': inputs}
+    return utilities.outputs_reuse_reason(
+        [p.health_depression_factor_path], signature, p.health_depression_factor_signature_path), signature
+
+
+def aligned_raster_reuse_reason(path, sources, settings):
+    """Why an aligned raster cannot be reused, or None when these sources made it on this grid.
+
+    Existence is not enough: an old aligned raster behind a changed source or population grid
+    would feed stale pixels into sums signed with the new sources' fingerprints.
+
+    Returns:
+        tuple: (the reason or None, the signature to record once the raster is rebuilt).
+    """
+    inputs = {source: utilities.file_fingerprint(source) for source in sources}
+    inputs[__file__] = utilities.file_fingerprint(__file__, content=False)
+    signature = {'settings': settings, 'inputs': inputs}
+    return utilities.outputs_reuse_reason([path], signature, path + '.signature.json'), signature
+
+
+def rebuild_aligned_raster(path, signature, build):
+    """Build an aligned raster beside the old one, displace the old one rather than delete it,
+    and sign the new one."""
+    staged_path = hb.suri(path, 'staged')
+    build(staged_path)
+    if hb.path_exists(path):
+        hb.displace_file(staged_path, path, raise_on_fails=True)
+    else:
+        os.rename(staged_path, path)
+    utilities.write_outputs_signature(signature, path + '.signature.json')
+
+
+def warp_onto_population_grid(src_path, pop_path, out_path):
+    """Bilinear warp of a raster onto the population raster's extent and resolution."""
+    ref = gdal.Open(pop_path)
+    gt = ref.GetGeoTransform()
+    bounds = (gt[0], gt[3] + ref.RasterYSize * gt[5], gt[0] + ref.RasterXSize * gt[1], gt[3])
+    gdal.Warp(out_path, src_path,
+              dstSRS='EPSG:4326', outputBounds=bounds, xRes=gt[1], yRes=abs(gt[5]),
+              resampleAlg='bilinear', outputType=gdal.GDT_Float32, dstNodata=-9999.0,
+              creationOptions=['COMPRESS=DEFLATE', 'TILED=YES'])
+
+
 def urban_prevented_factor(p):
     """Per-country sum of the prevented-cases factor times population over urban pixels.
 
-    The factor is exp(-10 ln(RR) NDVI) - 1 with the country's own risk ratio, so the lookup
-    from country id to -10 ln(RR) rides along the blockwise pass.
+    The factor is exp(-10 ln(RR) NDVI) - 1 at the one risk ratio the odds ratio converts to at
+    p0, so -10 ln(RR) is a single number across the blockwise pass.
     """
     publish_inputs(p)
     p.health_depression_country_id_path = os.path.join(p.cur_dir, 'iso3_r250_ids_1km.tif')
     p.health_depression_ndvi_on_pop_grid_path = os.path.join(p.cur_dir, 'ndvi_annual_on_pop_grid.tif')
     p.health_depression_factor_path = os.path.join(p.cur_dir, 'urban_prevented_factor_by_country.csv')
+    p.health_depression_factor_signature_path = os.path.join(p.cur_dir, 'urban_prevented_factor_signature.json')
     if not p.run_this:
         return
+    reason, signature = factor_reuse_reason(p)
+    if reason is None:
+        hb.log('  the urban factor sums are reused: their signature is unchanged')
+        return True
+    hb.log('  the urban factor sums are recomputed, %s' % reason)
 
     pop_path = str(p.get_path(p.health_depression_population_input_path))
-    if not hb.path_exists(p.health_depression_country_id_path):
-        utilities.rasterize_id_column(str(p.gep_regions_input_path), pop_path,
-                                      p.gep_regions_id_col, p.health_depression_country_id_path)
-    if not hb.path_exists(p.health_depression_ndvi_on_pop_grid_path):
-        ref = gdal.Open(pop_path)
-        gt = ref.GetGeoTransform()
-        bounds = (gt[0], gt[3] + ref.RasterYSize * gt[5], gt[0] + ref.RasterXSize * gt[1], gt[3])
-        gdal.Warp(p.health_depression_ndvi_on_pop_grid_path,
-                  str(p.get_path(p.health_depression_ndvi_input_path)),
-                  dstSRS='EPSG:4326', outputBounds=bounds, xRes=gt[1], yRes=abs(gt[5]),
-                  resampleAlg='bilinear', outputType=gdal.GDT_Float32, dstNodata=-9999.0,
-                  creationOptions=['COMPRESS=DEFLATE', 'TILED=YES'])
+    regions_path = str(p.get_path(p.gep_regions_input_path))
+    ndvi_source_path = str(p.get_path(p.health_depression_ndvi_input_path))
+    ids_reason, ids_signature = aligned_raster_reuse_reason(
+        p.health_depression_country_id_path, [regions_path, pop_path], {'id_col': p.gep_regions_id_col})
+    if ids_reason is not None:
+        hb.log('  the country-id raster is rebuilt, %s' % ids_reason)
+        rebuild_aligned_raster(p.health_depression_country_id_path, ids_signature, lambda out: (
+            utilities.rasterize_id_column(regions_path, pop_path, p.gep_regions_id_col, out)))
+    ndvi_reason, ndvi_signature = aligned_raster_reuse_reason(
+        p.health_depression_ndvi_on_pop_grid_path, [ndvi_source_path, pop_path], {'resample': 'bilinear'})
+    if ndvi_reason is not None:
+        hb.log('  the NDVI on the population grid is rebuilt, %s' % ndvi_reason)
+        rebuild_aligned_raster(p.health_depression_ndvi_on_pop_grid_path, ndvi_signature, lambda out: (
+            warp_onto_population_grid(ndvi_source_path, pop_path, out)))
     ndvi_path = p.health_depression_ndvi_on_pop_grid_path
 
-    prevalence = pd.read_csv(str(p.get_path(p.health_depression_prevalence_input_path)))
-    countries = utilities.collapse_countries_to_r250(p.df_countries)
-    prevalence = countries.merge(prevalence.rename(columns={'iso3': 'iso3_r250_label'}),
-                                 on='iso3_r250_label', how='inner')
-    odds_ratio = float(p.health_depression_odds_ratio)
-    rr = risk_ratio_from_odds_ratio(odds_ratio, prevalence['prevalence_pct'] / 100.0)
-    k_lookup = np.zeros(int(prevalence['iso3_r250_id'].max()) + 1, dtype=np.float64)
-    k_lookup[prevalence['iso3_r250_id'].astype(int)] = -10.0 * np.log(rr)
+    rr = risk_ratio_from_odds_ratio(float(p.health_depression_odds_ratio),
+                                    float(p.health_depression_prevalence_nonexposed))
+    k = -10.0 * np.log(rr)
+    hb.log('  risk ratio %.6f per 0.1 NDVI: odds ratio %s at reference-group risk p0 = %s'
+           % (rr, p.health_depression_odds_ratio, p.health_depression_prevalence_nonexposed))
 
     smod_min = int(p.health_depression_urban_smod_min)
     rasters = [gdal.Open(path) for path in (
@@ -87,17 +154,17 @@ def urban_prevented_factor(p):
         height = min(strip, n_rows - row0)
         pop, ndvi, smod, ids = (r.GetRasterBand(1).ReadAsArray(0, row0, n_cols, height)
                                 for r in rasters)
-        valid = ((pop > 0) & (ndvi > -1.0) & (ndvi <= 1.0) & (smod >= smod_min)
-                 & (ids > 0) & (ids < len(k_lookup)))
+        valid = (pop > 0) & (ndvi > -1.0) & (ndvi <= 1.0) & (smod >= smod_min) & (ids > 0)
         if not valid.any():
             continue
         ndvi_pos = np.where(ndvi[valid] > 0, ndvi[valid], 0.0)
-        factor = (np.exp(k_lookup[ids[valid].astype(int)] * ndvi_pos) - 1.0) * pop[valid]
+        factor = (np.exp(k * ndvi_pos) - 1.0) * pop[valid]
         for country_id in np.unique(ids[valid]):
             mask = ids[valid] == country_id
             sums[int(country_id)] = sums.get(int(country_id), 0.0) + float(factor[mask].sum())
     df = pd.DataFrame(sorted(sums.items()), columns=['iso3_r250_id', 'urban_prevented_factor_pop_sum'])
     df.to_csv(p.health_depression_factor_path, index=False, encoding='utf-8-sig')
+    utilities.write_outputs_signature(signature, p.health_depression_factor_signature_path)
     hb.log('  prevented-cases factor summed for %d countries' % len(df))
     return True
 
@@ -110,11 +177,19 @@ def gep_calculation(p):
     """
     publish_inputs(p)
     service_results, already_done = utilities.begin_gep_calculation(p, 'health_depression')
-    if already_done:
+    outputs = [service_results['gep_by_country_base_year']]
+    light_inputs = [__file__, hd.__file__]
+    if already_done and utilities.reuse_reason(p, 'health_depression', outputs,
+                                               light_inputs=light_inputs) is None:
         return
 
     if not p.run_this:
         return p
+    reason, _ = factor_reuse_reason(p)
+    if reason is not None:
+        raise ValueError('The urban factor sums at %s cannot be used: %s. They carry the risk ratio '
+                         'inside an exponential, so run urban_prevented_factor again rather than '
+                         'rescale them.' % (p.health_depression_factor_path, reason))
     countries = utilities.collapse_countries_to_r250(p.df_countries)
     factor = pd.read_csv(p.health_depression_factor_path)
     df = countries.merge(factor, on='iso3_r250_id', how='left')
@@ -162,6 +237,7 @@ def gep_calculation(p):
     gdf = hb.df_merge(p.gdf_countries_simplified, df, how='outer',
                       left_on='ee_r264_id', right_on='ee_r264_id')
     gdf.to_file(service_results['gep_by_country_base_year'].replace('.csv', '.gpkg'), driver='GPKG')
+    utilities.write_reuse_signature(p, 'health_depression', outputs, light_inputs=light_inputs)
 
     ours = df['health_depression_gep'].sum()
     ref = df['health_depression_gep_reference'].sum()

@@ -1,4 +1,5 @@
-"""Unit tests for the stormwater skeleton (valuation function + configuration rows)."""
+"""Unit tests for stormwater: the valuation function, the configuration rows and the
+ground-area correction."""
 from types import SimpleNamespace
 
 import pandas as pd

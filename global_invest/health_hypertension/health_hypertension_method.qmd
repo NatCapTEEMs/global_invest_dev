@@ -11,9 +11,19 @@ surroundings lower the odds of hypertension, so each city's greenness translates
 cases among its adults, priced at the country's published cost of treating one case. The base
 year is 2019.
 
-⚠ Coverage is limited to the countries with a refereed treatment-cost study (20, appendix
-Table A1), by construction; every other country carries NA with the absence named. The
-counterfactual is a zero-vegetation city, which does much of the work in the magnitude.
+Coverage is limited to the countries with a refereed treatment-cost study (20, appendix
+Table A1), by construction. Every other country carries NA with the absence named. The
+counterfactual is a zero-vegetation city, which does much of the work in the magnitude, and the
+whole avoided cost is attributed to greenspace.
+
+## Source
+
+The method is the authors' appendix of 22 October 2026, which is not yet in the shared folder
+of current write-ups. The registered code, `libby-07/gep_health_hypertension` at `ac5c862`
+(October 2025), predates it and differs in five ways: it uses the odds ratio directly, applies
+adult prevalence to the whole population, measures greenness from Landsat at 500 m, prices in
+international dollars and runs for the United States only. The library follows the appendix's
+equations and its Table A1 costs.
 
 ## Quantity
 
@@ -37,13 +47,26 @@ $$
 $$
 
 with $c_i$ the treatment cost, $x_i$ the prevalence, $\text{RR}_i$ the converted risk ratio,
-$s_i$ the 30-79 population share and $n_j$ the pixel population. The appendix's own Table 6 is
-carried beside the result as the comparison anchor; because the authors' pixel-level choices
-are not fully pinned, agreement is judged at the level-and-rank grade.
+$s_i$ the 30-79 population share and $n_j$ the pixel population.
+
+The appendix's own Table 6 is carried beside the result as the comparison anchor. It values 19
+of the 20 countries (not Ghana) and totals \$104,664,962,067. On those 19 the library is 1.42
+times the reference in total, from 0.67 to 3.73 times by country, with a rank correlation of
+0.92.
+
+A second column, `health_hypertension_gep_extended`, prices the same avoided cases in 187
+countries. Where no study exists it transfers the cost from a regression of log cost on log GDP
+per capita over the 20 studies (R² 0.32, with Duan smearing), and it keeps the observed cost
+where a study exists. It totals \$247,436,789,820.72 and is not the published value.
 
 ## Coverage
 
-The published table is one row for each of the account's 250 countries, base year 2019, in constant 2019 USD. Of the 250, 20 carry a value, 0 are computed zeros, and 230 rows are missing, kept as missing rather than zero because an input carries no data for those countries. A zero means the computation returned zero; a missing row means the data to compute one is absent.
+The published table is one row for each of the account's 250 countries, base year 2019, in 2019
+USD. Of the 250, 20 carry a value, totalling \$148,706,081,306.76, 0 are computed zeros, and 230
+rows are missing, kept as missing rather than zero because an input carries no data for those
+countries. 171 of the 230 lack only a treatment cost, and the `note` column names what each
+lacks. A zero means the computation returned zero. A missing row means the data to compute one
+is absent.
 
 ## Inputs
 
@@ -51,3 +74,20 @@ All paths and parameters come from `es_parameters.csv` under the `health_hyperte
 key: the WorldPop mosaic, the annual NDVI, the GHS-SMOD urban mask and its threshold, the WHO
 prevalence, the 30-79 shares, the cost table, the odds ratio and the appendix reference, each
 with a source row beside it.
+
+## Output
+
+`gep_calculation` writes `gep_by_country_base_year.csv` into its own task directory, holding the
+r250 identifiers and attributes, `year`, `health_hypertension_gep`, the extended and reference
+columns, and the inputs behind each value: the urban NDVI-weighted population, the prevalence,
+the 30-79 share, the cost per case and its source, the avoided cases and a `note`.
+
+## What is open
+
+- Baseline prevalence. The appendix uses dense-urban prevalence or a study quantile. The
+  library uses the national WHO prevalence among adults 30-79.
+- Greenness exposure. The appendix measures NDVI from Landsat over a 500 m buffer. The library
+  uses the MODIS 1 km annual mean per pixel.
+- The gap to the appendix's Table 6, \$148.71bn against \$104.66bn, is not reconciled. The
+  library's final step and input joins are checked independently, and the rasters are not
+  reproduced (open question 20).

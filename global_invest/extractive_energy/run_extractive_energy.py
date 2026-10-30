@@ -1,11 +1,11 @@
-"""Full extractive_energy GEP run: the committed valuation -> report.
+"""Full extractive_energy GEP run: CWoN 2024 fuel rents -> report.
 
 Thin runner: builds ONE tree and executes it. Inputs are published by each task itself
 (publish_inputs in the tasks module); base_data_dir is resolved by ProjectFlow (default /
 machine.env), never hardcoded here.
 
-Requires (es_parameters rows): the committed per-country tables under base_data/global_invest/
-(also shipped in reference/ as anchors). The upstream valuations are taken as given.
+Requires (es_parameters rows): the CWoN 2024 gas, coal and oil rent tables, and the committed
+per-country tables under base_data/global_invest/, read only as the replication anchor.
 """
 import hazelbean as hb
 

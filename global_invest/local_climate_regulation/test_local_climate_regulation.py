@@ -1,7 +1,7 @@
 """Unit tests for the local_climate_regulation port (committed-final anchored).
 
-reference/ ships the current final, the two lineage versions and a city-month sample, so every
-run verifies: the city-level kwh x price identity, the merged-sum lineage identity (the
+The service's base-data directory holds the current final, the two lineage versions and a
+city-month sample, so every run verifies: the city-level kwh x price identity, the merged-sum lineage identity (the
 December 2025 version IS the plain city sum), the current final's parse and totals, and the
 v04 correction's arithmetic on synthetic values. The correction's own inputs are the named
 asks; until they land, the current final is the carried value.
@@ -46,7 +46,7 @@ def test_current_final_parses_to_the_known_totals():
     final.columns = [c.strip() for c in final.columns]
     values = lc.parse_dollar_column(final['local_climate_regulation'])
     assert values.notna().sum() == 174
-    assert np.isclose(values.sum() / 1e9, 14.19, rtol=1e-2)
+    assert values.sum() == 14_188_882_295          # the author's delivered final, the account value
 
 
 def test_v04_correction_arithmetic_on_synthetic_values():

@@ -1,15 +1,12 @@
-"""landslide_mitigation wiring (folded from m-braaksma/landslide_mitigation v0.2.0, 2026-08-16).
+"""landslide_mitigation task trees, ported from m-braaksma/landslide_mitigation v0.2.0.
 
-The cleanest fold so far: the source repo already matched the stack conventions (stage-split task
-modules + functions + utils, hazelbean/ProjectFlow throughout, ZERO import-time side effects in the
-audit). Files arrive intact with imports rewritten to this package; the full task tree is lifted
-verbatim from the source run script and exposed under the template name. Data staged at
+The prediction tree follows the source run script's task tree. Raw inputs are staged at
 base_data/landslide_mitigation/input_data_raw (50.5 GiB, see the base_data changelog).
 
-STATUS: folded, import-clean, and run end to end once on the cluster. NOT number-verified against
-the author -- the current reference is the release-day appendix tables (the older gep xlsx predates
-the v0.2.0 method change), and exact replication waits on a machine-readable v0.2.0 output from the
-author. Numbers provisional.
+Status: the staged zonal statistics come from one end-to-end cluster run of the v0.2.0 port. The
+account prices that run's deaths with the authors' v0.2.1 value-of-life panel. Against the authors'
+v0.2.1 table the deaths are 9.7% fewer (570.66 against 632.02), a gap not yet isolated, so the
+numbers are provisional.
 """
 from global_invest.landslide_mitigation import landslide_mitigation_tasks
 
@@ -38,8 +35,8 @@ def build_gep_service_task_tree(p):
 
 
 def build_gep_service_prediction_task_tree(p):
-    """Full landslide calculation (source: the v0.2.0 run script tree, verbatim): input data ->
-    preprocessing -> stability model -> valuation -> tables/figures."""
+    """Full landslide calculation, following the v0.2.0 source run script's tree: input data ->
+    preprocessing -> stability model -> valuation -> tables, then the country table and report."""
     # Tasks publish their own inputs; the builder calls the same (idempotent) publish_inputs
     # only because add_iterator reads p.run_in_parallel at BUILD time.
     landslide_mitigation_tasks.publish_inputs(p)
@@ -97,8 +94,7 @@ def build_gep_service_prediction_task_tree(p):
     p.avoided_mortality_task = p.add_task(landslide_mitigation_tasks.compute_avoided_mortality, creates_dir=False)
 
     # ---------------------------------------------------------------- #
-    # Tables (landslide_mitigation_tasks.py). The three plotting tasks that stood here drew
-    # eight PNGs the results page never showed and nothing else read.
+    # TABLES (landslide_mitigation_tasks.py)
     # ---------------------------------------------------------------- #
     p.tables_figures_task = p.add_task(landslide_mitigation_tasks.tables_figures, creates_dir=True)
     p.zonal_statistics_task = p.add_task(landslide_mitigation_tasks.compute_zonal_statistics, creates_dir=False)

@@ -493,8 +493,9 @@ def eez_storage_value_by_iso3(df_r566, region_label_col='eemarine_r566_label'):
 
     The r566 surface holds an `_EEZ` row per country AND land/territorial rows for the same
     coast, so summing every row counts habitat that the EEZ row already carries. Keeping only
-    the `_EEZ` rows is the service's open question, not a cleanup step: it is the difference
-    between the EEZ-only total and the all-rows total, and the two are reported as such.
+    the `_EEZ` rows is a choice and the service's open question, not a cleanup step: the
+    EEZ-only total and the all-rows total answer different questions. The module writes the
+    EEZ-only figure. Summing the r566 table gives the all-rows figure.
     """
     is_eez = df_r566[region_label_col].astype(str).str.endswith(EEZ_LABEL_SUFFIX)
     return (df_r566[is_eez][['iso3_r250_label', 'coastal_carbon_storage_value']]

@@ -8,21 +8,34 @@ format:
 
 Urban and coastal nature is valued as the room-price premium hotel guests pay for a natural
 view. Within one hotel on one date, a sea-, mountain-, lake- or garden-view room prices above
-a comparable room without the view; that difference is a market price for the view itself,
+a comparable room without the view. That difference is a market price for the view itself,
 because brand, location, star rating and service difference out inside the hotel. The base
-year is 2019.
+year is 2019. No share is taken out for human inputs (λ = 1), so the whole premium is
+attributed to the view.
 
-⚠ Two of the owner's conventions are kept and named rather than changed: the room prices are
+## Source
+
+The method, code and data are the CAS team's September 2026 submission (Baolong Han), staged in
+`base_data/global_invest/cas_submission_2026_09/hotel_scenic/`: the methodology document
+(`Methods_for_Estimating_Hotel_Scenic_View_Premium_Value.docx`), the code
+(`04_Hotel_Scenic_View_Premium_Code`, scripts 01 to 03 and the `scenic_premium` package), the
+inputs and the owner's results. This module ports steps 02 and 03 of that code. Step 01, which
+builds the comparable groups from the raw scrape, is taken as given.
+
+Two of the owner's conventions are kept and named rather than changed: the room prices are
 scraped at the submission's own booking dates and applied to 2019 room-nights, and one uniform
 mean occupancy (from the 106 reporting countries in the UN Tourism table) applies to every
 country. Because the scrape is 2026 money, the published figure deflates it to 2019 by the
-shared US CPI factor; the owner-vintage reading is kept beside it and is what the replication
-anchor holds at.
+shared US CPI factor, the ratio of annual means of FRED's CPIAUCSL. The staged series holds all
+twelve months of 2019 (mean 255.652583) but only January to August of 2026 (mean 331.279875), so
+the 2026 figure is the mean of the months available, not a completed annual average, and the
+factor 0.771712 rests on it. The owner-vintage reading is kept beside it and is what the
+replication anchor holds at.
 
 ## Quantity
 
 The country's hotel room-nights carrying a natural view: UN Tourism hotel rooms 2019, times
-the uniform mean occupancy, times 365, times the scenic-room share -- the natural-view share of
+the uniform mean occupancy, times 365, times the scenic-room share, the natural-view share of
 displayed room availability in the sample, over records with a positive price and availability.
 
 ## Price
@@ -30,7 +43,7 @@ displayed room availability in the sample, over records with a positive price an
 The unit price difference per room-night: within each of the 7,270 comparable groups (same
 hotel, date and room configuration), the mean natural-view price minus the mean comparable
 non-view price. Groups outside three Excel-inclusive interquartile ranges of the log price
-ratio, or with a negative premium, are dropped (`5,213` kept); the country figure weights each
+ratio, or with a negative premium, are dropped (`5,213` kept). The country figure weights each
 group's difference by its scenic-room availability.
 
 ## Valuation
@@ -50,3 +63,35 @@ All paths and parameters come from `es_parameters.csv` under the `nature_view_am
 key: the raw room-price sample (read only for the coordinate-to-country mapping), the
 analysis-ready comparable-group workbook, the country mapping, the UN Tourism room inventory
 and the owner's reference, each with a source row beside it.
+
+## Output
+
+`gep_calculation` writes `gep_by_country_base_year.csv` into its own task directory, holding the
+r250 identifiers and attributes, `year`, `nature_view_amenity_gep` (2019 USD),
+`nature_view_amenity_gep_owner_vintage` (the scrape's money), `nature_view_amenity_gep_reference`
+(the owner's results), `hotel_rooms`, `scenic_room_share`, `unit_price_difference` and `note`.
+
+## Coverage
+
+The published table is one row for each of the account's 250 countries, base year 2019, in
+constant 2019 USD. 124 carry a value, totalling \$46,093,042,760.96, and 126 are missing, with no
+zeros. A country is missing when it lacks any of the three inputs, and the `note` column names
+which: a hotel-room count in the UN Tourism table (102 lack one), sampled room records (31) or a
+comparable group that survives the filters (73).
+
+## Reproduction
+
+From the owner's analysis-ready workbook the module reproduces the owner's own intermediate and
+final results: unit price differences for 177 countries, scenic-room shares for 219 and annual
+values for 124, each within a relative 2e-14 (largest 1.8e-14), with the same missing
+countries. The owner-vintage total is \$59,728,312,716.92, and the CPI factor gives the published
+\$46,093,042,760.96. The raw scrape and step 01 are not rerun.
+
+## What is open
+
+- The methodology document is not yet in the shared folder of current write-ups.
+- A room carrying only the platform's generic "View" label counts as a natural view, as the
+  methodology states.
+- The service covers hotel guests only. Views from homes and workplaces are outside it.
+- The occupancy is one mean for every country, and the room prices are 2026 scrape prices
+  applied to 2019 room-nights, both the owner's conventions.

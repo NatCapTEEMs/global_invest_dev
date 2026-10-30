@@ -3,9 +3,7 @@ import os
 from global_invest.example_service import example_service_functions
 
 def example_parent_task(p):
-    """
-    Example parent task that sets up the project and calls a child task, also creating folders as needed.
-    """
+    """Example parent task with no work of its own; example_task is registered as its child."""
     
 def example_task(p):
     """

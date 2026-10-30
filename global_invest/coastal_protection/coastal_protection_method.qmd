@@ -14,6 +14,15 @@ shore, so property and infrastructure behind them suffer less damage than they w
 coast. The service is therefore valued as avoided storm and flood damage, and it is reported for
 two habitats: mangroves and coral reefs. Both are attributed to the country whose coast they
 protect, and the two components are added to give one national coastal protection value.
+Mangroves and coral reefs are not the only habitats that protect coasts, so the value covers these
+two habitats only, and each country's row states which of the two its total includes.
+
+## Source
+
+The write-up is `Coastal_Protection.docx` (28 October 2026) in the shared folder of current
+write-ups. The registered author code is the six files at commit `7ea35e798`. The mangrove values
+are the World Bank wealth-accounts package's 2019 values, and the coral values are Beck et al.
+(2018) in 2011 dollars.
 
 
 ## Quantity
@@ -26,10 +35,24 @@ biophysical calculation.
 **Mangroves.** The mangrove component is the World Bank Changing Wealth of Nations mangrove
 table, staged as `data_mangroves_2019.xlsx`. It carries, per country, the mangrove area in
 hectares, a protection value per hectare, and the annual protection value that is their product,
-all for 2019 and all in current US dollars. The model reads the annual value column. Because the
-table is keyed on the r264 country label, a country that the correspondence splits into
-sub-regions arrives as several rows, and those rows are summed so that each country ends up with
-exactly one value.
+all for 2019 and all in current US dollars. The table matches the CWoN 2024 package's outputs for
+2019 exactly (`mangroves_unit_value_cd.dta` and `mangroves_annual_cd.dta`, 151 countries). The
+model computes the value as area times value per hectare, which reproduces the published annual
+value to within 2e-7 in total and 0.024% for any one country (the rate is rounded in the table). Because the table is keyed on the r264 country label, a country that the
+correspondence splits into sub-regions arrives as several rows, and those rows are summed so that
+each country ends up with exactly one value.
+
+**Countries the mangrove source excluded.** The World Bank's mangrove analysis removed six
+countries for a bug in its geospatial analysis: Guinea-Bissau, the Democratic Republic of the
+Congo, Egypt, Hong Kong, Iran, and Saint Vincent and the Grenadines (*Building Coastal Resilience
+with Mangroves*, 2024, Appendix 1, Data Cleaning items 3 and 4). The package's processing writes
+zero area for every country absent from its source, so the table shows these six at zero. Their
+mangrove component is published as missing, not zero, from the staged list
+`mangrove_excluded_geospatial_errors.csv`. Egypt and Iran keep their coral value, labelled coral
+protection only. The other four have no component and no value. The same appendix also removed 18
+countries holding under 100 ha of mangroves. Seventeen of them publish a zero mangrove component,
+and Anguilla is missing because neither table carries it. Whether to treat those zeros as
+unestimated is an open decision.
 
 **Coral reefs.** The coral component is the annual expected flood protection benefit table
 staged as `coral_reefs_annual_expected_benefit_nfamara.xlsx`, which gives one annual benefit per
@@ -49,14 +72,27 @@ $$
 The only monetary adjustment made here is a currency year alignment. The mangrove table is
 already in the base year's dollars and needs none. The coral table is in 2011 US dollars, so
 every value is multiplied by one scalar: the US CPI annual-mean ratio between 2019 and 2011
-(FRED's CPIAUCSL, the same series every temporal dollar conversion in the account uses), which
-is 1.1366 on the staged data. The values are dollars, not local currency, so one US factor
-carries every country; a per-country inflation rate would answer a different question.
+(FRED's CPIAUCSL, the shared US CPI series in `utilities.usd_deflation_factor`), which is 1.1366
+on the staged data. The values are dollars, not local currency, so one US factor
+carries every country. A per-country inflation rate would answer a different question.
 
 ## Valuation
 
-The two components are joined on country and year, a country present in only one table
-contributes that component alone, and the national value is their sum:
+The two components are joined on country and year, and the national value is the sum of the
+components that are measured. A component a table does not carry stays missing rather than zero.
+The coral table lists 80 countries and leaves out some that have reefs, Japan among them, so a
+country's absence from a table is not evidence that the habitat gives no protection there. A
+zero the source table reports, such as zero mapped mangrove area, stays zero.
+
+Each row carries a coverage label, `coastal_protection_coverage`, naming what its total covers:
+mangrove and coral protection, coral protection only, or mangrove protection only. The coastal
+group decided that where coral protection is valued and the mangrove estimate is missing, the coral
+value stands and the row reads coral protection only. Because other habitats also protect coasts,
+a row with both components is still not all of nature's coastal protection, so the label states
+which of the two modelled components the total includes, not that the total is complete. A
+component measured on only some of a split country's sub-regions is called partial in the label.
+No country is in that shape on the staged data. Where neither component is measured, the label is
+missing along with the value.
 
 $$
 \text{GEP}_{\text{coastal protection},c} = V^{\text{mangrove}}_{c,2019} + V^{\text{coral}}_{c,2011} \cdot D_{2011 \rightarrow 2019}
@@ -68,9 +104,9 @@ and $D_{2011 \rightarrow 2019}$ is the US CPI factor between those years. The re
 written as one row per country for the base year 2019, with the two components kept as separate
 columns beside the total so that either can be inspected on its own.
 
-On the currently staged input data this gives a global total of $36.28$ billion in 2019 US
-dollars, of which $30.40$ billion is the mangrove component and $5.88$ billion is the coral reef
-component.
+On the currently staged input data this gives a known-component total of $36.28$ billion in 2019
+US dollars, of which $30.40$ billion is the mangrove component and $5.88$ billion is the coral reef
+component. The 46 countries with both components measured sum to $32.68$ billion.
 
 ## Known limitations
 
@@ -84,3 +120,55 @@ coastal country is missing.
 Because the module consumes pre-valued national tables, it cannot separate the physical extent of
 a habitat from the value assigned to it. A change in either the mapped habitat area or the damage
 function behind these tables enters here only as a changed national total.
+
+## Output
+
+`gep_calculation` writes `gep_by_country_base_year.csv` into its own task directory, holding the
+r250 identifiers and attributes, `year`, `coastal_protection_gep` (the known-component total),
+`coastal_protection_gep_mangrove`, `coastal_protection_gep_coral_reef`,
+`coastal_protection_gep_both_components` (the total where both components are measured) and
+`coastal_protection_coverage` (the coverage label). The same columns are in
+`gep_by_country_base_year.gpkg` beside it, which carries the country boundaries for the map.
+
+## Coverage
+
+The published table is one row for each of the account's 250 countries, base year 2019, in 2019
+USD.
+
+| Column | Positive | Zero | Missing | Total |
+| --- | --- | --- | --- | --- |
+| Known-component total | 106 | 111 | 33 | \$36,282,030,656.66 |
+| Mangrove | 63 | 120 | 67 | \$30,400,077,269.61 |
+| Coral reef | 80 | 0 | 170 | \$5,881,953,387.05 |
+| Both components measured | 46 | 0 | 204 | \$32,678,157,914.16 |
+
+| Coverage label | Countries |
+| --- | --- |
+| mangrove and coral protection | 46 |
+| coral protection only | 34 |
+| mangrove protection only | 137 |
+| missing (no component measured) | 33 |
+
+Remaining zeros are carried from the source mangrove table, which records zero area for 120
+countries. They include the 17 small-mangrove exclusions, whose interpretation remains open. For
+111 of the 120 the coral table has no row, so their total is zero and reads mangrove protection
+only. That includes landlocked and temperate countries such as Austria and the Netherlands, where
+the label reflects which tables list the country rather than any coral value. A missing value
+means the data to compute it is absent.
+
+## Reproduction
+
+An independent rebuild of all 250 rows from the two author tables, the country correspondence,
+the CPI factor 1.13662268124 and the six exclusions matched the published totals and components
+within a relative 1.2e-7, with identical missing values. That rebuild predates the coverage label.
+The label change moved no measured value: all 250 totals and every measured component are
+identical, and only the 145 zeros previously set for a component a table does not carry (8
+mangrove, 137 coral) are now missing. The upstream habitat models are not rerun.
+
+## What is open
+
+- The small-mangrove zeros. Whether the 17 countries the mangrove source removed for holding
+  under 100 ha stand as zeros or count as unestimated is the coastal group's decision on missing
+  habitat data.
+- The CPI series. The write-up cites the BLS CPI-U, and the library uses FRED's seasonally
+  adjusted CPIAUCSL. The difference in the annual-mean ratio is not quantified.

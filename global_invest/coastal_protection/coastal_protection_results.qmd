@@ -87,7 +87,12 @@ for k, v in p.results[service_label].items():
     if k == 'gep_by_country_base_year':
         value_column = 'coastal_protection_gep'
         total_value = df[value_column].sum()
-        p.gep_by_country_base_year_table = df[['iso3_r250_name', value_column]]
+        both_components_total_value = df['coastal_protection_gep_both_components'].sum()
+        coverage_counts = df['coastal_protection_coverage'].value_counts()
+        p.gep_by_country_base_year_table = df[['iso3_r250_name', value_column,
+                                               'coastal_protection_gep_mangrove',
+                                               'coastal_protection_gep_coral_reef',
+                                               'coastal_protection_coverage']]
 
         # Group by useful aggregation columns explicitly and assign each as an attribute to p
         if 'income_grp' in df.columns:
@@ -134,7 +139,7 @@ for k, v in p.results[service_label].items():
         sm = plt.cm.ScalarMappable(cmap='OrRd', norm=norm)
         sm._A = []
         cbar = fig.colorbar(sm, ax=ax, orientation='vertical', fraction=0.03, pad=0.02)
-        cbar.set_label("Gross Economic Product (GEP) in Base Year")
+        cbar.set_label("Gross Ecosystem Product (GEP) in Base Year")
         cbar.ax.yaxis.set_major_formatter(mpl.ticker.FuncFormatter(lambda x, _: f'{int(x):,}'))
 
         ax.set_title('GEP by Country in Base Year')
@@ -155,14 +160,14 @@ for k, v in p.results[service_label].items():
         plt.plot(p.gep_by_year_table['year'], p.gep_by_year_table['Value'], marker='o')
         plt.title('GEP by Year')
         plt.xlabel('Year')
-        plt.ylabel('Gross Economic Product (GEP)')
+        plt.ylabel('Gross Ecosystem Product (GEP)')
         plt.grid(True)
         plt.savefig(os.path.join(utilities.report_dir(), 'gep_by_year_plot.png'), dpi=300)
         plt.close()
 
 ```
 
-Storm damage avoided by mangroves and coral reefs is valued at $`{python} f"{total_value:,.2f}"` in the base year. Both source tables already carry a final per-country value, so this page reports them rather than a calculation we ran. The tables below aggregate by income group, region and continent.
+Storm damage avoided by mangroves and coral reefs is valued at $`{python} f"{total_value:,.2f}"` in the base year, in 2019 US dollars, summed over the components each country has. The mangrove value is the World Bank's mangrove area times its value per hectare, and the coral value is a published 2011-dollar benefit brought to 2019 by the US CPI. Mangroves and coral reefs are not the only habitats that protect coasts, so each country's coverage label says which of the two its total includes: `{python} f"{coverage_counts.get('mangrove and coral protection', 0)}"` countries have both, `{python} f"{coverage_counts.get('coral protection only', 0)}"` have coral protection only and `{python} f"{coverage_counts.get('mangrove protection only', 0)}"` have mangrove protection only. Over the countries with both components measured, the total is $`{python} f"{both_components_total_value:,.2f}"`. The tables below aggregate the first total by income group, region, continent and subregion, and end with the per-country table, which shows both components and the coverage label.
 
 ## GEP by Country in Base Year, mapped
 

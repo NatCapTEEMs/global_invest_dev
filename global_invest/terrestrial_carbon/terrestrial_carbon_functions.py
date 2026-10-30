@@ -16,8 +16,8 @@ import hazelbean as hb
 from global_invest import utilities
 
 # The raw-Spawn density build (uint -> float32 scaling, aboveground+belowground add) is a one-off
-# base-data job, not part of the per-run tree; it lives in howto/rebuild_spawn_total_carbon_density.md
-# and the run consumes its finished product (spawn_total_biomass_carbon_2010.tif) from base_data.
+# base-data job, not part of the per-run tree; it is the gep_preprocess task, and the run consumes
+# its finished product (spawn_total_biomass_carbon_2010.tif) from base_data.
 
 # hazelbean's output_data_type code for Float32. The LULC grid the density rasters are written
 # against is uint8, which would round every density to a whole Mg C/ha.
@@ -34,7 +34,7 @@ LOOKUP_KEY_DTYPE = 'int64'
 
 # =============================================================================
 # Raster reducers. Both stream their pixels because the rasters are global at
-# 300 m; both return what they measured instead of writing it.
+# 300 m.
 # =============================================================================
 
 
@@ -98,9 +98,8 @@ def generate_carbon_density_raster(lulc_path, cz_path, density_lookup, out_path)
             f"Refusing to emit an all-NoData density raster.")
     hb.log(f"Saved: {out_path}")
 
-# Promoted to global_invest.utilities on its second caller (pollination GEP); re-exported here
-# so existing imports keep working. It reads as unused in this file because the caller is the
-# tasks module, which reaches it as tcf.summarize_raster_by_region.
+# Lives in global_invest.utilities, shared with the pollination GEP; re-exported here because the
+# tasks module reaches it as tcf.summarize_raster_by_region, so it reads as unused in this file.
 from global_invest.utilities import summarize_raster_by_region  # noqa: F401  (re-export)
 
 
@@ -277,9 +276,8 @@ def summed_shock_rows(scenario_by_year_by_scenario, baseline_at_base_year, zone_
     for zone_id, (endw, reg) in zone_labels.items():
         zones_by_region.setdefault(reg, []).append(zone_id)
 
-    # REGIONAL SCOPE. With covered_zones None -- every global run -- nothing changes: every region
-    # is required, and a missing zone raises in regional_total below. That is the full coverage
-    # requirement, unaltered.
+    # REGIONAL SCOPE. With covered_zones None -- every global run -- every region is required, and
+    # a missing zone raises in regional_total below: the full coverage requirement.
     #
     # A bounded AOI cannot satisfy it: on the zaf fixture 46 of 50 regions have no measured zone at
     # all. Such a region is reported COMPLETELY or not at all, never partially summed, so the
@@ -449,7 +447,7 @@ def scc_valuation_rows(stock_by_scenario_year, base_stock, price, base_year, ret
             is reported beside the change from the base year.
 
     Returns:
-        pd.DataFrame: iso3_r250_id, scenario, year (base_year..last anchor, annual, linear between
+        pd.DataFrame: iso3_r250_id, scenario, year (base_year..last anchor, annual, PCHIP between
         anchors), stock_mgc, delta_stock_mgc, delta_value_usd, and with a baseline
         delta_stock_vs_baseline_mgc, delta_value_vs_baseline_usd.
     """
@@ -464,10 +462,10 @@ def scc_valuation_rows(stock_by_scenario_year, base_stock, price, base_year, ret
         table = table.dropna()
         # PCHIP on the STOCK in Mg C -- the physical quantity -- never the multiplicative
         # productivity transform: a carbon account is additive and does not compound. Anchors are
-        # preserved exactly, so cumulative change and implied cumulative emissions are unaltered;
-        # the annual flow between anchors stops jumping at the reporting years. Measured on the
-        # bounded outputs: anchor identity 2.4e-07 Mg C, cumulative emissions identical,
-        # mean flow jump at 2030/2040 2.9e6 -> 6.3e5 Mg C/yr, NPV @1.4% -3.82%.
+        # preserved exactly, so cumulative change and implied cumulative emissions match straight
+        # lines between anchors, while the annual flow does not jump at the reporting years. Against
+        # straight lines on the bounded outputs: anchor identity 2.4e-07 Mg C, cumulative emissions
+        # identical, mean flow jump at 2030/2040 2.9e6 -> 6.3e5 Mg C/yr, NPV @1.4% -3.82%.
         _present = [c for c in table.columns if table[c].notna().any()]
         annual = pd.DataFrame(
             utilities.anchored_series(years, _present, table[_present].to_numpy().T).T,
@@ -492,12 +490,7 @@ def scc_valuation_rows(stock_by_scenario_year, base_stock, price, base_year, ret
         anchors = sorted(baseline_by_year)
         years = list(range(base_year, anchors[-1] + 1))
         table = pd.DataFrame({base_year: base_stock, **{y: baseline_by_year[y] for y in anchors}}).dropna()
-        # PCHIP on the STOCK in Mg C -- the physical quantity -- never the multiplicative
-        # productivity transform: a carbon account is additive and does not compound. Anchors are
-        # preserved exactly, so cumulative change and implied cumulative emissions are unaltered;
-        # the annual flow between anchors stops jumping at the reporting years. Measured on the
-        # bounded outputs: anchor identity 2.4e-07 Mg C, cumulative emissions identical,
-        # mean flow jump at 2030/2040 2.9e6 -> 6.3e5 Mg C/yr, NPV @1.4% -3.82%.
+        # The baseline stock is interpolated the same way: PCHIP on the stock, anchors exact.
         _present = [c for c in table.columns if table[c].notna().any()]
         annual = pd.DataFrame(
             utilities.anchored_series(years, _present, table[_present].to_numpy().T).T,

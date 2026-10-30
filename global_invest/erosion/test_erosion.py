@@ -23,9 +23,8 @@ def test_country_gep_weights_clips_and_floors():
     # Three countries: AAA exercises the production-weighted elasticity mean; BBB the elasticity
     # clip at 1.0; CCC the tiny-positive numerical floor, 8e-10.
     #
-    # This used to monkeypatch the two price loaders, because the only way in was a function that
-    # opened them. It is not needed: the shock and the valuation are separate pure functions, so
-    # the frames go straight in. A test that has to replace file readers is testing the wiring.
+    # The shock and the valuation are separate pure functions, so the frames go straight in and
+    # no price loader is replaced. A test that has to replace file readers is testing the wiring.
     df_country_crop = pd.DataFrame({
         'ISO3': ['AAA', 'AAA', 'BBB', 'CCC'],
         'protected_production_tons': [50.0, 100.0, 25.0, 1e-10],
@@ -154,22 +153,135 @@ def test_a_country_with_no_production_has_no_shock_rather_than_a_zero_one():
 
 
 def test_value_is_crop_output_times_the_shock_and_a_missing_price_is_not_a_zero_shock():
-    # The value is the country's crop gross production value times the shock. A country we have no
-    # GPV for values at zero -- but its shock stays visible, so the gap reads as a missing price
-    # rather than as a country where erosion does not matter.
+    # The value is the country's crop gross production value times the shock. A country with no
+    # GPV has no value: it is missing, not zero, and its shock stays visible, so the gap reads as a
+    # missing price rather than as a country where erosion does not matter. Present zeros, a zero
+    # price or a zero shock, still value at zero, and a missing shock is missing too.
     shock = pd.DataFrame({
-        'iso3': ['AAA', 'NOGPV'], 'protected_production_tons': [50.0, 50.0],
-        'total_production_tons': [100.0, 100.0], 'share_protected_production': [0.5, 0.5],
-        'erosion_shock_share': [0.2, 0.2]})
-    gpv = pd.DataFrame({'iso3': ['AAA'], 'crop_gpv_const2019_2019': [1000.0]})
+        'iso3': ['AAA', 'NOGPV', 'ZEROGPV', 'ZEROSHOCK', 'NOSHOCK'],
+        'protected_production_tons': [50.0] * 5, 'total_production_tons': [100.0] * 5,
+        'share_protected_production': [0.5] * 5,
+        'erosion_shock_share': [0.2, 0.2, 0.2, 0.0, np.nan]})
+    gpv = pd.DataFrame({'iso3': ['AAA', 'ZEROGPV', 'ZEROSHOCK', 'NOSHOCK'],
+                        'crop_gpv_const2019_2019': [1000.0, 0.0, 500.0, 500.0]})
     gdp = pd.DataFrame({'iso3': ['AAA', 'NOGPV'], 'gdp_const2019_2019': [10000.0, 0.0]})
     out = ec.country_gep(shock, gpv, gdp, 'combined').set_index('iso3')
     assert out.loc['AAA', 'gep_const2019_usd'] == pytest.approx(200.0)
     assert out.loc['AAA', 'gdp_loss_pct'] == pytest.approx(2.0)
-    assert out.loc['NOGPV', 'gep_const2019_usd'] == 0.0
+    assert pd.isna(out.loc['NOGPV', 'gep_const2019_usd'])
     assert out.loc['NOGPV', 'erosion_shock_share'] == pytest.approx(0.2)
+    assert out.loc['ZEROGPV', 'gep_const2019_usd'] == 0.0
+    assert out.loc['ZEROSHOCK', 'gep_const2019_usd'] == 0.0
+    assert pd.isna(out.loc['NOSHOCK', 'gep_const2019_usd'])
     # A zero or missing GDP gives no percentage, rather than an infinite one.
     assert pd.isna(out.loc['NOGPV', 'gdp_loss_pct'])
+
+
+def test_crop_rows_are_chosen_by_faostat_item_code_not_by_name():
+    # Sugar cane and oranges are crops a name pattern misses, and goat meat is livestock its "oat"
+    # keeps. FAOSTAT's own "Crops" group (QV 2041) decides.
+    groups = pd.DataFrame({'Domain Code': ['QV', 'QV', 'QV', 'QV', 'QC'],
+                           'Item Group Code': ['2041', '2041', '2041', '2044', '2041'],
+                           'Item Code': ['15', '156', '490', '1017', '1062']})
+    codes = ec.crop_item_codes(groups)
+    assert codes == {15, 156, 490}
+    rows = pd.DataFrame({'item_code_fao': [15, 156, 490, 1017, 1062, None],
+                         'item': ['Wheat', 'Sugar cane', 'Oranges', 'Meat of goat, fresh or chilled',
+                                  'Hen eggs in shell, fresh', 'No code'],
+                         'value': [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]})
+    kept = ec.crop_items_only(rows, codes)
+    assert kept['item'].tolist() == ['Wheat', 'Sugar cane', 'Oranges']
+    with pytest.raises(ValueError):
+        ec.crop_item_codes(groups[groups['Item Group Code'] != '2041'])
+
+
+def test_a_group_total_listed_as_a_crop_item_is_not_counted():
+    # 1717 is FAOSTAT's "Cereals, primary" total. Were it listed among the Crops members, a table
+    # carrying both the total and wheat would count wheat twice.
+    groups = pd.DataFrame({'Domain Code': ['QV', 'QV', 'QV'],
+                           'Item Group Code': ['2041', '2041', '1717'],
+                           'Item Code': ['15', '1717', '15']})
+    assert ec.crop_item_codes(groups) == {15}
+    rows = pd.DataFrame({'iso3': ['AAA', 'AAA'], 'item_code_fao': [15, 1717], 'value': [10.0, 10.0]})
+    assert ec.crop_items_only(rows, ec.crop_item_codes(groups))['value'].sum() == 10.0
+
+
+def test_the_fallback_values_crops_only(tmp_path):
+    # BBB has no FAOSTAT total, so its value comes from prices times quantities. Its goat meat
+    # carries a price and a quantity, and must not enter a crop value.
+    from types import SimpleNamespace
+    gpv = pd.DataFrame({'iso3': ['AAA'], 'year': [2019], 'item_code_fao': [15], 'item': ['Wheat'],
+                        'element': ['Gross Production Value (current thousand US$)'],
+                        'unit': ['1000 USD'], 'value': [7.0]})
+    # CCC grows only a crop that has no price anywhere, so it has no value rather than a zero.
+    prices = pd.DataFrame({'iso3': ['BBB', 'BBB', 'CCC'], 'item_code_fao': [15, 1017, 156],
+                           'item_name': ['Wheat', 'Meat of goat', 'Sugar cane'],
+                           'year': [2019, 2019, 2019], 'quantity_tons': [10.0, 5.0, 3.0],
+                           'price_usd_per_ton': [2.0, 100.0, None]})
+    groups = pd.DataFrame({'Domain Code': ['QV', 'QV'], 'Item Group Code': ['2041', '2041'],
+                           'Item Code': ['15', '156']})
+    gpv.to_csv(tmp_path / 'gpv.csv', index=False)
+    prices.to_csv(tmp_path / 'prices.csv', index=False)
+    groups.to_csv(tmp_path / 'groups.csv', index=False)
+    p = SimpleNamespace(erosion_crops_only=True)
+    paths = SimpleNamespace(input=SimpleNamespace(fao_item_groups=str(tmp_path / 'groups.csv')),
+                            output=SimpleNamespace(gpv_fallback_diagnostic=str(tmp_path / 'diag.csv')))
+    out = et.load_fao_gpv_iso3_const2019_with_fallback(
+        p, paths, str(tmp_path / 'gpv.csv'), str(tmp_path / 'prices.csv'), 2019).set_index('iso3')
+    assert out.loc['AAA', 'crop_gpv_const2019_2019'] == pytest.approx(7000.0)
+    assert out.loc['BBB', 'crop_gpv_const2019_2019'] == pytest.approx(20.0)
+    assert pd.isna(out.loc['CCC', 'crop_gpv_const2019_2019'])
+
+
+def test_a_repeated_price_row_does_not_weigh_twice_in_the_donor_mean(tmp_path):
+    # CCC has no price for wheat, so it takes the mean over the countries that have one. AAA's
+    # wheat row appears twice, exactly. Counted twice it would pull the mean to (10+10+40)/3 = 20
+    # instead of (10+40)/2 = 25. The split record for BBB (a name row and a quantity row) is not a
+    # duplicate and must still value BBB once.
+    from types import SimpleNamespace
+    gpv = pd.DataFrame({'iso3': ['ZZZ'], 'year': [2019], 'item_code_fao': [15], 'item': ['Wheat'],
+                        'element': ['Gross Production Value (current thousand US$)'],
+                        'unit': ['1000 USD'], 'value': [1.0]})
+    prices = pd.DataFrame({'area': ['A', 'A', 'B', None, 'C'],
+                           'iso3': ['AAA', 'AAA', 'BBB', 'BBB', 'CCC'], 'item_code_fao': [15] * 5,
+                           'item_name': ['Wheat', 'Wheat', 'Wheat', None, 'Wheat'], 'year': [2019] * 5,
+                           'quantity_tons': [1.0, 1.0, None, 2.0, 3.0],
+                           'price_usd_per_ton': [10.0, 10.0, None, 40.0, None]})
+    groups = pd.DataFrame({'Domain Code': ['QV'], 'Item Group Code': ['2041'], 'Item Code': ['15']})
+    gpv.to_csv(tmp_path / 'gpv.csv', index=False)
+    prices.to_csv(tmp_path / 'prices.csv', index=False)
+    groups.to_csv(tmp_path / 'groups.csv', index=False)
+    p = SimpleNamespace(erosion_crops_only=True)
+    paths = SimpleNamespace(input=SimpleNamespace(fao_item_groups=str(tmp_path / 'groups.csv')),
+                            output=SimpleNamespace(gpv_fallback_diagnostic=str(tmp_path / 'diag.csv')))
+    out = et.load_fao_gpv_iso3_const2019_with_fallback(
+        p, paths, str(tmp_path / 'gpv.csv'), str(tmp_path / 'prices.csv'), 2019).set_index('iso3')
+    assert out.loc['AAA', 'crop_gpv_const2019_2019'] == pytest.approx(10.0)    # once, not twice
+    assert out.loc['BBB', 'crop_gpv_const2019_2019'] == pytest.approx(80.0)    # split record kept
+    assert out.loc['CCC', 'crop_gpv_const2019_2019'] == pytest.approx(75.0)    # 3 t at mean 25
+
+
+def test_a_crop_listed_twice_for_one_country_raises():
+    rows = pd.DataFrame({'iso3': ['AAA', 'AAA', 'BBB'], 'item_code_fao': [156, 156, 156],
+                         'value': [5.0, 5.0, 3.0]})
+    with pytest.raises(ValueError, match='AAA'):
+        ec.crop_items_only(rows, {156})
+
+
+def test_the_staged_faostat_crop_group_has_no_group_totals_and_no_repeated_country_crop():
+    import hazelbean as hb
+    import tempfile
+    from global_invest import utilities
+    p = hb.ProjectFlow(project_dir=os.path.join(tempfile.mkdtemp(), 'anchors'))
+    groups = pd.read_csv(p.get_path(os.path.join('global_invest', 'fao', 'faostat_item_groups.csv')),
+                         encoding='utf-8-sig', dtype=str)
+    codes = ec.crop_item_codes(groups)
+    assert len(codes) == 160
+    gpv = utilities.normalize_columns(pd.read_csv(
+        p.get_path(os.path.join('global_invest', 'erosion', 'faostat_gpv_2019_iso3.csv')),
+        encoding='utf-8-sig'))
+    kept = ec.crop_items_only(gpv, codes)
+    assert len(kept) == 3678 and kept['iso3'].nunique() == 122
 
 
 def test_a_country_is_not_small_because_one_of_its_territories_is():
@@ -201,9 +313,9 @@ def test_a_country_is_not_small_because_one_of_its_territories_is():
 def test_static_shock_raises_when_the_dependency_table_is_absent(tmp_path):
     """A missing dependency table stops the run instead of leaving the consumer without a shock.
 
-    This printed a line and returned, so GTAP received no erosion shock and nothing in the run
-    failed -- the same silent-zero the scenario loop below it explicitly refuses to do. The static
-    path is the default one consumers take, so the quiet version of this was the likely one.
+    Printing a line and returning would leave GTAP with no erosion shock and nothing in the run
+    failed -- the same silent zero the scenario loop below it explicitly refuses. The static path
+    is the default one consumers take, so this is the likely place for that failure.
     """
     import os
 
@@ -229,12 +341,13 @@ def test_static_shock_raises_when_the_dependency_table_is_absent(tmp_path):
 
 
 def test_the_country_table_matches_the_authors_corrected_run_where_the_border_rule_allows():
-    """Condition 12. The entry claimed 25% disagreement against his March table for weeks, which two
-    things had already superseded: the elasticity crop-name bug he found, and his corrected run.
+    """Condition 12. Compares against the author's corrected run (which fixes the elasticity
+    crop-name bug the author found), with the crop values held fixed at the author's.
 
-    His corrected output is staged now, so this compares against it. The two differ by the border
-    rule alone -- his notebook sets RASTERIZE_ALL_TOUCHED, ours takes the cell whose centre the
-    polygon covers -- so the test pins the global agreement and the two countries the rule explains,
+    The account's crop values differ from the author's on purpose, so the totals differ by more
+    than the border rule alone. With the crop values fixed, the border rule is what remains: the
+    author's notebook sets RASTERIZE_ALL_TOUCHED, the account takes the cell whose centre the
+    polygon covers. The test pins the global agreement and the two countries the rule explains,
     rather than demanding an equality it should not get."""
     import os
     reference_path = os.path.join(
@@ -249,6 +362,12 @@ def test_the_country_table_matches_the_authors_corrected_run_where_the_border_ru
     column = 'gep_const2019_usd_combined'
     theirs = pd.read_csv(reference_path)
     ours = pd.read_csv(ours_path)
+    # Our crop value departs from theirs on purpose (FAOSTAT's "Crops" item group in place of their
+    # word list, repeated price rows dropped), so ours is valued at their crop value. The border
+    # rule acts on the shock, and the shock is what this compares.
+    ours = ours[['iso3', 'erosion_shock_share_combined']].merge(
+        theirs[['iso3', 'crop_gpv_const2019_2019']], on='iso3', how='left')
+    ours[column] = ours['crop_gpv_const2019_2019'] * ours['erosion_shock_share_combined']
 
     # Global agreement. The border rule moves this by about 0.8 percent and nothing else should.
     ratio = ours[column].sum() / theirs[column].sum()
@@ -264,7 +383,7 @@ def test_the_country_table_matches_the_authors_corrected_run_where_the_border_ru
     assert (swe[column + '_theirs'] > 0).all()            # all-touched finds one severe cell
     assert (swe[column + '_ours'].fillna(0) == 0).all()   # the centre rule finds none
 
-    # And most countries agree far better than the headline does.
+    # And over 40% of countries agree within 1%, far better than the headline does.
     both = joined.dropna()
     both = both[both[column + '_theirs'] > 0]
     within = ((both[column + '_ours'] - both[column + '_theirs']).abs()
@@ -273,7 +392,8 @@ def test_the_country_table_matches_the_authors_corrected_run_where_the_border_ru
 
 
 # ---------------------------------------------------------------------------
-# From test_baseline_domain_rule.py: Erosion is estimated on the BASE-YEAR cropland domain; newly appearing cropland is reported
+# Baseline-domain rule: erosion is estimated on the BASE-YEAR cropland domain; newly appearing
+# cropland outside it is reported, not shocked
 # ---------------------------------------------------------------------------
 
 import numpy as np
@@ -371,7 +491,8 @@ def test_excluded_zone_reports_its_future_hectares(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# From test_future_coverage_exclusion.py: A zone whose FUTURE cropland is entirely outside valid erosion support is a NAMED exception
+# Future coverage exclusion: a zone whose FUTURE cropland is entirely outside valid erosion
+# support is a NAMED exception
 # ---------------------------------------------------------------------------
 
 import pandas as pd
@@ -442,7 +563,7 @@ def test_the_record_keeps_baseline_and_future_hectares(tmp_path):
 
 
 def test_an_unnamed_zone_in_the_same_state_still_fails():
-    """The next unexplained case must stop the _fce_run, not be absorbed by the exception."""
+    """The next unexplained case must stop the run, not be absorbed by the exception."""
     unnamed = 2002
     assert unnamed not in FUTURE_COVERAGE_EXCLUSIONS
     with pytest.raises(ValueError, match='not named exceptions'):
@@ -462,14 +583,14 @@ def test_a_named_zone_undefined_in_only_some_scenario_years_is_excluded_from_all
 
 
 def test_a_zone_absent_from_the_table_is_evidence_not_contradiction():
-    """No cropland footprint means no _fce_row at all; that is the cause, not a failure of the cause."""
+    """No cropland footprint means no row at all; that is the cause, not a failure of the cause."""
     out = _fce_tmp()
     frame = pd.read_csv(_fce_run_absent(out))
     assert frame.zone_id.tolist() == [NAMED]
 
 
 def test_every_unnamed_offender_is_reported_at_once():
-    """Raising on the first hides the rest, and each rediscovery costs a full _fce_run of the seam."""
+    """Raising on the first hides the rest, and each rediscovery costs a full run of the seam."""
     a, b = 2002, 2003
     tables = _fce_build(a, ALL_FUTURE)
     for (scenario, year) in ALL_FUTURE:
@@ -519,9 +640,8 @@ def test_a_zone_with_no_base_year_is_left_to_the_baseline_rule():
     """The two rules must not compete for the same zone.
 
     A zone with no base-year damage has no d_2023, so its future cannot be the thing that is
-    missing. Scanning it with the future check reports it as an unnamed offender and stops a _fce_run
-    the baseline-domain rule would have handled -- which cost a full seam _fce_run on 2026-09-25, and is
-    why nine Canadian, Mongolian, US and rest-of-world zones were wrongly named as new cases.
+    missing. Scanning it with the future check would report it as an unnamed offender and stop a
+    run the baseline-domain rule handles.
     """
     unnamed = 2002
     assert unnamed not in FUTURE_COVERAGE_EXCLUSIONS
@@ -542,7 +662,7 @@ def test_a_zone_with_no_base_year_is_left_to_the_baseline_rule():
 
 
 # ---------------------------------------------------------------------------
-# From test_zone_id_normalisation.py: Zone ids are validated integers before anything keys on them
+# Zone ids are validated integers before anything keys on them
 # ---------------------------------------------------------------------------
 
 import geopandas as gpd
@@ -571,7 +691,7 @@ def test_string_ids_become_int64():
 
 
 def test_the_merge_that_failed_now_works():
-    """THE REGRESSION. Rasterisation yields int64 zone ids; the label table must join to them."""
+    """Pins the join: rasterisation yields int64 zone ids, and the label table must join to them."""
     b = normalise_zone_ids(_zid_boundary(['100', '208', '4918']))
     labels = zone_label_table(b)
     from_raster = pd.DataFrame({'zone_id': [100, 208, 4918], 'damage': [1.0, 2.0, 3.0]})
@@ -619,7 +739,7 @@ def test_aez0_is_kept():
 
 
 # ---------------------------------------------------------------------------
-# From test_erosion_damage.py: Small physical and accounting invariants; no raster runtime required
+# Damage arithmetic: small physical and accounting invariants; no raster runtime required
 # ---------------------------------------------------------------------------
 
 import unittest
@@ -697,7 +817,7 @@ if __name__ == '__main__':
 def test_seals7_biophysical_table_is_rebuilt_only_when_its_source_changes(tmp_path):
     """The re-key is a function of its source, so a second call must not rewrite the table.
 
-    It did, on every SDR pass, which is work repeated on resume and makes an unchanged-resume check
+    Rewriting it on every SDR pass repeats work on resume and makes an unchanged-resume check
     impossible to satisfy. An existence check alone would be the opposite defect, so the second half
     changes the source and requires the rebuild.
     """

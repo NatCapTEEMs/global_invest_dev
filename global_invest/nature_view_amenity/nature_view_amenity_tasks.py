@@ -12,7 +12,6 @@ which is the owner's convention, kept.
 import os
 
 import hazelbean as hb
-import numpy as np
 import pandas as pd
 
 from global_invest import utilities

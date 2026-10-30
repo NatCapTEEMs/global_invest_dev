@@ -11,8 +11,9 @@ they would otherwise be, and the damage those floods cause is smaller. That redu
 is what this account values.
 
 The scope is river flooding only. Coastal flooding, storm surge and pluvial flooding lie outside
-it, following the hazard product the account uses. The published table carries all 250 account
-rows at 537 m in USD 2019; 162 countries carry an estimate and 88 carry none.
+it, following the hazard product the account uses. The author's pipeline computes on a 537 m
+accounting grid. The published table is national: all 250 account rows in USD 2019, of which
+162 carry an estimate and 88 carry none.
 
 ## Method
 
@@ -59,6 +60,28 @@ At-a-station hydraulic geometry gives the split between width, depth and velocit
 discharge produces 8% more depth. The exponent is the least constrained element of the chain and
 is swept over 0.3 to 0.5.
 
+### The depth-damage table
+
+Damage per square metre at each depth comes from the JRC global depth-damage functions (Huizinga
+et al., 2017) as the authors rebuild them (`global_flood_gep` at `c0e49dd`,
+`counterfactual/rebuild_damage_table.py`, at its defaults, which the authors' method note records
+in section 11.6). The source is `country_landtype_depth_damage.xlsx`: 1,231 rows, 214 countries,
+six land types, checked against its recorded sha256 before it is read. Urban land (ESA class 190,
+SDA class `artif`) takes the Residential curve on the land-use basis, cropland takes the
+Agriculture curve, which the source gives per hectare and the rebuild divides by 10,000, and
+pasture takes cropland's. No roads class is priced. A land type a country lacks gives a zero
+curve. The cropland and pasture curves are zero for 18 countries: 17 have no Agriculture row and
+the Faroe Islands' row is zero. The Residential curves are zero for 18 small countries and
+territories, the same 18. Every
+value is converted from EUR2010 to USD2019 by one factor, 1.3260896 × 1.16006069 = 1.53834442.
+
+The canonical components table (`country_landtype_flood_damage_JRC_EUR_m2.csv`) is not used: its
+Residential curves are zero for every country, so urban land would take no damage. The run
+therefore sets `flood_skip_damage_tables`, and `task_rebuild_damage_table` writes the table
+Section D reads. The rebuilt table reproduces the authors' two checks in their section 11.7:
+196 of 214 urban curves are non-zero at 6 m, and Belgium's is USD2019 246.67 per m² (EUR2010
+160.35).
+
 ## Two counterfactuals
 
 **Bare soil** removes land cover entirely, setting curve numbers to the fallow values of the
@@ -97,8 +120,8 @@ alignment fault rather than a result.
 
 The amplification field is built from rainfall and flow direction rather than from the hazard
 maps, so it survives a change of hazard product. Building it is two weeks of single-threaded flow
-accumulation over 75 billion cells; everything downstream of it is hours. `RUN.md` documents both
-paths.
+accumulation over 75 billion cells; everything downstream of it is hours. The author's `RUN.md`
+documents both paths.
 
 
 ## Before trusting any rerun of the pipeline
@@ -106,9 +129,10 @@ paths.
 `gep_calculation` publishes the computed bare-counterfactual table when the chain has produced
 one — a computed table without the bare column is refused rather than silently substituted — and
 the author's per-country export otherwise, recording which was used. The saved published table
-matches the author's export on all 250 rows (162 with an estimate, 88 missing, identical
-missingness, largest numeric difference 3.73e-9). This section is the warning label for anyone
-rerunning the upstream pipeline.
+was written from the author's export and equals it on all 250 rows (162 with an estimate, 88
+missing, identical missingness, largest numeric difference 0). That is a check of the import,
+not a reproduction of the pipeline. This section is the warning label for anyone rerunning the
+upstream pipeline.
 
 ### The failure that made this account wrong twice
 
@@ -133,9 +157,11 @@ extraction — **but not a package that was never downloaded**, which was the or
 
 A missing amplification raster is refused: `_open_amplification_raster` raises rather than
 falling back to current depths, because that fallback completed the job with a wrong zero.
-`RUN.md` carries a
-three-line check that the mosaic resolves, and `msi/final_run.sbatch` verifies the totals itself and
-prints ALL MATCH or the quantity that differs.
+Inside a raster that does open, a nodata cell still reads as an amplification of 1.0
+(`_amp_tile`), so the tile check above remains the only guard against a missing flow-direction
+package. The author's `RUN.md` carries a three-line check that the mosaic resolves, and his
+`msi/final_run.sbatch` verifies the totals itself and prints ALL MATCH or the quantity that
+differs.
 
 ### Archived run evidence, 2026-09-01 cold start
 
@@ -144,9 +170,9 @@ What follows records that archived run; the current publisher rule is above. Fou
 counterfactuals gave **$11,403,596,548** across 250 rows, positive in 163: that run valued
 Iceland at $0.021 where the author's table carries NA, so its NA mask differed by one country,
 and the agreement to the cent held on the 162 rows both sides value — shared nonmissing
-agreement, not a 250-of-250 match. The CURRENT published table instead matches the author's
-export exactly in coverage (162 positive, 88 missing, identical missingness, largest numeric
-difference 3.73e-9). `gep = ead_bare - ead_current`
+agreement, not a 250-of-250 match. The CURRENT published table instead is the author's export,
+equal on all 250 rows (162 positive, 88 missing, identical missingness, largest numeric
+difference 0). In that archived run, `gep = ead_bare - ead_current`
 holds to 1.2e-07 on every row, and the damage side reproduces at $887,827,659,820 /
 $194,256,309,530 / $551,051,565,602.
 

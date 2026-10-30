@@ -326,8 +326,8 @@ def _align_zones_to_lulc_grid(p, reference_lulc_path):
     aligned_path = os.path.join(p.cur_dir, 'carbon_zones_aligned.tif')
     if not hb.path_exists(aligned_path):
         # Int32, not the reference's type. The match raster is a 7-class SEALS map stored as Byte,
-        # and taking the output type from it silently truncates every zone id above 255 -- South
-        # Africa's are 606-620, which landed on the Byte nodata and read as missing, leaving zone 0
+        # and taking the output type from it silently truncates every zone id above 255 (South
+        # Africa's are 606-620): they land on the Byte nodata and read as missing, leaving zone 0
         # everywhere and a carbon shock of exactly zero.
         hb.resample_to_match(p.terrestrial_quantity_input_path, reference_lulc_path,
                              aligned_path, resample_method='near',
@@ -404,9 +404,9 @@ def terrestrial_carbon_shock(p):
     #
     # This sits AFTER the two calls above, and must stay there. _inject_base_year_map publishes
     # scenario_lulc_paths[base][base_year], which erosion_damage_pipeline reads later; returning
-    # before it left that entry unset and the erosion damage seam failed with "Missing configured
-    # erosion input baseline_ignore_dependencies 2023: None". A reuse shortcut must skip the work,
-    # never the path publication. Both calls are themselves cached, so this costs nothing.
+    # before it leaves that entry unset and the erosion damage seam fails on a missing configured
+    # input. A reuse shortcut must skip the work, never the path publication. Both calls are
+    # themselves cached, so this costs nothing.
     shock_maps = sorted({m for by_year in p.scenario_lulc_paths.values() for m in by_year.values()})
     reason, signature, signature_path = _reuse_check(
         p, [p.terrestrial_carbon_shock_output_path], TERRESTRIAL_CARBON_SHOCK_SIGNATURE,
@@ -453,16 +453,15 @@ def _aligned_ha_per_cell(p, density_path):
     """The hectares-per-cell raster that ALIGNS with this carbon raster.
 
     Density x hectares is a per-pixel product, so the two rasters must share extent, resolution
-    and geotransform exactly. The global ha_per_cell_10sec was used unconditionally, which is
-    right for a global run and wrong for an AOI subset: on the zaf pilot it paired a (6120,4680)
-    density raster with a (129600,64800) hectares raster and raster_calculator_hb refused --
-    "Input Rasters are not the same dimensions ... {(6120, 4680), (129600, 64800)}" (job 3467106).
+    and geotransform exactly. The global ha_per_cell_10sec is right for a global run and wrong for
+    an AOI subset, whose density rasters cover only the AOI window, so raster_calculator_hb refuses
+    the pair as not the same dimensions.
 
     An AOI run already publishes an aligned raster: p.aoi_ha_per_cell_fine_path is the same
-    10-arcsec grid clipped to the AOI, measured on that pilot as (6120,4680) pixel 0.0027777778
-    origin (16.0,-22.0), identical to the density rasters. So the fix is to CHOOSE the aligned
-    input, not to resample either raster: resampling hectares-per-cell would change the areas the
-    carbon stock is computed from, and resampling density would change the stock itself.
+    10-arcsec grid clipped to the AOI, identical in size, pixel and origin to the density rasters.
+    So the aligned input is CHOSEN, and neither raster is resampled: resampling hectares-per-cell
+    would change the areas the carbon stock is computed from, and resampling density would change
+    the stock itself.
 
     Raises rather than guessing, because a silently misaligned product would still produce a
     plausible-looking carbon total.
@@ -512,16 +511,16 @@ def _reuse_check(p, outputs, signature_name, extra_settings=(), extra_inputs=(),
     `_service_settings_and_inputs` cannot see: the es_shock_* settings, which are not prefixed, and
     inputs named without the prefix (the region boundary, the GEP tables). The task's own output
     paths are dropped -- a signature that records where it was written changes whenever the project
-    directory moves, which is the path-keyed mistake that already cost one rebuild.
+    directory moves, which forces a needless rebuild.
 
     Returns:
         tuple: (reason to recompute or None, signature, signature_path).
     """
     settings, inputs = utilities._service_settings_and_inputs(p, 'terrestrial_carbon')
-    # Drop the task's own outputs by VALUE, not by attribute name. Name-matching missed
+    # Drop the task's own outputs by VALUE, not by attribute name. Name-matching misses
     # terrestrial_carbon_scc_valuation_path and _scc_figure_path, which end in _path rather than
-    # _output_path, so the task fingerprinted the files it was about to write: the signature changed
-    # every time it ran and the outputs could never be reused.
+    # _output_path, so the task would fingerprint the files it is about to write: the signature
+    # would change every time it ran and the outputs could never be reused.
     own = {str(o) for o in outputs}
     settings = {k: v for k, v in settings.items() if str(v) not in own}
     inputs = {k: v for k, v in inputs.items()
@@ -683,7 +682,7 @@ def terrestrial_carbon_shock_static(p):
     df = hb.df_read(carb_path)
     # The base resolves through the same candidate mechanism as the data scenarios (and FATALLY if it
     # can't): the frozen tables spell the nature-off baseline two ways across services, and an
-    # exact-match miss here gave an empty base -> empty output -> silent GTAP zero.
+    # exact-match miss here would give an empty base -> empty output -> silent GTAP zero.
     raw_base = utilities.resolve_base_scenario(df['scenario'].values, terrestrial_carbon_scenario_map, base_scenario, 'terrestrial_carbon', log=hb.log)
     base = df[(df['scenario'] == raw_base) & (df['year'] == es_shock_end_year)]
     base_vals = base.set_index(['ENDW', 'REG'])['percentage_change'].astype(float) * 100.0

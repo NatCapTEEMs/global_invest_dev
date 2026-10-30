@@ -36,7 +36,52 @@ def test_a_missing_input_is_an_na_with_its_absence_named():
     assert 'no electricity tariff' in out.loc['BBB', 'note']
 
 
-def test_the_staged_inputs_reproduce_the_committed_table_where_all_inputs_exist():
+def test_the_reference_keeps_author_only_countries_and_leaves_missing_values_missing():
+    # The run values AAA, has no value for BBB, and never sees CCC, which only the committed
+    # table values. Joining the reference onto the run's own rows would lose CCC.
+    country = pd.DataFrame({'iso3_r250_label': ['AAA', 'BBB', 'CCC'],
+                            'groundwater_recharge_gep': [10.0, np.nan, np.nan]})
+    committed = pd.DataFrame({'iso3_r250_label': ['AAA', 'CCC', 'COK', 'COK'],
+                              'ground_water_gep': [11.0, 5.0, np.nan, np.nan]})
+    out = gr.with_committed_reference(country, committed).set_index('iso3_r250_label')
+    assert list(out.index) == ['AAA', 'BBB', 'CCC']
+    assert out.loc['CCC', 'groundwater_recharge_gep_reference'] == 5.0
+    assert pd.isna(out.loc['CCC', 'groundwater_recharge_gep'])
+    assert pd.isna(out.loc['BBB', 'groundwater_recharge_gep'])
+    assert pd.isna(out.loc['BBB', 'groundwater_recharge_gep_reference'])
+    assert out.loc['AAA', 'groundwater_recharge_gep'] == 10.0
+
+
+def test_a_country_listed_twice_with_different_reference_values_raises():
+    country = pd.DataFrame({'iso3_r250_label': ['AAA'], 'groundwater_recharge_gep': [1.0]})
+    committed = pd.DataFrame({'iso3_r250_label': ['AAA', 'AAA'], 'ground_water_gep': [1.0, 2.0]})
+    try:
+        gr.with_committed_reference(country, committed)
+    except ValueError as error:
+        assert 'AAA' in str(error)
+    else:
+        raise AssertionError('conflicting duplicate reference rows were accepted')
+
+
+def test_the_staged_committed_table_attaches_to_250_countries_with_its_14_extra_values():
+    import os, tempfile, hazelbean as hb
+    base = utilities.service_data_dir(
+        hb.ProjectFlow(project_dir=os.path.join(tempfile.mkdtemp(), 'anchors')),
+        'groundwater_recharge')
+    committed = pd.read_csv(os.path.join(base, 'ground_water_gep.csv'))
+    recharge = pd.read_csv(os.path.join(base, 'l_val_dt_ctry.csv'))
+    labels = committed['iso3_r250_label'].drop_duplicates()
+    country = pd.DataFrame({'iso3_r250_label': labels})
+    out = gr.with_committed_reference(country, committed)
+    assert len(out) == len(labels) == 250 and out['iso3_r250_label'].is_unique
+    valued = set(out.loc[out['groundwater_recharge_gep_reference'].notna(), 'iso3_r250_label'])
+    author_only = valued - set(recharge['iso3_r250_label'])
+    assert author_only == {'ARM', 'ATG', 'CUB', 'CYP', 'DJI', 'DMA', 'DOM', 'IRL', 'JAM', 'KNA',
+                           'MKD', 'PRI', 'PRT', 'RWA'}
+    assert np.isclose(out['groundwater_recharge_gep_reference'].sum(), 7565447.41, rtol=0, atol=0.01)
+
+
+def test_india_from_the_staged_inputs_is_within_two_percent_of_the_committed_value():
     import os, tempfile, hazelbean as hb
     base = utilities.service_data_dir(
         hb.ProjectFlow(project_dir=os.path.join(tempfile.mkdtemp(), 'anchors')),
@@ -53,7 +98,8 @@ def test_the_staged_inputs_reproduce_the_committed_table_where_all_inputs_exist(
     ind_p = px.loc[px['Country name'] == 'India', 'Average price of 1KW/h (USD)'].iloc[0]
     ours = gr.pumping_cost_per_m3_per_m(ind_p, 0.5) * (ind_l / 1000.0) * ind_w * 1e9
     theirs = committed.loc[committed['iso3_r250_label'] == 'IND', 'ground_water_gep'].iloc[0]
-    # The staged committed CSV is one input vintage behind the current recharge table, so the
-    # anchor holds to a percent here; the all-services sheet's column, built on the current
-    # inputs, is reproduced to the cent (India 2,616,126.20) and the run log reports both.
+    # One country, at 2%: this is not a reproduction of the committed table. The committed CSV
+    # comes from a different recharge-table vintage than the staged one, and the author's own
+    # final step run on the staged inputs gives 7,211,275.95 in total, which matches only 21 of
+    # its 109 countries. India happens to sit within 2%.
     assert np.isclose(ours, theirs, rtol=0.02), (ours, theirs)

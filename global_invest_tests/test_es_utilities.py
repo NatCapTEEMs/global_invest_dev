@@ -43,7 +43,7 @@ def test_resolve_base_scenario_tries_candidates_and_is_fatal_when_absent():
 def test_nature_off_spellings_are_mutual_aliases_by_default():
     # The frozen tables disagree on the nature-off baseline's spelling (carbon: _dependencies;
     # pollination/erosion: _damages) -- each spelling must find the other's table without a
-    # consumer-supplied map. Closes the "global_invest open" half of the two-spelling bug.
+    # consumer-supplied map.
     quiet = lambda *a: None
     assert utilities.resolve_raw_scenario(
         ['baseline_ignore_damages', 'below_2c'], {}, 'baseline_ignore_dependencies', 'erosion', log=quiet) == 'baseline_ignore_damages'
@@ -290,3 +290,28 @@ def test_pyramid_sum_warp_conserves_a_dense_global_grid(tmp_path):
         got = float(warped[warped != out.GetRasterBand(1).GetNoDataValue()].sum())
         assert got == pytest.approx(expected, rel=1e-6), arc
         assert out.GetMetadataItem('POG_VARIABLE_CLASS') == 'extensive'
+
+
+def test_write_gep_by_country_gives_added_countries_the_tables_year(tmp_path):
+    """A country the service produced no value for is added with NA VALUES but the table's
+    YEAR: the year is metadata, so an added row must not leave it blank."""
+    import os
+    from types import SimpleNamespace
+    import numpy as np
+    import pandas as pd
+    from global_invest import utilities
+
+    countries = pd.DataFrame([
+        {'ee_r264_id': 1, 'iso3_r250_id': 76, 'ee_r264_label': 'BRA', 'iso3_r250_label': 'BRA',
+         'ee_r264_name': 'Brazil', 'iso3_r250_name': 'Brazil'},
+        {'ee_r264_id': 2, 'iso3_r250_id': 156, 'ee_r264_label': 'CHN', 'iso3_r250_label': 'CHN',
+         'ee_r264_name': 'China', 'iso3_r250_name': 'China'},
+    ])
+    p = SimpleNamespace(df_countries=countries)
+    service = pd.DataFrame({'iso3_r250_label': ['BRA'], 'year': [2019], 'value': [5.0]})
+    path = os.path.join(str(tmp_path), 'out.csv')
+    utilities.write_gep_by_country(p, service, path, log=lambda *a: None)
+    out = pd.read_csv(path).set_index('iso3_r250_label')
+    assert out.loc['CHN', 'year'] == 2019, 'the added country carries the table year'
+    assert np.isnan(out.loc['CHN', 'value']), 'its value stays missing'
+    assert out.loc['BRA', 'value'] == 5.0

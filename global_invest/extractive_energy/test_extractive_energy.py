@@ -47,8 +47,9 @@ def test_components_and_sum_reproduce_the_committed_anchors():
 
 def test_cwon_rents_replicate_the_committed_anchors_except_named_rows():
     """The computed valuation (CWoN <fuel>_rent_cd at YR2019) equals the committed drive
-    CSVs country by country. The exceptions are the eight rows named in the functions
-    module, which carry another country's full value in the committed CSVs."""
+    CSVs country by country, on the rows the committed CSVs value. The exceptions are the eight
+    rows named in the functions module, which carry another country's full value in the
+    committed CSVs. South Sudan is empty there and so is not compared."""
     for dta, csv, vcol in (('gas_rent_cd.dta', 'gep-gas.csv', 'gep_gas'),
                            ('coal_rent_cd.dta', 'gep-coal.csv', 'gep_coal'),
                            ('oil_rent_cd.dta', 'gep-petrolium.csv', 'gep_oil')):

@@ -22,9 +22,7 @@ INPUTS = ('gep_lulc_input_path', 'ntfp_ndvi_mean_path', 'ntfp_roads_vector_path'
 def main():
     p = hb.ProjectFlow(project_name='gep_ntfp', run_mode='check')
     # The same four calls the tasks make in publish_inputs, in the same order, so what this
-    # resolves is what the run will resolve. Writing them out here is what caught
-    # initialize_pyramid_paths missing from the task's own publish_inputs: ha_per_cell was read
-    # by the warps and published by nobody, and the run would have died on the first one.
+    # resolves is what the run will resolve.
     utilities.hydrate_es_config(p, 'ntfp', log=hb.log)
     utilities.hydrate_es_parameters(p, 'ntfp', log=hb.log)
     utilities.initialize_country_paths(p)
@@ -38,7 +36,7 @@ def main():
         if not found:
             missing.append(name)
 
-    # The pyramid the whole run is now on. Its absence would surface much later, as a warp with
+    # The pyramid the whole run is on. Its absence would surface much later, as a warp with
     # no template, so it is named here with the rest.
     print('[preflight] %-24s %-8s %s'
           % ('ha_per_cell_10sec_path', 'OK' if hb.path_exists(p.ha_per_cell_10sec_path)
@@ -46,10 +44,10 @@ def main():
     if not hb.path_exists(p.ha_per_cell_10sec_path):
         missing.append('ha_per_cell_10sec_path')
 
-    # EXISTENCE IS NOT VALIDITY. On MSI (job 17890607) every path resolved and the run died 25
-    # minutes later because `ee_r264_correspondence.csv` was an older vintage carrying neither
-    # `iso3_r250_id` nor `iso3_r250_label` -- the columns the country stage keys on. A file being
-    # present says nothing about it being the one the code expects, so the columns are checked here.
+    # EXISTENCE IS NOT VALIDITY. Every path can resolve while `ee_r264_correspondence.csv` is an
+    # older vintage carrying neither `iso3_r250_id` nor `iso3_r250_label` -- the columns the
+    # country stage keys on -- and the run then dies well into the job. A file being present says
+    # nothing about it being the one the code expects, so the columns are checked here.
     required = ['iso3_r250_id', 'iso3_r250_label']
     absent = [c for c in required if c not in p.df_countries.columns]
     print('[preflight] %-24s %-8s %s'

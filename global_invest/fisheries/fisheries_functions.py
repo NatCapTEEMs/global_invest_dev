@@ -8,6 +8,12 @@ The headers carry a FULL ANNUAL series (Y2017..Y2050, 50 regions x 34 years). Fo
 series is a 2017->2018 step that then holds flat, so it is already constant over the 2023-2050 solve
 window; the read returns the whole annual series regardless, so the task reads each year directly and a
 genuinely dynamic future source (DBEM/Fish-MIP, #45) needs no read change.
+
+The same module holds the GEP valuation, which is separate from the shock: commercial capture
+from the CWoN economic rent (clean_cwon_cpi through commfish_gep_by_country), subsistence fishing
+from the Lynch et al. (2024) release (subsistence_value_by_admin, subsistence_fisheries_by_country),
+and aquaculture as FAO value times GTAP's natural-resource share (natural_resource_share_of_fishing
+through natural_resource_share_of_fishing_gross_output).
 """
 
 
@@ -43,9 +49,9 @@ FISH_HEADER_MAP = {
 # 'nor' FI26 = +13.504 while its FI45 = +0.565 and FI85 = +0.558. A 24x larger gain under the WEAKEST
 # warming inverts the physics -- DBEM's high-latitude gains grow with warming, they do not peak at RCP2.6
 # -- so the value is an error, not signal. With only 50 regions the global mean is dominated by this one
-# cell (RCP2.6 mean +0.3037, of which 'nor' alone contributes +0.270), so the SIGN of the below_2c
-# fisheries shock rested on a number we know is wrong. Imputing it is what fixes that; a magnitude clip
-# would leave the same cell supplying about half the remaining mean while looking healthy.
+# cell (RCP2.6 mean +0.3037, of which 'nor' alone contributes +0.270), so without the imputation the SIGN
+# of the below_2c fisheries shock rests on a number we know is wrong. A magnitude clip would leave the
+# same cell supplying about half the remaining mean while looking healthy.
 #
 # Imputed from Norway's OWN other-RCP values by OLS across the other 49 regions:
 #   FI26 ~ FI45 : r=+0.813, slope +0.7411, intercept +0.0583 -> +0.4767   <- used (best correlated)
@@ -65,9 +71,8 @@ def resolve_fisheries_header(scen, header_map, climate_labels):
 
 def fisheries_headers_to_read(header_map):
     """The HAR headers to read: the union of the consumer map's targets and every RCP-derivable
-    header. Must NOT depend on header_map alone -- with the legacy default deleted, an empty map
-    would read no headers and every scenario would be dropped regardless of what the RCP
-    derivation resolves (found by the ngfs session: 9/9 scenarios -> 0/9 in simulation)."""
+    header. Must NOT depend on header_map alone: an empty map would then read no headers and
+    every scenario would be dropped regardless of what the RCP derivation resolves."""
     return tuple(sorted(set(header_map.values()) | set(RCP_FI_MAP.values())))
 
 
@@ -132,7 +137,6 @@ def static_shock_rows(fi_data, scenarios, header_map, climate_labels, overrides,
 # =============================================================================
 FISHERIES_CPI_YEARS = (2009, 2019)          # CPI + rent window read from CWoN
 FISHERIES_TREND_YEARS = (2009, 2018)        # the OLS window
-FISHERIES_TREND_MIDPOINT = 2013.5           # mean of the OLS window years
 FISHERIES_GEP_YEAR = 2019
 # Country exclusions from the source script (CWoN data quality drops).
 FISHERIES_RENT_EXCLUDED = ('CYP', 'MAF', 'PSE')
@@ -158,13 +162,15 @@ def compute_econ_rent(rent_df):
     table, rent equals profit minus subsidy on all 4,200 rows where both are present, and profit
     equals landed value minus total cost on all 4,648. Substituting variable plus fixed cost for
     their total-cost column moves the result by at most $67 on figures of order $10^9, which is
-    float32 storage precision rather than a disagreement, and leaves the 2019 country totals at
-    $29.0051bn either way. Computing it is therefore the same number and a step we own, so a
-    reviewer asking where the rent comes from gets an equation rather than a column name.
+    float32 storage precision rather than a disagreement, and does not change the 2019 country
+    totals beyond that precision. Computing it is therefore the same number and a step we own, so
+    a reviewer asking where the rent comes from gets an equation rather than a column name.
 
-    Subsidy is treated as absent-means-none, because a country-year with no recorded subsidy is
-    one that received none, not one whose rent is unknown. Landed value and the costs are not
-    filled: a missing catch or cost genuinely leaves the rent undefined.
+    A missing subsidy is filled with zero. This is the convention implemented here, and CWoN's own
+    `FAOEconRent` column follows it: on the 448 rows with no subsidy and a published rent, that
+    rent equals landed value less costs. The table does not record that those country-years
+    received no subsidy, so the zero is a convention, not an observed fact. Landed value and the
+    costs are not filled: a missing catch or cost leaves the rent undefined.
 
     Args:
         rent_df (pd.DataFrame): CWoN EconRent_Analysis_AllYears, with FAO_landval2018,
@@ -197,8 +203,11 @@ def deflate_rent_to_2019usd(rent_df, cpi_df):
 
 
 def fisheries_rent_trends(deflated_df):
-    """Per-country 2019 rent estimate: mean real rent over the OLS window plus the OLS
-    time-slope times the distance from the window midpoint to 2019, floored at zero.
+    """Per-country 2019 rent estimate: the country's OLS line evaluated at 2019, that is its mean
+    real rent plus the OLS time-slope times the distance from ITS OWN mean year to 2019, floored
+    at zero. With all ten window years the mean year is 2013.5, the source's fixed midpoint. A
+    country with excluded years (Curaçao, 2011 to 2018) has a later mean year, and the fixed
+    midpoint would overshoot its own fit by one slope.
     A country with fewer than two years of data gets no slope and no estimate (NaN),
     exactly as in the source."""
     import numpy as np
@@ -212,11 +221,12 @@ def fisheries_rent_trends(deflated_df):
         mean_rent = valid['resrent_2019usd'].mean() if len(valid) else np.nan
         beta = (np.polyfit(valid['year'].astype(float), valid['resrent_2019usd'], 1)[0]
                 if n_years >= 2 else np.nan)
-        rows.append({'wb_code': wb_code, 'n_years': n_years,
+        mean_year = valid['year'].astype(float).mean() if len(valid) else np.nan
+        rows.append({'wb_code': wb_code, 'n_years': n_years, 'mean_year': mean_year,
                      'mean_resrent_2009_2018': mean_rent, 'beta_hat': beta})
     trends = pd.DataFrame(rows)
     trends['resrent_2019_hat'] = (trends['mean_resrent_2009_2018']
-                                  + trends['beta_hat'] * (FISHERIES_GEP_YEAR - FISHERIES_TREND_MIDPOINT))
+                                  + trends['beta_hat'] * (FISHERIES_GEP_YEAR - trends['mean_year']))
     trends['positive_resrent_2019_hat'] = trends['resrent_2019_hat'].clip(lower=0)
     return trends
 
@@ -238,7 +248,7 @@ def commfish_gep_by_country(trends_df, countries_df):
 # The Lynch et al. release carries the whole valuation, not only its result: a harvested
 # quantity at the price's unit, a price per kilogram in USD, and their product per species.
 # So the country value is computed here rather than adopted from the published TCUV column.
-# Two reasons beyond principle: reading TCUV kept the FIRST value per admin, which is
+# Two reasons beyond principle: reading TCUV keeps the FIRST value per admin, which is
 # order-dependent where an admin carries more than one, and a published total cannot show us
 # a discrepancy. Recomputing reproduces the release exactly (9,952,528,093.60 either way).
 SUBSISTENCE_QUANTITY_COLUMN = 'total_biomass_harv_kg_unitofprice'
@@ -271,16 +281,17 @@ def subsistence_value_by_admin(lynch_df):
     return grouped
 
 
-def subsistence_fisheries_by_country(lynch_df, countries_df):
+def subsistence_fisheries_by_country(lynch_df, countries_df, admin_to_iso3=None):
     """The computed per-admin value name-joined onto the canonical r250 country rows.
 
     The join is on brk_name, and a country absent from the release stays NaN: no data is not
-    zero value.
+    zero value. An admin whose release name matches no brk_name is placed instead by
+    `admin_to_iso3`, an explicit release-name to iso3_r250_label correspondence, onto that one
+    row only.
 
-    ⚠ A territory's brk_name is its SOVEREIGN's name (Christmas Island carries 'Australia'),
-    so a bare name join hands every territory a verbatim copy of its parent's whole national
-    estimate — the double count Ken Bagstad's 2026-10-23 LLM screen flagged, worth $482M over
-    twelve territory rows in six sovereignty groups. The removal rests on the rows being
+    A territory's brk_name is its SOVEREIGN's name (Christmas Island carries 'Australia'), so a
+    bare name join hands every territory a verbatim copy of its parent's whole national estimate,
+    a double count worth $482M over twelve territory rows in six sovereignty groups. The removal rests on the rows being
     copies, not independent estimates: whether the release's national population nominally
     covers the territories is not stated by the source, but counting one estimate several
     times is wrong either way. Where several rows share a joined brk_name and one of them IS the name
@@ -300,7 +311,21 @@ def subsistence_fisheries_by_country(lynch_df, countries_df):
     in_duplicate_group.loc[group_sizes.index] = group_sizes > 1
     value_columns = ['subsistence_fisheries_gep', 'subsistence_fisheries_gep_published']
     df.loc[joined & in_duplicate_group & ~own_row, value_columns] = np.nan
-    return df.drop(columns=['admin'])
+    df = df.drop(columns=['admin'])
+    # Placed by code, after the territory rule, so a sovereign's satellites never see the value.
+    for admin, iso3 in (admin_to_iso3 or {}).items():
+        source = data[data['admin'] == admin]
+        if source.empty:
+            continue
+        target = df['iso3_r250_label'] == iso3
+        if target.sum() != 1:
+            raise ValueError('%r maps to %s, which is on %d country rows, not one.'
+                             % (admin, iso3, int(target.sum())))
+        if df.loc[target, 'subsistence_fisheries_gep'].notna().any():
+            raise ValueError('%r maps to %s, which already carries a name-joined value, so '
+                             'placing it would count one country twice.' % (admin, iso3))
+        df.loc[target, value_columns] = source[value_columns].values[0]
+    return df
 
 
 # =============================================================================
@@ -334,8 +359,8 @@ def natural_resource_share_of_fishing(evfp_array, endowments, activities, region
     GTAP's EVFP is primary factor purchases at purchasers' prices, dimensioned endowment by
     activity by region, so the share is the natural-resource row over the column's total. This
     replaces the source's `fsh_endowment_gtap.xlsx`, which is the same quantity read from a
-    workbook nobody sent us; computing it from the base data we already hold means the service
-    does not rest on a file only one machine has.
+    workbook that is not among the staged inputs. Computing it from the GTAP base data means the
+    service does not rest on a file only one machine has.
 
     Args:
         evfp_array: the EVFP array, (endowment, activity, region).
@@ -381,7 +406,8 @@ def aquaculture_value_by_country(value_df, year, species_groups_df=None,
         plants = set(species_groups_df.loc[
             species_groups_df['Major_Group'] == AQUATIC_PLANTS_MAJOR_GROUP, '3A_Code'])
         df = df[~df['SPECIES.ALPHA_3_CODE'].isin(plants)]
-    out = df.groupby('COUNTRY.UN_CODE', as_index=False)['VALUE'].sum()
+    # min_count=1: a country whose rows all carry no value has no value, not a zero.
+    out = df.groupby('COUNTRY.UN_CODE', as_index=False)['VALUE'].sum(min_count=1)
     out['aquaculture_value_usd'] = out['VALUE'] * 1000.0
     return out.rename(columns={'COUNTRY.UN_CODE': 'iso3_r250_id'})[
         ['iso3_r250_id', 'aquaculture_value_usd']]
@@ -409,15 +435,15 @@ def natural_resource_share_of_fishing_gross_output(evfp_array, maks_array, endow
 
     Why both exist. `natural_resource_share_of_fishing` divides the natural-resource payment by
     the sector's total FACTOR payments -- its value added. FAO's aquaculture figure is a REVENUE,
-    which is gross output. Multiplying a revenue by a share of value added overstates it by the
-    ratio between the two, and for fishing that ratio is 0.585 on average and as low as 0.265.
+    which is gross output. Multiplying a revenue by a share of value added overstates it by gross
+    output over value added, 1/(VA/GO). In the account's GTAP v12 data (26 sectors, 50 regions),
+    fishing VA/GO averages 0.585 over the 50 regions (unweighted) and runs from 0.265 to 0.928, a
+    factor of 1/0.585 = 1.71 at the average and 1/0.2645 = 3.78 at the lowest.
 
-    The check that this is right rather than a preference is forestry, where two independent
-    sources meet: GTAP's land share of forestry value added is 0.589, and 0.589 x 0.644 = 0.380 on
-    gross output, against CWoN's separately-derived forest rental ratio (0.376 in the vintage this
-    was first checked against; CWoN 2024 rebuilds the series and its production-weighted 2019 rate
-    is 0.232). Either vintage sits beside the gross-output share and far below the 0.589
-    value-added share, which is the point of the check.
+    For comparison only, forestry in the same data (unweighted means over the 50 regions): land
+    over value added 0.589, value added over gross output 0.655, land over gross output 0.386. The
+    comparison does not show that the gross-output share is the right denominator. The account
+    uses that share as its implemented choice.
 
     The conversion is per region and cannot be a single factor: value added over gross output
     runs 0.265 to 0.928 across the 50 GTAP regions, so a world average would move small fishing

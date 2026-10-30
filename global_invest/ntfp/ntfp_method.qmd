@@ -8,20 +8,35 @@ format:
 
 Non-timber forest products cover what forests yield other than wood. The account values them per
 hectare of forest people can actually reach. The base year is 2019 and the price convention
-recorded in `es_config.csv` is `value per accessible hectare`.
+recorded in `es_config.csv` is `value per accessible hectare`. No share is taken out for human
+inputs (λ = 1), as the write-up states: the per-hectare value already embeds it.
+
+## Source
+
+The write-up is `Non-Timber Forest Product Provision.docx` in the shared folder of current
+write-ups (version of 29 October 2026). The registered author code is `Observarun/geo-ntfp` at
+`928dc21`, a fork of `martaszk/geo_ntfp` that adds the NDVI screen. The library follows its rules
+on the account's own grid.
 
 ## Quantity
 
-Hectares of accessible forest. Forest is the ESA CCI class range 50 to 90 inclusive. Accessible
-means inside a 10 km buffer around roads and rivers. The source repository, `geo_ntfp`, implements
-that intersection two ways, a vector-buffer calculation and a distance-raster calculation, and commits no
-output from either. The library therefore runs both variants and presents both, following the
-pattern fire protection uses for its variants.
+Hectares of accessible, vegetated forest per country:
+
+- Forest is ESA CCI 2019 land cover, classes 50 to 90 inclusive.
+- A forest cell is kept where the 2015 to 2019 mean NDVI (MODIS MOD13Q1) is at least 0.20. A
+  cell with no NDVI is dropped. The floor is compared in the raster's own integers, so a cell at
+  exactly 0.20 is kept, where the authors' float comparison drops it.
+- Accessible means within 10 km of a road (`globalroads.shp`) or a river (Natural Earth 10 m
+  centre lines).
+- Everything is computed on the account grid (WGS84, 10 arcsec, about 309 m at the equator), with
+  the 10 km reach measured in metres at each latitude. The reach stops at 84 degrees. Cell
+  hectares come from `ha_per_cell_10sec.tif`, and a cell belongs to the country whose boundary
+  covers its centre.
 
 ## Price
 
 The CWoN 2024 non-wood forest product value per hectare per country, in current USD, read at the
-GEP base year.
+GEP base year from `nontimber_price_iucn_edited.csv`.
 
 ## Valuation
 
@@ -32,38 +47,54 @@ $$
 \text{NTFP GEP} = \text{accessible forest (ha)} \times \text{NWFP value (USD/ha)}
 $$
 
-The function is in place and unit-tested.
-
 ## Inputs
 
-From `es_parameters.csv`, scoped to the `ntfp` service:
-
-- `ntfp_roads_region1_path`, the GRIP4 Region 1 vector geodatabase, with a `_source_url` row
-  pointing at the public PBL download.
+From `es_parameters.csv`, scoped to the `ntfp` service: `ntfp_roads_vector_path`,
+`ntfp_rivers_path` (with its source URL), `ntfp_ndvi_mean_path` and `ntfp_value_per_ha_path`
+(with its source URL). The land cover is the `es_config.csv` row's `gep_lulc_input_path`,
+`lulc/esa/lulc_esa_2019.tif`.
 
 ## Output
 
-`gep_by_country_base_year.csv` in the `gep_calculation` task directory, holding the country label,
-the accessible forest hectares, the value per hectare and `ntfp_gep`. It is not yet produced.
+`accessible_forest` writes `accessible_forest_ha_by_country.csv`, and `gep_calculation` writes
+`gep_by_country_base_year.csv` into its own task directory, holding the r250 identifiers and
+attributes, `accessible_forest_ha`, `nwfp_value_per_ha`, `ntfp_gep` and `year`.
+
+The accessibility step reads five global rasters of 8.4 billion cells each, in blocks, and runs
+on the cluster.
+
+## Coverage
+
+The published table is one row for each of the account's 250 countries, base year 2019, in 2019
+USD. 196 carry a positive value, totalling \$13,852,553,747.75 on 1.44 billion accessible
+hectares. 36 are zeros, all measured: 34 have no accessible forest and 11 have a published zero
+rate, 9 of them both. 18 are missing because the CWoN table has no rate for them (ATA, BLM, BVT,
+CCK, ESH, HMD, IOT, KWT, MAF, MCO, MDV, MHL, MSR, NRU, PCN, TKL, TUV, VAT).
+
+## Reproduction
+
+Rate times saved hectares reproduces every published row, and the rate column equals the staged
+table's 2019 column. The authors' own per-country output is not supplied. Against the ten
+country values in the write-up's table, the library is 0.961 times their sum, from 0.838
+(Russia) to 0.999 (Brazil). The shortfall concentrates at high latitude, consistent with the
+authors' 10 km buffers drawn in Mollweide against the account grid's metric reach, though that is
+not tested country by country. The account grid replaces the authors' Mollweide 300 m grid, which
+gave \$14.07bn, so the change is −1.6%.
 
 ## Method constants
 
-- `NTFP_ACCESS_BUFFER_M = 10_000`, the accessibility buffer around roads and rivers.
-- `ESA_FOREST_CLASS_MIN = 50` and `ESA_FOREST_CLASS_MAX = 90`, the inclusive ESA CCI forest class
-  range.
-
-## Taken as given
-
-The CWoN NWFP value-per-hectare series.
+- `NTFP_ACCESS_BUFFER_M = 10_000`, the accessibility reach around roads and rivers.
+- `ESA_FOREST_CLASS_MIN = 50` and `ESA_FOREST_CLASS_MAX = 90`, the inclusive forest class range.
+- `NDVI_MIN_THRESHOLD = 0.20`, the vegetation floor.
 
 ## What is open
 
-The accessibility raster stage is being ported and is not yet built, so `gep_calculation` raises
-`NotImplementedError` naming exactly what is missing rather than emitting a partial number.
-
-The committed roads file is unusable, because only the sidecar files were committed and the `.shp`
-itself never was. The accessibility stage therefore runs on a public global roads dataset, and the
-original roads file remains a replication ask.
-
-The CWoN value-per-hectare table has no `es_parameters.csv` row yet, so the price side of the
-valuation has no recorded path.
+- The denominator. The source report averages the per-hectare value over a country's total
+  forest and multiplies by total forest area, while the account applies it to accessible forest
+  only. On 148 shared countries that area base accounts for −\$17.10bn of the gap to CWoN's
+  total. The question is with Marta (open question 15).
+- Three rates. The staged table's rates for the Democratic Republic of the Congo, Mozambique and
+  the Central African Republic are five times CWoN's own, which divides them by five without a
+  stated reason. Applying it gives \$12.76bn. A recorded open decision.
+- The grid. The account grid is agreed (29 October), and its effect against the authors' grid
+  is measured in total only.

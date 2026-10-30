@@ -4,10 +4,10 @@ Thin runner: builds ONE tree and executes it. Inputs are published by each task 
 (publish_inputs in the tasks module); base_data_dir is resolved by ProjectFlow (default /
 machine.env), never hardcoded here.
 
-Requires (es_parameters row): air_filtration_gep.xlsx under base_data/global_invest/
-air_filtration/ (pulled from the consortium drive; also shipped in reference/ as the anchor).
-The InMAP-based deaths columns are upstream science taken as given; the VSL build behind the
-workbook is an open ask (the folder's vsl.R is a different vintage).
+Requires (es_parameters rows): air_filtration_gep.xlsx, r250_gpkg_order.csv and the
+not-estimated list under base_data/global_invest/air_filtration/ (pulled from the consortium
+drive), and the shared VSL panel. The InMAP-based deaths columns are upstream science taken as
+given; the values are priced at the shared panel, not the workbook's own VSL column.
 """
 import hazelbean as hb
 

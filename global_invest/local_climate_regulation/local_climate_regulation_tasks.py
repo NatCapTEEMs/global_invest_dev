@@ -1,4 +1,4 @@
-"""Local-climate-regulation GEP tasks: the committed urban-cooling valuation on r250 rows."""
+"""Local-climate-regulation GEP tasks: the author's delivered urban-cooling valuation on r250 rows."""
 import os
 
 import pandas as pd
@@ -33,13 +33,13 @@ def read_city_savings(merged_dir):
 
 
 def gep_calculation(p):
-    """GEP valuation for local climate regulation, computed from the calculation's own city-month
-    valuations: avoided cooling energy priced at the national electricity price, summed over
-    every city in a country.
+    """GEP valuation for local climate regulation: the author's delivered final, the code register's
+    results file of 13 July 2026, joined onto the r250 country list.
 
-    The committed accounting table is carried beside it as the comparison anchor rather than
-    reported. The two disagree by a wide and country-varying margin, which is the open ask:
-    something sits between these city values and that table which is not in anything we hold.
+    That final is the December 2025 city sums with the old global marginal-consumption slope
+    divided out and each country's own cooling consumption per degree-day applied. The step that
+    made it is not in the registered code, so the final is imported, not recomputed. The
+    December 2025 city-sum lineage and the CAS 2019 results are carried beside it for comparison.
     """
     publish_inputs(p)
     service_results, already_done = utilities.begin_gep_calculation(p, 'local_climate_regulation')
@@ -48,49 +48,39 @@ def gep_calculation(p):
 
     if not p.run_this:
         return p
-    city = read_city_savings(p.local_climate_regulation_city_savings_path)
-    ours = lc.city_savings_by_country(city).rename(
-        columns={'local_climate_regulation_gep': 'local_climate_regulation_gep_city_sum_lineage'})
-
     attr_cols = ['iso3_r250_id', 'iso3_r250_label', 'iso3_r250_name',
                  'continent', 'region_un', 'region_wb', 'income_grp', 'subregion']
     countries = utilities.collapse_countries_to_r250(p.df_countries)[attr_cols]
 
-    # The account's cooling row adopts the CAS method: their 2019 results workbook is the
-    # carried figure, in 2019 USD at their own 2019 electricity prices. The superseded
-    # pipeline's city-sum lineage and its committed table stay beside it as the record.
+    # The account's cooling row is the author's delivered final.
+    adopted = lc.local_climate_gep_by_country(
+        hb.df_read(p.local_climate_regulation_final_path), countries[['iso3_r250_label']])
+    df_gep = countries.merge(adopted, on='iso3_r250_label', how='left')
+
+    # Beside it: the December 2025 city sums the final was built from, and the CAS 2019
+    # results the code register names as the cross-check.
+    city = read_city_savings(p.local_climate_regulation_city_savings_path)
+    lineage = lc.city_savings_by_country(city).rename(
+        columns={'local_climate_regulation_gep': 'local_climate_regulation_gep_city_sum_lineage'})
     cas = pd.read_excel(str(p.get_path(p.local_climate_regulation_cas_results_path)),
                         sheet_name='2019 Results')
-    adopted = lc.cas_cooling_by_country(cas, countries)
-    df_gep = countries.merge(adopted, on='iso3_r250_id', how='left')
-    df_gep = df_gep.merge(ours, on='iso3_r250_id', how='left')
-
-    anchor = lc.local_climate_gep_by_country(
-        hb.df_read(p.local_climate_regulation_final_path), countries[['iso3_r250_label']])
-    df_gep = df_gep.merge(
-        anchor.rename(columns={'local_climate_regulation_gep':
-                               'local_climate_regulation_gep_committed'}),
-        on='iso3_r250_label', how='left')
+    cas = lc.cas_cooling_by_country(cas, countries).rename(
+        columns={'local_climate_regulation_gep': 'local_climate_regulation_gep_cas',
+                 'cooling_kwh': 'cooling_kwh_cas'})
+    df_gep = df_gep.merge(lineage, on='iso3_r250_id', how='left')
+    df_gep = df_gep.merge(cas, on='iso3_r250_id', how='left')
     df_gep['year'] = int(p.gep_base_year)
-    total = df_gep['local_climate_regulation_gep'].sum()
-    hb.log('Total local climate regulation GEP (CAS method adopted) for base year %s: %s over '
-           '%d countries; city-sum lineage %s, committed %s beside it'
-           % (p.gep_base_year, f'{total:,.2f}',
-              int(df_gep['local_climate_regulation_gep'].notna().sum()),
-              f"{df_gep['local_climate_regulation_gep_city_sum_lineage'].sum():,.0f}",
-              f"{df_gep['local_climate_regulation_gep_committed'].sum():,.0f}"))
-    hb.df_write(df_gep[attr_cols + ['year', 'local_climate_regulation_gep', 'cooling_kwh',
+    hb.df_write(df_gep[attr_cols + ['year', 'local_climate_regulation_gep',
                                     'local_climate_regulation_gep_city_sum_lineage',
-                                    'local_climate_regulation_gep_committed']],
+                                    'local_climate_regulation_gep_cas', 'cooling_kwh_cas']],
                 service_results['gep_by_country_base_year'])
 
-    ours_total = df_gep['local_climate_regulation_gep'].sum()
-    committed_total = df_gep['local_climate_regulation_gep_committed'].sum()
-    hb.log(f'Total local_climate_regulation GEP for base year {p.gep_base_year}: '
-           f'{ours_total:,.2f} over '
-           f'{int(df_gep["local_climate_regulation_gep"].notna().sum())} countries')
-    hb.log(f'  the committed accounting table totals {committed_total:,.2f}; the gap is not a '
-           f'constant factor and is the open ask on this service')
+    hb.log('Total local climate regulation GEP (the author\'s delivered final) for base year %s: '
+           '%s over %d countries. Beside it: city-sum lineage %s, CAS %s'
+           % (p.gep_base_year, f"{df_gep['local_climate_regulation_gep'].sum():,.2f}",
+              int(df_gep['local_climate_regulation_gep'].notna().sum()),
+              f"{df_gep['local_climate_regulation_gep_city_sum_lineage'].sum():,.0f}",
+              f"{df_gep['local_climate_regulation_gep_cas'].sum():,.0f}"))
     return True
 
 

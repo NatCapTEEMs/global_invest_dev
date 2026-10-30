@@ -1,13 +1,12 @@
-"""Full water-quality GEP run: the verified retention calculation -> report.
+"""Full water-quality GEP run: retention priced at the benefit-transfer treatment cost -> report.
 
 Thin runner: builds ONE tree and executes it. Inputs are published by each task itself
 (publish_inputs in the tasks module); base_data_dir is resolved by ProjectFlow (default /
 machine.env), never hardcoded here.
 
-Requires (es_parameters rows under base_data/global_invest/water_quality/): the committed
-retention_estimates.csv and the final water_quality_gep.csv from the consortium drive (both
-also shipped in reference/ as anchors). The retention totals are upstream science taken as
-given; the USD-to-international-dollars conversion stage is the open ask.
+Requires the es_parameters rows under base_data/global_invest/water_quality/price_transfer/:
+the authors' retention estimates, raw price observations and the three World Bank series their
+script reads. The retention totals are upstream science taken as given.
 """
 import hazelbean as hb
 

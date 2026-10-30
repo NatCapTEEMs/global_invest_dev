@@ -1,9 +1,9 @@
 """Unit tests for the landslide_mitigation calculation.
 
-The module has no committed anchor table to compare against (the author's v0.2.0 output is not
-machine-readable here), so every test below pins the ported arithmetic on hand-built inputs:
-small arrays and short frames whose expected values are worked out in the comments. Every pure
-function in landslide_mitigation_functions is exercised.
+The module has no committed anchor table to compare against, so the tests pin the ported
+arithmetic on hand-built inputs: small arrays and short frames whose expected values are worked
+out in the comments. Every pure function in landslide_mitigation_functions is exercised. One test
+compares a local run with the authors' v0.2.1 per-country table when both are on the machine.
 """
 import math
 import os
@@ -16,7 +16,7 @@ from global_invest import utilities
 from global_invest.landslide_mitigation import landslide_mitigation_functions as chain
 from global_invest.landslide_mitigation import landslide_mitigation_tasks as tasks
 
-# A tiny reference grid: 1km pixels, origin at (0, 0), north-up.
+# A tiny reference grid: 100 m pixels, origin at (0, 0), north-up.
 TEST_GEOTRANSFORM = (0.0, 100.0, 0.0, 0.0, 0.0, -100.0)
 
 
@@ -493,11 +493,10 @@ def test_bucket_legend_labels_are_open_ended_at_the_top():
     assert labels == ['0.00 – 1.00', '1.00 – 5.00', '5.00+']
 
 def test_roc_auc_matches_the_reference_implementation_including_ties():
-    """The area agrees with scikit-learn's, which is what it replaced.
+    """The area agrees with scikit-learn's roc_auc_score.
 
-    scikit-learn is not imported by the library any more, so this test imports it only if the
-    environment happens to carry it and otherwise checks the properties that make the statistic
-    what it is. Ties are the case worth pinning: without averaging the ranks they span, a model
+    The library does not import scikit-learn, so this test imports it only if the environment
+    happens to carry it and otherwise checks the properties that make the statistic what it is. Ties are the case worth pinning: without averaging the ranks they span, a model
     that assigns many identical scores reads better than it is.
     """
     import numpy as np
@@ -535,10 +534,9 @@ def test_roc_auc_matches_the_reference_implementation_including_ties():
 
 
 def test_the_authors_v021_table_shares_our_distribution():
-    """The author's v0.2.1 per-country output (staged 2026-09, verified byte-identical to the
-    drive's copy 2026-10-06) against our run: the comparison the all-services sheet column
-    failed (0.72 log-correlation, USA-led), pinned so the agreement cannot quietly lapse.
-    Runs against every landslide project on the machine; skips where none exists."""
+    """The authors' v0.2.1 per-country output against our run: at least 210 countries valued in
+    both, log-correlation above 0.97 and the same top five, pinned so the agreement cannot quietly
+    lapse. Runs against every landslide project on the machine; skips where none exists."""
     import glob
     import pandas as pd
     import pytest
@@ -564,3 +562,19 @@ def test_the_authors_v021_table_shares_our_distribution():
         assert corr > 0.97
         assert (merged.nlargest(5, 'landslide_mitigation_gep')['iso3_r250_id'].tolist()
                 == merged.nlargest(5, 'avoided_value_sum_usd')['iso3_r250_id'].tolist())
+
+
+def test_a_country_with_no_valid_pixel_is_missing_not_zero():
+    # AAA has no valid pixel in either sub-region: no estimate, so missing. BBB has one empty
+    # sub-region and one valued one: it keeps the valued sum. CCC has valid pixels and no avoided
+    # deaths: a measured zero. DDD's count is absent: no estimate.
+    zonal = pd.DataFrame({
+        'iso3_r250_label': ['AAA', 'AAA', 'BBB', 'BBB', 'CCC', 'DDD'],
+        'pixel_count': [0, 0, 0, 12, 40, None],
+        'value_usd': [0.0, 0.0, 0.0, 5.0, 0.0, 0.0],
+    })
+    out = chain.country_values_from_zonal(zonal, 'value_usd').set_index('iso3_r250_label')
+    assert np.isnan(out.loc['AAA', 'landslide_mitigation_gep'])
+    assert out.loc['BBB', 'landslide_mitigation_gep'] == 5.0
+    assert out.loc['CCC', 'landslide_mitigation_gep'] == 0.0
+    assert np.isnan(out.loc['DDD', 'landslide_mitigation_gep'])

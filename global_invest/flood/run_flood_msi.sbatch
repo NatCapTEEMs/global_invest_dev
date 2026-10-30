@@ -14,9 +14,13 @@
 #     sbatch global_invest/flood/run_flood_msi.sbatch
 #
 # The machine-specific locations are es_parameters rows rather than values in here, so this file
-# is the same on every machine and the CSV is the only thing a machine edits. It reads two of
-# them, the conda environment and the code directory, because the shell needs those before python
-# exists to read anything.
+# is the same on every machine. The shell needs one of them before python exists: the conda
+# environment, taken from FLOOD_CONDA_ENV, else from the flood_msi_conda_env row of this
+# checkout's tracked input_template/es_parameters.csv, which ships blank. The code directory is
+# the submit directory. Every input path is read later by each task's publish_inputs from the
+# project's input/es_parameters.csv, seeded from the template on first use. A copy seeded
+# earlier keeps its own values. The run ends with the results report, which skips with a log
+# line on a node without quarto.
 #
 # Memory is measured: 64g was OOM-killed inside Section A (job 17488753), and a 400g run peaked
 # at 130g (job 17488957). 200g is that peak plus headroom. A global 300 m grid is about 7e9
@@ -44,7 +48,7 @@ PY
 }
 
 CONDA_ENV="${FLOOD_CONDA_ENV:-$(read_row flood_msi_conda_env)}"
-[ -n "$CONDA_ENV" ] || { echo "no environment: set FLOOD_CONDA_ENV or fill the flood_msi_conda_env row in your project's input/es_parameters.csv"; exit 1; }
+[ -n "$CONDA_ENV" ] || { echo "no environment: set FLOOD_CONDA_ENV (the flood_msi_conda_env row in $PARAMETERS ships blank)"; exit 1; }
 PYTHON="$CONDA_ENV/bin/python"
 [ -x "$PYTHON" ] || { echo "no interpreter at $PYTHON"; exit 1; }
 

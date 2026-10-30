@@ -3,8 +3,9 @@
 The valuation is the one the drive's per-fuel method appendices describe: each country's
 resource rent in current USD from the World Bank's Changing Wealth of Nations 2024 package
 (Output/Latest/<fuel>_rent_cd, the public reproducibility archive), read at the GEP base
-year. The drive's three committed per-country CSVs replicate that read exactly -- except
-eight rows that carry another country's full value (Christmas Island and Cocos = Australia,
+year. The drive's three committed per-country CSVs replicate that read, apart from rounding of
+three oil values (AUS, IRQ, USA), South Sudan, which their join leaves empty (its `adm0_a3` is
+SDS), and eight rows that carry another country's full value (Christmas Island and Cocos = Australia,
 Bouvet and Svalbard = Norway, Tokelau = New Zealand, Western Sahara = Morocco, Palestine =
 Israel, and Kosovo = Serbia, where the committed name column itself reads "Serbia"): a
 name-join artifact that counts the source countries twice and, for Kosovo, overrides the

@@ -11,7 +11,9 @@ producer price. Per crop and country, the value is the proportional yield benefi
 meta-analytic log response ratio), times organic production (organic area times the
 conventional yield scaled by an organic-to-conventional yield ratio), times the organic
 producer price (the conventional price times an organic-to-conventional price premium). Crop
-groups without a measured benefit carry a true zero, deliberately.
+groups without a measured benefit carry a zero effect, deliberately. Their value is a true zero
+only where the organic area, yield and price are all present; a missing yield or price leaves
+the value NA, as for any other crop.
 """
 import pandas as pd
 import numpy as np
@@ -24,10 +26,9 @@ def yield_benefit_from_lnrr(lnrr):
 
     Boldorini et al.'s lnRR is ln(yield with predators / yield without), and the observed
     organic yields already have the predators present, so the avoided loss measured from the
-    observed level is 1 - exp(-lnRR). The earlier exp(lnRR) - 1 read the observed yield as the
-    without-enemies yield and overstated the service by the factor exp(lnRR); the orientation
-    was confirmed by the service owner in writing on 2026-10-20, whose own current script
-    (10_biocontrol_effects.R) applies the same share per Monte Carlo draw.
+    observed level is 1 - exp(-lnRR). exp(lnRR) - 1 would read the observed yield as the
+    without-enemies yield and overstate the service by the factor exp(lnRR). The service
+    owner's script (10_biocontrol_effects.R) applies the same share per Monte Carlo draw.
 
     Args:
         lnrr: the meta-analytic log response ratio, elementwise over whatever is passed.
@@ -39,6 +40,9 @@ def yield_benefit_from_lnrr(lnrr):
     return 1.0 - np.exp(-np.asarray(lnrr))
 
 
+# FiBL names crops its own way; each name the valuation uses is pinned to one FAOSTAT item so a
+# silent drop cannot occur. A name mapped to None is a FiBL aggregate or wild-collection crop
+# with no FAOSTAT production analogue; its area is reported and excluded, never guessed.
 FIBL_CROP_TO_FAOSTAT_ITEM = {
     'Almonds': 'Almonds, in shell', 'Andean grains': 'Quinoa', 'Apples': 'Apples',
     'Apricots': 'Apricots', 'Avocados': 'Avocados', 'Bananas': 'Bananas', 'Barley': 'Barley',
@@ -182,8 +186,9 @@ def pest_control_value(df, price_premium):
 
     Returns:
         pd.DataFrame: the input with `pest_control_value` in USD added. A row missing a yield
-        or a price carries NA there, never a silent zero, and the note column names which; a
-        zero-effect crop group is a true zero with an empty note.
+        or a price carries NA there, never a silent zero, and the note column names which. This
+        holds for a zero-effect crop group too: it is a true zero with an empty note only when
+        its yield and price are present.
     """
     out = df.copy()
     out['pest_control_value'] = (

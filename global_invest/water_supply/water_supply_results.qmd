@@ -56,13 +56,17 @@ service_label = 'water_supply'
 df = hb.df_read(p.results[service_label]['gep_by_country_base_year'])
 total_water_supply_value = df['hydropower_gep'].sum()
 total_agriculture_value = df['water_use_agriculture_gep'].sum()
+total_municipal_value = df['water_use_domestic_gep'].sum()
+n_municipal = int(df['water_use_domestic_gep'].notna().sum())
 p.gep_by_country_base_year_table = df[['iso3_r250_name', 'hydropower_gep',
-                                       'water_use_agriculture_gep']]
+                                       'water_use_agriculture_gep', 'water_use_domestic_gep']]
 ```
 
-The analysis estimates a water-supply GEP (hydropower component) of $`{python} f"{total_water_supply_value:,.0f}"` for the base year (`{python} f"{int(p.gep_base_year)}"`): the constant annual rent implied by CWoN 2024's capitalized hydropower wealth at the CWoN-standard 4 percent discount over a 100-year horizon, replicating the committed reference output exactly. Countries without CWoN wealth data carry no value rather than zero, no data is not zero rent.
+The analysis estimates a water-supply GEP (hydropower component) of $`{python} f"{total_water_supply_value:,.0f}"` for the base year (`{python} f"{int(p.gep_base_year)}"`): the constant annual rent implied by CWoN 2024's capitalized hydropower wealth at the CWoN-standard 4 percent discount over a 100-year horizon. Leaving out the seventeen countries whose rent the authors' input records as negative reproduces the authors' 95 positive values exactly. Which treatment those seventeen get is open. Countries without CWoN wealth data carry no value rather than zero, because no data is not zero rent.
 
-The agricultural water component beside it is $`{python} f"{total_agriculture_value:,.0f}"`: Shunkei's lambda coefficients applied to the account's `{python} f"{int(p.gep_base_year)}"` commercial crop-provision values, split rainfed/irrigated by his SPAM shares (see the method note for what is replicated, what is substituted, and what coverage is left out — rice above all). Because its basis is the crop-provision GEP itself, this figure is an intermediate contribution — the water-attributable share of value already counted in crop provision — and is never added to a GEP total beside crop provision. `water_supply_gep` stays hydropower alone; the domestic column is the preserved water-use calculation, with municipal scope and pricing still open.
+The agricultural water component beside it is $`{python} f"{total_agriculture_value:,.0f}"`: Shunkei's lambda coefficients applied to the account's `{python} f"{int(p.gep_base_year)}"` commercial crop-provision values, split rainfed/irrigated by the author's SPAM shares (see the method note for what is replicated, what is substituted, and what coverage is left out, rice above all). Because its basis is the crop-provision GEP itself, this figure is an intermediate contribution, the water-attributable share of value already counted in crop provision, and is never added to a GEP total beside crop provision. `water_supply_gep` stays hydropower alone.
+
+The municipal component, `water_use_domestic_gep`, is $`{python} f"{total_municipal_value:,.0f}"` over `{python} f"{n_municipal}"` countries. It is the authors' final table, imported rather than recomputed: their city-level least-cost replacement model at a 2 percent discount rate (see the method note). A country's value covers only its cities where both the baseline and the replacement problem are feasible, so it is a partial total wherever some cities are unvalued. The earlier implied-price construction stays beside it as `water_use_domestic_gep_implied_price_variant`, for comparison only.
 
 ## GEP by Country in Base Year, mapped
 

@@ -1,14 +1,17 @@
 # -*- coding: utf-8 -*-
-"""Moisture-recycling science: water value re-attributed to the countries whose land sent the rain.
+"""Moisture-recycling science: the WAM2layers source-side diagnostic for rainfall regulation.
 
 Nothing here opens a file. The task layer reads the WAM2layers sink-fraction matrix and the
 water-supply country table, hands the frames in and writes back what it gets, so every step can
 be pinned on a hand-built input in the test suite.
 
-The service is a RE-ATTRIBUTION, not new value: the water-supply account values water where it is
-withdrawn, and this module moves the terrestrially-sourced share of that value upstream to the
-countries whose evaporation became the rain. The source-side total therefore equals the sink-side
-total by construction, and neither may be added to the water-supply row.
+The service's headline is not computed here: it is the VMR crop value at the receiving country,
+which the task layer reads from the water_supply run. This module supplies the diagnostic
+beside it, a WAM-weighted source-side view that credits the land-sourced share of each
+destination's value to the countries whose evaporation became its rain. The matrix columns sum
+below one, so the diagnostic covers only that land-sourced part, not a redistribution of the
+full headline. Its source-side and sink-side totals agree with each other by construction, and
+neither may be added to the headline, agricultural water or crop provision.
 """
 import numpy as np
 import pandas as pd
@@ -53,7 +56,7 @@ def untracked_destinations(matrix):
 
     Returns:
         list: the labels, sorted. These are islands and city-states below the tracking grid;
-        their water value cannot be attributed to any source and the caller reports it.
+        the source-side diagnostic cannot place their value, and the caller reports it.
     """
     return sorted(matrix.columns[matrix.isna().all(axis=0)])
 
@@ -73,24 +76,31 @@ def terrestrial_precipitation_share(matrix):
 
 
 def reattributed_water_value(matrix, water_value, ecosystem_share):
-    """Water value moved upstream to the countries whose land sent the rain.
+    """The WAM-weighted source-side diagnostic: value credited to the countries whose land sent the rain.
+
+    It is not a redistribution of the full headline. The matrix columns sum below one, so only
+    each destination's land-sourced share is credited upstream.
 
     Args:
         matrix (pd.DataFrame): the sink-fraction matrix from moisture_matrix.
-        water_value (pd.Series): destination label -> the water GEP being re-attributed.
-            Destinations absent from the matrix are dropped; the caller reports them.
+        water_value (pd.Series): destination label -> the receiving country's value, of which
+            the land-sourced share is credited upstream. Destinations absent from the matrix
+            are dropped; the caller reports them.
         ecosystem_share (float): the share of terrestrial evaporation credited to ecosystems.
             1 counts all of it; the transpiration-share decision lowers it.
 
     Returns:
         pd.DataFrame: one row per country appearing in the matrix, with
-            moisture_recycling_gep -- the value attributed to the country as a SOURCE,
-            moisture_recycling_gep_own_part -- the part serving its own water use,
-            moisture_recycling_gep_export_part -- the part serving other countries, and
-            moisture_recycling_sink_side_value -- the country's own water value that is
-            terrestrially sourced (the destination-side view of the same money).
-        The moisture_recycling_gep column and the sink-side column sum to the same total,
-        which is the conservation the construction guarantees.
+            moisture_recycling_gep -- the value credited to the country as a SOURCE (the task
+                publishes it as moisture_recycling_source_attributed, never as the headline),
+            moisture_recycling_gep_own_part -- the part credited for rain on its own crops,
+            moisture_recycling_gep_export_part -- the part credited for rain on other
+                countries' crops, and
+            moisture_recycling_sink_side_value -- the destination's land-sourced value (the
+                destination-side view of the same diagnostic).
+        The source column and the sink-side column sum to the same total: one double sum
+        computed two ways. That total is the land-sourced part of the input value, not all
+        of it.
     """
     filled = matrix.fillna(0.0)
     value = water_value.reindex(filled.columns).fillna(0.0) * float(ecosystem_share)
@@ -100,8 +110,7 @@ def reattributed_water_value(matrix, water_value, ecosystem_share):
                          'the own/export split needs unique labels.')
     # The own-country fraction is the LABELLED diagonal -- cell [label, label] -- so a matrix
     # whose columns arrive in a different order still splits correctly; a row label with no
-    # matching column has no own-column in the data and carries 0.0. Until 2026-10-25 this
-    # read the diagonal by position and silently zeroed the split when the order differed.
+    # matching column has no own-column in the data and carries 0.0.
     own_fracs = pd.Series(0.0, index=filled.index)
     common = filled.index.intersection(filled.columns)
     own_fracs.loc[common] = [float(filled.at[label, label]) for label in common]

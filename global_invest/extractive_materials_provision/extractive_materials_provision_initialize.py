@@ -2,29 +2,21 @@
 from global_invest.extractive_materials_provision import extractive_materials_provision_tasks
 
 def build_gep_service_calculation_task_tree(p):
-    """Build the default GEP task tree."""
+    """Build the calculation-only GEP task tree."""
     p.extractive_materials_provision_gep_calculation_task = p.add_task(extractive_materials_provision_tasks.gep_calculation)  
     return p
 
 def build_gep_service_task_tree(p):
-    """If you just want to load results, eg for reporting, this task tree inspects a different task tree and to learn paths and then loads results."""
-    
-    
-    # QUESTION!!!! If a task truly already inspects itself to not rerun, what's the difference between loading and just executing the tree on 
-    # an existing project? The difference is that load will do more error checking and FAIL rather than recalculate if it didn't find, also reporting
-    # that it didn't find it and giving information about how to put the data in so it does find it in the base data or a manually-built project data.
-    # I might want to have methods for automatically putting an archive into the right spot and also extended functionality for finding results in base_data
-    # and functionality for promoting project results to base data per the new documentation in ee_dev.
-    # Actually, maybe it's just that load_results is more useful for notebooks?
-    
+    """Build the default GEP task tree: calculation then the results report."""
     p = build_gep_service_calculation_task_tree(p)
-    p.extractive_materials_provision_gep_result_task = p.add_task(extractive_materials_provision_tasks.gep_result)   
+    p.extractive_materials_provision_gep_result_task = p.add_task(extractive_materials_provision_tasks.gep_result)
+    return p
 
-    
+
 def build_gep_task_tree(p):
-    """
-    Build the results-oriented task tree (very similar to the standard tree
-    but i've included it here for consistency with other models.
+    """Build the full task tree: preprocess, calculation, results report and results distribution.
+
+    Kept for the same builder set the other services define. No run file calls it.
     """
     p.extractive_materials_provision_gep_preprocess_task = p.add_task(extractive_materials_provision_tasks.gep_preprocess)  
     p.extractive_materials_provision_gep_calculation_task = p.add_task(extractive_materials_provision_tasks.gep_calculation)  

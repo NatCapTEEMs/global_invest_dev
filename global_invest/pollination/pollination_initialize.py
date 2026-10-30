@@ -1,11 +1,12 @@
 """Pollination wiring: GEP task trees + the ES-shock seam (global_invest module layout).
 
-GEP side: the valuation builds the pollination value raster here (pollination_value_raster:
-production times world producer price times each crop's dependence on animal pollination, written
-as USD in the cell) and aggregates it to one row per country on r250. The raster made
-elsewhere carries USD per square kilometre; a zonal sum over that adds densities and yields
-$18.28bn where the area-weighted total is $476.29bn. Building the raster as USD in the cell is
-what makes the zonal sum the total.
+GEP side: the valuation builds the pollination value raster here
+(pollination_value_raster_rebuilt: production times producer price times each crop's dependence
+on animal pollination, written as USD in the cell), weights it by habitat sufficiency and
+aggregates the reported variant to one row per country on r250. The author's raster carries USD
+per square kilometre; a zonal sum over that adds densities and yields $18.28bn where the
+area-weighted total is $476.29bn. Building the raster as USD in the cell is what makes the zonal
+sum the total.
 Shock side: consumers (ngfs_pnas, nff_global) call add_pollination_tasks(p) after their SEALS
 stitch task; it dispatches static vs dynamic on p.dynamic_es (mirrors add_terrestrial_carbon_tasks).
 """
@@ -16,16 +17,15 @@ from global_invest.pollination import pollination_tasks
 def build_gep_service_calculation_task_tree(p):
     """GEP calculation tree: value raster -> per-r264 sums -> r250 one-row-per-country valuation.
 
-    fao_median_prices is the first step towards building that value raster here rather than
-    taking it as given. It downloads FAOSTAT production and producer prices and writes the
-    per-crop median price the raster is priced at. skip_existing=1 because it is a download."""
+    fao_median_prices builds the per-crop median price the value raster is priced at, from the
+    FAOSTAT bulks the download task stages. Both carry skip_existing=1: one is a download, the
+    other is heavy and deterministic once its inputs exist."""
     p.download_pollination_inputs_task = p.add_task(
         utilities.download_inputs_task('pollination'), skip_existing=1)
     p.fao_median_prices_task = p.add_task(pollination_tasks.fao_median_prices, skip_existing=1)
     # The yield and production chain: Monfreda 2000 yields carried to the base year by FAO
     # country ratios, then multiplied by CropGrids harvested area. These are what the rebuilt
-    # value raster is priced from, and until they were ported the account read the source
-    # author's finished production rasters out of base_data instead.
+    # value raster is priced from.
     p.fao_yield_change_task = p.add_task(pollination_tasks.fao_yield_change, skip_existing=1)
     # No skip_existing on these two: each guards itself per crop, so a run that stopped part way
     # resumes at the crop it reached. skip_existing works on the task's directory, which exists as
@@ -37,10 +37,9 @@ def build_gep_service_calculation_task_tree(p):
         pollination_tasks.pollination_source_value_raster, skip_existing=1)
     p.pollination_value_raster_task = p.add_task(
         pollination_tasks.pollination_value_raster, skip_existing=1)
-    # Our own construction of the same quantity, and the comparison against his. Not the GEP
-    # number -- the account reports his raster -- but the only check in the library that can
-    # disagree with an author on method rather than on transcription, so it runs every time
-    # rather than sitting dormant as code nobody executes.
+    # Our own construction of the value raster, which the account reports, and the comparison
+    # against the author's. The comparison is the only check in the library that can disagree
+    # with an author on method rather than on transcription, so it runs every time.
     # No skip_existing, same reasoning as sufficiency_weighted below: the directory exists
     # before the body runs, so a part-way failure wedges every later resume. The body's own
     # output checks say whether the work is done.
@@ -52,9 +51,9 @@ def build_gep_service_calculation_task_tree(p):
     # sufficiency-weighted raster, and the country table is built from whichever raster
     # pollination_reported_variant names, so the weighted raster must exist first.
     # No skip_existing: that flag reads an existing task directory as work already done, and the
-    # directory is created before the task body runs, so a run that failed part way through left
-    # an empty directory that every later run took for a finished one. This task checks for the
-    # two files it writes instead, which is the thing that actually says whether it has run.
+    # directory is created before the task body runs, so a run that fails part way through leaves
+    # an empty directory every later run would take for a finished one. This task checks for the
+    # two files it writes instead, which is what says whether it has run.
     p.pollination_sufficiency_weighted_task = p.add_task(
         pollination_tasks.pollination_sufficiency_weighted)
     p.pollination_value_by_region_task = p.add_task(
@@ -72,7 +71,7 @@ def build_gep_service_results_task_tree(p):
 
 
 def build_gep_service_task_tree(p):
-    """Full GEP run: the calculation calculation plus the results/report task."""
+    """Full GEP run: the calculation plus the results/report task."""
     p = build_gep_service_calculation_task_tree(p)
     p.pollination_gep_result_task = p.add_task(pollination_tasks.gep_result)
     p.pollination_gep_results_distribution_task = p.add_task(

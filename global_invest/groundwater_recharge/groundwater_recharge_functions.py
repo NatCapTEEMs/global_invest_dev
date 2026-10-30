@@ -64,3 +64,31 @@ def groundwater_gep(recharge_df, withdrawal_df, price_df, pump_efficiency):
     out['note'] = out.apply(
         lambda row: '; '.join(absences[c] for c in absences if pd.isna(row[c])), axis=1)
     return out
+
+
+def with_committed_reference(country_df, committed_df):
+    """The country table with the committed value beside each country's own.
+
+    The reference joins the country list on its own, not onto the countries this run values, so
+    a country the committed table values and the staged recharge table lacks keeps its reference
+    value, and a country with no value of its own stays NA. The committed table lists Cook
+    Islands twice, both blank: repeated rows that agree collapse to one, and repeated rows that
+    disagree raise, since keeping either would be a guess.
+
+    Args:
+        country_df (pd.DataFrame): one row per iso3_r250_label, carrying the run's values.
+        committed_df (pd.DataFrame): iso3_r250_label and ground_water_gep.
+
+    Returns:
+        pd.DataFrame: country_df with `groundwater_recharge_gep_reference`, the same rows.
+    """
+    reference = committed_df[['iso3_r250_label', 'ground_water_gep']].rename(
+        columns={'ground_water_gep': 'groundwater_recharge_gep_reference'})
+    repeated = reference[reference['iso3_r250_label'].duplicated(keep=False)]
+    conflicting = sorted(label for label, rows in repeated.groupby('iso3_r250_label')
+                         if rows['groundwater_recharge_gep_reference'].nunique(dropna=False) > 1)
+    if conflicting:
+        raise ValueError('The committed groundwater table gives different values for the same '
+                         'country: %s' % ', '.join(conflicting))
+    reference = reference.drop_duplicates('iso3_r250_label')
+    return country_df.merge(reference, on='iso3_r250_label', how='left', validate='one_to_one')

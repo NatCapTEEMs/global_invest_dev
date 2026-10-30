@@ -22,9 +22,10 @@ The calculation, in the order the task tree runs it:
                   factor for the log-scale severity stage (duan_smearing_factor).
   prediction      hazard_probability x expected_deaths_given_landslide per pixel, tiled
                   (tile_offsets, tile_geotransform).
-  valuation       OECD VSL per country with an income-group fallback (vsl_usd_2019_by_iso3,
-                  assign_vsl); avoided deaths are the full_impacts minus observed difference,
-                  and their value is that difference times the pixel's VSL.
+  valuation       VSL per country: the staged EPA life-years-lost panel when configured (read in
+                  the task module), otherwise the OECD estimates with an income-group fallback
+                  (vsl_usd_2019_by_iso3, assign_vsl). Avoided deaths are the full_impacts minus
+                  observed difference, and their value is that difference times the pixel's VSL.
   reporting       publication table assembly (regression_stars, publication_table,
                   coefficients_by_term, hurdle_table_rows) and figure binning
                   (fatality_bin_masks, bucket_legend_labels).
@@ -40,9 +41,8 @@ from osgeo import osr
 # Every derived raster in this chain carries the same nodata value.
 NODATA = -9999.0
 
-# METHOD CONSTANTS defining the v0.2.0 science (the landslide author's to bless) -- in
-# code so a change costs a reviewed commit. publish_inputs applies them caller-wins, so a
-# deliberate override on p survives.
+# METHOD CONSTANTS defining the v0.2.0 science -- in code so a change costs a reviewed
+# commit. publish_inputs applies them caller-wins, so a deliberate override on p survives.
 DATA_PROCESSING_YEARS = list(range(2007, 2020))  # every year the input rasters are built for
 MODELING_YEARS = list(range(2007, 2019))         # the years both models are fitted on
 PREDICTION_YEARS = [2019]                        # held out of fitting, and the reported year
@@ -707,16 +707,6 @@ def bucket_legend_labels(bucket_edges, tick_format):
 
 
 # ==================================================================== #
-# Infinite-slope stability index (SI) computation
-# ==================================================================== #
-
-
-# ==================================================================== #
-# Thickness-weighted 0-30cm combine (SoilGrids + HiHydroSoil share this)
-# ==================================================================== #
-
-
-# ==================================================================== #
 # EASE-Grid 2.0 reference grid: parse from the authoritative .gpd file
 # ==================================================================== #
 
@@ -750,26 +740,41 @@ def parse_gpd_grid_definition(gpd_text):
 
 
 # ==================================================================== #
-# Warp a raster onto a reference grid
+# Country totals and hazard-model scoring
 # ==================================================================== #
 
+def country_values_from_zonal(zonal, value_column):
+    """One value per country from the per-sub-region zonal table, missing where nothing was valid.
 
-# ==================================================================== #
-# Sample a raster at point coordinates
-# ==================================================================== #
+    A sub-region whose pixel_count is zero (or absent) has no valid pixel in the avoided-deaths
+    raster. pygeoprocessing reads a polygon too small to hold a cell centre from the cells in its
+    bounding box, so a zero count means every cell it touches is nodata (near-flat below
+    MIN_SLOPE_DEG, or an input missing) or the polygon lies outside the raster. Its zonal sum comes
+    back as 0, but that is no estimate, not a measured zero, so it is set missing before the
+    country sum. A country keeps a value if any of its sub-regions has a valid pixel, and a
+    country with valid pixels and no avoided deaths stays a measured zero.
 
+    Args:
+        zonal (pd.DataFrame): one row per sub-region, carrying iso3_r250_label, pixel_count and
+            value_column.
+        value_column (str): the column to sum per country.
 
-# ==================================================================== #
-# Write a numpy array to GeoTIFF
-# ==================================================================== #
+    Returns:
+        pd.DataFrame: iso3_r250_label and landslide_mitigation_gep.
+    """
+    values = zonal[value_column].where(pd.to_numeric(zonal['pixel_count'], errors='coerce') > 0)
+    per_country = (zonal.assign(_value=values).groupby('iso3_r250_label', as_index=False)['_value']
+                   .sum(min_count=1))
+    return per_country.rename(columns={'_value': 'landslide_mitigation_gep'})
+
 
 def roc_auc(y_true, y_score):
     """Area under the ROC curve, for scoring the landslide hazard model.
 
-    This is the one thing scikit-learn was imported for, and scikit-learn is a large compiled
-    install to carry for a diagnostic. The area under an ROC curve is the probability that a
-    randomly chosen positive scores above a randomly chosen negative, which is the Mann-Whitney U
-    statistic, so it is computed from ranks rather than by walking the curve.
+    Computed here rather than imported from scikit-learn, a large compiled install to carry for
+    one diagnostic. The area under an ROC curve is the probability that a randomly chosen
+    positive scores above a randomly chosen negative, which is the Mann-Whitney U statistic, so it
+    is computed from ranks rather than by walking the curve.
 
     Tied scores take the average of the ranks they span, which is what makes the result agree with
     scikit-learn on real data; without it a model that assigns many identical scores reads better

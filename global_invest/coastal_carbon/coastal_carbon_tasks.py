@@ -439,10 +439,8 @@ def salt_marsh_area_within_countries(p):
     gdf_salt_marsh = gpd.read_file(p.salt_marsh_vector_path).to_crs(gdf_regions.crs)
     hb.log(f'Loaded {len(gdf_salt_marsh)} salt marsh polygons, {len(gdf_regions)} marine regions')
 
-    # No zonal pass over ha_per_cell here and no "for inspection" gpkg: add_equal_area_ha
-    # overwrites area_ha with the equal-area geometric area a line later -- the measure the other
-    # two habitats use and the one that reaches the country table -- so either would cost hours
-    # per run to compute something nothing reads.
+    # The area is the equal-area geometric area from add_equal_area_ha, as for the other two
+    # habitats. A zonal pass over ha_per_cell would take hours and nothing reads it.
     pieces = ccf.add_equal_area_ha(ccf.intersect_features_with_regions(
         gdf_salt_marsh, gdf_regions, desc='Intersecting salt marsh with countries'))
 
@@ -660,7 +658,7 @@ def gep_calculation(p):
         p.cur_dir, "gep_by_country_base_year.csv")
     # Only register results this task actually writes. Per-year results (gep_by_country_year,
     # gep_by_year) belong to a multi-year run and are registered there, not in this base-year
-    # valuation (same contract fix as terrestrial_carbon).
+    # valuation.
 
     final_csv = service_results['gep_by_country_base_year']
     if not p.run_this:

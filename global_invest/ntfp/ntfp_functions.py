@@ -2,13 +2,14 @@
 
 The source repo (geo_ntfp) multiplies the CWoN 2024 NWFP value per hectare per country by
 the hectares of ACCESSIBLE forest: ESA CCI forest classes within a 10 km buffer of roads
-and rivers. Two script variants exist side by side (a vector-buffer calculation and a
-distance-raster pipeline) and no output is committed, so the library runs BOTH and presents
-both, the way fire_protection presents its variants.
+and rivers. The source carries two script variants (a vector-buffer calculation and a
+distance-raster pipeline) and commits no output; the library grows the reach on the account's
+own grid (see ntfp_tasks).
 
-The committed roads file is unusable (only sidecar files were committed, the .shp never
-was), so the accessibility stage runs on a public global roads dataset; the original
-roads file remains a replication ask.
+The roads layer is the configured `ntfp_roads_vector_path`
+(`global_invest/ntfp/input/global_roads/globalroads.shp`). The registered source code reads a file
+of the same name from its own base data, but no hash or feature count of the authors' file exists,
+so whether the two are identical is not verified.
 """
 
 # From the source scripts: accessibility is a 10 km buffer around roads and rivers, and

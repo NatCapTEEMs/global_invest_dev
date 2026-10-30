@@ -114,7 +114,7 @@ for k, v in p.results[service_label].items():
         sm = plt.cm.ScalarMappable(cmap='OrRd', norm=norm)
         sm._A = []
         cbar = fig.colorbar(sm, ax=ax, orientation='vertical', fraction=0.03, pad=0.02)
-        cbar.set_label("Gross Economic Product (GEP) in Base Year")
+        cbar.set_label("Gross Ecosystem Product (GEP) in Base Year")
         cbar.ax.yaxis.set_major_formatter(mpl.ticker.FuncFormatter(lambda x, _: f'{int(x):,}'))
 
         ax.set_title('GEP by Country in Base Year')
@@ -124,7 +124,7 @@ for k, v in p.results[service_label].items():
 
 ```
 
-Rainfall pattern regulation values the crop output supported by vegetation-derived moisture (Shunkei's VMR share of crop water satisfaction, on the corrected 2019 crop-provision basis), reported at the RECEIVING country: $`{python} f"{total_moisture_recycling_value:,.2f}"` in the base year. It is an intermediate contribution already inside crop provision, never an addition. The source-side diagnostic beside it re-attributes the same value to the countries whose evaporation became the rain, of which $`{python} f"{export_moisture_recycling_value:,.2f}"` crosses a border. The tables below aggregate by income group, region and continent, and end with the per-country table the account reads.
+Rainfall pattern regulation values the part of the 2019 crop rent attributed to vegetation-derived moisture (Shunkei's VMR coefficients on the commercial crop-provision values), reported at the RECEIVING country: $`{python} f"{total_moisture_recycling_value:,.2f}"` in the base year. It is an intermediate contribution already inside crop provision, never an addition. The source-side diagnostic beside it credits only the land-sourced part of that value to the countries whose evaporation became the rain, of which $`{python} f"{export_moisture_recycling_value:,.2f}"` crosses a border. Part of every country's rain comes from the ocean, so the diagnostic total is smaller than the headline and is not an allocation of it. The tables below aggregate by income group, region and continent, and end with the per-country table the account reads.
 
 ## GEP by Country in Base Year, mapped
 

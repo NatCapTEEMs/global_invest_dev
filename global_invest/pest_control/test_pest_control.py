@@ -62,19 +62,18 @@ def test_the_staged_classification_covers_every_mapped_item():
     assert not missing, missing
 
 
-# The pair of 2026-10-20: the owner-confirmed orientation (1 - exp(-lnRR)) on the
-# China-deduplicated table. Before it, the FAOSTAT China aggregate dropped before the
-# join (it doubled every Chinese crop-country row, $1.96bn). At premium 1.0 this
-# sits within 3 percent of the owner's committed $6.25bn, where the inflated
-# reading sat 20 percent above it.
+# The published totals: the owner-confirmed orientation (1 - exp(-lnRR)) on the table with
+# the FAOSTAT China aggregate dropped before the join (keeping it doubles every Chinese
+# crop-country row). At the appendix premium of 1.38 the total sits 3.5 percent above the
+# owner's committed $6.25bn.
 PUBLISHED_TOTAL_PREMIUM = 6_467_213_436.55
 PUBLISHED_TOTAL_NO_PREMIUM = 4_686_386_548.22
 
 
 def test_the_pipeline_function_reproduces_the_published_total():
     """The factored frame-level pipeline, driven from the staged inputs exactly as the task
-    drives it, returns the account's published figure: $10,338,294,391 at the appendix's
-    premium of 1.38 (and the premium-1.0 reading beside it). This is the import seam the
+    drives it, returns the account's published figure, PUBLISHED_TOTAL_PREMIUM at the
+    appendix's premium of 1.38 (and the premium-1.0 reading beside it). This is the import seam the
     pest engine's no-spread static limit reuses, so the pin is what keeps the two models
     agreeing on the shared special case."""
     import os, tempfile, hazelbean as hb

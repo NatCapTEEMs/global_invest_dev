@@ -8,70 +8,115 @@ format:
 
 Water quality, or water purification, is valued as the nutrient retention ecosystems provide,
 priced at what it would cost to treat the same load. Two nutrients are carried, nitrogen and
-phosphorus, for the base year 2019. The price convention recorded in `es_config.csv` reads
-`treatment cost (intl dollars question open)`, which names the open item on the currency below.
+phosphorus, for the base year 2019, in 2019 US dollars. The calculation follows the authors'
+current write-up and ports their Stata script, `analysis.do`, step by step.
 
 ## Quantity
 
-Retained nutrient in kilograms, restricted to the share of water that reaches domestic use:
+Retained nutrient in kilograms, allocated to domestic use:
 
 $$
 \text{EstimatedRetention (kg)} = \text{TotalRetention (kg)} \times \text{DomesticWaterUseFraction}
 $$
 
-The domestic-water-use fraction is the AQUASTAT share. The total retention figures come from an
-NDR-style estimation upstream.
+The domestic-water-use fraction is the AQUASTAT domestic share of withdrawals. It is an
+allocation proxy: it does not show that the retained load would otherwise reach domestic
+supply. The total
+retention figures come from an InVEST NDR estimation upstream. A negative retention estimate is
+treated as missing and a true zero is kept, so a country with a negative estimate for either
+nutrient carries no value.
 
 ## Price
 
-The treatment cost per kg of the nutrient, the committed table's `<nutrient>_Price(usd)`
-column.
+The authors collected treatment and avoided-treatment costs per kg of nitrogen and phosphorus
+from the literature: 32 observations once converted, 17 for nitrogen and 15 for phosphorus. Each
+is brought to US dollars per kg at the 2019 price level. Reported units go to kg. A price
+reported in US dollars goes to local currency at the observation year's World Bank exchange
+rate, and a price reported in euro by a country outside the euro goes to local currency through
+the euro's own dollar rate. The World Bank GDP deflator moves the local-currency price to the
+2019 price level. The Estonian, Latvian and Lithuanian observations are reported in euro for
+2008, before those countries adopted it. Each goes to its old currency through the euro's dollar
+rate in 2008, is deflated there, and returns to euro at the old-currency-per-euro rate of the
+year before adoption. The 2019 exchange rate then gives US dollars.
+
+The observations are pooled in one benefit-transfer regression:
+
+$$
+\ln(\text{price}) = b_0 + b_\text{gdppc} \ln(\text{GDP per capita}_{2019}) + b_p \cdot \text{phosphorus}
+$$
+
+Each country's price is the conditional median, $\exp$ of the fitted value at its 2019 GDP per
+capita, with the phosphorus term for phosphorus. On the staged inputs the fit gives
+$b_0 = -3.6374$, $b_\text{gdppc} = 0.5903$ and $b_p = 1.0099$, as in the authors' log. A country
+with no 2019 GDP per capita has no price.
 
 ## Valuation
 
 $$
-\text{ServiceValue (USD)} = \text{EstimatedRetention (kg)} \times \text{Price (USD/kg)}
+\text{GEP} = \text{price}_N \times N + \text{price}_P \times P
 $$
 
-`element_service_values` recomputes both identities per nutrient and compares them against the
-committed columns at rtol 1e-9, raising if either breaks. `water_quality_gep_by_country` sums the
-two nutrients into `water_quality_gep` and joins the result onto the country list, then
-attaches the committed international-dollar column beside it.
+with $N$ and $P$ the estimated retention after the negative estimates are set to missing. The sum
+is missing when either term is.
 
 ## Inputs
 
-From `es_parameters.csv`, scoped to the `water_quality` service:
+From `es_parameters.csv`, scoped to the `water_quality` service, all in
+`global_invest/water_quality/price_transfer/` (provenance in its README):
 
-- `water_quality_retention_path`, the per-country retention estimates carrying the total
-  retention, the domestic-water-use fraction, the prices and the committed intermediate columns
-  the recomputation is checked against.
-- `water_quality_international_path`, the final accounting table in international dollars.
+- `water_quality_retention_path`, the per-country retention estimates (total, domestic share,
+  estimated).
+- `water_quality_raw_prices_path`, the authors' raw cost observations.
+- `water_quality_gdp_deflator_path`, `water_quality_exchange_rate_path` and
+  `water_quality_gdp_per_capita_path`, the three World Bank series the script reads.
+- `water_quality_reference_gep_path`, the authors' exported table, which the tests reproduce.
 
 ## Output
 
 `gep_calculation` writes `gep_by_country_base_year.csv` into its own task directory, holding the
-r250 identifiers and attributes, `year`, `nitrogen_gep_usd`, `phosphorus_gep_usd`,
-`water_quality_gep` and `water_quality_gep_international_dollars`. Both totals are logged, the market-USD sum (the account column, decided 2026-10-25) and
-the international-dollar sum.
+r250 identifiers and attributes, `year`, the two prices per kg, the retention used, each
+nutrient's value and `water_quality_gep`, their sum. The log records the regression's
+coefficients and the number of observations.
 
-## Method constants
+## Checks
 
-`WATER_QUALITY_NUTRIENTS = ('n', 'p')` names the two nutrients and drives the column lookups.
+The port reproduces the authors' exported table on all 250 countries: identical missing values
+(178 valued, 10 zero, 62 missing), prices within 2e-6 relative (the script stores them in single
+precision) and the same total to 1e-7. `water_purification_gep` raises if an estimated retention
+stops equalling its total times the domestic fraction.
 
 ## Taken as given
 
-The retention totals themselves. The folder carries the committed calculation but no script, so the
-NDR-style estimation behind `TotalRetention(kg)` is adopted as produced.
+The retention totals. The authors' folder carries the InVEST NDR outputs but no script or run
+log for them, so the InVEST version and the units of the retention rasters are not established
+here.
 
-## What is open
+## Limitations
 
-The final accounting output is expressed in 2019 international dollars, per the drive's method
-note, and that conversion stage is not identified. It is not the plain sum of the USD components,
-with per-country ratios reaching about 11 times. The single-factor XR over PPP hypothesis was
-tested against the WDI series and rejected, missing by a median of 36 percent. The harmonisation
-appears to use per-source-year cost inputs the folder does not carry. The committed
-international-dollar values are therefore carried as the provisional account column, and the
-conversion script with its inputs is the ask.
-
-This also raises a cross-cutting question flagged on the deck. Every other service in the account
-values in 2019 market USD.
+- The regression rests on 32 observations, and 18 of them come from one report's four values
+  (Gren 2008, the lower bounds of its sewage-treatment cost ranges). Its R² is 0.156, and the
+  income and phosphorus coefficients have p-values of 0.106 and 0.095.
+- Two of the three Chinese nitrogen observations price ammonia nitrogen, not total nitrogen:
+  Ouyang 2020 (NH-N, from the NDRC treatment costs) and Li 2025 ("the cost of ammonia nitrogen
+  purification is 7910 CNY/t"). The retention they are applied to is total nitrogen.
+- The third, Li 2024 (Tonglu County, 2021), enters as a nitrogen price of 9,572.92 CNY/t. In
+  that paper 9,572.92 CNY/t is the treatment cost of COD (chemical oxygen demand), and its
+  ammonia-nitrogen cost is 8,000 CNY/t. Measured with this pipeline, 8,000 in its place gives a
+  total 0.65% lower, and dropping the row gives one 6.8% higher. The observation stays as the
+  authors entered it until they correct it.
+- The value adds the nitrogen and phosphorus terms. That is valid only if the two unit costs are
+  incremental and pollutant-specific. Gren 2008, the source of 18 of the 32 observations, lists
+  increased cleaning at sewage treatment plants among the measures that affect both nutrients,
+  costed as annualised investment, and the report does not state how a shared investment is
+  split between its per-kg nitrogen and per-kg phosphorus costs. Whether the sum counts shared
+  treatment spending twice is therefore not established.
+- The prices are treatment and avoided-treatment costs. A reviewer's comment linked from the
+  write-up suggests constructed wetlands as a lower-cost replacement, which would put the
+  replacement cost below these prices.
+- The domestic share allocates retention to domestic use as a proxy. It is not a measured
+  delivery of the retained load to domestic supply.
+- Which retention definition produced the 2019 table is not established: the committed code
+  takes the base run's load minus export, while the write-up describes the difference in export
+  between a scenario and the baseline.
+- Earlier versions of this account priced retention at the committed table's per-country prices
+  and kept negative estimates. That construction is superseded by the authors' current method.

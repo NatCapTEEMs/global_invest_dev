@@ -198,13 +198,11 @@ def test_the_banded_alternative_rounds_up_and_is_not_the_default():
 
 
 def test_the_flood_module_does_not_import_the_source_repo():
-    """The science lives here, so nothing may reach for the upstream layout again.
+    """flood_tasks loads without the source repo's `flood_paths` module.
 
-    The source repo resolved every path from a GEP_FLOOD_ROOT environment variable through its own
-    `flood_paths` module, and flood_tasks imported it by bare name. That works only from inside that
-    checkout, which is how a module reaches a collaborator and fails at import. flood_paths is
-    absorbed and the root is configuration now, so this blocks the old import and asserts the module
-    still loads without it. Same guard pollination carries against crop_benefits.
+    The source repo resolves every path from a GEP_FLOOD_ROOT environment variable through
+    `flood_paths`, which imports only from inside that checkout. This blocks that import and asserts
+    the module still loads. Pollination carries the same guard against crop_benefits.
     """
     import importlib
     import sys
@@ -231,9 +229,8 @@ def test_the_flood_module_does_not_import_the_source_repo():
 def test_every_flood_input_is_an_es_parameters_reference():
     """Inputs resolve through get_path like every other service, not from a directory convention.
 
-    Flood used to derive some thirty locations by hand from one root, which meant a machine had to
-    reproduce a layout rather than say where its data is, and made the run's inputs invisible to
-    anything that reads the definitions.
+    Locations derived by hand from one root make a machine reproduce a layout rather than say where
+    its data is, and hide the run's inputs from anything that reads the definitions.
     """
     import csv
     import os
@@ -246,14 +243,44 @@ def test_every_flood_input_is_an_es_parameters_reference():
     assert 'flood_root_dir' not in keys, 'the hand-derived root is gone; inputs are references now'
 
 
-def test_every_flood_module_imports():
-    """The fold-in deleted flood_paths.py but left run_flood.py importing it.
+def test_the_staged_pipeline_inputs_resolve_on_a_fresh_project_and_a_machine_keeps_its_own():
+    """The seven staged inputs ship as references to base_data's flood/input/pipeline_inputs, so a
+    fresh project resolves every one; a project copy that already names another location keeps
+    it, and a value set on p before hydration wins, so a machine with its own layout is unmoved."""
+    import csv
+    import os
+    from global_invest.flood import flood_tasks
+    staged = ('flood_lulc_path', 'flood_pop_path', 'flood_depth_aligned_path', 'flood_spa_path',
+              'flood_spa_ratio_path', 'flood_canonical_eur_path', 'flood_currency_factors_path')
+    root = tempfile.mkdtemp()
+    p = hb.ProjectFlow(project_dir=os.path.join(root, 'gep_flood_control'))
+    flood_tasks.publish_inputs(p)
+    if not hb.path_exists(str(p.flood_lulc_path)):
+        pytest.skip('the staged flood pipeline inputs are not on this machine')
+    missing = [name for name in staged if not hb.path_exists(str(getattr(p, name)))]
+    assert not missing, 'unresolved on a fresh project: %s' % missing
 
-    Nothing caught it: the tests here exercise flood_tasks and flood_functions, never the entry
-    point, and every real run so far has used the source repo's own copy on MSI, which still has
-    the deleted module. So our refactored flood raised ModuleNotFoundError on import for weeks
-    while appearing green. An import is the cheapest possible assertion and it is the one that
-    would have failed.
+    local = os.path.join(p.input_dir, 'es_parameters.csv')
+    rows = list(csv.reader(open(local, encoding='utf-8-sig')))
+    for row in rows:
+        if len(row) > 2 and row[1] == 'flood_lulc_path':
+            row[2] = 'global_invest/flood/lulc/machine_layout.tif'
+    with open(local, 'w', newline='', encoding='utf-8') as f:
+        csv.writer(f).writerows(rows)
+    q = hb.ProjectFlow(project_dir=p.project_dir)
+    q.flood_spa_path = '/set/by/caller.tif'
+    flood_tasks.publish_inputs(q)
+    assert str(q.flood_lulc_path).endswith('global_invest/flood/lulc/machine_layout.tif')
+    assert q.flood_spa_path == '/set/by/caller.tif'
+    assert str(q.flood_pop_path) == str(p.flood_pop_path)
+
+
+def test_every_flood_module_imports():
+    """Every flood module imports, including the run file no other test executes.
+
+    The other tests exercise flood_tasks and flood_functions, never the entry point, so a stale
+    import there would surface only on a real run. An import is the cheapest assertion that
+    catches it.
     """
     import importlib
     for name in ('flood_functions', 'flood_initialize', 'flood_tasks', 'run_flood'):
@@ -261,14 +288,12 @@ def test_every_flood_module_imports():
 
 
 def test_the_run_file_does_not_configure_the_service():
-    """run_flood.py used to set 55 p.flood_* attributes; 51 of them were read by nothing.
+    """run_flood.py sets no p.flood_* attribute: everything the module needs comes from es_parameters.
 
-    Everything the module needs comes from configure_paths, which resolves each location under
-    flood_root_dir, or from es_parameters. The hardcoded copies were not merely redundant: they let
-    the valuation run correctly on a machine where input_template was absent and no config hydrated
-    at all, so nothing surfaced the gap until the GEP chain -- which does read config -- returned $0
-    for every country while reporting success. H14 in the harmonization gate enforces this across
-    the library; this asserts it for the file that broke the rule.
+    Hardcoded copies in the run file are not merely redundant: they let the valuation run on a
+    machine where input_template is absent and no config hydrates, while the GEP chain, which does
+    read config, returns $0 for every country and reports success. H14 in the harmonization gate
+    enforces this across the library; this asserts it for the flood run file.
     """
     import os
     here = os.path.dirname(os.path.abspath(__file__))
@@ -281,10 +306,8 @@ def test_the_run_file_does_not_configure_the_service():
 # ---------------------------------------------------------------------------
 # Section D end to end, on frames small enough to check by hand.
 #
-# Until 2026-08-30 nothing here executed 4A, 4C or 4D: the tests covered
-# flood_functions and stopped, so the first cluster run was also the first time
-# those functions had ever run. These exercise the real code paths on a handful
-# of countries and return periods.
+# These execute the real 4A, 4C and 4D code paths on a handful of countries and
+# return periods, so a fault in them shows here rather than on a cluster run.
 # ---------------------------------------------------------------------------
 def _flood_settings(p, directory):
     """The es_parameters values Section D reads, on a bare object."""
@@ -346,11 +369,11 @@ def test_expected_annual_damage_integrates_each_country_and_writes_one_file_per_
 
 
 def test_a_country_with_no_damage_table_stops_the_run_rather_than_counting_as_zero(tmp_path):
-    """The failure that made France, Australia and Norway look like legitimate zeros.
+    """A country that produced no damage table has no EAD, which is not an EAD of zero.
 
-    Their step 4B was OOM-killed, 4C recorded ead=0, and the global total was short by their
-    value with nothing raising. A country that produced no damage table has no EAD, which is
-    not the same as an EAD of zero.
+    A step 4B that dies for a country (an out-of-memory kill, for one) leaves its folder without a
+    table. Recording zero there would cut the global total by that country's value with nothing
+    raising.
     """
     import os
     from types import SimpleNamespace
@@ -373,7 +396,7 @@ def test_a_country_with_no_damage_table_stops_the_run_rather_than_counting_as_ze
 
 
 def test_the_damage_tables_convert_eur2010_to_usd2019_and_give_pasture_the_cropland_curve(tmp_path):
-    """Step 4A, which nothing had ever run.
+    """Step 4A on the wide canonical table.
 
     Every value takes one combined factor, the 2010 FX rate times the US inflator to 2019.
     Pasture has no curve of its own in the JRC table, so it takes cropland's.
@@ -424,10 +447,179 @@ def test_the_damage_tables_convert_eur2010_to_usd2019_and_give_pasture_the_cropl
     assert crop == past, 'pasture takes cropland curve when flood_set_pasture_equal_crop is on'
 
 
+_AUTHOR_MULTIPLIER = 1.3260896 * 1.1600606949798336   # rebuild_damage_table.py EUR2010_TO_USD2019
+_DEPTH_COLS = ['0m', '0.5m', '1m', '1.5m', '2m', '3m', '4m', '5m', '6m']
+
+
+def _landtype_row(iso3, land_type, scale):
+    """One source row: a curve rising with depth, plus a 2.5 m column the rebuild must ignore."""
+    row = {'Country': iso3, 'ISO3': iso3, 'Continent': 'X', 'LandType': land_type,
+           'Max_Damage_Euro_per_m2': 6.0 * scale}
+    for i, col in enumerate(_DEPTH_COLS):
+        row[col] = float(i) * scale
+    row['2.5m'] = 999.0
+    return row
+
+
+def test_the_rebuilt_damage_table_follows_the_authors_recipe():
+    """The authors' rebuild at its defaults: urban land takes the Residential curve, cropland the
+    Agriculture curve converted from EUR per hectare, pasture cropland's, and a land type the
+    country lacks is a zero curve. Commercial and Industrial do not enter, and no roads class is
+    written."""
+    src = pd.DataFrame([_landtype_row('AAA', 'Residential', 10.0),
+                        _landtype_row('AAA', 'Commercial', 3.0),
+                        _landtype_row('AAA', 'Agriculture', 50_000.0),
+                        _landtype_row('bbb', 'Residential', 2.0)])
+    out = ff.sda_curves_from_landtype_depth_table(src, _AUTHOR_MULTIPLIER,
+                                                  [0, 0.5, 1, 1.5, 2, 3, 4, 5, 6])
+
+    assert list(out.columns) == ['iso3', 'sda_type'] + _DEPTH_COLS
+    assert list(zip(out['iso3'], out['sda_type'])) == [
+        ('AAA', 'artif'), ('AAA', 'crop'), ('AAA', 'pasture'),
+        ('BBB', 'artif'), ('BBB', 'crop'), ('BBB', 'pasture')]
+    row = out.set_index(['iso3', 'sda_type'])
+    for i, col in enumerate(_DEPTH_COLS):
+        assert row.loc[('AAA', 'artif'), col] == float(i) * 10.0 * _AUTHOR_MULTIPLIER
+        assert row.loc[('AAA', 'crop'), col] == float(i) * 50_000.0 / 10_000.0 * _AUTHOR_MULTIPLIER
+        assert row.loc[('AAA', 'pasture'), col] == row.loc[('AAA', 'crop'), col]
+        assert row.loc[('BBB', 'crop'), col] == 0.0          # no Agriculture row: zero curve
+        assert row.loc[('BBB', 'pasture'), col] == 0.0
+
+
+def test_a_rebuilt_table_with_no_urban_damage_or_a_missing_depth_is_refused():
+    zero_urban = pd.DataFrame([_landtype_row('AAA', 'Residential', 0.0),
+                               _landtype_row('AAA', 'Agriculture', 1.0)])
+    with pytest.raises(ValueError, match='artif'):
+        ff.sda_curves_from_landtype_depth_table(zero_urban, 1.0, [0, 0.5, 1, 1.5, 2, 3, 4, 5, 6])
+    no_6m = pd.DataFrame([_landtype_row('AAA', 'Residential', 1.0)]).drop(columns=['6m'])
+    with pytest.raises(ValueError, match='6m'):
+        ff.sda_curves_from_landtype_depth_table(no_6m, 1.0, [0, 0.5, 1, 1.5, 2, 3, 4, 5, 6])
+
+
+def test_the_rebuild_checks_the_source_hash_and_records_its_provenance(tmp_path):
+    """A workbook that is not the recorded one stops the rebuild before anything is written."""
+    import json
+    import os
+    from global_invest.flood import flood_tasks as ft
+    src_path = os.path.join(str(tmp_path), 'country_landtype_depth_damage.xlsx')
+    pd.DataFrame([_landtype_row('AAA', 'Residential', 10.0),
+                  _landtype_row('AAA', 'Agriculture', 10_000.0)]).to_excel(src_path, index=False)
+    out_path = os.path.join(str(tmp_path), 'rebuilt.csv')
+
+    with pytest.raises(ValueError, match='sha256'):
+        ft.rebuild_sda_damage_table(src_path, '0' * 64, _AUTHOR_MULTIPLIER, out_path)
+    assert not os.path.exists(out_path)
+
+    ft.rebuild_sda_damage_table(src_path, utilities.sha256_file(src_path), _AUTHOR_MULTIPLIER,
+                                out_path)
+    # round_trip parsing reads back the float64 the writer wrote; the default parser can differ
+    # in the last bit.
+    table = pd.read_csv(out_path, float_precision='round_trip').set_index(['iso3', 'sda_type'])
+    assert table.loc[('AAA', 'artif'), '6m'] == 8 * 10.0 * _AUTHOR_MULTIPLIER
+    assert table.loc[('AAA', 'crop'), '6m'] == 8 * 10_000.0 / 10_000.0 * _AUTHOR_MULTIPLIER
+    curves = ft.load_damage_table_wide(out_path)       # the reader Section D uses (float32)
+    assert curves[('AAA', 'artif')][1][-1] == pytest.approx(80.0 * _AUTHOR_MULTIPLIER, rel=1e-6)
+    record = json.load(open(os.path.splitext(out_path)[0] + '_provenance.json'))
+    assert record['source_sha256'] == utilities.sha256_file(src_path)
+    assert record['table_sha256'] == utilities.sha256_file(out_path)
+    assert (record['rows'], record['countries'], record['artif_curves_nonzero']) == (3, 1, 1)
+
+
+def test_section_d_reads_the_rebuilt_table_only_when_4a_is_skipped():
+    """A path es_parameters names wins. With 4A skipped Section D reads the rebuilt table, and
+    with 4A running it reads 4A's own output, so the rebuild can never be overwritten by 4A."""
+    import os
+    from types import SimpleNamespace
+    from global_invest.flood import flood_tasks as ft
+    base = dict(flood_global_export_dir='/run/_global',
+                flood_rebuilt_sda_damage_wide_path='/run/rebuild/rebuilt.csv')
+
+    p = SimpleNamespace(flood_skip_damage_tables=True, **base)
+    assert ft.resolve_sda_damage_wide_path(p) == '/run/rebuild/rebuilt.csv'
+    p = SimpleNamespace(flood_skip_damage_tables=False, **base)
+    assert ft.resolve_sda_damage_wide_path(p) == os.path.join('/run/_global',
+                                                              'damage_by_sda_usd2019_wide.csv')
+    p = SimpleNamespace(flood_skip_damage_tables=True, flood_sda_damage_wide_path='/named.csv',
+                        **base)
+    assert ft.resolve_sda_damage_wide_path(p) == '/named.csv'
+
+
+def _es_parameter(name):
+    import os
+    from global_invest.flood import flood_tasks as ft
+    params = pd.read_csv(os.path.join(os.path.dirname(ft.__file__), '..', 'input_template',
+                                      'es_parameters.csv'), encoding='utf-8-sig')
+    values = params.loc[(params['service'] == 'flood') & (params['parameter'] == name), 'value']
+    assert len(values) == 1, name
+    return str(values.iloc[0])
+
+
+def test_es_parameters_configures_the_authors_damage_table():
+    """The authors' configuration (method note 11.6): 4A skipped, the land-type workbook named
+    with its hash, and no roads class, which this table does not price."""
+    assert _es_parameter('flood_skip_damage_tables') == 'true'
+    assert _es_parameter('flood_landtype_depth_damage_path').endswith(
+        'flood_damage/country_landtype_depth_damage.xlsx')
+    assert re.fullmatch(r'[0-9a-f]{64}', _es_parameter('flood_landtype_depth_damage_sha256'))
+    assert _es_parameter('flood_use_roads') == 'false'
+
+
+def test_the_staged_workbook_reproduces_the_authors_checks(tmp_path):
+    """Method note 11.7: artif non-zero at 6 m in 196 of 214 countries and Belgium's at USD2019
+    246.67 per m2 (EUR2010 160.35). Every one of the 5,778 values also equals a recomputation that
+    walks the workbook row by row, independently of the pivot the rebuild uses, both in memory and
+    as written to disk and read back with round_trip parsing.
+
+    Zero cropland curves come from two causes that are kept apart: 17 countries have no
+    Agriculture row, and the Faroe Islands' Agriculture row is zero, so 18 cropland curves are zero.
+    """
+    import os
+    from global_invest.flood import flood_tasks as ft
+    root = hb.ProjectFlow(project_dir=os.path.join(tempfile.mkdtemp(), 'anchors')).base_data_dir
+    path = os.path.join(root, _es_parameter('flood_landtype_depth_damage_path'))
+    if not os.path.exists(path):
+        pytest.skip('the staged flood land-type workbook is not on this machine')
+    assert utilities.sha256_file(path) == _es_parameter('flood_landtype_depth_damage_sha256')
+    src = pd.read_excel(path, sheet_name=0)
+    out = ff.sda_curves_from_landtype_depth_table(src, _AUTHOR_MULTIPLIER,
+                                                  [0, 0.5, 1, 1.5, 2, 3, 4, 5, 6])
+
+    assert len(out) == 642 and out['iso3'].nunique() == 214
+    artif = out[out['sda_type'] == 'artif'].set_index('iso3')
+    assert int((artif[_DEPTH_COLS].abs().sum(axis=1) > 0).sum()) == 196
+    assert artif.loc['BEL', '6m'] == pytest.approx(246.66772458807412, rel=1e-12)
+    assert artif.loc['BEL', '6m'] / _AUTHOR_MULTIPLIER == pytest.approx(160.35, abs=0.005)
+    assert {'SRB', 'PSE', 'XKX'} <= set(out['iso3'])
+    absent = set(src['ISO3']) - set(src.loc[src['LandType'] == 'Agriculture', 'ISO3'])
+    crop = out[out['sda_type'] == 'crop'].set_index('iso3')
+    zero_crop = set(crop.index[crop[_DEPTH_COLS].abs().sum(axis=1) == 0])
+    assert len(absent) == 17 and absent < zero_crop and zero_crop - absent == {'FRO'}
+
+    got = out.set_index(['iso3', 'sda_type'])
+    worst = 0.0
+    for iso3, rows in src.groupby('ISO3'):
+        for sda_type, land_type in (('artif', 'Residential'), ('crop', 'Agriculture'),
+                                    ('pasture', 'Agriculture')):
+            match = rows[rows['LandType'] == land_type]
+            for col in _DEPTH_COLS:
+                value = float(match[col].iloc[0]) if len(match) else 0.0
+                value = 0.0 if np.isnan(value) else value
+                if land_type == 'Agriculture':
+                    value = value / 10_000.0
+                worst = max(worst, abs(got.loc[(iso3.upper(), sda_type), col]
+                                       - value * _AUTHOR_MULTIPLIER))
+    assert worst == 0.0
+
+    saved_path = ft.rebuild_sda_damage_table(path, _es_parameter('flood_landtype_depth_damage_sha256'),
+                                             _AUTHOR_MULTIPLIER, str(tmp_path / 'rebuilt.csv'))
+    saved = pd.read_csv(saved_path, float_precision='round_trip')
+    pd.testing.assert_frame_equal(saved, out, check_exact=True)
+
+
 def test_the_components_reader_multiplies_the_regional_fraction_by_the_country_max_damage(tmp_path):
     """The other canonical shape: a fraction per region and land type, times a max damage per
-    country. Nothing calls this today, so if the real canonical file is this shape, 4A is
-    reading fractions as if they were absolute euros.
+    country. Nothing in the pipeline calls this, so if the real canonical file is this shape, 4A
+    reads fractions as if they were absolute euros.
     """
     import os
     from global_invest.flood import flood_tasks as ft
@@ -450,8 +642,8 @@ def test_the_components_reader_multiplies_the_regional_fraction_by_the_country_m
 
 def test_a_missing_amplification_raster_stops_the_run_rather_than_zeroing_the_gep(tmp_path):
     """The degraded world is the current depths times an amplification factor, so a missing factor
-    makes the two worlds identical and that return period's GEP exactly zero. It used to warn and
-    return None, which is indistinguishable from the current scenario, where None is correct.
+    makes the two worlds identical and that return period's GEP exactly zero. Returning None there
+    would be indistinguishable from the current scenario, where None is correct.
     """
     import os
     from types import SimpleNamespace
@@ -472,14 +664,12 @@ def test_a_missing_amplification_raster_stops_the_run_rather_than_zeroing_the_ge
 
 
 def test_the_account_country_layer_works_as_the_flood_admin0():
-    """Condition 2. Flood read its country boundary from the author's staged
-    `country_boundary_r250_with_iso3.gpkg`, and the thing stopping the switch was step4D taking
-    `region_wb` off the geometry: the account's layer carries iso3 id, label and name, and no region.
+    """Condition 2. The account's layer carries iso3 id, label and name but no region, so step 4D
+    takes `region_wb` from the shared country table rather than from the geometry.
 
-    Step4D now takes the region from the shared country table, so the account's own layer is usable.
-    This checks the three things that have to hold for that, because each has bitten once: the layer
-    resolves one row per country, the ISO3 detector picks the right column out of it, and the region
-    the export needs is available from the table rather than the geometry.
+    Three things have to hold for the layer to serve as flood's admin0: it resolves one row per
+    country, the ISO3 detector picks the right column out of it, and the region the export needs is
+    available from the table rather than the geometry.
     """
     import os
     import geopandas as gpd
@@ -501,8 +691,8 @@ def test_the_account_country_layer_works_as_the_flood_admin0():
     assert iso_col == 'iso3_r250_label', iso_col
     assert admin0[iso_col].nunique() == 250
 
-    # And the region step4D needs is absent from the geometry and present in the table, which is
-    # the whole reason the export had to stop reading it off the boundary.
+    # The region step 4D needs is absent from the geometry and present in the table, which is why
+    # the export reads it from the table.
     assert 'region_wb' not in admin0.columns
     countries = utilities.collapse_countries_to_r250(pd.read_csv(correspondence))
     assert 'region_wb' in countries.columns
@@ -513,15 +703,14 @@ def test_the_account_country_layer_works_as_the_flood_admin0():
 
 def test_our_flood_gep_reproduces_the_authors_committed_table():
     """Condition 12. The account's flood GEP is $11,403,596,548 and the author publishes $11.40bn,
-    which is his rounding. Quoting that agreement is not a check; this recomputes it.
+    his rounding; this recomputes the agreement country by country.
 
-    His `flood_gep_for_merge_v2_2024hazard.csv` is the table he named as the one to join against the
-    other services, staged in base_data beside our own run's output so the comparison survives.
+    `flood_gep_for_merge_v2_2024hazard.csv` is the author's table for joining against the other
+    services, staged in base_data beside the account's run output.
 
-    What it proves is narrow, and the entry says so: the module is his pipeline with our path
-    handling and ProjectFlow wiring, so agreement was close to guaranteed. This is a build test --
-    it catches our refactor breaking his arithmetic, and nothing about whether the arithmetic is
-    right."""
+    What it proves is narrow: the module is the author's pipeline with the account's path handling
+    and ProjectFlow wiring, so this is a build test. It catches a refactor breaking the arithmetic
+    and says nothing about whether the arithmetic is right."""
     import os
     base = os.path.join(os.path.expanduser('~'), 'Files', 'base_data', 'global_invest', 'flood',
                         'reference')
@@ -554,8 +743,8 @@ def test_our_flood_gep_reproduces_the_authors_committed_table():
 def test_the_water_variant_more_than_doubles_the_flood_headline():
     """The largest open question in the account, pinned so it cannot drift unnoticed. The run writes
     four variants and the delivered one removes permanent water; keeping it more than doubles the
-    figure. Which the account intends is not written down anywhere we have found, so this asserts
-    the gap exists rather than which side is right."""
+    figure. Which the account intends is undocumented, so this asserts the gap exists rather than
+    which side is right."""
     import os
     base = os.path.join(os.path.expanduser('~'), 'Files', 'base_data', 'global_invest', 'flood',
                         'reference')
@@ -572,14 +761,13 @@ def test_the_water_variant_more_than_doubles_the_flood_headline():
 
 
 def test_every_flood_tree_builder_assembles():
-    """H23 flagged `build_flood_calculation_task_tree` and `build_flood_valuation_task_tree` as
-    defined and never used, which they were: flood publishes a family of composable partial trees
-    and only some of them are reached from the run file.
+    """Every flood tree builder assembles.
 
-    They are deliberate API rather than leftovers, so the answer is to exercise them rather than
-    delete them -- an entry point nothing calls and nothing tests is indistinguishable from dead,
-    and this makes the difference visible. Building each tree also proves it assembles, which
-    nothing checked before: a builder naming a task that no longer exists would have failed only
+    Flood publishes a family of composable partial trees and only some are reached from the run
+    file: `build_flood_calculation_task_tree` and `build_flood_valuation_task_tree` are reached
+    only from here. They are deliberate API, and an entry point nothing calls and nothing tests is
+    indistinguishable from dead code (harmonization check H23 flags such builders). Building each
+    tree also catches a builder naming a task that does not exist, which would otherwise fail only
     when somebody chose that tree.
     """
     from global_invest.flood import flood_initialize
@@ -596,8 +784,8 @@ def test_every_flood_tree_builder_assembles():
 
 def test_gep_calculation_requires_the_bare_counterfactual_in_a_computed_table(tmp_path, monkeypatch):
     """A computed table without gep_flood_bare_usd2019 is refused — the account never silently
-    publishes the insitu column under the bare description — and a valid bare table is used
-    exactly as before."""
+    publishes the insitu column under the bare description — and a valid bare table publishes its
+    bare column."""
     from types import SimpleNamespace
     from global_invest.flood import flood_tasks as ft
     monkeypatch.setattr(ft, 'publish_inputs', lambda p: p)
@@ -620,3 +808,68 @@ def test_gep_calculation_requires_the_bare_counterfactual_in_a_computed_table(tm
     ft.gep_calculation(p)
     published = pd.read_csv(out_path)
     assert published.loc[0, 'flood_gep'] == pytest.approx(7.0)
+
+
+def test_the_computed_route_publishes_the_authors_export_from_the_staged_table(tmp_path, monkeypatch):
+    """The computed route reads the table compute_flood_gep writes, which keys by `iso3`. On the
+    staged run output it must publish exactly what the author's export publishes, including the
+    author's rule that blanks anything below $1 (Iceland's 2.1 cents is the case that rule exists
+    for)."""
+    import os
+    import shutil
+    from types import SimpleNamespace
+    from global_invest.flood import flood_tasks as ft
+    base = os.path.join(os.path.expanduser('~'), 'Files', 'base_data', 'global_invest', 'flood')
+    ours_path = os.path.join(base, 'reference', 'step4e_flood_gep_USD2019_ours_20260831.csv')
+    his_path = os.path.join(base, 'flood_gep_for_merge_v2_2024hazard.csv')
+    if not (os.path.exists(ours_path) and os.path.exists(his_path)):
+        pytest.skip('the staged flood run output or the author export is not on this machine')
+
+    his = pd.read_csv(his_path)
+    computed = os.path.join(str(tmp_path), 'flood_gep_usd2019.csv')
+    shutil.copy(ours_path, computed)
+    out_path = os.path.join(str(tmp_path), 'gep_by_country_base_year.csv')
+    monkeypatch.setattr(ft, 'publish_inputs', lambda p: p)
+    monkeypatch.setattr(utilities, 'begin_gep_calculation',
+                        lambda p, s: ({'gep_by_country_base_year': out_path}, False))
+    monkeypatch.setattr(utilities, 'collapse_countries_to_r250', lambda df: df)
+    countries = his[['iso3_r250_label', 'iso3_r250_name']].copy()
+    p = SimpleNamespace(run_this=True, gep_base_year=2019, df_countries=countries,
+                        flood_gep_path=computed, flood_gep_for_merge_path=None)
+    ft.gep_calculation(p)
+
+    published = pd.read_csv(out_path).set_index('iso3_r250_label')['flood_gep']
+    reference = his.set_index('iso3_r250_label')['gep_const2019_usd'].reindex(published.index)
+    assert len(published) == 250
+    assert (published.isna() == reference.isna()).all()
+    assert (published - reference).abs().max() < 0.01
+    assert np.isnan(published['ISL'])
+
+
+def test_a_return_period_never_reads_a_longer_return_periods_depths(tmp_path):
+    """The fallback patterns must not let rp50 match the rp500 file when the exact file is missing."""
+    import os
+    from types import SimpleNamespace
+    from global_invest.flood import flood_tasks as ft
+    open(os.path.join(str(tmp_path), 'JRC_flood_depth_rp500y__matchLULC.tif'), 'wb').close()
+    p = SimpleNamespace(flood_depth_aligned_path=str(tmp_path))
+    assert ft._find_depth_raster(p, 50) is None
+    assert ft._find_depth_raster(p, 500).endswith('rp500y__matchLULC.tif')
+    open(os.path.join(str(tmp_path), 'JRC_flood_depth_rp50_matchLULC.tif'), 'wb').close()
+    assert ft._find_depth_raster(p, 50).endswith('rp50_matchLULC.tif')
+
+
+def test_a_zip_member_in_a_subfolder_lands_beside_the_others(tmp_path):
+    """A member stored under a folder inside the zip is extracted beside the others."""
+    import os
+    import zipfile
+    from global_invest.flood import flood_tasks as ft
+    zip_path = os.path.join(str(tmp_path), 'depth.zip')
+    with zipfile.ZipFile(zip_path, 'w') as z:
+        z.writestr('floodMapGL_rp10y/floodMapGL_rp10y.tif', b'tif')
+    out_dir = os.path.join(str(tmp_path), 'out')
+    extracted = ft._extract_zip(zip_path, out_dir)
+    member = os.path.join(out_dir, 'floodMapGL_rp10y.tif')
+    assert extracted == [member]
+    with open(member, 'rb') as f:
+        assert f.read() == b'tif'

@@ -6,22 +6,63 @@ format:
     standalone: true
 ---
 
-Timber provision values managed forestry. The valuation runs on a 10 arcsecond grid and is
-reported as one row per country for the GEP base year of 2019. The price convention recorded in
-`es_config.csv` is `stumpage value`.
+Timber provision values the rent the world's forests earn from wood production. The published
+figure, `timber_provision_gep`, is the World Bank's Changing Wealth of Nations 2024 forest rent
+for 2019, one row per country. The price convention recorded in `es_config.csv` is
+`stumpage value`.
 
-## Quantity
+## The published figure: CWoN forest rent
+
+`gep_calculation` reads the series `Forest, rents (current US$)` from `forest_timber_rent_cd.dta`
+(CWoN 2024 reproducibility package `FR_WLD_2024_195`) and takes its `YR2019` column, joined to
+the account's countries on the ISO3 label. The values are current US dollars of 2019, which is
+the account's 2019 USD with no further conversion. A country CWoN does not value stays missing,
+because no published rent is not a rent of zero. The total is $132.13bn over 190 positive
+countries, with 23 zeros where CWoN publishes zero and 37 missing.
+
+CWoN builds this rent in `forest_timber_depletion.do`. Each product's FAOSTAT production, wood
+fuel (item 1864) and industrial roundwood (items 1866 and 1867), is priced at its regional mean
+export unit value, after values above the median plus 1.5 times the interquartile range are
+replaced by the median. The three revenues are summed, so fuelwood is already inside the figure,
+and the sum is multiplied by one rental ratio, country-specific for 17 countries and a regional
+default elsewhere. `forest_timber_gapfill.do` then sets the rent to zero where CWoN has no forest
+data for small island economies and a few named countries.
+
+## Published beside it
+
+- **`timber_provision_gep_spatial`, the comparison construction.** The zonal sum of the Forestry
+  pipeline's value raster, $88.74bn over 166 countries (zero elsewhere). It is the construction
+  the shared sheet carried before the account adopted the CWoN rent, and it is kept because it is
+  the only spatial forestry layer the library holds. It is described under "Spatial comparison
+  column" below.
+- **`timber_provision_gep_fuelwood_part` and `timber_provision_gep_industrial_part`, an
+  approximate split of the published figure** ($59.99bn and $72.14bn, summing to it). Each
+  product's FAOSTAT production is priced at its WORLD export unit value, and the fuelwood share of
+  that revenue is applied to the CWoN rent. CWoN itself prices with outlier-trimmed regional mean
+  export unit values, so this is an approximate allocation, not an exact decomposition of CWoN's
+  rent. Its purpose is to show that a separate fuelwood row is a subset of this figure, never an
+  addition to it.
+- **`timber_roundwood_gross_value`, a diagnostic** ($881.66bn over 202 countries). FAOSTAT
+  roundwood production priced at the country's own industrial-roundwood export unit value where
+  it falls between $5 and $3,000 per m³, else the world value. A rent above it flags the country
+  for review. Export unit values are proxies for the price of the wood actually produced,
+  especially where trade is thin, so an exceedance alone does not establish an error in either
+  figure.
+
+## Spatial comparison column
+
+### Quantity
 
 Annual harvestable biomass yield in cubic metres per hectare, built from MC2 forest types crossed
 with Tian et al. timber regions and adjusted for net primary productivity. This layer is produced
 by the consortium drive's Forestry calculation and is staged for the library rather than rebuilt in it.
 
-## Price
+### Price
 
 The national log price in USD per cubic metre, from Siikamaki and Santiago-Avila 2014 as the
 Forestry calculation's method appendix cites it.
 
-## Valuation
+### Valuation
 
 Gross return is converted to net return with the GTAP land factor share (Damania et al. 2023) and
 then reduced by a per-pixel transport cost built from Weiss et al. travel time and a trucking
@@ -39,13 +80,11 @@ and nodata floor to zero, which is the value raster's own nodata convention.
 the 10 arcsecond r250 country-id raster, 2048 rows at a time, accumulating into an array indexed by
 `iso3_r250_id`. `timber_gep_from_zone_sums` keys those sums onto the country list.
 
-## What the library reports
+### Checks on the spatial column
 
-The reported number is the library's own run of the zonal sum over the staged value raster. The
-committed Forestry CSV is the comparison anchor, logged next to the computed total and pinned in
-the test suite, and is never written out as the result.
-
-Three checks are recorded against the staged rasters:
+The spatial column is the library's own run of the zonal sum over the staged value raster. The
+committed Forestry CSV is its anchor, logged next to the computed sum and pinned in the test
+suite. Three checks are recorded against the staged rasters:
 
 - `current_forest_value.tif` equals `forestry_land_share_return_tcost_before_2022_07_23.tif`
   bit-exactly on every one of its 265,210,379 positive pixels, with zero mismatches globally. The
@@ -61,21 +100,27 @@ Three checks are recorded against the staged rasters:
 
 ## Coverage
 
-The published table is one row for each of the account's 250 countries, base year 2019, in constant 2019 USD. Of the 250, 190 carry a value, 23 are computed zeros, and 37 rows are missing, kept as missing rather than zero because an input carries no data for those countries. A zero means the computation returned zero; a missing row means the data to compute one is absent.
+The published table is one row for each of the account's 250 countries, base year 2019, in constant 2019 USD. Of the 250, 190 carry a value, 23 are zeros and 37 are missing. All 23 zeros are CWoN's. Four are countries whose FAOSTAT roundwood production is zero (Andorra, the Faroe Islands, Gibraltar and Malta). The other 19 are zeros CWoN assumes where it has no forest data, for Greenland, Monaco, the West Bank and Gaza, San Marino and 15 small island economies. The 37 missing rows are countries CWoN does not value in 2019, 34 absent from its table plus the Isle of Man, Nauru and Kosovo, kept as missing rather than zero.
 
 ## Inputs
 
 From `es_parameters.csv`, scoped to the `timber_provision` service:
 
+- `timber_provision_cwon_forest_rent_path`, CWoN's `forest_timber_rent_cd.dta`, the published
+  figure's source.
+- `timber_provision_faostat_roundwood_path`, the staged FAOSTAT forestry slice for 2019, behind
+  the fuelwood split and the gross-value diagnostic.
 - `timber_provision_value_raster_path`, the staged current-forest-value raster.
 - `timber_provision_zone_raster_path`, `cartographic/ee/ee_r250_id_10sec.tif`, the country-id
   raster the zonal sum keys on.
-- `timber_provision_gep_path`, the committed Forestry table used as the anchor.
+- `timber_provision_gep_path`, the committed Forestry table, the spatial column's anchor.
 
 ## Output
 
 `gep_calculation` writes `gep_by_country_base_year.csv` into its own task directory, holding the
-r250 identifiers and attributes, `year`, and `timber_provision_gep`.
+r250 identifiers and attributes, `year`, `timber_provision_gep` (the CWoN rent),
+`timber_provision_gep_fuelwood_part`, `timber_provision_gep_industrial_part`,
+`timber_provision_gep_spatial` and `timber_roundwood_gross_value`.
 
 ## Method constants
 
@@ -86,11 +131,19 @@ The zonal sum is sized by `n_zones = 1000` and reads `rows_per_block = 2048` at 
 
 ## Taken as given
 
-The upstream raster valuation, meaning the biomass yield, the aligned log prices and the transport
-cost surface, is taken as produced by the Forestry calculation. The management mask is not derivable
-from the staged layers and is likewise adopted.
+CWoN's forest rent is taken as published. For the spatial column, the upstream raster valuation
+(the biomass yield, the aligned log prices and the transport cost surface) is taken as produced
+by the Forestry calculation. The management mask is not derivable from the staged layers and is
+likewise adopted.
 
 ## What is open
 
-The status sheet lists timber's draft as In Progress. The committed output and the verified
-replication above correct that status.
+The published table reproduces CWoN's `YR2019` series on all 250 countries. That checks the
+final table only. It is not an upstream reproduction of the spatial pipeline and not a scientific
+validation of the rent. A candidate author write-up (`timber_provision_appendix.docx`, last
+changed 10 May 2026, in the drive's Forestry folder rather than the methods folder) describes the
+spatial model behind `timber_provision_gep_spatial`, not the published rent, and the authors have
+been asked to confirm it. Malaysia's CWoN rental ratio is 1.1546 in every year, so its rent
+exceeds CWoN's own revenue for it ($6.30bn against $5.46bn). The account takes it as published
+until that is decided. The scientific support for CWoN's rental ratio as this service's measure
+also remains open.

@@ -1,0 +1,88 @@
+---
+title: "Overview of Ecosystem Service: Marine Carbon"
+format:
+  html:
+    embed-resources: true
+    standalone: true
+---
+
+Marine carbon storage is valued as the annual rental value of four ocean carbon pools, shared out among countries in proportion to the area of their exclusive economic zones (EEZs). The service is reported separately and kept out of the summed GEP total (decision of 29 October 2026, replacing the exclusion of 9 October). This module ports the source code so its numbers can be read and checked. The base year is 2019 and the price convention recorded in `es_config.csv` is `rental social cost of carbon and of methane x pool stock`.
+
+## Source
+
+The code is [Observarun/marine-carbon-gep](https://github.com/Observarun/marine-carbon-gep) at commit `0dac21fd6bdc883c39c8b72e6ac0d073cd4ef70c` (24 October 2026, "Include methane hydrates"). Its README describes the four pools and the area-proportional allocation. The repository carries no licence file. This note describes the code. A methods write-up for the service was not read for this port.
+
+The port keeps the source's geometry and arithmetic. The changes are structural: the stocks, prices, name patterns and projection moved from the run file into `es_parameters.csv`, the file reading and writing moved into the tasks, and the high-seas row is written in its own table so the country table cannot drop it.
+
+## Quantity
+
+Four stocks, in petagrams of carbon (Pg C), set in the source's run file. The repository cites no source for them.
+
+| Pool | Stock (Pg C) | What the source says it covers |
+|---|---:|---|
+| `DIC` | 38,000 | dissolved inorganic carbon |
+| `DOC_and_biota` | 703 | dissolved organic carbon (700) and marine biota (3) |
+| `sediment_carbon` | 2,303 | marine sediment carbon in the top 1 m, excluding coastal |
+| `methane_hydrates` | 1,780 | methane hydrates, marine and subsea permafrost |
+
+## Price
+
+The three carbon pools take \$13.19 per tonne of carbon per year. That is the account's 2019 rental social cost of carbon (`rental scc r2%` in `carbon_prices.xlsx`, 13.185089) rounded to cents. Terrestrial and coastal carbon read the unrounded value, so the marine price is 0.037% higher.
+
+The methane hydrates take \$49.25 per tonne of carbon per year, which the source calls the rental social cost of methane. The repository does not say how the number was derived, or whether it is per tonne of methane or per tonne of carbon.
+
+## Valuation
+
+Each pool's global value is its stock converted to tonnes and multiplied by its price, and a country's value is the sum over pools of that value times its share of the ocean:
+
+$$V_k = S_k \times 10^{9} \times P_k, \qquad
+\text{GEP}_c = \sum_k V_k \, \frac{A_c}{A_\text{ocean}}, \qquad
+A_\text{high seas} = A_\text{ocean} - \sum_c A_c$$
+
+where $S_k$ is the stock in Pg C, $P_k$ the price per tonne of carbon, $A_c$ country $c$'s EEZ area and $A_\text{ocean}$ the total ocean area. The shares of the countries and the high seas sum to one, so each pool's value is conserved: the four pools come to \$628.53 trillion a year (DIC \$501.22 trillion, dissolved organic carbon and biota \$9.27 trillion, sediment \$30.38 trillion, methane hydrates \$87.67 trillion). That total does not depend on the geometry. The geometry decides only how it splits between countries and the high seas.
+
+## Areas
+
+All areas come from the account's marine correspondence layer, `cartographic/ee/eemarine_r566_correspondence.gpkg`, measured in World Mollweide (ESRI:54009) after `make_valid`.
+
+- **EEZ per country.** The rows named `Marine EEZ`, 188 polygons for 187 countries (China has two), dissolved by `iso3_r250_id`. A polygon with no country id would stay its own row.
+- **Total ocean.** The rows named `Marine EEZ` or `Nearest Open Ocean`, 302 polygons, summed with no union.
+- **High seas.** The total minus the dissolved EEZs, one row with the source's id 999 and label `ABNJ`.
+
+On the layer as staged (md5 `b7844333e878a97e36dd9a06e0bdd499`) the EEZs cover 148,458,339.58 km² of 360,674,668.12 km². The high seas hold the remaining 212,216,328.54 km², 58.84% of the total. No two EEZ polygons of the same country overlap, so the dissolve removes nothing and the high-seas area equals the summed `Nearest Open Ocean` polygons exactly.
+
+## Coverage
+
+The published table is one row for each of the account's 250 countries, base year 2019, in 2019 USD. 187 carry a value and 63 are missing. A missing row means the layer holds no `Marine EEZ` polygon labelled with that country. The 63 include landlocked countries and also coastal countries and territories whose waters the layer does not label with them, among them Haiti, Western Sahara, Palestine, Réunion and Svalbard and Jan Mayen. Where those waters sit in the layer has not been established. None of the 63 is written as zero, because the source does not say whether a country with no EEZ has zero marine carbon or none to assess.
+
+The high seas never enter the country table. They are the `ABNJ` row of `allocation_with_high_seas_base_year.csv`, which holds every country row and the high-seas row in the source's own columns. The country table is put on the account's country list by label, so `gep_calculation` stops before writing if any EEZ row carries a label the list does not have, which would otherwise drop that row and its value.
+
+## Inputs
+
+From `es_config.csv`, the `marine_carbon` row: `gep_regions_input_path`, the marine correspondence layer, and `gep_base_year`. The row has no sheet label, because the service has no column in the account sheet.
+
+From `es_parameters.csv`, scoped to the `marine_carbon` service:
+
+- `marine_carbon_pools`, the four stocks and prices, with `marine_carbon_pools_source` recording where each comes from.
+- `marine_carbon_eez_name_pattern`, `marine_carbon_ocean_name_pattern` and `marine_carbon_area_crs`, the selections and projection, with `marine_carbon_area_source`.
+- `marine_carbon_reference_eez_areas_path`, `marine_carbon_reference_total_ocean_area_path` and `marine_carbon_reference_value_path`, the replication reference the tests read, with `marine_carbon_reference_source` recording how it was made.
+
+## Output
+
+`ocean_areas` writes `eez_areas_by_country.csv` and `total_ocean_area.csv`. `gep_calculation` writes `gep_by_country_base_year.csv`, holding the r250 identifiers and attributes, `year`, `marine_carbon_gep`, the EEZ area and ocean share, and one `allocated_value_<pool>_usd` column per pool. It also writes `allocation_with_high_seas_base_year.csv`. Both tasks record a run signature, so a rerun with the same layer, settings and code reuses their outputs.
+
+## Reproduction
+
+The source's three functions, run unchanged on the staged layer, are kept in the service's base-data folder as `marine_carbon_reference_0dac21f_*.csv`. The tests feed the reference's own areas and the shipped pools through the port and require the reference's allocation back, the same rows in the same order with every value equal. The port's own area measurement on the same layer is compared with the reference in the review record. Agreement with the source shows the port is faithful to it. It does not show that the stocks, the prices or the areal allocation are right.
+
+## What is open
+
+- **Scope.** DIC is 79.7% of the value. Whether whole-stock rental values of largely abiotic pools, most of them outside any national jurisdiction, belong in an account of ecosystem services is a question for the group. The value is reported separately, outside the summed total, while it stays open.
+- **The methane price.** If \$49.25 is per tonne of methane, a tonne of carbon held as methane is 16/12 tonnes of methane, and the hydrates would value at \$116.89 trillion instead of \$87.67 trillion. The derivation and the unit are a question for the author.
+- **The stocks.** No source is cited for the four stocks.
+- **Areal allocation.** Every pool is given a uniform density per square kilometre of sea surface. Water depth and where each pool lies do not enter.
+- **Overlapping polygons.** Summing the ocean polygons without a union counts shared area twice. The pairwise overlaps measured on the staged layer are 527,593.72 km² between EEZ and open-ocean polygons, 748,889.33 km² among open-ocean polygons and 423.45 km² between different countries' EEZs, about 0.35% of the total ocean. Where each double count lands differs, because the EEZ dissolve is within a country only. The overlap between different countries' EEZs stays in both countries' areas, so it is counted twice among the country rows. The overlap between an EEZ and an open-ocean polygon is counted once in the country and once in the high-seas row. The overlap among open-ocean polygons is counted twice in the high-seas row. Some EEZ pairs that overlap cannot be neighbours (Somalia and Venezuela, 9.19 km², Mauritania and Puerto Rico, 0.05 km²), which points to artefacts in the layer. The values keep the source's construction until the group decides otherwise.
+- **Antarctica.** The layer carries an EEZ polygon for Antarctica, which takes 2.69% of the value as a country row.
+- **Overlap with coastal carbon.** The source excludes coastal sediment. Whether its exclusion matches the mangrove, salt marsh and seagrass soils that coastal carbon values has not been checked.
+- **Missing or zero.** Whether a landlocked country publishes zero or missing.
+- **Licence.** The repository has no licence. Its terms of reuse are a question for the author before the port is merged.

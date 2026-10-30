@@ -5,11 +5,6 @@ Nothing here opens a file. The task layer reads the two World Bank CSVs, hands t
 writes back what it gets, so every step below can be pinned on a hand-built input in the test
 suite.
 """
-import logging
-
-import hazelbean as hb
-
-from global_invest import utilities
 
 # The World Bank publishes one indicator per file in wide form: four descriptive columns
 # (country name, country code, indicator name, indicator code) and then one column per year.

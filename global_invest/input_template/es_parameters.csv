@@ -1,4 +1,4 @@
-﻿service,parameter,value
+service,parameter,value
 erosion,erosion_gep_root,
 erosion,erosion_spam_alias_path,global_invest/erosion/spam_crop_alias_correspondence.csv
 terrestrial_carbon,region_boundary_path,gtap_invest/region_boundaries/ee_r50_aez18_correspondence.gpkg
@@ -30,14 +30,15 @@ fisheries,fisheries_reference_by_country_path,global_invest/fisheries/author_dri
 fisheries,fisheries_reference_source,"the author's cleaned per-country capture GEP (2026-07-20, delivered 2026-10-03 with write-ups staged beside it); the module's table matches it at integer rounding, pinned by a test"
 fisheries,fisheries_cwon_cpi_path,global_invest/fisheries/commercial/cpi2019.dta
 fisheries,fisheries_cwon_econ_rent_path,global_invest/fisheries/commercial/EconRent_Analysis_AllYears.dta
-fisheries,fisheries_aquaculture_value_path,global_invest/fisheries/aquaculture/Aquaculture_Value.csv
-fisheries,fisheries_aquaculture_value_source_url,https://www.fao.org/fishery/static/Data/Aquaculture_2025.1.0.zip
+fisheries,fisheries_aquaculture_value_path,global_invest/fisheries/aquaculture/release_2024.1.0/Aquaculture_Value.csv
+fisheries,fisheries_aquaculture_value_source_url,https://www.fao.org/fishery/static/Data/Aquaculture_2024.1.0.zip
 fisheries,fisheries_aquaculture_value_source_archive_member,Aquaculture_Value.csv
-fisheries,fisheries_aquaculture_quantity_path,global_invest/fisheries/aquaculture/Aquaculture_Quantity.csv
-fisheries,fisheries_aquaculture_quantity_source_url,https://www.fao.org/fishery/static/Data/Aquaculture_2025.1.0.zip
+fisheries,fisheries_aquaculture_value_sha256,a7c80334bbfbd358442777f6946b0088f67438e7cd3ae11c073cb87eee35b5e9
+fisheries,fisheries_aquaculture_quantity_path,global_invest/fisheries/aquaculture/release_2024.1.0/Aquaculture_Quantity.csv
+fisheries,fisheries_aquaculture_quantity_source_url,https://www.fao.org/fishery/static/Data/Aquaculture_2024.1.0.zip
 fisheries,fisheries_aquaculture_quantity_source_archive_member,Aquaculture_Quantity.csv
-fisheries,fisheries_aquaculture_species_groups_path,global_invest/fisheries/aquaculture/CL_FI_SPECIES_GROUPS.csv
-fisheries,fisheries_aquaculture_species_groups_source_url,https://www.fao.org/fishery/static/Data/Aquaculture_2025.1.0.zip
+fisheries,fisheries_aquaculture_species_groups_path,global_invest/fisheries/aquaculture/release_2024.1.0/CL_FI_SPECIES_GROUPS.csv
+fisheries,fisheries_aquaculture_species_groups_source_url,https://www.fao.org/fishery/static/Data/Aquaculture_2024.1.0.zip
 fisheries,fisheries_aquaculture_species_groups_source_archive_member,CL_FI_SPECIES_GROUPS.csv
 fisheries,fisheries_aquaculture_exclude_aquatic_plants,true
 fisheries,fisheries_gtap_basedata_path,gtappy/cge_releases/gtapv7-aez-rd/data/v12-s26-r50/basedata.har
@@ -58,6 +59,7 @@ erosion,erosion_elasticity_csv_path,global_invest/erosion/elasticity_crops_fao_r
 erosion,erosion_country_boundary_path,cartographic/ee/ee_r250.gpkg
 erosion,erosion_fao_gpv_iso3_csv_path,global_invest/erosion/faostat_gpv_2019_iso3.csv
 erosion,erosion_fao_prices_csv_path,global_invest/erosion/faostat_prices_2019_completed_revised.csv
+erosion,erosion_fao_item_groups_path,global_invest/fao/faostat_item_groups.csv
 erosion,erosion_gdp_csv_path,global_invest/erosion/worldbank_gdp_2019.csv
 erosion,region_boundary_path,gtap_invest/region_boundaries/ee_r50_aez18_correspondence.gpkg
 erosion,erosion_shock_acts,"[""PDR"", ""WHT"", ""GRO"", ""V_F"", ""OSD"", ""C_B"", ""PFB"", ""OCR""]"
@@ -114,6 +116,8 @@ health_depression,health_depression_cost_input_path,global_invest/health_depress
 health_depression,health_depression_cost_source,"the owner's staged extract of Christensen et al. 2020: societal cost per depression case, USD PPP mostly 2018, 32 countries plus a Europe aggregate"
 health_depression,health_depression_odds_ratio,0.931
 health_depression,health_depression_odds_ratio_source,"odds ratio of depression per 0.1 NDVI increment, Liu et al. 2023 meta-analysis (0.887-0.977)"
+health_depression,health_depression_prevalence_nonexposed,0.115
+health_depression,health_depression_prevalence_nonexposed_source,"p0 of the Zhang and Yu 1998 odds-to-risk conversion, one value for every country: the health-record depression diagnosis share in the lowest residential-NDVI quartile of Hystad et al. 2019, per the service write-up (equation 5) and the authors' run file (prevalence_nonexposed = 0.115); baseline prevalence for the case count is a separate input"
 health_depression,health_depression_us_cpi_input_path,socioeconomic/fred_cpiaucsl/CPIAUCSL.csv
 health_depression,health_depression_us_cpi_source,"FRED CPIAUCSL monthly, annual means; the account's ONE temporal dollar series (also the EPA VSL update's)"
 health_depression,health_depression_price_level_input_path,socioeconomic/worldbank_ppp_price_level/price_level_ratio_gdp_based.csv
@@ -167,6 +171,9 @@ water_supply,water_use_water_share_of_value_added,0.332
 water_supply,water_supply_cwon_hydro_wealth_path,global_invest/water_supply/hydropower/cwon/hydro_wealth_cd.dta
 water_supply,water_supply_cwon_hydro_wealth_source_url,https://reproducibility.worldbank.org/catalog/194/download/549
 water_supply,water_supply_cwon_hydro_wealth_source_archive_member,FR_WLD_2024_195/Reproducibility package/Output/Latest/hydro_wealth_cd.dta
+water_supply,water_supply_cwon_hydro_workbook_path,global_invest/water_supply/hydropower/cwon_private/Hydropower valuation_CWON 2024_rev4.xlsx
+water_supply,water_supply_cwon_hydro_workbook_sha256,e7c6e7f69d7ed9a676549b49e74036d5e8fd795c7d82af9be773f54cd6d130ed
+water_supply,water_supply_cwon_hydro_workbook_source,"World Bank CWoN 2024 hydropower valuation workbook (rev4), provided by World Bank staff on request to the authors. Not in the public reproducibility package and not to be redistributed: staged only on machines authorised to hold it, and the run proceeds without it."
 water_supply,water_use_agriculture_path,global_invest/water_supply/water_use/wateruse_ag_gep.csv
 water_supply,water_use_all_sector_path,global_invest/water_supply/water_use/final/wateruse_gep.csv
 water_supply,water_use_efficiency_input_path,global_invest/water_supply/water_use/data/Raw/aquastat/aquastat_water_efficiency.csv
@@ -185,9 +192,15 @@ water_supply,water_supply_agriculture_spam_path,global_invest/water_supply/agric
 water_supply,water_supply_agriculture_correspondence_path,global_invest/water_supply/agriculture/shunkei_e229f881/CropGBWater_FAOSTAT_GPV_crop_correspondence.csv
 water_supply,water_use_withdrawal_path,global_invest/water_supply/water_use/data/water_withdraw.csv
 water_supply,water_supply_agriculture_source,"Shunkei3/GEP-WaterUse-Agriculture @ e229f881, final stage (Code/5): the pinned lambda, SPAM-share and crop-correspondence tables, with the provenance README beside them in base_data"
+water_supply,water_supply_municipal_results_path,global_invest/water_supply/municipal/lifeng_f94e33a4_dr02/wateruse_municipal_gep.csv
+water_supply,water_supply_municipal_results_source,"the authors' final municipal values: lifengren95/gep_domestic_water_supply @ f94e33a4, Results/dr02 (2% discount rate), a city-level least-cost replacement model; confirmed final by Lifeng Ren 2026-10-28; matches column N of All Services GEP Values 2026_10_01 within its reported precision (countries within 4.4e-9 relative); the library imports it and does not rerun the city optimisation"
 air_filtration,air_filtration_workbook_path,global_invest/air_filtration/air_filtration_gep.xlsx
-water_quality,water_quality_retention_path,global_invest/water_quality/Results/EstimationOutput/retention_estimates.csv
-water_quality,water_quality_international_path,global_invest/water_quality/water_quality_gep.csv
+water_quality,water_quality_retention_path,global_invest/water_quality/price_transfer/retention_estimates.csv
+water_quality,water_quality_raw_prices_path,global_invest/water_quality/price_transfer/EXAMPLE_SERVICE_prices_raw_data.xlsx
+water_quality,water_quality_gdp_deflator_path,global_invest/water_quality/price_transfer/API_NY.GDP.DEFL.ZS_DS2_en_csv_v2_24026.csv
+water_quality,water_quality_exchange_rate_path,global_invest/water_quality/price_transfer/API_PA.NUS.FCRF_DS2_en_csv_v2_327898.csv
+water_quality,water_quality_gdp_per_capita_path,global_invest/water_quality/price_transfer/API_NY.GDP.PCAP.CD_DS2_en_csv_v2_1529.csv
+water_quality,water_quality_reference_gep_path,global_invest/water_quality/price_transfer/water_purification_price_quantity_gep.xlsx
 flood,flood_iso3_list,all
 flood,flood_esa_codebook_path,global_invest/flood/esa_lulc_codebook.csv
 flood,flood_flopros_documented_iso3_path,global_invest/flood/flopros_documented_iso3.csv
@@ -197,19 +210,20 @@ flood,flood_skip_depth_download,false
 flood,flood_all_touched,false
 flood,flood_apply_service_flow,true
 flood,flood_return_periods,"[10, 20, 50, 100, 200, 500]"
-flood,flood_compute_ead_rasters,false
 flood,flood_damage_depth_mode,interpolated
-flood,flood_lulc_path,global_invest/flood/lulc/lulc_esa_2019_int_reproj.tif
+flood,flood_lulc_path,global_invest/flood/input/pipeline_inputs/lulc/lulc_esa_2019_int_reproj.tif
 flood,flood_roads_path,
-flood,flood_pop_path,global_invest/flood/pop/GlobPOP_Count_30arc_2020_I32.tif
-flood,flood_depth_aligned_path,global_invest/flood/floodplain_depth/aligned_to_lulc
+flood,flood_pop_path,global_invest/flood/input/pipeline_inputs/pop/GlobPOP_Count_30arc_2020_I32.tif
+flood,flood_depth_aligned_path,global_invest/flood/input/pipeline_inputs/floodplain_depth/aligned_to_lulc
 flood,flood_sda_mapping_path,
 flood,flood_sda_legend_path,
-flood,flood_spa_path,global_invest/flood/spa/global_prr_spa.tif
-flood,flood_spa_ratio_path,global_invest/flood/spa/global_upstream_spa_ratio.tif
-flood,flood_canonical_eur_path,global_invest/flood/flood_damage/country_landtype_flood_damage_JRC_EUR_m2.csv
+flood,flood_spa_path,global_invest/flood/input/pipeline_inputs/global_spa_ben/global_prr_spa.tif
+flood,flood_spa_ratio_path,global_invest/flood/input/pipeline_inputs/global_spa_ben/global_upstream_spa_ratio.tif
+flood,flood_canonical_eur_path,global_invest/flood/input/pipeline_inputs/flood_damage/country_landtype_flood_damage_JRC_EUR_m2.csv
+flood,flood_landtype_depth_damage_path,global_invest/flood/input/pipeline_inputs/flood_damage/country_landtype_depth_damage.xlsx
+flood,flood_landtype_depth_damage_sha256,c1f0e4e1fd62426708111e348d3f326117872efacf2b32efde50917db4f74195
 flood,flood_sda_damage_wide_path,
-flood,flood_currency_factors_path,global_invest/flood/flood_damage/currency_conversion_factors_EUR2010_to_USD2019.csv
+flood,flood_currency_factors_path,global_invest/flood/input/pipeline_inputs/flood_damage/_currency_audit/currency_conversion_factors_EUR2010_to_USD2019.csv
 flood,flood_amplification_path,
 flood,flood_cn_table_path,
 flood,flood_amplification_pattern,global_amplification_{scenario}_rp{rp}.tif
@@ -229,17 +243,11 @@ flood,flood_fill_missing_zero,true
 flood,flood_include_existing_in_summary,true
 flood,flood_include_pasture,true
 flood,flood_latitude_correct_area,true
-flood,flood_map_k_classes,5
-flood,flood_mosaic_global_raster,false
-flood,flood_raster_downsample_factor,6
 flood,flood_region_col,region_wb
 flood,flood_report_protection_split,true
 flood,flood_set_pasture_equal_crop,true
-flood,flood_skip_damage_tables,false
+flood,flood_skip_damage_tables,true
 flood,flood_skip_done,true
-flood,flood_top_n,20
-flood,flood_usd_to_millions,1000000.0
-flood,flood_money_unit_label,2019 USD million
 flood,flood_depth_source_url,https://jeodpp.jrc.ec.europa.eu/ftp/jrc-opendata/FLOODS/GlobalMaps/floodMapGL_rp{rp}y.zip
 flood,flood_use_roads,false
 flood,flood_with_pop,false
@@ -261,6 +269,7 @@ flood,flood_reference_gep_waterkept_path,global_invest/flood/reference/step4e_fl
 flood,flood_reference_for_merge_path,global_invest/flood/reference/flood_gep_for_merge_v2_2024hazard.csv
 flood,flood_reference_country_results_path,global_invest/flood/reference/flood_gep_country_results_v2_2024hazard.csv
 local_climate_regulation,local_climate_regulation_final_path,global_invest/local_climate_regulation/local_climate_regulation_gep.csv
+local_climate_regulation,local_climate_regulation_final_source,"Libby Kula's delivered final (the code register's results file local_climate_regulation_gep.csv, Drive 1ynPxuJDjwEq8v1JsZQryWl42awAar1-0, 13 July 2026, sha256 8c92bd1032edf764705fe1b8f7b0482ccc5ec55cef0b171f6058f57237f7f9ac), adopted as the account value on 29 October 2026"
 local_climate_regulation,local_climate_regulation_cas_results_path,global_invest/cas_submission_2026_09/coolling_effect/02_Country_Results/country_cooling_service_review.xlsx
 local_climate_regulation,local_climate_regulation_cas_results_source,"the CAS cooling package's own country results (submission 2026-09-12): avoided cooling energy from vegetation evapotranspiration at 2019 country electricity prices, sheet '2019 Results', adopted as the account's cooling row 2026-10-08"
 local_climate_regulation,local_climate_regulation_city_savings_path,global_invest/local_climate_regulation/merged
@@ -311,12 +320,12 @@ landslide_mitigation,landslide_zonal_statistics_path,global_invest/landslide_mit
 crop_provision,fao_input_path,global_invest/crop_provision/Value_of_Production_E_All_Data.csv
 crop_provision,faostat_aggregate_areas_path,global_invest/fao/faostat_aggregate_areas.csv
 crop_provision,faostat_aggregate_items_path,global_invest/fao/faostat_aggregate_items.csv
-crop_provision,faostat_item_groups_path,global_invest/fao/faostat_item_groups.csv
-crop_provision,faostat_item_groups_source,"FAOSTAT Definitions and Standards, Item Group listing, exported 2026-10-27 from fao.org/faostat #definitions (all domains, 9,544 mapping rows); QV rows give each group total's member item codes"
 crop_provision,crop_provision_default_items_path,global_invest/crop_provision/fao_crop_items.csv
 crop_provision,crop_provision_fao_values_table_path,global_invest/pollination/fao/fao_values_1993_2024.csv
 crop_provision,crop_provision_fao_values_table_source,"built by pollination's fao_median_prices task (the ported crop_benefits chain): production tonnes x that year's USD producer price, the price falling back country to subregion to region to world, with the level in price_source_agg_level"
-crop_provision,crop_provision_reference_by_country_path,global_invest/crop_provision/reference/gep_by_country_2019_reference.csv
+crop_provision,crop_provision_reference_by_country_path,global_invest/crop_provision/reference/gep_by_country_2019_reference_169073e.csv
+crop_provision,crop_provision_reference_by_country_source,"the authors' repository main at 169073e (github.com/mcwayrm/gep_commerical_agriculture, 2026-10-18, which removes the three FAOSTAT group totals), its own calculate() on its committed inputs, 2019 rows: 474216381706.00 USD over 114 valued countries, no gap filling. Its FAO bulk and CWoN table give the same 2019 values and rates as the staged ones for the 158 items. The previous reference, gep_by_country_2019_reference.csv (623117396403.00, the January 2026 list with the group totals), stays beside it."
+crop_provision,crop_provision_reference_superseded_by_country_path,global_invest/crop_provision/reference/gep_by_country_2019_reference.csv
 crop_provision,fao_input_source_url,https://bulks-faostat.fao.org/production/Value_of_Production_E_All_Data.zip
 crop_provision,fao_input_source_archive_member,Value_of_Production_E_All_Data.csv
 crop_provision,cwon_crop_coefficients_path,global_invest/crop_provision/CWON2024_crop_coef.csv
@@ -333,14 +342,12 @@ crop_provision,crop_subsistence_covariates_path,global_invest/crop_provision/sub
 crop_provision,crop_subsistence_cpi_path,global_invest/crop_provision/subsistence/CPI_WB.csv
 crop_provision,crop_subsistence_reference_panel_path,global_invest/crop_provision/subsistence/reference/agr_subsistence_adjusted_2020.csv
 crop_provision,crop_subsistence_reference_delivered_path,global_invest/crop_provision/subsistence/reference/gep-agr-crop-subsistence.csv
-livestock_provision,fao_input_path,global_invest/livestock_provision/Value_of_Production_E_All_Data.csv
-livestock_provision,faostat_aggregate_areas_path,global_invest/fao/faostat_aggregate_areas.csv
-livestock_provision,faostat_aggregate_items_path,global_invest/fao/faostat_aggregate_items.csv
-livestock_provision,faostat_item_groups_path,global_invest/fao/faostat_item_groups.csv
-livestock_provision,livestock_provision_owner_value_codes_path,global_invest/livestock_provision/fao_owner_livestock_value_codes.csv
-livestock_provision,fao_input_source_url,https://bulks-faostat.fao.org/production/Value_of_Production_E_All_Data.zip
-livestock_provision,fao_input_source_archive_member,Value_of_Production_E_All_Data.csv
-livestock_provision,cwon_crop_coefficients_path,global_invest/livestock_provision/CWON2024_crop_coef.csv
+livestock_provision,livestock_provision_cwon_revenue_path,global_invest/livestock_provision/cwon/land_pasture_revenue_total.xlsx
+livestock_provision,livestock_provision_cwon_revenue_source,"the World Bank's CWoN 2024 reproducibility package (FR_WLD_2024_195), Output/Latest, copied unchanged 2026-10-29. The table the livestock write-up names (country total livestock revenue, current USD), with README_provenance.md beside it"
+livestock_provision,livestock_provision_cwon_rental_rate_path,global_invest/livestock_provision/cwon/land_rental_rates.xlsx
+livestock_provision,livestock_provision_cwon_rental_rate_source,"the World Bank's CWoN 2024 reproducibility package (FR_WLD_2024_195), Output/Latest, copied unchanged 2026-10-29. The table the livestock write-up names (country land rental rate, the lambda), with README_provenance.md beside it"
+livestock_provision,livestock_provision_cwon_product_rent_path,global_invest/livestock_provision/cwon/land_pasture_rent_cd.xlsx
+livestock_provision,livestock_provision_cwon_product_rent_source,"the World Bank's CWoN 2024 reproducibility package (FR_WLD_2024_195), Output/Latest, copied unchanged 2026-10-29. The table the livestock write-up names (product-level livestock rents, current USD, verification only), with README_provenance.md beside it"
 livestock_provision,gleam_dmi_path,global_invest/livestock_provision/gleam3_dmi_dashboard.psv
 erosion,erosion_use_upslope_lulc_diagnostics,true
 erosion,erosion_upstream_prevention_share_path,global_invest/erosion/author_drive/msi_upstream_attribution_v3/upstream_prevention_share.tif
@@ -358,9 +365,13 @@ pollination,pollination_fao_prices_path,global_invest/pollination/fao/bulk/Price
 pollination,pollination_fao_prices_source_url,https://bulks-faostat.fao.org/production/Prices_E_All_Data_(Normalized).zip
 pollination,pollination_fao_prices_source_archive_member,Prices_E_All_Data_(Normalized).csv
 pollination,pollination_author_value_dir,global_invest/pollination/crop_benefits
+air_filtration,air_filtration_not_estimated_path,global_invest/air_filtration/air_filtration_not_estimated.csv
+air_filtration,air_filtration_not_estimated_source,"the source's own coverage statement: the 53 countries and territories the authors' write-up (Air_Filtration.docx) says could not be estimated for missing air-quality model data, identified as the rows of the shipped workbook (air_filtration_gep.xlsx md5 50928e6a0c12959c631e3a8a1bada693) carrying 0 deaths in both channels; WorldPop 2019 population (46 populated, 7 not) is recorded beside each row as context only"
 air_filtration,air_filtration_vsl_path,global_invest/landslide_mitigation/vsl_2026_09/vsl_by_country_2019.csv
 air_filtration,air_filtration_vsl_source,"the account's shared VSL: the rebuilt EPA life-years-lost panel, the same file landslide_mitigation_vsl_panel_path reads, adopted for both mortality services 2026-10-07; the air quality group's raw 221-row vsl.csv it replaces stays staged beside the workbook"
 coastal_protection,coastal_protection_coral_reef_path,global_invest/coastal_protection/coral_reefs_annual_expected_benefit_nfamara.xlsx
+coastal_protection,coastal_protection_mangrove_excluded_path,global_invest/coastal_protection/mangrove_excluded_geospatial_errors.csv
+coastal_protection,coastal_protection_mangrove_excluded_source,"the six countries World Bank (2024) Building Coastal Resilience with Mangroves, Appendix 1, Data Cleaning items 3-4 (printed p. 41) removed for a bug in the geospatial analysis; their mangrove component is missing, not the zero area the CWoN 2024 package's mangroves.do lines 32-34 write for countries absent from its source; the 18 under-100-ha removals (items 1-2) are a separate case and not listed"
 coastal_protection,coastal_protection_us_cpi_input_path,socioeconomic/fred_cpiaucsl/CPIAUCSL.csv
 coastal_protection,coastal_protection_us_cpi_source,"FRED CPIAUCSL monthly, annual means; the account's ONE temporal dollar series (also the EPA VSL update's)"
 landslide_mitigation,landslide_elevation_path,seals/static_regressors/alt_m.tif
@@ -375,7 +386,6 @@ pollination,pollination_fao_production_table_path,global_invest/pollination/fao/
 pollination,pollination_dependence_table_path,global_invest/pollination/fao/pollination/pollination_1993_2024.parquet
 pollination,pollination_coffee_split_path,global_invest/pollination/coffee_types_distribution/prop_arabica_robusta.csv
 pollination,pollination_price_years,"[2019]"
-pollination,pollination_price_temporal_window_years,5
 pollination,pollination_reported_variant,habitat_sufficiency
 pollination,pollination_us_cpi_input_path,socioeconomic/fred_cpiaucsl/CPIAUCSL.csv
 pollination,pollination_us_cpi_source,"FRED CPIAUCSL monthly, annual means; the account's ONE temporal dollar series"
@@ -475,3 +485,13 @@ groundwater_recharge,groundwater_recharge_reference_path,global_invest/groundwat
 groundwater_recharge,groundwater_recharge_reference_source,"the owner's committed final (ground_water_gep.csv, 2025-10), the replication anchor"
 fuelwood_provision,fuelwood_provision_results_path,global_invest/fuelwood/author_drive/fuelwood_provision_gep.xlsx
 fuelwood_provision,fuelwood_provision_results_source,"the CAS team's per-country fuelwood results (drive Fuelwood folder, exported 2026-10-08), values in thousands of 2019 USD per the sheet's own title; method in the staged CAS appendix (cas_submission_2026_09/fuelwood/)"
+marine_carbon,marine_carbon_pools,"[{""pool"": ""DIC"", ""stock_pg_c"": 38000.0, ""rental_price_usd_per_tc_per_year"": 13.19}, {""pool"": ""DOC_and_biota"", ""stock_pg_c"": 703.0, ""rental_price_usd_per_tc_per_year"": 13.19}, {""pool"": ""sediment_carbon"", ""stock_pg_c"": 2303.0, ""rental_price_usd_per_tc_per_year"": 13.19}, {""pool"": ""methane_hydrates"", ""stock_pg_c"": 1780.0, ""rental_price_usd_per_tc_per_year"": 49.25}]"
+marine_carbon,marine_carbon_pools_source,"the stocks and prices set in run_marine_carbon.py lines 46-55 of github.com/Observarun/marine-carbon-gep at 0dac21fd (2026-10-24): dissolved inorganic carbon 38000 Pg C, dissolved organic carbon 700 plus marine biota 3 Pg C, sediment carbon in the top 1 m excluding coastal 2303 Pg C, methane hydrates (marine plus subsea permafrost) 1780 Pg C. The repository cites no source for the stocks. The three carbon pools take 13.19 USD per tonne C per year, the account's 2019 rental social cost of carbon (carbon_prices.xlsx, rental scc r2%, 13.185089) rounded to cents. The hydrates take 49.25, described there as the rental social cost of methane, with neither its derivation nor whether it is per tonne CH4 or per tonne C stated."
+marine_carbon,marine_carbon_eez_name_pattern,Marine EEZ
+marine_carbon,marine_carbon_ocean_name_pattern,Marine EEZ|Nearest Open Ocean
+marine_carbon,marine_carbon_area_crs,ESRI:54009
+marine_carbon,marine_carbon_area_source,"the selection and projection of marine_carbon_functions.py at 0dac21fd: each country's EEZ area from the eemarine rows named Marine EEZ, made valid and dissolved by iso3_r250_id in World Mollweide (ESRI:54009). The total ocean from the rows named Marine EEZ or Nearest Open Ocean, made valid and summed with no union. The high seas are the total minus the dissolved EEZs."
+marine_carbon,marine_carbon_reference_source,"the author's three functions at 0dac21fd run unchanged on eemarine_r566_correspondence.gpkg (md5 b7844333e878a97e36dd9a06e0bdd499) with the pools above, staged as the three marine_carbon_reference_0dac21f_*.csv files in the service's base-data folder. Agreement with them shows the port is faithful to the source and says nothing about whether the stocks, prices or areal allocation are right."
+marine_carbon,marine_carbon_reference_eez_areas_path,global_invest/marine_carbon/marine_carbon_reference_0dac21f_eez_areas_by_country.csv
+marine_carbon,marine_carbon_reference_total_ocean_area_path,global_invest/marine_carbon/marine_carbon_reference_0dac21f_total_ocean_area.csv
+marine_carbon,marine_carbon_reference_value_path,global_invest/marine_carbon/marine_carbon_reference_0dac21f_value_by_country_2019.csv

@@ -1,11 +1,12 @@
-"""Full timber_provision GEP run: the committed valuation -> report.
+"""Full timber_provision GEP run: valuation -> fuelwood table -> report.
 
 Thin runner: builds ONE tree and executes it. Inputs are published by each task itself
 (publish_inputs in the tasks module); base_data_dir is resolved by ProjectFlow (default /
 machine.env), never hardcoded here.
 
-Requires (es_parameters rows): the committed per-country tables under base_data/global_invest/
-(also shipped in reference/ as anchors). The upstream valuations are taken as given.
+Requires (es_parameters rows): the value and country-id rasters, the CWoN forest rent table, the
+FAOSTAT roundwood slice, the fuelwood reference and the committed per-country anchor, all under
+base_data.
 """
 import hazelbean as hb
 

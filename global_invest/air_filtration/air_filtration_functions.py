@@ -3,39 +3,41 @@
 The consortium drive's Air Filtration folder carries the committed per-country workbook
 (air_filtration_gep.xlsx): avoided deaths from DEPOSITION (dry pollutant capture by vegetation
 -- the sheet's air_filtration service) and from DUST (windblown-dust suppression -- the sheet's
-sandstorm prevention service), each valued at a GDP-adjusted VSL. The upstream science behind
-the deaths columns (process-based emissions models + Global InMAP + health impacts, per the
-appendix) is not rebuildable here and is taken as given; the valuation layer is rebuilt, prices
-at the account's shared VSL panel, and reports where the workbook's own VSL column (which the
-manuscript's $17.81bn deposition total carries) differs from it.
+sandstorm prevention service). The upstream science behind the deaths columns (process-based
+emissions models + Global InMAP + health impacts, per the appendix) is not rebuildable here and
+is taken as given. The valuation prices those deaths at the account's shared VSL panel -- the
+same file landslide mitigation reads: the EPA benchmark carried to 2019, scaled by GDP per
+capita (PPP) and life-years lost, with countries lacking data taking their World Bank region's
+median, else the global median. The workbook's own VSL column prices nothing; the run reports
+how far the panel departs from it. The countries the source states it could not estimate
+publish as missing (not_estimated_mask), not as the zero deaths the workbook stores.
 
-Two identified rules, both asserted in the tests:
-- The workbook's rows are the r250 geopackage in row order (FID 1..250); names differ from our
+Identified properties of the WORKBOOK, asserted in the tests:
+- Its rows are the r250 geopackage in row order (FID 1..250); names differ from our
   correspondence only by which name column was used (199 of 250 identical, the rest sovereign-
   vs-territory naming of the same rows).
-- Countries without a country-specific VSL take the global average of the country-source VSLs
-  (identified from the workbook, exact).
+- Its own VSL column fills countries without a country-specific VSL with the global average of
+  the country-source VSLs (exact) -- the workbook's rule, not the account's.
 
-VINTAGE GAP, flagged: the folder's vsl.R and raw CSVs document the VSL method (US-anchored,
-GDP- and life-years-adjusted) but do NOT reproduce the workbook's VSL column -- a different
-data vintage. The VSL build behind the workbook is an open ask; gdp_adjusted_vsl below ports
-the documented method for transparency.
+Provenance gap, recorded: the folder's vsl.R and raw CSVs document the workbook's VSL method
+(US-anchored, GDP- and life-years-adjusted) but do not reproduce the workbook's VSL column -- a
+different data vintage. Pricing does not depend on it; gdp_adjusted_vsl ports that documented
+method for transparency.
 """
 import numpy as np
 
-AIR_FILTRATION_VSL_USA = 9_900_000    # the method's US anchor VSL (vsl.R)
+AIR_FILTRATION_VSL_USA = 9_900_000    # the workbook method's US anchor VSL (vsl.R), not the account's
 AIR_FILTRATION_MIN_NAME_MATCHES = 190  # positional-join sanity floor (199 observed)
 AIR_FILTRATION_FID_START = 1  # the workbook's FID is the gpkg feature id, 1..250 in file order
 
-# How closely the VSL rebuilt from the group's country table must match the workbook's own
-# column before the difference is worth reporting. The two are the same build, so a country that
-# differs is either a stale workbook row or a revision, and either way somebody has to say which.
+# How closely the shared-panel VSL must match the workbook's own column before a row counts as
+# repriced in the run's report.
 VSL_AGREEMENT_RTOL = 1e-6
 
 def gdp_adjusted_vsl(life_expectancy_df, median_age_df, gdp_df):
     """The documented VSL method (vsl.R, ported for transparency): US VSL per life-year lost,
     scaled to GDP, applied to each country's own life-years lost (life expectancy minus median
-    age). Slug-keyed like its raw inputs. NOTE the module-docstring vintage gap: with the
+    age). Slug-keyed like its raw inputs. NOTE the module-docstring provenance gap: with the
     committed raw data this does not reproduce the workbook's VSL column."""
     df = (life_expectancy_df[['slug', 'years']].rename(columns={'years': 'life_expectancy'})
           .merge(median_age_df[['slug', 'years']].rename(columns={'years': 'median_age'}), on='slug')
@@ -50,8 +52,10 @@ def gdp_adjusted_vsl(life_expectancy_df, median_age_df, gdp_df):
 
 
 def verify_global_average_fill(workbook_df):
-    """Assert the identified fill rule: every global_avg row carries exactly the mean of the
-    country-source VSLs. Returns that mean."""
+    """Assert the WORKBOOK's own fill rule (every global_avg row carries exactly the mean of the
+    country-source VSLs), so a changed workbook cannot slip by unnoticed. The account does not
+    price with this column; its fills are the shared panel's regional and global medians.
+    Returns the workbook's mean."""
     country_vsl = workbook_df.loc[workbook_df['VSL_Source'] == 'country', 'VSL']
     fill = workbook_df.loc[workbook_df['VSL_Source'] == 'global_avg', 'VSL']
     global_average = country_vsl.mean()
@@ -66,8 +70,8 @@ def vsl_from_shared_panel(workbook_df, r250_order_df, panel_df):
 
     The panel is the rebuilt EPA life-years-lost table both mortality services read, keyed by
     iso3_r250_label with every account country covered, so there is no fill rule and a missing
-    country is an error rather than an average. The workbook's own VSL column no longer prices
-    anything; rows where the panel departs from it beyond VSL_AGREEMENT_RTOL are returned so
+    country is an error rather than an average. The workbook's own VSL column prices nothing;
+    rows where the panel departs from it beyond VSL_AGREEMENT_RTOL are returned so
     the run can report the size of the repricing it applies.
 
     Args:
@@ -99,8 +103,8 @@ def vsl_from_shared_panel(workbook_df, r250_order_df, panel_df):
 
 def air_quality_benefits(workbook_df, vsl=None):
     """Deaths x VSL per channel. The tests hold the recomputation to the workbook's benefit
-    columns. `vsl` supplies the column rebuilt from the group's country table; without it the
-    workbook's own column is used, which is what the benefit-column tests compare against."""
+    columns. `vsl` supplies the shared-panel column; without it the workbook's own column is
+    used, which is what the benefit-column tests compare against."""
     df = workbook_df.copy()
     valuation = workbook_df['VSL'] if vsl is None else vsl
     df['air_filtration_gep'] = df['Dep_Deaths'] * valuation
@@ -108,7 +112,29 @@ def air_quality_benefits(workbook_df, vsl=None):
     return df
 
 
-def air_quality_gep_by_country(workbook_df, r250_order_df, vsl=None):
+def not_estimated_mask(workbook_df, r250_order_df, not_estimated_labels):
+    """Positions of the countries the source did not estimate, from an identified list.
+
+    The list is the source's own coverage statement for this workbook version, not a rule: a
+    zero elsewhere in the workbook stays a measured zero. Every listed country must carry zero
+    deaths in both channels in this workbook, so a list written for another version fails here
+    instead of blanking a measured value.
+    """
+    labels = r250_order_df['iso3_r250_label'].reset_index(drop=True)
+    listed = set(not_estimated_labels)
+    unknown = sorted(listed - set(labels))
+    if unknown:
+        raise ValueError(f'not-estimated list names countries outside the r250 order: {unknown}')
+    mask = labels.isin(listed).to_numpy()
+    deaths = workbook_df[['Dep_Deaths', 'Dust_Deaths']].reset_index(drop=True)
+    measured = mask & (deaths != 0).any(axis=1).to_numpy()
+    if measured.any():
+        raise ValueError('listed as not estimated but the workbook carries deaths: '
+                         f'{sorted(labels[measured])} -- the list does not match this workbook')
+    return mask
+
+
+def air_quality_gep_by_country(workbook_df, r250_order_df, vsl=None, not_estimated_labels=()):
     """Join the workbook onto the r250 ids by POSITION, which is not a shortcut but a requirement.
 
     The workbook carries no country code, only an FID that is the geopackage's feature id, so a
@@ -137,8 +163,8 @@ def air_quality_gep_by_country(workbook_df, r250_order_df, vsl=None):
     # in the r250 list means a real country's row sits at the wrong position. A swap of whole
     # rows carries its FID and is caught above; a swap of the data columns alone is caught here.
     # The workbook's duplicated name (Serbia, whose second row is Kosovo's by FID order) is the
-    # recorded exception; spelling and territory variants never appear in the r250 list --
-    # measured 2026-10-25, zero hits on the shipped file.
+    # recorded exception; spelling and territory variants never appear in the r250 list (zero
+    # hits on the shipped file).
     w = workbook_df['Country'].astype(str).to_numpy()
     b = r250_order_df['brk_name'].astype(str).to_numpy()
     duplicated = set(workbook_df['Country'][workbook_df['Country'].duplicated(keep=False)])
@@ -154,4 +180,6 @@ def air_quality_gep_by_country(workbook_df, r250_order_df, vsl=None):
     out = r250_order_df[['iso3_r250_id', 'iso3_r250_label']].reset_index(drop=True).copy()
     out[['air_filtration_gep', 'sandstorm_prevention_gep']] = (
         df[['air_filtration_gep', 'sandstorm_prevention_gep']])
+    unestimated = not_estimated_mask(workbook_df, r250_order_df, not_estimated_labels)
+    out.loc[unestimated, ['air_filtration_gep', 'sandstorm_prevention_gep']] = np.nan
     return out

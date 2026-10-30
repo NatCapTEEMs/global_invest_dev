@@ -58,7 +58,7 @@ total_fisheries_value = df['fisheries_gep'].sum()
 p.gep_by_country_base_year_table = df[['iso3_r250_name', 'fisheries_gep']]
 ```
 
-The analysis estimates a commercial capture-fisheries GEP of $`{python} f"{total_fisheries_value:,.0f}"` for the base year (`{python} f"{int(p.gep_base_year)}"`), PROVISIONAL as the account's fisheries value until the source choice is blessed. The estimate follows the CWoN method: FAO-based economic rent per country from the CWoN 2024 reproducibility package, deflated to 2019 USD, extrapolated to 2019 by each country's own 2009–2018 trend and floored at zero. Countries without CWoN rent data carry no value rather than zero, no data is not zero rent.
+The analysis estimates a commercial capture-fisheries GEP of $`{python} f"{total_fisheries_value:,.0f}"` for the base year (`{python} f"{int(p.gep_base_year)}"`). The estimate follows the CWoN method: FAO-based economic rent per country from the CWoN 2024 reproducibility package, converted to 2019 USD with the country's CPI (rent × 100 / CPI, with 2019 = 100), extrapolated to 2019 by each country's own 2009–2018 trend and floored at zero. The price basis of the input landed value (`FAO_landval2018`) is unverified, so the CPI step is the implemented conversion, not a confirmed move from a known price year. Countries without CWoN rent data carry no value rather than zero, because no data is not zero rent.
 
 ## GEP by Country in Base Year, mapped
 
@@ -109,4 +109,38 @@ summary_tables.get('subregion', 'No subregion column in this table.')
 ## GEP by Country in Base Year
 ```{python}
 p.gep_by_country_base_year_table
+```
+
+## Subsistence Fisheries GEP
+
+```{python}
+#| output: false
+
+df_subsistence = hb.df_read(p.fisheries_subsistence_gep_path)
+total_subsistence_value = df_subsistence['subsistence_fisheries_gep'].sum()
+n_subsistence = int(df_subsistence['subsistence_fisheries_gep'].notna().sum())
+```
+
+A separate service: the consumptive-use value of inland recreational harvest eaten as food, from Lynch et al. (2024), quantity times price summed over species. It totals $`{python} f"{total_subsistence_value:,.0f}"` over `{python} f"{n_subsistence}"` countries, in late-2021 US dollars, not deflated to 2019. The release's own value is carried beside the computed one.
+
+```{python}
+df_subsistence.loc[df_subsistence['subsistence_fisheries_gep'].notna(),
+                   ['iso3_r250_label', 'ee_r264_description', 'subsistence_fisheries_gep',
+                    'subsistence_fisheries_gep_published']]
+```
+
+## Aquaculture GEP
+
+```{python}
+#| output: false
+
+df_aquaculture = hb.df_read(p.fisheries_aquaculture_gep_path)
+total_aquaculture_value = df_aquaculture['aquaculture_gep'].sum()
+n_aquaculture = int(df_aquaculture['aquaculture_gep'].notna().sum())
+```
+
+A separate service: FAO's 2019 aquaculture production value, aquatic plants left out, times the natural-resource share of the GTAP fishing sector's gross output in the country's region. It totals $`{python} f"{total_aquaculture_value:,.0f}"` over `{python} f"{n_aquaculture}"` countries. The figure on the share of value added is shown beside it for comparison.
+
+```{python}
+df_aquaculture[['iso3_r250_name', 'aquaculture_gep', 'aquaculture_gep_on_value_added_share']]
 ```

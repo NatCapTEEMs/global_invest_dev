@@ -14,7 +14,7 @@ Avoided deaths per country per channel, the workbook's `Dep_Deaths` and `Dust_De
 
 ## Price
 
-The account's shared value of a statistical life: the rebuilt EPA life-years-lost panel, the same file landslide mitigation reads, covering all 250 countries with each row's fallback tier recorded. The workbook's own `VSL` column no longer prices anything; the run reports how far the panel departs from it, and `verify_global_average_fill` still asserts the workbook's internal fill rule at rtol 1e-9 so a changed workbook cannot slip by unnoticed.
+The account's shared value of a statistical life, the same panel landslide mitigation reads (built by `m-braaksma/landslide_mitigation` v0.2.1). The US benchmark is EPA's \$7.9 million in 2008 dollars, carried to 2019 by CPI-U inflation times the change in real US GDP per capita raised to EPA's income elasticity of 0.4, giving \$9,876,237. Each country's VSL scales that benchmark by its GDP per capita at purchasing power parity (World Bank, 2019) and its life-years lost, life expectancy minus median age (UN World Population Prospects 2024, 2019). A country without those data takes the median VSL of its World Bank region (49 countries), or the global median where the region has none (2). 199 have a direct estimate. The workbook's own `VSL` column, whose fill is the mean of its country values, no longer prices anything. The run reports how far the panel departs from it, and `verify_global_average_fill` still asserts that workbook rule at rtol 1e-9 so a changed workbook cannot slip by unnoticed.
 
 ## Valuation
 
@@ -23,7 +23,9 @@ The account's shared value of a statistical life: the rebuilt EPA life-years-los
 $$\text{air filtration GEP} = \text{Dep\_Deaths} \times \text{VSL}, \qquad
 \text{sandstorm prevention GEP} = \text{Dust\_Deaths} \times \text{VSL}$$
 
-The tests hold that recomputation to the workbook's own benefit columns. The deposition total, \$17.81bn, is the manuscript's air-filtration number.
+Priced at the workbook's own `VSL` column, the tests hold that recomputation to the workbook's benefit columns exactly. That deposition total, \$17.81bn, is the manuscript's air-filtration number. The account prices at the shared panel instead, which gives \$17.48bn for deposition and \$567.71bn for dust.
+
+No share is taken out for human inputs (λ = 1), as the write-up states. Each channel's deaths are measured against a counterfactual without the ecosystem's contribution, barren land for dust and no deposition for filtration, so the whole value is attributed to nature.
 
 ## Joining to countries
 
@@ -31,15 +33,17 @@ The tests hold that recomputation to the workbook's own benefit columns. The dep
 
 ## Coverage
 
-The published table is one row for each of the account's 250 countries, base year 2019, in constant 2019 USD. Of the 250, 197 carry a value and 53 are computed zeros; no row is missing. A zero means the computation returned zero; a missing row means the data to compute one is absent.
+The published table is one row for each of the account's 250 countries, base year 2019, in constant 2019 USD. Of the 250, 197 carry a value and 53 are missing, in both channels: the countries and territories the authors state they could not estimate for missing air-quality model data. The workbook stores them as zero deaths in both channels. They publish as missing because the authors state these places were not estimated, and a zero would read as a measurement. The list is staged as `air_filtration_not_estimated.csv` and checked against the workbook row by row, so it cannot blank a measured value. A zero means the computation returned zero. A missing row means the data to compute one is absent.
 
 ## Inputs
 
 From `es_parameters.csv`, scoped to the `air_filtration` service:
 
 - `air_filtration_workbook_path`, the committed per-country workbook, with a `_source_note` row recording that it comes from the drive's air filtration folder rather than a public URL.
+- `air_filtration_vsl_path`, the shared VSL panel, with its `_source` row.
+- `air_filtration_not_estimated_path`, the 53 countries the source did not estimate, with its `_source` row tying the list to this workbook version.
 
-`reference/r250_gpkg_order.csv` ships inside the module and supplies the row order the positional join checks against.
+`r250_gpkg_order.csv`, beside the workbook in the service's base-data folder, supplies the row order the positional join checks against.
 
 ## Output
 
@@ -47,13 +51,15 @@ From `es_parameters.csv`, scoped to the `air_filtration` service:
 
 ## Method constants
 
-- `AIR_FILTRATION_VSL_USA = 9_900_000`, the US anchor VSL the documented method starts from.
+- `AIR_FILTRATION_VSL_USA = 9_900_000`, the US anchor of the workbook's documented method (`vsl.R`), used only by the transparency port. The account's anchor is the shared panel's \$9,876,237.
 - `AIR_FILTRATION_MIN_NAME_MATCHES = 190`, the sanity floor under the positional join.
 
 ## Taken as given
 
-The science behind the avoided-death columns, a coupled set of process-based emissions models, Global InMAP and health impacts as the appendix describes it, is not rebuildable here and is adopted as published. The valuation layer on top of it is rebuilt and verified against the workbook exactly.
+The science behind the avoided-death columns, a coupled set of process-based emissions models, Global InMAP and health impacts as the appendix describes it, is not rebuildable here and is adopted as published. The valuation arithmetic on top of it is rebuilt and reproduces the workbook exactly at the workbook's own VSL. The published values use the shared panel's VSL instead.
 
 ## What is open
 
 The VSL build behind the workbook. The folder's `vsl.R` and its raw CSVs document a US-anchored, GDP- and life-years-adjusted method, and `gdp_adjusted_vsl` ports that method for transparency, scaling the US VSL per life-year lost by GDP and applying it to each country's own life expectancy minus median age. Run against the committed raw data it does not reproduce the workbook's VSL column, which points to a different data vintage. That vintage gap remains a provenance question, and pricing no longer depends on it.
+
+The authors' write-up describes the VSL differently from the panel the account uses. It anchors on a US VSL of \$9.9 million for 2020 and measures life-years lost from the 75th percentile of the age distribution, with life expectancy and GDP from the CIA World Factbook and ages from the US Census International Database. The authors' own `vsl.R` uses median age, as the panel does. Which age statistic the authors intend is a question for them. A tracked edit in the write-up, not yet accepted, describes the panel's regional and global median fills and its 2019 dollars.

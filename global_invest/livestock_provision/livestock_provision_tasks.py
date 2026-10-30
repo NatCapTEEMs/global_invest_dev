@@ -4,31 +4,21 @@ import pandas as pd
 import hazelbean as hb
 from global_invest import utilities
 
-from global_invest.livestock_provision import livestock_provision_initialize
 from global_invest.livestock_provision import livestock_provision_functions
 
 
 
-def read_crop_values(path, items, aggregate_areas):
-    """The FAOSTAT bulk file read and cleaned. See clean_crop_values for the science.
+def read_cwon_table(path, value_name):
+    """A CWoN 2024 table read and reshaped long. See cwon_series_long for the science.
 
-    The file ships Latin-1 encoded, so it is read as such rather than as UTF-8.
+    The World Bank writes a missing value as "..", which is read as missing.
     """
-    return utilities.clean_faostat_values(
-        pd.read_csv(path, encoding='ISO-8859-1'), items, 'livestock_provision_gep', aggregate_areas)
-
-
-def read_crop_coefs(path):
-    """The CWoN rental-rate table read and reshaped. See build_rental_rate_lookup for the science.
-
-    The table ships semicolon-delimited.
-    """
-    return utilities.build_rental_rate_lookup(
-        pd.read_csv(path, delimiter=';', encoding='utf-8'))
+    return livestock_provision_functions.cwon_series_long(
+        pd.read_excel(path, na_values=['..']), value_name)
 
 
 def publish_inputs(p):
-    """Every task's first line: the FAO livestock-production valuation's es_config row (defaults layer -- a caller-set value wins)
+    """Every task's first line: the livestock valuation's es_config row (defaults layer -- a caller-set value wins)
     plus the shared country references and the results registry."""
     utilities.hydrate_es_config(p, 'livestock_provision', log=hb.log)
     utilities.hydrate_es_parameters(p, 'livestock_provision', log=hb.log)
@@ -44,11 +34,10 @@ def livestock_provision(p):
     publish_inputs(p)
 
 def gep_preprocess(p):
-    """
-    Preprocessing tasks are assumed NOT to be run by the user. Instead, it is assumed that the output of a preprocess
-    task is an input to the actual model, saved at the canonical project attribute p.livestock_provision_input_path.
-    These are preprocessing tasks are still provided for reference, but are not intended to be run directly by the user.
-    We will "promote" the data outputed by a preprocess task to the base_data_dir provided to users.
+    """Preprocessing placeholder, not implemented and not meant to be run by users.
+
+    A preprocess task's output is an input to the model, saved at the canonical project
+    attribute p.livestock_provision_input_path and promoted to the base_data_dir users receive.
     """
     publish_inputs(p)
     if not p.run_this:
@@ -71,44 +60,45 @@ def gep_calculation(p):
 
     if not p.run_this:
         return p
-    if not getattr(p, 'livestock_provision_subservices', None):
-        p.commercial_attribute_subservices = utilities.read_column(
-            p.livestock_provision_owner_value_codes_path, 'item_code_fao', int)
+    # The authors' method: CWoN livestock revenue x the CWoN land rental rate, from the CWoN 2024
+    # reproducibility package (see the functions module for the write-up it follows).
+    revenue = read_cwon_table(p.get_path(p.livestock_provision_cwon_revenue_path), 'livestock_revenue')
+    rate = read_cwon_table(p.get_path(p.livestock_provision_cwon_rental_rate_path), 'rental_rate')
+    rent = livestock_provision_functions.cwon_livestock_rent(revenue, rate)
 
-    df_crop_value = read_crop_values(
-        p.fao_input_path, p.commercial_attribute_subservices,
-        utilities.read_column(p.faostat_aggregate_areas_path, 'area_fao'))
-    # FAOSTAT publishes both the individual animal product and the "Livestock" total that adds them
-    # up. The item list carries both, so a total is kept except where its own members are
-    # individually valued (per the staged item-group membership).
-    item_groups = pd.read_csv(p.faostat_item_groups_path)
-    item_groups = item_groups[item_groups['Domain Code'] == 'QV']
-    df_crop_value = utilities.drop_aggregates_where_components_exist(
-        df_crop_value, utilities.read_column(p.faostat_aggregate_items_path, 'item_fao'),
-        'livestock_provision_gep', item_groups)
-    df_crop_coefs = read_crop_coefs(p.cwon_crop_coefficients_path)
+    # The package's product-level rents, summed by country, must give the same numbers.
+    product_rent = read_cwon_table(p.get_path(p.livestock_provision_cwon_product_rent_path), 'product_rent')
+    check = livestock_provision_functions.product_rent_check(rent, product_rent)
+    checked = check[check['year'] == int(p.gep_base_year)]
+    both = checked['livestock_provision_gep'].notna() & checked['product_rent_sum'].notna()
+    hb.log('CWoN check, %s: revenue x rate against product rents summed, %d countries, max |diff| '
+           '%.3g USD, same missing countries: %s'
+           % (p.gep_base_year, int(both.sum()), checked.loc[both, 'difference'].abs().max(),
+              bool((checked['livestock_provision_gep'].isna()
+                    == checked['product_rent_sum'].isna()).all())))
 
-    df_gep_by_country_year_crop = utilities.apply_rental_rates(
-        df_crop_value, df_crop_coefs, 'livestock_provision_gep')
-    df_gep_by_country_year_crop = utilities.normalize_m49_codes(df_gep_by_country_year_crop)
+    df_gep_by_country_year = livestock_provision_functions.attach_countries(rent, p.df_countries)
+    unplaced = df_gep_by_country_year[df_gep_by_country_year['iso3_r250_id'].isna()]
+    if len(unplaced):
+        hb.log('  CWoN codes with no r250 country, not carried: %s (%d valued country-years)'
+               % (', '.join(sorted(unplaced['countrycode'].unique())),
+                  int(unplaced['livestock_provision_gep'].notna().sum())))
+    df_gep_by_country_year = df_gep_by_country_year[
+        df_gep_by_country_year['iso3_r250_id'].notna()].drop(columns=['countrycode'])
     df_gep_by_country_year_crop = livestock_provision_functions.attach_countries(
-        df_gep_by_country_year_crop, p.df_countries)
+        product_rent, p.df_countries)
+    df_gep_by_country_year_crop = df_gep_by_country_year_crop[
+        df_gep_by_country_year_crop['iso3_r250_id'].notna()]
 
-    df_gep_by_country_year = utilities.sum_items_to_country_year(
-        df_gep_by_country_year_crop, 'livestock_provision_gep')
-
-    # The feed share, beside the rental rate rather than instead of it. GLEAM 3 intake gives
-    # the share of what livestock ate that ecosystems grew, which is the factor this service
-    # wants; the rental rate is the crop method's factor standing in for it. Which one the
-    # account uses is the group's decision, so both columns are written.
+    # The feed share, beside the headline as a diagnostic: GLEAM 3 intake gives the share of what
+    # livestock ate that ecosystems grew, applied here to the same CWoN revenue.
     df_gleam, df_gleam_unmatched = livestock_provision_functions.clean_gleam_dashboard_intake(
         hb.df_read(p.get_path(p.gleam_dmi_path), delimiter='|'), p.df_countries)
     df_lambda = livestock_provision_functions.feed_lambda_by_country(df_gleam)
     df_gep_by_country_year = livestock_provision_functions.feed_share_gep(
-        df_gep_by_country_year, df_lambda)
-    hb.log('Feed share: %d countries carry one, %d GLEAM rows match no country in the '
-           'account. Rental-rate and feed-share columns are both written.'
-           % (int(df_lambda['lambda'].notna().sum()), len(df_gleam_unmatched)))
+        df_gep_by_country_year, df_lambda, gross_column='livestock_revenue')
+    hb.log('Feed share (diagnostic): %d countries carry one, %d GLEAM rows match no country in '
+           'the account.' % (int(df_lambda['lambda'].notna().sum()), len(df_gleam_unmatched)))
 
     df_gep_by_year = utilities.sum_countries_to_year(df_gep_by_country_year, 'livestock_provision_gep')
 
@@ -144,7 +134,7 @@ def gep_result(p):
 
 def gep_results_distribution(p):
     """Copy this service's results into the output directory. Shared implementation in
-    utilities, which is also where the service key stops being written out by hand."""
+    utilities."""
     publish_inputs(p)
     if not p.run_this:
         return p

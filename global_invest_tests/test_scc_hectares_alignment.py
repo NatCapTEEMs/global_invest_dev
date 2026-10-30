@@ -1,18 +1,13 @@
 """Density x hectares is a per-pixel product, so the two grids must match exactly.
 
-Job 3467106 reached the SCC valuation and failed:
+The global hectares raster (p.ha_per_cell_10sec_path) is right for a global run and wrong for an
+AOI subset: on the zaf pilot the density rasters are (6120,4680) at pixel 0.0027777778 with origin
+(16.0,-22.0) -- the same 10-arcsec grid, clipped -- while the global hectares raster is
+(129600,64800) at origin (-180,90), and hb.multiply refuses rasters of different dimensions.
 
-  ValueError: Input Rasters are not the same dimensions.
-              The following raster are not identical {(6120, 4680), (129600, 64800)}
-
-stock_by_country multiplied the carbon density raster by p.ha_per_cell_10sec_path
-unconditionally. That is right for a global run and wrong for an AOI subset: on the zaf pilot the
-density rasters are (6120,4680) at pixel 0.0027777778 with origin (16.0,-22.0) -- the same
-10-arcsec grid, clipped -- while the global hectares raster is (129600,64800) at origin (-180,90).
-
-The fix CHOOSES the aligned raster. It does not resample: resampling hectares-per-cell would
-change the areas the stock is computed from, and resampling density would change the stock itself.
-The geometry below is the pilot's, measured.
+_aligned_ha_per_cell CHOOSES the aligned raster. It does not resample: resampling hectares-per-cell
+would change the areas the stock is computed from, and resampling density would change the stock
+itself. The geometry below is the pilot's, measured.
 """
 import numpy as np
 import pytest
@@ -57,7 +52,7 @@ def test_the_aoi_raster_is_chosen_when_the_density_is_an_aoi_subset(grids):
 
 
 def test_the_global_raster_is_chosen_for_a_global_density(tmp_path, grids):
-    """A global run must keep using the global hectares raster -- the fix must not invert."""
+    """A global run must keep using the global hectares raster -- the choice must not invert."""
     _, aoi_ha, global_ha = grids
     global_density = _raster(tmp_path / 'carbon_density_global.tif', GLOBAL['cols'], GLOBAL['rows'],
                              GLOBAL['x'], GLOBAL['y'], pixel=1.0)
@@ -94,7 +89,7 @@ def test_it_raises_rather_than_resampling_when_nothing_aligns(grids):
 
 
 def test_the_product_is_computable_once_aligned(tmp_path, grids):
-    """The end the fix exists for: hb.multiply succeeds and the values are the real product."""
+    """The point of the choice: hb.multiply succeeds and the values are the real product."""
     density, aoi_ha, global_ha = grids
     p = _P(aoi_ha_per_cell_fine_path=aoi_ha, ha_per_cell_10sec_path=global_ha)
     out = str(tmp_path / 'per_cell.tif')

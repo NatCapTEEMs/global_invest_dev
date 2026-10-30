@@ -70,6 +70,7 @@ for k, v in p.results[service_label].items():
     if k == 'gep_by_country_base_year':
         total_nature_view_amenity_value = df['nature_view_amenity_gep'].sum()
         p.gep_by_country_base_year_table = df[['iso3_r250_name', 'nature_view_amenity_gep',
+                                               'nature_view_amenity_gep_owner_vintage',
                                                'nature_view_amenity_gep_reference']]
 
         # Group by useful aggregation columns explicitly and assign each as an attribute to p
@@ -112,7 +113,7 @@ for k, v in p.results[service_label].items():
         sm = plt.cm.ScalarMappable(cmap='OrRd', norm=norm)
         sm._A = []
         cbar = fig.colorbar(sm, ax=ax, orientation='vertical', fraction=0.03, pad=0.02)
-        cbar.set_label("Gross Economic Product (GEP) in Base Year")
+        cbar.set_label("Gross Ecosystem Product (GEP) in Base Year")
         cbar.ax.yaxis.set_major_formatter(mpl.ticker.FuncFormatter(lambda x, _: f'{int(x):,}'))
 
         ax.set_title('GEP by Country in Base Year')
@@ -122,7 +123,7 @@ for k, v in p.results[service_label].items():
 
 ```
 
-The nature-view amenity is valued as the hotel room-price premium natural views earn. The total is $`{python} f"{total_nature_view_amenity_value:,.2f}"` in the base year over the countries with a premium estimate and room inventory; the reference column beside the per-country table is the owner's results workbook, matched to the cent. The tables below aggregate by income group, region and continent, and end with the per-country table the account reads.
+The nature-view amenity is valued as the hotel room-price premium natural views earn. The total is $`{python} f"{total_nature_view_amenity_value:,.2f}"` in 2019 US dollars, over the countries with a room inventory, a room sample and a premium estimate. The per-country table also carries the value in the scrape's own money and the owner's results workbook, which that value matches to the cent. The 2019 figure is the scrape-money figure deflated by the US CPI. The tables below aggregate by income group, region, continent and subregion, and end with the per-country table the account reads.
 
 ## GEP by Country in Base Year, mapped
 

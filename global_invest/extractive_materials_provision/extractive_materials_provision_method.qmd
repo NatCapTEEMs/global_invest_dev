@@ -8,17 +8,26 @@ format:
 
 Extractive materials provision covers mineral extraction. The account values it from two World
 Bank series, the share of a country's GDP that mineral rents represent and the GDP itself, with an
-attribution factor applied to the resulting rent. The base year is 2019.
+attribution factor applied to the resulting rent. The base year is 2019, and values are 2019 US
+dollars at market exchange rates, the account's convention.
+
+## Source
+
+The write-up is `Extractive_Mineral_Provision.docx` in the shared folder of current write-ups,
+and the authors' code is the `develop_yanxu` branch at `eff0d0b`. Both value mineral rents as a
+share of GDP (the World Bank's CWoN 2024 rents for ten minerals) times GDP times a factor λ.
 
 ## Quantity
 
 GDP in current USD, the World Bank series `NY.GDP.MKTP.CD`, read from the path recorded in
-`es_config.csv` as `gep_quantity_input_path`.
+`es_config.csv` as `gep_quantity_input_path`. At the base year, current USD is 2019 USD. The
+staged file is `API_NY.GDP.MKTP.CD_DS2_en_csv_v2_130122.csv`, dated 3 November 2025.
 
 ## Price
 
 Mineral rents as a percentage of GDP, the World Bank series `NY.GDP.MINR.RT.ZS`, read from the
-path recorded in `es_config.csv` as `gep_attribution_input_path`.
+path recorded in `es_config.csv` as `gep_attribution_input_path`. The staged file is
+`API_NY.GDP.MINR.RT.ZS_DS2_en_csv_v2_6559.csv`, dated 3 November 2025.
 
 ## Attribution
 
@@ -37,23 +46,44 @@ melts the year columns into long form keyed on `Country Code` and drops the desc
 by not naming them. The two long tables are merged on `Country Code` and `year` and deduplicated
 on that pair. `collapse_countries_to_r250` reduces the r264 correspondence to one canonical row
 per country before the join, so a country that r264 splits is not repeated. The base-year table
-is the rows where `year` equals `p.gep_base_year`. `group_countries` aggregates the value column
-by year for the time series.
+is the rows where `year` equals `p.gep_base_year`. `utilities.sum_countries_to_year` sums the
+value column by year for the time series.
 
 Country references are published at 30 arcsecond simplification for this service, rather than the
 300 arcsecond default the other modules use.
 
 ## Coverage
 
-The published table is one row for each of the account's 250 countries, base year 2019, in constant 2019 USD. Of the 250, 88 carry a value, 119 are computed zeros, and 43 rows are missing, kept as missing rather than zero because an input carries no data for those countries. A zero means the computation returned zero; a missing row means the data to compute one is absent.
+The published table is one row for each of the account's 250 countries, base year 2019, in
+2019 USD. Of the 250, 88 carry a value, totalling \$99,544,328,382.62, 119 are computed zeros,
+and 43 rows are missing, kept as missing rather than zero because an input carries no data for
+those countries. A zero means the computation returned zero. A missing row means the data to
+compute one is absent.
+
+## Reproduction
+
+The library equals the authors' own committed output of November 2025
+(`outputs/extractive_materials_provision_gep.csv`) country for country, all 207 values and the
+same total. That file labels Kosovo's row "Serbia".
+
+The write-up reports \$198,741,283,557.50 in 2019 international dollars, which the authors'
+current code computes from GDP in local currency divided by the PPP conversion factor. On World
+Bank values fetched on 29 October 2026, that formula gives the write-up's total to the cent. The
+difference from the library's total splits into two parts, and the 0.49 enters both sides
+alike:
+
+- GDP vintage, \$339,605,495.79. The fetched GDP revises 54 countries. The rent shares are
+  unchanged.
+- Currency basis, \$98,857,349,679.10. By country the international-dollar figure is a median
+  2.50 times the US-dollar one, and nine countries without a PPP factor drop out.
 
 ## Inputs
 
 Both data paths come from `es_config.csv` rather than `es_parameters.csv`. The
 `extractive_materials_provision` row names `gep_quantity_input_path` for the GDP series and
-`gep_attribution_input_path` for the mineral rent share, along with
-`gep_regions_input_path` as `cartographic/ee/ee_r264_correspondence.gpkg` and `gep_regions_id_col`
-as `ee_r264_id`. The service has no `es_parameters.csv` rows.
+`gep_attribution_input_path` for the mineral rent share. Its `gep_price_input_path` reads
+`computed`, and its region columns are `n/a`, because the countries come from the account's own
+correspondence. The service has no `es_parameters.csv` rows.
 
 ## Outputs
 
@@ -77,10 +107,18 @@ Both World Bank series are used as published.
 
 ## What is open
 
-The attribution factor's provenance is undocumented as of 2026-08-16. There is no source for 0.49
-in the code, in the drive submission, or in its `raw_data` notes, and it is an open question for
-the service owner. The staged reference output embeds the factor, so it should not change without
-an owner-blessed source.
+The attribution factor has no stated source. The write-up writes GEP = λθ with no value for λ,
+and neither the authors' code, the drive submission nor its `raw_data` notes gives a source for
+0.49. The question is with the authors (open question 16). The factor stays as the authors set
+it until they answer.
+
+The write-up and the authors' code compute 2019 international dollars. The account reports 2019
+US dollars at market exchange rates, as William's comment on the write-up states ("We are not
+using international dollars (PPP), just the normal US$ 2019"). Bringing the write-up and code to
+that convention is with the authors.
+
+The staged GDP is the November 2025 download. Whether to refresh it to the current World Bank
+vintage, worth \$339,605,495.79, is an account decision.
 
 `gep_by_country_year.csv` and `gep_by_country_year_mineral.csv` are the same table written twice.
 The valuation produces one row per country and year, so there is nothing for the second table to

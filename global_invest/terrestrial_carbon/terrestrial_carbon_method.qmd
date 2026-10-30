@@ -25,7 +25,6 @@ author:
     affiliations: University of Minnesota
 abstract: |
 
-keywords: [template, demo]
 bibliography: references.bib
 ---
 
@@ -58,7 +57,7 @@ $$
 
 
 where $P_C(t)$ denotes the social cost of carbon in year $t$, and $r$ represents the net discount rate equal to
-the difference between the discount rate and the rate of growth of carbon prices. This formulation reflects the rental valuation approach, capturing the annualized benefit of temporarily storing one metric ton of CO2 for one year. This measure represents the annualized marginal damage cost of emitting an additional metric ton of CO2, thereby aligning our valuation approach with established climate policy frameworks and principles of intertemporal cost-benefit analysis. We adopt a carbon price of \$678.33 per metric ton of carbon (C), corresponding to the mean social cost of CO2 of roughly \$185 per metric ton of CO2 estimated by @rennert_comprehensive_2022 (converted to a per-carbon basis by the 44/12 mass ratio). This value is employed for $P_C(t)$, the carbon price at time $t$, and a discount rate of 2% is applied, following the same source. The rental rate the model applies is read year by year from the carbon-price series (`rental scc r2%` in `carbon_prices.xlsx`); for the base year 2019 it is approximately \$13.19 per ton of C. A flat 2% rate applied directly to \$678.33 would give \$13.43; the difference reflects the net discount rate $r$ defined above, which nets out the growth in carbon prices.
+the difference between the discount rate and the rate of growth of carbon prices. This formulation reflects the rental valuation approach, capturing the annualized benefit of temporarily storing one metric ton of CO2 for one year. This measure represents the annualized marginal damage cost of emitting an additional metric ton of CO2, thereby aligning our valuation approach with established climate policy frameworks and principles of intertemporal cost-benefit analysis. We adopt a carbon price of \$678.33 per metric ton of carbon (C), corresponding to the mean social cost of CO2 of roughly \$185 per metric ton of CO2 estimated by @rennert_comprehensive_2022 (converted to a per-carbon basis by the 44/12 mass ratio). This value is employed for $P_C(t)$, the carbon price at time $t$, and a discount rate of 2% is applied, following the same source. The rental rate the model applies is read year by year from the carbon-price series (`rental scc r2%` in `carbon_prices.xlsx`). For the base year 2019 it is \$13.19 per ton of C. The series takes the \$185 per ton of CO2 for 2020 back to 2019 by US inflation, \$181.60 per ton of CO2 or \$665.87 per ton of C, and applies $1 - e^{-0.02}$ to it. The same rate on the 2020 value, \$678.33, gives \$13.43.
 
 ## Valuation
 
@@ -71,8 +70,42 @@ $$
 where $Q$ represents the quantity of carbon storage (in metric tons), and $P$ denotes the annual rental SCC per ton. This formulation aligns with the GEP framework, translating biophysical carbon sequestration into monetary value.
 
 
-# References
+## Source and implementation
+
+The write-up is the authors' terrestrial carbon document of 28 October 2026 in the shared folder
+of current write-ups. The registered code is the `terrestrial_carbon` folder of
+`NatCapTEEMs/global_invest_dev` at `3be9ae5` (folder last changed at `f0de419`). The library
+follows its chain: Spawn et al. (2020) above- and below-ground biomass carbon for 2010, scaled
+from integers to Mg C per hectare and added, reprojected by nearest neighbour onto the land-cover
+grid, a lookup of the mean density per land-cover class and carbon zone (2,855 keys), the 2019
+density raster from it, times hectares per cell, summed by region and then by country.
+
+The library differs from the registered code in three places, none of them a method change. It
+publishes one row per country, where the registered code repeats a split country's value on
+each of its sub-regions (six countries, 23.49% too high in total). It gives each cell to the one
+region that covers its centre, where the registered code lets a border cell count in both
+neighbours. And it runs end to end, where the registered reprojection step reads a path nothing
+sets.
+
+## Output
+
+`gep_calculation` writes `gep_by_country_base_year.csv` into its own task directory, holding the
+r250 identifiers and attributes, `year`, `terrestrial_carbon_quantity` (Mg C), the rental rate
+`rental scc r2%` and `terrestrial_carbon_gep`.
 
 ## Coverage
 
-The published table is one row for each of the account's 250 countries, base year 2019, in constant 2019 USD. Of the 250, every row carries a value; none is zero and none is missing. A zero means the computation returned zero; a missing row means the data to compute one is absent.
+The published table is one row for each of the account's 250 countries, base year 2019, in 2019
+USD. Every row carries a value, totalling \$5,364,951,396,387.05 on 406.9 billion Mg C. None is
+zero and none is missing. A zero means the computation returned zero. A missing row means the
+data to compute one is absent.
+
+## What is open
+
+- The lookup year. The write-up builds the density lookup from ESA land cover for 2010, the year
+  of the Spawn map. The registered code and the library build it from 2019 land cover, so 2010
+  biomass is paired with 2019 classes. This is a question for the authors.
+- The lookup means are checked for range and plausibility, not recomputed from the Spawn raster,
+  which takes one global pass over 8.4 billion cells.
+
+# References

@@ -93,6 +93,8 @@ service_label = 'terrestrial_carbon'
 
 # Load the results
 for k, v in p.results[service_label].items():
+    if not str(v).lower().endswith(('.csv', '.parquet')):
+        continue
     # Load the results DataFrame
     df = hb.df_read(v)
 
@@ -150,7 +152,7 @@ for k, v in p.results[service_label].items():
         sm = plt.cm.ScalarMappable(cmap='OrRd', norm=norm)
         sm._A = []
         cbar = fig.colorbar(sm, ax=ax, orientation='vertical', fraction=0.03, pad=0.02)
-        cbar.set_label("Gross Economic Product (GEP) in Base Year")
+        cbar.set_label("Gross Ecosystem Product (GEP) in Base Year")
         cbar.ax.yaxis.set_major_formatter(mpl.ticker.FuncFormatter(lambda x, _: f'{int(x):,}'))
 
         ax.set_title('GEP by Country in Base Year')
@@ -163,7 +165,7 @@ for k, v in p.results[service_label].items():
     # Per-year results (gep_by_year) are produced only in a multi-year run; omitted in this base-year report.
 ```
 
-Carbon stored by land ecosystems is valued at the rental social cost of carbon, giving $`{python} f"{total_terrestrial_carbon_value:,.2f}"` in the base year. The tables below aggregate that by income group, region and continent, and end with the per-country table the account reads.
+Carbon stored by land ecosystems is valued at the rental social cost of carbon, giving $`{python} f"{total_terrestrial_carbon_value:,.2f}"` in the base year, in 2019 US dollars. The tables below aggregate that by income group, region, continent and subregion, and end with the per-country table the account reads.
 
 ## GEP by Country in Base Year, mapped
 

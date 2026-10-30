@@ -2,14 +2,16 @@
 """Crop-provision science: FAOSTAT gross production value x the CWoN land rental rate.
 
 The quantity-and-price stage is fused in the source data where FAOSTAT fused it: the Value of
-Production bulk reports gross production value per country, crop and year. Where FAOSTAT's
-current-USD series carries production and no value -- its USD value stops wherever its own USD
-producer-price series stops -- the pair is filled from production tonnes times that year's USD
-producer price the pollination chain stages, at the deepest level that table resolves (country,
-subregion, region, world). Attribution is the Changing Wealth of Nations 2024 land rental rate,
-a per-country share that varies by decade, applied by an as-of merge so each year takes the
-rate of the decade it falls in, to filled and read rows alike. The result is converted from FAOSTAT's thousand USD to plain USD once, before any
-grouping, and collapsed onto the r250 country list.
+Production bulk reports gross production value per country, crop and year. Where FAOSTAT reports
+production and no current-USD value for a country, crop and year, the pair is filled from
+production tonnes times that year's USD producer price the pollination chain stages, at the
+deepest level that table resolves (country, subregion, region, world). Why a value is missing is
+not established here, and a missing value does not mean a missing price: some filled pairs have
+an observed USD producer price in the same year. Attribution is the Changing Wealth of Nations
+2024 land rental rate, a per-country share that varies by decade, applied by an as-of merge so
+each year takes the rate of the decade it falls in, to filled and read rows alike. The result is
+converted from FAOSTAT's thousand USD to plain USD once, before any grouping, and collapsed onto
+the r250 country list.
 
 The subsistence component sits at the bottom of this module, the way the Lynch subsistence value
 sits beside the commercial rent in fisheries: same folder, own task, own table, never summed into
@@ -19,21 +21,11 @@ makes the overlap between the two components exact rather than a matter of judge
 Every function here is a pure transformation over frames, which is what the tests exercise. The
 task module reads the FAOSTAT bulk file and the rental-rate table and passes the frames in.
 """
-import logging
-
 import numpy as np
 import pandas as pd
 import hazelbean as hb
 
 from global_invest import utilities
-
-# FAOSTAT's Value of Production table stacks several elements and units in one file. The
-# valuation reads gross production value in current USD, which the file reports as element 57
-# with unit "1000 USD".
-
-
-
-
 
 
 def attach_countries_in_usd(df_crop_value, df_countries, value_column='crop_provision_gep'):
@@ -87,9 +79,9 @@ def impute_missing_crop_values(df_crop_value, df_fao_values, year, area_code_by_
                                items, value_column='crop_provision_gep'):
     """FAOSTAT's missing current-USD values filled from the pollination chain's values table.
 
-    A pair with production and no value is a price gap, not absent production: FAOSTAT's
-    current-USD gross production value stops wherever its own USD producer-price series stops,
-    which is how India carries 2019 rice production and no 2019 rice value. The fill reads the
+    A pair with production and no reported current-USD value is filled rather than treated as
+    absent production; India, for example, carries 2019 rice production and no 2019 rice value.
+    Why FAOSTAT leaves a value missing is not established here. The fill reads the
     value the pollination chain already computes and stages -- production tonnes times that
     year's producer price in USD, the price falling back country to subregion to region to
     world -- so the two services value a crop one way and this module adds no price code of its
@@ -163,50 +155,23 @@ def impute_missing_crop_values(df_crop_value, df_fao_values, year, area_code_by_
     return pd.concat([df, new_rows], ignore_index=True)
 
 
-def drop_fills_under_group_totals(df_crop_value, aggregate_items, membership_df,
-                                  country_column='area_code', value_column='crop_provision_gep'):
-    """Remove imputed items that a retained FAOSTAT group total already values.
+def items_without_group_totals(items, aggregate_items):
+    """The commercial item list with every FAOSTAT group total taken out, in every country.
 
-    drop_aggregates_where_components_exist keeps a country-year's group totals where none of
-    their members is individually valued (India and Argentina in 2019). impute_missing_crop_values
-    then fills individual items for such country-years, so an imputed rice would be counted again
-    on top of a retained "Cereals, primary". A fill is therefore removed exactly when its item is
-    a MEMBER of a retained group total with a nonmissing value in the same country-year. A fill of
-    an item no retained group contains stays: India's wheat is not inside "Roots and Tubers,
-    Total", and a group row whose value is missing values nothing.
+    A group total ("Oilcrops Primary", "Roots and Tubers, Total", "Sugar Crops Primary") adds up
+    crops the list also carries, so counting it beside them counts those crops twice. Taking it out
+    of the list keeps it out of the reported values and out of the gaps the fill looks for alike,
+    and lets the fill value its member crops wherever FAOSTAT reports production without a value.
 
     Args:
-        df_crop_value (pd.DataFrame): the frame after both steps, with crop, crop_code, year,
-            value_source and the value column.
-        aggregate_items (iterable): the group-total item names.
-        membership_df (pd.DataFrame): the FAOSTAT item-group membership, as staged or normalized.
-        country_column (str): the column identifying the country.
-        value_column (str): the value column that decides whether a group total is nonmissing.
+        items (iterable): the configured item names.
+        aggregate_items (iterable): the configured group-total names.
 
     Returns:
-        pd.DataFrame: the frame without the double-counted fills.
+        list: the items, in their configured order, without the group totals.
     """
-    from global_invest import utilities
-    members = utilities.faostat_item_group_members(membership_df)
-    df = df_crop_value.reset_index(drop=True)
-    codes = pd.to_numeric(df['crop_code'], errors='coerce')
-    carried = df['crop'].isin(set(aggregate_items)) & df[value_column].notna()
-    covered = (df.loc[carried, [country_column, 'year']]
-               .assign(item_group_code=codes[carried])
-               .dropna(subset=['item_group_code']))
-    covered['item_group_code'] = covered['item_group_code'].astype(int)
-    covered = (covered.merge(members, on='item_group_code')
-               [[country_column, 'year', 'item_code']].drop_duplicates())
-    filled = df['value_source'].astype(str).str.startswith('price_')
-    fill_rows = (df.loc[filled, [country_column, 'year']]
-                 .assign(item_code=codes[filled]).dropna(subset=['item_code']))
-    fill_rows['item_code'] = fill_rows['item_code'].astype(int)
-    fill_rows['row'] = fill_rows.index
-    to_drop = fill_rows.merge(covered, on=[country_column, 'year', 'item_code'])['row']
-    return df[~df.index.isin(to_drop)]
-
-
-
+    aggregates = set(aggregate_items)
+    return [item for item in items if item not in aggregates]
 
 
 # =================================================================================================
@@ -221,11 +186,11 @@ def drop_fills_under_group_totals(df_crop_value, aggregate_items, membership_df,
 #   05  valuation        = x the CWoN land rental rate, then deflated to the base year by CPI
 #   00  delivery         = the base-year panel joined onto the account's country list
 #
-# Reproducing the reference is what makes a disagreement with it worth stating, which is the lesson
-# pollination taught: the coffee split was only actionable because both sides ran the same numbers.
-# What the reproduction cannot test is an error the reference makes that this makes too -- so where
-# we found one, the account publishes our arithmetic and the reference's is published beside it.
-# `subsistence_own_consumption` computes both in one pass for exactly that reason.
+# Reproducing the reference is what makes a disagreement with it worth stating: a disagreement is
+# only actionable when both sides run the same numbers. What the reproduction cannot test is an
+# error the reference makes that this makes too -- so where one is known, the account publishes its
+# own arithmetic and the reference's beside it. `subsistence_own_consumption` computes both in one
+# pass for exactly that reason.
 # =================================================================================================
 
 # FAO RuLIS stacks four indicators in one export. The one beside this is the share of agricultural
@@ -397,8 +362,8 @@ def subsistence_own_consumption(df_rulis, df_wb_hist, df_area_value, df_income, 
     sources: FAOSTAT reports cropland in THOUSANDS of hectares against an intensity per SINGLE
     hectare, and the Lowder share is a PERCENTAGE that is never divided by 100. The single /100
     converts only the own-consumption share. The two errors compound to a factor of ten, and this
-    reproduces it deliberately -- `subsistence_own_consumption_corrected` is the same chain with the
-    units read as the sources label them.
+    reproduces it deliberately -- the `own_con_corrected` column is the same chain with the units
+    read as the sources label them.
 
     Args:
         df_rulis (pd.DataFrame): the FAO RuLIS export.
@@ -838,7 +803,7 @@ def agricultural_ppp_factors(df_area_value, df_value_of_production, df_income, y
     that, which holds for the Value of Production table. It does not hold for the production
     intensity this component multiplies by: FAOSTAT publishes `Value of agricultural production
     (Int. $) per Area` only in international dollars, so there is no current-US$ version to read
-    instead and the subsistence estimate came out in the wrong currency.
+    instead, and multiplying by it unconverted puts the estimate in international dollars.
 
     No external conversion table is needed, because FAOSTAT publishes the same quantity both ways.
     Agricultural land times the intensity is total agricultural output in international dollars;

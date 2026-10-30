@@ -8,8 +8,8 @@ collapse coincide).
 The flow engine windows by COUNTRY where the source windows by parameter group. The maths is
 pixel-local within the fixed 50 km cutoff and the country ids partition every group's pixels,
 so the two give the same flows (convolution is linear over the partition); a test pins that on
-a shared toy grid. What the change buys: a worldwide archetype group's window is the whole
-globe, a country's window is the country plus a 50 km buffer. Convolutions run in memory
+a shared toy grid. Country windows are smaller: a worldwide archetype group's window is the
+whole globe, a country's window is the country plus a 50 km buffer. Convolutions run in memory
 (scipy fftconvolve) on those windows instead of through file-based tiles. The source also
 computes a global distance-to-site transform its engine never reads; that step is not ported.
 
@@ -63,9 +63,12 @@ def extract_high_quality_sites(ranked_sites_path, output_path):
 
 
 def dissolve_high_quality_sites(hq_sites_path, output_path, site_sizes_path):
-    """Contiguous high-quality pixels labelled into discrete sites (8-connected), so a large
-    park is one destination rather than many independent site pixels. Writes the site-id
-    raster (0 = not a site, 1..N = site id) and a per-site pixel-count table."""
+    """Contiguous high-quality pixels labelled into discrete sites (8-connected), for reporting.
+
+    The flows allocate to high-quality pixels. Within each distance band, trips are divided
+    equally among reachable high-quality pixels. The site table then sums each site's pixels.
+    Writes the site-id raster (0 = not a site, 1..N = site id) and a per-site pixel-count
+    table."""
     hq_nodata = pygeoprocessing.get_raster_info(hq_sites_path)['nodata'][0]
     ds = gdal.Open(hq_sites_path)
     hq_array = ds.GetRasterBand(1).ReadAsArray()
@@ -231,10 +234,12 @@ def calculate_recreation_flows(inputs, outputs, country_to_group_map, group_para
     """The banded flow model over per-country windows; maths as the source per pixel.
 
     Per population pixel with its country's (a, b): budget = pop * a; each band's share is
-    the closed-form CDF difference; a band's fixed budget splits evenly over the sites its
-    ring reaches (any country's sites -- the window is buffered by the cutoff); no reachable
-    site makes the share unmet; value prices the round trip to the band midpoint at the
-    origin country's per-km fuel cost; demand beyond the cutoff is unconditionally unmet.
+    the closed-form CDF difference; a band's fixed budget splits evenly over the high-quality
+    pixels its ring reaches (any country's pixels -- the window is buffered by the cutoff); no
+    high-quality pixel in reach makes the share unmet; value prices the round trip to the band
+    midpoint at the origin country's per-km fuel cost; demand beyond the cutoff is
+    unconditionally unmet. Visits and value land on the high-quality pixels, and
+    `write_site_table` then sums them over the dissolved sites.
 
     inputs: 'hq_sites', 'hq_sites_dissolved', 'population', 'country_id', 'country_costs'.
     outputs: 'visits', 'value', 'unmet' rasters; 'site_table', 'group_table',

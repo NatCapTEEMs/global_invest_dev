@@ -6,76 +6,116 @@ format:
     standalone: true
 ---
 
-Rainfall pattern regulation values the crop output supported by vegetation-derived moisture.
-The quantity is Shunkei's VMR share of crop water satisfaction — the part of the water a crop
-actually received that vegetation-regulated rainfall supplied — valued on the corrected 2019
-commercial crop-provision basis in the water_supply run, and reported AT THE RECEIVING COUNTRY,
-the agreed paper approach. The base year is 2019.
+Rainfall pattern regulation values the part of the crop rent attributed to vegetation-derived
+moisture: Shunkei's VMR coefficients applied to the 2019 commercial crop-provision values in the
+water_supply run, and reported AT THE RECEIVING COUNTRY, the agreed paper approach. The base
+year is 2019.
 
 ⚠ The published headline is an **intermediate contribution already inside crop provision, never
-an addition to it** — the same convention as agricultural water, whose basis it shares. The
-earlier construction (the water-supply irrigation and domestic GEP re-attributed to supplying
-countries) is RETIRED and is not published under any name; the sink-fraction machinery now
-serves only the source-side diagnostic below, whose source and sink totals agree by
-construction, and the task raises if they differ.
+an addition to it**, the same convention as agricultural water, whose basis it shares. It also
+overlaps agricultural water itself, because the VMR value is part of the green-water value.
+The earlier construction (the water-supply irrigation and domestic GEP re-attributed to
+supplying countries) is RETIRED and is not published under any name.
 
 ## Quantity
 
-The WAM2layers country-to-country sink-fraction matrix (Bakels and Wang-Erlandsson): cell
-$[i, j]$ is the fraction of column-country $j$'s 2019 precipitation that evaporated from
-row-country $i$'s land. A column sums to $j$'s terrestrial-origin share, below one because the
-remainder comes from the ocean. Read from the path recorded in `es_parameters.csv` as
-`moisture_recycling_sink_fraction_input_path`. Twelve destinations sit below the 0.5 degree
-tracking grid and carry all-NaN columns; their water value goes unattributed and the task names
-them and it.
+Shunkei's VMR coefficients, from his pinned pipeline (`Shunkei3/GEP-WaterUse-Agriculture` at
+`e229f881`, Code/3 lines 146-212). For each crop and country, the green water that satisfied
+the crop's requirement is split, grid cell by grid cell, into a part that originated as
+vegetation moisture recycling (VMR) and a non-VMR part, using his VMR grid table.
+`lambda_gn_rf_vmr` and `lambda_gn_ir_vmr` are then the Ky-weighted means, over growth stages, of
+the VMR-origin green-water satisfaction ratios on rainfed and on irrigated production.
+
+They are biophysical ratios, not water volumes and not shares of value. Applying them to a
+monetary value attributes that value in proportion, an assumption the method shares with
+agricultural water, not a measured rent.
 
 ## Price
 
-None of its own. The value is the water_supply run's VMR crop components by receiving country
-(`water_use_rainfed_vmr_gep` and `water_use_irrigated_vmr_gep`), read from the LIVE water table:
-an explicit `moisture_recycling_water_gep_path` wins, else
-`moisture_recycling_water_gep_relative_file` against the project directory, so the figure is as
-fresh as the last water_supply run and a stale copy cannot shadow it. The component columns are
-configuration (`moisture_recycling_water_gep_component_cols`).
+The basis is the account's 2019 commercial crop-provision value, the crop rent (FAOSTAT gross
+production value times CWoN's cropland rental rate), split into rainfed and irrigated parts by
+SPAM's production shares. It is not gross crop output. The water_supply run computes the two
+components, `lambda_gn_rf_vmr` times the rainfed basis and `lambda_gn_ir_vmr` times the
+irrigated basis, and publishes them by receiving country as `water_use_rainfed_vmr_gep` and
+`water_use_irrigated_vmr_gep`.
 
-## Attribution
-
-`moisture_recycling_ecosystem_share` scales the terrestrial evaporation credited to ecosystems.
-It is 1 in `es_parameters.csv`, counting all terrestrial evaporation; the transpiration-share
-decision that would lower it is open with the group.
+This service reads them from the LIVE water table: an explicit `moisture_recycling_water_gep_path`
+wins, else `moisture_recycling_water_gep_relative_file` against the project directory, so the
+figure is as fresh as the last water_supply run and a stale copy cannot shadow it. The resolved
+path is pinned before the reuse decision, so a new water table invalidates the saved result. The
+component columns are configuration (`moisture_recycling_water_gep_component_cols`).
 
 ## Valuation
 
-The headline is the receiving country's own VMR crop value: the two component columns summed per
-country, a country missing both staying missing.
-
-The source-side DIAGNOSTIC beside it runs the same value through `reattributed_water_value`:
-
-$$
-\text{GEP}_i = s \sum_j M_{ij} \, V_j
-$$
-
-where $M$ is the sink-fraction matrix, $V_j$ is destination $j$'s VMR crop value, and $s$ is the
-ecosystem share. The diagonal term is the own part (a country's moisture serving its own crops)
-and the rest the export part, with the destination-side view published as
-`moisture_recycling_sink_side_value`. The diagnostic answers where the value WOULD go if
-attributed to the countries whose evaporation supplied the rain; the headline stays at the
-receiver.
-
-`collapse_countries_to_r250` reduces the r264 correspondence to one canonical row per country
-before the join, and the published table carries every account country, NA where the matrix has
-no row.
+The headline, `moisture_recycling_gep`, is the receiving country's two VMR components summed,
+a country missing both staying missing. It does not use the WAM2layers matrix.
 
 ## Coverage
 
 The published table is one row for each of the account's 250 countries, base year 2019, in
-constant 2019 USD. Of the 250, 138 carry a value and 112 are missing, kept as missing rather
-than zero — the VMR pair is a subset of the agricultural water coverage (143), because five of
-its countries carry lambda components with no VMR observation. A zero means the computation
-returned zero; a missing row means the data to compute one is absent.
+constant 2019 USD. Of the 250, 158 carry a value and 92 are missing, kept as missing rather
+than zero. The VMR pair is a subset of the agricultural water coverage (164), because six of
+its countries (BHS, CYP, JAM, MLT, PRI, TTO) carry lambda components with no VMR observation.
+A zero means the computation returned zero, and a missing row means the data to compute one is
+absent. The headline equals the water table's two VMR columns summed per country, to within
+$1.2e-7 per country, with identical missing values.
+
+## Source-side diagnostic (WAM2layers), not the headline
+
+Beside the headline the task publishes a diagnostic: where the land-sourced part of that value
+would sit if it were credited to the countries whose evaporation supplied the rain.
+
+It uses the WAM2layers country-to-country sink-fraction matrix (Bakels and Wang-Erlandsson):
+cell $[i, j]$ is the fraction of column-country $j$'s 2019 precipitation that evaporated from
+row-country $i$'s land. A column sums to $j$'s terrestrial-origin share, below one because the
+remainder comes from the ocean. The matrix is read from `moisture_recycling_sink_fraction_input_path`.
+
+$$
+\text{source}_i = s \sum_j M_{ij} \, V_j
+$$
+
+where $V_j$ is destination $j$'s headline value and $s$ is `moisture_recycling_ecosystem_share`,
+the share of terrestrial evaporation credited to ecosystems. It is 1 in `es_parameters.csv`, and
+the transpiration-share decision that would lower it is open with the group. The diagonal term
+is the own part (a country's moisture serving its own crops), the rest the export part, and the
+destination-side view is published as `moisture_recycling_sink_side_value`.
+
+Three things affect the diagnostic only, never the headline:
+
+- countries carrying a VMR value but absent from the matrix, which it cannot place;
+- twelve destinations below the 0.5 degree tracking grid, whose matrix columns are all missing;
+- the ecosystem share $s$.
+
+Because the matrix columns sum below one, the diagnostic total is the land-sourced part of the
+headline, not the headline. The task checks that the source-side and destination-side totals of
+the diagnostic agree. That is one double sum computed two ways, not a conservation of the
+headline, so the diagnostic is not an allocation of the full headline value.
 
 ## Inputs
 
-All paths and parameters come from `es_parameters.csv` under the `moisture_recycling` service key:
-the sink-fraction matrix, the water-supply snapshot it re-attributes, the component column list,
-and the ecosystem share, each with a source row beside it.
+All paths and parameters come from `es_parameters.csv` under the `moisture_recycling` service
+key: the water-supply table, the component column list, the sink-fraction matrix and the
+ecosystem share, each with a source row beside it.
+
+## Taken as given
+
+Shunkei's VMR coefficients and his VMR grid table, at `e229f881`. Their derivation (his
+Code/3) is not reproduced here.
+
+## Against the authors' write-up
+
+The authors' rainfall write-up (28 October 2026: Sylla, Kakimoto, Ren, Bakels, Wang
+Erlandsson) matches this implementation's structure: the same VMR green-water coefficients on
+the SPAM-split crop basis, summed at the receiving country, reported as an intermediate
+contribution and never added, with transboundary attribution out of scope.
+
+Shunkei, who owns the shared pipeline, settled two earlier questions on 28 October 2026. The
+intended monetary base is commercial crop-provision value, and only FAOSTAT's Wheat and Millet
+items are divided among several crop categories, with no other group allocation. The account
+also removes FAOSTAT's group totals. His revised code is not yet published (his repository's
+main is still `e229f881`), so the library matches his stated intended method, and the revised
+code itself has not been checked.
+
+What remains specific to rainfall is the write-up's wording. It still calls the crop input the
+gross farm-gate production value and describes SPAM allocation of crop groups, so its authors
+need to confirm the commercial crop-provision base and bring the text into line.

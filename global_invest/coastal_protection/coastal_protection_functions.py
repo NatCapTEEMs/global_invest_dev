@@ -14,7 +14,8 @@ base year by the shared US CPI factor (utilities.usd_deflation_factor) and added
 ask on this service.
 
 Every function here is a pure transformation over frames, which is what the tests exercise. The
-task module reads the three workbooks and passes the frames in.
+task module reads the mangrove and coral-reef workbooks, the shared US CPI series and the list of
+countries the mangrove source excluded, and passes them in.
 """
 import logging
 
@@ -35,6 +36,11 @@ MANGROVE_AREA_COLUMN = 'mangrove_ha'
 MANGROVE_VALUE_PER_HA_COLUMN = 'value_per_ha_2019'
 MANGROVE_PUBLISHED_VALUE_COLUMN = 'annual_value_2019'
 
+# The published column naming what each country's total covers, and the label a country
+# carrying both fully measured components gets.
+COVERAGE_COLUMN = 'coastal_protection_coverage'
+BOTH_COMPONENTS_LABEL = 'mangrove and coral protection'
+
 
 def clean_mangrove_values(df_raw):
     """The mangrove protection value, computed from area times value per hectare.
@@ -42,8 +48,9 @@ def clean_mangrove_values(df_raw):
     The workbook publishes a finished annual value, but it also carries the two numbers that
     value is made of, so the value is computed here instead of read. A country missing either
     stays empty rather than becoming zero: no area or no price is not no protection. A zero
-    area is a measured zero even where the rate is missing, because zero habitat earns zero
-    whatever a hectare would have been worth.
+    area the table reports stays zero even where the rate is missing, because zero habitat earns
+    zero whatever a hectare would have been worth. Those zeros are source-reported, not all
+    independently measured (see combine_coastal_components).
 
     Args:
         df_raw (pd.DataFrame): the CWoN mangrove table as shipped, carrying countrycode, year,
@@ -57,8 +64,8 @@ def clean_mangrove_values(df_raw):
     area = pd.to_numeric(df[MANGROVE_AREA_COLUMN], errors='coerce')
     value_per_ha = pd.to_numeric(df[MANGROVE_VALUE_PER_HA_COLUMN], errors='coerce')
     df['Value'] = area * value_per_ha
-    # Zero mapped area is a measured zero whatever the rate column holds (0 x missing must
-    # not read as unknown). A missing area stays missing: no quantity is not no protection.
+    # A reported zero area stays zero whatever the rate column holds (0 x missing must not read
+    # as unknown). A missing area stays missing: no quantity is not no protection.
     df.loc[area == 0, 'Value'] = 0.0
     df['Value_published'] = pd.to_numeric(df[MANGROVE_PUBLISHED_VALUE_COLUMN], errors='coerce')
     logging.info(f'Finished cleaning up ({df.shape[0]} rows).')
@@ -75,7 +82,7 @@ def mangrove_gep_by_country(gdf_countries, df_mangrove_value):
     A country whose every row carries a missing value sums to missing, not zero (min_count=1);
     a partially measured country sums its measured rows alone. `mangrove_fully_measured` says
     whether every row the country contributed carried a value -- a partially measured country
-    keeps its measured sum but is not complete.
+    keeps its measured sum and its coverage label calls the component partial.
 
     Args:
         gdf_countries (pd.DataFrame): the r264 country correspondence.
@@ -120,60 +127,98 @@ def coral_reef_gep_by_country(gdf_countries, df_coral_reef_value, deflation_fact
     df['coral_reef_value'] = df['coral_reef_value'] * deflation_factor
     df['year'] = base_year
     # A value the table carries as missing stays missing: the country keeps a missing
-    # component (min_count=1) rather than disappearing into absence, and the flag says
-    # whether every surviving row carried a value. Until 2026-10-25 missing rows were
-    # dropped, which read as absence and earned a measured zero in the combine.
+    # component (min_count=1) instead of dropping out. The flag says whether every surviving
+    # row carried a value.
     df = (df.groupby(['iso3_r250_label', 'year'], as_index=False, dropna=False)
             .agg(coral_reef_value=('coral_reef_value', lambda v: v.sum(min_count=1)),
                  coral_fully_measured=('coral_reef_value', lambda v: bool(v.notna().all()))))
     return df.rename(columns={'coral_reef_value': 'coastal_protection_gep_coral_reef'})
 
 
-def combine_coastal_components(df_mangrove, df_coral_reef):
-    """The two components on one row per country and year, plus two totals.
+def coverage_label(mangrove_part, coral_part):
+    """What a country's coastal-protection total covers, from its two component descriptions.
+
+    Args:
+        mangrove_part (str or None): 'mangrove', 'partial mangrove', or missing when the
+            component carries no value.
+        coral_part (str or None): 'coral', 'partial coral', or missing.
+
+    Returns:
+        str or None: '<a> and <b> protection' with both, '<a> protection only' with one, and
+        None with neither, so the label is missing exactly where the total is.
+    """
+    present = [part for part in (mangrove_part, coral_part) if isinstance(part, str)]
+    if len(present) == 2:
+        return f'{present[0]} and {present[1]} protection'
+    if len(present) == 1:
+        return f'{present[0]} protection only'
+    return None
+
+
+def combine_coastal_components(df_mangrove, df_coral_reef, mangrove_excluded_labels=()):
+    """The two components on one row per country and year, two totals and a coverage label.
 
     The join is outer because the two tables cover different countries. A component ABSENT
-    from its table is an absence of habitat and becomes a measured zero -- but only beside a
-    measured partner; beside a carried-missing partner it stays missing, so an unknown
-    country cannot acquire a value-shaped total from an absence fill. A component a table
-    carries as MISSING (area with no rate, or no area at all) stays missing.
+    from its table stays missing: the coral table lists 80 countries and leaves out some that
+    have reefs (Japan among them), so absence from a table is not evidence of zero protection.
+    A component a table carries as MISSING (area with no rate, or no area at all) stays missing
+    too. A zero the source table reports (zero mapped mangrove area) is preserved. Those zeros
+    are source-reported, not all independently measured: the source's processing writes zero
+    area for countries absent from its analysis, and 17 of the 18 countries it removed for
+    holding under 100 ha keep that zero while their interpretation is open (the 18th, Anguilla,
+    is in neither table).
 
-    coastal_protection_gep is the known-component total: the sum of what is measured, a lower
-    bound where a component is missing (the missing component column marks which countries),
-    and missing only where nothing is measured. coastal_protection_gep_complete carries the
-    total only where every component is known, so the two columns' sums state the complete
-    and known-component account totals side by side.
+    A country on the mangrove exclusion list was removed from the source's analysis, so its
+    mangrove component is missing whatever its row shows: the source's own processing writes
+    zero area for countries absent from its analysis. Each listed country must carry no
+    positive mangrove value, so a list written for another table version fails instead of
+    blanking a measured value.
+
+    coastal_protection_gep is the known-component total: the sum of what is measured, missing
+    only where nothing is. COVERAGE_COLUMN names what that total covers ('mangrove and coral
+    protection', 'coral protection only', 'mangrove protection only', with 'partial' before a
+    component measured on only some of a split country's rows) and is missing where the total
+    is. Mangroves and coral reefs are not the only habitats that protect coasts, so even both
+    components are not all of nature's coastal protection: the label states which of the two
+    modelled components the total covers, not that it is complete.
+    coastal_protection_gep_both_components carries the total only where both components are
+    fully measured.
 
     Args:
         df_mangrove (pd.DataFrame): iso3_r250_label, year, coastal_protection_gep_mangrove.
         df_coral_reef (pd.DataFrame): iso3_r250_label, year, coastal_protection_gep_coral_reef.
+        mangrove_excluded_labels (iterable): iso3_r250 labels the mangrove source removed from
+            its analysis.
 
     Returns:
         pd.DataFrame: both components, the known-component sum as coastal_protection_gep, the
-        complete-countries sum as coastal_protection_gep_complete, and a Value copy of the
-        known-component sum for the shared reporting templates.
+        both-components sum as coastal_protection_gep_both_components, the coverage label, and
+        a Value copy of the known-component sum for the shared reporting templates.
+
+    Raises:
+        ValueError: if a listed country carries a positive mangrove value.
     """
-    df = pd.merge(df_mangrove, df_coral_reef, how='outer', on=['iso3_r250_label', 'year'],
-                  indicator=True)
     m, c = 'coastal_protection_gep_mangrove', 'coastal_protection_gep_coral_reef'
-    # A component absent from its table is an absence of habitat, worth a measured zero --
-    # but only beside a measured partner. Beside a carried-missing partner the absence zero
-    # would turn an unknown country into a value-shaped total, so it stays missing there.
-    df.loc[(df['_merge'] == 'left_only') & df[m].notna(), c] = 0.0
-    df.loc[(df['_merge'] == 'right_only') & df[c].notna(), m] = 0.0
-    df = df.drop(columns='_merge')
-    # Known-component total: the sum of what is measured, a lower bound where a component is
-    # missing (the missing component column says which); missing only when nothing is measured.
+    excluded = set(mangrove_excluded_labels)
+    valued = df_mangrove.loc[df_mangrove['iso3_r250_label'].isin(excluded) & (df_mangrove[m] > 0),
+                             'iso3_r250_label']
+    if len(valued):
+        raise ValueError('listed as excluded from the mangrove analysis but the table carries a '
+                         f'positive value: {sorted(set(valued))} -- the list does not match this table')
+    df = pd.merge(df_mangrove, df_coral_reef, how='outer', on=['iso3_r250_label', 'year'])
+    df.loc[df['iso3_r250_label'].isin(excluded), m] = float('nan')
     df['coastal_protection_gep'] = df[[m, c]].sum(axis=1, min_count=1)
-    # Complete total: only where every component the country carries is known, down to the
-    # row level -- a partially measured country shows its known-component total and no
-    # complete one. A coral-only country has no mangrove rows; absence is knowledge.
-    fully = pd.Series(True, index=df.index)
-    for flag in ('mangrove_fully_measured', 'coral_fully_measured'):
-        if flag in df.columns:
-            fully &= df[flag].fillna(True)
-    df['coastal_protection_gep_complete'] = df['coastal_protection_gep'].where(
-        df[m].notna() & df[c].notna() & fully)
+    # Each component described as measured, partly measured (some of a split country's rows
+    # carried no value) or missing, then the two descriptions combined into the label.
+    parts = {}
+    for column, name, flag in ((m, 'mangrove', 'mangrove_fully_measured'),
+                               (c, 'coral', 'coral_fully_measured')):
+        # A component absent from its table has no flag; only an explicit False marks it partial.
+        fully = df[flag].ne(False) if flag in df.columns else pd.Series(True, index=df.index)
+        parts[name] = fully.map({True: name, False: 'partial ' + name}).where(df[column].notna())
+    df[COVERAGE_COLUMN] = [coverage_label(a, b) for a, b in zip(parts['mangrove'], parts['coral'])]
+    df['coastal_protection_gep_both_components'] = df['coastal_protection_gep'].where(
+        df[COVERAGE_COLUMN] == BOTH_COMPONENTS_LABEL)
     df = df.drop(columns=['mangrove_fully_measured', 'coral_fully_measured'], errors='ignore')
     df['Value'] = df['coastal_protection_gep']
     return df

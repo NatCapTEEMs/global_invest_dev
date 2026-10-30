@@ -8,15 +8,15 @@ base_data/global_invest/stormwater/run_recipe.md records the run's configuration
 The tasks module reads the per-country table those two steps produce, and the function below
 prices it.
 
-The run's replacement cost is 1 USD/m3, a placeholder rather than a valuation. The intended
-price per cubic metre is the open ask, held in one named constant until the author answers.
+The run's replacement cost is 1 USD/m3, a placeholder rather than a valuation, held in one
+named constant. The intended price per cubic metre is unresolved.
 """
 
 import numpy as np
 
 
-# The committed InVEST configuration prices retention at 1 USD/m3. That is a placeholder
-# (the ask on the status sheet); every output built on it is provisional by construction.
+# The committed InVEST configuration prices retention at 1 USD/m3. That is a placeholder, so
+# every output built on it is provisional.
 STORMWATER_PRICE_PER_M3_PLACEHOLDER = 1.0
 
 

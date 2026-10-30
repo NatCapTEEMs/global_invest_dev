@@ -8,9 +8,18 @@ bibliography: references.bib
 
 Value the carbon held in the world's three mapped coastal blue-carbon habitats (mangrove, salt
 marsh and seagrass) as part of Gross Ecosystem Product. The quantity is mapped habitat area
-multiplied by a per-habitat carbon density; the price is the same annual rental social cost of
+multiplied by a per-habitat carbon density. The price is the same annual rental social cost of
 carbon that terrestrial carbon storage is valued at [@parisa2022]. The service values storage
 only. The figure it reports is the carbon standing in the base year, not a flow between years.
+
+## Source
+
+The write-up is `Global_Climate_Regulation_Coastal_Carbon.docx` in the shared folder of current
+write-ups (version of 28 October 2026). The authors' current code is the `develop_yanxu` branch at
+`eff0d0b` (2 September 2026), which deepens soil carbon to the top 30 cm and replaces the seagrass
+extent with GlobalSeagrass2019_2020. The library implements the earlier version described below,
+with soil to 20 cm and the UNEP-WCMC seagrass polygons. Integrating the two changes is the
+account's own task.
 
 ## Method
 
@@ -21,12 +30,12 @@ Each habitat comes from its own published extent map, read as polygons:
 | Habitat | Extent |
 |---|---|
 | Mangrove | Global Mangrove Watch v3, 2019 [@bunting2018; @bunting2022] |
-| Salt marsh | GLC_FCS30D 2019, a 30 m land-cover product; the marsh class extracted to `global_salt_marsh2019.gpkg` [@zhang2024] |
+| Salt marsh | GLC_FCS30D 2019, a 30 m land-cover product, with the marsh class extracted to `global_salt_marsh2019.gpkg` [@zhang2024] |
 | Seagrass | UNEP-WCMC013-014 SeagrassPtPy v7.1 [@unepwcmc2021] |
 
 Seagrass is optional at the tree level (`include_seagrass`). A tree built with seagrass but no
 extent file raises rather than running, so a data gap cannot quietly understate the coastal
-total; a tree built without seagrass writes every seagrass column at zero, so the combined table
+total. A tree built without seagrass writes every seagrass column at zero, so the combined table
 has the same shape either way.
 
 ### Aggregation surface
@@ -55,14 +64,14 @@ IPCC zone-specific root-to-shoot ratio [@ipcc2014]: 0.49 in the wet tropics, 0.2
 tropics, 0.96 subtropical, with the tropical boundary at |lat| = 23.5° and the wet/dry split at
 2000 mm mean annual precipitation. Biomass converts to carbon at 0.48 for AGB [@hamilton2018] and
 0.39 for BGB [@howard2014]. Soil carbon is read from the Sanderman 30 m mangrove soil map
-[@sanderman2018]. Where no precipitation raster is supplied the whole tropics take the wet ratio;
-where no soil raster is supplied, soil falls back to a latitude step function running from 80
+[@sanderman2018]. Where no precipitation raster is supplied the whole tropics take the wet ratio.
+Where no soil raster is supplied, soil falls back to a latitude step function running from 80
 Mg C/ha at the equator down to 50 Mg C/ha poleward of 25°.
 
 **Salt marsh.** Above-ground biomass is the Chmura median of 5 t/ha [@chmura2003], raised by a
 factor of 1.2 below |lat| = 25° for tropical productivity. Below-ground biomass is 2.5 times AGB,
 for the extensive root systems of tidal marsh. Carbon fractions are 0.45 for AGB and 0.41
-for BGB. Soil carbon is read from the Maxwell MarSOC map of tidal marsh soils [@maxwell2024]; the
+for BGB. Soil carbon is read from the Maxwell MarSOC map of tidal marsh soils [@maxwell2024]. The
 fallback step function runs the other way from mangrove, 36 Mg C/ha in the tropics up to 70
 Mg C/ha poleward of 45°.
 
@@ -131,7 +140,7 @@ each guard against counting the same coast twice:
 Step 1 above is a choice, not a cleanup. Valuing every r566 row instead of the `_EEZ` rows returns
 a strictly larger total, and the gap is exactly the non-EEZ rows, the same coastal habitat
 counted again under a land or territorial label. The two totals answer different questions. What
-the module writes is the EEZ-only figure; the all-rows figure is what summing the r566 table
+the module writes is the EEZ-only figure. The all-rows figure is what summing the r566 table
 gives, and the module does not compute it. The arithmetic of the distinction is pinned in
 `test_eez_only_is_a_strict_subset_of_all_rows`.
 
@@ -145,8 +154,8 @@ produces. Which source each run used is written to the log at the point the rast
 
 Per habitat, in the habitat's own task directory:
 
-- `<habitat>_area_by_countries2019.{gpkg,csv}` (hectares per marine region.
-- `<habitat>_carbon_stock_by_countries2019.csv`) the four stock pools per marine region (Mg C).
+- `<habitat>_area_by_countries2019.{gpkg,csv}`, hectares per marine region.
+- `<habitat>_carbon_stock_by_countries2019.csv`, the four stock pools per marine region (Mg C).
 - `<habitat>_storage_value_by_countries2019.csv`, the stock pools priced (USD), with the year and
   the rental SCC used.
 
@@ -154,7 +163,31 @@ Then, across habitats:
 
 - `combined_ecosystem_areas.csv`, every habitat's area and stock on one row per marine region,
   plus total coastal area and total carbon stock.
-- `gep_by_country_base_year_r566.{csv,gpkg}` (the marine-surface GEP detail.
-- `gep_by_country_base_year.csv`) one row per country, the service's GEP result.
+- `gep_by_country_base_year_r566.{csv,gpkg}`, the marine-surface GEP detail.
+- `gep_by_country_base_year.csv`, one row per country, the service's GEP result.
+
+## Coverage
+
+The published table is one row for each of the account's 250 countries, base year 2019, in 2019
+USD, at the 2019 rental rate of \$13.19 per Mg C. 162 carry a value, totalling
+\$17,721,915,148.24, and 88 are zero: countries with no EEZ row, or whose EEZ rows hold none of
+the three mapped habitats. None is missing.
+
+## Reproduction
+
+The authors' submitted per-country file matches the library's EEZ-side areas for mangrove and
+salt marsh in all 250 countries, within 3e-8 ha. Seagrass differs, 13.43 Mha in their file
+against the library's 50.35 Mha, from the newer extent data and soil depth above. Their total is
+\$6.60bn against the library's \$17.72bn. The values are not reproduced.
+
+## What is open
+
+- Integrating the authors' September changes, the 30 cm soil depth and the GlobalSeagrass2019_2020
+  extent, both in `eff0d0b`. This is the account's own task, so no question goes to the authors.
+- The overlaps (review decision 13). The UNEP-WCMC seagrass polygons overlap one another, which
+  inflates the seagrass extent about 1.8 times inside the published value. Spawn biomass is
+  positive at sampled mangrove points, so mangrove biomass may also be counted in terrestrial
+  carbon, but that overlap is not quantified. Whether and how the account nets these out is
+  open, together with the EEZ-only scope above.
 
 ## References

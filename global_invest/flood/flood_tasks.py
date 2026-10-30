@@ -15,8 +15,8 @@ one place that decides where a file lives, so every task sees the same layout ho
 task wrappers at the end are the seam `flood_initialize` grafts onto a task tree.
 """
 # The pipeline runs in five sections, A to E. Outputs are named for what they hold;
-# reference/output_provenance.csv maps each output to the committed reference file it is
-# compared against.
+# base_data's global_invest/flood/output_provenance.csv maps each output to the committed
+# reference file it is compared against.
 from __future__ import annotations
 
 import glob
@@ -45,22 +45,10 @@ import matplotlib
 matplotlib.use("Agg")  # HPC batch nodes have no display
 import matplotlib.pyplot as plt
 
+import hazelbean as hb
+
 from global_invest.flood import flood_functions as ff
 from global_invest import utilities
-
-
-# =============================================================================
-# SHARED PROJECT PATHS (defined ONCE -- see design note above)
-# =============================================================================
-# Machine-specific, so es_parameters owns it. Every path below is derived from it.
-
-
-# The return periods the damage integral runs over. es_parameters owns it: dropping one
-# changes EAD without changing anything a run reports.
-
-
-
-import hazelbean as hb
 
 
 # Raster-window helpers: they take a rasterio dataset or a Window rather than
@@ -107,20 +95,6 @@ def _amp_tile(amp_src, shape, transform, crs) -> Optional[np.ndarray]:
         src_nodata=amp_src.nodata, dst_nodata=np.nan,
     )
     return np.maximum(np.where(np.isfinite(field), field, 1.0), 1.0).astype("float32")
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 ESA_TO_SDA = {
@@ -172,9 +146,6 @@ def documented_protection_iso3(p):
     return set(evidence[column].astype(str).str.upper().str.strip())
 
 
-
-
-
 def _download(url: str, dst: str) -> None:
     from urllib.request import urlretrieve
 
@@ -205,7 +176,7 @@ def _extract_zip(zip_path: str, out_dir: str) -> List[str]:
             z.extract(m, out_dir)
             nested = os.path.join(str(out_dir), m)
             if hb.path_exists(nested) and nested != out_path:
-                nested.rename(out_path)
+                os.replace(nested, out_path)
             extracted.append(out_path)
     hb.log(f"[OK]  extracted {len(extracted)} tif(s)")
     return extracted
@@ -593,10 +564,6 @@ def prepare_all_inputs(p, skip_download: bool = False) -> dict:
     return results
 
 
-
-
-
-
 def _required(p, attribute, _unused_default=None):
     """A setting es_parameters owns. No code default: a missing row must fail, not be guessed."""
     if not hasattr(p, attribute):
@@ -604,8 +571,6 @@ def _required(p, attribute, _unused_default=None):
             '%s is not set. It belongs in es_parameters.csv under the flood service; a default here '
             'would decide the run silently.' % attribute)
     return getattr(p, attribute)
-
-
 
 
 SDA_CODE_VERSION = "2025-12-15_sda_step2_smartskip_v2_depth_inputs"
@@ -826,14 +791,11 @@ def process_country(
     return df
 
 
-
-
 def _service_flow_stats(p, iso3: str, rp: int, sda_class_file: str,
                         sda_mask_file: str, flow_file: str) -> dict:
     """
-    Read stats back off the written rasters. Doing it this way (rather than
-    from the in-memory arrays) means --skip-done runs still populate the global
-    summary CSV, instead of reporting "no outputs produced" as older versions did.
+    Read stats back off the written rasters rather than the in-memory arrays,
+    so --skip-done runs still populate the global summary CSV.
     """
     with rasterio.open(sda_class_file) as csrc, \
          rasterio.open(sda_mask_file) as msrc, \
@@ -969,14 +931,7 @@ def compute_service_flow_global(p, iso3_list: Optional[List[str]] = None) -> str
     return p.flood_service_flow_path
 
 
-
-
 DEPTH_BINS_M = [0, 0.5, 1, 1.5, 2, 3, 4, 5, 6]
-
-
-
-
-
 
 
 # The three counterfactuals and the suffix each writes into a file name. The keys are the
@@ -1098,8 +1053,8 @@ def load_canonical_eur_table(canonical_eur: str, audit_dir: Optional[str] = None
        -> returned as-is (ensuring required columns exist)
 
     NOTE:
-    Your canonical file often is WIDE with depth columns; it will NOT have
-    'depth_m' and 'damage_per_m2' as columns. This function handles that.
+    The canonical file is usually WIDE, with depth columns and no 'depth_m' or
+    'damage_per_m2' column.
     """
     df = pd.read_csv(canonical_eur)
     df = df.map(ff.clean_missing)
@@ -1187,7 +1142,7 @@ def build_canonical_from_components(
       - iso3
       - LandType
       - max_damage_eur_m2   (or similar)
-    (Your fixed file is: jrc_max_damage_values_long_with_iso3.csv)
+    (the staged file is jrc_max_damage_values_long_with_iso3.csv)
 
     ISO3->REGION must contain:
       - iso3
@@ -1304,9 +1259,9 @@ def assert_every_landtype_is_priced(eur_long):
     """Every land type must carry a damage above zero at some depth, or say which does not.
 
     A land type whose whole curve is zero is priced at nothing in every country and at every
-    depth, and the run still writes a complete table for all 250 countries. That is what makes
-    it worth checking rather than assuming: a `Residential` curve of zeros produced a global
-    expected annual damage of $17.6bn against $887.8bn, with no error and no empty output.
+    depth, and the run still writes a complete table for all 250 countries, so nothing else
+    shows it: a `Residential` curve of zeros cuts global expected annual damage from $887.8bn to
+    $17.6bn with no error and no empty output.
 
     Args:
         eur_long (pandas.DataFrame): `landtype` and `damage_per_m2`, in EUR2010 per m2.
@@ -1331,9 +1286,8 @@ def assert_every_sda_type_is_priced(curves, path):
 
     The companion to `assert_every_landtype_is_priced`, on the other path into the valuation:
     4A can be skipped, and then the table is read rather than built, so a prepared table that is
-    flat zero for a class is never seen by the builder's guard. Built-up is the class this
-    happened to and the one that dominates the account, so an unpriced class is worth stopping
-    for wherever the table came from.
+    flat zero for a class is never seen by the builder's guard. Built-up dominates the account,
+    so an unpriced class is worth stopping for wherever the table came from.
 
     Args:
         curves (dict): {(iso3, sda_type): (depths, damages)}, from `load_damage_table_wide`.
@@ -1364,14 +1318,14 @@ def build_damage_tables(p):
     Cropland's curve is copied to pasture when `flood_set_pasture_equal_crop` is set, which is the
     JRC default: pasture has no curve of its own.
 
-    The staged inputs cannot currently price buildings, and the guard below stops the run rather
-    than letting it report the shortfall as a number. `jrc_fractional_curves_long.csv` holds a
-    zero at all nine depths for `GLOBAL` crossed with `Residential buildings` while every other
-    region carries a real curve, and `country_landtype_flood_damage_JRC_EUR_m2.csv` puts all 214
-    countries in `GLOBAL`. Building from the components instead does not avoid it, since that is
-    where the hole is. Until the region assignment or that curve is corrected, 4A must read a
-    table built some other way -- which is how the run that matched the published $887.8bn got
-    its built-up damages.
+    The staged inputs cannot price buildings, and the guard below stops the run rather than
+    letting it report the shortfall as a number. `jrc_fractional_curves_long.csv` holds a zero at
+    all nine depths for `GLOBAL` crossed with `Residential buildings` while every other region
+    carries a real curve, and `country_landtype_flood_damage_JRC_EUR_m2.csv` puts all 214
+    countries in `GLOBAL`. Building from the components does not avoid it, since the hole is in
+    the components. While the region assignment or that curve stands, the valuation needs a
+    table built some other way, which is where the run matching the published $887.8bn took its
+    built-up damages.
     """
     multiplier = load_combined_multiplier(factors_csv=p.flood_currency_factors_path, factors_json=None)
     eur_long = load_canonical_eur_table(p.flood_canonical_eur_path,
@@ -1409,6 +1363,52 @@ def build_damage_tables(p):
            % (len(sector_long), len(sda_long), float(multiplier)))
     return p.flood_sda_damage_wide_path
 
+
+def rebuild_sda_damage_table(src_path, expected_sha256, multiplier, out_path):
+    """Write the authors' SDA depth-damage table from the JRC country land-type curves.
+
+    The source is checked against its recorded sha256 before it is read, so a replaced workbook
+    stops the run instead of changing every damage quietly. A provenance record (source, hashes,
+    multiplier, depths, counts) is written beside the table.
+
+    Args:
+        src_path (str): country_landtype_depth_damage.xlsx.
+        expected_sha256 (str): the hash es_parameters records for it.
+        multiplier (float): the EUR2010 to USD2019 factor.
+        out_path (str): where the wide table goes.
+
+    Returns:
+        str: out_path.
+
+    Raises:
+        ValueError: if the source's hash is not the recorded one.
+    """
+    found = utilities.sha256_file(str(src_path))
+    if found != str(expected_sha256).strip().lower():
+        raise ValueError(f'{src_path} has sha256 {found}, not the recorded {expected_sha256}')
+    table = ff.sda_curves_from_landtype_depth_table(pd.read_excel(str(src_path), sheet_name=0),
+                                                    multiplier, DEPTH_BINS_M)
+    utilities.write_csv(table, out_path)
+    cols = [ff._fmt_depth_col(d) for d in DEPTH_BINS_M]
+    artif = table[table['sda_type'] == 'artif']
+    record = {
+        'source': str(src_path),
+        'source_sha256': found,
+        'recipe': ('global_flood_gep c0e49dd counterfactual/rebuild_damage_table.py at its '
+                   'defaults: land-use basis, residential urban, no roads, pasture = crop'),
+        'multiplier_eur2010_to_usd2019': float(multiplier),
+        'depth_bins_m': list(DEPTH_BINS_M),
+        'rows': int(len(table)),
+        'countries': int(table['iso3'].nunique()),
+        'artif_curves_nonzero': int((artif[cols].abs().sum(axis=1) > 0).sum()),
+        'table_sha256': utilities.sha256_file(out_path),
+    }
+    hb.write_to_file(json.dumps(record, indent=2, sort_keys=True),
+                     os.path.splitext(out_path)[0] + '_provenance.json')
+    hb.log('Step 4A (rebuilt table): %d rows, %d countries, %d with a non-zero artif curve'
+           % (record['rows'], record['countries'], record['artif_curves_nonzero']))
+    return out_path
+
 def load_damage_table_wide(path: str) -> Dict[Tuple[str, str], Tuple[np.ndarray, np.ndarray]]:
     """Load the wide SDA damage curves into {(iso3, sda_type): (depths, damages)}."""
     df = pd.read_csv(path)
@@ -1431,7 +1431,10 @@ def load_damage_table_wide(path: str) -> Dict[Tuple[str, str], Tuple[np.ndarray,
 
 
 def _find_depth_raster(p, rp: int) -> Optional[str]:
-    for pattern in (f"*rp{rp}y*matchLULC*.tif", f"*rp{rp}*matchLULC*.tif", f"*rp{rp}*.tif"):
+    # [!0-9] after the number: without it the fallbacks let rp50 match the rp500 file (and rp10
+    # the rp100 one) whenever the exact file is missing, and the damage reads the wrong depths.
+    for pattern in (f"*rp{rp}y*matchLULC*.tif", f"*rp{rp}[!0-9]*matchLULC*.tif",
+                    f"*rp{rp}[!0-9]*.tif"):
         hits = sorted(glob.glob(os.path.join(p.flood_depth_aligned_path, pattern)))
         if hits:
             return hits[0]
@@ -1488,23 +1491,20 @@ def compute_pixel_damages(p, iso3_list: Optional[List[str]] = None,
     scenario "degraded_insitu" / "degraded_bare"  depths amplified by A(i); see
                                                   the SCENARIO_SUFFIX note above
 
-    TILED READING -- WHY THIS FUNCTION LOOKS LIKE THIS
-    -------------------------------------------------
-    The original implementation clipped the whole country at once with
-    rio_mask(crop=True). That allocates several arrays the size of the country's
-    BOUNDING BOX, which is fine for compact countries and fatal for others.
+    TILED READING
+    -------------
+    Clipping the whole country at once with rio_mask(crop=True) allocates
+    several arrays the size of the country's BOUNDING BOX, which is fine for
+    compact countries and fatal for others.
 
     Norway's bounding box is 43,389 x 8,861 = 384 million pixels, because
     Svalbard stretches it to ~81 N -- almost all of that window is empty Arctic.
     Depth (float32) + SDA (int32) + damage (float32) + masks is 6-10 GB per
-    return period. At an 8 GB allocation it was OOM-killed, no damage-by-return-period CSV was
-    written, Step 4C recorded status="missing_damage_by_return_period" with ead=0, and Step 4D
-    reported the country as zero. Silent, plausible, and wrong: France,
-    Australia and Norway all appeared as legitimate zeros for this reason.
+    return period, beyond an 8 GB allocation.
 
     Reading in tiles makes peak memory a function of `tile`, not of country
     extent -- roughly 80 MB at the 2048 default. Russia, Canada, the USA and
-    every antimeridian country now run in the same footprint as Germany.
+    every antimeridian country run in the same footprint as Germany.
     """
     if scenario not in SCENARIO_SUFFIX:
         raise ValueError(f"scenario must be one of {tuple(SCENARIO_SUFFIX)}")
@@ -1513,7 +1513,7 @@ def compute_pixel_damages(p, iso3_list: Optional[List[str]] = None,
     utilities.assert_exists(
         p.flood_sda_damage_wide_path,
         "Run step 4A (build_damage_tables), or, if flood_skip_damage_tables is true because the "
-        "curves were built elsewhere, name that file in flood_sda_damage_wide_input_path.")
+        "curves were built elsewhere, name that file in flood_sda_damage_wide_path.")
     utilities.assert_exists(p.flood_sda_raster_path, "Global SDA raster is required (Section A).")
 
     curves = load_damage_table_wide(p.flood_sda_damage_wide_path)
@@ -1898,11 +1898,9 @@ def compute_ead_by_country(p, scenario: str = "current") -> pd.DataFrame:
     hb.log(f"[DONE] Step 4C [{scenario}]: ok={n_ok} / {len(iso3_dirs)}, "
           f"total EAD ${total:,.0f}")
 
-    # "ok" counts countries that completed, not countries that produced a number. On 2026-08-29
-    # this printed ok=250/250 while every country was $0, because the run had hydrated no config
-    # and there was nothing to value -- and the zero total flowed all the way into a published
-    # published GEP table without anything raising. A whole-world zero is never a real result, so it stops
-    # the run here rather than being discovered by comparing against someone else's figure.
+    # "ok" counts countries that completed, not countries that produced a number: a run that
+    # hydrated no config completes every country at $0. A whole-world zero is never a real
+    # result, so it stops the run here rather than flowing into the published GEP table.
     if not status_df.empty and total <= 0.0:
         raise ValueError(
             'Step 4C [%s] finished with %d of %d countries ok but a total EAD of $0. That is not a '
@@ -1911,9 +1909,8 @@ def compute_ead_by_country(p, scenario: str = "current") -> pd.DataFrame:
             'beside the calling script, so a runner in a subdirectory finds none.'
             % (scenario, n_ok, len(iso3_dirs)))
 
-    # A country whose step 4B did not finish has no EAD, which is not the same as an EAD of zero.
-    # Recording it as zero is what made France, Australia and Norway look like legitimate zeros
-    # after they were OOM-killed, so the failures stop the run and name themselves.
+    # A country whose step 4B did not finish (an out-of-memory kill, for one) has no EAD, which is
+    # not the same as an EAD of zero, so the failures stop the run and name themselves.
     failed = status_df[status_df["status"] != "ok"] if not status_df.empty else status_df
     if not failed.empty:
         by_status = failed.groupby("status")["iso3"].apply(lambda s: ", ".join(sorted(s)))
@@ -2046,7 +2043,7 @@ def export_global_results(p, df_countries):
         enrich = enrich.rename(columns={name_col: "country_name"})
 
     # region_wb from the shared country table, not from the geometry. Reading it off the boundary
-    # is what tied this step to one particular Admin0 file.
+    # would tie this step to one particular Admin0 file.
     countries = utilities.collapse_countries_to_r250(df_countries)
     region = countries[['iso3_r250_label', p.flood_region_col]].rename(
         columns={'iso3_r250_label': 'iso3'}) if p.flood_region_col in countries.columns else None
@@ -2258,9 +2255,9 @@ def run_gep_chain(p, skip_damage_tables: bool,
     then difference. Roughly triples Step 4B cost with both degraded scenarios,
     so it is a deliberate separate task rather than part of run_valuation_chain().
 
-    `skip_damage_tables` has no default here, and none in `run_valuation_chain`, because the two
-    carried opposite ones -- True here, False there -- so which curves a run used depended on
-    which chain reached them first. Both callers read it from es_parameters, where it belongs.
+    `skip_damage_tables` has no default here or in `run_valuation_chain`: defaults that differed
+    between the two would make which curves a run used depend on which chain reached them first.
+    Both callers read it from es_parameters, where it belongs.
     """
     out = {}
     if not skip_damage_tables:
@@ -2289,8 +2286,6 @@ def run_valuation_chain(p, df_countries, skip_damage_tables: bool) -> dict:
     out["by_country"] = export_global_results(p, df_countries)
     out["attributed"] = export_attributed_summary(p)
     return out
-
-
 
 
 def load_admin0(path: str, layer: Optional[str] = None) -> gpd.GeoDataFrame:
@@ -2485,29 +2480,18 @@ def publish_inputs(p):
     utilities.hydrate_es_parameters(p, 'flood', log=hb.log)
     utilities.initialize_country_paths(p)
 
-    # Optional companions: a blank es_parameters cell means it is not supplied, and the readers
-    # branch on None rather than on a path that happens not to exist.
     # Optional inputs: a blank es_parameters cell means the run does not use one, and the
     # readers branch on None. Without this a blank cell is skipped by hydration and the
     # attribute simply does not exist, which is an AttributeError deep in a task rather than
-    # a switch that reads as off -- roads did exactly that an hour into a run.
+    # a switch that reads as off.
     for optional in ('flood_protection_path', 'flood_protection_evidence_path',
                      'flood_roads_path', 'flood_pop_path'):
         value = getattr(p, optional, None)
         setattr(p, optional, str(value) if value else None)
-    # The scenarios to compute, named in es_parameters; SCENARIO_SUFFIX says what each is
-    # called on disk.
 
     if not hasattr(p, 'results'):
         p.results = {}
     return p
-
-
-
-
-
-
-
 
 
 # ---------------------------------------------------------------------------------------------
@@ -2517,9 +2501,10 @@ def task_prepare_flood_inputs(p):
     """
     Task wrapper for Section A: download and align the JRC flood depth
     rasters to the LULC grid, write the LULC -> SDA mapping JSON, build the
-    global SDA raster + audit legend, and QA the SPA raster. Originally
-    download_and_prep_jrc_flood_depth.ipynb, sda_step_2A_make_lulc_to_sda_
-    mapping_esa300.py, build_sda_from_esa300m.py and qa_spa_global_step1.py.
+    global SDA raster + audit legend, and QA the SPA raster. Ported from the
+    source scripts download_and_prep_jrc_flood_depth.ipynb, sda_step_2A_make_
+    lulc_to_sda_mapping_esa300.py, build_sda_from_esa300m.py and
+    qa_spa_global_step1.py.
     """
     publish_inputs(p)
     p.flood_qa_dir = os.path.join(p.cur_dir, 'qa_maps')
@@ -2530,10 +2515,10 @@ def task_prepare_flood_inputs(p):
     p.flood_depth_raw_path = os.path.join(p.cur_dir, 'floodplain_depth_raw')
     p.flood_depth_extract_path = os.path.join(p.flood_depth_raw_path, 'extracted_tifs')
     p.flood_depth_mask_path = os.path.join(p.cur_dir, 'floodplain_depth_masks')
-    # Section A PRODUCES these three. Publishing them under this task's directory is what stops
-    # the run writing into a staged input tree it does not own -- the first attempt died with a
-    # PermissionError doing exactly that. A configured copy still stands when this task is not
-    # the one producing them, which is how a valuation-only run reads an earlier Section A.
+    # Section A PRODUCES these three. Publishing them under this task's directory keeps the run
+    # from writing into a staged input tree it does not own. A configured copy still stands when
+    # this task is not the one producing them, which is how a valuation-only run reads an earlier
+    # Section A.
     for attribute, produced_name in (
             ('flood_sda_mapping_path', 'lulc_to_sda_mapping.json'),
             ('flood_sda_raster_path', 'sda_esa300m_artif_crop_pasture.tif'),
@@ -2620,7 +2605,7 @@ def task_build_sda(p):
     """
     Task wrapper for Section B: intersect economic assets (from LULC) with the
     floodplain (from depth rasters) to delineate Service Demanding Areas per
-    ISO3 x return period. Originally sda_step2_build_sda_global.py.
+    ISO3 x return period. Ported from the source script sda_step2_build_sda_global.py.
 
     The underlying script does its own smart-skip (signature hashing of inputs
     + options), so re-running is cheap; the guard here only short-circuits when
@@ -2630,7 +2615,7 @@ def task_build_sda(p):
     # Section C reads the per-country SDA rasters written here, so the directory is published
     # before the run_this guard: a skipped task still tells the later ones where its work is.
     # An es_parameters row wins, so a machine holding an earlier run's per-country tree points
-    # at it and skips Section B rather than rebuilding weeks of work in a fresh task directory.
+    # at it and skips Section B rather than rebuilding hours of work in a fresh task directory.
     p.flood_sda_country_dir = getattr(p, 'flood_sda_country_dir', None) or p.cur_dir
     p.flood_sda_summary_path = os.path.join(p.cur_dir, 'global_sda_summary_countries.csv')
     if not p.run_this:
@@ -2644,7 +2629,7 @@ def task_compute_service_flow(p):
     """
     Task wrapper for Section C: reproject the upstream SPA ratio onto the SDA
     grid and record the flood-regulation service flow fraction for each
-    ISO3 x RP. Originally serviceflow_step3_spa_to_sda_ratio_global.py.
+    ISO3 x RP. Ported from the source script serviceflow_step3_spa_to_sda_ratio_global.py.
     Writes global_service_flow_spa_to_sda.csv, which Section E maps.
     """
     publish_inputs(p)
@@ -2659,11 +2644,10 @@ def task_compute_service_flow(p):
     return True
 
 
-# Section D's outputs depend on more than their own existence. The chain was gated on one file
-# being present, so a rerun after any change to the curves, the depths or the skip flag reused
-# whatever was there: job 17589055 reported COMPLETED in 2h15m and returned the previous run's
-# figures in every digit, because the previous run's expected_annual_damage_by_country file
-# existed. Section B has had a signature for this since the source pipeline; Section D had none.
+# Section D's outputs depend on more than their own existence. Gated on one file being present,
+# a rerun after any change to the curves, the depths or the skip flag would reuse whatever was
+# there and return the previous run's figures. The signature records what produced them, as
+# Section B's does.
 SECTION_D_CODE_VERSION = '2026-08-31_valuation_signature'
 
 
@@ -2726,12 +2710,58 @@ def write_valuation_signature(p, signature):
                      valuation_signature_path(p))
 
 
+def resolve_sda_damage_wide_path(p):
+    """The SDA damage curves Section D reads.
+
+    A path es_parameters names wins. With `flood_skip_damage_tables` set the curves are an input,
+    and the table `task_rebuild_damage_table` writes is the one the authors' recipe produces.
+    Otherwise 4A writes its own table into the export directory. A blank es_parameters row
+    hydrates to nothing and falls through.
+
+    Args:
+        p: the ProjectFlow object.
+
+    Returns:
+        str: the path of the wide SDA damage table.
+    """
+    named = getattr(p, 'flood_sda_damage_wide_path', None)
+    if named:
+        return named
+    rebuilt = getattr(p, 'flood_rebuilt_sda_damage_wide_path', None)
+    if _required(p, 'flood_skip_damage_tables') and rebuilt:
+        return rebuilt
+    return os.path.join(p.flood_global_export_dir, 'damage_by_sda_usd2019_wide.csv')
+
+
+def task_rebuild_damage_table(p):
+    """Step 4A as the authors run it: the SDA damage table rebuilt from the JRC country curves.
+
+    The canonical components table `build_damage_tables` reads carries all-zero Residential
+    curves for every country, so urban land would take no damage. The authors rebuild the table
+    from `country_landtype_depth_damage.xlsx` and set `flood_skip_damage_tables` so 4A cannot
+    regenerate it from the defective source (global_flood_gep c0e49dd, docs/README.md and the
+    method note's section 11.6). The rebuild takes seconds and runs every time, so a changed
+    source cannot leave a stale table behind, and Section D's signature hashes the table it reads.
+    """
+    publish_inputs(p)
+    p.flood_rebuilt_sda_damage_wide_path = os.path.join(
+        p.cur_dir, 'damage_by_sda_usd2019_wide_rebuilt.csv')
+    if not p.run_this:
+        return True
+    multiplier = load_combined_multiplier(factors_csv=p.flood_currency_factors_path,
+                                          factors_json=None)
+    rebuild_sda_damage_table(p.flood_landtype_depth_damage_path,
+                             p.flood_landtype_depth_damage_sha256, multiplier,
+                             p.flood_rebuilt_sda_damage_wide_path)
+    return True
+
+
 def task_compute_flood_damages(p):
     """
     Task wrapper for Section D: the monetary chain 4A -> 4B -> 4C -> 4D.
     Builds USD2019 depth-damage tables, computes pixel-wise damages per return
     period, integrates them over exceedance probability into Expected Annual
-    Damage, and packages the global CSV/GPKG outputs. Originally
+    Damage, and packages the global CSV/GPKG outputs. Ported from the source scripts
     build_damage_table_USD2019.py, flood_gep_step4b_pixel_damage_USD2019.py,
     flood_gep_step4c_ead_USD2019_global.py and
     flood_gep_step4d_export_global_USD2019.py.
@@ -2750,20 +2780,12 @@ def task_compute_flood_damages(p):
         p.flood_global_export_dir, 'expected_annual_damage_by_country_with_service_flow_usd2019.csv')
     p.flood_gep_path = os.path.join(p.flood_global_export_dir, 'flood_gep_usd2019.csv')
     # Step 4A's four tables. These are outputs, so they belong to the task that writes them rather
-    # than to es_parameters, where they sat as blank rows -- which meant the attribute did not
-    # exist at all and 4B raised AttributeError on the guard meant to tell you 4A had not run.
+    # than to es_parameters, where a blank row would leave the attribute undefined.
     p.flood_damage_long_path = os.path.join(p.flood_global_export_dir, 'damage_by_landtype_usd2019_long.csv')
     p.flood_damage_wide_table_path = os.path.join(p.flood_global_export_dir, 'damage_by_landtype_usd2019_wide.csv')
     p.flood_sda_damage_long_path = os.path.join(p.flood_global_export_dir, 'damage_by_sda_usd2019_long.csv')
     # The wide SDA table is the exception, because it is only an output while 4A runs.
-    # `flood_skip_damage_tables` says the curves were built elsewhere, which makes this an input.
-    # Assigning it unconditionally overwrote the file es_parameters had already named, so a run
-    # configured to skip 4A looked in 4A's own empty output directory and stopped with "Run step 4A
-    # first" -- the one thing the operator had deliberately not done. A blank row still hydrates to
-    # nothing and falls through to the default, which is what the three tables above rely on.
-    p.flood_sda_damage_wide_path = (getattr(p, 'flood_sda_damage_wide_path', None)
-                                    or os.path.join(p.flood_global_export_dir,
-                                                    'damage_by_sda_usd2019_wide.csv'))
+    p.flood_sda_damage_wide_path = resolve_sda_damage_wide_path(p)
     if not p.run_this:
         return True
     hb.create_directories([p.flood_global_export_dir, p.flood_currency_audit_dir])
@@ -2787,13 +2809,14 @@ def task_compute_flood_damages(p):
 
 def task_compute_flood_gep(p):
     """
-    Task wrapper for the paired-scenario counterfactual: run Step 4B/4C for both
-    the current and the degraded world, then difference them into
+    Task wrapper for the paired-scenario counterfactual: run Step 4B/4C for the
+    current world and each degraded one in flood_gep_scenarios, then difference them into
 
         GEP_flood = EAD_degraded - EAD_current
 
-    This is the construct comparable to the erosion module's GEP. It roughly
-    doubles Section D's cost, so it is a separate task rather than part of
+    This is the construct comparable to the erosion module's GEP. With the current
+    world and both degraded scenarios it roughly triples Step 4B's cost (see
+    run_gep_chain), so it is a separate task rather than part of
     task_compute_flood_damages().
     """
     publish_inputs(p)
@@ -2841,7 +2864,15 @@ def gep_calculation(p):
                 'account reports the bare counterfactual, so an insitu-only file is refused '
                 'rather than silently published under the bare description.'
                 % (computed, list(df_gep.columns)))
+        # compute_flood_gep keys its table by `iso3`, which holds the r250 label; the author's
+        # export_gep_for_merge.py reads it the same way.
+        if 'iso3_r250_label' not in df_gep.columns:
+            df_gep = df_gep.rename(columns={'iso3': 'iso3_r250_label'})
         df_gep = df_gep.rename(columns={'gep_flood_bare_usd2019': 'flood_gep'})
+        # The author's export blanks anything below MIN_GEP_USD = 1.0 (export_gep_for_merge.py,
+        # "numerical noise from differencing two large integrals"), negatives included. The
+        # computed route applies the same rule, so both routes publish the same masks.
+        df_gep.loc[df_gep['flood_gep'] < 1.0, 'flood_gep'] = np.nan
         source = 'computed here (%s, gep_flood_bare_usd2019)' % os.path.basename(str(computed))
     else:
         df_gep = hb.df_read(p.flood_gep_for_merge_path)

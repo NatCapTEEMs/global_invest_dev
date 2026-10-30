@@ -29,8 +29,6 @@ from __future__ import annotations
 import glob
 import os
 import numpy as np
-import matplotlib.pyplot as plt
-import matplotlib as mpl
 import sys
 import time
 import json
@@ -71,15 +69,14 @@ from global_invest.erosion import erosion_functions as ef
 # es_parameters (shipped default; a consumer overrides p.erosion_crop_to_sector).
 # The erosion -> yield bridge: the fraction of yield lost per unit of erosion exposure. Converting
 # biophysical erosion into an economic productivity shock requires such a coefficient, so both
-# methods rest on one. The service methods read a
-# per-crop coefficient from elasticity_crops_fao_revised.csv (see alpha_for in erosion_shock) and
-# falls back here only when neither the crop nor its sector has a value.
-# The SES-11 threshold policy and analysis frame (SES-11 = the erosion author's run-series tag;
-# the 11 is the 11 t/ha/yr severe threshold, a standard tolerable-soil-loss benchmark -- the
-# expansion of 'SES' is the author's naming, to confirm at submission): METHOD CONSTANTS defining
-# the published science
-# (provisional, the erosion author's to bless) -- in code so a change costs a reviewed commit, not
-# an input/-copy edit. getattr hooks below allow a deliberate consumer override.
+# methods rest on one. The service methods read a per-crop coefficient from
+# elasticity_crops_fao_revised.csv (see alpha_for in erosion_shock) and fall back to the flat
+# erosion_alpha row only when neither the crop nor its sector has a value.
+# The SES-11 threshold policy (SES-11 = the erosion author's run-series tag; the 11 is the
+# 11 t/ha/yr severe threshold, a standard tolerable-soil-loss benchmark -- the expansion of 'SES'
+# is the author's naming, to confirm at submission) defines the published science. Its values are
+# the erosion_threshold_*, erosion_small_country_area_km2 and erosion_low_elevation_mean_m rows of
+# es_parameters, provisional until the erosion author confirms them.
 
 
 # ---------------------------------------------------------------------------
@@ -287,14 +284,15 @@ def build_equal_area_solve_inputs(p, work_dir, dem_src, erosivity_src, erodibili
     area falls as cos^2(latitude) -- that sum weights high latitudes far too heavily. The staged
     inputs are EPSG:3857, inherited from the source author rather than chosen.
 
-    Doing this also fixes a defect that looks unrelated. The three projected inputs were already on
-    one grid, but erosivity and erodibility are global WGS84, so InVEST warped them on every call and
-    intersected the ragged result: a global run wrote 6158x4030 against a pinned 6217x3968, losing 47
-    columns west and 12 east, silently. Warping every input onto one grid ONCE makes the intersection
-    exact, makes the output grid deterministic, and removes about half the per-scenario solve cost --
-    the two soil reprojections were 24 of 56 seconds and were discarded every time.
+    Erosivity and erodibility are global WGS84, so left to InVEST they are warped on every call and
+    the ragged result intersected: a global run writes 6158x4030 against a pinned 6217x3968, losing
+    47 columns west and 12 east, silently.
+    Warping every input onto one grid ONCE makes the intersection exact, makes the output grid
+    deterministic, and removes about half the per-scenario solve cost -- the two soil
+    reprojections are 24 of 56 seconds and would be discarded every time.
 
-    Returns the four paths, all on the same grid. Cached: skipped entirely on a rerun.
+    Returns the three raster paths, all on the same grid, plus the grid's `shape` and `bounds`.
+    Cached: a warp whose output exists is skipped on a rerun.
     """
     import math
     from osgeo import gdal, ogr, osr
@@ -307,7 +305,7 @@ def build_equal_area_solve_inputs(p, work_dir, dem_src, erosivity_src, erodibili
     target.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
 
     # The extent comes from the WATERSHEDS, not from the world. SDR clips to the watershed vector, so
-    # a grid built to the globe is cut back to the basins anyway -- and the cut is what made the
+    # a grid built to the globe is cut back to the basins anyway -- and the cut is what makes the
     # output grid unpredictable. HydroBASINS stops short of Antarctica and of the far west, so a
     # world grid loses 47 columns and the run says nothing. Snapping the basin extent outward to
     # whole pixels makes the clip a no-op and the grid reproducible from the inputs alone.
@@ -358,8 +356,8 @@ def repair_watersheds(src_path, out_path):
     SDR's last step (_generate_report) unions the watershed polygons to test for overlap, and GEOS
     RAISES TopologyException on an invalid ring rather than warning -- so a single bad geometry kills a
     run whose rasters are already computed. HydroBASINS reprojected to an equal-area CRS carries ring
-    self-intersections (1192 of 16397 in hybas_global_lev06_v1c), which is why this never showed up on a
-    clipped AOI: the small subset happened to exclude them.
+    self-intersections (1192 of 16397 in hybas_global_lev06_v1c); a clipped AOI can miss them
+    because the small subset happens to exclude them.
 
     make_valid (not buffer(0), which can silently drop slivers) clears all of them, leaves the union
     computable, and preserves total area. Returns out_path.
@@ -446,8 +444,8 @@ def _setup_sdr_environment():
 
 
 def _dem_wkt(dem_path: str) -> str:
-    """Return DEM CRS as WKT. We trust DEM CRS as the canonical target CRS. (hazelbean raster-info;
-    swap verified by the bit-identical section-A rerun.)"""
+    """Return DEM CRS as WKT, read through hazelbean's raster info. We trust DEM CRS as the
+    canonical target CRS."""
     wkt = hb.get_raster_info_hb(str(dem_path))['projection']
     if not wkt:
         raise ValueError(f"DEM has no CRS: {dem_path}")
@@ -624,10 +622,9 @@ def load_countries_iso3_alpha(p, paths, in_crs: rioCRS):
     iso_col = None
     # The devstack's own label comes first. A boundary file may carry Natural Earth's columns
     # beside it, and those disagree: in ee_r264_correspondence South Sudan is SSD under
-    # iso3_r250_label and SDS under adm0_a3, sov_a3 and su_a3. Preferring adm0_a3 gave the country
-    # a code the FAO tables do not use, so its crop GPV came back empty and its GEP was zero while
-    # the author's run values it at $3.7M. Only ee_r264_correspondence carries both, so ee_r250
-    # never showed it.
+    # iso3_r250_label and SDS under adm0_a3, sov_a3 and su_a3. Preferring adm0_a3 gives the country
+    # a code the FAO tables do not use, so its crop GPV comes back empty and its GEP is zero while
+    # the author's run values it at $3.7M. Only ee_r264_correspondence carries both columns.
     for cand in ["iso3_r250_label", "iso3", "ISO3", "iso_a3", "adm0_a3", "ADM0_A3"]:
         if cand in gdf.columns:
             iso_col = cand
@@ -658,6 +655,12 @@ def rasterize_iso3(p, gdf: gpd.GeoDataFrame, like_da: xr.DataArray):
     )
     gdf = gdf.merge(lut, on="ISO3", how="left")
 
+    # erosion_rasterize_all_touched = false is the centre rule: a cell goes to the country covering
+    # its centre point, so it has exactly one owner and the answer depends on geography alone.
+    # Under true every country whose outline touches a cell claims it, and because the claims are
+    # burned into one id raster the country rasterised LAST keeps it, which puts a country's value
+    # at the mercy of its row order in the boundary file. This is the rule utilities.py already
+    # aggregates on.
     arr = rasterio.features.rasterize(
         shapes=zip(gdf.geometry, gdf["iso_id"].astype(int)),
         out_shape=(like_da.rio.height, like_da.rio.width),
@@ -710,7 +713,9 @@ def load_fao_gpv_iso3_const2019_with_fallback(p, paths,
     usd_ok = base["unit"].astype(str).str.lower().str.contains("1000") & base["unit"].astype(str).str.upper().str.contains("USD")
     base = base[el_ok & usd_ok].copy()
     if p.erosion_crops_only:
-        base = ef._filter_crops_only(base)
+        item_groups = pd.read_csv(paths.input.fao_item_groups, encoding="utf-8-sig", dtype=str)
+        crop_codes = ef.crop_item_codes(item_groups)
+        base = ef.crop_items_only(base, crop_codes)
 
     base["iso3"] = base["iso3"].astype(str).str.upper()
     base["value_thousand_usd"] = pd.to_numeric(base["value"], errors="coerce")
@@ -719,6 +724,14 @@ def load_fao_gpv_iso3_const2019_with_fallback(p, paths,
     fao_out = fao_out[["iso3","crop_gpv_const2019_2019"]]
 
     prices = load_fao_prices_full(prices_full_csv)
+    if p.erosion_crops_only:
+        # The fallback values the same crops as the reported total. The price file splits some
+        # country-crop records over two rows, so the mask is applied without the one-row guard.
+        prices = prices[ef.crop_item_mask(prices, crop_codes)].copy()
+    # Exact duplicate rows (every column equal, as for 52 of CHE's rows and 28 of SRB's) would count
+    # twice in a country's fallback and weigh twice in the global donor mean. Split records, a name
+    # row and a quantity row for the same crop, differ and are kept.
+    prices = prices.drop_duplicates()
     key = "item_code_fao" if "item_code_fao" in prices.columns else "item_name"
 
     if (prices["iso3"] == "*").any():
@@ -741,7 +754,8 @@ def load_fao_gpv_iso3_const2019_with_fallback(p, paths,
     dfp.loc[dfp["price_used"].isna() | (dfp["price_used"] <= 0), "price_used"] = dfp["price_usd_per_ton_global"]
     dfp["fallback_value_usd"] = (dfp["price_used"].clip(lower=0.0) * dfp["quantity_tons"].clip(lower=0.0))
 
-    gpv_fb = dfp.groupby("iso3", as_index=False)["fallback_value_usd"].sum()
+    # min_count=1: a country with no valued crop row has no fallback value, not a zero.
+    gpv_fb = dfp.groupby("iso3", as_index=False)["fallback_value_usd"].sum(min_count=1)
     gpv_fb = gpv_fb.rename(columns={"fallback_value_usd":"crop_gpv_const2019_2019_fallback"})
 
     out = fao_out.merge(gpv_fb, on="iso3", how="outer")
@@ -918,7 +932,7 @@ def run_biophysical_decomposed(p, paths):
     # a country qualify as small on the strength of an island and take the low soil-loss
     # tolerance, which enlarges the domain the severity threshold defines. Measured on that file,
     # the countries whose small/large status can turn on this are CHN, FRA, GBR, IND and TUR.
-    # r250, which the run now reads, carries one row per country, so it cannot arise there at all.
+    # r250 carries one row per country, so it cannot arise there at all.
     df_country_area = (gdf_countries[["ISO3", "area_km2"]].rename(columns={"ISO3": "iso3"})
                        .groupby("iso3", as_index=False)["area_km2"].sum(min_count=1))
     df_threshold = ef.country_threshold_policy(
@@ -1262,13 +1276,11 @@ Elapsed minutes: {manifest['elapsed_minutes']}
 
 
 
-# The files Section B writes. Each name is spelled once, so a rename cannot be applied to the
-# writer and missed in the manifest that claims to record what ran.
 
 def publish_inputs(p):
     """Every task's first line: erosion's es_config row plus its es_parameters block (the SDR
     data references, the SES-11 threshold policy, the crop-sector export map, the blank
-    erosion_gep_root machine key the configure_* functions read) and the results registry.
+    erosion_gep_root machine key) and the results registry.
     Defaults layer throughout: anything the caller set wins."""
     utilities.hydrate_es_config(p, 'erosion', log=hb.log)
     utilities.hydrate_es_parameters(p, 'erosion', log=hb.log)
@@ -1276,9 +1288,7 @@ def publish_inputs(p):
     # utilities.country_attributes, which expects p.df_countries, so it is published here with the
     # rest of the inputs exactly as the other twenty services do.
     utilities.initialize_country_paths(p)
-    # Derived from the DEM row (caller wins): configure_* in erosion_functions reads these, and
-    # their own fallbacks point at the author's cluster layout -- without these lines a local
-    # Section-A run would silently reach for MSI paths.
+    # Derived from the DEM row (caller wins).
     if getattr(p, 'erosion_sdr_input_dir', None) is None:
         p.erosion_sdr_input_dir = os.path.dirname(p.erosion_dem_path)
     if getattr(p, 'erosion_elevation_path', None) is None:
@@ -1308,10 +1318,9 @@ def erosion_sdr(p):
     # still needs downstream to find these outputs, and a task body that returns early would leave
     # the attribute unset and fail the next task with an AttributeError.
     p.erosion_sdr_dir = p.cur_dir      # downstream tasks read usle_/rkls_/avoided_erosion_ from here
-    # PUBLISHED BEFORE the run_this guard, per ProjectFlow convention: erosion_shock reads
+    # PUBLISHED BEFORE the run_this guard too, per ProjectFlow convention: erosion_shock reads
     # p.scenario_lulc_paths, and on a resumed run this task is SKIPPED because its rasters
-    # already exist. Built after the guard the attribute stayed unset and killed the next
-    # task with AttributeError 25s in -- the exact failure the comment above predicts.
+    # already exist.
     # Build scenario_lulc_paths from a template if the caller didn't (mirrors carbon/pollination).
     # p.es_lulc_path_template uses {scenario} and {year}; include the base scenario for differencing.
     if not getattr(p, 'scenario_lulc_paths', None) and getattr(p, 'es_lulc_path_template', None):
@@ -1382,7 +1391,7 @@ def erosion_sdr(p):
     biophysical = build_seals7_biophysical_table(
         p.get_path(p.erosion_biophysical_table_path),
         os.path.join(p.cur_dir, 'biophysical_table_seals7.csv'))
-    # The same rows Section A reads, so the two paths cannot drift apart again.
+    # The same rows Section A reads, so the two paths cannot drift apart.
     sdr_params = dict(threshold_flow_accumulation=p.erosion_sdr_threshold_flow_accumulation,
                       k_param=p.erosion_sdr_k_param, sdr_max=p.erosion_sdr_max,
                       ic_0_param=p.erosion_sdr_ic_0_param, l_max=p.erosion_sdr_l_max,
@@ -1397,8 +1406,8 @@ def erosion_sdr(p):
             suffix = '%s_%d' % (scenario, year)
             workspace = os.path.join(p.cur_dir, suffix)
             lulc = p.get_path(lulc)
-            # Refuse old/changed workspaces rather than silently reusing the
-            # pre-fix grids or overwriting preserved production evidence.
+            # Refuse a workspace built under another signature rather than silently
+            # reusing its grids or overwriting preserved production evidence.
             signature = utilities._signature(
                 {'resampling': 'full_resolution_source_nodata_v1', 'native': native,
                  'sdr_params': sdr_params},
@@ -1409,8 +1418,8 @@ def erosion_sdr(p):
                            ('usle_%s.tif', 'rkls_%s.tif', 'avoided_erosion_%s.tif')]
             # Per-scenario-year existence guard, per the rule that every expensive step skips work
             # it has already done. The task's own skip_existing is all-or-nothing -- the dir is
-            # there, so the WHOLE task is skipped -- which is why a chain missing a single
-            # scenario-year could not be completed without re-solving all of them. InVEST SDR is
+            # there, so the WHOLE task is skipped -- so on its own a chain missing a single
+            # scenario-year cannot be completed without re-solving all of them. InVEST SDR is
             # the most expensive step in the tree, so this guard is what makes a partial chain
             # finishable. Keyed on the three rasters the downstream tasks read, not on the
             # workspace dir, which a killed run leaves behind looking complete.
@@ -1433,7 +1442,7 @@ def erosion_sdr(p):
                         raise ValueError('Unverified erosion LULC grid: ' + lulc_grid
                                          + '. Use a fresh erosion directory.')
                     # resample_method='mode' is categorical, so hazelbean reads the original
-                    # pixels rather than an overview. AUTO selection otherwise treated the
+                    # pixels rather than an overview. AUTO selection would treat the
                     # unpyramided base map differently from future maps, creating false
                     # land-cover change.
                     hb.resample_to_match(
@@ -1545,7 +1554,6 @@ def erosion_exposure(p):
     import rioxarray as rxr
     import pygeoprocessing as pgp
     from rasterio.enums import Resampling
-    from global_invest.erosion import erosion_functions
     from global_invest.erosion import erosion_functions as ef
 
     thresh_high = float(p.erosion_threshold_high_t_ha_yr)
@@ -1631,7 +1639,7 @@ def erosion_exposure(p):
                 # Every published raster is a POG; already on the rung, so this only adds overviews.
                 hb.make_path_pog(out, output_arcseconds=arcseconds)
 
-            _write(combined, 'ps_gated')            # threshold-gated (original candidate)
+            _write(combined, 'ps_gated')            # threshold-gated
             _write(continuous, 'ps_continuous')        # threshold-free (method B)
             _write(rkls_v, 'rkls_grid')                # method B magnitude weight
 
@@ -1650,10 +1658,9 @@ def erosion_exposure(p):
 def erosion_paths(p):
     """Every path erosion needs, resolved from the project rather than hardcoded.
 
-    Constants built from a `ROOT` naming someone else's machine would tie three tasks in the
-    tree to the machine the code was written on.
-    Inputs now resolve through `p.get_path` against base data and outputs land under the task's
-    own directory, which is what lets the same code run anywhere.
+    Inputs resolve through `p.get_path` against base data and outputs land under the task's own
+    directory, which is what lets the same code run anywhere rather than only on the machine it
+    was written on.
 
     Args:
         p (ProjectFlow): the project, after publish_inputs has set the es_parameters values.
@@ -1667,13 +1674,12 @@ def erosion_paths(p):
     # task's, not the caller's. prevention_shares publishes it as erosion_gep_output_dir before
     # its own run_this check, so a later task sees it whether that task ran or skipped. Reading
     # p.cur_dir here instead sends a consumer looking in its own directory, where a producer
-    # never wrote: gep_calculation raised on a missing integrated_country_gep.csv that had been
-    # written seven hours earlier, one directory across.
+    # never wrote.
     out_dir = str(getattr(p, 'erosion_gep_output_dir', None) or p.cur_dir)
     hb.create_directories([str(out_dir)])
     # The figures are the other way round: read by nothing, so they belong to whoever draws them
     # rather than to the task whose numbers they draw. make_erosion_figures.py names its own
-    # cur_dir and gets its own directory here; hanging them off out_dir put them inside
+    # cur_dir and gets its own directory here; hanging them off out_dir would put them inside
     # prevention_shares'.
     figure_dir = os.path.join(str(p.cur_dir), 'figures')
     hb.create_directories([str(figure_dir)])
@@ -1684,7 +1690,7 @@ def erosion_paths(p):
         Several of these are produced by one task and read by another: upstream_prevention_share
         is written by its own task and consumed by prevention_shares. The producer publishes the
         path on p before its run_this guard, so the consumer must read that rather than assume the
-        file sits in its own directory, which is what made the first run fail.
+        file sits in its own directory.
         """
         value = getattr(p, attribute, None)
         return str(value) if value else os.path.join(out_dir, default_name)
@@ -1699,8 +1705,8 @@ def erosion_paths(p):
             watersheds=str(p.get_path(p.erosion_watersheds_path)),
             # Section A writes these and Section B reads them, so they are resolved the way the
             # upstream share is: whatever invest_sdr published, without requiring it to exist
-            # yet. Resolving them through get_path made invest_sdr demand the file it was about
-            # to create, which is why the first cluster run died before doing any work.
+            # yet. Resolving them through get_path would make invest_sdr demand the file it is
+            # about to create.
             usle=published('erosion_usle_path', 'usle.tif'),
             avoided_erosion=published('erosion_avoided_erosion_path', 'avoided_erosion.tif'),
             country_boundary=str(p.get_path(p.erosion_country_boundary_path)),
@@ -1710,8 +1716,11 @@ def erosion_paths(p):
             elasticity=str(p.get_path(p.erosion_elasticity_csv_path)),
             fao_gpv=str(p.get_path(p.erosion_fao_gpv_iso3_csv_path)),
             fao_prices=str(p.get_path(p.erosion_fao_prices_csv_path)),
+            fao_item_groups=str(p.get_path(p.erosion_fao_item_groups_path)),
             gdp=str(p.get_path(p.erosion_gdp_csv_path)),
         ),
+        # The files Section B writes. Each name is spelled once, so a rename cannot be applied to
+        # the writer and missed in the manifest that claims to record what ran.
         output=SimpleNamespace(
             directory=out_dir,
             figure_directory=figure_dir,
@@ -1746,22 +1755,21 @@ def erosion_paths(p):
 def resample_band_to_match(stack_path, band, match_path, working_dir, resample_method, src_ndv=-9999.0):
     """One band of a multi-band stack, on the grid of `match_path`, through hazelbean.
 
-    This replaces a rioxarray `reproject_match` per band. The two are byte-identical on all
+    It stands in for a rioxarray `reproject_match` per band. The two are byte-identical on all
     24,669,056 pixels of the real SPAM stacks, for both the yield band (average) and the area
     band (sum), and hazelbean does it in about 2 seconds against 22.
 
-    Two things have to be right or the result is wrong rather than merely different, and both
-    were wrong on an earlier attempt at this switch:
+    Two things have to be right or the result is wrong rather than merely different:
 
     The method. Yield resamples by `average` and harvested area by `sum`, because a yield is a
     rate that survives being averaged over a coarser cell and an area is a quantity that has to
-    be added up. Using `average` for area understated it by four orders of magnitude, and
-    `bilinear` for yield moved it 5 percent, neither of which announces itself.
+    be added up. Using `average` for area understates it by four orders of magnitude, and
+    `bilinear` for yield moves it 5 percent, neither of which announces itself.
 
     The nodata. `resample_to_match` defaults the output nodata to the float32 maximum rather
     than carrying the source's, so the -9999 sentinel is resampled as though it were data. With
-    `sum` that accumulates: the harvested-area total came out negative. Declaring `src_ndv` and
-    `ndv` fixes it, so they are passed explicitly rather than left to a default.
+    `sum` that accumulates and drives the harvested-area total negative. Declaring `src_ndv` and
+    `ndv` prevents it, so they are passed explicitly rather than left to a default.
 
     Args:
         stack_path (str): the multi-band source.
@@ -1772,7 +1780,7 @@ def resample_band_to_match(stack_path, band, match_path, working_dir, resample_m
         src_ndv (float): the source's nodata value.
 
     Returns:
-        np.ndarray: float64, with nodata as 0.0, matching what the rioxarray path produced
+        np.ndarray: float64, with nodata as 0.0, matching what the rioxarray path produces
         after its `.fillna(0.0)`.
     """
     import rasterio
@@ -1811,9 +1819,9 @@ def erosion_shock(p):
         taken from the base scenario and held FIXED, so the shock measures protection change and not a
         change of population. Verified in-task on the full ZAF run: min exactly 0.0, max +1.30%, no
         negative outliers, 63 zone-erosion_shock_acts responding at 2050 with a mean of +0.157% -- roughly 2.5x
-        unthresholded B, which tops out at +0.52% on the same run. A scenario-VARYING set put -18%
-        into a paddy-rice zone; fixing it removed that entirely. Matches how the published account of
-        this method builds it.
+        unthresholded B, which tops out at +0.52% on the same run. A scenario-VARYING set puts -18%
+        into a paddy-rice zone; holding it fixed removes that entirely. Matches how the published
+        account of this method builds it.
     p.erosion_method ('service'|'service_threshold', default 'service_threshold') selects which
     becomes shock_pct, the column GTAP consumes. The area-damage method (the 8% approach) is
     erosion_method='damage_area', which returns early into erosion_damage_pipeline.
@@ -1846,7 +1854,6 @@ def erosion_shock(p):
     import numpy as np, pandas as pd, rioxarray as rxr, geopandas as gpd
     from rasterio.features import rasterize as rio_rasterize
     from rasterio.enums import Resampling
-    from global_invest.erosion import erosion_functions
     from global_invest.erosion import erosion_functions as ef
 
     es_shock_base_year = int(p.es_shock_base_year); es_shock_end_year = int(p.es_shock_end_year)
@@ -1854,7 +1861,7 @@ def erosion_shock(p):
     fallback_coef = float(p.erosion_yield_coefficient_fallback)
     alpha = float(p.erosion_alpha)
     # Method B lets the erosion->yield coefficient vary by crop; A applies the flat alpha to all.
-    # SOURCE = elasticity_crops_fao_revised.csv (already loaded above as coef_map). Despite the column
+    # SOURCE = elasticity_crops_fao_revised.csv (loaded below as coef_map). Despite the column
     # name, that table holds erosion-to-yield sensitivities, not price responses: its references are all
     # soil-erosion-and-yield literature (Lal 1998, Borrelli 2020, Panagos 2018, Oldfield 2019) and its
     # categories are a qualitative ranking rather than estimated coefficients. It is the crop-specific
@@ -1951,7 +1958,7 @@ def erosion_shock(p):
         elast = ef.get_erosion_yield_coefficient(str(r[crcol]).strip().lower(), coef_map,
                                                  fallback_coef, spam_aliases)
         # Yield averages and area sums: see resample_band_to_match for why the pair is not
-        # interchangeable. Byte-identical to the rioxarray path this replaced, and ~11x faster.
+        # interchangeable. Byte-identical to a rioxarray reproject_match, and ~11x faster.
         y = resample_band_to_match(yield_stack, b, _ref_path, _resample_dir, 'average')
         ha = np.clip(resample_band_to_match(area_stack, b, _ref_path, _resample_dir, 'sum'), 0.0, None)
         prod = y * ha
@@ -2006,8 +2013,8 @@ def erosion_shock(p):
             # A zone-crop with nothing at stake carries NO WEIGHT, rather than scoring a share of 0.
             # Zero would read as "no protection delivered" when it means "no erosion to protect
             # against", so under a severe threshold a zone that stops eroding between baseline and
-            # scenario would look like its protection collapsed. That produced a -28% shock for paddy
-            # rice in South Africa, a zone with almost no rice and no severe pixels in the scenario.
+            # scenario would look like its protection collapsed: a -28% shock for paddy rice in
+            # South Africa, a zone with almost no rice and no severe pixels in the scenario.
             # Dropping it from both sides of the ratio lets it fall back to the all-crop level below.
             weight = _zonal(prod) * at_stake
             contribution = weight * alpha_for(crop) * share
@@ -2048,7 +2055,7 @@ def erosion_shock(p):
         the ~98% of land that is not eroding. But a scenario-VARYING severe set makes the shock partly
         a change of population rather than of protection: the two levels then average over different
         pixels, and in a zone with only a handful of severe pixels one entering or leaving swings the
-        average. That put -18% into a paddy-rice zone in South Africa. Holding the set fixed makes the
+        average. That puts -18% into a paddy-rice zone in South Africa. Holding the set fixed makes the
         difference measure protection alone, and also makes `potential` identical across scenarios,
         because RKLS carries no cover factor and so does not vary with land use.
 
@@ -2059,10 +2066,10 @@ def erosion_shock(p):
         zone HAS. No cropland term is needed: every sum carries prod as a factor, so a pixel with no
         production contributes nothing regardless."""
         # The severe set is held at the BASE YEAR, not at yr. Holding it across scenarios
-        # alone left it moving across years (137,517 severe cells at 2023 against 149,007 at
+        # alone leaves it moving across years (137,517 severe cells at 2023 against 149,007 at
         # 2050, +8.4%), which is invisible to V1 -- both scenarios share mask(base, t) -- but
-        # not to a difference taken ACROSS years: L_s(t) and L_s(2023) were then averaged over
-        # different pixel sets, and a zone entering or leaving the set swung the whole level.
+        # not to a difference taken ACROSS years: L_s(t) and L_s(2023) are then averaged over
+        # different pixel sets, and a zone entering or leaving the set swings the whole level.
         keep = _grid('severe_mask', base_scenario, es_shock_base_year) > 0.5
         return _service_level(np.where(keep, np.clip(_grid('ps_continuous', scn, yr), 0.0, 1.0), 0.0),
                               np.where(keep, _rkls_tons(scn, yr), 0.0))
@@ -2231,7 +2238,7 @@ def erosion_shock_static(p):
 
 # =============================================================================
 # GEP valuation tasks (folded from global_erosion_gep): InVEST SDR -> prevention
-# shares -> per-country GEP -> maps/figures. The ES-shock tasks above and this
+# shares -> per-country GEP and the published map. The ES-shock tasks above and this
 # valuation are separate consumers of the same erosion science.
 # =============================================================================
 
@@ -2249,10 +2256,10 @@ def invest_sdr(p):
     if not getattr(p, 'erosion_watersheds_sanitized_path', None):
         p.erosion_watersheds_sanitized_path = os.path.join(p.erosion_sdr_output_dir, 'wshed_sanitized.gpkg')
     # Publish Section A's outputs so Section B reads them, but ONLY when this task is producing
-    # them or has already produced them. Unconditionally it overwrote the erosion_usle_path and
-    # erosion_avoided_erosion_path rows, which point at the author's staged rasters -- and those
-    # rasters are what the published number is computed from, so the account was being pointed at
-    # a file this task had not written.
+    # them or has already produced them. Unconditionally it would overwrite the erosion_usle_path
+    # and erosion_avoided_erosion_path rows, which point at the author's staged rasters -- and
+    # those rasters are what the published number is computed from, so the account would be
+    # pointed at a file this task has not written.
     _sfx = p.erosion_sdr_results_suffix
     usle = os.path.join(p.erosion_sdr_output_dir, f'usle_{_sfx}.tif')
     avoided = os.path.join(p.erosion_sdr_output_dir, f'avoided_erosion_{_sfx}.tif')
@@ -2284,8 +2291,8 @@ def upstream_prevention_share(p):
     #
     # A path configured in es_parameters wins, so the account can read the author's own layer
     # rather than our rebuild of it. This line must not overwrite the configured value
-    # unconditionally, which made that row inert: it could be set to anything and the task's own
-    # output was used regardless. Where nothing is configured, or the configured file is absent,
+    # unconditionally, which would make that row inert: it could be set to anything and the task's
+    # own output would be used regardless. Where nothing is configured, or the configured file is absent,
     # the task owns the path -- that fallback is what lets the account run on a machine that
     # cannot reach the cluster the layer came from.
     built = os.path.join(p.cur_dir, 'upstream_prevention_share.tif')
@@ -2332,7 +2339,7 @@ def prevention_shares(p):
     union-of-protection PS_combined, then country-crop protected production and the GEP valuation
     (onfarm / upstream / combined) -> integrated_country_gep.csv + the PS rasters the maps task
     reads. ProjectFlow-idiomatic: outputs default into THIS task's dir via erosion_gep_output_dir
-    (the same attr configure_maps calculations on), USLE/avoided arrive from invest_sdr's
+    (the attribute erosion_paths reads), USLE/avoided arrive from invest_sdr's
     published attrs, and the registered result is the skip check (like every gep_calculation).
     """
     publish_inputs(p)
@@ -2449,10 +2456,10 @@ def read_grid(path, expected=None):
 def normalise_zone_ids(frame, column='ee_r50_aez18_id'):
     """The boundary's zone id as a validated int64, once, before anything keys on it.
 
-    The gpkg stores ee_r50_aez18_id as TEXT while aez18_id beside it is int64. Rasterisation
-    coerced with int(i) and the label frame did not, so the two sides of the later join carried
-    different dtypes and pandas refused the merge after twelve hours of upstream work. Normalising
-    at ingestion means rasterisation, labels and every join downstream use one validated set of ids
+    The gpkg stores ee_r50_aez18_id as TEXT while aez18_id beside it is int64. If rasterisation
+    coerces with int(i) and the label frame does not, the two sides of the later join carry
+    different dtypes and pandas refuses the merge after hours of upstream work. Normalising at
+    ingestion means rasterisation, labels and every join downstream use one validated set of ids
     rather than each coercing, or not coercing, on its own.
 
     Rejected rather than coerced: a missing id has no zone, a non-numeric one is not an id, and a
@@ -2571,7 +2578,7 @@ def crop_fraction(source, reference, destination):
 # pathways and not others, and the comparison between pathways is the entire point of the exercise.
 #
 # Any zone NOT listed here still fails, and the failure reports every offending zone at once rather
-# than the first: discovering these one run at a time cost two and a half hours per zone.
+# than the first: discovering these one run at a time costs two and a half hours per zone.
 FUTURE_COVERAGE_EXCLUSIONS = {
     1001: 'future cropland outside valid erosion support',
     1008: 'no future cropland footprint in low_demand',

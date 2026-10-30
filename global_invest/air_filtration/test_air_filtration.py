@@ -1,10 +1,11 @@
 """Unit tests for the air_filtration port (workbook-anchored, two channels).
 
-The anchor workbook ships in reference/, so every run verifies: the recomputed deaths x VSL
-benefits against the workbook's own benefit columns, the identified global-average VSL fill
-rule, the positional r250 join with its name floor, and the two channel totals -- deposition
-matching the manuscript's air-filtration number. The documented-but-different-vintage VSL
-method is pinned on synthetic data.
+The anchor workbook is read from the service's base-data folder, so every run verifies: the
+recomputed deaths x VSL benefits against the workbook's own benefit columns (at the workbook's
+own VSL), the workbook's global-average VSL fill rule, the positional r250 join with its name
+floor, the two channel totals at the workbook's VSL -- deposition matching the manuscript's
+air-filtration number -- and the identified not-estimated list. The documented-but-different-
+vintage VSL method is pinned on synthetic data.
 """
 import os
 from types import SimpleNamespace
@@ -45,6 +46,43 @@ def test_recomputed_benefits_match_the_workbook_exactly():
     assert np.isclose(out['sandstorm_prevention_gep'].sum(), 595.4e9, rtol=1e-2)
 
 
+def _order(labels):
+    return pd.DataFrame({'iso3_r250_id': range(1, len(labels) + 1), 'iso3_r250_label': labels})
+
+
+def test_only_the_listed_countries_publish_as_missing():
+    """The identified list, not a zero rule: a listed country publishes missing, an unlisted
+    double zero stays a measured zero, and valued rows are untouched."""
+    w = pd.DataFrame({'FID': [1, 2, 3], 'Country': ['A', 'B', 'C'],
+                      'Dep_Deaths': [0.0, 0.0, 2.0], 'Dust_Deaths': [0.0, 0.0, 3.0],
+                      'VSL': [10.0, 10.0, 10.0]})
+    mask = af.not_estimated_mask(w, _order(['AAA', 'BBB', 'CCC']), ['AAA'])
+    assert mask.tolist() == [True, False, False]
+
+
+def test_a_listed_country_with_deaths_rejects_the_list():
+    w = pd.DataFrame({'Dep_Deaths': [0.0, 4.0], 'Dust_Deaths': [0.0, 1.0]})
+    with pytest.raises(ValueError, match='does not match this workbook'):
+        af.not_estimated_mask(w, _order(['AAA', 'BBB']), ['AAA', 'BBB'])
+    with pytest.raises(ValueError, match='outside the r250 order'):
+        af.not_estimated_mask(w, _order(['AAA', 'BBB']), ['ZZZ'])
+
+
+def test_the_staged_list_is_the_sources_not_estimated_set_for_this_workbook():
+    """Row by row against the shipped workbook: the 53 listed countries are exactly its rows
+    with zero deaths in both channels (the write-up's 53 not estimated), and the staged
+    population evidence puts people in 46 of them."""
+    w = _workbook()
+    order = pd.read_csv(os.path.join(REFERENCE_DIR, 'r250_gpkg_order.csv'))
+    listed = pd.read_csv(os.path.join(REFERENCE_DIR, 'air_filtration_not_estimated.csv'),
+                         encoding='utf-8-sig')
+    assert len(listed) == 53
+    mask = af.not_estimated_mask(w, order, listed['iso3_r250_label'])
+    double_zero = ((w['Dep_Deaths'] == 0) & (w['Dust_Deaths'] == 0)).to_numpy()
+    assert (mask == double_zero).all()
+    assert int(listed['populated_worldpop_2019'].sum()) == 46
+
+
 def test_global_average_fill_rule_holds_and_returns_the_mean():
     w = _workbook()
     global_average = af.verify_global_average_fill(w)
@@ -69,8 +107,8 @@ def test_positional_r250_join_carries_ids_and_refuses_a_reordered_workbook():
 
 
 def test_documented_vsl_method_on_synthetic_data():
-    # US: 80 - 40 = 40 life-years, GDP 60k -> VSL per life-year per GDP = 9.9e6 / 40 / 60000.
-    # AAA: (75 - 45) = 30 life-years, GDP 20k -> VSL = 20000 * 30 * ratio = 2.475e6 * 30/40 * 20/60... hand: 9.9e6/40/60000 = 4.125; AAA = 20000*30*4.125 = 2.475e6.
+    # US: 80 - 40 = 40 life-years, GDP 60k -> VSL per life-year per GDP = 9.9e6 / 40 / 60000 = 4.125.
+    # AAA: 75 - 45 = 30 life-years, GDP 20k -> VSL = 20000 * 30 * 4.125 = 2.475e6.
     le = pd.DataFrame({'slug': ['united-states', 'aaa'], 'years': [80.0, 75.0]})
     age = pd.DataFrame({'slug': ['united-states', 'aaa'], 'years': [40.0, 45.0]})
     gdp = pd.DataFrame({'slug': ['united-states', 'aaa'], 'gdp_real': [60000.0, 20000.0]})
@@ -93,7 +131,7 @@ def test_es_config_and_parameters_rows_hydrate_air_filtration(tmp_path):
 def test_vsl_comes_from_the_shared_panel_and_a_missing_country_raises():
     # The panel keys on iso3_r250_label, so the workbook's duplicate "Serbia" naming (FID 137
     # and 232) cannot misprice Kosovo: each row takes its own label's value. The workbook
-    # column no longer prices anything, and the repricing report carries the rows that moved.
+    # column prices nothing, and the repricing report carries the rows that moved.
     workbook = pd.DataFrame({
         'Country': ['Serbia', 'Serbia', 'Turkey'],
         'VSL': [10.0, 20.0, 30.0],
@@ -140,9 +178,9 @@ def test_positional_join_accepts_the_shipped_order_and_the_duplicate_name(monkey
 
 
 def test_positional_join_refuses_a_two_row_swap(monkeypatch):
-    """Swapping two whole rows carries their FIDs with them; until 2026-10-25 the floor accepted
-    this and both countries silently took each other's deaths (reproduced on the real file with
-    Slovakia and Zambia)."""
+    """Swapping two whole rows carries their FIDs with them, so the FID-order guard refuses it.
+    The name floor alone accepts such a swap, and both countries would silently take each
+    other's deaths."""
     monkeypatch.setattr(af, 'AIR_FILTRATION_MIN_NAME_MATCHES', 1)
     workbook, order = _mini_workbook_and_order()
     workbook.iloc[[0, 1]] = workbook.iloc[[1, 0]].values

@@ -1,11 +1,13 @@
 ---
-title: "Erosion-control ecosystem-service shock"
+title: "Erosion control: GEP valuation and ecosystem-service shock"
 format: html
 ---
 
 ## Purpose
 
-Turn the pipeline's own 300 m SEALS land-use maps into a per-region, per-year **crop-productivity
+This module does two things. The **GEP valuation** values the 2019 crop production that land cover
+protects from water erosion, following the authors' write-up (`Soil_Erosion_Control.docx`, version
+of 26 October 2026). The **shock** turns the pipeline's own 300 m SEALS land-use maps into a per-region, per-year **crop-productivity
 shock** for the eight crop sectors (`PDR`, `WHT`, `GRO`, `V_F`, `OSD`, `C_B`, `PFB`, `OCR`), so the
 economic model responds to the soil protection each scenario's land cover actually provides rather
 than to a frozen table.
@@ -13,7 +15,67 @@ than to a frozen table.
 Land cover enters soil loss only through the cover-management factor, so scenario differences in this
 module are land-driven by construction.
 
-## Method
+## GEP valuation
+
+The account value is the crop production that vegetation and land cover protect from water erosion,
+in constant 2019 USD. It is an intermediate service inside crop provision, reported separately and
+not added to total GEP.
+
+1. **Severe cropland.** Valuation counts only cropland pixels where modelled soil loss exceeds the
+   country's threshold: 2 t/ha/yr for countries under 50,000 km² or with mean elevation below 250 m,
+   and 11 t/ha/yr otherwise.
+2. **Prevention shares.** On each severe cropland pixel, the on-farm share is
+   $PS^{on} = AE / (AE + USLE)$, with $AE$ the erosion vegetation avoids and $USLE$ the soil loss that
+   remains. The upstream share $PS^{up}$ is the same ratio of D8 flow-accumulated avoided and
+   potential erosion from the land draining to the pixel. The two are combined using the bounded
+   formula $PS^{comb} = 1 - (1 - PS^{on})(1 - PS^{up})$.
+3. **Protected production.** Each crop's protected production is the prevention share times its
+   SPAM2020 yield and harvested area, summed over the country's pixels.
+4. **Shock.** A country's shock is protected production weighted by each crop's erosion-to-yield
+   elasticity, over total production: $\text{Shock}_k = \sum_c PP_{c,k}\, \varepsilon_c / \sum_c
+   \text{Prod}_{c,k}$. Elasticities follow Sartori et al. (2019), about 0.30 for cereals and 0.15 for
+   roots, oilseeds and vegetables, with 0.08 where a crop has none.
+5. **Value.** $\text{GEP}_k = \text{GPV}_k \times \text{Shock}_k$, with GPV the country's FAOSTAT crop
+   gross production value in constant 2019 USD. GDP enters only to report the value as a share of
+   GDP.
+
+The three components (on-farm, upstream, combined) are computed side by side. The account reports
+the combined one, summed to the account's r250 countries.
+
+**Missing inputs.** A country without a crop gross production value or without a shock is missing,
+not zero. A zero comes only from a present zero gross production value or a present zero shock.
+
+**Fallback crop value.** The fallback works at the country total, not crop by crop. Where FAOSTAT
+gives a country no crop gross production value at all, the whole country total is replaced by a
+fallback total: producer price times quantity, summed over the country's crops, each crop priced at
+the country's own price or else that crop's global mean price
+(`load_fao_gpv_iso3_const2019_with_fallback` in `erosion_tasks.py`). The fallback values the same
+crop items as the FAOSTAT totals, and a country with no valued crop row has no fallback total and
+stays missing. A country that has a FAOSTAT total keeps it, and gaps inside it are not filled. The write-up describes a national, then regional
+or global, price. The regional step is not in the code, a difference recorded for the authors, and
+the code is unchanged.
+
+**Repeated price rows.** The producer-price file lists some rows twice, identical in every column:
+52 of Switzerland's rows and 28 of Serbia's. These exact repeats are dropped before the global mean
+prices are taken, so each country's price counts once in the mean. Both countries have FAOSTAT
+totals, so their own values do not use the fallback, but the repeats weighted their prices twice in
+the means that fill other countries' missing prices. Dropping them lowers the combined value by
+$30.89M across 55 countries, by at most 2.3% for any one country. The file also splits some records
+over two rows, one with the crop name and one with the quantity. Those rows differ, are kept, and
+value each such crop once.
+
+**Crop items.** The FAOSTAT value table holds both crop and livestock items. The code keeps the
+items of FAOSTAT's own "Crops" item group (value domain QV, group 2041, 160 items), chosen by item
+code (`crop_item_codes` and `crop_items_only` in `erosion_functions.py`). A group total listed
+among the members is left out, and a country that lists one crop twice stops the run. The authors'
+code instead matches item names against a word list. That list misses many crops, among them sugar
+cane, oranges, bananas, olives, sugar beet, tea and natural rubber, and its pattern "oat" also keeps
+goat meat. On the reported FAOSTAT totals of 122 countries the word list keeps $2,324.72bn of 2019
+value where the item group gives $2,926.95bn. Valued with the same shocks, the item group raises
+the combined value from $18.24bn to $21.26bn. This difference from the authors' code is recorded
+for them.
+
+## Shock method
 
 The biophysics is InVEST's Sediment Delivery Ratio model, run per scenario and anchor year. It yields
 two rasters that everything downstream is built from: **USLE**, the soil loss under actual land cover,
@@ -35,7 +97,7 @@ zone,
 $$\text{level}_A = -100 \times 0.08 \times p_{crop}, \qquad p_{crop} = \frac{\text{severe cropland area}}{\text{total cropland area}}$$
 
 This is thresholded, binary, on-farm only, and weighted by cropland *area*. Because land cover carries
-no crop detail, method A is necessarily **uniform across sectors**; it cannot tell wheat land from
+no crop detail, method A is necessarily **uniform across sectors**. It cannot tell wheat land from
 vegetable land. It runs as `erosion_method = 'damage_area'` (the damage-seam section of `erosion_tasks.py`), and its
 shock is the scenario's level minus the base scenario's level in 2023, not the contemporaneous
 difference described below.
@@ -60,16 +122,24 @@ mainly under cereals sends that signal to `GRO` rather than spreading it across 
 
 ### Sign conventions
 
-A measures damage borne and is negative; B measures protection delivered and is positive. This does
-not affect the shock, because the two differ by a constant that cancels when the baseline is
-subtracted.
+A measures damage borne and is negative. B measures protection delivered and is positive. The two
+use different thresholds, weights and upstream terms, so their levels are not comparable, and each
+method's shock is taken against its own baseline.
 
 ## From level to shock
 
-Each level is already a percentage of crop productivity, so the shock is the **absolute** difference
-against the contemporaneous baseline (the nature-off counterfactual in the same year) not a relative
-change. That difference is zero at the base year and interpolated linearly between the 5-year anchors,
-then applied as a factor-productivity term (`afeall`).
+Each level is already a percentage of crop productivity, so a shock is an **absolute** difference of
+levels, not a relative change. The two families of methods difference against different references.
+
+- Methods B and B-thresholded (`erosion_shock`) take each scenario's level minus the baseline
+  scenario's level in the same year. The difference is zero at the base year and interpolated
+  linearly between the 5-year anchors. The same table also carries `shock_pct_fixedbase`, the
+  scenario's level minus the baseline's level in the base year, for comparison.
+- Method A (`erosion_method = 'damage_area'`, `erosion_damage_shock`) takes the scenario's level,
+  interpolated from the base-year level through the anchors, minus that fixed base-year level
+  (`annual_damage_change`). Where a physical stress is set, it applies from its onset year.
+
+The shock is then applied as a factor-productivity term (`afeall`).
 
 ## Crop coefficients
 
@@ -77,7 +147,7 @@ The per-crop coefficients come from a table of erosion-to-yield sensitivities ke
 joined to IFPRI SPAM crop groups. The join is one-to-many in places, since SPAM's 46 groups are coarser
 than FAO's item list, so a few resolutions are representative substitutions rather than exact matches
 (all citrus through oranges, all temperate fruit through apples, pigeon pea through dry peas). Four
-SPAM aggregates have no FAO counterpart and inherit their sector's mean; for other cereals that gives
+SPAM aggregates have no FAO counterpart and inherit their sector's mean. For other cereals that gives
 0.30, matching every named cereal in the table.
 
 ## Static fallback
@@ -95,4 +165,4 @@ standalone, which is the practical way to iterate on it without invoking the eco
 
 ## Coverage
 
-The published table is one row for each of the account's 250 countries, base year 2019, in constant 2019 USD. Of the 250, 161 carry a value, 31 are computed zeros, and 58 rows are missing, kept as missing rather than zero because an input carries no data for those countries. A zero means the computation returned zero; a missing row means the data to compute one is absent.
+The saved local table is one row for each of the account's 250 countries, base year 2019, in constant 2019 USD. Of the 250, 161 carry a value, 21 are computed zeros, and 68 rows are missing, kept as missing rather than zero because an input carries no data for those countries. The combined value sums to $21.23bn. Ten of the missing rows (ALA, AND, ESH, GLP, GUF, LIE, MCO, MTQ, SMR, XKX) have a shock but no crop gross production value. A zero means the computation returned zero. A missing row means the data to compute one is absent.

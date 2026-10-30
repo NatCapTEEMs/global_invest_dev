@@ -3,13 +3,12 @@ import os
 import hazelbean as hb
 from global_invest import utilities
 
-from global_invest.renewable_energy_provision import renewable_energy_provision_initialize
 from global_invest.renewable_energy_provision import renewable_energy_provision_functions as rf
 
 
 def publish_inputs(p):
-    """Every task's first line: the renewable-energy valuation's es_config row (defaults layer -- a caller-set value wins)
-    plus the shared country references and the results registry."""
+    """Every task's first line: the renewable-energy valuation's es_config and es_parameters rows (defaults layer --
+    a caller-set value wins) plus the shared country references and the results registry."""
     utilities.hydrate_es_config(p, 'renewable_energy_provision', log=hb.log)
     utilities.hydrate_es_parameters(p, 'renewable_energy_provision', log=hb.log)
     utilities.initialize_country_paths(p, simplified='30sec')
@@ -25,15 +24,38 @@ def renewable_energy_provision(p):
 
 def gep_preprocess(p):
     """
-    Preprocessing tasks are assumed NOT to be run by the user. Instead, it is assumed that the output of a preprocess
-    task is an input to the actual model, saved at the canonical project attribute p.renewable_energy_provision_input_path.
-    These are preprocessing tasks are still provided for reference, but are not intended to be run directly by the user.
-    We will "promote" the data outputed by a preprocess task to the base_data_dir provided to users.
+    Preprocessing step, not meant to be run by users: its output becomes a model input and is promoted
+    to the base_data_dir that users receive. Not yet implemented.
     """
     publish_inputs(p)
     if not p.run_this:
         return p
     pass # NYI
+
+def write_published(df, path, one_row_per_country=False):
+    """Write a country table in the published shape, renaming on the way out only: the frame
+    keeps the source's `Year` because the split and the map merge read it, while the published
+    table uses the lowercase `year` every other service writes.
+
+    With one_row_per_country, the per-technology rows collapse to the account's shape, one row
+    per country with the technologies summed; otherwise any downstream join on iso3 multiplies
+    each country by its technology count. The collapse groups on the country keys only, because
+    the technology, its price and its generation differ per row by construction. The
+    per-technology detail is what the three subservice tables are for.
+    """
+    published = df.rename(columns={'Year': 'year'})
+    published = published[utilities.published_country_columns(
+        published, 'renewable_energy_provision')]
+    if one_row_per_country:
+        keys = [c for c in utilities.GEP_COUNTRY_ATTR_COLS + ['year']
+                if c in published.columns]
+        # min_count=1: a country whose every technology is missing stays missing. A bare
+        # sum() maps an all-NaN group to 0, which would publish unmeasured countries as zero
+        # renewable value.
+        published = (published.groupby(keys, dropna=False, as_index=False)
+                     ['renewable_energy_provision_gep'].sum(min_count=1))
+    hb.df_write(published, path, index=False)
+
 
 def gep_calculation(p):
     """GEP valuation for renewable energy: each resource's generation priced at the country-year
@@ -74,28 +96,6 @@ def gep_calculation(p):
     utilities.assert_join_coverage(df_gep, 'renewable_energy_provision_gep',
                                    valued_rows_before_join, 'renewable_energy_provision', log=hb.log)
 
-    # Renaming on the way out only: the frame keeps the source's `Year` because the split and the
-    # map merge below read it, while the published table uses the lowercase `year` every other
-    # service writes.
-    def write_published(df, path, one_row_per_country=False):
-        published = df.rename(columns={'Year': 'year'})
-        published = published[utilities.published_country_columns(
-            published, 'renewable_energy_provision')]
-        if one_row_per_country:
-            # The combined table carried one row per country PER TECHNOLOGY: 335 rows with 85
-            # countries repeated. The total was right, being the three technologies summed, but
-            # any downstream join on iso3 multiplies the country it lands on.
-            #
-            # Summing on every column it carries does not fix it, because it also carries the
-            # technology, its price and its generation -- which differ per row by construction, so
-            # each group stays a single row. The account's shape is the country, the year and the
-            # value; the per-technology detail is what the three subservice tables are for.
-            keys = [c for c in utilities.GEP_COUNTRY_ATTR_COLS + ['year']
-                    if c in published.columns]
-            published = (published.groupby(keys, dropna=False, as_index=False)
-                         ['renewable_energy_provision_gep'].sum())
-        hb.df_write(published, path, index=False)
-
     write_published(df_gep, service_results['gep_by_country_base_year'],
                     one_row_per_country=True)
     by_resource = rf.split_by_resource(df_gep)
@@ -121,7 +121,7 @@ def gep_result(p):
 
 def gep_results_distribution(p):
     """Copy this service's results into the output directory. Shared implementation in
-    utilities, which is also where the service key stops being written out by hand."""
+    utilities."""
     publish_inputs(p)
     if not p.run_this:
         return p

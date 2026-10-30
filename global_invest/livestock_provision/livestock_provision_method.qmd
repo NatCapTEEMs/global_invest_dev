@@ -13,59 +13,67 @@ format:
 
 # Livestock Provision
 
-Livestock provision values the meat, milk, eggs and other animal products a country produces, and
-attributes to nature the part of that value nature provided. The base year is 2019.
+Livestock provision is valued as the annual resource rent attributable to the land used in
+livestock production, following the authors' write-up (`Livestock_Provision.docx`, version of
+26 October 2026) and the agricultural-land framework of The Changing Wealth of Nations 2024. The
+base year is 2019, in 2019 US dollars.
 
 ## Data and Methods
 
-The quantity is FAOSTAT's gross production value, in constant US dollars, over the 65 livestock
-item codes the method repository lists. FAOSTAT reports it in thousands of dollars, which the
-module converts.
+For country $i$,
 
 $$
-\text{GEP}_{\text{livestock}} = \sum_{c,k} \text{GPV}_{c,k} \cdot \lambda_{c}
+\text{GEP}_{i,2019} = \text{Revenue}_{i,2019} \times \lambda_{i,2019}
 $$
 
-where GPV is the gross production value for country $c$ and item $k$, and $\lambda_c$ is the
-share of that value attributable to nature.
+where Revenue is CWoN's total livestock production revenue and $\lambda$ is CWoN's land rental
+rate, land costs as a share of the total value of production. Both come from the CWoN 2024
+reproducibility package (`land_pasture_revenue_total.xlsx` and `land_rental_rates.xlsx`).
+Revenue is in current US dollars, hence 2019 dollars for this run. The rental rate is a
+dimensionless share. CWoN builds the revenue from the products of
+its Table 22: indigenous meat of ten species, whole fresh milk of five, and hides, skins, wool and
+hair.
 
-## The attribution factor
+A country missing either input is missing, not zero. A zero would come only from a zero product
+of two present inputs, and none occurs in 2019.
 
-What $\lambda$ should be is the service's open question, and the library computes it both ways so
-the two can be compared.
+## Verification
 
-**The feed share.** Nature's contribution to a farmed animal is the feed it ate that nature grew
-rather than that a farmer planted and fertilised. GLEAM 3 reports dry-matter intake per country
-across eight feed categories, and four of them are ecosystem-provided: grass and leaves, crop
-residues, fodder crop, and by-products. The share is those four over all eight.
+The package also gives the rent product by product (`land_pasture_rent_cd.xlsx`). Summed by
+country for 2019 it equals revenue times rate on all 189 valued countries (largest difference
+$0.0000005), with the same countries missing. The run log reports this check.
 
-$$
-\lambda_c = \frac{\text{grass and leaves} + \text{crop residues} + \text{fodder crop} + \text{by-products}}
-{\text{total dry-matter intake}}
-$$
+The values equal the authors' own country column in the shared results sheet (largest relative
+difference 5e-10, display rounding) and cover the same 189 countries. These checks reproduce
+CWoN's published pasture rents. They do not validate them against independent data. The
+authors' code register records validation for the earlier FAOSTAT construction: a comparison
+with FAO values, done but not documented, and a comparison with non-FAO sources, outstanding.
+No comparison with non-FAO livestock data has been made for the CWoN values used here.
 
-The intake comes from FAO's public GLEAM 3 dashboard, harvested for 231 countries of which 205
-match a country in the account. The median share is 0.73.
+## Feed-share diagnostic
 
-**The land rental rate.** The alternative is the CWoN land rental rate, the share of production
-value accruing to land rather than to labour, capital or purchased inputs. That is the factor
-crop provision uses, and livestock currently uses it as a stand-in.
-
-The two differ by a factor of 2.6 on the same production: $519bn on the rental rate, $1.37T on
-the feed share. Choosing between them is a decision for the account, not a data gap.
-
-## Validation
-
-There is no committed reference output for either. The GLEAM harvest can be checked against the
-compiled extract FAO distributes as gleam3_dmi.xlsx, which we have asked for.
-
-## References
-
-1. FAO (2023). *Global Livestock Environmental Assessment Model (GLEAM) 3*.
-   <https://www.fao.org/gleam/en/>
-2. World Bank (2024). *The Changing Wealth of Nations: Revisiting the Measurement of
-   Comprehensive Wealth*.
+GLEAM 3's ecosystem-provided feed share (grass and leaves, crop residues, fodder crop and
+by-products over total dry-matter intake) is applied to the same CWoN revenue and written beside
+the headline as `livestock_provision_gep_feed_share`. It is a diagnostic. The account's value is
+revenue times rental rate.
 
 ## Coverage
 
-The published table is one row for each of the account's 250 countries, base year 2019, in constant 2019 USD. Of the 250, 142 carry a value, 36 are computed zeros, and 72 rows are missing, kept as missing rather than zero because an input carries no data for those countries. A zero means the computation returned zero; a missing row means the data to compute one is absent.
+The published table is one row for each of the account's 250 countries. 189 carry a value, none
+is zero, and 61 are missing because CWoN has no revenue or no rental rate for them. CWoN's code
+CHI (Channel Islands) has no r250 country and no value.
+
+## Earlier construction
+
+Until 29 October 2026 the library valued FAOSTAT gross production value over 65 livestock items
+times CWoN's crop rental rate ($245.89bn over 142 countries). The authors' method uses CWoN's own
+livestock revenue, and the library now follows it.
+
+## References
+
+1. World Bank (2024a). *The Changing Wealth of Nations 2024: Technical Report, Methods and Data*,
+   pp. 53-59.
+2. World Bank (2024b). *Reproducibility package for The Changing Wealth of Nations 2024*.
+   <https://reproducibility.worldbank.org/catalog/194>
+3. FAO (2023). *Global Livestock Environmental Assessment Model (GLEAM) 3*.
+   <https://www.fao.org/gleam/en/>

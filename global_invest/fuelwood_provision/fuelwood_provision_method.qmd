@@ -9,42 +9,83 @@ format:
 ---
 
 Fuelwood provision values the woody biomass that households and local economies burn for
-cooking and heating. The account carries the CAS team's per-country results; their staged
-appendix documents the chain, and rebuilding it from the public inputs is the recorded
-later step.
+cooking and heating. The account carries the CAS team's per-country results. Their method is
+documented, but the chain cannot be rebuilt from what was supplied: the package has no
+executable code or complete numerical input tables.
+
+## Sources
+
+- **Method:** the CAS team's September 2026 package (dated 6 September 2026), staged in
+  `base_data/global_invest/cas_submission_2026_09/fuelwood/`, holds four documents:
+  - Methodology.
+  - Input Data, which describes the public sources and a labour-cost table but attaches no
+    complete numerical input tables.
+  - Code, a workflow description with no executable code.
+  - Output Result, which defines the outputs and states that no result tables are attached.
+- It is later than the 19 September 2025 appendix, still staged beside the timber module. That
+  appendix used 2020 consumption in constant 2020 USD and had no explicit λ.
+- **Values:** the results sheet `fuelwood_provision_gep.xlsx`, sheet `1000USD ($2019 USD)`,
+  180 countries.
 
 ## Quantity
 
-National annual fuelwood harvest volumes from FAO forestry statistics, converted to energy
-content in terajoules, following the CAS methodology appendix.
+GFPM fuelwood consumption for 2019 in 180 countries, benchmarked to FAOSTAT forestry
+statistics and split into heat and electricity use. It is converted to energy (TJ) and to
+the equivalent quantities of substitute coal, oil, natural gas and electricity. The
+conversion uses a bulk density of 0.5 t/m³, net calorific values, power-plant efficiency for
+electricity and the national energy mix (the package's equation 1). Total production
+includes exported volume.
 
 ## Price
 
-The replacement cost of the equivalent energy from substitute fuels, per terajoule, in
-constant 2019 USD, following the same appendix.
+The replacement cost of that energy at constant-2019 USD substitute prices.
 
 ## Valuation
 
 $$
-\text{GEP}_i = \text{gross replacement value}_i - \text{human inputs}_i
+G_i = \sum_R P_{R,i} Q_{R,i} + EV_i, \qquad
+\lambda_i = 1 - \frac{c_{labor,i} \, E_{total,i}}{\sum_R P_{R,i} Q_{R,i}}, \qquad
+\text{GEP}_i = G_i \, \lambda_i
 $$
 
-the ecosystem-attributable fraction of each country's gross fuelwood value, as the CAS
-appendix defines it. The library reads their per-country results sheet, whose own title
-states the values in thousands of 2019 USD, onto the account's country list.
+$G_i$ is the replacement value plus export revenue $EV_i$. $c_{labor,i}$ is the harvesting
+labour cost per TJ. It comes from literature labour costs (the package's Table S1, 21 entries
+in 2019 USD/m³) and, for other countries, from a transfer adjusted for labour productivity
+across countries of similar GDP per capita.
+
+⚠ Two points need clarification:
+
+- λ's denominator excludes $EV_i$ while $G_i$ includes it. The export revenue is therefore
+  scaled by a labour share computed on the replacement value only.
+- With the stated units (labour cost in USD/m³, 0.5 t/m³, NCV in TJ/Gg), the conversion to
+  USD per TJ is $2 \times 10^3 / NCV_f$. The package writes $2 \times 10^6$.
+
+## What the library computes
+
+The library reads the results sheet, whose title gives thousands of 2019 USD, multiplies by
+1,000 and joins by ISO3 onto the account's country list. The 179 matched country values
+reproduce the supplied sheet after conversion to dollars. The Netherlands Antilles value is
+recorded separately. That checks the final table only. It is not a reconstruction of the GFPM
+chain, which the supplied package does not make possible.
+
+## Relation to timber
+
+The account's timber value, CWoN's forest rent, already includes wood-fuel revenue. This row
+values much of the same flow by replacement cost, so the two rows overlap. Which row carries
+wood fuel is an account decision.
 
 ## Coverage
 
 The published table is one row for each of the account's 250 countries, base year 2019, in
-constant 2019 USD. The CAS sheet values 180 countries; 179 join the account list by ISO3
+constant 2019 USD. The CAS sheet values 180 countries. 179 join the account list by ISO3,
 and one, the Netherlands Antilles (dissolved 2010), cannot be carried and is written beside
-the table with its value rather than dropped. The remaining rows are missing, not zero: the
-sheet reports no value for them. A zero would mean a computed zero, and the sheet carries
+the table with its value rather than dropped. The remaining rows are missing, not zero, because
+the sheet reports no value for them. A zero would mean a computed zero, and the sheet carries
 none.
 
 ## Inputs
 
 All paths come from `es_parameters.csv` under the `fuelwood_provision` service key: the CAS
-per-country results sheet, with its source row beside it. The CAS appendix documents
-(methodology, input data, code, output result) are staged beside the account's copy of the
-results in base_data.
+per-country results sheet, with its source row beside it. The September 2026 CAS documents
+(methodology, input data, code, output result) are staged in
+`base_data/global_invest/cas_submission_2026_09/fuelwood/`.

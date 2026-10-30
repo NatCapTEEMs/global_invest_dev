@@ -1,9 +1,8 @@
 """The selected annual-interpolation specification: PCHIP on the anchored level or stock.
 
-Pins what the 10 October specification requires -- anchor identity, positivity, no overshoot,
+Pins what the specification requires -- anchor identity, positivity, no overshoot,
 multiplicative annual compounding, and preservation of the discrete ES20 stress event -- so the
-pipeline cannot drift back to linear interpolation silently. The specification lived only in two
-standalone prepare.py scripts until 13 October, which is exactly how a fresh run reverted.
+pipeline cannot drift back to linear interpolation silently.
 """
 import numpy as np
 import pytest
@@ -88,9 +87,8 @@ def test_es20_stress_keeps_its_timing_on_top_of_a_pchip_path():
     before = np.asarray(YEARS) < 2030
     assert np.allclose(stressed[before], (1 + ordinary / 100.0)[before])
     assert stressed[YEARS.index(2030)] == pytest.approx((1 + ordinary[YEARS.index(2030)] / 100.0) * 0.8)
-# The test that pinned the production pollination path to PCHIP is not here: it imported
-# global_invest.pollination.retained_value, which this branch has removed. The property it
-# guarded - that the path is not linear - is unguarded until the replacement is pinned.
+# The pollination shock path is pinned against linear interpolation in its own tests
+# (global_invest/pollination/test_pollination.py), not here.
 
 
 def test_anchor_identity_holds_at_production_magnitude():
@@ -98,10 +96,9 @@ def test_anchor_identity_holds_at_production_magnitude():
 
     test_anchor_values_are_returned_exactly uses anchors of order 10, where evaluating the cubic
     Hermite at a knot is wrong by about 1e-15 and any sane tolerance hides it. Retained pollination
-    value is order 1e8, where the same round-off is 7.5e-09: a zone whose 2050 anchor is exactly
-    zero came back at -1.4e-14, and the strict non-negativity check on retained value rejected the
-    whole table mid-run. So pin the knots at the magnitude the pipeline actually carries, and pin
-    them exactly -- a tolerance here is the thing that failed.
+    value is order 1e8, where the same round-off can turn an exactly-zero anchor slightly negative,
+    which the strict non-negativity check on retained value rejects. So pin the knots at the
+    magnitude the pipeline actually carries, and pin them exactly: a tolerance hides the failure.
     """
     values = [6.4e8, 3.0e8, 1.0e8, 0.0]
     out = utilities.anchored_series(YEARS, ANCHORS, values)

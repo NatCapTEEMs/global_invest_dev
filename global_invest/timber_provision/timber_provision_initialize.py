@@ -6,13 +6,13 @@ Shock side: consumers with SEALS maps call add_timber_provision_shock_tasks(p, p
 their downscaling, exactly as they call add_terrestrial_carbon_tasks. It writes
 timber_provision_interpolated.csv beside the carbon seam, so forestry's two candidate shocks --
 carbon density, which is a proxy, and timber value, which is what the land actually yields -- can be
-compared on the same scenarios. Nothing routes it to GTAP; producing the comparison is the point.
+compared on the same scenarios. Nothing routes it to GTAP by default; the run file decides.
 """
 from global_invest.timber_provision import timber_provision_tasks
 
 
 def build_gep_service_calculation_task_tree(p):
-    """GEP calculation tree: the committed timber table -> r250 one-row-per-country."""
+    """GEP calculation tree: the r250 one-row-per-country valuation, then the fuelwood table."""
     p.gep_calculation_task = p.add_task(timber_provision_tasks.gep_calculation)
     p.fuelwood_gep_task = p.add_task(timber_provision_tasks.fuelwood_gep)
     return p

@@ -38,7 +38,7 @@ def build_gep_service_results_task_tree(p):
 
 
 def build_gep_service_task_tree(p):
-    """Full GEP run: the calculation calculation plus the results/report task."""
+    """Full GEP run: the calculation plus the results/report task."""
     p = build_gep_service_calculation_task_tree(p)
     p.terrestrial_carbon_gep_result_task = p.add_task(terrestrial_carbon_tasks.gep_result)
 
@@ -48,7 +48,7 @@ def build_gep_service_task_tree(p):
 # ---------------------------------------------------------------------------------------------
 # ES-shock wiring (the consumer seam). Everything above builds the GEP task trees; this builds the ES-shock one.
 # Both live here so a module has a single wiring file (cf. add_pollination_tasks / add_erosion_tasks
-# / add_fisheries_tasks in their own <module>_initialization.py).
+# / add_fisheries_tasks in their own <module>_initialize.py).
 # ---------------------------------------------------------------------------------------------
 def add_terrestrial_carbon_tasks(p, parent=None):
     """Graft the carbon ES-shock task onto p, dispatching STATIC vs DYNAMIC on p.dynamic_es.
@@ -64,10 +64,8 @@ def add_terrestrial_carbon_tasks(p, parent=None):
     Spawn density / carbon zones via p.get_path.
     """
     # NO skip_existing. The flag keys on the TASK DIRECTORY, and that directory holds the cached
-    # density rasters -- so once they exist the whole task is skipped and the summaries and the
-    # output table are never rebuilt, even when they are missing or invalidated. The task reported
-    # "Skipping" and "Script complete" and produced nothing, which is why consumers had to reach in
-    # and set skip_existing = 0 to make progress.
+    # density rasters -- so once they exist the whole task would be skipped and the summaries and
+    # the output table never rebuilt, even when they are missing or invalidated.
     #
     # Re-runnability lives INSIDE the task instead, and at a finer grain: _zone_mean guards the
     # density raster and the zonal summary separately, per scenario-year. Deleting one summary
