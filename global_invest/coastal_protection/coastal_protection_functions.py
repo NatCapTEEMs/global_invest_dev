@@ -1,48 +1,171 @@
 # -*- coding: utf-8 -*-
-import os
 import logging
 import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
-import hazelbean as hb
 
-def read_mangrove_values(path: str):
 
+CORAL_REEF_VALUE_YEAR = 2011
+COASTAL_PROTECTION_BASE_YEAR = 2019
+
+
+def _read_excel_sheet(path: str, sheet_name: str, source_label: str):
     try:
-        df_mangrove_value = pd.read_excel(path, sheet_name='Sheet1', engine='openpyxl')
-        logging.info(f"Loaded mangrove coastal protection values from {path} ({df_mangrove_value.shape[0]} rows).")
+        df = pd.read_excel(path, sheet_name=sheet_name, engine='openpyxl')
+        logging.info(
+            f"Loaded {source_label} from {path} ({df.shape[0]} rows)."
+        )
+        return df
     except Exception as e:
-        logging.error(f"Failed to read crop values file '{path}': {e}")
+        logging.error(f"Failed to read {source_label} file '{path}': {e}")
         raise
 
 
-    # rename columns
-    old_names = ["countrycode","annual_value_2019"]
-    new_names = ["ee_r264_label",'Value']
+def _read_world_bank_indicator(path: str, value_name: str):
+    """Read a World Bank wide indicator file and return country-year values.
 
-    rename_dict = dict(zip(old_names, new_names))
-    df_mangrove_value.rename(columns=rename_dict, inplace=True)
+    World Bank CSV downloads carry four metadata rows before their header.  Values are
+    coerced with ``errors='coerce'`` so blank cells become NaN while true zeroes remain zero.
+    """
+    try:
+        if path.lower().endswith(('.xlsx', '.xls')):
+            df_raw = pd.read_excel(path, engine='openpyxl')
+        else:
+            with open(path, encoding='utf-8-sig') as source_file:
+                first_line = source_file.readline().lstrip()
+            skiprows = 4 if first_line.startswith(('Data Source', '"Data Source"')) else 0
+            df_raw = pd.read_csv(path, skiprows=skiprows, encoding='utf-8-sig')
+        logging.info(f"Loaded World Bank indicator from {path} ({df_raw.shape[0]} rows).")
+    except Exception as e:
+        logging.error(f"Failed to read World Bank indicator file '{path}': {e}")
+        raise
+
+    year_columns = [column for column in df_raw.columns if str(column).isdigit()]
+    if 'Country Code' not in df_raw.columns or not year_columns:
+        raise ValueError(
+            f"World Bank indicator file '{path}' must contain Country Code and year columns."
+        )
+
+    df = df_raw.melt(
+        id_vars=['Country Code'],
+        value_vars=year_columns,
+        var_name='year',
+        value_name=value_name,
+    )
+    df['year'] = pd.to_numeric(df['year'], errors='coerce').astype('Int64')
+    df[value_name] = pd.to_numeric(df[value_name], errors='coerce')
+    return df
 
 
-    logging.info(f"Finished cleaning up ({df_mangrove_value.shape[0]} rows).")
+def read_world_bank_year_values(path: str, year, value_name: str):
+    """Read one World Bank indicator for requested years, preserving missing values."""
+    df = _read_world_bank_indicator(path, value_name)
+    years = [year] if isinstance(year, int) else list(year)
+    available_years = set(df['year'].dropna().astype(int))
+    missing_years = sorted(set(years) - available_years)
+    if missing_years:
+        raise ValueError(
+            f"World Bank indicator file '{path}' lacks requested years {missing_years}."
+        )
+    return df.loc[df['year'].isin(years), ['Country Code', 'year', value_name]].copy()
 
-    # reshape to long format
-    df_mangrove_value["year"] = pd.to_numeric(df_mangrove_value["year"], errors="coerce").astype(int)
+
+def read_world_bank_latest_values(path: str, target_year: int, value_name: str):
+    """Read latest nonmissing World Bank value at or before ``target_year``."""
+    df = _read_world_bank_indicator(path, value_name)
+    df = df.loc[
+        df['year'].le(target_year) & df[value_name].notna(),
+        ['Country Code', 'year', value_name],
+    ].sort_values(['Country Code', 'year'])
+    return (
+        df.drop_duplicates('Country Code', keep='last')
+        .rename(columns={'year': f'{value_name}_source_year'})
+        .reset_index(drop=True)
+    )
+
+
+def read_exchange_rate_fallbacks(path: str, years=None):
+    """Read documented non-World-Bank exchange-rate fallback records."""
+    df = pd.read_csv(path, encoding='utf-8-sig')
+    required_columns = {
+        'Country Code', 'year', 'exchange_rate_lcu_per_usd'
+    }
+    missing_columns = required_columns.difference(df.columns)
+    if missing_columns:
+        raise ValueError(
+            f"Exchange-rate fallback file '{path}' lacks columns "
+            f"{sorted(missing_columns)}."
+        )
+    df['year'] = pd.to_numeric(df['year'], errors='coerce').astype('Int64')
+    df['exchange_rate_lcu_per_usd'] = pd.to_numeric(
+        df['exchange_rate_lcu_per_usd'], errors='coerce'
+    )
+    df = df.dropna(subset=['Country Code', 'year', 'exchange_rate_lcu_per_usd'])
+    if years is not None:
+        df = df.loc[df['year'].isin(years)]
+    return df
+
+
+def apply_exchange_rate_fallbacks(df: pd.DataFrame, fallback_df: pd.DataFrame):
+    """Append documented rates and keep World Bank values when available."""
+    if fallback_df.empty:
+        return df
+    fallback_values = fallback_df[
+        ['Country Code', 'year', 'exchange_rate_lcu_per_usd']
+    ].rename(columns={'exchange_rate_lcu_per_usd': 'fx_lcu_per_usd'})
+    combined = pd.concat([df, fallback_values], ignore_index=True)
+    return (
+        combined.sort_values(['Country Code', 'year'])
+        .groupby(['Country Code', 'year'], as_index=False, dropna=False)[
+            'fx_lcu_per_usd'
+        ]
+        .first()
+    )
+
+
+def _multiply_preserve_zeros(value, factor):
+    """Multiply values while carrying exact source zeroes through missing factors."""
+    value = pd.to_numeric(value, errors='coerce')
+    factor = pd.to_numeric(factor, errors='coerce')
+    factor = factor.where(factor > 0)
+    result = value * factor
+    return result.mask(value.eq(0), 0.0)
+
+
+def _divide_preserve_zeros(value, divisor):
+    """Divide values while carrying exact numerator zeroes through missing divisors."""
+    value = pd.to_numeric(value, errors='coerce')
+    divisor = pd.to_numeric(divisor, errors='coerce')
+    divisor = divisor.where(divisor > 0)
+    result = value / divisor
+    return result.mask(value.eq(0), 0.0)
+
+
+def read_mangrove_values(path: str):
+    df_mangrove_value = _read_excel_sheet(
+        path, 'Sheet1', 'mangrove coastal protection values'
+    )
+    df_mangrove_value.rename(columns={'countrycode': 'ee_r264_label'}, inplace=True)
+    df_mangrove_value['annual_value_2019'] = pd.to_numeric(
+        df_mangrove_value['annual_value_2019'], errors='coerce'
+    )
+    df_mangrove_value['mangrove_value_2019_usd'] = df_mangrove_value['annual_value_2019']
+    df_mangrove_value['year'] = pd.to_numeric(
+        df_mangrove_value['year'], errors='coerce'
+    ).astype('Int64')
 
     logging.info(f"Reshaped to long format ({df_mangrove_value.shape[0]} rows).")
     return df_mangrove_value
 
 
 def read_coral_reef_values(path: str):
-
-    try:
-        df_coral_reef_value = pd.read_excel(path, sheet_name='Sheet1', engine='openpyxl')
-        logging.info(f"Loaded mangrove coastal protection values from {path} ({df_coral_reef_value.shape[0]} rows).")
-    except Exception as e:
-        logging.error(f"Failed to read crop values file '{path}': {e}")
-        raise
-        df_coral_reef_value['coral_reef_value'] = pd.to_numeric(df_coral_reef_value['coral_reef_value'], errors='coerce')*1000000  
-         # original values: 2011 USD millions -> convert to USD
+    df_coral_reef_value = _read_excel_sheet(
+        path, 'Sheet1', 'coral-reef coastal protection values'
+    )
+    df_coral_reef_value['coral_reef_value'] = pd.to_numeric(
+        df_coral_reef_value['coral_reef_value'], errors='coerce'
+    )
+    df_coral_reef_value['year'] = pd.to_numeric(
+        df_coral_reef_value['year'], errors='coerce'
+    ).astype('Int64')
 
     logging.info(f"Finished cleaning up ({df_coral_reef_value.shape[0]} rows).")
 
@@ -52,82 +175,107 @@ def read_coral_reef_values(path: str):
 
 def read_gdp_inflation_deflator(path: str):
     """
-    Read the World Bank GDP inflation deflator data from the specified Excel file.
-    https://data.worldbank.org/indicator/NY.GDP.DEFL.KD.ZG
+    Read World Bank GDP-deflator index data from CSV or Excel.
+    https://data.worldbank.org/indicator/NY.GDP.DEFL.ZS
 
     """
 
-    try:
-        df_gdp_inflation_deflator = pd.read_excel(path, engine='openpyxl')
-        df_gdp_inflation_deflator = df_gdp_inflation_deflator.melt(
-            id_vars=['Country Name', 'Country Code', 'Indicator Name', 'Indicator Code'],
-            var_name='year',
-            value_name='value'
+    return _read_world_bank_indicator(path, 'value')
+
+
+def get_gdp_deflator_factor(path, source_year: int, target_year: int):
+    """Return GDP-deflator index ratio carrying source-year LCU into target-year LCU.
+
+    ``NY.GDP.DEFL.ZS`` is an index, not an annual inflation-rate series.  The correct
+    conversion is ``deflator[target_year] / deflator[source_year]``.
+    """
+    df = _read_world_bank_indicator(path, 'GDP_deflator')
+    levels = (
+        df.loc[df['year'].isin([source_year, target_year])]
+        .pivot_table(index='Country Code', columns='year', values='GDP_deflator', aggfunc='first')
+    )
+    source = levels.get(source_year)
+    target = levels.get(target_year)
+    if source is None or target is None:
+        raise ValueError(
+            f"GDP-deflator file '{path}' lacks required years {source_year} and {target_year}."
         )
-        df_gdp_inflation_deflator['year'] = pd.to_numeric(df_gdp_inflation_deflator['year'], errors='coerce').astype('Int64')
-        logging.info(f"Loaded mangrove coastal protection values from {path} ({df_gdp_inflation_deflator.shape[0]} rows).")
-    except Exception as e:
-        logging.error(f"Failed to read crop values file '{path}': {e}")
-        raise
 
-    logging.info(f"Finished cleaning up ({df_gdp_inflation_deflator.shape[0]} rows).")
-
-    return df_gdp_inflation_deflator
+    factor = (target / source).where((source > 0) & (target > 0))
+    return pd.DataFrame({
+        'Country Code': factor.index,
+        'deflator_source': source.reindex(factor.index).to_numpy(),
+        'deflator_target': target.reindex(factor.index).to_numpy(),
+        'deflator_factor': factor.to_numpy(),
+    })
 
 
 def get_inflation_deflator_multiplier(path, start_year, end_year):
 
     """
-    Compute cumulative GDP deflator multiplier between two years for each country.
+    Backward-compatible name for a GDP-deflator index ratio.
 
-    Parameters
-    ----------
-    p : object
-        Parameter object containing path attributes (e.g., p.df_gdp_inflation_deflator_path)
-    start_year : int
-        The first year in the period (inclusive)
-    end_year : int
-        The last year in the period (inclusive)
-
-    Returns
-    -------
-    DataFrame
-        A DataFrame with columns:
-        ['Country Code', 'Country Name', f'deflator_multiplier_{start_year}_{end_year}']
+    ``start_year`` is the first inflation year; source-value year is
+    ``start_year - 1``.
     """
 
-    df_gdp_inflation_deflator = read_gdp_inflation_deflator(path)
+    # Backward-compatible wrapper.  Existing callers pass the first inflation year;
+    # for an index series that means source-year = start_year - 1.
+    df = get_gdp_deflator_factor(path, start_year - 1, end_year)
+    return df.rename(columns={'deflator_factor': 'deflator_multiplier'})
 
-    mask = df_gdp_inflation_deflator["year"].between(start_year, end_year)
-    df_gdp_inflation_deflator = df_gdp_inflation_deflator[mask]
-    df_gdp_inflation_deflator["multiplier"] = 1 + df_gdp_inflation_deflator["value"]/100
-    df_gdp_inflation_deflator = (df_gdp_inflation_deflator.groupby(["Country Code", "Country Name"], as_index=False)["multiplier"]
-    .prod()
-    .rename(columns={"multiplier": "deflator_multiplier"})
+
+def merge_world_bank_factors(df: pd.DataFrame, *factor_dfs):
+    """Left-join country-level World Bank factors onto source values."""
+    for factor_df in factor_dfs:
+        df = (
+            df.merge(
+                factor_df,
+                how='left',
+                left_on='ee_r264_label',
+                right_on='Country Code',
+                validate='many_to_one',
+            )
+            .drop(columns=['Country Code'])
+        )
+    return df
+
+
+def convert_usd_to_2019_int_dollars(
+    value_usd, exchange_rate, ppp_factor, deflator_factor=None
+):
+    """Convert source-year USD to 2019 LCU and 2019 PPP-adjusted international dollars.
+
+    ``exchange_rate`` must match source-value year.  Supply ``deflator_factor`` only
+    when source LCU must first be expressed in 2019 LCU.  Returns source-year LCU,
+    2019 LCU, and 2019 international dollars, in that order.
+    """
+    source_lcu = _multiply_preserve_zeros(value_usd, exchange_rate)
+    target_lcu = source_lcu
+    if deflator_factor is not None:
+        target_lcu = _multiply_preserve_zeros(source_lcu, deflator_factor)
+    int_dollar = _divide_preserve_zeros(target_lcu, ppp_factor)
+    return source_lcu, target_lcu, int_dollar
+
+
+def group_sum_preserving_nan(df: pd.DataFrame, groupby_cols, value_cols):
+    """Aggregate values without turning all-missing groups into zero."""
+    return (
+        df.groupby(groupby_cols, as_index=False, dropna=False)[value_cols]
+        .agg(lambda values: values.sum(skipna=False))
     )
-
-    df_gdp_inflation_deflator.rename(
-        columns={
-            "Country Code": "ee_r264_label",
-            "Country Name": "ee_r264_name"
-        },
-        inplace=True
-    )
-
-    return df_gdp_inflation_deflator
 
 def group_countries(df: pd.DataFrame):
     """
-    Aggregate total GEP across all countries by year.
-    """
-    # df = df.loc[df['year'] == 2019].copy()
-    df_gep_by_year = hb.df_groupby(df, groupby_cols='year', agg_cols="Value", preserve='keep_all_valid')
+    Aggregate total GEP across countries by year.
 
-    
-    # START HERE: df_gep_by_year = hb.df_groupby(df, groupby_cols='iso3_r250_label', agg_dict={"Value": "sum"}). This line causes a really wrongly formatted DataFrame.
-    df_gep_by_year.set_index("year", inplace=False)
-    # df_gep_by_year.rename(columns={"gep": "total_gep"}, inplace=True)
-    df_gep_by_year.sort_values("year", inplace=True)
+    Missing country values are excluded when at least one country is valid;
+    an all-missing year remains NaN.
+    """
+    df_gep_by_year = (
+        df.groupby('year', as_index=False, dropna=False)['Value']
+        .sum(min_count=1)
+    )
+    df_gep_by_year.sort_values('year', inplace=True)
     logging.info(f"Grouped total by year ({df_gep_by_year.shape[0]} rows).")
     return df_gep_by_year
-

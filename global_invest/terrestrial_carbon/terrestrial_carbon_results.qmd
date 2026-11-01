@@ -1,14 +1,27 @@
 ---
+title: "Global Climate Regulation Services (Terrestrial Carbon Retention)"
+bibliography: ../coastal_carbon/references.bib
+csl: /usr/local/texlive/2025/texmf-dist/tex/latex/citation-style-language/styles/apa.csl
+nocite: '@un2021seea'
+resource-path:
+  - "/Users/long/Library/CloudStorage/GoogleDrive-yxlong@umn.edu/Shared drives/NatCapTEEMs/Files/base_data/submissions/terrestrial_carbon"
 format:
   html:
     embed-resources: true
     standalone: true
+    toc: true
+    toc-location: left
+    number-sections: true
     code-fold: true           # Fold code by default in HTML
     code-summary: "Show code"
   pdf:
     echo: false              # Hide code by default in PDF
+    toc: true
+    number-sections: true
   docx:
     echo: false              # Hide code by default in Word
+    toc: true
+    number-sections: true
   ipynb:
     echo: true
 
@@ -28,205 +41,395 @@ author:
     affiliations: University of Minnesota
   - name: Nfamara Dampha
     affiliations: University of Minnesota
+  - name: Chiara Colesanti Senni
+    affiliations:
+      - name: University of Zurich
+        department: Department of Finance
+        address: Plattenstrasse 14
+        city: Zürich
+        country: Switzerland
+        postal-code: 8032
+    url: https://sites.google.com/view/chiaracolesantisenni/home
   - name: Haku Bo
     affiliations: University of Minnesota
 ---
 
-# Terrestrial Carbon Results
+{{< pagebreak >}}
 
-Text describing it. To be written by service team.
+# Introduction
+
+Terrestrial ecosystems hold large stocks of carbon in biomass and soils. Continued storage limits the carbon dioxide released to the atmosphere and therefore has value as a climate regulation service. The System of Environmental-Economic Accounting Ecosystem Accounting (SEEA EA) places this service within ecosystem accounting and distinguishes carbon retention from carbon sequestration (United Nations, 2021).
+
+Carbon retention is the primary component considered here. It is the continued storage of carbon already held in terrestrial ecosystem assets, with the opening carbon stock used as a proxy for the annual service flow.
+
+# Methods
+
+## Estimating quantity
+
+We use the two stage spatial model described by @johnson2023 to estimate terrestrial carbon storage. @fig-carbon-workflow summarizes the workflow.
+
+Stage 1 creates a carbon density lookup table. The global carbon density maps from @spawn2020 provide harmonized, vegetation specific estimates of aboveground and belowground biomass for 2010. The maps exclude soil carbon and dead organic matter. We combine 300 m ESA Climate Change Initiative Land Cover data, abbreviated ESA CCI LC, with the carbon zone map from @gibbs2008. The lookup table assigns a carbon density to each land use and land cover class and carbon zone combination.
+
+Stage 2 applies the lookup table and carbon zone map to annual ESA CCI LC maps (ESA, 2017). For each pixel and year, the model matches the pixel's LULC class and carbon zone to a carbon density value. We use the 2019 LULC map to estimate pixel level carbon storage. The estimate captures changes associated with land cover transitions, but not changes within a LULC class caused by growth, degradation, disturbance, or recovery. This produces a spatial account that can be updated when improved input data become available.
+
+<!-- Figure source: /Users/long/Library/CloudStorage/GoogleDrive-yxlong@umn.edu/Shared drives/NatCapTEEMs/Files/base_data/submissions/terrestrial_carbon/GEP_carbon_workflow.png -->
+![Workflow for estimating terrestrial carbon storage. We combine the carbon zone map, 2010 ESA LULC data, and carbon density data to construct a lookup table, then apply it to annual ESA LULC maps.](GEP_carbon_workflow.png){#fig-carbon-workflow width=100% fig-pos="H"}
+
+## Estimating price
+
+We value one year of terrestrial carbon retention with the rental social cost of carbon (SCC) [@parisa2022; @groom2023; @venmans2025]. Rental SCC measures the value of short term carbon storage [@parisa2022]. Within the GEP framework, the one year rental rate is:
+
+$$
+\text{One year rental rate}
+= P_C(t) - P_C(t+1)e^{-r}
+= P_C(t) - P_C(t)e^{g}e^{-r}
+= P_C(t)\left(1-e^{-x}\right).
+$$
+
+In this expression, $P_C(t)$ is the social cost of carbon in year $t$, $P_C(t+1)$ is the value in year $t+1$, $r$ is the discount rate, $g$ is the SCC growth rate, and $x=r-g$ is the net carbon discount rate. The formula gives the annual value of holding one metric ton of CO2 for one year.
+
+All monetary values are in constant 2019 int\$. SCC and rental SCC are global benchmark prices quoted in U.S. dollars, so 2019 int\$ and 2019 U.S. dollars have the same numerical value in this study. We convert 2020 U.S. dollar source values to 2019 int\$ with the GDP deflator factor 1.0185:
+
+$$
+V_{2019\ \text{int\$}}
+= \frac{V_{2020\ \text{USD}}}{1.0185}.
+$$
+
+We do not apply country specific exchange rate or PPP conversion to these scalar SCC or rental SCC values.
+
+The 2019 base year requires $P_C(2019)$ and $P_C(2020)$. The GIVE damage functions begin in 2020, so the model cannot calculate $P_C(2019)$ directly. GIVE combines mortality, agriculture, energy, and sea level rise damages with probabilistic socioeconomic projections from the Resources for the Future Socioeconomic Pathways (RFF SPs). The model underpins updated U.S. Environmental Protection Agency SCC estimates [@rennert2022]. We therefore use $P_C(2020)$ as the value for $P_C(2019)$.
+
+At the 2.0% discount rate, the replication gives an SCC of \$185 per tCO2 in 2020 and \$188 in 2021, an increase of about 1.6%. GDP growth and cumulative emissions drive this increase. The COVID 19 recession reduced global GDP in 2020, so the difference between 2019 and 2020 SCC is likely small for this application.
+
+Under this convention, the 2.0% replication gives a mean SCC of \$185.05 per tCO2 in 2020 U.S. dollars. Deflating this value gives \$181.69 per tCO2 and \$666.19 per tC in 2019 int\$. With zero carbon price growth, annual rental SCC is \$13.19 per tC in 2019 int\$.
+
+Rental SCC varies with uncertainty in the underlying SCC and with the net carbon discount rate. The SCC distribution reflects uncertainty in climate sensitivity, socioeconomic trajectories, and damage functions [@rennert2022]. Because $x=r-g$, higher assumed carbon price growth lowers the rental rate. When $g=r$, the formula gives a zero rental rate, consistent with Hotelling's rule [@groom2023; @venmans2025]. When $g>r$, the net carbon discount rate is negative and falls outside the range used here.
+
+The appendix gives rental SCC under alternative discount rates and carbon price growth rates. Valid parameter combinations yield rental rates from \$2.16 to \$20.11 per metric ton of carbon in 2019 int\$. For a given discount rate, the rental rate falls as assumed growth rises. At a 2% discount rate, it falls from \$13.19 with zero growth to \$6.59 at 1% growth and \$3.35 at 1.5% growth. We mark cases as NA when growth equals or exceeds the discount rate. At equality, the formula yields zero; above it, the net carbon discount rate is negative. We use zero carbon price growth ($g=0$, so $x=r$), which gives a rental rate of \$13.19 per metric ton of carbon in 2019 int\$.
+
+Across discount rates of 1.0%, 1.5%, 2.0%, 2.5%, and 3.0%, rental SCC ranges from \$8.48 to \$20.11 per tC in 2019 int\$. The 2.0% baseline is \$13.19 per tC. @tbl-rental-scc-discount shows SCC and rental SCC per tonne of CO2 and per tonne of carbon.
+
+| Discount rate | SCC (2019 int\$/tCO2) | SCC (2019 int\$/tC) | Rental SCC (2019 int\$/tCO2/year) | Rental SCC (2019 int\$/tC/year) |
+|---|---|---|---|---|
+| 1.0% | \$551.11 | \$2,020.75 | \$5.48 | \$20.11 |
+| 1.5% | \$302.41 | \$1,108.82 | \$4.50 | \$16.51 |
+| **2.0%** | **\$181.69** | **\$666.19** | **\$3.60** | **\$13.19** |
+| 2.5% | \$115.86 | \$424.81 | \$2.86 | \$10.49 |
+| 3.0% | \$78.22 | \$286.82 | \$2.31 | \$8.48 |
+
+: Rental social cost of carbon at alternative discount rates. {#tbl-rental-scc-discount}
+
+## Lambda
+
+Lambda is the contribution ratio assigned to nature in GEP. For terrestrial carbon retention, we set $\lambda=1$, so nature accounts for 100 percent of the modeled service. The quantity model measures carbon stored in terrestrial ecosystems and includes no anthropogenic inputs such as labor, capital, management, restoration, or other production factors. We therefore make no further attribution adjustment. This is an accounting convention, not a claim that every carbon stock is independent of human influence. Restoration, management, and other jointly produced services would require a separate attribution rule [@kachler2023]. This treatment follows ecosystem accounting for global climate regulation (United Nations, 2021) and the framing of nature's contributions to people [@diaz2018].
+
+## Valuation
+
+For country or territory $c$, terrestrial carbon GEP is:
+
+$$
+\text{GEP}_{\text{terrestrial carbon}}
+= P \times Q \times \lambda
+= \text{Rental SCC} \times \text{Carbon storage} \times 1.
+$$
+
+Here, $P$ is annual rental SCC per metric ton of carbon in 2019 int\$, $Q$ is carbon storage in metric tons of carbon, and $\lambda=1$ assigns the modeled quantity to terrestrial ecosystems. The equation converts modeled carbon storage into annual monetary value. Global GEP is the sum of country or territory values. Because rental SCC is a global benchmark, the same price applies to every unit, with no country or territory specific exchange rate or PPP conversion.
 
 ```{python}
-#| output: false
+#| include: false
 
-### SETUP CODE: Runs the whole model if it doesn't exist, else loads the results. Doesn't output anything and all debugging surpressed for this QMD.
+from pathlib import Path
+from types import SimpleNamespace
 
-import os
+p = SimpleNamespace()
+p.project_dir = Path.home() / "Files" / "global_invest" / "projects" / "gep_terrestrial_carbon"
+p.gep_results_dir = p.project_dir / "gep_results"
+p.authoritative_gep_by_country_base_year_path = (
+    p.gep_results_dir / "gep_by_country_base_year.csv"
+)
+```
+
+```{python}
+#| include: false
+
+import math
 import pandas as pd
-import hazelbean as hb
+from IPython.display import display
 
-from global_invest.terrestrial_carbon import terrestrial_carbon_initialization
+pd.set_option("display.float_format", "{:,.2f}".format)
+pd.set_option("display.max_rows", 1000)
 
-if __name__ == '__main__':
+value_col = "terrestrial_carbon_gep"
+base_year_path = p.authoritative_gep_by_country_base_year_path
+required_metadata_columns = [
+    "ee_r264_id",
+    "iso3_r250_id",
+    "ee_r264_label",
+    "iso3_r250_label",
+    "ee_r264_name",
+    "iso3_r250_name",
+    "continent",
+    "region_un",
+    "region_wb",
+    "income_grp",
+    "subregion",
+    "year",
+]
+model_columns = [
+    "terrestrial_carbon_quantity",
+    value_col,
+]
+required_columns = [*required_metadata_columns, *model_columns, "rental scc r2%"]
+required_nonmissing_columns = [*required_metadata_columns, "rental scc r2%"]
 
-    # ProjectFlow object
-    p = hb.ProjectFlow() # Create a ProjectFlow Object to organize directories and enable parallel processing.
-    p.project_name = 'gep_terrestrial_carbon'  # Determines the folder created to store intermediate and final results.
-    p.project_dir = os.path.join(os.path.expanduser('~'), 'Files', 'global_invest', 'projects', p.project_name) # Put it in the right location relative to the user's home directory.
-    p.base_data_dir = "/Users/long/Library/CloudStorage/GoogleDrive-yxlong@umn.edu/Shared drives/NatCapTEEMs/Files/base_data/submissions" # Set where data outside the project will be stored. CAUTION: For GEP we are using the shared Google Drive, but best practice is to use a local directory that you can control (also it's faster)
-    p.set_project_dir(p.project_dir) # Set the project directory in the ProjectFlow object. Also defines p.input_dir, p.intermediate_dir, and p.output_dir based on the project_dir.
+if not base_year_path.is_file():
+    raise FileNotFoundError(
+        f"Authoritative terrestrial-carbon result not found: {base_year_path}"
+    )
 
-    # Task tree
-    terrestrial_carbon_initialization.build_gep_service_calculation_task_tree(p) # Defines the actual logic of the model. Navigate into here to see what the model does.
+df = pd.read_csv(base_year_path)
+missing_columns = [column for column in required_columns if column not in df]
+if missing_columns:
+    raise KeyError(f"Authoritative result missing required columns: {missing_columns}")
+if df[required_nonmissing_columns].isna().any().any():
+    missing = df[required_nonmissing_columns].isna().sum()
+    raise ValueError(
+        "Authoritative result contains required missing values: "
+        f"{missing.loc[missing.gt(0)].to_dict()}"
+    )
+model_missing = df[model_columns].isna()
+if model_missing.any(axis=1).ne(model_missing.all(axis=1)).any():
+    raise ValueError("Authoritative result has partially missing modeled values.")
+if set(df["year"].unique()) != {2019}:
+    raise ValueError(
+        "Authoritative result must contain only 2019 records; "
+        f"found {sorted(df['year'].unique().tolist())}."
+    )
 
-    # Project level attributes
-    p.df_countries_csv_path = p.get_path('cartographic', 'ee', 'ee_r264_correspondence.csv') # ProjectFlow downloads all files automatically via the p.get_path() function.
-    p.gdf_countries_vector_path = p.get_path('cartographic', 'ee', 'ee_r264_correspondence.gpkg')
-    p.gdf_countries_vector_simplified_path = p.get_path('cartographic', 'ee', 'ee_r264_simplified300sec.gpkg')
-    p.carbon_zones_path =os.path.join(p.base_data_dir,'carbon', 'johnson_2019', 'decision_tree_combined_carbon', 'carbon_zones_rasterized.tif')
-    p.lulc_folder_path = os.path.join(p.base_data_dir, 'lulc/esa')
-    p.base_year_lulc_path = os.path.join(p.base_data_dir, 'lulc/esa/lulc_esa_2019.tif')
-    p.carbon_prices_path = os.path.join(p.base_data_dir, 'terrestrial_carbon', 'carbon_prices.xlsx')
-    p.carbon_price = "rental scc r2%"
-    p.results = {}  # All results will be stored here by each child task.
-    terrestrial_carbon_initialization.initialize_paths(p)
+p.gep_by_country_base_year = df
+p.terrestrial_carbon_missing_rows = df.loc[model_missing.all(axis=1)].copy()
+p.terrestrial_carbon_gep_total = float(df[value_col].sum())
 
-    # Run the model
-    hb.log('Created ProjectFlow object at ' + p.project_dir + '\n    from script ' + p.calling_script + '\n    with base_data set at ' + p.base_data_dir)
-    p.execute()
+def grouped_gep(group_column):
+    table = (
+        df.groupby(group_column, as_index=False)[value_col]
+        .sum()
+        .sort_values(group_column)
+        .reset_index(drop=True)
+    )
+    if not math.isclose(
+        float(table[value_col].sum()),
+        p.terrestrial_carbon_gep_total,
+        rel_tol=1e-12,
+        abs_tol=1e-6,
+    ):
+        raise ValueError(f"{group_column} aggregation does not reproduce source total.")
+    return table
 
-    result = 'Done!'
+def one_based_index(table):
+    table = table.copy()
+    table.index = range(1, len(table) + 1)
+    return table
+
+def presentation_table(table, column_labels):
+    return one_based_index(table.rename(columns=column_labels))
+
+p.gep_by_country_base_year_table = presentation_table(
+    pd.DataFrame(
+        {
+            "Country or Territory (ISO3)": (
+                df["iso3_r250_name"] + " (" + df["iso3_r250_label"] + ")"
+            ),
+            "GEP value (2019 int$)": df[value_col],
+        }
+    ),
+    {
+    },
+)
+p.gep_by_income_grp_base_year_table = presentation_table(
+    grouped_gep("income_grp"),
+    {"income_grp": "Income group", value_col: "GEP value (2019 int$)"},
+)
+p.gep_by_region_un_base_year_table = presentation_table(
+    grouped_gep("region_un"),
+    {"region_un": "UN region", value_col: "GEP value (2019 int$)"},
+)
+p.gep_by_continent_base_year_table = presentation_table(
+    grouped_gep("continent"),
+    {"continent": "Continent", value_col: "GEP value (2019 int$)"},
+)
+p.gep_by_subregion_base_year_table = presentation_table(
+    grouped_gep("subregion"),
+    {"subregion": "Subregion", value_col: "GEP value (2019 int$)"},
+)
+p.terrestrial_carbon_top_countries_table = one_based_index(
+    df.loc[df[value_col].gt(0), ["iso3_r250_name", value_col]]
+    .sort_values(value_col, ascending=False)
+    .head(10)
+    .rename(
+        columns={
+            "iso3_r250_name": "Country or Territory",
+            value_col: "GEP value (2019 int$)",
+        }
+    )
+)
 ```
 
+# Results
 
+The source covers 250 countries and territories. Modeled terrestrial carbon GEP totals \$5.33 trillion per year in 2019 int\$ across 235 countries or territories with reported carbon values. Fifteen countries or territories have missing carbon stock and GEP values; their values remain missing in the country or territory table. The tables below show the ten highest values and aggregates by income group, UN region, continent, and subregion. The complete country or territory table appears in the Appendix.
 
-
+## Top countries and territories
 
 ```{python}
-#| output: false
-
-### DISPLAY SETUP CODE: Based on the results in the prior cells, make the objectgs that will actually get displayed, like smol csvs or gpkg-as-pngs
-
-import matplotlib.pyplot as plt
-import pandas as pd
-import os
-import hazelbean as hb
-from global_invest.terrestrial_carbon import terrestrial_carbon_functions
-
-
-pd.set_option('display.float_format', '{:,.2f}'.format)
-pd.set_option('display.max_rows', 1000)  # Set max rows to display
-from IPython.display import Image, display
-# pd.set_option('styler.render.index', False)
-
-# Service label for this QMD
-service_label = 'terrestrial_carbon'
-
-# Load the results
-for k, v in p.results[service_label].items():
-    # Load the results DataFrame
-    df = hb.df_read(v)
-
-    setattr(p, k, df)
-
-    # SERVICE-SPECIFIC CODE CUSTOMIZATION GOES HERE: Put whatever you think should be displayed
-    # E.g., generate manuscript-ready tables, calculate total values for inline text, make plot pngs, etc
-    if k == 'gep_by_country_base_year':
-        total_terrestrial_carbon_value = df['terrestrial_carbon_gep'].sum()
-        p.gep_by_country_base_year_table = df[['iso3_r250_name', 'terrestrial_carbon_gep']]
-
-        # Group by useful aggregation columns explicitly and assign each as an attribute to p
-        if 'income_grp' in df.columns:
-            p.gep_by_income_grp_base_year_table = df.groupby('income_grp', as_index=False)['terrestrial_carbon_gep'].sum()
-            p.gep_by_income_grp_base_year_table = p.gep_by_income_grp_base_year_table[['income_grp', 'Value']]
-        if 'region_un' in df.columns:
-            p.gep_by_region_un_base_year_table = df.groupby('region_un', as_index=False)['terrestrial_carbon_gep'].sum()
-            p.gep_by_region_un_base_year_table = p.gep_by_region_un_base_year_table[['region_un', 'terrestrial_carbon_gep']]
-        if 'continent' in df.columns:
-            p.gep_by_continent_base_year_table = df.groupby('continent', as_index=False)['terrestrial_carbon_gep'].sum()
-            p.gep_by_continent_base_year_table = p.gep_by_continent_base_year_table[['continent', 'terrestrial_carbon_gep']]
-        if 'subregion' in df.columns:
-            p.gep_by_subregion_base_year_table = df.groupby('subregion', as_index=False)['terrestrial_carbon_gep'].sum()
-
-            # p.gep_by_subregion_base_year_table = p.gep_by_country_base_year_table[['subregion', 'terrestrial_carbon_gep']]
-
-        # Save each plot table as a CSV in the current directory
-        p.gep_by_country_base_year_table.to_csv(os.path.join(p.intermediate_dir, service_label, 'gep_result', 'gep_by_country_base_year_table.csv'), index=False)
-        hb.df_write(p.gep_by_income_grp_base_year_table, os.path.join(p.intermediate_dir, service_label, 'gep_result', 'gep_by_income_grp_base_year_table.csv'))
-        hb.df_write(p.gep_by_region_un_base_year_table, os.path.join(p.intermediate_dir, service_label, 'gep_result', 'gep_by_region_un_base_year_table.csv'))
-        hb.df_write(p.gep_by_continent_base_year_table, os.path.join(p.intermediate_dir, service_label, 'gep_result', 'gep_by_continent_base_year_table.csv'))
-        hb.df_write(p.gep_by_subregion_base_year_table, os.path.join(p.intermediate_dir, service_label, 'gep_result', 'gep_by_subregion_base_year_table.csv'))
-
-        # Using the gpkg in gep_calculation, plot the GEP by country on a map
-
-        import numpy as np
-        import matplotlib as mpl
-
-        gpkg_path = p.results[service_label]['gep_by_country_base_year'].replace('.csv', '.gpkg')
-        gdf = hb.read_vector(gpkg_path)
-        gdf = gdf[['iso3_r250_id', 'iso3_r250_name', 'terrestrial_carbon_gep', 'geometry']]  # Keep only relevant columns
-
-        # Add country borders for clarity
-        borders = gdf.copy()
-        borders['geometry'] = borders['geometry'].boundary
-
-        # Set up log normalization for color mapping
-        norm = mpl.colors.LogNorm(vmin=gdf['terrestrial_carbon_gep'][gdf['terrestrial_carbon_gep'] > 0].min(), vmax=gdf['terrestrial_carbon_gep'].max())
-
-        fig, ax = plt.subplots(figsize=(15, 10))
-        gdf.plot(column='terrestrial_carbon_gep', cmap='OrRd', legend=False, norm=norm, ax=ax)
-        borders.plot(ax=ax, color='black', linewidth=0.5)
-
-        # Add colorbar with actual values
-        sm = plt.cm.ScalarMappable(cmap='OrRd', norm=norm)
-        sm._A = []
-        cbar = fig.colorbar(sm, ax=ax, orientation='vertical', fraction=0.03, pad=0.02)
-        cbar.set_label("Gross Economic Product (GEP) in Base Year")
-        cbar.ax.yaxis.set_major_formatter(mpl.ticker.FuncFormatter(lambda x, _: f'{int(x):,}'))
-
-        ax.set_title('GEP by Country in Base Year')
-        ax.set_axis_off()  # Hide the axis
-        plt.savefig(os.path.join(p.intermediate_dir, service_label, 'gep_result', 'gep_by_country_base_year_map.png'), bbox_inches='tight', dpi=300)
-        plt.close()
-
-
-
-    if k == 'gep_by_year':
-        p.gep_by_year_table = df[['year', 'terrestrial_carbon_gep']]
-        # Drop values that are zero
-        p.gep_by_year_table = p.gep_by_year_table[p.gep_by_year_table['terrestrial_carbon_gep'] > 0]
-        hb.df_write(p.gep_by_year_table, os.path.join(p.intermediate_dir, service_label, 'gep_result', 'gep_by_year_table.csv'))
-
-        # Also make a basic line graph as a png
-        plt.figure(figsize=(10, 6))
-        plt.plot(p.gep_by_year_table['year'], p.gep_by_year_table['terrestrial_carbon_gep'], marker='o')
-        plt.title('GEP by Year')
-        plt.xlabel('Year')
-        plt.ylabel('Gross Economic Product (GEP)')
-        plt.grid(True)
-        plt.savefig(os.path.join(p.intermediate_dir, service_label, 'gep_result', 'gep_by_year_plot.png'), dpi=300)
-        plt.close()
-
+display(p.terrestrial_carbon_top_countries_table)
 ```
 
-The analysis reveals that commercial agriculture generates a total gross economic product of $`{python} f"{total_terrestrial_carbon_value:,.2f}"` across the study period. Below we present the results in various aggregations, ending with the GEP by country in the base year.
+## Terrestrial carbon GEP by income group
 
 ```{python}
-# Display the GEP by income group table
-display(Image(os.path.join(p.intermediate_dir, service_label, 'gep_result', 'gep_by_country_base_year_map.png')))
-```
-
-## GEP by Income Group in Base Year
-```{python}
-# Display the GEP by income group table
 display(p.gep_by_income_grp_base_year_table)
 ```
-## GEP by Region in Base Year
+
+## Terrestrial carbon GEP by UN region
+
 ```{python}
-# Display the GEP by income group table
 display(p.gep_by_region_un_base_year_table)
 ```
-## GEP by Continent in Base Year
+
+## Terrestrial carbon GEP by continent
+
 ```{python}
-# Display the GEP by income group table
 display(p.gep_by_continent_base_year_table)
 ```
-## GEP by Subregion in Base Year
+
+## Terrestrial carbon GEP by subregion
+
 ```{python}
-# Display the GEP by income group table
 display(p.gep_by_subregion_base_year_table)
 ```
-## GEP  Over Time
-```{python}
 
-display(Image(os.path.join(p.intermediate_dir, service_label, 'gep_result', 'gep_by_year_plot.png')))
+# Conclusion
 
-# Display the GEP by income group table
-display(p.gep_by_year_table)
+This study values modeled terrestrial carbon retention in 2019 at \$5.33 trillion per year (\$8.13 trillion at a 1% discount rate and \$3.43 trillion at a 3% discount rate) across 235 countries or territories with reported carbon values. The estimate combines mapped aboveground and belowground biomass carbon with rental SCC at a 2 percent discount rate. It covers the modeled terrestrial retention service and excludes carbon sequestration, soil organic carbon, dead biomass, debris, sediments, and coastal carbon.
+
+# References {.unnumbered}
+
+::: {#refs}
+:::
+
+{{< pagebreak >}}
+
+# Appendix
+
+## Discounting sensitivity {#sec-rental-scc-sensitivity .unnumbered .unlisted}
+
+```{=latex}
+\captionsetup{labelformat=empty}
 ```
 
+| Discount rate | Growth rate | Net discount rate | SCC (2019 int\$/tCO2) | SCC (2019 int\$/tC) | Rental SCC (2019 int\$/tC/year) |
+|:---:|:---:|:---:|---:|---:|---:|
+| 1.00% | 0% | 1.00% | \$551.11 | \$2,020.75 | \$20.11 |
+| 1.00% | 1.00% | `NA` | \$551.11 | \$2,020.75 | `NA` |
+| 1.00% | 1.50% | -0.50% | \$551.11 | \$2,020.75 | `NA` |
+| 1.00% | 2.00% | -1.00% | \$551.11 | \$2,020.75 | `NA` |
+| 1.50% | 0% | 1.50% | \$302.41 | \$1,108.82 | \$16.51 |
+| 1.50% | 1.00% | 0.50% | \$302.41 | \$1,108.82 | \$5.53 |
+| 1.50% | 1.50% | `NA` | \$302.41 | \$1,108.82 | `NA` |
+| 1.50% | 2.00% | -0.50% | \$302.41 | \$1,108.82 | `NA` |
+| 2.00% | 0% | 2.00% | \$181.69 | \$666.19 | \$13.19 |
+| 2.00% | 1.00% | 1.00% | \$181.69 | \$666.19 | \$6.59 |
+| 2.00% | 1.50% | 0.50% | \$181.69 | \$666.19 | \$3.35 |
+| 2.00% | 2.00% | `NA` | \$181.69 | \$666.19 | `NA` |
+| 2.50% | 0% | 2.50% | \$115.86 | \$424.81 | \$10.49 |
+| 2.50% | 1.00% | 1.50% | \$115.86 | \$424.81 | \$6.28 |
+| 2.50% | 1.50% | 1.00% | \$115.86 | \$424.81 | \$4.21 |
+| 2.50% | 2.00% | 0.50% | \$115.86 | \$424.81 | \$2.16 |
+| 3.00% | 0% | 3.00% | \$78.22 | \$286.82 | \$8.48 |
+| 3.00% | 1.00% | 2.00% | \$78.22 | \$286.82 | \$5.68 |
+| 3.00% | 1.50% | 1.50% | \$78.22 | \$286.82 | \$4.27 |
+| 3.00% | 2.00% | 1.00% | \$78.22 | \$286.82 | \$2.85 |
 
-## GEP by Country in Base Year
+: Table A-1: Rental social cost of carbon under alternative discount rates and carbon price growth rates. {.unnumbered}
+
+Notes: SCC values per tCO2 are mean estimates from Rennert et al. (2022) at five discount rates. SCC values per tC convert CO2 units with the molecular weight ratio $44/12$. The rental rate is $P_C(t)(1-e^{-x})$, where $x=r-g$ is the net carbon discount rate. NA marks cases that are not applicable, not missing observations. Values are converted to 2019 int\$ by dividing 2020 U.S. dollar values by the GDP deflator factor 1.0185.
+
+## Terrestrial carbon GEP by country or territory in base year {.unnumbered .unlisted}
+
+Table A-2. Terrestrial carbon GEP by country or territory in the base year.
+
+NA denotes missing carbon stock and GEP values in the source; it does not denote zero.
+
+::: {.content-visible when-format="pdf"}
+
 ```{python}
-display(p.gep_by_country_base_year_table)
+#| output: asis
+
+country_table = p.gep_by_country_base_year_table.copy()
+country_table["GEP value (2019 int$)"] = country_table[
+    "GEP value (2019 int$)"
+].map(lambda value: "NA" if pd.isna(value) else f"{value:,.2f}")
+
+def escape_latex_cell(value):
+    replacements = {
+        "\\": r"\textbackslash{}",
+        "&": r"\&",
+        "%": r"\%",
+        "$": r"\$",
+        "#": r"\#",
+        "_": r"\_",
+        "{": r"\{",
+        "}": r"\}",
+        "~": r"\textasciitilde{}",
+        "^": r"\textasciicircum{}",
+    }
+    return "".join(replacements.get(character, character) for character in str(value))
+
+latex_rows = [
+    r"\begingroup",
+    r"\small",
+    r"\begin{longtable}{@{}r p{0.60\textwidth} r@{}}",
+    r"\toprule",
+    r" & \textbf{Country or Territory (ISO3)} & \multicolumn{1}{r}{\textbf{GEP value (2019 int\$)}} \\",
+    r"\midrule",
+    r"\endfirsthead",
+    r"\endhead",
+    r"\endfoot",
+    r"\bottomrule",
+    r"\endlastfoot",
+]
+for row_number, row in country_table.iterrows():
+    latex_rows.append(
+        f"{int(row_number)} & "
+        f"{escape_latex_cell(row['Country or Territory (ISO3)'])} & "
+        f"{escape_latex_cell(row['GEP value (2019 int$)'])} \\\\"
+    )
+latex_rows.extend([r"\end{longtable}", r"\endgroup"])
+
+print("```{=latex}")
+print("\n".join(latex_rows))
+print("```")
 ```
+
+:::
+
+::: {.content-visible unless-format="pdf"}
+
+```{python}
+#| output: asis
+
+country_table = p.gep_by_country_base_year_table.copy()
+country_table["GEP value (2019 int$)"] = country_table[
+    "GEP value (2019 int$)"
+].map(lambda value: "NA" if pd.isna(value) else f"{value:,.2f}")
+
+print(
+    country_table.to_markdown(
+        colalign=("right", "left", "right")
+    )
+)
+print()
+```
+
+:::

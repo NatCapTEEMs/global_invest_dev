@@ -9,27 +9,78 @@ format:
     echo: false              # Hide code by default in PDF
   docx:
     echo: false              # Hide code by default in Word
-  ipynb: 
+  ipynb:
     echo: true
 ---
 
-# extractive materials provision Results
+<!--
+# Data-source and calculation notes:
+# - World Bank WDI API downloads:
+#   * NY.GDP.MINR.RT.ZS: Mineral rents (% of GDP)
+#     https://api.worldbank.org/v2/en/indicator/NY.GDP.MINR.RT.ZS?downloadformat=csv
+#   * NY.GDP.MKTP.CN: GDP (current LCU); unit = current local currency units
+#     https://api.worldbank.org/v2/en/indicator/NY.GDP.MKTP.CN?downloadformat=csv
+#   * PA.NUS.PPP: PPP conversion factor; unit = LCU per international $
+#     https://api.worldbank.org/v2/en/indicator/PA.NUS.PPP?downloadformat=csv
+#   * NY.GDP.DEFL.ZS: GDP deflator
+#     https://api.worldbank.org/v2/en/indicator/NY.GDP.DEFL.ZS?downloadformat=csv
+# - API files are cached in p.input_dir/world_bank/ (project input/world_bank/).
+# - If API download fails, code uses p.base_data_dir/extractive_materials_provision/.
+# - For country c and year t, calculation is:
+#   GEP[c,t] = mineral_rent_percent[c,t] / 100
+#              * GDP_current_LCU[c,t] / PA.NUS.PPP[c,t]
+#              * GDP_deflator[c,p.base_year] / GDP_deflator[c,t] * 0.49
+# - Output is fixed p.base_year international dollars; p.base_year is set above.
+-->
 
-Text describing it. To be written by service team.
+# Global GEP Extractive Materials Provision
+
+
+## 1. Ecosystem Service Description
+
+Minerals contribute to nearly every aspect of modern economies, from industry to national security. Minerals are used to maintain infrastructure, manufacture consumer goods and defense technologies, and develop low-carbon energy sources. “A mineral is a naturally occurring inorganic element or compound having an orderly internal structure and characteristic chemical composition, crystal form, and physical properties.” (USGS Minerals, 2025)[^usgs] Rocks are made up of minerals and are an aggregate of one or more minerals or an undifferentiated mineral matter.
+
+## 2. Methods
+
+This section provides the methodology for computing nature's contribution to the value of mining production.
+
+$$
+\mathrm{GEP}_{\mathrm{mining}} = \lambda\theta
+$$
+
+The value added of mining production is calculated as  (resource rents). We use the mineral rents data by the Changing Wealth of Nations (CWON), the World Bank (2024).
+Mineral rents are the difference between the value of production for a stock of minerals at world prices and their total costs of production. Minerals included in the calculation are tin, gold, lead, zinc, iron, copper, nickel, silver, bauxite, and phosphate. The resource rent is calculated as the difference between revenues from extraction, the cost of extraction from intermediate inputs, labor, and the user cost of produced capital used in the extraction process. This indicator is expressed in percent of GDP (World Bank, 2024).
+Gross domestic product is the value of final goods and services earned in an economic territory during an accounting period. This indicator is expressed in 2019 international dollars (World Bank, 2024).
+
+$$
+\theta = \text{Mineral rents (\%)} \times \text{Real GDP (\$)}
+$$
+
+Calculating nature’s contribution to the value of mining production utilizes λ (lambda coefficient) to measure the share attributed to nature’s contributions. The share of nature’s contributions to mineral production resource rents is calibrated to the nonrenewable natural capital assets of metals and minerals, such as bauxite, copper, gold, iron ore, lead, nickel, phosphate, silver, tin, cobalt, molybdenum, platinum, and lithium. The values are reported in real 2019 US dollars and calculated using the Törnqvist volume index method.
+The CWON methodology aligns with the System of National Accounts and the System of Environmental-Economic Accounting in estimating the resource rents.
+
+The calculation uses the GDP PPP conversion factor and GDP deflator to express each year in fixed base-year international dollars.
+
+
+## 3. Validation
+
+The limitation of this approach is estimating the lambda coefficient. This coefficient can be calibrated to changes in assets calculated using the Törnqvist volume index method. The lambda coefficient can also be calculated using resource rents divided by costs of production. However, this methodology is limited by the industry cost data availability.
+
+## 4. Results
 
 ```{python}
 import os
 
 os.chdir("/Users/long/Files/global_invest/global_invest_dev")
 
-print("Working directory", os.getcwd())
+# print("Working directory", os.getcwd())
 ```
 
 
 ```{python}
 #| output: false
 
-### SETUP CODE: Runs the whole model if it doesn't exist, else loads the results. Doesn't output anything and all debugging surpressed for this QMD.
+# Setup: load existing model results or run model when results are absent.
 
 import os
 import pandas as pd
@@ -47,6 +98,8 @@ p.project_name = 'gep_extractive_materials_provision'  # Determines the folder c
 p.project_dir = os.path.join(os.path.expanduser('~'), 'Files', 'global_invest', 'projects', p.project_name) # Put it in the right location relative to the user's home directory.
 p.base_data_dir = "/Users/long/Library/CloudStorage/GoogleDrive-yxlong@umn.edu/Shared drives/NatCapTEEMs/Files/base_data/submissions" # Set where data outside the project will be stored. CAUTION: For GEP we are using the shared Google Drive, but best practice is to use a local directory that you can control (also it's faster)
 p.set_project_dir(p.project_dir) # Set the project directory in the ProjectFlow object. Also defines p.input_dir, p.intermediate_dir, and p.output_dir based on the project_dir.
+p.base_year = 2019
+
 
 # Task tree
 # CRITICAL AND UNOBVIOUS, you CANNOT run the full service because this includes the generation of the qmd and the render line itself, thus calling this would infinitely loop.
@@ -55,7 +108,7 @@ extractive_materials_provision_initialization.build_gep_service_calculation_task
 # Project level attributes
 p.df_countries_csv_path = p.get_path('cartographic', 'ee', 'ee_r264_correspondence.csv') # ProjectFlow downloads all files automatically via the p.get_path() function. 
 p.gdf_countries_vector_path = p.get_path('cartographic', 'ee', 'ee_r264_correspondence.gpkg') 
-p.gdf_countries_vector_simplified_path = p.get_path('cartographic', 'ee', 'ee_r264_simplified300sec.gpkg') 
+p.gdf_countries_vector_simplified_path = p.get_path('cartographic', 'ee', 'ee_r264_simplified30sec.gpkg')
 p.results = {}  # All results will be stored here by each child task.
 extractive_materials_provision_initialization.initialize_paths(p)
 
@@ -64,14 +117,10 @@ hb.log('Created ProjectFlow object at ' + p.project_dir + '\n    from script ' +
 p.execute()
 ```
 
-
-
-
-
 ```{python}
 #| output: false
 
-### DISPLAY SETUP CODE: Based on the results in the prior cells, make the objectgs that will actually get displayed, like smol csvs or gpkg-as-pngs
+# Display setup: prepare tables and figures from loaded model results.
 
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -87,6 +136,19 @@ from IPython.display import Image, display
 
 # Service label for this QMD
 service_label = 'extractive_materials_provision'
+gep_display_label = f'GEP ({p.base_year} int$)'
+
+
+def format_gep_table(table, group_column, group_label):
+    """Apply reader-facing labels and number formatting without changing source tables."""
+    report_table = table.rename(columns={
+        group_column: group_label,
+        'extractive_materials_provision_gep': gep_display_label,
+    })
+    return report_table.style.hide(axis='index').format(
+        {gep_display_label: '{:,.2f}'},
+        na_rep='NaN',
+    )
 
 # Load the results
 for k, v in p.results[service_label].items():
@@ -100,7 +162,24 @@ for k, v in p.results[service_label].items():
     # E.g., generate manuscript-ready tables, calculate total values for inline text, make plot pngs, etc
     if k == 'gep_by_country_base_year':
         total_extractive_materials_provision_value = df['extractive_materials_provision_gep'].sum()
-        p.gep_by_country_base_year_table = df[['iso3_r250_name', 'extractive_materials_provision_gep']]
+        p.gep_by_country_base_year_table = df[
+            [
+                'iso3_r250_id',
+                'iso3_r250_label',
+                'iso3_r250_name',
+                'extractive_materials_provision_gep',
+            ]
+        ]
+        p.gep_by_country_base_year_table['iso3_r250_id'] = (
+            pd.to_numeric(
+                p.gep_by_country_base_year_table['iso3_r250_id'],
+                errors='raise',
+            ).astype('Int64')
+        )
+        p.gep_by_country_base_year_table.loc[
+            p.gep_by_country_base_year_table['iso3_r250_label'].eq('CIV'),
+            'iso3_r250_name',
+        ] = "Côte d'Ivoire"
 
         # Group by useful aggregation columns explicitly and assign each as an attribute to p
         if 'income_grp' in df.columns:
@@ -118,7 +197,17 @@ for k, v in p.results[service_label].items():
             # p.gep_by_subregion_base_year_table = p.gep_by_country_base_year_table[['subregion', 'extractive_materials_provision_gep']]
         
         # Save each plot table as a CSV in the current directory
-        p.gep_by_country_base_year_table.to_csv(os.path.join(p.intermediate_dir, service_label, 'gep_result', 'gep_by_country_base_year_table.csv'), index=False)
+        p.gep_by_country_base_year_table.to_csv(
+            os.path.join(
+                p.intermediate_dir,
+                service_label,
+                'gep_result',
+                'gep_by_country_base_year_table.csv',
+            ),
+            index=False,
+            encoding='utf-8',
+            na_rep='NaN',
+        )
         hb.df_write(p.gep_by_income_grp_base_year_table, os.path.join(p.intermediate_dir, service_label, 'gep_result', 'gep_by_income_grp_base_year_table.csv'))
         hb.df_write(p.gep_by_region_un_base_year_table, os.path.join(p.intermediate_dir, service_label, 'gep_result', 'gep_by_region_un_base_year_table.csv'))
         hb.df_write(p.gep_by_continent_base_year_table, os.path.join(p.intermediate_dir, service_label, 'gep_result', 'gep_by_continent_base_year_table.csv'))
@@ -128,6 +217,7 @@ for k, v in p.results[service_label].items():
 
         import numpy as np
         import matplotlib as mpl
+        from matplotlib.patches import Patch
 
         gpkg_path = p.results[service_label]['gep_by_country_base_year'].replace('.csv', '.gpkg')
         gdf = hb.read_vector(gpkg_path)
@@ -137,21 +227,37 @@ for k, v in p.results[service_label].items():
         borders = gdf.copy()
         borders['geometry'] = borders['geometry'].boundary
 
-        # Set up log normalization for color mapping
-        norm = mpl.colors.LogNorm(vmin=gdf['extractive_materials_provision_gep'][gdf['extractive_materials_provision_gep'] > 0].min(), vmax=gdf['extractive_materials_provision_gep'].max())
+        value_col = 'extractive_materials_provision_gep'
+        missing_mask = gdf[value_col].isna()
+        positive_values = gdf.loc[gdf[value_col] > 0, value_col]
+        if positive_values.empty:
+            raise ValueError('No positive extractive-materials GEP values available for log-scaled map.')
+
+        # Set up log normalization for color mapping.
+        norm = mpl.colors.LogNorm(vmin=positive_values.min(), vmax=positive_values.max())
+        missing_color = '#d9d9d9'
 
         fig, ax = plt.subplots(figsize=(15, 10))
-        gdf.plot(column='extractive_materials_provision_gep', cmap='OrRd', legend=False, norm=norm, ax=ax)
+        gdf.loc[~missing_mask].plot(column=value_col, cmap='YlGn', legend=False, norm=norm, ax=ax)
+        if missing_mask.any():
+            gdf.loc[missing_mask].plot(ax=ax, color=missing_color, edgecolor='black', linewidth=0.2)
         borders.plot(ax=ax, color='black', linewidth=0.5)
 
         # Add colorbar with actual values
-        sm = plt.cm.ScalarMappable(cmap='OrRd', norm=norm)
+        sm = plt.cm.ScalarMappable(cmap='YlGn', norm=norm)
         sm._A = []
         cbar = fig.colorbar(sm, ax=ax, orientation='vertical', fraction=0.03, pad=0.02)
-        cbar.set_label("Gross Economic Product (GEP) in Base Year")
+        cbar.set_label(f"Gross Economic Product (GEP), {p.base_year} int$")
         cbar.ax.yaxis.set_major_formatter(mpl.ticker.FuncFormatter(lambda x, _: f'{int(x):,}'))
 
-        ax.set_title('GEP by Country in Base Year')
+        if missing_mask.any():
+            ax.legend(
+                handles=[Patch(facecolor=missing_color, edgecolor='black', label='Missing')],
+                loc='lower left',
+                frameon=True,
+            )
+
+        ax.set_title(f'GEP by Country in {p.base_year}')
         ax.set_axis_off()  # Hide the axis
         plt.savefig(os.path.join(p.intermediate_dir, service_label, 'gep_result', 'gep_by_country_base_year_map.png'), bbox_inches='tight', dpi=300)
         plt.close()
@@ -160,8 +266,11 @@ for k, v in p.results[service_label].items():
 
     if k == 'gep_by_year':
         p.gep_by_year_table = df[['year', 'Value']]
-        # Drop values that are zero
-        p.gep_by_year_table = p.gep_by_year_table[p.gep_by_year_table['Value'] > 0]
+        # Report GEP by year from 2000 onward and omit zero-valued years.
+        p.gep_by_year_table = p.gep_by_year_table[
+            (p.gep_by_year_table['year'] >= 2000)
+            & (p.gep_by_year_table['Value'] > 0)
+        ]
         hb.df_write(p.gep_by_year_table, os.path.join(p.intermediate_dir, service_label, 'gep_result', 'gep_by_year_table.csv'))
 
         # Also make a basic line graph as a png
@@ -169,51 +278,62 @@ for k, v in p.results[service_label].items():
         plt.plot(p.gep_by_year_table['year'], p.gep_by_year_table['Value'], marker='o')
         plt.title('GEP by Year')  
         plt.xlabel('Year')
-        plt.ylabel('Gross Economic Product (GEP)')
+        plt.ylabel(f'Gross Economic Product (GEP), {p.base_year} int$')
         plt.grid(True)
         plt.savefig(os.path.join(p.intermediate_dir, service_label, 'gep_result', 'gep_by_year_plot.png'), dpi=300)
         plt.close()
 
 ```
 
-The analysis reveals that total extractive materials provision value generates a total gross economic product of $`{python} f"{total_extractive_materials_provision_value:,.2f}"` across the study period. Below we present the results in various aggregations, ending with the GEP by country in the base year.
+In `{python} p.base_year`, total extractive materials provision is `{python} f"{total_extractive_materials_provision_value:,.2f}"` (`{python} p.base_year` int$). We then disaggregate this total by income group, region, continent, and country before presenting GEP over time.
 
 ```{python}
 # Display the GEP by income group table   
 display(Image(os.path.join(p.intermediate_dir, service_label, 'gep_result', 'gep_by_country_base_year_map.png')))
 ```
 
-## GEP by Income Group in Base Year
+## GEP by Income Group in `{python} p.base_year`
 ```{python}
 # Display the GEP by income group table   
 display(p.gep_by_income_grp_base_year_table)
 ```
-## GEP by Region in Base Year
+
+## GEP by Region in `{python} p.base_year`
 ```{python}
 # Display the GEP by income group table   
 display(p.gep_by_region_un_base_year_table)
 ```
-## GEP by Continent in Base Year
+
+## GEP by Continent in `{python} p.base_year`
 ```{python}
 # Display the GEP by income group table   
 display(p.gep_by_continent_base_year_table)
 ```
-## GEP by Subregion in Base Year
+## GEP by Subregion in `{python} p.base_year`
 ```{python}
 # Display the GEP by income group table   
 display(p.gep_by_subregion_base_year_table)
 ```
+
+
+## GEP by Country in `{python} p.base_year`
+```{python}
+country_table = p.gep_by_country_base_year_table.fillna('NaN').copy()
+country_table.index = range(1, len(country_table) + 1)
+country_table.index.name = 'Index'
+display(
+    country_table[
+        ['iso3_r250_name', 'extractive_materials_provision_gep']
+    ]
+)
+```
+
 ## GEP  Over Time
+
 ```{python}
 
 display(Image(os.path.join(p.intermediate_dir, service_label, 'gep_result', 'gep_by_year_plot.png')))
 
 # Display the GEP by income group table   
 display(p.gep_by_year_table)
-```
-
-
-## GEP by Country in Base Year
-```{python}
-display(p.gep_by_country_base_year_table)
 ```

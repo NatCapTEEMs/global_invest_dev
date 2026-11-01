@@ -11,10 +11,73 @@ from global_invest.extractive_materials_provision import extractive_materials_pr
 
 def extractive_materials_provision(p):
     """
-    Parent task for commercial agriculture.
+    Parent task for extractive materials provision.
     """
-    p.wb_mineral_input_ref_path = os.path.join(p.base_data_dir, 'extractive_materials_provision', 'API_NY.GDP.MINR.RT.ZS_DS2_en_csv_v2_6559.csv')
-    p.wb_GDP_ref_path = os.path.join(p.base_data_dir, 'extractive_materials_provision', "API_NY.GDP.MKTP.CD_DS2_en_csv_v2_130122.csv")
+    if not hasattr(p, 'base_year'):
+        raise AttributeError(
+            "ProjectFlow object must define p.base_year before running "
+            "extractive materials provision."
+        )
+    fallback_dir = os.path.join(p.base_data_dir, 'extractive_materials_provision')
+    project_wdi_dir = os.path.join(p.input_dir, 'world_bank')
+    refresh = getattr(p, 'refresh_world_bank_inputs', False)
+    deflator_fallback_path = getattr(
+        p,
+        'wb_GDP_deflator_fallback_path',
+        os.path.join(
+            fallback_dir,
+            'API_NY.GDP.DEFL.ZS_DS2_en_csv_v2_24026.csv',
+        ),
+    )
+    if not os.path.exists(deflator_fallback_path):
+        project_deflator_fallback_path = (
+            '/Users/long/Library/CloudStorage/GoogleDrive-yxlong@umn.edu/'
+            'Shared drives/NatCapTEEMs/Projects/Global GEP/Results, Base Data, '
+            '& Overlaps/Currency Conversion Method/'
+            'API_NY.GDP.DEFL.ZS_DS2_en_csv_v2_24026.csv'
+        )
+        if os.path.exists(project_deflator_fallback_path):
+            deflator_fallback_path = project_deflator_fallback_path
+
+    p.wb_mineral_input_ref_path, mineral_downloaded = (
+        extractive_materials_provision_functions.download_world_bank_indicator(
+            'NY.GDP.MINR.RT.ZS',
+            project_wdi_dir,
+            os.path.join(fallback_dir, 'API_NY.GDP.MINR.RT.ZS_DS2_en_csv_v2_6559.csv'),
+            required_year=p.base_year,
+            refresh=refresh,
+        )
+    )
+    p.wb_GDP_ref_path, gdp_downloaded = (
+        extractive_materials_provision_functions.download_world_bank_indicator(
+            'NY.GDP.MKTP.CN',
+            project_wdi_dir,
+            os.path.join(fallback_dir, 'API_NY.GDP.MKTP.CN_DS2_en_csv_v2_33171.csv'),
+            required_year=p.base_year,
+            refresh=refresh,
+        )
+    )
+    p.wb_PPP_ref_path, ppp_downloaded = (
+        extractive_materials_provision_functions.download_world_bank_indicator(
+            'PA.NUS.PPP',
+            project_wdi_dir,
+            os.path.join(fallback_dir, 'API_PA.NUS.PPP_DS2_en_csv_v2_38116.csv'),
+            required_year=p.base_year,
+            refresh=refresh,
+        )
+    )
+    p.wb_GDP_deflator_ref_path, deflator_downloaded = (
+        extractive_materials_provision_functions.download_world_bank_indicator(
+            'NY.GDP.DEFL.ZS',
+            project_wdi_dir,
+            deflator_fallback_path,
+            required_year=p.base_year,
+            refresh=refresh,
+        )
+    )
+    p.world_bank_inputs_downloaded = any(
+        [mineral_downloaded, gdp_downloaded, ppp_downloaded, deflator_downloaded]
+    )
 
 def gep_preprocess(p):
     """
@@ -26,7 +89,7 @@ def gep_preprocess(p):
     pass # NYI
 
 def gep_calculation(p):
-    """ GEP calculation task for commercial agriculture."""
+    """Calculate extractive-materials GEP in fixed p.base_year international dollars."""
     # Define at least the primary output for the service, which for this project is gep_by_country_base_year.   
     service_results = {}
     p.results['extractive_materials_provision'] = service_results  
@@ -38,25 +101,80 @@ def gep_calculation(p):
     p.results['extractive_materials_provision']['gep_by_year'] = os.path.join(p.cur_dir, "gep_by_year.csv")
             
     # Check if all results exist
-    if hb.path_all_exist(list(service_results.values())):
-        hb.log("All results already exist. Skipping GEP calculation for commercial agriculture.")
+    if (
+        hb.path_all_exist(list(service_results.values()))
+        and not getattr(p, 'world_bank_inputs_downloaded', False)
+    ):
+        hb.log("All results already exist. Skipping GEP calculation for extractive materials provision.")
     else:
-        hb.log("Starting GEP calculation for commercial agriculture.")
+        hb.log("Starting GEP calculation for extractive materials provision.")
         
         # Optimization here,
         # p.gdf_countries = hb.read_vector(p.gdf_countries)
         p.gdf_countries = hb.read_vector(p.gdf_countries_simplified)
 
 
-        # 1. Read and process data
-        df_mineral_values = extractive_materials_provision_functions.read_mineral_values(p.wb_mineral_input_ref_path)
-
+        # 1. Read all available years and convert them to fixed p.base_year int$.
+        df_mineral_values = extractive_materials_provision_functions.read_mineral_values(
+            p.wb_mineral_input_ref_path
+        )
         df_gdp_values = extractive_materials_provision_functions.read_GDP_values(p.wb_GDP_ref_path)
+        df_ppp_values = extractive_materials_provision_functions.read_PPP_values(p.wb_PPP_ref_path)
+        df_deflator_values = (
+            extractive_materials_provision_functions.read_GDP_deflator_values(
+                p.wb_GDP_deflator_ref_path
+            )
+        )
 
+        df_mineral_values = (
+            df_mineral_values.rename(columns={"mineral_rent": "mineral_rent_percent"})
+        )
+        df_deflator_year = (
+            df_deflator_values[["Country Code", "year", "GDP_deflator"]]
+            .rename(columns={"GDP_deflator": "GDP_deflator_year"})
+        )
+        df_deflator_base_year = (
+            df_deflator_values.loc[
+                df_deflator_values["year"] == p.base_year
+            ]
+            [["Country Code", "GDP_deflator"]]
+            .rename(columns={"GDP_deflator": "GDP_deflator_base_year"})
+        )
 
-        df_mineral_gdp_values = df_mineral_values.merge(df_gdp_values, on=['Country Code', 'year'], how='left')
+        df_mineral_gdp_values = df_mineral_values.merge(
+            df_gdp_values,
+            on=["Country Code", "year"],
+            how="left",
+        ).merge(
+            df_ppp_values,
+            on=["Country Code", "year"],
+            how="left",
+        ).merge(
+            df_deflator_year,
+            on=["Country Code", "year"],
+            how="left",
+        ).merge(
+            df_deflator_base_year,
+            on=["Country Code"],
+            how="left",
+        )
 
-        df_mineral_gdp_values['extractive_materials_provision_gep'] = (df_mineral_gdp_values['mineral_rent'] / 100) * df_mineral_gdp_values['GDP_currentUSD']*0.49
+        for column in [
+            "PA.NUS.PPP",
+            "GDP_deflator_year",
+            "GDP_deflator_base_year",
+        ]:
+            if (df_mineral_gdp_values[column] <= 0).any():
+                raise ValueError(f"{column} must be positive before conversion.")
+
+        df_mineral_gdp_values["extractive_materials_provision_gep"] = (
+            df_mineral_gdp_values["mineral_rent_percent"] / 100
+            * df_mineral_gdp_values["GDP_current_LCU"]
+            / df_mineral_gdp_values["PA.NUS.PPP"]
+            * df_mineral_gdp_values["GDP_deflator_base_year"]
+            / df_mineral_gdp_values["GDP_deflator_year"]
+            * 0.49
+        )
 
         df_mineral_gdp_values['Value'] = df_mineral_gdp_values['extractive_materials_provision_gep']
 
@@ -92,7 +210,9 @@ def gep_calculation(p):
 
         df_gep_by_country_year =  df_gep_by_country_year_mineral.copy()
         
-        df_gep_by_country_base_year = df_gep_by_country_year.loc[df_gep_by_country_year['year'] == 2019].copy()
+        df_gep_by_country_base_year = df_gep_by_country_year.loc[
+            df_gep_by_country_year['year'] == p.base_year
+        ].copy()
 
         df_gep_by_year = extractive_materials_provision_functions.group_countries(df_gep_by_country_year)
 
@@ -112,7 +232,7 @@ def gep_calculation(p):
         # Then sum the values across all countries. 
         value_gep_base_year = df_gep_by_country_base_year['extractive_materials_provision_gep'].sum()
         
-        hb.log(f"Total GEP value for base year 2019: {value_gep_base_year}")
+        hb.log(f"Total GEP value for {p.base_year} int$: {value_gep_base_year}")
         
         return value_gep_base_year
 

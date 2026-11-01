@@ -199,3 +199,8 @@ cython_debug/
 # Ignore quarto generated files
 *.html
 global_invest/coastal_carbon/developing.py
+global_invest/coastal_carbon/coastal_carbon_results.pdf
+global_invest/coastal_carbon/coastal_carbon_results.pdf
+global_invest/coastal_carbon/coastal_carbon_results.docx
+global_invest/coastal_carbon/coastal_carbon_results.pdf
+global_invest/coastal_carbon/_quarto.yml
