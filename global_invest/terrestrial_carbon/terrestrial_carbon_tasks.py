@@ -1,6 +1,8 @@
 import os
 import re
 import gc
+import subprocess
+import sys
 from concurrent.futures import ProcessPoolExecutor
 import rasterio
 import pandas as pd
@@ -823,13 +825,8 @@ def task_combine_region_summaries(p):
     return True
 
 
-def task_gep_by_country(p):
-    """Calculate country-level terrestrial-carbon GEP from zonal summaries.
-
-    Each summary may contain multiple regions for one ``iso3_r250_id``. Keep
-    only its largest-area region, calculate annual rental-SCC GEP values, and
-    append a global total row to each per-year output CSV.
-    """
+def _calculate_preferred_gep(p):
+    """Calculate country-level terrestrial-carbon GEP at configured price."""
     if not getattr(p, 'gep_enabled', True):
         print('  Skipping GEP: p.gep_enabled is False')
         return True
@@ -854,14 +851,27 @@ def task_gep_by_country(p):
     iso_col = getattr(p, 'gep_iso_col', 'iso3_r250_id')
     expected_iso_count = getattr(p, 'gep_expected_iso_count', 250)
     required_cols = [iso_col, 'total_area', 'total_carbon_stock']
-    if not hasattr(p, 'gep_rental_scc_2019_int_dollars_per_tc_year'):
+    if not hasattr(p, 'gep_preferred_rental_scc_2019_int_dollars_per_tc_year'):
         raise AttributeError(
-            'Missing p.gep_rental_scc_2019_int_dollars_per_tc_year. '
-            'Configure rental SCC rates in run_terrestrial_carbon.py.'
+            'Missing p.gep_preferred_rental_scc_2019_int_dollars_per_tc_year. '
+            'Configure preferred rental SCC in run_terrestrial_carbon.py.'
         )
-    rental_scc_2019_int_dollars_per_tc_year = dict(
-        p.gep_rental_scc_2019_int_dollars_per_tc_year
+    preferred_rental_scc = float(
+        p.gep_preferred_rental_scc_2019_int_dollars_per_tc_year
     )
+    if not np.isfinite(preferred_rental_scc) or preferred_rental_scc < 0:
+        raise ValueError('Preferred rental SCC must be a finite nonnegative number.')
+    value_col = getattr(p, 'gep_value_column', 'terrestrial_carbon_gep')
+    price_col = getattr(
+        p,
+        'gep_preferred_price_column',
+        'rental scc r2%',
+    )
+
+    if not hasattr(p, 'results'):
+        p.results = {}
+    service_results = p.results.setdefault('terrestrial_carbon', {})
+    country_results = []
 
     for fname in summary_files:
         input_path = os.path.join(summary_dir, fname)
@@ -908,51 +918,238 @@ def task_gep_by_country(p):
                 f"Expected {expected_iso_count} unique {iso_col} values in {input_path}; found {len(df)}"
             )
 
-        gep_cols = []
-        for suffix, rental_scc in rental_scc_2019_int_dollars_per_tc_year.items():
-            gep_col = f'terrestrial_carbon_gep_{suffix}'
-            df[gep_col] = df['total_carbon_stock'] * rental_scc
-            gep_cols.append(gep_col)
+        df[price_col] = preferred_rental_scc
+        df['terrestrial_carbon_quantity'] = df['total_carbon_stock']
+        df[value_col] = df['total_carbon_stock'] * preferred_rental_scc
+        country_results.append(df)
 
-        total_row = {col: pd.NA for col in df.columns}
-        total_row['year'] = 'TOTAL' if 'year' in df.columns else pd.NA
-        total_row[iso_col] = 'TOTAL'
-        total_row['total_area'] = df['total_area'].sum(min_count=1)
-        total_row['total_carbon_stock'] = df['total_carbon_stock'].sum(min_count=1)
-        for gep_col in gep_cols:
-            total_row[gep_col] = df[gep_col].sum(min_count=1)
-        result = pd.concat([df, pd.DataFrame([total_row])], ignore_index=True)
+    all_country_results = pd.concat(country_results, ignore_index=True)
+    base_year = getattr(p, 'base_year', 2019)
+    base_year_results = all_country_results.loc[
+        pd.to_numeric(all_country_results['year'], errors='coerce').eq(base_year)
+    ].copy()
+    if base_year_results.empty:
+        raise ValueError(f'No terrestrial-carbon GEP result found for base year {base_year}.')
 
-        numeric_cols = stock_cols + gep_cols
-        for col in numeric_cols:
-            result[col] = pd.to_numeric(result[col], errors='coerce')
-        for col in numeric_cols:
-            invalid = result[col].dropna()
-            if not np.isfinite(invalid).all():
-                raise ValueError(f"Non-finite value in {col}")
+    base_year_output = os.path.join(p.cur_dir, 'gep_by_country_base_year.csv')
+    base_year_results.to_csv(base_year_output, index=False, na_rep='')
+    service_results['gep_by_country_base_year'] = base_year_output
 
-        value_cols = ['total_area', 'total_carbon_stock'] + gep_cols
-        for col in value_cols:
-            result[col] = result[col].astype(object)
-            result.loc[result[col].notna() & result[col].eq(0), col] = 0
+    year_output = os.path.join(p.cur_dir, 'gep_by_country_year.csv')
+    all_country_results.to_csv(year_output, index=False, na_rep='')
+    service_results['gep_by_country_year'] = year_output
 
-        end_cols = [
-            col for col in [
-                'AGB_carbon_stock',
-                'BGB_carbon_stock',
-                'total_carbon_stock',
-            ] + gep_cols
-            if col in result.columns
-        ]
-        result = result[[col for col in result.columns if col not in end_cols] + end_cols]
+    gep_by_year = (
+        all_country_results.groupby('year', as_index=False)[value_col]
+        .sum(min_count=1)
+        .sort_values('year')
+    )
+    gep_by_year_output = os.path.join(p.cur_dir, 'gep_by_year.csv')
+    gep_by_year.to_csv(gep_by_year_output, index=False, na_rep='')
+    service_results['gep_by_year'] = gep_by_year_output
 
-        suffix = fname[len('carbon_summary_'):-len('.csv')]
-        output_prefix = getattr(p, 'gep_output_prefix', 'task_gep_by_country')
-        output_path = os.path.join(p.cur_dir, f'{output_prefix}_{suffix}.csv')
-        result.to_csv(output_path, index=False, na_rep='')
-        print(f"  Saved: {output_path} ({len(df)} countries plus TOTAL)")
+    # Match Extractive Materials Provision: retain one country row per
+    # ISO-250 ID and write a geometry-bearing base-year result.
+    geopackage_output = base_year_output.replace('.csv', '.gpkg')
+    if getattr(p, 'gdf_countries_simplified', None):
+        gdf = hb.df_merge(
+            p.gdf_countries_simplified,
+            base_year_results,
+            how='outer',
+            on='ee_r264_id',
+        )
+        gdf.to_file(geopackage_output, driver='GPKG')
+        service_results['gep_by_country_base_year_gpkg'] = geopackage_output
 
+    total_value = base_year_results[value_col].sum(min_count=1)
+    hb.log(
+        f'Total terrestrial-carbon GEP for {base_year} at preferred price '
+        f'({preferred_rental_scc:,.2f} 2019 int$/tC/year): {total_value:,.2f}'
+    )
+    return total_value
+
+
+def task_gep_by_country(p):
+    """Backward-compatible task name for preferred-price GEP calculation."""
+    return _calculate_preferred_gep(p)
+
+
+def gep_calculation(p):
+    """Calculate GEP outputs in the ProjectFlow ``gep_calculation`` folder."""
+    return _calculate_preferred_gep(p)
+
+
+def gep_results(p):
+    """Build tables, figures, and reports from preferred-price GEP outputs."""
+    service_results = p.results.get('terrestrial_carbon', {})
+    results_dir = getattr(
+        p,
+        'gep_results_dir',
+        os.path.join(p.project_dir, 'gep_results'),
+    )
+    os.makedirs(results_dir, exist_ok=True)
+
+    for key, source_path in service_results.items():
+        if not isinstance(source_path, str) or not os.path.isfile(source_path):
+            continue
+        destination = os.path.join(results_dir, os.path.basename(source_path))
+        hb.path_copy(source_path, destination)
+        hb.log(f'Distributed {key} to {destination}')
+
+    _write_gep_report_tables_and_figures(p, results_dir)
+    _render_gep_reports(p, results_dir)
+    hb.log(f'Preferred-price GEP results written to {results_dir}')
     return True
+
+
+def _write_gep_report_tables_and_figures(p, results_dir):
+    """Write Extractive-style tables and figures for terrestrial carbon."""
+    import geopandas as gpd
+    import matplotlib as mpl
+    import matplotlib.pyplot as plt
+    from matplotlib.patches import Patch
+
+    service_results = p.results['terrestrial_carbon']
+    value_col = getattr(p, 'gep_value_column', 'terrestrial_carbon_gep')
+    base_year_path = service_results['gep_by_country_base_year']
+    df = pd.read_csv(base_year_path)
+    report_df = df.copy()
+
+    report_tables = {
+        'gep_by_country_base_year_table.csv': report_df[
+            ['iso3_r250_id', 'iso3_r250_label', 'iso3_r250_name', value_col]
+        ],
+        'gep_by_income_grp_base_year_table.csv': (
+            report_df.groupby('income_grp', as_index=False)[value_col]
+            .sum(min_count=1)
+        ),
+        'gep_by_region_un_base_year_table.csv': (
+            report_df.groupby('region_un', as_index=False)[value_col]
+            .sum(min_count=1)
+        ),
+        'gep_by_continent_base_year_table.csv': (
+            report_df.groupby('continent', as_index=False)[value_col]
+            .sum(min_count=1)
+        ),
+        'gep_by_subregion_base_year_table.csv': (
+            report_df.groupby('subregion', as_index=False)[value_col]
+            .sum(min_count=1)
+        ),
+        'gep_by_year_table.csv': pd.read_csv(
+            service_results['gep_by_year']
+        ),
+    }
+    report_tables['terrestrial_carbon_top_countries_table.csv'] = (
+        report_df.loc[report_df[value_col].gt(0),
+                      ['iso3_r250_name', value_col]]
+        .sort_values(value_col, ascending=False)
+        .head(10)
+        .rename(columns={
+            'iso3_r250_name': 'Country or Territory',
+            value_col: 'GEP value (2019 int$)',
+        })
+        .reset_index(drop=True)
+    )
+
+    for filename, table in report_tables.items():
+        table.to_csv(
+            os.path.join(results_dir, filename),
+            index=False,
+            encoding='utf-8',
+            na_rep='NaN',
+        )
+
+    # Country map uses geometry-bearing calculation output, matching the
+    # Extractive Materials Provision report workflow.
+    geopackage_path = service_results.get('gep_by_country_base_year_gpkg')
+    map_path = os.path.join(results_dir, 'gep_by_country_base_year_map.png')
+    if geopackage_path and os.path.isfile(geopackage_path):
+        gdf = gpd.read_file(geopackage_path)
+        if value_col not in gdf.columns:
+            raise KeyError(f'{value_col} missing from {geopackage_path}')
+        missing_mask = gdf[value_col].isna()
+        positive_values = gdf.loc[gdf[value_col].gt(0), value_col]
+        if positive_values.empty:
+            raise ValueError('No positive terrestrial-carbon GEP values for map.')
+
+        norm = mpl.colors.LogNorm(
+            vmin=float(positive_values.min()),
+            vmax=float(positive_values.max()),
+        )
+        borders = gdf.copy()
+        borders['geometry'] = borders.geometry.boundary
+        fig, ax = plt.subplots(figsize=(15, 10))
+        gdf.loc[~missing_mask].plot(
+            column=value_col,
+            cmap='YlGn',
+            legend=False,
+            norm=norm,
+            ax=ax,
+        )
+        if missing_mask.any():
+            gdf.loc[missing_mask].plot(
+                ax=ax,
+                color='#d9d9d9',
+                edgecolor='black',
+                linewidth=0.2,
+            )
+        borders.plot(ax=ax, color='black', linewidth=0.5)
+        sm = plt.cm.ScalarMappable(cmap='YlGn', norm=norm)
+        sm.set_array([])
+        cbar = fig.colorbar(sm, ax=ax, orientation='vertical', fraction=0.03, pad=0.02)
+        cbar.set_label('Gross Economic Product (GEP), 2019 int$')
+        cbar.ax.yaxis.set_major_formatter(
+            mpl.ticker.FuncFormatter(lambda x, _: f'{int(x):,}')
+        )
+        if missing_mask.any():
+            ax.legend(
+                handles=[Patch(
+                    facecolor='#d9d9d9',
+                    edgecolor='black',
+                    label='Missing',
+                )],
+                loc='lower left',
+                frameon=True,
+            )
+        ax.set_title('Terrestrial Carbon GEP by Country or Territory')
+        ax.set_axis_off()
+        fig.savefig(map_path, bbox_inches='tight', dpi=300)
+        plt.close(fig)
+
+    # Year plot follows Extractive Materials Provision naming and layout.
+    year_df = report_tables['gep_by_year_table.csv'].copy()
+    year_df['year'] = pd.to_numeric(year_df['year'], errors='raise')
+    fig, ax = plt.subplots(figsize=(10, 6))
+    ax.plot(year_df['year'], year_df[value_col], marker='o')
+    ax.set_title('Terrestrial Carbon GEP Over Time')
+    ax.set_xlabel('Year')
+    ax.set_ylabel('Gross Economic Product (GEP), 2019 int$')
+    ax.grid(True)
+    fig.tight_layout()
+    fig.savefig(os.path.join(results_dir, 'gep_by_year_plot.png'), dpi=300)
+    plt.close(fig)
+
+
+def _render_gep_reports(p, results_dir):
+    """Render terrestrial QMD to HTML, PDF, DOCX, and IPYNB."""
+    qmd_path = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
+        'terrestrial_carbon_results.qmd',
+    )
+    if not os.path.isfile(qmd_path):
+        raise FileNotFoundError(f'Terrestrial-carbon QMD not found: {qmd_path}')
+
+    os.environ['QUARTO_PYTHON'] = sys.executable
+    env = os.environ.copy()
+    env['QUARTO_LOG_LEVEL'] = 'WARN'
+    for output_format in ('html', 'pdf', 'docx', 'ipynb'):
+        command = [
+            'quarto', 'render', qmd_path,
+            '--to', output_format,
+            '--output-dir', results_dir,
+        ]
+        hb.log(f'Rendering terrestrial-carbon QMD to {output_format}')
+        subprocess.run(command, check=True, env=env)
 
 
 # LEGACY: Variant-comparison report and trend-plot path retained for compatibility.

@@ -58,7 +58,7 @@ def build_preprocessing_task_tree(p):
 
 
 def build_gep_service_calculation_task_tree(p):
-    """Build one variant carbon-density, regional-summary, and GEP DAG."""
+    """Build one variant carbon-density and preferred-price GEP DAG."""
     from . import terrestrial_carbon_tasks
 
     p.task_compute_carbon_density_table = p.add_task(
@@ -76,24 +76,34 @@ def build_gep_service_calculation_task_tree(p):
         terrestrial_carbon_tasks.task_combine_region_summaries,
         dependencies=[p.task_summarize_carbon_by_region],
     )
-    p.task_gep_by_country = p.add_task(
-        terrestrial_carbon_tasks.task_gep_by_country,
+    p.task_gep_calculation = p.add_task(
+        terrestrial_carbon_tasks.gep_calculation,
         dependencies=[p.task_combine_region_summaries],
     )
     return p
 
 
 def build_gep_service_results_task_tree(p):
-    """Build GEP output from existing regional-summary CSV files only."""
+    """Build preferred-price GEP outputs from existing regional summaries."""
     from . import terrestrial_carbon_tasks
 
-    p.task_gep_by_country = p.add_task(
-        terrestrial_carbon_tasks.task_gep_by_country,
+    p.task_gep_calculation = p.add_task(
+        terrestrial_carbon_tasks.gep_calculation,
+    )
+    p.task_gep_results = p.add_task(
+        terrestrial_carbon_tasks.gep_results,
+        dependencies=[p.task_gep_calculation],
     )
     return p
 
 
 def build_gep_service_task_tree(p):
-    """Build default terrestrial-carbon GEP service task tree."""
-    return build_gep_service_calculation_task_tree(p)
+    """Build full terrestrial-carbon tree, including result distribution."""
+    from . import terrestrial_carbon_tasks
 
+    build_gep_service_calculation_task_tree(p)
+    p.task_gep_results = p.add_task(
+        terrestrial_carbon_tasks.gep_results,
+        dependencies=[p.task_gep_calculation],
+    )
+    return p

@@ -6,7 +6,8 @@ For each carbon-density variant:
   2. Generate carbon-density rasters for selected LULC year(s).
   3. Summarize AGB, BGB, and total carbon by ee264 region.
   4. Aggregate results to iso250.
-  5. Calculate rental-SCC terrestrial-carbon GEP.
+  5. Calculate terrestrial-carbon GEP at configured preferred rental SCC.
+  6. Distribute GEP calculation outputs to the configured results directory.
 """
 
 import logging
@@ -93,19 +94,16 @@ if __name__ == "__main__":
     p.gep_iso_col = "iso3_r250_id"
     p.gep_expected_iso_count = 250
     p.gep_missing_coverage_as_na = True
-    p.gep_output_prefix = "task_gep_by_country"
-    p.gep_rental_scc_2019_int_dollars_per_tc_year = {
-        "r1pct": 20.11,
-        "r1dot5pct": 16.51,
-        "r2pct": 13.19,
-        "r2dot5pct": 10.49,
-        "r3pct": 8.48,
-    }
+    p.gep_preferred_price_label = "r2pct"
+    p.gep_preferred_price_column = "rental scc r2%"
+    p.gep_preferred_rental_scc_2019_int_dollars_per_tc_year = 13.19
+    p.gep_value_column = "terrestrial_carbon_gep"
+    p.gep_results_dir = os.path.join(p.project_dir, "gep_results")
 
     # -------------------------------------------------------------------------
     # EXECUTION
     # -------------------------------------------------------------------------
-    p.dry_run = True
+    p.dry_run = False
 
     tcf.setup_logging(p.project_dir)
     tcf.run_shared_preprocessing(p)
@@ -114,7 +112,7 @@ if __name__ == "__main__":
         tcf.run_variant(
             p,
             n_lat_bands,
-            tci.build_gep_service_calculation_task_tree,
+            tci.build_gep_service_task_tree,
         )
 
     logging.info("Done! All variants completed.")
