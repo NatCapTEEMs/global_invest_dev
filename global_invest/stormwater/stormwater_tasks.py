@@ -129,7 +129,6 @@ def retention_by_country(p):
     if hb.path_exists(p.stormwater_retention_by_country_path):
         hb.log('stormwater retention table already exists. Skipping the zonal sum.')
         return True
-    import geopandas as gpd
 
     retention_path = os.path.join(p.intermediate_dir, INVEST_WORKSPACE_DIR_NAME,
                                   RETENTION_VOLUME_FILE_NAME)

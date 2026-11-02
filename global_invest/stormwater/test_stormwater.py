@@ -1,12 +1,16 @@
-"""Unit tests for stormwater: the valuation function, the configuration rows and the
-ground-area correction."""
+"""Unit tests for stormwater: the valuation function, the configuration rows, the
+ground-area correction and the country polygons on the retention grid."""
 from types import SimpleNamespace
 
+import geopandas as gpd
 import pandas as pd
+import pyproj
 import pytest
 import numpy as np
+import rasterio
+from shapely.geometry import box
 
-from global_invest.stormwater import stormwater_functions
+from global_invest.stormwater import stormwater_functions, stormwater_tasks
 
 
 def test_stormwater_gep_is_volume_times_price():
@@ -51,3 +55,26 @@ def test_the_ground_area_correction_only_removes_volume():
     corrected = volume * share[:, None]
     assert corrected.sum() == pytest.approx(100.0 + 50.0 + 25.0)
     assert corrected.sum() < volume.sum()
+
+
+def test_countries_are_reprojected_onto_the_retention_grid(tmp_path):
+    """Two one-degree countries at the equator, burned onto a 4 x 2 EPSG:3857 retention grid,
+    each fill their own two columns. The same polygons burned without reprojection miss every cell."""
+    countries_path = str(tmp_path / 'countries.gpkg')
+    retention_path = str(tmp_path / 'retention.tif')
+    countries_on_grid_path = str(tmp_path / 'countries_on_grid.gpkg')
+    zone_ids_path = str(tmp_path / 'zone_ids.tif')
+    countries = gpd.GeoDataFrame({'iso3_r250_id': [1, 2], 'iso3_r250_label': ['AAA', 'BBB']},
+                                 geometry=[box(0, 0, 1, 1), box(1, 0, 2, 1)], crs='EPSG:4326')
+    countries.to_file(countries_path, driver='GPKG')
+    x_max, y_max = pyproj.Transformer.from_crs('EPSG:4326', 'EPSG:3857', always_xy=True).transform(2.0, 1.0)
+    with rasterio.open(retention_path, 'w', driver='GTiff', width=4, height=2, count=1, dtype='float32',
+                       crs='EPSG:3857', transform=rasterio.transform.from_bounds(0, 0, x_max, y_max, 4, 2)) as dst:
+        dst.write(np.ones((1, 2, 4), dtype='float32'))
+
+    stormwater_tasks.write_countries_on_retention_grid(countries_path, countries_on_grid_path)
+    stormwater_tasks.write_zone_id_raster(countries_on_grid_path, retention_path, zone_ids_path)
+
+    assert gpd.read_file(countries_on_grid_path).crs.to_epsg() == stormwater_tasks.RETENTION_GRID_EPSG
+    with rasterio.open(zone_ids_path) as src:
+        assert src.read(1).tolist() == [[1, 1, 2, 2], [1, 1, 2, 2]]
