@@ -13,21 +13,28 @@ follows Libby Kula's approach, adopted by Chiara on 29 October 2026 in place of 
 
 ## Sources
 
-- Method: `Local_Climate_Regulation_Appendix_10_7_26` (Libby Kula, Liaila Tajibaeva, Haku Bo,
-  Nfamara K Dampha), version of 21 October 2026, with its companion additional documentation.
+- Method: `Local_Climate_Regulation.docx` in the shared folder of current write-ups (Libby Kula,
+  Liaila Tajibaeva, Haku Bo, Nfamara K Dampha), version of 30 October 2026, 19:02 UTC, with no
+  tracked changes or comments. It replaces the appendix of 21 October 2026.
+- Additional documentation: `Local_Climate_Regulation_Additional_documentation_10_7_26`, version
+  of 30 October 2026, 19:00 UTC: the countries missing or zero and a country results table.
 - Code: `libby-07/urban-cooling`, main `362f177` (31 October 2025), the registered repository.
 - Result: `local_climate_regulation_gep.csv` of 13 July 2026, the code register's results file.
   The staged copy is byte-identical to it (sha256 `8c92bd10...f9ac`).
 
 ## Quantity
 
-The model covers about 46,000 of the 123,034 urban areas in the Global Urban Polygons and Points
-Dataset, those large enough for the 1 km air-temperature input. For each urban area and month, the
-hottest pixel stands for the temperature without nature, and the cooling of each pixel is the
-difference from it. InVEST urban cooling at 100 m gives that cooling effect.
+The write-up covers about 46,000 of the 123,034 urban areas in the Global Urban Polygons and
+Points Dataset, those large enough for the 1 km air-temperature input (GSHTD monthly means). For
+each urban area and month, the hottest pixel stands for the temperature without nature, and the
+cooling of each pixel is the difference from it, with a 70°F threshold. The write-up then
+describes the savings per 100 m pixel, referring to Urban InVEST cooling results, and per 1 km
+pixel resampled to the population grid. Which resolution the delivered values come from is not
+established.
 
-The cooling is converted into fewer cooling degree-days and then into electricity saved per person,
-using each country's cooling electricity per person and degree-day.
+The cooling is converted into fewer cooling degree-days and then into electricity saved per
+person. The write-up derives the electricity per degree-day from a regression across countries,
+while the delivered final applies each country's own cooling consumption per degree-day (below).
 
 ## Price
 
@@ -66,11 +73,18 @@ imported, not recomputed. Two comparison columns sit beside it: the December 202
 
 ## Coverage
 
-The published table is one row for each of the account's 250 countries, base year 2019, in constant
-2019 USD. Of the 250, 174 carry a value, none is a computed zero, and 76 rows are missing, kept as
-missing rather than zero because an input carries no data for those countries. A zero means the
-computation returned zero. A missing row means the data to compute one is absent. The delivered
-total is $14,188,882,295.
+The published table is one row for each of the account's 250 countries, base year 2019, in
+constant 2019 USD, and it is the delivered final as imported: 174 countries carry a value, none
+is zero, and 76 are missing. The delivered total is $14,188,882,295.
+
+The 30 October additional documentation accounts for the 76 differently. It values five of them,
+Côte d'Ivoire $49,400, Eritrea $2,953.04, São Tomé and Príncipe $114, South Sudan $1,455 and Yemen
+$561 ($54,483.04 in all), and its country table otherwise equals the final in the 174 countries
+both value (joined on country keys). It lists 26 as true zeros: Iceland, below the threshold in
+every month, and 25 places without an urban area in its source, 24 of which it also lists as
+lacking price or consumption data. The other 45 it lists as missing price, consumption or
+temperature data, or as unsure. The library keeps the final as delivered, so these five values
+and 26 zeros are not in the account.
 
 ## Inputs
 
@@ -91,20 +105,23 @@ columns.
 - `URBAN_COOLING_OLD_GLOBAL_MC = 1.71737465916468`, the global slope the final divides out.
 - `URBAN_COOLING_CDD_BASE_C = 18.0` and `URBAN_COOLING_SMOOTH_WINDOW_C = 1.0`, used by the helper
   `temp_degc_to_cdd_smooth`. That helper is not the authors' degree-day curve, which in their code
-  is a Fahrenheit polynomial switching at 70°F. It does not enter the reported value and stays
-  unchanged until the write-up and code agree on the threshold.
+  is a Fahrenheit polynomial switching at 70°F, the threshold the 30 October write-up states. It
+  does not enter the reported value.
 
 ## Taken as given
 
-The InVEST urban cooling runs, the national electricity prices and the delivered final.
+The cooling estimates behind the city files, the national electricity prices and the delivered
+final.
 
 ## What is open
 
-- The code and inputs of the final's last step: the IEA-CMCC 2019 cooling degree-day file, the
-  per-country consumption per degree-day, and which energy-share version was used.
-- The write-up and the code differ on three points. The write-up derives the gradient from a
-  regression across countries, while the final uses each country's own ratio. Libby's comment gives
-  a 60°F threshold, while the code switches at 70°F. The write-up lists Iceland as a true zero,
-  while the delivered results leave it blank.
-- Review comments open on the write-up: the treatment of places without air conditioning, the
-  model inputs, the urban-area size criterion shared with other urban services.
+- The provenance of the final's last step: its code, the IEA-CMCC 2019 cooling degree-day file,
+  the per-country consumption per degree-day, and which energy-share version was used. The 30
+  October documents do not supply them, so the final is imported, not reproduced.
+- The write-up and the delivered values still differ: the gradient is a regression in the
+  write-up and each country's own ratio in the final, the resolution is described both as 100 m
+  and as 1 km, and the additional documentation's five values and 26 true zeros (Iceland among
+  them) are missing in the final. The threshold is settled: the write-up states 70°F, the code's.
+- Review comments raised on the 21 October appendix: the treatment of places without air
+  conditioning, the model inputs, the urban-area size criterion shared with other urban services.
+  The 30 October write-up carries no comments, and these points are not yet checked against it.
