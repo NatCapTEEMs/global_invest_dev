@@ -348,16 +348,21 @@ def test_the_country_table_matches_the_authors_corrected_run_where_the_border_ru
     than the border rule alone. With the crop values fixed, the border rule is what remains: the
     author's notebook sets RASTERIZE_ALL_TOUCHED, the account takes the cell whose centre the
     polygon covers. The test pins the global agreement and the two countries the rule explains,
-    rather than demanding an equality it should not get."""
+    rather than demanding an equality it should not get.
+
+    That run used the February SDR rasters (`usle_2019_revised_feb_13.tif`) and the v3 upstream
+    share, so the library side is the table computed on the same rasters, kept beside the current
+    one. The current shares are tested against the matching reference in the test below."""
     import os
     reference_path = os.path.join(
         os.path.expanduser('~'), 'Files', 'base_data', 'global_invest', 'erosion', 'reference',
         'integrated_country_gep_corrected_20260829.csv')
     ours_path = os.path.join(
         os.path.expanduser('~'), 'Files', 'global_invest', 'projects', 'gep_erosion',
-        'intermediate', 'prevention_shares', 'integrated_country_gep.csv')
+        'intermediate', 'prevention_shares.displaced_20261101_pre_fresh_rasters',
+        'integrated_country_gep.csv')
     if not (os.path.exists(reference_path) and os.path.exists(ours_path)):
-        pytest.skip('the staged reference or an erosion run is not on this machine')
+        pytest.skip('the staged reference or the earlier-raster table is not on this machine')
 
     column = 'gep_const2019_usd_combined'
     theirs = pd.read_csv(reference_path)
@@ -389,6 +394,55 @@ def test_the_country_table_matches_the_authors_corrected_run_where_the_border_ru
     within = ((both[column + '_ours'] - both[column + '_theirs']).abs()
               / both[column + '_theirs'] < 0.01).mean()
     assert within > 0.4, within
+
+def test_the_country_shares_equal_the_authors_released_run():
+    """The current country shares against the authors' released table (v2.0.0-LUP, 618f67e).
+
+    Both are computed from the same rasters by the same share code, on the same boundaries and
+    with the same cell-centre rule, so every share and every missing row agrees exactly. A
+    difference means the rasters, the boundaries or the share code changed, and is explained
+    rather than absorbed by a tolerance. Soil retained is left out: it does not enter the shares,
+    and its last digits differ in six countries.
+
+    The crop values differ on purpose. Valued at the authors' crop values, the shares give the
+    authors' GEP exactly, so the whole difference between the two GEP totals is the crop value."""
+    import math
+    import os
+
+    import numpy as np
+    reference_path = os.path.join(
+        os.path.expanduser('~'), 'Files', 'base_data', 'global_invest', 'erosion', 'reference',
+        'integrated_country_gep_v2_0_0_lup_618f67e.csv')
+    ours_path = os.path.join(
+        os.path.expanduser('~'), 'Files', 'global_invest', 'projects', 'gep_erosion',
+        'intermediate', 'prevention_shares', 'integrated_country_gep.csv')
+    if not (os.path.exists(reference_path) and os.path.exists(ours_path)):
+        pytest.skip('the staged reference or an erosion run is not on this machine')
+
+    theirs = pd.read_csv(reference_path, float_precision='round_trip').set_index('iso3')
+    ours = pd.read_csv(ours_path, float_precision='round_trip').set_index('iso3')
+    assert theirs.index.is_unique and ours.index.is_unique
+    assert set(theirs.index) == set(ours.index)
+    ours = ours.reindex(theirs.index)
+
+    channels = ('onfarm', 'upstream', 'combined')
+    share_columns = [prefix + channel for channel in channels
+                     for prefix in ('protected_production_tons_', 'total_production_tons_',
+                                    'share_protected_production_', 'erosion_shock_share_')]
+    share_columns += [column for column in theirs.columns if column.startswith('mean_')]
+    for column in share_columns:
+        assert ours[column].isna().equals(theirs[column].isna()), column
+        valued = theirs[column].notna()
+        assert np.array_equal(ours.loc[valued, column].to_numpy(),
+                              theirs.loc[valued, column].to_numpy()), column
+
+    priced = theirs['crop_gpv_const2019_2019'].notna()
+    for channel in channels:
+        column = 'gep_const2019_usd_' + channel
+        at_their_crop_values = theirs['crop_gpv_const2019_2019'] * ours['erosion_shock_share_' + channel]
+        assert np.array_equal(at_their_crop_values[priced].to_numpy(), theirs.loc[priced, column].to_numpy(),
+                              equal_nan=True), column
+        assert math.fsum(at_their_crop_values.dropna()) == math.fsum(theirs[column].dropna()), column
 
 
 # ---------------------------------------------------------------------------

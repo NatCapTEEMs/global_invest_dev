@@ -49,8 +49,8 @@ erosion,erosion_biophysical_table_path,global_invest/erosion/expanded_biophysica
 erosion,erosion_erodibility_path,soil/erodibility_30s.tif
 erosion,erosion_erosivity_path,soil/erosivity_30s.tif
 erosion,erosion_watersheds_path,global_invest/erosion/hybas_global_lev06_v1c.gpkg
-erosion,erosion_usle_path,global_invest/erosion/usle_2019_revised_feb_13.tif
-erosion,erosion_avoided_erosion_path,global_invest/erosion/avoided_erosion_2019_revised_feb_13.tif
+erosion,erosion_usle_path,global_invest/erosion/author_repo_2026_10/full_chain_618f67e/usle_fresh.tif
+erosion,erosion_avoided_erosion_path,global_invest/erosion/author_repo_2026_10/full_chain_618f67e/avoided_erosion_fresh.tif
 erosion,erosion_analysis_grid_path,global_invest/erosion/erosion_analysis_grid_6p45km.tif
 erosion,erosion_yield_stack_path,global_invest/erosion/spam2020_yield_stack_TA.tif
 erosion,erosion_area_stack_path,global_invest/erosion/spam2020_harvested_area_stack_TA.tif
@@ -350,7 +350,7 @@ livestock_provision,livestock_provision_cwon_product_rent_path,global_invest/liv
 livestock_provision,livestock_provision_cwon_product_rent_source,"the World Bank's CWoN 2024 reproducibility package (FR_WLD_2024_195), Output/Latest, copied unchanged 2026-10-29. The table the livestock write-up names (product-level livestock rents, current USD, verification only), with README_provenance.md beside it"
 livestock_provision,gleam_dmi_path,global_invest/livestock_provision/gleam3_dmi_dashboard.psv
 erosion,erosion_use_upslope_lulc_diagnostics,true
-erosion,erosion_upstream_prevention_share_path,global_invest/erosion/author_drive/msi_upstream_attribution_v3/upstream_prevention_share.tif
+erosion,erosion_upstream_prevention_share_path,global_invest/erosion/author_repo_2026_10/full_chain_618f67e/upstream_prevention_share_fresh.tif
 erosion,erosion_upslope_forest_share_path,global_invest/erosion/author_drive/msi_upstream_attribution_v3/upslope_forest_share.tif
 erosion,erosion_upslope_grass_share_path,global_invest/erosion/author_drive/msi_upstream_attribution_v3/upslope_grass_share.tif
 erosion,erosion_upslope_cropland_share_path,global_invest/erosion/author_drive/msi_upstream_attribution_v3/upslope_cropland_share.tif
@@ -415,7 +415,7 @@ pollination,pollination_yield_method,"target"
 pollination,pollination_yield_early_years,"[1998, 1999, 2000, 2001, 2002]"
 pollination,pollination_yield_late_years,"[2019]"
 erosion,erosion_gdp_csv_source_url,https://api.worldbank.org/v2/country/all/indicator/NY.GDP.MKTP.CD?format=json&per_page=20000
-erosion,erosion_reference_country_gep_path,global_invest/erosion/reference/integrated_country_gep_corrected_20260829.csv
+erosion,erosion_reference_country_gep_path,global_invest/erosion/reference/integrated_country_gep_v2_0_0_lup_618f67e.csv
 renewable_energy_provision,gep_quantity_input_source_url,https://pxweb.irena.org/pxweb/en/IRENASTAT (Power Capacity and Generation)
 renewable_energy_provision,gep_price_input_source_url,"https://databank.worldbank.org/metadataglossary/doing-business/series/IC.ELC.PRI.KH.DB1619 (Doing Business: Getting Electricity - price of electricity, US cents/kWh, warehouse tariff)"
 renewable_energy_provision,gep_attribution_input_source_note,"computed by the module author with the CWoN hydropower rent method (rent over revenue per country-year); no public URL exists"
