@@ -23,18 +23,24 @@ HYDROPOWER_RENT_SIGNATURE = 'hydropower_rent_signature.json'
 
 
 def hydropower_rent(p):
-    """The hydropower table: the CWoN-wealth annual value the account reports, and beside it the
-    authors' 2019 resource rent, revenues minus total costs from the World Bank's hydropower
-    valuation workbook, with its sign and a status per country.
+    """The hydropower table: the authors' 2019 resource rent the account reports, from their
+    public rent table, with its sign and a status per country, and the CWoN-wealth annual value
+    beside it.
 
-    The workbook is not public. Where it is staged it is checked against its recorded sha256;
-    where it is not, the run goes on with the revenue-minus-cost columns missing and says so.
+    The public table is checked against its recorded sha256. The World Bank's valuation workbook
+    behind it is not public: where it is staged it is checked against its own sha256 and its
+    revenue minus cost against the public rent; where it is not, the run says so.
     """
     publish_inputs(p)
     p.hydropower_rent_path = os.path.join(p.cur_dir, 'hydropower_rent.csv')
     if not p.run_this:
         return
     wealth_path = str(p.water_supply_cwon_hydro_wealth_path)
+    public_path = str(p.water_supply_hydro_rent_table_path)
+    found = utilities.sha256_file(public_path)
+    if found != str(p.water_supply_hydro_rent_table_sha256).strip().lower():
+        raise ValueError('%s has sha256 %s, not the recorded water_supply_hydro_rent_table_sha256 %s'
+                         % (public_path, found, p.water_supply_hydro_rent_table_sha256))
     workbook_path = str(p.water_supply_cwon_hydro_workbook_path)
     staged = hb.path_exists(workbook_path)
     if staged:
@@ -45,28 +51,36 @@ def hydropower_rent(p):
     # The rate is configuration rather than a module constant, so the one number the
     # wealth-based figure turns on is visible beside every other service's parameters.
     rate = float(p.water_supply_hydropower_capitalization_rate)
-    inputs = {'wealth': utilities.file_fingerprint(wealth_path)}
+    inputs = {'wealth': utilities.file_fingerprint(wealth_path),
+              'public_rent': utilities.file_fingerprint(public_path)}
     if staged:
         inputs['workbook'] = utilities.file_fingerprint(workbook_path)
-    signature = utilities._signature({'capitalization_rate': rate, 'workbook_staged': staged}, inputs)
+    # The code is part of what produced the table: a changed rule in wf must not be hidden
+    # behind unchanged inputs, and gep_calculation downstream cannot refresh a stale table.
+    light_inputs = [__file__, wf.__file__]
+    signature = utilities._signature({'capitalization_rate': rate, 'workbook_staged': staged}, inputs,
+                                     light_inputs)
     signature_path = os.path.join(p.cur_dir, HYDROPOWER_RENT_SIGNATURE)
     reason = utilities.outputs_reuse_reason([p.hydropower_rent_path], signature, signature_path)
     if reason is None:
-        hb.log('  hydropower: reusing %s (same inputs, same settings)' % p.hydropower_rent_path)
+        hb.log('  hydropower: reusing %s (same inputs, settings and code)' % p.hydropower_rent_path)
         return True
     hb.log('  hydropower: computing because %s' % reason)
     database = None
     if staged:
         database = pd.read_excel(workbook_path, sheet_name=wf.HYDROPOWER_WORKBOOK_SHEET)
     else:
-        hb.log('  hydropower: the valuation workbook is not staged at %s, so the revenue-minus-cost '
-               'columns are missing' % workbook_path)
-    table = wf.hydropower_rent_table(pd.read_stata(wealth_path), rate, database)
+        hb.log('  hydropower: the valuation workbook is not staged at %s, so the public rent is not '
+               'checked against it' % workbook_path)
+    table = wf.hydropower_rent_table(pd.read_stata(wealth_path), rate, pd.read_csv(public_path), database)
     table.to_csv(p.hydropower_rent_path, index=False)
     utilities.write_outputs_signature(signature, signature_path)
     counts = table['hydropower_rent_status'].value_counts().to_dict()
-    hb.log('  hydropower: wealth-based value %.2f over %d countries; revenue minus cost by status %s'
-           % (table['hydropower_gep'].sum(), int(table['hydropower_gep'].notna().sum()), counts))
+    hb.log('  hydropower: the authors\' rent, negative calculated rents at zero, %.2f over %d countries, '
+           '%d of them zero; wealth-based value beside it %.2f; rent by status %s%s'
+           % (table['hydropower_gep'].sum(), int(table['hydropower_gep'].notna().sum()),
+              int((table['hydropower_gep'] == 0).sum()), table['hydropower_gep_wealth_based'].sum(),
+              counts, '; workbook agrees within $1' if staged else ''))
     return True
 
 
@@ -121,19 +135,16 @@ def gep_calculation(p):
     water_use_cols += [c for c in agriculture.columns
                        if c.startswith('water_use_') and c not in water_use_cols]
     utilities.write_gep_by_country(
-        p, df_gep[attr_cols + ['year', 'hydropower_gep', 'hydropower_gep_reference_variant']
+        p, df_gep[attr_cols + ['year', 'hydropower_gep', 'hydropower_gep_wealth_based']
                   + water_use_cols + ['water_supply_gep']],
         service_results['gep_by_country_base_year'])
 
     utilities.write_reuse_signature(p, 'water_supply', outputs, light_inputs=dependencies)
-    ours = df_gep['hydropower_gep'].sum()
-    reference = df_gep['hydropower_gep_reference_variant'].sum()
-    n_extra = int(df_gep['hydropower_gep'].notna().sum()
-                  - df_gep['hydropower_gep_reference_variant'].notna().sum())
+    rent = df_gep['hydropower_gep']
     hb.log(f'Total water_supply GEP (hydropower component) for base year {p.gep_base_year}: '
-           f'{ours:,.2f}')
-    hb.log(f'  reference-matching variant {reference:,.2f} over {n_extra} fewer countries; '
-           f'the gap is the reference exclusions, which the reported value does not apply')
+           f'{rent.sum():,.2f} over {int(rent.notna().sum())} countries, {int((rent == 0).sum())} '
+           f'of them zero')
+    hb.log(f'  the wealth-based value beside it: {df_gep["hydropower_gep_wealth_based"].sum():,.2f}')
     hb.log(f'  municipal (the authors\' final table): {df_gep["water_use_domestic_gep"].sum():,.2f} '
            f'over {int(df_gep["water_use_domestic_gep"].notna().sum())} countries')
     return True

@@ -1,5 +1,5 @@
-"""Hydropower rent inferred from CWoN wealth, with the authors' revenue-minus-cost rent beside
-it, agricultural-water valuation using the GEP-WaterUse-Agriculture coefficients and crop values,
+"""The authors' hydropower resource rent, with the value inferred from CWoN wealth beside it,
+agricultural-water valuation using the GEP-WaterUse-Agriculture coefficients and crop values,
 and municipal water. The municipal value is the authors' final table, imported and checked by `municipal_gep_by_country`. The domestic
 valuation at the premium-implied price is kept only as a comparison variant. Provenance is in
 the method note and the evidence record, not here.
@@ -24,6 +24,13 @@ HYDROPOWER_WORKBOOK_COLUMN_POSITIONS = {HYDROPOWER_WORKBOOK_REVENUE: 22,   # W
 HYDROPOWER_WORKBOOK_RENAMES = {'Czechia': 'Czech Republic', 'North Macedonia': 'Macedonia, FYR',
                                'Turkiye': 'Turkey'}
 
+# The authors' public rent table, their repository's CWON_resource_rent_data.csv: the workbook's
+# revenues and total costs per country-year in whole dollars, resource_rent their difference.
+# It uses the workbook's country names. Where the workbook is staged the two must agree within
+# a dollar, the public file's rounding.
+HYDROPOWER_PUBLIC_RENT = 'resource_rent'
+HYDROPOWER_PUBLIC_WORKBOOK_TOLERANCE_USD = 1.0
+
 
 def annuity_factor(rate, years=HYDROPOWER_HORIZON_YEARS):
     """Present value of one dollar per year for the horizon: sum of 1/(1+r)^t, t = 1..years."""
@@ -37,21 +44,59 @@ def hydropower_rent_from_wealth(wealth_df, capitalization_rate, year=HYDROPOWER_
     equal to real 2019 USD in the 2019 base year, and the only variant that covers Venezuela).
     Countries without wealth stay NaN: no data is not zero rent.
 
-    Returns hydropower_gep, every country the wealth table values. It is what the account reports
-    while the treatment of negative resource rents is undecided (see hydropower_rent_table)."""
+    Returns hydropower_gep_wealth_based, every country the wealth table values. It is published
+    beside the authors' rent as a comparison (see hydropower_rent_table)."""
     df = wealth_df[['countrycode', f'YR{year}']].rename(
         columns={'countrycode': 'iso3_r250_label',
                  f'YR{year}': 'hydropower_wealth_usd'})
-    df['hydropower_gep'] = df['hydropower_wealth_usd'] / annuity_factor(capitalization_rate)
+    df['hydropower_gep_wealth_based'] = df['hydropower_wealth_usd'] / annuity_factor(capitalization_rate)
     return df
 
 
-def hydropower_rent_from_revenue_and_cost(database_df, wealth_df, year=HYDROPOWER_GEP_YEAR):
-    """The authors' annual hydropower resource rent: workbook revenues minus total costs.
+def _wealth_codes(names, wealth_df, source):
+    """Map workbook-style country names to the CWoN wealth table's codes, refusing any it lacks."""
+    codes = wealth_df.set_index('countryname')['countrycode']
+    names = names.replace(HYDROPOWER_WORKBOOK_RENAMES)
+    unmatched = sorted(set(names) - set(codes.index))
+    if unmatched:
+        raise ValueError(f'{source} countries with no code in the CWoN wealth table: {unmatched}')
+    return names.map(codes).values
 
-    The sign is kept: a negative rent is a negative rent here, and whether it counts as zero or as
-    missing is a decision this function does not make. Countries are keyed through the CWoN
-    wealth table's own names and codes.
+
+def hydropower_rent_from_public_table(rent_df, wealth_df, year=HYDROPOWER_GEP_YEAR):
+    """The authors' annual hydropower resource rent from their public table, sign kept.
+
+    Args:
+        rent_df (pd.DataFrame): the authors' CWON_resource_rent_data table (Country, Year,
+            tot_revenue, tot_cost, resource_rent).
+        wealth_df (pd.DataFrame): the CWoN wealth table, for its countryname and countrycode.
+        year (int): the year to take.
+
+    Returns:
+        pd.DataFrame: iso3_r250_label, hydropower_rent_signed_usd and hydropower_rent_status
+        (positive, negative, zero, or missing where the rent is not numeric).
+
+    Raises:
+        ValueError: if a country has no code in the wealth table or appears twice in the year.
+    """
+    rows = rent_df[rent_df['Year'] == year]
+    codes = _wealth_codes(rows['Country'], wealth_df, 'public rent table')
+    if len(set(codes)) != len(codes):
+        raise ValueError(f'the public rent table lists a country more than once in {year}')
+    out = pd.DataFrame({'iso3_r250_label': codes,
+                        'hydropower_rent_signed_usd': pd.to_numeric(rows[HYDROPOWER_PUBLIC_RENT],
+                                                                    errors='coerce').values})
+    out['hydropower_rent_status'] = np.select(
+        [out['hydropower_rent_signed_usd'] > 0, out['hydropower_rent_signed_usd'] < 0,
+         out['hydropower_rent_signed_usd'] == 0], ['positive', 'negative', 'zero'], 'missing')
+    return out
+
+
+def hydropower_rent_from_revenue_and_cost(database_df, wealth_df, year=HYDROPOWER_GEP_YEAR):
+    """The workbook's annual hydropower resource rent: revenues minus total costs, sign kept.
+
+    It checks the public table where the private workbook is staged. Countries are keyed through
+    the CWoN wealth table's own names and codes.
 
     Args:
         database_df (pd.DataFrame): the workbook's Database sheet as read, header row included.
@@ -59,8 +104,8 @@ def hydropower_rent_from_revenue_and_cost(database_df, wealth_df, year=HYDROPOWE
         year (int): the year to take.
 
     Returns:
-        pd.DataFrame: iso3_r250_label, hydropower_rent_signed_usd (revenues minus total costs) and
-        hydropower_rent_status (positive, negative, zero, or missing where a value is not numeric).
+        pd.DataFrame: iso3_r250_label and hydropower_rent_workbook_usd (revenues minus total costs,
+        missing where a value is not numeric).
 
     Raises:
         ValueError: if revenues or total costs are not in columns W and Y, or a workbook country
@@ -74,57 +119,61 @@ def hydropower_rent_from_revenue_and_cost(database_df, wealth_df, year=HYDROPOWE
                        & (database_df['Renewable energy asset'] == 'Hydropower')]
     rent = (pd.to_numeric(rows[HYDROPOWER_WORKBOOK_REVENUE], errors='coerce')
             - pd.to_numeric(rows[HYDROPOWER_WORKBOOK_COST], errors='coerce'))
-    codes = wealth_df.set_index('countryname')['countrycode']
-    names = rows['Country'].replace(HYDROPOWER_WORKBOOK_RENAMES)
-    unmatched = sorted(set(names) - set(codes.index))
-    if unmatched:
-        raise ValueError(f'workbook countries with no code in the CWoN wealth table: {unmatched}')
-    out = pd.DataFrame({'iso3_r250_label': names.map(codes).values,
-                        'hydropower_rent_signed_usd': rent.values})
-    out['hydropower_rent_status'] = np.select(
-        [out['hydropower_rent_signed_usd'] > 0, out['hydropower_rent_signed_usd'] < 0,
-         out['hydropower_rent_signed_usd'] == 0], ['positive', 'negative', 'zero'], 'missing')
-    return out
+    return pd.DataFrame({'iso3_r250_label': _wealth_codes(rows['Country'], wealth_df, 'workbook'),
+                         'hydropower_rent_workbook_usd': rent.values})
 
 
-def hydropower_rent_table(wealth_df, capitalization_rate, database_df=None,
+def hydropower_rent_table(wealth_df, capitalization_rate, public_rent_df, database_df=None,
                           year=HYDROPOWER_GEP_YEAR):
-    """The hydropower table: the reported wealth-based value and the authors' resource rent.
+    """The hydropower table: the authors' resource rent the account reports, and the
+    wealth-based value beside it.
 
-    hydropower_gep is the CWoN-wealth annual value the account reports. Beside it,
-    hydropower_rent_signed_usd and hydropower_rent_status carry the authors' revenue-minus-cost
-    rent with its sign, and hydropower_gep_reference_variant takes the positive rents and leaves
-    the rest blank, the convention of the authors' output. That variant exists for comparison:
-    the write-up floors negative rents at zero, the output leaves them blank, and the choice is
-    not made here. Without the workbook the rent columns are missing and the status explains why.
+    hydropower_gep is the authors' rule applied to their public rent: a negative calculated rent
+    counts as zero, and a country the table does not list, or lists without a numeric rent,
+    stays missing. hydropower_rent_signed_usd and hydropower_rent_status keep the rent with its
+    sign. hydropower_gep_wealth_based is the CWoN-wealth annual value, a comparison. Where the
+    private workbook is staged, its revenue minus cost (hydropower_rent_workbook_usd) must match
+    the public rent within a dollar in every country either lists.
 
     Args:
         wealth_df (pd.DataFrame): the CWoN hydro_wealth_cd table.
         capitalization_rate (float): the CWoN capitalization rate.
+        public_rent_df (pd.DataFrame): the authors' public CWON_resource_rent_data table.
         database_df (pd.DataFrame or None): the workbook's Database sheet, or None when the
             workbook is not staged.
         year (int): the year to take.
 
     Returns:
         pd.DataFrame: one row per country in the wealth table.
+
+    Raises:
+        ValueError: if the workbook and the public table disagree by more than a dollar.
     """
     out = hydropower_rent_from_wealth(wealth_df, capitalization_rate, year)
+    out = out.merge(hydropower_rent_from_public_table(public_rent_df, wealth_df, year),
+                    on='iso3_r250_label', how='left', validate='one_to_one')
+    out['hydropower_rent_status'] = out['hydropower_rent_status'].fillna("not in the authors' table")
+    out['hydropower_gep'] = out['hydropower_rent_signed_usd'].clip(lower=0)   # NaN stays NaN
     if database_df is None:
-        out['hydropower_rent_signed_usd'] = np.nan
-        out['hydropower_rent_status'] = 'workbook not staged'
-    else:
-        out = out.merge(hydropower_rent_from_revenue_and_cost(database_df, wealth_df, year),
-                        on='iso3_r250_label', how='left', validate='one_to_one')
-    signed = out['hydropower_rent_signed_usd']
-    out['hydropower_gep_reference_variant'] = signed.where(signed > 0)
+        out['hydropower_rent_workbook_usd'] = np.nan
+        return out
+    out = out.merge(hydropower_rent_from_revenue_and_cost(database_df, wealth_df, year),
+                    on='iso3_r250_label', how='left', validate='one_to_one')
+    public, workbook = out['hydropower_rent_signed_usd'], out['hydropower_rent_workbook_usd']
+    listed = public.notna() | workbook.notna()
+    apart = listed & ~((public - workbook).abs() <= HYDROPOWER_PUBLIC_WORKBOOK_TOLERANCE_USD)
+    if apart.any():
+        raise ValueError('the public rent table and the workbook differ by more than $%g in: %s'
+                         % (HYDROPOWER_PUBLIC_WORKBOOK_TOLERANCE_USD,
+                            sorted(out.loc[apart, 'iso3_r250_label'])))
     return out
 
 
 def water_supply_gep_by_country(hydropower_df, countries_df):
     """Join the hydropower rent onto the r250 country list by iso3 label, one row per country."""
     columns = ['iso3_r250_label', 'hydropower_gep']
-    if 'hydropower_gep_reference_variant' in hydropower_df.columns:
-        columns.append('hydropower_gep_reference_variant')
+    if 'hydropower_gep_wealth_based' in hydropower_df.columns:
+        columns.append('hydropower_gep_wealth_based')
     return countries_df.merge(hydropower_df[columns], on='iso3_r250_label', how='left')
 
 

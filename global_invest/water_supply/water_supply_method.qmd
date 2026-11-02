@@ -7,7 +7,7 @@ format:
 ---
 
 Water supply is built one component at a time. Hydropower direct use is computed and is what
-`water_supply_gep` currently carries, with its treatment of negative rents still open. The agricultural and municipal components are reported
+`water_supply_gep` carries: the authors' resource rent, with a negative calculated rent at zero. The agricultural and municipal components are reported
 beside it as separate columns. The municipal value, `water_use_domestic_gep`, is the authors'
 final table. The price convention recorded in `es_config.csv`, `resource rent (CWoN 2024)`,
 describes the hydropower component. The municipal component is a replacement cost, described
@@ -23,25 +23,33 @@ account wants.
 
 ### Valuation
 
-`annuity_factor` is the present value of one dollar a year over the CWoN horizon,
+`hydropower_rent_from_public_table` reads the authors' 2019 resource rent from their public table,
+`data/CWON_resource_rent_data.csv` in `lifengren95/gep_hydropower` at `7f45eb4`: revenues minus
+total costs of the hydropower rows of the World Bank's CWoN 2024 hydropower valuation workbook, in
+nominal USD (equal to 2019 USD for 2019), stored in whole dollars. The sign is kept in
+`hydropower_rent_signed_usd`, and `hydropower_rent_status` says positive, negative, zero, missing,
+or not in the authors' table. Countries are keyed by the CWoN wealth table's own names and codes,
+with three newer World Bank names (Czechia, North Macedonia, Türkiye) mapped to that table's
+earlier ones. The reported `hydropower_gep` applies the rule the authors agreed on 30 October 2026:
+a negative calculated rent counts as zero, and a country the table does not list, or lists
+without a numeric rent, stays missing.
+
+Beside it, `annuity_factor` is the present value of one dollar a year over the CWoN horizon,
 
 $$
 A = \sum_{t=1}^{100} \frac{1}{(1+r)^t}, \qquad r = 0.04
 $$
 
-and `hydropower_rent_from_wealth` divides each country's `YR2019` wealth by it. Countries without
-wealth stay NaN, because no data is not zero rent.
+and `hydropower_rent_from_wealth` divides each country's `YR2019` wealth by it into
+`hydropower_gep_wealth_based`, a comparison. Countries without wealth stay NaN, because no data is
+not zero rent.
 
-This wealth-based value is what the account reports while the treatment of negative rents is
-undecided. Beside it, `hydropower_rent_from_revenue_and_cost` computes the authors' 2019 resource
-rent directly: revenues (column W) minus total costs (column Y) of the hydropower rows of the
-World Bank's CWoN 2024 hydropower valuation workbook, sheet `Database`, in nominal USD (equal to
-2019 USD for 2019). The sign is kept in `hydropower_rent_signed_usd`, and
-`hydropower_rent_status` says positive, negative, zero or missing. Countries are keyed by the
-CWoN wealth table's own names and codes, with three newer World Bank names (Czechia, North
-Macedonia, Türkiye) mapped to that table's earlier ones. An earlier direct-use script on the
-drive, price times quantity from EIA and World Bank series dated November 2024, is superseded and
-is not ported.
+Where the private workbook is staged, `hydropower_rent_from_revenue_and_cost` computes the same
+rent from it, revenues (column W) minus total costs (column Y) of sheet `Database`, into
+`hydropower_rent_workbook_usd`, and `hydropower_rent_table` refuses the run if that differs from the
+public rent by more than a dollar in any country either lists. An earlier direct-use script on
+the drive, price times quantity from EIA and World Bank series dated November 2024, is superseded
+and is not ported.
 
 ### Source
 
@@ -50,21 +58,27 @@ The write-up is `Hydropower_Provision.docx` in the shared folder of current writ
 nets costs out of price times quantity. The registered author code is `lifengren95/gep_hydropower`
 at `7f45eb4`. It imports a prepared CWoN rent table in 2019 USD. The authors confirmed on 30
 October that the table is the valuation workbook's 2019 revenues minus total costs, computed in
-Excel, with no script. The workbook (rev4, sha256 `e7c6e7f6…`) was provided by World Bank staff,
-is not in the public reproducibility package and is not to be redistributed. It is staged only
-where authorised and checked against its recorded hash. Without it the run proceeds and the
-revenue-minus-cost columns are missing, with status "workbook not staged".
+Excel, with no script. Their public table is staged unchanged in base_data under
+`global_invest/water_supply/author_repo_2026_10/`, with a provenance note, and checked
+against its recorded hash (sha256 `17ffd8f3…`). The workbook (rev4, sha256 `e7c6e7f6…`) was
+provided by World Bank staff, is not in the public reproducibility package and is not to be
+redistributed. It is staged only where authorised and checked against its recorded hash. Without
+it the run proceeds and the public table is not cross-checked.
 
 ### Coverage
 
-`hydropower_gep` carries 107 positive values, totalling \$146,075,770,382.38, 5 zeros where the
-CWoN wealth is zero, and 138 missing countries with no wealth figure.
-The workbook gives 112 countries a 2019 rent: 95 positive, \$144,680,445,647.89, and 17 negative,
-−\$1,518,729,566.45. `hydropower_gep_reference_variant` is the positive rents with the rest left
-missing, the convention of the authors' output. It exists for comparison and is not the reported
-value. It equals the authors' 95 rents in every country, within \$1 because their file stores whole
-dollars, with the same 17 left blank. The wealth-based value equals the workbook's rent in the 95
-positive countries. `water_supply_gep` is `hydropower_gep`.
+`hydropower_gep` values 112 countries, 95 positive and 17 at zero, \$144,680,445,650 in total, and
+138 of the 250 countries are missing. It equals the authors' 95 rents in every country, within \$1.
+Their output of 20 July 2026 leaves the 17 negative rents blank, and the authors are updating it
+to zeros. The private workbook gives the same 112 countries within a dollar each and
+\$144,680,445,647.89 in total, \$2.11 less, because the public file stores whole dollars.
+Venezuela is valued at \$3,475,395,551 in the public table, the workbook and the wealth-based
+value alike.
+
+`hydropower_gep_wealth_based` carries 107 positive values, totalling \$146,075,770,382.38, 5 zeros
+where the CWoN wealth is zero, and 138 missing countries with no wealth figure. It equals the rent
+in the 95 positive countries and gives 12 of the 17 negative-rent countries \$1,395,324,734.50 in
+all, because their CWoN wealth is positive. `water_supply_gep` is `hydropower_gep`.
 
 ## Water use
 
@@ -132,8 +146,10 @@ functions the author's own theta x GPV 2020 basis in thousand current US$ and re
 September 21 crop-country and country results within measured float-reordering noise. The
 `agriculture_water` task instead feeds the account's 2019 commercial crop-provision values in
 current USD, with the CWoN rental rate already applied, so no theta and no rental
-re-application, split rainfed/irrigated by the author's SPAM shares. The 2019 substitution is the
-account's decision, not the author's output. The author's upstream lambda, SPAM, crop-mapping and theta
+re-application, split rainfed/irrigated by the author's SPAM shares. That basis is the author's
+own: on 28 October 2026 he confirmed commercial-agriculture GEP as the monetary base of his updated
+valuation. His updated code is not yet public, so the account's run follows his Code/5 arithmetic
+and is not compared with an output of his on that basis. The author's upstream lambda, SPAM, crop-mapping and theta
 derivations are taken as given, and matching the author's final-stage outputs proves fidelity, not
 correctness.
 
@@ -217,9 +233,12 @@ From `es_parameters.csv`, scoped to the `water_supply` service:
 - `water_supply_cwon_hydro_wealth_path`, the CWoN `hydro_wealth_cd` table, with a `_source_url`
   row for the World Bank reproducibility archive and a `_source_archive_member` row naming the
   file inside it.
+- `water_supply_hydro_rent_table_path` and `water_supply_hydro_rent_table_sha256`, the authors'
+  public rent table the reported value comes from and its hash, with a `_source` row naming the
+  repository, commit and file.
 - `water_supply_cwon_hydro_workbook_path` and `water_supply_cwon_hydro_workbook_sha256`, the
   private valuation workbook and its hash, with a `_source` row on where it comes from and that
-  it is not to be redistributed.
+  it is not to be redistributed. Where staged it checks the public table.
 - `water_use_efficiency_input_path`, the raw AQUASTAT export, with a `_source_url` row for the
   AQUASTAT data API.
 - `water_use_withdrawal_path`, the withdrawal table.
@@ -259,17 +278,23 @@ From `es_parameters.csv`, scoped to the `water_supply` service:
 ## Method constants
 
 - `water_supply_hydropower_capitalization_rate = 0.04` in `es_parameters`, the rate CWoN
-  capitalized their wealth figure with.
+  capitalized their wealth figure with. It applies only to the wealth-based comparison,
+  `hydropower_gep_wealth_based`: the reported `hydropower_gep` is the authors' rent and involves
+  no capitalization rate.
 
   This is not the account's discount rate. The account discounts future benefits at 2 percent,
   with sensitivity at 1 and 3. This rate does the opposite job: CWoN published a *capitalized*
-  wealth figure, and hydropower GEP is the annual rent inside it, so the module runs their
+  wealth figure, and the comparison column is the annual rent inside it, so the module runs their
   capitalization backwards. Inverting with any other rate returns a rent CWoN never capitalized.
-  The consistency gate reports both rates. A review comment proposes 2 percent here, which is
-  open (see below).
+  The consistency gate reports both rates. The review chose 2 percent, which applied
+  consistently returns the same value (see below).
 - `HYDROPOWER_HORIZON_YEARS = 100`, the CWoN capitalisation horizon.
-- `HYDROPOWER_GEP_YEAR = 2019`, the wealth column the rent is read from. Current USD equals real
-  2019 USD in the 2019 base year, and this is the only variant that covers Venezuela.
+- `HYDROPOWER_GEP_YEAR = 2019`, the year of the rent and of the wealth column. Current USD equals
+  real 2019 USD in the 2019 base year, and the current-dollar wealth table is the only CWoN variant
+  that covers Venezuela.
+- `HYDROPOWER_PUBLIC_RENT = 'resource_rent'`, the public table's rent column, and
+  `HYDROPOWER_PUBLIC_WORKBOOK_TOLERANCE_USD = 1.0`, the largest gap allowed between it and the
+  workbook, the public file's whole-dollar rounding.
 - `HYDROPOWER_WORKBOOK_SHEET`, `HYDROPOWER_WORKBOOK_REVENUE` and `HYDROPOWER_WORKBOOK_COST`,
   the workbook's sheet and the headers of columns W and Y, which the code checks sit in those
   columns, and `HYDROPOWER_WORKBOOK_RENAMES`, the three name mappings above.
@@ -283,15 +308,15 @@ CWoN's own hydropower wealth estimate, and the AQUASTAT efficiency and withdrawa
 
 ## What is open
 
-Hydropower, two open points:
+Hydropower has no open point. Two were settled on 30 October 2026:
 
-- Negative rents. The workbook's 2019 rent is negative in 17 countries. The authors' output
-  leaves them blank, the write-up floors them at zero, and the wealth-based value the account
-  reports gives 12 of them \$1,395,324,734.50 in all, because their CWoN wealth is positive (the
-  other 5 have zero wealth and report zero). Which treatment the account uses is undecided, so the
-  library keeps the signed rent and does not choose.
-- The capitalisation rate. The wealth-based value inverts at CWoN's 4 percent. A review comment
-  proposes 2 percent, which is under review.
+- Negative rents. The 2019 rent is negative in 17 countries. The authors agreed that a negative
+  calculated rent counts as zero and a missing input stays missing, and the reported value applies
+  that to their public table.
+- The capitalisation rate, which now matters only for the wealth-based comparison. The review
+  chose 2 percent and settled it on 30 October 2026. Applied consistently, recapitalising the same
+  rent and annuitising at 2 percent, it returns the same value, so the inversion at CWoN's 4
+  percent stands.
 
 The drive's per-country water-use tables are not this calculation's outputs and are held as anchors
 rather than adopted. The agriculture table equals 1000 times `GEP_total` from the crop-water

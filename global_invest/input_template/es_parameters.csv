@@ -176,6 +176,9 @@ water_supply,water_supply_cwon_hydro_wealth_source_archive_member,FR_WLD_2024_19
 water_supply,water_supply_cwon_hydro_workbook_path,global_invest/water_supply/hydropower/cwon_private/Hydropower valuation_CWON 2024_rev4.xlsx
 water_supply,water_supply_cwon_hydro_workbook_sha256,e7c6e7f69d7ed9a676549b49e74036d5e8fd795c7d82af9be773f54cd6d130ed
 water_supply,water_supply_cwon_hydro_workbook_source,"World Bank CWoN 2024 hydropower valuation workbook (rev4), provided by World Bank staff on request to the authors. Not in the public reproducibility package and not to be redistributed: staged only on machines authorised to hold it, and the run proceeds without it."
+water_supply,water_supply_hydro_rent_table_path,global_invest/water_supply/author_repo_2026_10/CWON_resource_rent_data.csv
+water_supply,water_supply_hydro_rent_table_sha256,17ffd8f3dcb071639bf004a48b424ac7076627f0de30bc18adec642effa92b69
+water_supply,water_supply_hydro_rent_table_source,"the authors' public resource rent table, copied unchanged: github.com/lifengren95/gep_hydropower at 7f45eb4 (2026-10-09), data/CWON_resource_rent_data.csv. Revenues minus total costs from the CWoN 2024 hydropower workbook, nominal USD, whole dollars. The reported hydropower value is the 2019 rent with a negative calculated rent at zero and an unlisted country missing, as the authors agreed. README_provenance.md beside the file"
 water_supply,water_use_agriculture_path,global_invest/water_supply/water_use/wateruse_ag_gep.csv
 water_supply,water_use_all_sector_path,global_invest/water_supply/water_use/final/wateruse_gep.csv
 water_supply,water_use_efficiency_input_path,global_invest/water_supply/water_use/data/Raw/aquastat/aquastat_water_efficiency.csv

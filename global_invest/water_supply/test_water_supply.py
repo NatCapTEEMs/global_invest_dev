@@ -2,9 +2,10 @@
 water-use calculation.
 
 The hydropower checks pin the annuity identity (the observed constant 0.040808 against
-1/annuity(4%, 100y)), the authors' revenue-minus-cost rent with its sign and status, and, where
-the private valuation workbook is staged, that rent against the authors' output country by
-country. The water-use tests pin the two-script calculation against its two committed
+1/annuity(4%, 100y)), the authors' public rent with its sign and status, the reported value
+with negative calculated rents at zero, the staged public table against its pinned hash and
+totals, and, where the private valuation workbook is staged, the workbook against the public
+table and the authors' output country by country. The water-use tests pin the two-script calculation against its two committed
 intermediates (cleaning bit-exact, products to the anchor's own CSV rounding) and check the
 joins and totals of the committed per-country anchors.
 """
@@ -67,41 +68,96 @@ def _database(rows):
     return df
 
 
-def test_the_authors_rent_is_revenue_minus_cost_with_its_sign_and_status():
-    """Revenues minus total costs, sign kept. A negative rent stays negative with status
-    'negative', is blank in the author-output comparison variant, and leaves the wealth-based
-    value the account reports untouched. The workbook's newer country names map through the
-    wealth table's older ones."""
-    wealth = pd.DataFrame({'countrycode': ['AAA', 'BBB', 'TUR', 'CCC'],
-                           'countryname': ['Aland', 'Bland', 'Turkey', 'Cland'],
-                           'YR2019': [245.05, 490.10, 100.0, 50.0]})
+def _public_rents(rows):
+    """The authors' public rent table: Country, Year, tot_revenue, tot_cost, resource_rent."""
+    df = pd.DataFrame(rows, columns=['Country', 'Year', 'tot_revenue', 'tot_cost', 'resource_rent'])
+    df['nat_contrib'] = np.nan
+    return df
+
+
+WEALTH = pd.DataFrame({'countrycode': ['AAA', 'BBB', 'TUR', 'CCC'],
+                       'countryname': ['Aland', 'Bland', 'Turkey', 'Cland'],
+                       'YR2019': [245.05, 490.10, 100.0, 50.0]})
+PUBLIC = _public_rents([('Aland', 2019, 300, 100, 200), ('Bland', 2019, 100, 250, -150),
+                        ('Turkiye', 2019, None, 10, 'n/a'), ('Aland', 2018, 1, 0, 1)])
+
+
+def test_the_reported_value_is_the_authors_rent_with_negative_rents_at_zero():
+    """The public rent with its sign and status. A negative rent is zero in the reported value,
+    a rent that is not numeric and a country the table does not list stay missing, and the
+    wealth-based value sits beside it. The table's newer country names map through the wealth
+    table's older ones, and the staged workbook agrees, so the table passes its check."""
     database = _database([('Aland', 2019, 'Hydropower', 300.0, 100.0),
                           ('Bland', 2019, 'Hydropower', 100.0, 250.0),
                           ('Turkiye', 2019, 'Hydropower', 'n/a', 10.0),
                           ('Aland', 2018, 'Hydropower', 1.0, 0.0),
                           ('Aland', 2019, 'Solar', 9.0, 0.0)])
-    out = wf.hydropower_rent_table(wealth, CWON_CAPITALIZATION_RATE, database).set_index('iso3_r250_label')
+    out = wf.hydropower_rent_table(WEALTH, CWON_CAPITALIZATION_RATE, PUBLIC, database).set_index('iso3_r250_label')
 
     assert out.loc['AAA', 'hydropower_rent_signed_usd'] == 200.0
     assert out.loc['AAA', 'hydropower_rent_status'] == 'positive'
-    assert out.loc['AAA', 'hydropower_gep_reference_variant'] == 200.0
+    assert out.loc['AAA', 'hydropower_gep'] == 200.0
+    assert out.loc['AAA', 'hydropower_rent_workbook_usd'] == 200.0
     assert out.loc['BBB', 'hydropower_rent_signed_usd'] == -150.0
     assert out.loc['BBB', 'hydropower_rent_status'] == 'negative'
-    assert np.isnan(out.loc['BBB', 'hydropower_gep_reference_variant'])
-    assert np.isclose(out.loc['BBB', 'hydropower_gep'], 490.10 / wf.annuity_factor(0.04))
-    assert out.loc['TUR', 'hydropower_rent_status'] == 'missing'          # revenue is 'n/a'
-    assert np.isnan(out.loc['TUR', 'hydropower_rent_signed_usd'])
-    assert pd.isna(out.loc['CCC', 'hydropower_rent_status'])               # not in the workbook
-    assert np.isclose(out.loc['CCC', 'hydropower_gep'], 50.0 / wf.annuity_factor(0.04))
+    assert out.loc['BBB', 'hydropower_gep'] == 0.0
+    assert np.isclose(out.loc['BBB', 'hydropower_gep_wealth_based'], 490.10 / wf.annuity_factor(0.04))
+    assert out.loc['TUR', 'hydropower_rent_status'] == 'missing'          # rent is 'n/a'
+    assert np.isnan(out.loc['TUR', 'hydropower_gep'])                     # missing stays missing
+    assert out.loc['CCC', 'hydropower_rent_status'] == "not in the authors' table"
+    assert np.isnan(out.loc['CCC', 'hydropower_gep'])
+    assert np.isclose(out.loc['CCC', 'hydropower_gep_wealth_based'], 50.0 / wf.annuity_factor(0.04))
 
 
-def test_without_the_workbook_the_rent_columns_are_missing_and_say_why():
-    wealth = pd.DataFrame({'countrycode': ['AAA'], 'countryname': ['Aland'], 'YR2019': [245.05]})
-    out = wf.hydropower_rent_table(wealth, CWON_CAPITALIZATION_RATE, None)
-    assert out['hydropower_rent_status'].tolist() == ['workbook not staged']
-    assert out['hydropower_rent_signed_usd'].isna().all()
-    assert out['hydropower_gep_reference_variant'].isna().all()
-    assert out['hydropower_gep'].notna().all()
+def test_without_the_workbook_the_reported_value_still_comes_from_the_public_table():
+    out = wf.hydropower_rent_table(WEALTH, CWON_CAPITALIZATION_RATE, PUBLIC, None).set_index('iso3_r250_label')
+    assert out['hydropower_rent_workbook_usd'].isna().all()
+    assert out.loc['AAA', 'hydropower_gep'] == 200.0
+    assert out.loc['BBB', 'hydropower_gep'] == 0.0
+
+
+def test_a_workbook_that_disagrees_with_the_public_table_or_a_bad_table_is_refused():
+    apart = _database([('Aland', 2019, 'Hydropower', 302.0, 100.0),
+                       ('Bland', 2019, 'Hydropower', 100.0, 250.0)])
+    with pytest.raises(ValueError, match='differ by more than'):
+        wf.hydropower_rent_table(WEALTH, CWON_CAPITALIZATION_RATE, PUBLIC, apart)
+    extra = _database([('Aland', 2019, 'Hydropower', 300.0, 100.0),
+                       ('Bland', 2019, 'Hydropower', 100.0, 250.0),
+                       ('Cland', 2019, 'Hydropower', 5.0, 1.0)])     # listed only in the workbook
+    with pytest.raises(ValueError, match='CCC'):
+        wf.hydropower_rent_table(WEALTH, CWON_CAPITALIZATION_RATE, PUBLIC, extra)
+    with pytest.raises(ValueError, match='more than once'):
+        wf.hydropower_rent_from_public_table(pd.concat([PUBLIC, PUBLIC.iloc[[0]]]), WEALTH)
+    with pytest.raises(ValueError, match='Nowhere'):
+        wf.hydropower_rent_from_public_table(_public_rents([('Nowhere', 2019, 1, 0, 1)]), WEALTH)
+
+
+def _staged_public_table():
+    params = pd.read_csv(os.path.join(os.path.dirname(wf.__file__), '..', 'input_template',
+                                      'es_parameters.csv'), encoding='utf-8-sig').set_index('parameter')
+    path = os.path.join(_base_data_project().base_data_dir,
+                        params.loc['water_supply_hydro_rent_table_path', 'value'])
+    return path, params.loc['water_supply_hydro_rent_table_sha256', 'value']
+
+
+def test_the_staged_public_table_is_pinned_and_gives_the_reported_totals():
+    """The authors' public table as staged: its pinned hash, revenue minus cost equal to the rent,
+    and for 2019 112 valued countries, 95 positive and 17 at zero, the other 138 of the authors'
+    250 keys missing, $144,680,445,650 in all, Venezuela kept."""
+    path, sha = _staged_public_table()
+    with open(path, 'rb') as f:
+        assert hashlib.sha256(f.read()).hexdigest() == sha
+    public = pd.read_csv(path)
+    assert (public['tot_revenue'] - public['tot_cost'] == public['resource_rent']).all()
+    wealth = pd.read_stata(os.path.join(REFERENCE_DIR, 'hydro_wealth_cd.dta'))
+    table = wf.hydropower_rent_table(wealth, CWON_CAPITALIZATION_RATE, public).set_index('iso3_r250_label')
+    reported = table['hydropower_gep']
+    assert int(reported.notna().sum()) == 112
+    assert int((reported > 0).sum()) == 95 and int((reported == 0).sum()) == 17
+    assert reported.sum() == 144_680_445_650
+    assert reported.loc['VEN'] == 3_475_395_551
+    keys = pd.read_csv(os.path.join(REFERENCE_DIR, 'gep_hydro_directuse_CWONresrent_20260720.csv'))['iso3_r250_label']
+    assert len(keys) == 250 and int(reported.reindex(keys).isna().sum()) == 138
 
 
 def test_a_workbook_out_of_layout_or_with_an_unknown_country_is_refused():
@@ -121,34 +177,43 @@ def test_es_parameters_names_the_private_workbook_with_its_hash():
     assert params.loc['water_supply_cwon_hydro_workbook_path', 'value'].endswith(
         'Hydropower valuation_CWON 2024_rev4.xlsx')
     assert len(params.loc['water_supply_cwon_hydro_workbook_sha256', 'value']) == 64
+    assert params.loc['water_supply_hydro_rent_table_path', 'value'].endswith(
+        'author_repo_2026_10/CWON_resource_rent_data.csv')
+    assert len(params.loc['water_supply_hydro_rent_table_sha256', 'value']) == 64
 
 
 def test_the_workbook_rent_reproduces_the_authors_output_country_by_country():
-    """Where the private workbook is staged: revenues minus total costs for 2019 give the authors'
-    95 positive rents (their file stores whole dollars) and the 17 they leave blank, all of which
-    are negative here, with wealth in the CWoN table for every one. 12 of the 17 carry positive
-    CWoN wealth, the countries where the wealth-based value and the authors' output differ."""
+    """Where the private workbook is staged: revenues minus total costs for 2019 match the public
+    table within a dollar (the table checks this itself), the workbook's positive rents total
+    $144,680,445,647.89, $2.11 below the public table's whole dollars, and the reported value
+    gives the authors' 95 positive rents and zero for the 17 their staged output leaves blank,
+    all negative, with wealth in the CWoN table for every one. 12 of the 17 carry positive CWoN
+    wealth, the countries where the wealth-based value and the authors' rent differ."""
     path = _workbook_path()
     if path is None:
         pytest.skip('the private hydropower valuation workbook is not staged on this machine')
     wealth = pd.read_stata(os.path.join(REFERENCE_DIR, 'hydro_wealth_cd.dta'))
     anchor = pd.read_csv(os.path.join(REFERENCE_DIR, 'gep_hydro_directuse_CWONresrent_20260720.csv'))
     database = pd.read_excel(path, sheet_name=wf.HYDROPOWER_WORKBOOK_SHEET)
-    table = wf.hydropower_rent_table(wealth, CWON_CAPITALIZATION_RATE, database)
+    table = wf.hydropower_rent_table(wealth, CWON_CAPITALIZATION_RATE, pd.read_csv(_staged_public_table()[0]),
+                                     database)
 
-    rent = table[table['hydropower_rent_status'].isin(['positive', 'negative', 'zero', 'missing'])]
-    assert len(rent) == 112
-    assert rent['hydropower_rent_status'].value_counts().to_dict() == {'positive': 95, 'negative': 17}
-    assert rent.loc[rent['hydropower_rent_signed_usd'] > 0, 'hydropower_rent_signed_usd'].sum() == \
-        pytest.approx(144_680_445_647.89, abs=0.05)
+    workbook = table['hydropower_rent_workbook_usd']
+    assert int(workbook.notna().sum()) == 112
+    assert workbook[workbook > 0].sum() == pytest.approx(144_680_445_647.89, abs=0.05)
+    assert table['hydropower_rent_status'].value_counts().to_dict() == {
+        'positive': 95, 'negative': 17, "not in the authors' table": len(table) - 112}
 
     merged = anchor.merge(table, on='iso3_r250_label', how='left')
-    variant, ref = merged['hydropower_gep_reference_variant'], merged['gep_hydro_cwonresrent_2019usd']
-    both = variant.notna() & ref.notna()
+    reported, ref = merged['hydropower_gep'], merged['gep_hydro_cwonresrent_2019usd']
+    both = reported.notna() & ref.notna()
     assert both.sum() == 95
-    assert (variant[both] - ref[both]).abs().max() <= 1.0
-    assert not (ref.notna() & variant.isna()).any()
-    assert not (ref.isna() & variant.notna()).any()
+    assert (reported[both] - ref[both]).abs().max() <= 1.0
+    assert not (ref.notna() & reported.isna()).any()
+    blank_in_output = ref.isna() & reported.notna()
+    assert blank_in_output.sum() == 17 and (reported[blank_in_output] == 0).all()
+    assert set(merged.loc[blank_in_output, 'iso3_r250_label']) == \
+        set(table.loc[table['hydropower_rent_status'] == 'negative', 'iso3_r250_label'])
     negative = table[table['hydropower_rent_status'] == 'negative']
     assert negative['hydropower_wealth_usd'].notna().all()
     assert int((negative['hydropower_wealth_usd'] > 0).sum()) == 12
@@ -157,11 +222,13 @@ def test_the_workbook_rent_reproduces_the_authors_output_country_by_country():
 def test_no_wealth_stays_nan_and_the_join_keeps_all_countries():
     wealth = pd.DataFrame({'countrycode': ['AAA'], 'YR2019': [245.05]})
     hydropower = wf.hydropower_rent_from_wealth(wealth, CWON_CAPITALIZATION_RATE)
+    hydropower['hydropower_gep'] = 7.0
     countries = pd.DataFrame({'iso3_r250_label': ['AAA', 'BBB'], 'iso3_r250_id': [1, 2]})
-    out = wf.water_supply_gep_by_country(hydropower, countries)
+    out = wf.water_supply_gep_by_country(hydropower, countries).set_index('iso3_r250_label')
     assert len(out) == 2
-    assert np.isclose(out.set_index('iso3_r250_label').loc['AAA', 'hydropower_gep'], 10.0, rtol=1e-3)
-    assert np.isnan(out.set_index('iso3_r250_label').loc['BBB', 'hydropower_gep'])
+    assert np.isclose(out.loc['AAA', 'hydropower_gep_wealth_based'], 10.0, rtol=1e-3)
+    assert out.loc['AAA', 'hydropower_gep'] == 7.0
+    assert out.loc['BBB', ['hydropower_gep', 'hydropower_gep_wealth_based']].isna().all()
 
 
 def test_es_config_and_parameters_rows_hydrate_water_supply(tmp_path):
@@ -611,6 +678,52 @@ def test_agriculture_task_recomputes_changed_inputs_and_registers_paths(tmp_path
     assert os.path.isfile(p.water_supply_agriculture_country_path)
 
 
+def test_hydropower_rent_reuse_turns_on_the_calculation_code(tmp_path, monkeypatch):
+    """A table made by older code is not reused, even when the inputs and settings are the same.
+    The signature recorded before the code joined it, with the same wealth table, rate and
+    staging, must recompute. An unchanged rerun reuses, and an edit to the functions module
+    recomputes."""
+    from global_invest.water_supply import water_supply_tasks as wt
+    monkeypatch.setattr(wt, 'publish_inputs', lambda p: p)
+    wealth_path = str(tmp_path / 'hydro_wealth.dta')
+    pd.DataFrame({'countrycode': ['AAA'], 'countryname': ['Aland'],
+                  'YR2019': [245.05]}).to_stata(wealth_path, write_index=False)
+    public_path = str(tmp_path / 'public_rents.csv')
+    _public_rents([('Aland', 2019, 150, 50, 100)]).to_csv(public_path, index=False)
+    p = SimpleNamespace(cur_dir=str(tmp_path), run_this=True,
+                        water_supply_cwon_hydro_wealth_path=wealth_path,
+                        water_supply_hydro_rent_table_path=public_path,
+                        water_supply_hydro_rent_table_sha256=utilities.sha256_file(public_path),
+                        water_supply_cwon_hydro_workbook_path=str(tmp_path / 'not_staged.xlsx'),
+                        water_supply_hydropower_capitalization_rate=CWON_CAPITALIZATION_RATE)
+    # The functions module is fingerprinted through a copy, so the test can edit it.
+    functions_copy = tmp_path / 'water_supply_functions.py'
+    functions_copy.write_text(open(wf.__file__, encoding='utf-8').read(), encoding='utf-8')
+    monkeypatch.setattr(wf, '__file__', str(functions_copy))
+    calls = []
+    real_table = wf.hydropower_rent_table
+    monkeypatch.setattr(wf, 'hydropower_rent_table', lambda *args: calls.append(1) or real_table(*args))
+
+    # The table and signature an old project holds: inputs and settings as now, no code.
+    rent_path = tmp_path / 'hydropower_rent.csv'
+    rent_path.write_text('iso3_r250_label,hydropower_gep\nAAA,999\n')
+    old = utilities._signature({'capitalization_rate': CWON_CAPITALIZATION_RATE, 'workbook_staged': False},
+                               {'wealth': utilities.file_fingerprint(wealth_path)})
+    utilities.write_outputs_signature(old, str(tmp_path / wt.HYDROPOWER_RENT_SIGNATURE))
+
+    wt.hydropower_rent(p)
+    assert len(calls) == 1
+    assert pd.read_csv(rent_path)['hydropower_gep'].iloc[0] == 100.0
+
+    wt.hydropower_rent(p)
+    assert len(calls) == 1
+
+    with open(functions_copy, 'a', encoding='utf-8') as f:
+        f.write('\n# a changed rule\n')
+    wt.hydropower_rent(p)
+    assert len(calls) == 2
+
+
 def test_water_country_output_replaces_old_agriculture_but_preserves_domestic(tmp_path, monkeypatch):
     from global_invest.water_supply import water_supply_tasks as wt
     monkeypatch.setattr(wt, 'publish_inputs', lambda p: p)
@@ -624,7 +737,7 @@ def test_water_country_output_replaces_old_agriculture_but_preserves_domestic(tm
                         df_countries=countries)
     frames = {
         'hydropower_rent': pd.DataFrame({'iso3_r250_label': ['AAA'], 'hydropower_gep': [10.],
-                                         'hydropower_gep_reference_variant': [10.]}),
+                                         'hydropower_gep_wealth_based': [12.]}),
         'water_use_components': pd.DataFrame({'iso3_r250_label': ['AAA', 'BBB'],
                                               'iso3_r250_id': [1, 2],
                                               'water_use_irrigation_gep': [999., 999.],
