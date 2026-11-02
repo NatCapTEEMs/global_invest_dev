@@ -309,8 +309,8 @@ ntfp,ntfp_ndvi_mean_path,global_invest/ntfp/input/mean_ndvi_2015_2019.tif
 ntfp,ntfp_value_per_ha_path,global_invest/ntfp/nontimber_price_iucn_edited.csv
 ntfp,ntfp_value_per_ha_source_url,https://reproducibility.worldbank.org/catalog/194/download/549
 ntfp,ntfp_msi_conda_env,
-landslide_mitigation,landslide_mitigation_vsl_panel_path,global_invest/landslide_mitigation/vsl_2026_09/vsl_by_country_2019.csv
-landslide_mitigation,landslide_mitigation_vsl_panel_source,"the rebuilt EPA life-years-lost VSL panel (m-braaksma/landslide_mitigation v0.2.1, 2026-09-14): EPA $7.9M 2008$ to $9,876,237 at 2019, GDP-pc-PPP x life-years-lost transfer, 250 of 250 covered with tier recorded; blank this row to recover the OECD schedule"
+landslide_mitigation,landslide_mitigation_vsl_panel_path,global_invest/landslide_mitigation/vsl_2026_11/vsl_by_country_2019.csv
+landslide_mitigation,landslide_mitigation_vsl_panel_source,"the account's shared VSL panel of 2 Nov 2026 (vsl_2026_11, provenance beside it): the v0.2.1 life-years-lost transfer (m-braaksma/landslide_mitigation c85c9ad) with the US anchor at $9.9M in 2019 US$ and GDP per capita from World Bank NY.GDP.PCAP.KD (constant 2015 US$, 2019) in place of PPP, as Matt Braaksma's email of 30 Oct 2026 states. Constant US$ is read as NY.GDP.PCAP.KD, his updated code not being public. Median-age life-years lost, elasticity 1, region then global median fallback, 250 of 250 covered with tier recorded. The v0.2.1 panel stays in vsl_2026_09. Blank the path row to recover the OECD schedule"
 landslide_mitigation,uglc_year_source,start_date
 landslide_mitigation,force_run,false
 landslide_mitigation,run_in_parallel,true
@@ -367,8 +367,12 @@ pollination,pollination_fao_prices_source_archive_member,Prices_E_All_Data_(Norm
 pollination,pollination_author_value_dir,global_invest/pollination/crop_benefits
 air_filtration,air_filtration_not_estimated_path,global_invest/air_filtration/air_filtration_not_estimated.csv
 air_filtration,air_filtration_not_estimated_source,"the source's own coverage statement: the 53 countries and territories the authors' write-up (Air_Filtration.docx) says could not be estimated for missing air-quality model data, identified as the rows of the shipped workbook (air_filtration_gep.xlsx md5 50928e6a0c12959c631e3a8a1bada693) carrying 0 deaths in both channels; WorldPop 2019 population (46 populated, 7 not) is recorded beside each row as context only"
-air_filtration,air_filtration_vsl_path,global_invest/landslide_mitigation/vsl_2026_09/vsl_by_country_2019.csv
-air_filtration,air_filtration_vsl_source,"the account's shared VSL: the rebuilt EPA life-years-lost panel, the same file landslide_mitigation_vsl_panel_path reads, adopted for both mortality services 2026-10-07; the air quality group's raw 221-row vsl.csv it replaces stays staged beside the workbook"
+air_filtration,air_filtration_vsl_path,global_invest/landslide_mitigation/vsl_2026_11/vsl_by_country_2019.csv
+air_filtration,air_filtration_vsl_source,"the account's shared VSL, the same file landslide_mitigation_vsl_panel_path reads (one panel for both mortality services since 2026-10-07): from 2 Nov 2026 the $9.9M 2019 US$ anchor and World Bank NY.GDP.PCAP.KD GDP per capita (constant 2015 US$, 2019), with life-years lost recomputed here from the 75th-percentile age. The air quality group's raw 221-row vsl.csv stays staged beside the workbook"
+air_filtration,air_filtration_age_structure_path,global_invest/air_filtration/gep_aq_20261029/data/raw/age_structure_global.csv
+air_filtration,air_filtration_age_structure_source,"the 2019 single-year age structure in Raahil Madhok's updated code (gep-aq.zip, his email of 29 Oct 2026, sha256 9e8ea3a6...), staged unchanged in gep_aq_20261029 with his age_75.csv, vsl.csv and both scripts (SHA256SUMS.txt). The archive does not name the file's source. The write-up names the US Census International Database, and the file's layout matches its export"
+air_filtration,air_filtration_genc_correspondence_path,global_invest/air_filtration/genc_iso3_r250_correspondence.csv
+air_filtration,air_filtration_elderly_age_percentile,75
 coastal_protection,coastal_protection_coral_reef_path,global_invest/coastal_protection/coral_reefs_annual_expected_benefit_nfamara.xlsx
 coastal_protection,coastal_protection_mangrove_excluded_path,global_invest/coastal_protection/mangrove_excluded_geospatial_errors.csv
 coastal_protection,coastal_protection_mangrove_excluded_source,"the six countries World Bank (2024) Building Coastal Resilience with Mangroves, Appendix 1, Data Cleaning items 3-4 (printed p. 41) removed for a bug in the geospatial analysis; their mangrove component is missing, not the zero area the CWoN 2024 package's mangroves.do lines 32-34 write for countries absent from its source; the 18 under-100-ha removals (items 1-2) are a separate case and not listed"

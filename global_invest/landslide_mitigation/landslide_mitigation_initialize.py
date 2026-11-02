@@ -4,7 +4,7 @@ The prediction tree follows the source run script's task tree. Raw inputs are st
 base_data/landslide_mitigation/input_data_raw (50.5 GiB, see the base_data changelog).
 
 Status: the staged zonal statistics come from one end-to-end cluster run of the v0.2.0 port. The
-account prices that run's deaths with the authors' v0.2.1 value-of-life panel. Against the authors'
+account prices that run's deaths with its shared value-of-life panel (vsl_2026_11). Against the authors'
 v0.2.1 table the deaths are 9.7% fewer (570.66 against 632.02), a gap not yet isolated, so the
 numbers are provisional.
 """

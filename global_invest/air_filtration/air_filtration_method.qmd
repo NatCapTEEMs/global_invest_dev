@@ -14,7 +14,7 @@ Avoided deaths per country per channel, the workbook's `Dep_Deaths` and `Dust_De
 
 ## Price
 
-The account's shared value of a statistical life, the same panel landslide mitigation reads (built by `m-braaksma/landslide_mitigation` v0.2.1). The US benchmark is EPA's \$7.9 million in 2008 dollars, carried to 2019 by CPI-U inflation times the change in real US GDP per capita raised to EPA's income elasticity of 0.4, giving \$9,876,237. Each country's VSL scales that benchmark by its GDP per capita at purchasing power parity (World Bank, 2019) and its life-years lost, life expectancy minus median age (UN World Population Prospects 2024, 2019). A country without those data takes the median VSL of its World Bank region (49 countries), or the global median where the region has none (2). 199 have a direct estimate. The workbook's own `VSL` column, whose fill is the mean of its country values, no longer prices anything. The run reports how far the panel departs from it, and `verify_global_average_fill` still asserts that workbook rule at rtol 1e-9 so a changed workbook cannot slip by unnoticed.
+The account's shared value of a statistical life, the same panel landslide mitigation reads (`vsl_2026_11`: the construction of `m-braaksma/landslide_mitigation` v0.2.1 with the two changes Matt Braaksma's email of 30 October 2026 states). The US benchmark is \$9.9 million in 2019 dollars. Each country's VSL scales that benchmark by its GDP per capita at market exchange rates (World Bank `NY.GDP.PCAP.KD`, constant 2015 US\$, 2019, which is how the email's "constant US\$" is read, his updated code not being public) and its life-years lost, life expectancy (UN World Population Prospects 2024, 2019) minus the elderly age. The elderly age is the authors' (Raahil Madhok's code of 29 October 2026, `clean_pyramid.R`): the last single age whose cumulative population share is still below 75%, from the 2019 single-year age structure in his archive. It is the age just below the 75th percentile, as the authors compute it. `age_at_population_percentile` ports that step and reproduces his `age_75.csv` in all 227 countries, and his `vsl.R` arithmetic on his own inputs reproduces his `vsl.csv` in all 221. Only the age term is his: the anchor, life expectancy and GDP are the panel's, so the account's VSL differs from his table. Gaza Strip and the West Bank pool their populations into the account's one country. For the US the elderly age is 57, so its life-years lost are 21.916. A country without those data takes the median VSL of its World Bank region (41 countries), or the global median where the region has none (2). 207 have a direct estimate. `vsl_with_age_statistic` changes only that term of the shared panel, which landslide mitigation still reads with the median age. The workbook's own `VSL` column, whose fill is the mean of its country values, no longer prices anything. The run reports how far the panel departs from it, and `verify_global_average_fill` still asserts that workbook rule at rtol 1e-9 so a changed workbook cannot slip by unnoticed.
 
 ## Valuation
 
@@ -23,7 +23,7 @@ The account's shared value of a statistical life, the same panel landslide mitig
 $$\text{air filtration GEP} = \text{Dep\_Deaths} \times \text{VSL}, \qquad
 \text{sandstorm prevention GEP} = \text{Dust\_Deaths} \times \text{VSL}$$
 
-Priced at the workbook's own `VSL` column, the tests hold that recomputation to the workbook's benefit columns exactly. That deposition total, \$17.81bn, is the manuscript's air-filtration number. The account prices at the shared panel instead, which gives \$17.48bn for deposition and \$567.71bn for dust.
+Priced at the workbook's own `VSL` column, the tests hold that recomputation to the workbook's benefit columns exactly. That deposition total, \$17.81bn, is the manuscript's air-filtration number. The account prices at the shared panel with the elderly age instead, which gives \$12.61bn for deposition and \$365.11bn for dust. At the panel's median age the two are \$11.50bn and \$309.70bn, and the run logs both. On the previous panel (PPP GDP, the \$9,876,237 EPA update) the elderly-age totals were \$19.32bn and \$686.86bn. The anchor accounts for +0.24% of the change and the GDP series for the rest.
 
 No share is taken out for human inputs (λ = 1), as the write-up states. Each channel's deaths are measured against a counterfactual without the ecosystem's contribution, barren land for dust and no deposition for filtration, so the whole value is attributed to nature.
 
@@ -41,6 +41,8 @@ From `es_parameters.csv`, scoped to the `air_filtration` service:
 
 - `air_filtration_workbook_path`, the committed per-country workbook, with a `_source_note` row recording that it comes from the drive's air filtration folder rather than a public URL.
 - `air_filtration_vsl_path`, the shared VSL panel, with its `_source` row.
+- `air_filtration_age_structure_path`, the authors' 2019 single-year age structure, with its `_source` row, and `air_filtration_elderly_age_percentile`, 75.
+- `air_filtration_genc_correspondence_path`, the age file's 227 GENC codes against the r250 countries.
 - `air_filtration_not_estimated_path`, the 53 countries the source did not estimate, with its `_source` row tying the list to this workbook version.
 
 `r250_gpkg_order.csv`, beside the workbook in the service's base-data folder, supplies the row order the positional join checks against.
@@ -51,7 +53,7 @@ From `es_parameters.csv`, scoped to the `air_filtration` service:
 
 ## Method constants
 
-- `AIR_FILTRATION_VSL_USA = 9_900_000`, the US anchor of the workbook's documented method (`vsl.R`), used only by the transparency port. The account's anchor is the shared panel's \$9,876,237.
+- `AIR_FILTRATION_VSL_USA = 9_900_000`, the US anchor of the workbook's documented method (`vsl.R`), used only by the transparency port. The account's anchor is the shared panel's US row, also \$9.9 million.
 - `AIR_FILTRATION_MIN_NAME_MATCHES = 190`, the sanity floor under the positional join.
 
 ## Taken as given
@@ -60,6 +62,10 @@ The science behind the avoided-death columns, a coupled set of process-based emi
 
 ## What is open
 
-The VSL build behind the workbook. The folder's `vsl.R` and its raw CSVs document a US-anchored, GDP- and life-years-adjusted method, and `gdp_adjusted_vsl` ports that method for transparency, scaling the US VSL per life-year lost by GDP and applying it to each country's own life expectancy minus median age. Run against the committed raw data it does not reproduce the workbook's VSL column, which points to a different data vintage. That vintage gap remains a provenance question, and pricing no longer depends on it.
+The VSL build behind the workbook. The drive folder's earlier `vsl.R` and its raw CSVs document a US-anchored, GDP- and life-years-adjusted method, and `gdp_adjusted_vsl` ports that method for transparency, scaling the US VSL per life-year lost by GDP and applying it to each country's own life expectancy minus median age. Run against the committed raw data it does not reproduce the workbook's VSL column, which points to a different data vintage. That vintage gap remains a provenance question, and pricing no longer depends on it.
 
-The authors' write-up describes the VSL differently from the panel the account uses. It anchors on a US VSL of \$9.9 million for 2020 and measures life-years lost from the 75th percentile of the age distribution, with life expectancy and GDP from the CIA World Factbook and ages from the US Census International Database. The authors' own `vsl.R` uses median age, as the panel does. Which age statistic the authors intend is a question for them. A tracked edit in the write-up, not yet accepted, describes the panel's regional and global median fills and its 2019 dollars.
+The age data. The archive does not name the age structure's source. The write-up names the US Census International Database, and the file's layout matches its export, while the panel's life expectancy is UN World Population Prospects.
+
+The VSL itself. The authors' write-up anchors on a US VSL of \$9.9 million for 2020 and measures life-years lost from the 75th percentile of the age distribution, with life expectancy and GDP from the CIA World Factbook and ages from the US Census International Database. Their updated code of 29 October 2026 (`clean_pyramid.R` and `vsl.R`) uses that 75th-percentile age, and so does the account. The account keeps the shared panel's anchor (\$9.9 million in 2019 dollars), life expectancy (UN World Population Prospects 2024) and GDP (World Bank, constant 2015 US\$), so its VSL is not the authors' VSL. William Sidemo Holm wrote on 2 November 2026 that he is asking the authors to move their own GDP to market exchange rates. The authors' VSL table is reproduced only on their own inputs, in the tests. A tracked edit in the write-up, not yet accepted, describes the panel's regional and global median fills and its 2019 dollars.
+
+Central African Republic. Its 2019 life expectancy is 31.53 years in UN World Population Prospects 2024, the panel's source (WDI `SP.DYN.LE00.IN` gives the same figure), 21.5 years below the next lowest country and between 52.30 in 2018 and 50.60 in 2020. Its 75th-percentile age is 33, as in the authors' own `age_75.csv`. The life-years lost are therefore -1.47 and its VSL is negative, -\$4,370.77, so both channels publish a negative value (-\$30,894.87 and -\$1,224,459.19). The authors' own code reads the World Factbook's 56.4 years and gives \$120,035.75. The value is left as computed until a rule for life expectancy below the elderly age is set.

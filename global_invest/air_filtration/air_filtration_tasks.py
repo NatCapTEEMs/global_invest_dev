@@ -48,7 +48,23 @@ def gep_calculation(p):
     # The valuation prices at the account's shared VSL panel rather than the workbook's own
     # column. The departure from the workbook is the decided repricing, so the run reports its
     # size rather than each row.
-    vsl_table = hb.df_read(p.air_filtration_vsl_path)
+    panel = hb.df_read(p.air_filtration_vsl_path)
+    # Life-years lost from the authors' elderly age (their updated code) instead of the panel's
+    # median age. The age file is keyed on GENC codes, and GENC 'NA' is Namibia, so only empty
+    # cells are missing.
+    ages = pd.read_csv(p.air_filtration_age_structure_path, encoding='utf-8-sig', keep_default_na=False,
+                       na_values=[''], dtype=str)
+    genc = pd.read_csv(p.air_filtration_genc_correspondence_path, encoding='utf-8-sig', keep_default_na=False,
+                       na_values=[''])
+    ages = ages.merge(genc[['genc_code', 'iso3_r250_id']], left_on='GENC', right_on='genc_code', how='left',
+                      validate='many_to_one')
+    if ages['iso3_r250_id'].isna().any():
+        raise ValueError('age-structure codes without an r250 country: %s'
+                         % sorted(ages.loc[ages['iso3_r250_id'].isna(), 'GENC'].unique()))
+    elderly = af.age_at_population_percentile(ages, float(p.air_filtration_elderly_age_percentile), 'iso3_r250_id')
+    vsl_table = af.vsl_with_age_statistic(panel, elderly)
+    hb.log('VSL from the elderly age (%g%%): %s'
+           % (float(p.air_filtration_elderly_age_percentile), vsl_table['vsl_source'].value_counts().to_dict()))
     vsl, repriced = af.vsl_from_shared_panel(workbook, r250_order, vsl_table)
     max_departure = float(repriced['relative_difference'].max()) if len(repriced) else 0.0
     hb.log('VSL from the shared panel for all %d countries; %d rows depart from the workbook '
@@ -70,10 +86,13 @@ def gep_calculation(p):
     hb.df_write(df_gep[attr_cols + ['year', 'air_filtration_gep', 'sandstorm_prevention_gep']],
                 service_results['gep_by_country_base_year'])
 
-    hb.log(f'Total air_filtration GEP (deposition channel) for base year {p.gep_base_year}: '
-           f'{df_gep["air_filtration_gep"].sum():,.2f}')
-    hb.log(f'Total sandstorm_prevention GEP (dust channel): '
-           f'{df_gep["sandstorm_prevention_gep"].sum():,.2f}')
+    # The same deaths at the panel's median-age VSL, so the run states the age change's size.
+    median_age_vsl, _ = af.vsl_from_shared_panel(workbook, r250_order, panel)
+    median_age = af.air_quality_gep_by_country(workbook, r250_order, vsl=median_age_vsl,
+                                               not_estimated_labels=not_estimated)
+    for column, channel in (('air_filtration_gep', 'deposition'), ('sandstorm_prevention_gep', 'dust')):
+        hb.log(f'Total {column} ({channel} channel) for base year {p.gep_base_year}: '
+               f'{df_gep[column].sum():,.2f}, at the median-age VSL {median_age[column].sum():,.2f}')
     return True
 
 

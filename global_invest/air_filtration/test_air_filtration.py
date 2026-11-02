@@ -199,3 +199,113 @@ def test_positional_join_refuses_a_data_column_swap_with_fids_left_in_place(monk
     workbook.loc[[0, 1], cols] = workbook.loc[[1, 0], cols].values
     with pytest.raises(ValueError, match='wrong'):
         af.air_quality_gep_by_country(workbook, order)
+
+
+AGE_DIR = os.path.join(REFERENCE_DIR, 'gep_aq_20261029')
+
+
+def _read(path, **kwargs):
+    # GENC 'NA' is Namibia and the slug files have no NA code, so only empty cells are missing.
+    return pd.read_csv(path, encoding='utf-8-sig', keep_default_na=False, na_values=['NA', ''], **kwargs).rename(columns=str.strip)
+
+
+def _authors_slug(name):
+    """clean_pyramid.R's name cleaning, so the port can be keyed against the authors' age_75.csv."""
+    import re
+    slug = re.sub(r'\s+', ' ', re.sub(r'[-,()]', ' ', name.lower())).strip().replace(' ', '-')
+    return {'curaçao': 'curacao', 'turkey': 'turkey-turkiye', 'côte-d’ivoire': 'cote-divoire',
+            'virgin-islands-u.s.': 'virgin-islands', 'virgin-islands-british': 'british-virgin-islands',
+            'congo-kinshasa': 'congo-democratic-republic-of-the',
+            'congo-brazzaville': 'congo-republic-of-the'}.get(slug, slug)
+
+
+def test_the_elderly_age_port_reproduces_the_authors_age_75_in_every_country():
+    ages = pd.read_csv(os.path.join(AGE_DIR, 'data', 'raw', 'age_structure_global.csv'), encoding='utf-8-sig',
+                       keep_default_na=False, na_values=[''], dtype=str)
+    ours = af.age_at_population_percentile(ages, 75, 'Country/Area Name')
+    ours['country'] = ours['Country/Area Name'].map(_authors_slug)
+    theirs = _read(os.path.join(AGE_DIR, 'data', 'clean', 'age_75.csv'))
+    both = theirs.merge(ours, on='country', how='outer', validate='one_to_one')
+    assert len(both) == 227
+    assert (both['age_75'] == both['elderly_age']).all()
+
+
+def test_the_authors_vsl_arithmetic_reproduces_their_vsl_table():
+    """vsl.R: vsl = gdp x (LE - age75) x 9.9e6 / (LE_us - age75_us) / gdp_us, on their own inputs."""
+    raw = os.path.join(AGE_DIR, 'data', 'raw')
+    df = (_read(os.path.join(raw, 'life_expectancy.csv'))[['slug', 'years']]
+          .merge(_read(os.path.join(AGE_DIR, 'data', 'clean', 'age_75.csv')).rename(columns={'country': 'slug'}),
+                 on='slug', how='left')
+          .merge(_read(os.path.join(raw, 'real_gdp_pc.csv'))[['slug', 'value']], on='slug', how='inner'))
+    df['gdp'] = pd.to_numeric(df['value'].astype(str).str.replace(r'[\$,]', '', regex=True))
+    us = df[df['slug'] == 'united-states'].iloc[0]
+    assert (us['years'], us['age_75'], us['gdp']) == (80.9, 57, 64600)
+    df['vsl'] = df['gdp'] * (df['years'] - df['age_75']) * (af.AIR_FILTRATION_VSL_USA / (us['years'] - us['age_75']) / us['gdp'])
+    theirs = _read(os.path.join(AGE_DIR, 'data', 'clean', 'vsl.csv')).merge(
+        df[['slug', 'vsl']].rename(columns={'slug': 'country'}), on='country', how='outer', suffixes=('', '_port'),
+        validate='one_to_one')
+    assert len(theirs) == 221
+    assert (theirs['vsl'].isna() == theirs['vsl_port'].isna()).all()
+    np.testing.assert_allclose(theirs['vsl_port'], theirs['vsl'], rtol=2 * np.finfo(float).eps, atol=0)
+
+
+def test_the_elderly_age_is_the_last_age_below_the_share_and_a_shared_key_pools_its_countries():
+    ages = pd.DataFrame({'code': ['A'] * 5 + ['B'] * 3 + ['C'] * 3,
+                         'GROUP': [np.nan, '0', '1', '2', '3+', np.nan, '0', '1', np.nan, '0', '1'],
+                         'Population': ['100', '25', '49', '1', '25', '10', '7', '3', '10', '8', '2']})
+    # A: cumulative 25, 74, 75, 100. The share reaches 75 at age 2, so the age is 1, not 2. C: 80 at
+    # age 0, so no age lies below the share and C has no elderly age, as in the authors' filter.
+    assert af.age_at_population_percentile(ages, 75, 'code').set_index('code')['elderly_age'].to_dict() == {'A': 1, 'B': 0}
+    # B and C pooled: 15 at age 0 of 20, cumulative 75, so no age lies below and the pooled key has none.
+    # The pooled shares are the pooled populations', not a mean of the two countries' ages.
+    pooled = ages.assign(code=ages['code'].replace({'C': 'B'}))
+    assert af.age_at_population_percentile(pooled, 75, 'code').set_index('code')['elderly_age'].to_dict() == {'A': 1}
+    with pytest.raises(ValueError):
+        af.age_at_population_percentile(ages.assign(Population=ages['Population'].replace({'49': '48'})), 75, 'code')
+
+
+def test_the_age_statistic_moves_only_the_life_years_term_and_refills_from_the_new_values():
+    panel = pd.DataFrame({
+        'iso3_r250_id': [840, 1, 2, 3, 4, 5],
+        'iso3_r250_label': ['USA', 'AAA', 'BBB', 'CCC', 'DDD', 'EEE'],
+        'region_wb': ['North America', 'R1', 'R1', 'R1', 'R1', 'Antarctica'],
+        'life_expectancy': [80.0, 70.0, 60.0, 65.0, np.nan, np.nan],
+        'median_age': [40.0, 30.0, 20.0, 25.0, np.nan, np.nan],
+        'gdp_pc': [60000.0, 30000.0, 6000.0, 12000.0, np.nan, np.nan],
+        'vsl_usd': [9.0e6, 3.375e6, 0.9e6, 1.8e6, 1.8e6, 1.8e6],
+        'vsl_source': ['direct', 'direct', 'direct', 'direct', 'region_median_fallback', 'global_median_fallback'],
+    })
+    panel['lll'] = panel['life_expectancy'] - panel['median_age']
+    elderly = pd.DataFrame({'iso3_r250_id': [840, 1, 2], 'elderly_age': [60, 50, 40]})
+    out = af.vsl_with_age_statistic(panel, elderly)
+    assert out.loc[0, 'vsl_usd'] == 9.0e6
+    # AAA: 9e6 x (30000 / 60000) x (20 / 20); BBB: 9e6 x 0.1 x (20 / 20).
+    np.testing.assert_allclose(out.loc[1:2, 'vsl_usd'], [4.5e6, 0.9e6], rtol=1e-15)
+    # CCC has no elderly age: it leaves the direct values and takes R1's new median, as DDD does.
+    assert list(out['vsl_source']) == ['direct', 'direct', 'direct', 'region_median_fallback',
+                                       'region_median_fallback', 'global_median_fallback']
+    assert out.loc[3, 'vsl_usd'] == out.loc[4, 'vsl_usd'] == np.median([4.5e6, 0.9e6])
+    assert out.loc[5, 'vsl_usd'] == np.median([9.0e6, 4.5e6, 0.9e6])
+    for column in ('iso3_r250_label', 'region_wb', 'life_expectancy', 'median_age', 'gdp_pc'):
+        assert out[column].equals(panel[column])
+
+
+def test_the_genc_correspondence_maps_every_code_once_and_only_gaza_and_the_west_bank_share_a_country():
+    genc = pd.read_csv(os.path.join(REFERENCE_DIR, 'genc_iso3_r250_correspondence.csv'), encoding='utf-8-sig',
+                       keep_default_na=False, na_values=[''])
+    ages = pd.read_csv(os.path.join(AGE_DIR, 'data', 'raw', 'age_structure_global.csv'), encoding='utf-8-sig',
+                       keep_default_na=False, na_values=[''], dtype=str)
+    assert genc['genc_code'].is_unique and set(genc['genc_code']) == set(ages['GENC'])
+    assert 'NA' in set(genc['genc_code'])
+    shared = genc[genc['iso3_r250_id'].duplicated(keep=False)]
+    assert sorted(shared['genc_code']) == ['XG', 'XW'] and set(shared['iso3_r250_label']) == {'PSE'}
+
+
+def test_the_template_names_the_authors_age_structure_and_the_75th_percentile():
+    import csv
+    here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    rows = {row[1]: row[2] for row in csv.reader(open(os.path.join(here, 'input_template', 'es_parameters.csv'),
+                                                     encoding='utf-8-sig')) if len(row) > 2 and row[0] == 'air_filtration'}
+    assert rows['air_filtration_age_structure_path'] == 'global_invest/air_filtration/gep_aq_20261029/data/raw/age_structure_global.csv'
+    assert rows['air_filtration_genc_correspondence_path'] == 'global_invest/air_filtration/genc_iso3_r250_correspondence.csv'
+    assert rows['air_filtration_elderly_age_percentile'] == '75'

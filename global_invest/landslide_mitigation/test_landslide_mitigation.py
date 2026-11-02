@@ -533,35 +533,79 @@ def test_roc_auc_matches_the_reference_implementation_including_ties():
 
 
 
-def test_the_authors_v021_table_shares_our_distribution():
-    """The authors' v0.2.1 per-country output against our run: at least 210 countries valued in
-    both, log-correlation above 0.97 and the same top five, pinned so the agreement cannot quietly
-    lapse. Runs against every landslide project on the machine; skips where none exists."""
-    import glob
+def test_the_canonical_table_prices_the_staged_deaths_at_the_configured_panel():
+    """The canonical landslide table against its own inputs: every country is the sum of its
+    sub-regions' staged avoided deaths over the sub-regions with a valid pixel, times the VSL of
+    the panel the canonical project's own es_parameters names, which must also be the template's.
+    250 unique keys, missing exactly where no sub-region has a valid pixel, zero exactly where those
+    deaths sum to zero, values within rtol 1e-12. Skips where the project or the staged files are
+    not on this machine."""
+    import csv
+    import pytest
+    home = os.path.expanduser('~')
+    project = os.path.join(home, 'Files', 'global_invest', 'projects', 'gep_landslide_mitigation')
+    table_path = os.path.join(project, 'intermediate', 'gep_calculation', 'gep_by_country_base_year.csv')
+    active = os.path.join(project, 'input', 'es_parameters.csv')
+    zonal_path = os.path.join(home, 'Files', 'base_data', 'global_invest', 'landslide_mitigation',
+                              'cluster_run_2019', 'zonal_statistics_2019.csv')
+    template = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                            'input_template', 'es_parameters.csv')
+    if not all(os.path.exists(p) for p in (table_path, active, zonal_path)):
+        pytest.skip('the canonical landslide table, its es_parameters or the staged zonal statistics is absent')
+
+    def panel_ref(path):
+        return {r[1]: r[2] for r in csv.reader(open(path, encoding='utf-8'))
+                if len(r) == 3 and r[0] == 'landslide_mitigation'}['landslide_mitigation_vsl_panel_path']
+
+    # the canonical run's own configuration, and the template it was seeded from, name one panel
+    assert panel_ref(active) == panel_ref(template)
+    panel_path = os.path.join(home, 'Files', 'base_data', panel_ref(active))
+    if not os.path.exists(panel_path):
+        pytest.skip('the configured VSL panel is absent')
+    table = pd.read_csv(table_path, float_precision='round_trip')
+    assert len(table) == 250 and table['iso3_r250_label'].is_unique
+    zonal = pd.read_csv(zonal_path, float_precision='round_trip')
+    valid = zonal[pd.to_numeric(zonal['pixel_count'], errors='coerce') > 0]
+    deaths = valid.groupby('iso3_r250_label')['avoided_deaths_sum'].sum()
+    vsl = pd.read_csv(panel_path, float_precision='round_trip').set_index('iso3_r250_label')['vsl_usd']
+    expected = (deaths * vsl.reindex(deaths.index)).reindex(table['iso3_r250_label'])
+    actual = table.set_index('iso3_r250_label')['landslide_mitigation_gep']
+    assert (actual.isna() == expected.isna()).all()
+    assert ((actual == 0) == (expected == 0)).all()
+    known = actual.notna()
+    np.testing.assert_allclose(actual[known], expected[known], rtol=1e-12, atol=0)
+
+
+def test_the_authors_v021_deaths_share_our_distribution():
+    """The authors' v0.2.1 per-country avoided deaths against the staged cluster run's, the
+    quantity every landslide run prices: at least 210 countries with deaths in both,
+    log-correlation above 0.97, the same three largest in order and the same five largest, pinned
+    so the agreement cannot quietly lapse. Deaths rather than values, because the account prices
+    at its shared panel and the authors' table at v0.2.1's PPP panel, so the two values no longer
+    share a price. Their totals stay pinned. Skips where the files are not on this machine."""
     import pandas as pd
     import pytest
-    his_path = os.path.join(os.path.expanduser('~'), 'Files', 'base_data', 'global_invest',
-                            'landslide_mitigation', 'vsl_2026_09', 'landslide_mitigation_gep.xlsx')
-    runs = sorted(glob.glob(os.path.join(
-        os.path.expanduser('~'), 'Files', 'global_invest', 'projects',
-        'gep_landslide_mitigation*', 'intermediate', 'gep_calculation',
-        'gep_by_country_base_year.csv')))
-    if not (os.path.exists(his_path) and runs):
-        pytest.skip('the author workbook or a landslide run is not on this machine')
+    base = os.path.join(os.path.expanduser('~'), 'Files', 'base_data', 'global_invest',
+                        'landslide_mitigation')
+    his_path = os.path.join(base, 'vsl_2026_09', 'landslide_mitigation_gep.xlsx')
+    zonal_path = os.path.join(base, 'cluster_run_2019', 'zonal_statistics_2019.csv')
+    if not (os.path.exists(his_path) and os.path.exists(zonal_path)):
+        pytest.skip('the author workbook or the staged zonal statistics are not on this machine')
     his = pd.read_excel(his_path)
     assert his['avoided_value_sum_usd'].sum() == pytest.approx(707_155_816, abs=1.0)
     assert his['avoided_deaths_sum'].sum() == pytest.approx(632.0, abs=0.5)
-    for ours_path in runs:
-        ours = pd.read_csv(ours_path)
-        merged = ours.merge(his, on='iso3_r250_id')
-        both = merged[(merged['landslide_mitigation_gep'] > 0)
-                      & (merged['avoided_value_sum_usd'] > 0)]
-        assert len(both) >= 210
-        corr = np.corrcoef(np.log(both['landslide_mitigation_gep']),
-                           np.log(both['avoided_value_sum_usd']))[0, 1]
-        assert corr > 0.97
-        assert (merged.nlargest(5, 'landslide_mitigation_gep')['iso3_r250_id'].tolist()
-                == merged.nlargest(5, 'avoided_value_sum_usd')['iso3_r250_id'].tolist())
+    ours = (pd.read_csv(zonal_path).groupby('iso3_r250_label', as_index=False)
+            ['avoided_deaths_sum'].sum())
+    merged = ours.merge(his, on='iso3_r250_label', suffixes=('_ours', '_his'))
+    both = merged[(merged['avoided_deaths_sum_ours'] > 0) & (merged['avoided_deaths_sum_his'] > 0)]
+    assert len(both) >= 210
+    corr = np.corrcoef(np.log(both['avoided_deaths_sum_ours']),
+                       np.log(both['avoided_deaths_sum_his']))[0, 1]
+    assert corr > 0.97
+    largest = {side: merged.nlargest(5, 'avoided_deaths_sum_' + side)['iso3_r250_label'].tolist()
+               for side in ('ours', 'his')}
+    assert largest['ours'][:3] == largest['his'][:3]
+    assert set(largest['ours']) == set(largest['his'])
 
 
 def test_a_country_with_no_valid_pixel_is_missing_not_zero():

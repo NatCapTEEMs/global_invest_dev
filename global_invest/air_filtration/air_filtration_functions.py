@@ -6,9 +6,9 @@ The consortium drive's Air Filtration folder carries the committed per-country w
 sandstorm prevention service). The upstream science behind the deaths columns (process-based
 emissions models + Global InMAP + health impacts, per the appendix) is not rebuildable here and
 is taken as given. The valuation prices those deaths at the account's shared VSL panel -- the
-same file landslide mitigation reads: the EPA benchmark carried to 2019, scaled by GDP per
-capita (PPP) and life-years lost, with countries lacking data taking their World Bank region's
-median, else the global median. The workbook's own VSL column prices nothing; the run reports
+same file landslide mitigation reads: the US anchor of $9.9M (2019 US$), scaled by GDP per
+capita (World Bank, constant 2015 US$) and life-years lost, with countries lacking data taking
+their World Bank region's median, else the global median. The workbook's own VSL column prices nothing; the run reports
 how far the panel departs from it. The countries the source states it could not estimate
 publish as missing (not_estimated_mask), not as the zero deaths the workbook stores.
 
@@ -26,7 +26,7 @@ method for transparency.
 """
 import numpy as np
 
-AIR_FILTRATION_VSL_USA = 9_900_000    # the workbook method's US anchor VSL (vsl.R), not the account's
+AIR_FILTRATION_VSL_USA = 9_900_000    # the workbook method's US anchor VSL (vsl.R); the account's is the panel's US row
 AIR_FILTRATION_MIN_NAME_MATCHES = 190  # positional-join sanity floor (199 observed)
 AIR_FILTRATION_FID_START = 1  # the workbook's FID is the gpkg feature id, 1..250 in file order
 
@@ -99,6 +99,87 @@ def vsl_from_shared_panel(workbook_df, r250_order_df, panel_df):
                            'table_vsl': vsl,
                            'relative_difference': difference})
     return vsl, report[difference > VSL_AGREEMENT_RTOL].copy()
+
+
+def age_at_population_percentile(age_structure_df, percentile, key):
+    """The authors' elderly age per country: the last single age whose cumulative population
+    share is still below the percentile (clean_pyramid.R in the authors' updated code).
+
+    The convention is the authors' and is kept exactly: the age returned is the one just below
+    the percentile, not the first age at or above it. Ages are read in ascending order and a key
+    holding several source countries (Gaza Strip and West Bank in one r250 country) pools their
+    populations by age before the shares are taken.
+
+    Args:
+        age_structure_df (pd.DataFrame): the single-year age structure, one row per source
+            country and age, with `GROUP` (the age, '100+' for the last, empty on the total row),
+            `Population` (thousands separators allowed) and the key column.
+        percentile (float): the cumulative share, in percent, that marks the elderly age.
+        key (str): the column that identifies a country.
+
+    Returns:
+        pd.DataFrame: the key and `elderly_age`, one row per key.
+
+    Raises:
+        ValueError: if a key has no total row or its ages do not sum to its total.
+    """
+    import pandas as pd
+
+    df = age_structure_df[[key, 'GROUP', 'Population']].copy()
+    df['population'] = pd.to_numeric(df['Population'].astype(str).str.replace(',', ''))
+    total = df[df['GROUP'].isna()].groupby(key)['population'].sum()
+    ages = df[df['GROUP'].notna()].assign(age=lambda d: d['GROUP'].str.rstrip('+').astype(int))
+    ages = ages.groupby([key, 'age'], as_index=False)['population'].sum().sort_values([key, 'age'])
+    if set(ages[key]) != set(total.index):
+        raise ValueError('countries without a total row: %s' % sorted(set(ages[key]) ^ set(total.index)))
+    summed = ages.groupby(key)['population'].sum()
+    if not (summed == total.loc[summed.index]).all():
+        raise ValueError('ages do not sum to the total in: %s' % sorted(summed.index[summed != total.loc[summed.index]]))
+    ages['cum_share'] = (ages['population'] / ages[key].map(total)).groupby(ages[key]).cumsum() * 100
+    below = ages[ages['cum_share'] < percentile]
+    return below.groupby(key, as_index=False)['age'].last().rename(columns={'age': 'elderly_age'})
+
+
+def vsl_with_age_statistic(panel_df, elderly_age_df):
+    """The shared VSL panel with life-years lost measured from the authors' elderly age.
+
+    The panel scales the US VSL by GDP per capita and by life-years lost, life expectancy less
+    median age: vsl_c = vsl_us x (gdp_c / gdp_us) x (lll_c / lll_us). The authors' updated code
+    measures life-years lost from the elderly age (`age_at_population_percentile`) instead. Only
+    that term changes, in each country and in the US: the US anchor, the GDP ratio and the life
+    expectancies are the panel's. A country the panel values directly keeps a direct value where
+    it has an elderly age. Every other country takes the panel's own fill, the median direct VSL
+    of its World Bank region, else the global median.
+
+    Args:
+        panel_df (pd.DataFrame): the shared panel (iso3_r250_id, iso3_r250_label, region_wb,
+            life_expectancy, median_age, lll, gdp_pc, vsl_usd, vsl_source).
+        elderly_age_df (pd.DataFrame): iso3_r250_id and elderly_age.
+
+    Returns:
+        pd.DataFrame: the panel with `elderly_age` added and `lll`, `vsl_usd` and `vsl_source`
+        recomputed. Every other column is the panel's.
+
+    Raises:
+        ValueError: if the US has no elderly age or no direct panel value.
+    """
+    out = panel_df.copy()
+    out['elderly_age'] = out['iso3_r250_id'].map(elderly_age_df.set_index('iso3_r250_id')['elderly_age'])
+    out['lll'] = out['life_expectancy'] - out['elderly_age']
+    direct = (panel_df['vsl_source'] == 'direct') & out['lll'].notna()
+    us = out['iso3_r250_label'] == 'USA'
+    if not direct[us].all() or us.sum() != 1:
+        raise ValueError('the US needs a direct panel value and an elderly age')
+    anchor = out.loc[us, 'vsl_usd'].iloc[0]
+    gdp_us, lll_us = out.loc[us, 'gdp_pc'].iloc[0], out.loc[us, 'lll'].iloc[0]
+    out['vsl_usd'] = np.where(direct, anchor * (out['gdp_pc'] / gdp_us) * (out['lll'] / lll_us), np.nan)
+    region = out[direct].groupby('region_wb')['vsl_usd'].median()
+    out.loc[~direct, 'vsl_usd'] = out.loc[~direct, 'region_wb'].map(region)
+    out['vsl_source'] = np.where(direct, 'direct', 'region_median_fallback')
+    unfilled = out['vsl_usd'].isna()
+    out.loc[unfilled, 'vsl_usd'] = out.loc[direct, 'vsl_usd'].median()
+    out.loc[unfilled, 'vsl_source'] = 'global_median_fallback'
+    return out
 
 
 def air_quality_benefits(workbook_df, vsl=None):

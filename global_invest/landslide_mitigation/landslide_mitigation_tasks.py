@@ -2534,7 +2534,7 @@ def gep_calculation(p):
         panel = pd.read_csv(str(p.get_path(panel_path)))
         zonal = zonal.merge(panel[['iso3_r250_label', 'vsl_usd']], on='iso3_r250_label', how='left')
         zonal['value_usd'] = zonal['avoided_deaths_sum'] * zonal['vsl_usd']
-        p.L.info('Deaths priced at the shared EPA life-years-lost panel; the staged OECD-priced '
+        p.L.info('Deaths priced at the shared life-years-lost VSL panel; the staged OECD-priced '
                  'column sums to %s beside it.'
                  % format(zonal['avoided_value_sum_usd'].sum(), ',.2f'))
     else:

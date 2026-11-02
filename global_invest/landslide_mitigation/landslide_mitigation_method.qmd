@@ -205,12 +205,16 @@ where it comes out negative are counted and warned about rather than silently fl
 Avoided deaths are priced at the **value of a statistical life**, per country, in 2019 constant USD
 to match the rest of GEP.
 
-The default schedule is the staged EPA life-years-lost panel
-(`landslide_mitigation_vsl_panel_path`): EPA's adopted $7.9M (2008 USD) carried to $9,876,237 at
-2019 by CPI and real-income growth at elasticity 0.4, transferred to each country by the ratio of
-GDP per capita (PPP) times life years lost, with World Bank region-median and global-median
-fallbacks. All 250 account countries are covered (199 direct, 49 region, 2 global) and each row
-records its tier in a `vsl_source` column.
+The default schedule is the account's shared life-years-lost panel
+(`landslide_mitigation_vsl_panel_path`, `vsl_2026_11`): a US anchor of $9.9M in 2019 USD,
+transferred to each country by the ratio of GDP per capita (World Bank `NY.GDP.PCAP.KD`, constant
+2015 US$, 2019) times life years lost (UN World Population Prospects 2024 life expectancy minus
+median age), at income elasticity 1, with World Bank region-median and global-median fallbacks.
+That is the authors' v0.2.1 construction with the two changes Matt Braaksma's email of 30 October
+2026 states: the fixed $9.9M anchor in place of EPA's $7.9M (2008 USD) carried to $9,876,237, and
+non-PPP GDP in place of PPP. "Constant US$" is read as `NY.GDP.PCAP.KD`, because his updated code is
+not public. All 250 account countries are covered (207 direct, 41 region, 2 global) and each row
+records its tier in a `vsl_source` column. The v0.2.1 panel stays staged in `vsl_2026_09`.
 
 Blanking that parameter row recovers the OECD schedule. There, countries with a published OECD
 country estimate take it directly; the published figures are 2022 USD with a power-of-ten
@@ -235,10 +239,10 @@ country table sums the sub-regions back together in `gep_calculation` (`country_
 
 The default GEP run does not recompute the rasters. `gep_calculation` reads the zonal table of the
 v0.2.0 port's cluster run (21 August 2026, staged as `landslide_zonal_statistics_path`), prices its
-avoided deaths at the EPA panel and sums the r264 sub-regions to countries. A sub-region with no
+avoided deaths at the shared panel and sums the r264 sub-regions to countries. A sub-region with no
 valid pixel has no estimate: every cell it touches is near-flat, lacks an input or lies outside the
 grid. It is left missing before the sum, so a country with no valid pixel anywhere is missing, not
-zero. On the staged table this gives $657,753,718.76 in 2019 USD, with 227 countries valued, 6
+zero. On the staged table this gives $288,315,488.73 in 2019 USD, with 227 countries valued, 6
 measured zeros (valid pixels and no avoided deaths) and 17 missing.
 
 ## What the module does not do
@@ -250,8 +254,8 @@ measured zeros (valid pixels and no avoided deaths) and 17 missing.
 - Transmissivity units are flagged as unverified in the code and have not been checked against the
   HiHydroSoil documentation here.
 - The death calculation has been run end to end once on the cluster, as the v0.2.0 port. Against
-  the authors' v0.2.1 table it gives 570.66 avoided deaths to their 632.02 (9.7% fewer) and
-  $657,753,718.76 to their $707,155,816 at the same value-of-life panel. The gap is not yet
+  the authors' v0.2.1 table it gives 570.66 avoided deaths to their 632.02 (9.7% fewer), and
+  $657,753,718.76 to their $707,155,816 at their v0.2.1 value-of-life panel. The gap is not yet
   isolated: the port reads raw inputs where v0.2.1 reads the submitted base-data files. The numbers
   remain provisional.
 - The prevalence behind the case-control intercept correction counts event pixels, marked only
