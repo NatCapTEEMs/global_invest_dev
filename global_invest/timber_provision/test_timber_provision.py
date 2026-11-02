@@ -151,6 +151,83 @@ def test_the_cwon_rent_is_read_from_its_named_series_and_missing_stays_missing()
         tp.cwon_forest_rent_by_country(wrong, countries, 2019)
 
 
+def _cwon_table(series, values_by_country):
+    return pd.DataFrame({'countrycode': list(values_by_country), 'series': series,
+                         'YR2019': list(values_by_country.values())})
+
+
+def test_the_computed_rent_is_revenue_times_rate_matched_by_country_code():
+    """The two CWoN tables list countries in different orders and one country only in the revenue
+    table, so a product taken by row position would pair the wrong numbers."""
+    revenue = _cwon_table(tp.CWON_FOREST_REVENUE_SERIES, {'AAA': 1000.0, 'BBB': 2000.0, 'DDD': 50.0})
+    rate = _cwon_table(tp.CWON_FOREST_RENTAL_RATE_SERIES, {'BBB': 0.5, 'AAA': 0.1})
+    countries = pd.DataFrame({'iso3_r250_label': ['BBB', 'AAA', 'DDD']})
+    out = tp.cwon_forest_rent_from_revenue_and_rate(revenue, rate, countries, 2019).set_index('iso3_r250_label')
+    assert out.loc['AAA', 'timber_provision_gep_cwon_rent'] == pytest.approx(100.0)
+    assert out.loc['BBB', 'timber_provision_gep_cwon_rent'] == pytest.approx(1000.0)
+    assert pd.isna(out.loc['DDD', 'timber_provision_gep_cwon_rent'])     # a revenue without a rate
+
+    with pytest.raises(ValueError, match='rental rate'):
+        tp.cwon_forest_rent_from_revenue_and_rate(
+            revenue, rate.assign(series='Forest, rents (current US$)'), countries, 2019)
+    with pytest.raises(ValueError, match='more than once'):
+        tp.cwon_forest_rent_from_revenue_and_rate(pd.concat([revenue, revenue.head(1)]), rate, countries, 2019)
+
+
+def test_a_named_country_without_inputs_is_zero_and_any_other_stays_missing():
+    """CWoN sets a missing forest rent to zero only for the countries its gap-filling names. A named
+    country with both inputs keeps its product, and an unnamed one without them stays missing."""
+    nan = float('nan')
+    revenue = _cwon_table(tp.CWON_FOREST_REVENUE_SERIES, {'SMR': nan, 'SYR': 100.0, 'NRU': nan})
+    rate = _cwon_table(tp.CWON_FOREST_RENTAL_RATE_SERIES, {'SMR': 0.2, 'SYR': 0.22, 'NRU': 0.2})
+    countries = pd.DataFrame({'iso3_r250_label': ['SMR', 'SYR', 'NRU', 'XKX']})
+    out = tp.cwon_forest_rent_from_revenue_and_rate(
+        revenue, rate, countries, 2019, assumed_zero_countries=['SMR', 'SYR']).set_index('iso3_r250_label')
+    rent, assumed = out['timber_provision_gep_cwon_rent'], out['timber_provision_cwon_rent_assumed_zero']
+    assert rent['SMR'] == 0.0 and assumed['SMR']
+    assert rent['SYR'] == pytest.approx(22.0) and not assumed['SYR']
+    assert pd.isna(rent['NRU']) and not assumed['NRU']        # no inputs, not named
+    assert pd.isna(rent['XKX']) and not assumed['XKX']        # in neither table
+
+
+def test_the_staged_cwon_tables_reproduce_the_published_2019_rent(tmp_path):
+    """Revenue times rate on the staged CWoN 2024 tables, against the rent CWoN publishes for 2019.
+
+    Every computed value equals the published one. The published table carries 16 further zeros,
+    small islands and territories with no forest revenue in any year, which CWoN's island rule
+    sets to zero from a list the package does not include, so the computed rent leaves them
+    missing. IMN, NRU and XKX are missing in both, although they too have no revenue in any year.
+    """
+    revenue_path = os.path.join(REFERENCE_DIR, 'cwon2024', 'forest_timber_revenue.xlsx')
+    rate_path = os.path.join(REFERENCE_DIR, 'cwon2024', 'forest_timber_rental_rate.xlsx')
+    rent_path = os.path.join(REFERENCE_DIR, 'cwon', 'forest_timber_rent_cd.dta')
+    if not all(os.path.exists(path) for path in (revenue_path, rate_path, rent_path)):
+        pytest.skip('the staged CWoN timber tables are not on this machine')
+    p = SimpleNamespace(input_dir=str(tmp_path / 'input'), get_path=lambda *a, **k: '/resolved/' + '/'.join(a))
+    utilities.hydrate_es_parameters(p, 'timber_provision', log=lambda *a: None)
+    assert p.timber_provision_cwon_assumed_zero_countries == ['SMR', 'MCO', 'GRL', 'PSE', 'SYR']
+
+    published = pd.read_stata(rent_path)
+    countries = pd.DataFrame({'iso3_r250_label': sorted(published['countrycode'].unique())})
+    out = tp.cwon_forest_rent_from_revenue_and_rate(
+        pd.read_excel(revenue_path, na_values=['..']), pd.read_excel(rate_path, na_values=['..']),
+        countries, 2019, p.timber_provision_cwon_assumed_zero_countries).set_index('iso3_r250_label')
+    rent = out['timber_provision_gep_cwon_rent']
+    reference = tp.cwon_forest_rent_by_country(published, countries, 2019).set_index(
+        'iso3_r250_label')['timber_provision_gep_cwon_rent']
+
+    both = rent.notna() & reference.notna()
+    assert both.sum() == 198 and rent.notna().sum() == 198     # 194 products and 4 named zeros
+    assert np.allclose(rent[both], reference[both], rtol=1e-12, atol=1e-6)
+    assert rent.sum() == pytest.approx(132_130_111_931.1806, rel=1e-12)
+    assert sorted(out.index[out['timber_provision_cwon_rent_assumed_zero']]) == ['GRL', 'MCO', 'PSE', 'SMR']
+    island_zeros = sorted(reference.index[reference.notna() & rent.isna()])
+    assert island_zeros == ['ASM', 'ATG', 'BMU', 'CHI', 'CUW', 'CYM', 'GRD', 'GUM', 'KNA', 'MAF',
+                            'MHL', 'MNP', 'PLW', 'SXM', 'TUV', 'VIR']
+    assert reference[island_zeros].eq(0).all()
+    assert sorted(reference.index[reference.isna()]) == ['IMN', 'NRU', 'XKX']
+
+
 def test_both_timber_valuations_are_published_and_differ_by_the_recorded_ratio():
     """Every run writes both valuations, so the gap between them stays visible."""
     import glob

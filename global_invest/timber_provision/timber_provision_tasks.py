@@ -1,6 +1,7 @@
 """Timber-provision GEP tasks, and the timber scenario ES shock.
 
-The account's figure, `timber_provision_gep`, is CWoN's published forest rent. Beside it is OUR
+The account's figure, `timber_provision_gep`, is CWoN's forest rent, computed here from CWoN's
+timber revenue and rental rate and checked against the rent CWoN publishes. Beside it is OUR
 spatial estimate, `timber_provision_gep_spatial`: the pipeline's value raster (verified equal to
 the net-return layer masked and floored, see timber_provision_functions) summed per country on
 the 10-arcsecond country-id raster. The committed Forestry CSV stays as the test anchor the
@@ -68,9 +69,40 @@ def publish_inputs(p):
     return p
 
 
+def cwon_forest_rent(p, countries):
+    """CWoN's forest rent on the given country rows: revenue times rental rate, from the CWoN 2024
+    package, with CWoN's assumed zeros for the countries es_parameters names.
+
+    The rent CWoN publishes is read only to check the result, and the check is logged.
+    """
+    year = int(p.gep_base_year)
+    # The World Bank writes a missing value as "..".
+    revenue, rate = (pd.read_excel(str(p.get_path(path)), na_values=['..'])
+                     for path in (p.timber_provision_cwon_forest_revenue_path,
+                                  p.timber_provision_cwon_forest_rental_rate_path))
+    rent = tp.cwon_forest_rent_from_revenue_and_rate(
+        revenue, rate, countries, year, p.timber_provision_cwon_assumed_zero_countries)
+
+    # pd.read_stata, like extractive_energy and fisheries: hb.df_read is csv-only.
+    published = tp.cwon_forest_rent_by_country(
+        pd.read_stata(str(p.get_path(p.timber_provision_cwon_forest_rent_path))),
+        countries[['iso3_r250_label']], year).set_index('iso3_r250_label')['timber_provision_gep_cwon_rent']
+    computed = rent.set_index('iso3_r250_label')['timber_provision_gep_cwon_rent']
+    both = computed.notna() & published.notna()
+    only_published = published.notna() & computed.isna()
+    hb.log('CWoN check, %d: revenue x rate against the published rent, %d countries, max |diff| '
+           '%.3g USD, %d assumed zeros. Published but not computed: %d (%s), all of them zero: %s'
+           % (year, int(both.sum()), (computed[both] - published[both]).abs().max(),
+              int(rent['timber_provision_cwon_rent_assumed_zero'].sum()), int(only_published.sum()),
+              ', '.join(sorted(published.index[only_published])),
+              bool(published[only_published].eq(0).all())))
+    return rent
+
+
 def gep_calculation(p):
-    """GEP valuation for timber provision: CWoN's forest rent per country, with the value-raster
-    sum, the fuelwood split and the roundwood gross-value diagnostic beside it."""
+    """GEP valuation for timber provision: CWoN's forest rent per country (revenue times rental
+    rate), with the value-raster sum, the fuelwood split and the roundwood gross-value diagnostic
+    beside it."""
     publish_inputs(p)
     service_results, already_done = utilities.begin_gep_calculation(p, 'timber_provision')
     if already_done:
@@ -97,11 +129,7 @@ def gep_calculation(p):
     # Both valuations, side by side: the issues document recommends the CWoN rent, which is the
     # account's figure (below), and publishing it alone would hide how far it sits from the
     # spatial estimate.
-    df_gep = tp.cwon_forest_rent_by_country(
-        # pd.read_stata, like extractive_energy and fisheries: hb.df_read is csv-only and a
-        # .dta reaches it as a malformed csv rather than as the wrong reader.
-        pd.read_stata(str(p.get_path(p.timber_provision_cwon_forest_rent_path))),
-        df_gep, int(p.gep_base_year))
+    df_gep = cwon_forest_rent(p, df_gep)
     # And the proxy diagnostic: FAOSTAT roundwood priced at the country's own industrial-roundwood
     # export unit value where one is reported, the world value otherwise. Not a third estimate: a
     # land share is a fraction of the gross value of the wood it comes from, so a country whose GEP
@@ -199,9 +227,7 @@ def fuelwood_gep(p):
             utilities.GEP_COUNTRY_ATTR_COLS]
 
         # the lambda-applied figure: the fuelwood share of CWoN's rent
-        rent = tp.cwon_forest_rent_by_country(
-            pd.read_stata(str(p.get_path(p.timber_provision_cwon_forest_rent_path))),
-            countries, int(p.gep_base_year))
+        rent = cwon_forest_rent(p, countries)
         rent = tp.fuelwood_share_of_forest_rent(faostat, rent, int(p.gep_base_year))
         rent['fuelwood_gep_from_forest_rent'] = (
             rent['timber_provision_gep_cwon_rent'] * rent['fuelwood_share_of_rent'])

@@ -105,6 +105,9 @@ CWON_FOREST_RENT_SERIES = 'Forest, rents (current US$)'
 def cwon_forest_rent_by_country(rent_df, countries_df, year):
     """CWoN's published forest rent for one year, on the account's country rows.
 
+    The account computes the rent with cwon_forest_rent_from_revenue_and_rate. This reads the
+    published table to check it.
+
     Args:
         rent_df (pd.DataFrame): forest_timber_rent_cd, wide by year (countrycode + YR<year>).
         countries_df (pd.DataFrame): the r250 country rows, carrying iso3_r250_label.
@@ -131,6 +134,67 @@ def cwon_forest_rent_by_country(rent_df, countries_df, year):
     return countries_df.merge(
         rent[['countrycode', 'timber_provision_gep_cwon_rent']],
         left_on='iso3_r250_label', right_on='countrycode', how='left').drop(columns=['countrycode'])
+
+
+CWON_FOREST_REVENUE_SERIES = 'Forest, timber revenues (current USD)'
+CWON_FOREST_RENTAL_RATE_SERIES = 'Forest, timber, rental rate'
+
+
+def cwon_forest_rent_from_revenue_and_rate(revenue_df, rate_df, countries_df, year,
+                                           assumed_zero_countries=()):
+    """CWoN's forest rent for one year, computed: timber revenue times the rental rate.
+
+    CWoN prices roundwood removals at export unit values and multiplies the revenue by a regional
+    rental ratio (`tot_rent = tot_rev * ratio` in forest_timber_depletion.do). Where that leaves no
+    rent, CWoN's gap-filling writes zero for the countries it assumes have none
+    (forest_timber_gapfill.do). Here a missing rent becomes zero only for a country named in
+    `assumed_zero_countries`, and any other country without both inputs stays missing.
+
+    Args:
+        revenue_df (pd.DataFrame): forest_timber_revenue, wide by year (countrycode, series,
+            YR<year>).
+        rate_df (pd.DataFrame): forest_timber_rental_rate, the same shape.
+        countries_df (pd.DataFrame): the r250 country rows, carrying iso3_r250_label.
+        year (int): the base year.
+        assumed_zero_countries (iterable): ISO3 codes whose missing rent CWoN sets to zero.
+
+    Returns:
+        pd.DataFrame: countries_df with timber_provision_cwon_revenue,
+        timber_provision_cwon_rental_rate, timber_provision_gep_cwon_rent and
+        timber_provision_cwon_rent_assumed_zero, True where the rent is an assumed zero rather
+        than a product. Inputs are matched on the country code, not on row order.
+
+    Raises:
+        ValueError: if a table does not carry its series or lists a country twice, since either
+            would put another quantity, or a country's value twice, under these names.
+    """
+    import pandas as pd
+    column = 'YR%d' % int(year)
+
+    def by_country(df, series, name):
+        if 'series' in df.columns:
+            labels = set(str(v) for v in df['series'].dropna().unique())
+            if series not in labels:
+                raise ValueError('the CWoN %s table does not carry %r, it carries %r'
+                                 % (name, series, sorted(labels)[:3]))
+            df = df[df['series'] == series]
+        repeated = df.loc[df['countrycode'].duplicated(), 'countrycode']
+        if len(repeated):
+            raise ValueError('the CWoN %s table lists %s more than once' % (name, sorted(repeated)[:5]))
+        return pd.to_numeric(df.set_index('countrycode')[column], errors='coerce')
+
+    revenue = by_country(revenue_df, CWON_FOREST_REVENUE_SERIES, 'timber revenue')
+    rate = by_country(rate_df, CWON_FOREST_RENTAL_RATE_SERIES, 'rental rate')
+    out = countries_df.copy()
+    out['timber_provision_cwon_revenue'] = out['iso3_r250_label'].map(revenue)
+    out['timber_provision_cwon_rental_rate'] = out['iso3_r250_label'].map(rate)
+    out['timber_provision_gep_cwon_rent'] = (out['timber_provision_cwon_revenue']
+                                             * out['timber_provision_cwon_rental_rate'])
+    assumed = (out['timber_provision_gep_cwon_rent'].isna()
+               & out['iso3_r250_label'].isin(set(assumed_zero_countries)))
+    out.loc[assumed, 'timber_provision_gep_cwon_rent'] = 0.0
+    out['timber_provision_cwon_rent_assumed_zero'] = assumed
+    return out
 
 
 def roundwood_gross_value_by_country(fao_df, countries_df, year):
