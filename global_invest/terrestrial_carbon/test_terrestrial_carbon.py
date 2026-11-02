@@ -16,13 +16,19 @@ from global_invest.terrestrial_carbon import terrestrial_carbon_functions as tcf
 from global_invest.terrestrial_carbon import terrestrial_carbon_tasks as tct
 
 
-def _write_tif(path, array, dtype, nodata=None):
+def _write_tif(path, array, dtype, nodata=None, geotransform=None, crs=4326):
+    """crs is an EPSG code or a PROJ string."""
     from osgeo import gdal, osr
     array = np.asarray(array)
     h, w = array.shape
     ds = gdal.GetDriverByName('GTiff').Create(str(path), w, h, 1, dtype)
-    ds.SetGeoTransform((-180.0, 360.0 / w, 0.0, 90.0, 0.0, -180.0 / h))
-    srs = osr.SpatialReference(); srs.ImportFromEPSG(4326); ds.SetProjection(srs.ExportToWkt())
+    ds.SetGeoTransform(geotransform or (-180.0, 360.0 / w, 0.0, 90.0, 0.0, -180.0 / h))
+    srs = osr.SpatialReference()
+    if isinstance(crs, int):
+        srs.ImportFromEPSG(crs)
+    else:
+        srs.ImportFromProj4(crs)
+    ds.SetProjection(srs.ExportToWkt())
     band = ds.GetRasterBand(1)
     if nodata is not None:
         band.SetNoDataValue(float(nodata))
@@ -61,6 +67,236 @@ def test_stack_groups_by_two_rasters_with_mean_and_count(tmp_path):
     assert df.loc[(10, 101), 'carbon_density_mean'] == 5.0     # mean of [4, 6]
     assert df.loc[(10, 101), 'carbon_density_count'] == 2
     assert df.loc[(20, 101), 'carbon_density_mean'] == 9.0     # mean of [8, 10]
+
+
+# --- carbon_density_table and the base-year map: the lookup's land cover against the map's -----------
+
+def _lookup_year_scene(tmp_path, lookup_shape=(2, 2), lookup_geotransform=None, lookup_crs=4326, base_crs=4326):
+    """2010 classes [[10, 10], [20, 20]] and 2019 classes [[10, 20], [20, 20]] on one 2x2 grid, one
+    carbon zone, Spawn densities [[4, 6], [8, 10]]. The lookup_* arguments move the 2010 map off
+    that grid."""
+    from osgeo import gdal
+    lulc_2010, lulc_2019 = tmp_path / 'lulc_2010.tif', tmp_path / 'lulc_2019.tif'
+    cz, dens = tmp_path / 'cz.tif', tmp_path / 'dens.tif'
+    _write_tif(lulc_2010, np.resize([[10, 10], [20, 20]], lookup_shape), gdal.GDT_Byte,
+               geotransform=lookup_geotransform, crs=lookup_crs)
+    _write_tif(lulc_2019, [[10, 20], [20, 20]], gdal.GDT_Byte, crs=base_crs)
+    _write_tif(cz, [[101, 101], [101, 101]], gdal.GDT_UInt32)
+    _write_tif(dens, [[4.0, 6.0], [8.0, 10.0]], gdal.GDT_Float32, nodata=np.nan)
+    return SimpleNamespace(cur_dir=str(tmp_path), run_this=1, gep_base_year=2019,
+                           carbon_density_lookup_lulc_path=str(lulc_2010),
+                           gep_lulc_input_path=str(lulc_2019), gep_quantity_input_path=str(cz),
+                           reprojected_total_carbon_density_path=str(dens))
+
+
+def test_lookup_groups_by_the_2010_land_cover_and_the_map_applies_it_to_2019(tmp_path, monkeypatch):
+    """Grouped by the 2010 classes the lookup gives class 10 the mean of [4, 6] and class 20 the mean
+    of [8, 10]. Grouped by 2019 it would give 4 and 8. The base-year map then reads the 2019
+    classes, so the cell that is class 10 in 2010 and class 20 in 2019 takes class 20's 9."""
+    from osgeo import gdal
+    monkeypatch.setattr(tct, 'publish_inputs', lambda p: p)
+    p = _lookup_year_scene(tmp_path)
+
+    tct.carbon_density_table(p)
+    tct.carbon_density_raster_base_year(p)
+
+    lookup = pd.read_csv(p.carbon_density_lookup_table_path).set_index(['lulc_id', 'carbon_zone_id'])
+    assert lookup.loc[(10, 101), 'carbon_density_mean'] == 5.0
+    assert lookup.loc[(10, 101), 'carbon_density_count'] == 2
+    assert lookup.loc[(20, 101), 'carbon_density_mean'] == 9.0
+    density = gdal.Open(p.carbon_density_raster_base_year_path).ReadAsArray()
+    assert density.tolist() == [[5.0, 9.0], [9.0, 9.0]]
+
+
+# A transverse Mercator that matches no EPSG code, so the GeoTIFF keeps its parameters and both
+# rasters read back with the same name ("unknown"), datum and unit.
+_CUSTOM_TM = '+proj=tmerc +lat_0=0 +lon_0=%d +k=0.9 +x_0=500000 +y_0=0 +datum=WGS84 +units=m +no_defs'
+
+
+@pytest.mark.parametrize('off_grid', [
+    dict(lookup_shape=(4, 4)),                                                    # finer cells
+    dict(lookup_shape=(3, 3), lookup_geotransform=(-180.0, 180.0, 0.0, 90.0, 0.0, -90.0)),  # same cells, more of them
+    dict(lookup_geotransform=(-90.0, 180.0, 0.0, 90.0, 0.0, -90.0)),              # shifted half the globe east
+    dict(lookup_geotransform=(-179.9999, 180.0, 0.0, 90.0, 0.0, -90.0)),          # 1e-4 degrees, 0.036 of a 300 m cell
+    dict(lookup_crs=3857),                                                        # same numbers, metres not degrees
+    dict(lookup_crs=_CUSTOM_TM % 15, base_crs=_CUSTOM_TM % 9),                     # same name, central meridian 15 not 9
+], ids=['resolution', 'size', 'shift', 'small_shift', 'projection', 'projection_parameter'])
+def test_lookup_refuses_a_land_cover_on_another_grid(tmp_path, monkeypatch, off_grid):
+    """A 2010 land cover that does not share the base-year grid cannot pair its cells with the Spawn
+    densities aligned to that grid, so the lookup refuses rather than group misaligned cells. The small
+    shift sits inside a relative tolerance of 1e-6 at an origin of -180, so it fails only an exact
+    comparison. The two projection cases keep size and geotransform identical, so only the CRS tells
+    the grids apart. In the last, only a projection parameter does: a comparison of CRS names, datum
+    and unit passes it."""
+    monkeypatch.setattr(tct, 'publish_inputs', lambda p: p)
+    p = _lookup_year_scene(tmp_path, **off_grid)
+    with pytest.raises(ValueError, match='Grid mismatch between lookup land cover'):
+        tct.carbon_density_table(p)
+    assert not os.path.exists(p.carbon_density_lookup_table_path)
+
+
+# --- carbon zone 0: no key in the lookup, no density in the map, a stale lookup refused --------------
+
+def _zone0_scene(tmp_path):
+    """One land cover for both years, [[10, 10, 30], [10, 20, 20]], over carbon zones
+    [[0, 101, 101], [0, 101, 101]], with Spawn densities [[4, 6, 0], [2, 8, 10]]. Class 30 in zone 101
+    is a valid zero."""
+    from osgeo import gdal
+    lulc, cz, dens = tmp_path / 'lulc.tif', tmp_path / 'cz.tif', tmp_path / 'dens.tif'
+    _write_tif(lulc, [[10, 10, 30], [10, 20, 20]], gdal.GDT_Byte)
+    _write_tif(cz, [[0, 101, 101], [0, 101, 101]], gdal.GDT_UInt32)
+    _write_tif(dens, [[4.0, 6.0, 0.0], [2.0, 8.0, 10.0]], gdal.GDT_Float32, nodata=np.nan)
+    return SimpleNamespace(cur_dir=str(tmp_path), run_this=1, gep_base_year=2019,
+                           carbon_density_lookup_lulc_path=str(lulc), gep_lulc_input_path=str(lulc),
+                           gep_quantity_input_path=str(cz), reprojected_total_carbon_density_path=str(dens))
+
+
+def test_the_lookup_leaves_carbon_zone_0_out_and_keeps_every_other_key(tmp_path, monkeypatch):
+    """Grouped over all zones the scene gives (10, 0) the mean of [4, 2]. That key is not written, and
+    the zone-101 keys are exactly what the summary over all zones gives them."""
+    monkeypatch.setattr(tct, 'publish_inputs', lambda p: p)
+    p = _zone0_scene(tmp_path)
+    every_zone = tct.stack_layers_summary(p.carbon_density_lookup_lulc_path, p.gep_quantity_input_path,
+                                          p.reprojected_total_carbon_density_path, group1_name='lulc_id',
+                                          group2_name='carbon_zone_id', value_name='carbon_density')
+    assert ((every_zone.carbon_zone_id == 0) & (every_zone.lulc_id == 10)).sum() == 1
+
+    tct.carbon_density_table(p)
+
+    lookup = pd.read_csv(p.carbon_density_lookup_table_path)
+    assert (lookup.carbon_zone_id != 0).all()
+    expected = every_zone[every_zone.carbon_zone_id != 0].reset_index(drop=True)
+    pd.testing.assert_frame_equal(lookup, expected, check_dtype=False)
+    assert lookup.set_index(['lulc_id', 'carbon_zone_id']).loc[(20, 101), 'carbon_density_mean'] == 9.0
+
+
+def test_a_zone_0_cell_is_missing_in_the_map_and_a_valid_zero_stays_zero(tmp_path, monkeypatch):
+    """Both zone-0 cells come out NaN, not 0. Class 30 in zone 101 averages a real 0 and keeps it."""
+    from osgeo import gdal
+    monkeypatch.setattr(tct, 'publish_inputs', lambda p: p)
+    p = _zone0_scene(tmp_path)
+
+    tct.carbon_density_table(p)
+    tct.carbon_density_raster_base_year(p)
+
+    density = gdal.Open(p.carbon_density_raster_base_year_path).ReadAsArray()
+    assert np.isnan(density[0, 0]) and np.isnan(density[1, 0])
+    assert density[0, 2] == 0.0
+    assert density[0, 1] == 6.0 and density[1, 1] == 9.0 and density[1, 2] == 9.0
+
+
+@pytest.mark.parametrize('run_this', [1, 0], ids=['running', 'skipped'])
+def test_a_lookup_built_before_the_zone_0_rule_is_refused(tmp_path, monkeypatch, run_this):
+    """A lookup that still carries a zone-0 key is refused by the map task, also when that task is
+    skipped, since skip_existing would otherwise reuse the old lookup and everything built from it."""
+    monkeypatch.setattr(tct, 'publish_inputs', lambda p: p)
+    p = _zone0_scene(tmp_path)
+    p.run_this = run_this
+    p.carbon_density_lookup_table_path = str(tmp_path / 'carbon_density_lookup_table.csv')
+    pd.DataFrame({'lulc_id': [10, 10], 'carbon_zone_id': [0, 101], 'carbon_density_mean': [3.0, 6.0]}).to_csv(
+        p.carbon_density_lookup_table_path, index=False)
+
+    with pytest.raises(ValueError, match='carbon_density_table, carbon_density_raster_base_year'):
+        tct.carbon_density_raster_base_year(p)
+    assert not os.path.exists(tmp_path / 'projected_carbon_density_2019.tif')
+
+
+# --- gep_calculation: every country keeps a row --------------------------------------------------
+
+def test_every_country_keeps_a_row_with_missing_and_measured_zero_apart(tmp_path, monkeypatch):
+    """Five countries. AAA is valued. BBB is a measured zero: its region holds valid cells that sum
+    to 0. CCC has no region row at all, as when every cell is in carbon zone 0, and comes out blank.
+    DDD is split and one sub-region has no row, so it is the other sub-region alone. EEE is split
+    with both sub-regions valued, so it is their sum."""
+    import geopandas as gpd
+    from shapely.geometry import box
+    monkeypatch.setattr(tct, 'publish_inputs', lambda p: p)
+    attrs = dict(continent='C', region_un='U', region_wb='W', income_grp='I', subregion='S')
+    r264 = pd.DataFrame([
+        (1, 1.0, 'AAA', 'AAA'), (2, 2.0, 'BBB', 'BBB'), (3, 3.0, 'CCC', 'CCC'),
+        (4, 4.0, 'DDD', 'DDD'), (5, 4.0, 'DDX', 'DDD'), (6, 5.0, 'EEE', 'EEE'), (7, 5.0, 'EEX', 'EEE')],
+        columns=['ee_r264_id', 'iso3_r250_id', 'ee_r264_label', 'iso3_r250_label']).assign(
+        ee_r264_name=lambda d: d.ee_r264_label, iso3_r250_name=lambda d: d.iso3_r250_label, **attrs)
+    present = {1: 2.0, 2: 0.0, 4: 10.0, 6: 3.0, 7: 4.0}        # regions 3 and 5 hold no valid cell
+    regions = r264[r264.ee_r264_id.isin(present)].assign(
+        year=2019, total=lambda d: d.ee_r264_id.map(present), count=5)
+    regions_path, price_path = tmp_path / 'carbon_by_region.csv', tmp_path / 'carbon_prices.xlsx'
+    regions.to_csv(regions_path, index=False)
+    pd.DataFrame({'year': [2018, 2019], 'rental scc r2%': [12.0, 13.0]}).to_excel(price_path, index=False)
+    simplified_path = tmp_path / 'countries_simplified.gpkg'
+    gpd.GeoDataFrame(r264[['ee_r264_id']], geometry=[box(i, 0, i + 1, 1) for i in range(len(r264))],
+                     crs=4326).to_file(simplified_path, driver='GPKG')
+    cur_dir = tmp_path / 'gep_calculation'
+    cur_dir.mkdir()
+    p = SimpleNamespace(cur_dir=str(cur_dir), run_this=1, results={}, gep_base_year=2019,
+                        gep_price_convention='rental scc r2%', gep_price_input_path=str(price_path),
+                        carbon_by_region_base_year_path=str(regions_path), df_countries=r264,
+                        gdf_countries_simplified=str(simplified_path))
+
+    total = tct.gep_calculation(p)
+
+    written = pd.read_csv(os.path.join(p.cur_dir, 'gep_by_country_base_year.csv'))
+    assert list(written.columns) == tcf.CARBON_ATTR_COLS + ['year', 'terrestrial_carbon_quantity',
+                                                            'rental scc r2%', 'terrestrial_carbon_gep']
+    assert written.iso3_r250_id.is_monotonic_increasing
+    out = written.set_index('iso3_r250_label')
+    assert sorted(out.index) == ['AAA', 'BBB', 'CCC', 'DDD', 'EEE'] and out.iso3_r250_id.is_unique
+    assert out.loc['AAA', 'terrestrial_carbon_quantity'] == 2.0 and out.loc['AAA', 'terrestrial_carbon_gep'] == 26.0
+    assert out.loc['BBB', 'terrestrial_carbon_quantity'] == 0.0 and out.loc['BBB', 'terrestrial_carbon_gep'] == 0.0
+    assert np.isnan(out.loc['CCC', 'terrestrial_carbon_quantity']) and np.isnan(out.loc['CCC', 'terrestrial_carbon_gep'])
+    assert out.loc['CCC', 'year'] == 2019 and out.loc['CCC', 'rental scc r2%'] == 13.0
+    assert out.loc['DDD', 'terrestrial_carbon_quantity'] == 10.0
+    assert out.loc['EEE', 'terrestrial_carbon_quantity'] == 7.0
+    assert total == 13.0 * (2.0 + 0.0 + 10.0 + 7.0)
+
+
+def test_the_lookup_land_cover_is_configured_as_2010():
+    """es_parameters names the 2010 map for the lookup, and es_config keeps 2019 for the base year."""
+    params = pd.read_csv(os.path.join(os.path.dirname(utilities.__file__), 'input_template', 'es_parameters.csv'))
+    row = params[(params.service == 'terrestrial_carbon') & (params.parameter == 'carbon_density_lookup_lulc_path')]
+    assert row.value.tolist() == ['lulc/esa/lulc_esa_2010.tif']
+    config = pd.read_csv(os.path.join(os.path.dirname(utilities.__file__), 'input_template', 'es_config.csv'))
+    assert config.loc[config.iloc[:, 0] == 'terrestrial_carbon', 'gep_lulc_input_path'].tolist() == ['lulc/esa/lulc_esa_2019.tif']
+
+
+def _hydrated_from_a_copy_predating_the_row(tmp_path, **caller_set):
+    """Hydrate terrestrial_carbon from a project input/ copy of es_parameters made before the lookup
+    rows existed, with one local value of its own. get_path is stubbed to a base_data join."""
+    template = os.path.join(os.path.dirname(utilities.__file__), 'input_template', 'es_parameters.csv')
+    stale = pd.read_csv(template)
+    stale = stale[~stale.parameter.str.startswith('carbon_density_lookup_lulc_', na=False)]
+    stale.loc[stale.parameter == 'terrestrial_carbon_shock_acts', 'value'] = 'FRS_LOCAL'
+    (tmp_path / 'input').mkdir()
+    stale.to_csv(tmp_path / 'input' / 'es_parameters.csv', index=False)
+    p = SimpleNamespace(input_dir=str(tmp_path / 'input'), **caller_set,
+                        get_path=lambda ref, raise_error_if_fail=True: os.path.join('BASE', ref))
+    utilities.hydrate_es_parameters(p, 'terrestrial_carbon', log=lambda *args: None)
+    return p, pd.read_csv(tmp_path / 'input' / 'es_parameters.csv')
+
+
+def test_a_project_copy_predating_the_row_takes_it_and_keeps_its_own_values(tmp_path):
+    """The saved project's input/ copy predates the lookup row. Hydration appends the row from the
+    template and sets the 2010 map on p, and the copy's own values stay as they were."""
+    p, copy = _hydrated_from_a_copy_predating_the_row(tmp_path)
+    assert p.carbon_density_lookup_lulc_path == os.path.join('BASE', 'lulc/esa/lulc_esa_2010.tif')
+    assert copy.loc[copy.parameter == 'carbon_density_lookup_lulc_path', 'value'].tolist() == ['lulc/esa/lulc_esa_2010.tif']
+    assert p.terrestrial_carbon_shock_acts == 'FRS_LOCAL'
+    assert copy.loc[copy.parameter == 'terrestrial_carbon_shock_acts', 'value'].tolist() == ['FRS_LOCAL']
+
+
+def test_a_caller_set_lookup_land_cover_wins_over_the_template(tmp_path):
+    p, _ = _hydrated_from_a_copy_predating_the_row(tmp_path, carbon_density_lookup_lulc_path='caller_2010.tif')
+    assert p.carbon_density_lookup_lulc_path == 'caller_2010.tif'
+
+
+def test_the_lookup_land_cover_stays_out_of_the_carbon_shock_signature(tmp_path):
+    """The shock tasks reuse their table while the terrestrial_carbon_ settings and inputs are
+    unchanged, and they read their own lookup table, not the one carbon_density_table builds. A
+    prefixed lookup row would change every recorded shock signature and rebuild every shock."""
+    p, _ = _hydrated_from_a_copy_predating_the_row(tmp_path)
+    settings, inputs = utilities._service_settings_and_inputs(p, 'terrestrial_carbon')
+    assert 'terrestrial_carbon_shock_acts' in settings                     # the signature does see the hydrated rows
+    assert not [k for k in list(settings) + list(inputs) if 'lookup_lulc' in k]
 
 
 # --- terrestrial_carbon_shock_static (linear ramp, differencing, loud skip) ----------

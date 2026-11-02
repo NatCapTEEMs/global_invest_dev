@@ -77,8 +77,16 @@ of current write-ups. The registered code is the `terrestrial_carbon` folder of
 `NatCapTEEMs/global_invest_dev` at `3be9ae5` (folder last changed at `f0de419`). The library
 follows its chain: Spawn et al. (2020) above- and below-ground biomass carbon for 2010, scaled
 from integers to Mg C per hectare and added, reprojected by nearest neighbour onto the land-cover
-grid, a lookup of the mean density per land-cover class and carbon zone (2,855 keys), the 2019
-density raster from it, times hectares per cell, summed by region and then by country.
+grid, a lookup of the mean density per land-cover class and carbon zone, the 2019 density raster
+from it, times hectares per cell, summed by region and then by country. The lookup's classes come
+from the 2010 land cover, the year of the Spawn map, as in the write-up and the authors' current
+code, and the lookup is applied to the 2019 land cover.
+
+Carbon zone 0 is the zone map's fill, the cells outside every carbon zone. As in the authors' code,
+it has no key in the lookup, so its cells carry no density, missing rather than zero. A country
+whose regions hold no valid cell is therefore missing, a blank row. A country whose valid cells sum
+to zero is zero. The price is the series value at full precision, 13.185088586933462 per Mg C. The
+authors' table rounds it to 13.19, which on the same stock puts their total \$1.98 billion higher.
 
 The library differs from the registered code in three places, none of them a method change. It
 publishes one row per country, where the registered code repeats a split country's value on
@@ -96,15 +104,18 @@ r250 identifiers and attributes, `year`, `terrestrial_carbon_quantity` (Mg C), t
 ## Coverage
 
 The published table is one row for each of the account's 250 countries, base year 2019, in 2019
-USD. Every row carries a value, totalling \$5,364,951,396,387.05 on 406.9 billion Mg C. None is
-zero and none is missing. A zero means the computation returned zero. A missing row means the
-data to compute one is absent.
+USD. 234 rows carry a value, totalling \$5,328,155,728,197.37 on 404.1 billion Mg C. Antarctica is
+zero and 15 small islands and territories are missing, the same rows as in the authors' table. A zero means the
+computation returned zero. A missing row means the data to compute one is absent.
 
 ## What is open
 
-- The lookup year. The write-up builds the density lookup from ESA land cover for 2010, the year
-  of the Spawn map. The registered code and the library build it from 2019 land cover, so 2010
-  biomass is paired with 2019 classes. This is a question for the authors.
+- The residual against the authors' 1 September table is explained in total, not country by
+  country. Keys and masks are identical. Priced at their 13.19, the values differ by \$6,659 in
+  total, 504.86 Mg C or 1.25e-9 of the stock, and every country lies within the bound that float32
+  storage of the densities allows, the largest at 9.1e-8. In total the residual splits into the
+  lookup means and the per-cell storage. The account keeps 13.185088586933462 from the price
+  table, where the authors' code uses 13.19.
 - The lookup means are checked for range and plausibility, not recomputed from the Spawn raster,
   which takes one global pass over 8.4 billion cells.
 

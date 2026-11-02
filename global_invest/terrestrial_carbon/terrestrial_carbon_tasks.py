@@ -4,6 +4,7 @@ from tqdm import tqdm
 from osgeo import gdal
 
 import pandas as pd
+import rasterio
 import hazelbean as hb
 import numpy as np
 
@@ -12,6 +13,9 @@ from global_invest import utilities
 from global_invest.terrestrial_carbon import terrestrial_carbon_functions as tcf
 
 SPAWN_INTEGER_SCALE = 0.1  # raw Spawn tiles store carbon as integers x10; x0.1 recovers Mg C/ha
+# Carbon zone 0 is the zone map's fill, the cells outside every carbon zone (an id is >= 1, 0 is no data).
+# The authors' code leaves it out of the lookup and the map (c0c86ba and ef89219, functions lines 594, 684).
+CARBON_ZONE_NDV = 0
 
 
 
@@ -108,18 +112,41 @@ def total_carbon_density(p):
 
 
 def carbon_density_table(p):
+    """The density lookup: mean Spawn biomass carbon per land-cover class and carbon zone.
+
+    The classes come from the 2010 land cover (carbon_density_lookup_lulc_path), the year of the
+    Spawn map, so biomass and class describe the same year. carbon_density_raster_base_year then
+    applies the lookup to the base-year land cover (gep_lulc_input_path).
+
+    The parameter carries no terrestrial_carbon_ prefix, like total_carbon_density_path, so it
+    stays out of the carbon-shock reuse signature: the shock reads its own lookup table, not this one.
+
+    Carbon zone 0 has no key. The lookup is applied by reindex, so a zone-0 cell gets no density
+    (missing, never 0), and every other key is untouched, since zone-0 cells feed only zone-0 keys.
+
+    Raises:
+        ValueError: from utilities.assert_same_grid, if the lookup land cover and the base-year land
+            cover the Spawn raster was aligned to differ in CRS (compared in full, parameters
+            included), shape or transform, since the cells would then not pair.
+    """
     publish_inputs(p)
     p.carbon_density_lookup_table_path = os.path.join(p.cur_dir, "carbon_density_lookup_table.csv")
     if not p.run_this:
         return True
 
+    with rasterio.open(p.carbon_density_lookup_lulc_path) as lookup_lulc, rasterio.open(p.gep_lulc_input_path) as base_lulc:
+        # rtol=0: a relative tolerance scales with the coordinates, and at an origin of -180 the
+        # default 1e-6 lets a 0.036-cell shift of the 300 m grid through. The 1e-9 absolute allowance stays.
+        utilities.assert_same_grid(lookup_lulc, base_lulc, label_a='lookup land cover ' + p.carbon_density_lookup_lulc_path,
+                                   label_b='base-year land cover ' + p.gep_lulc_input_path, rtol=0)
     summary = stack_layers_summary(
-        group_layer1_path=p.gep_lulc_input_path,
+        group_layer1_path=p.carbon_density_lookup_lulc_path,
         group_layer2_path=p.gep_quantity_input_path,
         value_layer_path=p.reprojected_total_carbon_density_path,
         group1_name="lulc_id",
         group2_name="carbon_zone_id",
         value_name="carbon_density")
+    summary = summary[summary['carbon_zone_id'] != CARBON_ZONE_NDV]
     summary.to_csv(p.carbon_density_lookup_table_path, index=False)
     return True
 
@@ -127,6 +154,16 @@ def carbon_density_table(p):
 def carbon_density_raster_base_year(p):
     publish_inputs(p)
     p.carbon_density_raster_base_year_path = os.path.join(p.cur_dir, f"projected_carbon_density_{p.gep_base_year}.tif")
+    # Checked before the skip: skip_existing keys on the folder alone, so a project built before zone 0
+    # was left out would otherwise reuse its lookup and the four outputs built from it without a word.
+    if hb.path_exists(p.carbon_density_lookup_table_path):
+        lookup_zones = pd.read_csv(p.carbon_density_lookup_table_path, usecols=['carbon_zone_id'])['carbon_zone_id']
+        if (lookup_zones == CARBON_ZONE_NDV).any():
+            raise ValueError(
+                f"{p.carbon_density_lookup_table_path} holds carbon zone {CARBON_ZONE_NDV}, which the lookup now "
+                f"leaves out: it predates that rule. Move carbon_density_table, carbon_density_raster_base_year, "
+                f"carbon_density_raster_per_cell_base_year, carbon_by_region and gep_calculation aside together, "
+                f"then rerun.")
     if not p.run_this:
         return True
     tcf.generate_carbon_density_raster(
@@ -220,6 +257,14 @@ def gep_calculation(p):
     df_regions = hb.df_read(p.carbon_by_region_base_year_path)
     df_price = pd.read_excel(p.gep_price_input_path)[[p.gep_price_convention, 'year']]
     df_gep = tcf.collapse_regions_to_countries(df_regions, df_price, p.gep_price_convention)
+    # Every country keeps a row. One whose regions hold no valid cell (all of it in carbon zone 0, say)
+    # has no region row, so it is added here with quantity and value blank: missing, never 0. A
+    # measured zero is a region row with total 0 and stays 0. The valued rows are not touched.
+    countries = utilities.collapse_countries_to_r250(p.df_countries)[tcf.CARBON_ATTR_COLS]
+    absent = countries[~countries['iso3_r250_id'].isin(df_gep['iso3_r250_id'])].assign(
+        year=df_gep['year'].iloc[0], **{p.gep_price_convention: df_gep[p.gep_price_convention].iloc[0]})
+    df_gep = (pd.concat([df_gep, absent], ignore_index=True)[df_gep.columns]
+              .sort_values('iso3_r250_id', kind='stable').reset_index(drop=True))
     hb.df_write(df_gep, service_results['gep_by_country_base_year'])
 
     # Map only: r264-expanded, each sub-region carries its country's value, never summed.

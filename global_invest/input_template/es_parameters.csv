@@ -12,6 +12,8 @@ terrestrial_carbon,terrestrial_carbon_density_lookup_table_path,global_invest/te
 terrestrial_carbon,terrestrial_carbon_shock_id_col,ee_r50_aez18_id
 terrestrial_carbon,total_carbon_density_path,global_invest/terrestrial_carbon/spawn_total_biomass_carbon_2010.tif
 terrestrial_carbon,spawn_raw_input_path,terrestrial_carbon/spawn_2020
+terrestrial_carbon,carbon_density_lookup_lulc_path,lulc/esa/lulc_esa_2010.tif
+terrestrial_carbon,carbon_density_lookup_lulc_source,"ESA CCI land cover for 2010, the year of the Spawn et al. (2020) biomass map, so the density lookup pairs 2010 biomass with 2010 classes (the authors' write-up of 28 Oct 2026, confirmed by Yanxu 1 Nov 2026, and develop_yanxu ef89219 run_terrestrial_carbon.py base_year_lulc_path). The lookup is applied to the base-year map, gep_lulc_input_path (2019)."
 pollination,region_boundary_path,gtap_invest/region_boundaries/ee_r50_aez18_correspondence.gpkg
 pollination,pollination_zone_labels_path,gtap_invest/region_boundaries/ee_r50_aez18_correspondence.csv
 pollination,pollination_shock_acts,"[""V_F"", ""OSD""]"
