@@ -12,30 +12,46 @@ Nations 2024 package at the GEP base year of 2019.
 
 ## Quantity and price
 
-There is no separate quantity step and no separate price step. CWoN reports the rent itself, in
-current USD per country per year, so the module reads that number and carries it through. The
-price convention recorded for this service in `es_config.csv` is `resource rent`.
+For gas and oil the quantity is CWoN's production (TJ of gas, barrels of oil) and the price is
+CWoN's unit rent in current USD per unit. The rent is their product, as CWoN computes it. For coal
+the module takes CWoN's published rent. CWoN builds coal rent as thermal plus metallurgical plus
+brown coal, each priced from mine-level prices and costs by coal type, and the package ships those
+inputs for no coal type. The price convention recorded for this service in `es_config.csv` is
+`resource rent`.
 
 ## Valuation
 
-`fuel_rent_by_country_from_cwon` takes one CWoN table and returns one row per country holding the
-`YR<year>` column at the requested year. The CWoN tables are wide, keyed on `countrycode` with
-World Bank codes that match `iso3_r250_label` directly, Kosovo included as XKX.
+`fuel_rent_from_production_and_unit_rent` computes gas or oil rent at the requested year. It
+matches the production and unit-rent tables on `countrycode`, one to one, and multiplies. A
+country missing either input has no rent, and a zero in either is a zero rent, because CWoN floors
+negative unit rents at zero. Nothing is filled. A table carrying another series label, or repeating
+a country code, is refused. The CWoN tables are wide, keyed on `countrycode` with World Bank codes
+that match `iso3_r250_label` directly, Kosovo included as XKX.
 
-`extractive_energy_gep_from_cwon` runs that read once per fuel and sums the three components with
-`min_count=1`. A country absent from one fuel's table stays NaN in that component and still
-receives a service total from the components that do exist, so a country with only coal is a coal
-country rather than a missing one. Components sum by the same commodity convention that
-extractive materials provision uses.
+`fuel_rent_by_country_from_cwon` reads coal's published rent at the requested year.
+`compare_with_published_rent` checks the computed gas and oil rent against CWoN's published
+`<fuel>_rent_cd`. In 2019 they agree in every country, 98 for gas and 99 for oil, with the same
+missing countries and relative differences below 2e-16.
+
+`extractive_energy_gep_from_cwon` joins the three components to the r250 countries, one to one,
+and refuses a valued country code with no r250 row. It sums the components with `min_count=1`. A
+country absent from one fuel's table stays NaN in that component and still receives a service
+total from the components that do exist, so a country with only coal is a coal country rather than
+a missing one. Components sum by the same commodity convention that extractive materials provision
+uses.
 
 ## Inputs
 
 From `es_parameters.csv`, all scoped to the `extractive_energy` service:
 
+- `extractive_energy_cwon_{gas,oil}_production_path` and
+  `extractive_energy_cwon_{gas,oil}_unit_rent_path`, the Stata production and unit-rent tables
+  the gas and oil rent is computed from.
 - `extractive_energy_cwon_gas_path`, `extractive_energy_cwon_coal_path` and
-  `extractive_energy_cwon_oil_path`, the Stata rent tables the valuation computes from. Each
-  carries a `_source_url` row pointing at the World Bank reproducibility archive and a
-  `_source_archive_member` row naming the file inside it, under
+  `extractive_energy_cwon_oil_path`, the Stata published rent tables: coal's is the valuation, and
+  gas's and oil's are the check.
+- Each Stata table carries a `_source_url` row pointing at the World Bank reproducibility archive
+  and a `_source_archive_member` row naming the file inside it, under
   `Reproducibility package/Output/Latest/`.
 - `extractive_energy_gas_path`, `extractive_energy_coal_path` and `extractive_energy_oil_path`,
   the three committed per-country CSVs from the consortium drive, kept as the replication anchor.
@@ -63,7 +79,8 @@ itself reads "Serbia". The values were verified equal in every fuel where the ro
 
 ## Taken as given
 
-The CWoN rent estimation is upstream science and is used as published.
+CWoN's production and unit-rent estimates for gas and oil, and its coal rent estimation, are
+upstream science and are used as published.
 
 ## What is open
 

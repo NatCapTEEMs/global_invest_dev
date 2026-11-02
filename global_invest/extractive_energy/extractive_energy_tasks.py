@@ -1,4 +1,5 @@
-"""Extractive-energy GEP tasks: CWoN 2024 fuel rents computed onto the r250 rows."""
+"""Extractive-energy GEP tasks: CWoN 2024 fuel rents onto the r250 rows, gas and oil computed as
+production times unit rent, coal as published."""
 
 import pandas as pd
 import hazelbean as hb
@@ -27,15 +28,29 @@ def gep_calculation(p):
 
     if not p.run_this:
         return p
-    gas_cwon = pd.read_stata(p.extractive_energy_cwon_gas_path)
+    tables = {fuel: {'production': pd.read_stata(getattr(p, f'extractive_energy_cwon_{fuel}_production_path')),
+                     'unit_rent': pd.read_stata(getattr(p, f'extractive_energy_cwon_{fuel}_unit_rent_path'))}
+              for fuel in xe.COMPUTED_RENT_FUELS}
     coal_cwon = pd.read_stata(p.extractive_energy_cwon_coal_path)
-    oil_cwon = pd.read_stata(p.extractive_energy_cwon_oil_path)
     attr_cols = ['iso3_r250_id', 'iso3_r250_label', 'iso3_r250_name',
                  'continent', 'region_un', 'region_wb', 'income_grp', 'subregion']
     countries = utilities.collapse_countries_to_r250(p.df_countries)[attr_cols]
-    df_gep = xe.extractive_energy_gep_from_cwon(gas_cwon, coal_cwon, oil_cwon, countries,
-                                                p.gep_base_year)
+    df_gep = xe.extractive_energy_gep_from_cwon(
+        tables['gas']['production'], tables['gas']['unit_rent'], coal_cwon,
+        tables['oil']['production'], tables['oil']['unit_rent'], countries, p.gep_base_year)
     df_gep['year'] = int(p.gep_base_year)
+
+    # The published rent tables are read only to check the computed rent against them.
+    for fuel in xe.COMPUTED_RENT_FUELS:
+        computed = xe.fuel_rent_from_production_and_unit_rent(
+            tables[fuel]['production'], tables[fuel]['unit_rent'], p.gep_base_year,
+            xe.CWON_PRODUCTION_SERIES[fuel], xe.CWON_UNIT_RENT_SERIES[fuel])
+        check = xe.compare_with_published_rent(
+            computed, pd.read_stata(getattr(p, f'extractive_energy_cwon_{fuel}_path')), p.gep_base_year)
+        hb.log(f'{fuel} rent, production x unit rent against CWoN {fuel}_rent_cd: {check["countries_both"]} '
+               f'countries in both, masks equal {check["masks_equal"]}, largest relative difference '
+               f'{check["max_relative_difference"]:.3g}, totals {check["total_computed"]:,.2f} and '
+               f'{check["total_published"]:,.2f}')
     hb.df_write(df_gep[attr_cols + ['year', 'extractive_energy_gas_gep',
                                     'extractive_energy_coal_gep', 'extractive_energy_oil_gep',
                                     'extractive_energy_gep']],
