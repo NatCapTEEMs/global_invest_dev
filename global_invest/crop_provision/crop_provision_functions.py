@@ -68,11 +68,34 @@ def area_codes_by_m49(df_fao_raw, aggregate_areas):
     carry, so a filled row takes its code from here. Aggregate areas are dropped first; that is
     what makes China resolve to the account's China row (FAO 351) rather than to the mainland
     component the account drops as an aggregate.
+
+    The successor map folds a dissolved state onto its successor's M49 (Ethiopia PDR's 230 onto
+    Ethiopia's 231; Serbia and Montenegro, Sudan (former) and Czechoslovakia likewise), so two
+    FAO codes can share one normalized code. The successor's own code is kept, the one whose M49
+    already is the normalized code: the dissolved state's code carries no CWoN rental rate, so a
+    fill keyed to it is valued and then lost. Row order in the file plays no part.
+
+    Raises:
+        ValueError: if a normalized code has several FAO codes and not exactly one of them carries
+            that code as its own M49.
     """
     areas = df_fao_raw[~df_fao_raw['Area'].isin(aggregate_areas)]
     areas = areas[['Area Code', 'Area Code (M49)']].drop_duplicates()
-    m49 = normalize_m49_series(areas['Area Code (M49)'])
-    return dict(zip(m49, areas['Area Code'].astype(int)))
+    register = pd.DataFrame({
+        'area_code': areas['Area Code'].astype(int).to_numpy(),
+        'own_m49': areas['Area Code (M49)'].astype(str).str.replace("'", '', regex=False)
+                   .astype(int).to_numpy(),
+        'm49': normalize_m49_series(areas['Area Code (M49)']).to_numpy()})
+    out = {}
+    for m49, group in register.groupby('m49'):
+        codes = sorted(set(group['area_code']))
+        own = sorted(set(group.loc[group['own_m49'] == m49, 'area_code']))
+        if len(codes) > 1 and len(own) != 1:
+            raise ValueError('M49 %d is shared by FAO area codes %s, and %d of them carry it as '
+                             'their own M49, so which one is canonical is ambiguous.'
+                             % (m49, codes, len(own)))
+        out[int(m49)] = int(codes[0] if len(codes) == 1 else own[0])
+    return out
 
 
 def impute_missing_crop_values(df_crop_value, df_fao_values, year, area_code_by_m49,
@@ -93,6 +116,10 @@ def impute_missing_crop_values(df_crop_value, df_fao_values, year, area_code_by_
     keyed on the FAO area code the value file carries), so its rows are left out rather than
     valued without the attribution; the caller's log counts them.
 
+    A pair is filled once, on its canonical FAO code (area_codes_by_m49). A dissolved state's
+    empty row shares its successor's normalized M49 but not its code, so it stays empty, and a
+    pair whose only row is the dissolved state's arrives as a new row on the successor's code.
+
     Args:
         df_crop_value (pd.DataFrame): the cleaned long value frame, thousand USD.
         df_fao_values (pd.DataFrame): the staged fao_values table, with area_code_m49, iso3,
@@ -107,6 +134,10 @@ def impute_missing_crop_values(df_crop_value, df_fao_values, year, area_code_by_
     Returns:
         pd.DataFrame: df_crop_value with the filled rows and a value_source column
         ('faostat', or 'price_<level>' for a filled row).
+
+    Raises:
+        ValueError: if the values table carries a country-item pair twice once M49 codes are
+            normalized, or a pair would carry more than one filled row.
     """
     df = df_crop_value.copy()
     df['value_source'] = np.where(df[value_column].notna(), 'faostat', None)
@@ -127,16 +158,24 @@ def impute_missing_crop_values(df_crop_value, df_fao_values, year, area_code_by_
     gaps = gaps[gaps['m49'].isin(area_code_by_m49)].copy()
     gaps[value_column] = gaps['value_usd'] / utilities.FAOSTAT_THOUSAND_USD
     gaps['value_source'] = 'price_' + gaps['price_source_agg_level']
+    repeated_gaps = gaps[gaps.duplicated(['m49', 'item_code_fao'], keep=False)]
+    if not repeated_gaps.empty:
+        raise ValueError('%d values-table rows at %d repeat a country-item pair once M49 codes are '
+                         'normalized (M49, item), for example %s.'
+                         % (len(repeated_gaps), year, sorted(set(zip(
+                             repeated_gaps['m49'], repeated_gaps['item_code_fao'])))[:5]))
 
     # A pair whose row exists with an empty value is filled in place; a pair with no row at all
-    # arrives as a new row carrying the FAO area code the rental lookup needs.
+    # arrives as a new row carrying the FAO area code the rental lookup needs. Only the row on the
+    # pair's canonical code is filled in place: filling a dissolved state's row as well would
+    # place one value twice, or alone under a code with no rental rate.
     fill_map = {(m, i): (v, s) for m, i, v, s in zip(
         gaps['m49'], gaps['item_code_fao'], gaps[value_column], gaps['value_source'])}
     filled_pairs = set()
     for position in df.index[at_year & df[value_column].isna()]:
         pair = (df_m49[position], df.at[position, 'crop_code'])
         hit = fill_map.get(pair)
-        if hit is not None:
+        if hit is not None and df.at[position, 'area_code'] == area_code_by_m49[pair[0]]:
             df.at[position, value_column], df.at[position, 'value_source'] = hit
             filled_pairs.add(pair)
 
@@ -152,7 +191,17 @@ def impute_missing_crop_values(df_crop_value, df_fao_values, year, area_code_by_
         value_column: to_append[value_column],
         'value_source': to_append['value_source'],
     })
-    return pd.concat([df, new_rows], ignore_index=True)
+    out = pd.concat([df, new_rows], ignore_index=True)
+
+    # One value per pair: a repeated empty row would otherwise count the same production twice.
+    filled = out['value_source'].astype(str).str.startswith('price_')
+    keys = pd.DataFrame({'m49': normalize_m49_series(out.loc[filled, 'area_code_M49']),
+                         'crop_code': out.loc[filled, 'crop_code']})
+    repeated = keys[keys.duplicated(keep=False)]
+    if not repeated.empty:
+        raise ValueError('%d filled rows at %d repeat a country-item pair (M49, item), for example '
+                         '%s.' % (len(repeated), year, sorted(set(map(tuple, repeated.values)))[:5]))
+    return out
 
 
 def items_without_group_totals(items, aggregate_items):

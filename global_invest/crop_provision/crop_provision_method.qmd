@@ -80,7 +80,10 @@ values where they exist and prices only the gaps, rather than repricing all prod
 
 A fill requires a country code that can be linked to the rental-rate lookup. Filled rows
 record the price level in `value_source` (`price_country`, `price_subregion`,
-`price_region`, `price_world`). Reported values are marked `faostat`.
+`price_region`, `price_world`). Reported values are marked `faostat`. A dissolved state's
+rows (Ethiopia PDR, Serbia and Montenegro, Sudan (former), Czechoslovakia) are never filled:
+each country-crop pair is filled once, on its successor's FAO code, which carries the rental
+share.
 
 ### Rental shares, units and outputs
 

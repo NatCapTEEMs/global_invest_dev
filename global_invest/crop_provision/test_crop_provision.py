@@ -672,6 +672,140 @@ def test_area_codes_by_m49_keeps_the_account_row_not_the_aggregate_component():
     assert out[10] == 1
 
 
+def test_area_codes_by_m49_keeps_the_successors_own_code_in_any_row_order():
+    """The successor map folds four dissolved states onto their successor's M49, so two FAO codes
+    share one normalized code. The successor's own code is kept, whichever row the file lists
+    first: the dissolved state's code has no CWoN rental rate. Rows repeat, as in the file."""
+    rows = [(62, "'230", 'Ethiopia PDR'), (238, "'231", 'Ethiopia'),
+            (186, "'891", 'Serbia and Montenegro'), (272, "'688", 'Serbia'),
+            (206, "'736", 'Sudan (former)'), (276, "'729", 'Sudan'),
+            (51, "'200", 'Czechoslovakia'), (167, "'203", 'Czechia')] * 2
+    expected = {231: 238, 688: 272, 729: 276, 203: 167}
+    shuffled = [rows[i] for i in np.random.default_rng(0).permutation(len(rows))]
+    for order in (rows, rows[::-1], shuffled):
+        raw = pd.DataFrame(order, columns=['Area Code', 'Area Code (M49)', 'Area'])
+        assert cp.area_codes_by_m49(raw, aggregate_areas=[]) == expected
+
+
+def test_area_codes_by_m49_refuses_a_shared_code_it_cannot_resolve():
+    """Two codes on one normalized M49 where neither, or both, carry it as their own M49 leave no
+    canonical choice, so the map refuses rather than keep whichever came last."""
+    neither = pd.DataFrame({'Area Code': [62, 63], 'Area Code (M49)': ["'230", "'230"],
+                            'Area': ['Aaaland', 'Bbbland']})
+    both = pd.DataFrame({'Area Code': [238, 239], 'Area Code (M49)': ["'231", "'231"],
+                         'Area': ['Aaaland', 'Bbbland']})
+    for raw in (neither, both):
+        with pytest.raises(ValueError, match='ambiguous'):
+            cp.area_codes_by_m49(raw, aggregate_areas=[])
+
+
+def _ethiopia_values(rows):
+    """The staged values-table columns for Ethiopia (M49 231) at 2019, one row per (item, name,
+    value_usd, level)."""
+    return pd.DataFrame({
+        'area_code_m49': ['231'] * len(rows),
+        'iso3': ['ETH'] * len(rows),
+        'area_fao': ['Ethiopia'] * len(rows),
+        'item_code_fao': [r[0] for r in rows],
+        'item_fao': [r[1] for r in rows],
+        'year': [2019] * len(rows),
+        'total_production_tonnes': [1.0] * len(rows),
+        'price_source_agg_level': [r[3] for r in rows],
+        'value_usd': [r[2] for r in rows],
+    })
+
+
+def test_impute_fills_a_dissolved_and_successor_pair_once_on_the_successors_code():
+    """Ethiopia PDR (62) and Ethiopia (238) share normalized M49 231. Wheat has an empty row on
+    both codes: one fill, on 238, and the PDR row stays empty. Barley's only row is the PDR's, so
+    the fill arrives as a new row on 238. Ethiopia's reported rye stays as reported."""
+    values = pd.DataFrame({
+        'area_code': [62, 238, 62, 238],
+        'area_code_M49': ["'230", "'231", "'230", "'231"],
+        'country': ['Ethiopia PDR', 'Ethiopia', 'Ethiopia PDR', 'Ethiopia'],
+        'crop_code': [15, 15, 44, 71],
+        'crop': ['Wheat', 'Wheat', 'Barley', 'Rye'],
+        'year': [2019] * 4,
+        'crop_provision_gep': [np.nan, np.nan, np.nan, 7.0],
+    })
+    fao_values = _ethiopia_values([(15, 'Wheat', 3000.0, 'country'),
+                                   (44, 'Barley', 800.0, 'subregion'),
+                                   (71, 'Rye', 999.0, 'country')])
+
+    out = cp.impute_missing_crop_values(
+        values, fao_values, 2019, {231: 238}, ['Wheat', 'Barley', 'Rye'])
+
+    filled = out[out['value_source'].astype(str).str.startswith('price_')].set_index('crop')
+    assert sorted(zip(filled['area_code'], filled.index)) == [(238, 'Barley'), (238, 'Wheat')]
+    assert filled.at['Wheat', 'crop_provision_gep'] == pytest.approx(3.0)
+    assert filled.at['Barley', 'crop_provision_gep'] == pytest.approx(0.8)
+    assert filled.at['Barley', 'value_source'] == 'price_subregion'
+    old_state = out[out['area_code'] == 62]
+    assert old_state['crop_provision_gep'].isna().all()
+    assert old_state['value_source'].isna().all()
+    rye = out[out['crop'] == 'Rye']
+    assert list(rye['crop_provision_gep']) == [7.0]
+    assert list(rye['value_source']) == ['faostat']
+    assert len(out) == 5
+
+
+def test_impute_refuses_to_fill_one_country_item_pair_twice():
+    """A repeated empty row on the canonical code would count the same production twice, and a
+    values table carrying one pair under two M49 codes that normalize together offers two values
+    for it. The fill refuses both, whether the pair has a canonical row to fill or is appended."""
+    repeated_row = pd.DataFrame({
+        'area_code': [238, 238], 'area_code_M49': ["'231", "'231"],
+        'country': ['Ethiopia', 'Ethiopia'], 'crop_code': [15, 15], 'crop': ['Wheat', 'Wheat'],
+        'year': [2019, 2019], 'crop_provision_gep': [np.nan, np.nan]})
+    with pytest.raises(ValueError, match='repeat a country-item pair'):
+        cp.impute_missing_crop_values(repeated_row, _ethiopia_values([(15, 'Wheat', 3000.0, 'country')]),
+                                      2019, {231: 238}, ['Wheat'])
+
+    two_codes = _ethiopia_values([(15, 'Wheat', 3000.0, 'country'), (15, 'Wheat', 2000.0, 'country')])
+    two_codes.loc[1, 'area_code_m49'] = '230'
+    for rows in (repeated_row.iloc[:1], repeated_row.iloc[:0]):     # canonical row present, absent
+        with pytest.raises(ValueError, match='repeat a country-item pair'):
+            cp.impute_missing_crop_values(rows, two_codes, 2019, {231: 238}, ['Wheat'])
+
+
+def test_the_staged_2019_fill_places_each_pair_once_and_never_on_a_dissolved_states_code(tmp_path):
+    """On the staged FAOSTAT Value of Production and the pollination values table, the 2019 fill
+    places 5,214 country-item pairs, one row each, none on Ethiopia PDR (62), Serbia and
+    Montenegro (186), Sudan (former) (206) or Czechoslovakia (51), worth $1,115,866,904,924.72
+    before the rental rate. Every reported value stays as reported. Skips where base_data is
+    absent."""
+    import hazelbean as hb
+    p = hb.ProjectFlow(project_dir=str(tmp_path / 'fill'))
+    utilities.hydrate_es_parameters(p, 'crop_provision', log=lambda *a: None)
+    paths = {name: str(p.get_path(getattr(p, name))) for name in (
+        'fao_input_path', 'crop_provision_fao_values_table_path', 'faostat_aggregate_areas_path',
+        'faostat_aggregate_items_path', 'crop_provision_default_items_path')}
+    if not all(hb.path_exists(path) for path in paths.values()):
+        pytest.skip('the staged FAOSTAT inputs are not on this machine')
+    aggregate_areas = utilities.read_column(paths['faostat_aggregate_areas_path'], 'area_fao')
+    items = cp.items_without_group_totals(
+        utilities.read_column(paths['crop_provision_default_items_path'], 'item_fao'),
+        utilities.read_column(paths['faostat_aggregate_items_path'], 'item_fao'))
+    raw = pd.read_csv(paths['fao_input_path'], encoding='ISO-8859-1', low_memory=False)
+    reported = utilities.clean_faostat_values(raw, items, 'crop_provision_gep', aggregate_areas)
+
+    out = cp.impute_missing_crop_values(
+        reported, pd.read_csv(paths['crop_provision_fao_values_table_path']), 2019,
+        cp.area_codes_by_m49(raw, aggregate_areas), items)
+
+    filled = out[out['value_source'].astype(str).str.startswith('price_')]
+    pairs = set(zip(cp.normalize_m49_series(filled['area_code_M49']), filled['crop_code']))
+    assert len(filled) == len(pairs) == 5214
+    assert not filled['area_code'].isin([62, 186, 206, 51]).any()
+    assert (filled['crop_provision_gep'].sum() * utilities.FAOSTAT_THOUSAND_USD
+            == pytest.approx(1115866904924.72, rel=1e-12))
+    was_reported = reported['crop_provision_gep'].notna().to_numpy()
+    kept = out.iloc[:len(reported)]
+    assert (kept['crop_provision_gep'].to_numpy()[was_reported]
+            == reported['crop_provision_gep'].to_numpy()[was_reported]).all()
+    assert (kept['value_source'].to_numpy()[was_reported] == 'faostat').all()
+
+
 def test_the_shared_group_total_rule_is_judged_by_membership_not_by_any_item():
     """The shared group-total helper in utilities (crop provision itself removes its group totals
     everywhere): a group total is kept only where none of ITS members is valued.
