@@ -22,13 +22,14 @@ two habitats only, and each country's row states which of the two its total incl
 The write-up is `Coastal_Protection.docx` (28 October 2026) in the shared folder of current
 write-ups. The registered author code is the six files at commit `7ea35e798`. The mangrove values
 are the World Bank wealth-accounts package's 2019 values, and the coral values are Beck et al.
-(2018) in 2011 dollars.
+(2018) in 2011 dollars, summed from the study's coastal study units.
 
 
 ## Quantity
 
 Neither component is modelled from habitat extent inside this module. Both arrive as published
-per-country tables in which the physical protection modelling has already been done upstream, so
+tables, per country for mangroves and per coastal study unit for coral reefs, in which the physical
+protection modelling has already been done upstream, so
 the quantity stage here is the read and the aggregation onto the country list rather than a
 biophysical calculation.
 
@@ -54,11 +55,19 @@ countries holding under 100 ha of mangroves. Seventeen of them publish a zero ma
 and Anguilla is missing because neither table carries it. Whether to treat those zeros as
 unestimated is an open decision.
 
-**Coral reefs.** The coral component is the annual expected flood protection benefit table
-staged as `coral_reefs_annual_expected_benefit_nfamara.xlsx`, which gives one annual benefit per
-country in 2011 US dollars. This table is keyed on country name rather than country code, so it
-is joined to the correspondence on the name and then reduced to one row per country before the
-currency conversion below.
+**Coral reefs.** The coral component comes from Beck et al. (2018), staged as
+`coral_reefs_annual_expected_benefit_nfamara.xlsx`. The workbook's study-unit sheet (`Sheet4`)
+lists the study's 2,529 coastal study units, each with its country and its annual expected built
+capital avoided flooded (`BC_USD11`) in 2011 US dollars. The model sums the units by country. The
+same workbook carries the authors' country table (`Sheet1`), and the sum reproduces it in all 80
+of its countries, with a largest difference of 2.4e-7 dollars and a 2011 total of
+\$5,174,939,304.06. The study units name 86 countries. For six of them, Japan, the British Indian
+Ocean Territory, the Northern Mariana Islands, Seychelles, the US Minor Outlying Islands and
+Dominica, the units sum to exactly zero, and the authors' country table leaves them out. The model
+leaves them out too, so their coral component is missing rather than zero. Whether those zeros are
+measured is a question for the authors. The country values are keyed on country name rather than
+country code, so they are joined to the correspondence on the name and then reduced to one row
+per country before the currency conversion below.
 
 ## Price
 
@@ -80,8 +89,9 @@ carries every country. A per-country inflation rate would answer a different que
 
 The two components are joined on country and year, and the national value is the sum of the
 components that are measured. A component a table does not carry stays missing rather than zero.
-The coral table lists 80 countries and leaves out some that have reefs, Japan among them, so a
-country's absence from a table is not evidence that the habitat gives no protection there. A
+The coral values cover 80 countries. Japan has reefs and is not among them, because its study
+units sum to zero, so a country's absence from a table is not evidence that the habitat gives no
+protection there. A
 zero the source table reports, such as zero mapped mangrove area, stays zero.
 
 Each row carries a coverage label, `coastal_protection_coverage`, naming what its total covers:
@@ -113,11 +123,11 @@ component. The 46 countries with both components measured sum to $32.68$ billion
 Two properties of the calculation are worth stating because they affect coverage rather than
 arithmetic, and neither is silent once you know to look for it.
 
-The coral table is joined on country name, not on a code. A name that the correspondence spells
-differently would drop the country without failing, so the join is a place to check first when a
-coastal country is missing.
+The coral values are joined on country name, not on a code. A name carrying a value that the
+correspondence spells differently stops the run, so a valued coastal country cannot drop out of
+the join silently.
 
-Because the module consumes pre-valued national tables, it cannot separate the physical extent of
+Because the module consumes pre-valued tables, it cannot separate the physical extent of
 a habitat from the value assigned to it. A change in either the mapped habitat area or the damage
 function behind these tables enters here only as a changed national total.
 
@@ -165,6 +175,11 @@ The label change moved no measured value: all 250 totals and every measured comp
 identical, and only the 145 zeros previously set for a component a table does not carry (8
 mangrove, 137 coral) are now missing. The upstream habitat models are not rerun.
 
+The coral component is now summed from the authors' 2,529 study units instead of read from their
+country table. Because the sum equals that table in all 80 countries, the change moved no
+published value: rerun on the staged data, every country's coral value and every published
+column equal the previous table within a relative 1e-15, with identical missing values and zeros.
+
 ## What is open
 
 - The small-mangrove zeros. Whether the 17 countries the mangrove source removed for holding
@@ -172,3 +187,10 @@ mangrove, 137 coral) are now missing. The upstream habitat models are not rerun.
   habitat data.
 - The CPI series. The write-up cites the BLS CPI-U, and the library uses FRED's seasonally
   adjusted CPIAUCSL. The difference in the annual-mean ratio is not quantified.
+- The coral measure. The model sums `BC_USD11`, built capital avoided flooded. The study units
+  also carry `BCD50_USD1`, built capital avoided damaged, which totals \$3.83 billion in 2019
+  dollars against \$5.88 billion. The 15 countries in Beck et al. (2018) Table 1 are close to
+  `BCD50_USD1`, 13 of them within 6%, and far from `BC_USD11`. Which of the two the account
+  should carry is a question for the authors.
+- The six zero-sum countries. Whether Japan and the five others are measured zeros or
+  countries the study did not value is a question for the authors. Until then they stay missing.

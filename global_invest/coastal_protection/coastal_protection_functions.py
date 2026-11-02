@@ -1,21 +1,22 @@
 # -*- coding: utf-8 -*-
 """Coastal-protection science: storm damage avoided by mangroves and by coral reefs.
 
-Two components, combined here, and only one of them is ours to compute.
+Two components, each computed here from what its source carries underneath, then combined.
 
-The mangrove component IS computed here: the CWoN mangrove table carries the protected area in
-hectares and the value per hectare beside its own published total, so the value is the product
-of those two rather than the published column read through. That reproduces the published total
-to within 2e-7 and, unlike reading it, would show us a disagreement if one appeared.
+The mangrove component: the CWoN mangrove table carries the protected area in hectares and the
+value per hectare beside its own published total, so the value is the product of those two rather
+than the published column read through. That reproduces the published total to within 2e-7 and,
+unlike reading it, would show us a disagreement if one appeared.
 
-The coral-reef component is NOT computed here. Its table carries a finished annual benefit per
-country and nothing underneath it, so there is no calculation to run; it is carried from 2011 to the
-base year by the shared US CPI factor (utilities.usd_deflation_factor) and added. That is the open
-ask on this service.
+The coral-reef component: the coral workbook carries the 2,529 Beck et al. (2018) coastal study
+units beneath the authors' country table, each with its annual expected benefit, so the value is
+the units summed by country rather than the country table read through. That reproduces the
+country table in all 80 of its countries to within 1e-6 USD. The country values are carried from
+2011 to the base year by the shared US CPI factor (utilities.usd_deflation_factor) and added.
 
 Every function here is a pure transformation over frames, which is what the tests exercise. The
-task module reads the mangrove and coral-reef workbooks, the shared US CPI series and the list of
-countries the mangrove source excluded, and passes them in.
+task module reads the mangrove workbook, the coral study units, the shared US CPI series and the
+list of countries the mangrove source excluded, and passes them in.
 """
 import logging
 
@@ -35,6 +36,11 @@ COASTAL_PROTECTION_BASE_YEAR = 2019
 MANGROVE_AREA_COLUMN = 'mangrove_ha'
 MANGROVE_VALUE_PER_HA_COLUMN = 'value_per_ha_2019'
 MANGROVE_PUBLISHED_VALUE_COLUMN = 'annual_value_2019'
+
+# The two study-unit columns the coral value is summed from: the country a unit is attributed
+# to, and its annual expected built capital avoided flooded in CORAL_REEF_VALUE_YEAR USD.
+CORAL_REEF_UNIT_COUNTRY_COLUMN = 'COUNTRY'
+CORAL_REEF_UNIT_VALUE_COLUMN = 'BC_USD11'
 
 # The published column naming what each country's total covers, and the label a country
 # carrying both fully measured components gets.
@@ -100,6 +106,30 @@ def mangrove_gep_by_country(gdf_countries, df_mangrove_value):
     return df.rename(columns={'Value': 'coastal_protection_gep_mangrove'})
 
 
+def coral_reef_values_from_study_units(df_units):
+    """The coral-reef benefit per country, summed from the authors' study units.
+
+    Each row is one Beck et al. (2018) coastal study unit with its annual expected built capital
+    avoided flooded. Summed by country, the units reproduce the authors' own country table. A
+    country whose units all carry no value sums to missing, not zero (min_count=1). A country
+    whose units sum to exactly zero is dropped, as the authors' country table drops it, so its
+    component stays missing.
+
+    Args:
+        df_units (pd.DataFrame): the study-unit sheet, carrying CORAL_REEF_UNIT_COUNTRY_COLUMN
+            and CORAL_REEF_UNIT_VALUE_COLUMN.
+
+    Returns:
+        pd.DataFrame: ee_r264_name, coral_reef_value and year (CORAL_REEF_VALUE_YEAR), one row
+        per country, the frame coral_reef_gep_by_country takes.
+    """
+    values = (df_units.groupby(CORAL_REEF_UNIT_COUNTRY_COLUMN)[CORAL_REEF_UNIT_VALUE_COLUMN]
+              .sum(min_count=1))
+    values = values[values != 0]
+    return pd.DataFrame({'ee_r264_name': values.index, 'coral_reef_value': values.to_numpy(),
+                         'year': CORAL_REEF_VALUE_YEAR})
+
+
 def coral_reef_gep_by_country(gdf_countries, df_coral_reef_value, deflation_factor,
                               base_year=COASTAL_PROTECTION_BASE_YEAR):
     """Coral-reef protection value carried to the base year, one row per country.
@@ -108,7 +138,8 @@ def coral_reef_gep_by_country(gdf_countries, df_coral_reef_value, deflation_fact
     ee_r264_name and then de-duplicated on the country/year/value triple, which collapses the
     sub-region rows a split country's name matches. The surviving rows are multiplied by the
     shared US CPI factor and stamped with the base year. The values are USD of the table's own
-    year, not local currency, so one factor carries every country.
+    year, not local currency, so one factor carries every country. A name carrying a positive
+    value that the correspondence does not spell raises, because the join would drop it.
 
     Args:
         gdf_countries (pd.DataFrame): the r264 country correspondence.
@@ -120,7 +151,15 @@ def coral_reef_gep_by_country(gdf_countries, df_coral_reef_value, deflation_fact
 
     Returns:
         pd.DataFrame: iso3_r250_label, year, coastal_protection_gep_coral_reef.
+
+    Raises:
+        ValueError: if a name with a positive value matches no ee_r264_name.
     """
+    unmatched = df_coral_reef_value.loc[
+        (df_coral_reef_value['coral_reef_value'] > 0)
+        & ~df_coral_reef_value['ee_r264_name'].isin(gdf_countries['ee_r264_name']), 'ee_r264_name']
+    if len(unmatched):
+        raise ValueError(f'coral countries with a positive value match no ee_r264_name: {sorted(unmatched)}')
     df = hb.df_merge(gdf_countries, df_coral_reef_value, how='inner', on='ee_r264_name')
     df = df.drop_duplicates(subset=['iso3_r250_label', 'year', 'coral_reef_value'])
 

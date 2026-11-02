@@ -5,8 +5,12 @@ from global_invest import utilities
 
 from global_invest.coastal_protection import coastal_protection_functions
 
-# Both valuation workbooks ship their table on a single sheet with this name.
+# The mangrove workbook ships its table on a sheet with this name. The coral workbook's sheet of
+# this name is the authors' country table, the anchor the study units reproduce.
 SOURCE_SHEET_NAME = 'Sheet1'
+# The coral workbook's study-unit sheet, one row per Beck et al. (2018) study unit, which the coral
+# value is summed from.
+CORAL_REEF_UNIT_SHEET_NAME = 'Sheet4'
 
 
 def read_mangrove_values(path):
@@ -60,10 +64,14 @@ def gep_calculation(p):
     p.gdf_countries = hb.read_vector(p.gdf_countries_vector_path)
 
     df_mangrove_value = read_mangrove_values(p.gep_quantity_input_path)
-    # The coral table already carries ee_r264_name, coral_reef_value and year, so nothing is
-    # renamed or rescaled on the way in.
-    df_coral_reef_value = pd.read_excel(p.coral_reef_ref_path, sheet_name=SOURCE_SHEET_NAME,
+    df_coral_reef_units = pd.read_excel(p.coral_reef_ref_path, sheet_name=CORAL_REEF_UNIT_SHEET_NAME,
                                         engine='openpyxl')
+    df_coral_reef_value = coastal_protection_functions.coral_reef_values_from_study_units(
+        df_coral_reef_units)
+    hb.log('  coral values summed from %d study units: %d countries, %s USD %.2f'
+           % (len(df_coral_reef_units), len(df_coral_reef_value),
+              coastal_protection_functions.CORAL_REEF_VALUE_YEAR,
+              df_coral_reef_value['coral_reef_value'].sum()))
     # The coral table is in CORAL_REEF_VALUE_YEAR USD, carried to the base year by the shared
     # CPI series every temporal dollar conversion in the account uses.
     cpi = pd.read_csv(str(p.get_path(p.coastal_protection_us_cpi_input_path)))

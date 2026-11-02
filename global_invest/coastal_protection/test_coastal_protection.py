@@ -93,6 +93,32 @@ def test_coral_reef_gep_deflates_to_the_base_year_and_counts_a_split_country_onc
     assert len(out) == 2
 
 
+def test_coral_values_are_summed_from_study_units_and_a_zero_sum_country_is_dropped():
+    """Units sum to their country, a missing unit beside a valued one leaves the measured sum,
+    a country whose units sum to zero is dropped as the authors' country table drops it, and a
+    country whose units all carry no value stays missing."""
+    units = pd.DataFrame({
+        cpf.CORAL_REEF_UNIT_COUNTRY_COLUMN: ['Aaaland', 'Aaaland', 'Aaaland', 'Bbbland', 'Bbbland',
+                                             'Cccland'],
+        cpf.CORAL_REEF_UNIT_VALUE_COLUMN: [100.0, 25.0, np.nan, 0.0, 0.0, np.nan],
+    })
+    out = cpf.coral_reef_values_from_study_units(units).set_index('ee_r264_name')
+
+    assert out.loc['Aaaland', 'coral_reef_value'] == 125.0
+    assert 'Bbbland' not in out.index                       # zero sum: no row, so missing
+    assert np.isnan(out.loc['Cccland', 'coral_reef_value'])  # no value is not zero
+    assert out['year'].tolist() == [cpf.CORAL_REEF_VALUE_YEAR] * 2
+
+
+def test_a_valued_coral_name_the_correspondence_does_not_spell_is_refused():
+    """The coral table joins on name, so a valued name the correspondence spells differently
+    would drop the country without a trace."""
+    coral = pd.DataFrame({'ee_r264_name': ['Aaaland', 'Nowhereland'],
+                          'coral_reef_value': [100.0, 5.0], 'year': [2011, 2011]})
+    with pytest.raises(ValueError, match='Nowhereland'):
+        cpf.coral_reef_gep_by_country(COUNTRIES, coral, 1.0)
+
+
 def test_combine_coastal_components_adds_them_and_keeps_a_country_present_in_only_one():
     mangrove = pd.DataFrame({'iso3_r250_label': ['AAA', 'BBB'], 'year': [2019, 2019],
                              'coastal_protection_gep_mangrove': [140.0, 250.0]})
@@ -365,6 +391,29 @@ def test_the_staged_exclusion_list_is_the_reports_six_geospatial_errors():
     listed = pd.read_csv(path, encoding='utf-8-sig')
     assert sorted(listed['iso3_r250_label']) == ['COD', 'EGY', 'GNB', 'HKG', 'IRN', 'VCT']
     assert sorted(listed['data_cleaning_item'].unique()) == [3, 4]
+
+
+def test_the_staged_study_units_reproduce_the_authors_country_table():
+    """Summed by country, the 2,529 study units equal the authors' country table in all 80 of
+    its countries, and the six countries whose units sum to zero (Japan among them) are the ones
+    it leaves out."""
+    path = _configured_base_data_path('coastal_protection_coral_reef_path')
+    if not os.path.exists(path):
+        pytest.skip('the coral-reef workbook is not staged on this machine')
+    units = pd.read_excel(path, sheet_name=cpt.CORAL_REEF_UNIT_SHEET_NAME, engine='openpyxl')
+    authors = pd.read_excel(path, sheet_name=cpt.SOURCE_SHEET_NAME, engine='openpyxl')
+    ours = cpf.coral_reef_values_from_study_units(units).set_index('ee_r264_name')
+    authors = authors.set_index('ee_r264_name')
+
+    assert len(units) == 2529
+    assert sorted(ours.index) == sorted(authors.index) and len(ours) == 80
+    assert np.allclose(ours.loc[authors.index, 'coral_reef_value'], authors['coral_reef_value'],
+                       rtol=0, atol=1e-6)
+    assert (ours['year'] == authors['year'].unique().item()).all()
+    assert np.isclose(ours['coral_reef_value'].sum(), 5174939304.06, rtol=0, atol=0.01)
+    zero_sum = set(units[cpf.CORAL_REEF_UNIT_COUNTRY_COLUMN]) - set(ours.index)
+    assert zero_sum == {'Japan', 'British Indian Ocean Territory', 'Northern Mariana Islands',
+                        'Seychelles', 'United States Minor Outlying Islands', 'Dominica'}
 
 
 def test_coverage_label_names_both_one_or_neither_component():
