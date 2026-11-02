@@ -7,9 +7,12 @@ distance-raster pipeline) and commits no output; the library grows the reach on 
 own grid (see ntfp_tasks).
 
 The roads layer is the configured `ntfp_roads_vector_path`
-(`global_invest/ntfp/input/global_roads/globalroads.shp`). The registered source code reads a file
-of the same name from its own base data, but no hash or feature count of the authors' file exists,
-so whether the two are identical is not verified.
+(`global_invest/ntfp/input/global_roads/grip4_global_roads.gpkg`), the GRIP4 roads (Meijer et al.
+2018) merged from the seven regional geodatabases into one GeoPackage layer of 25,758,453 lines.
+The registered source code reads `globalroads.shp` from its own base data. The copy staged under
+that name holds 21,438,033 lines and no highway, primary or secondary road, so the library departs
+from it. The authors' shared copy of `globalroads.*` is identical to it in all six files by
+sha256, which identifies the file they shared, not the one their published run read.
 """
 
 # From the source scripts: accessibility is a 10 km buffer around roads and rivers, and

@@ -26,8 +26,8 @@ Hectares of accessible, vegetated forest per country:
 - A forest cell is kept where the 2015 to 2019 mean NDVI (MODIS MOD13Q1) is at least 0.20. A
   cell with no NDVI is dropped. The floor is compared in the raster's own integers, so a cell at
   exactly 0.20 is kept, where the authors' float comparison drops it.
-- Accessible means within 10 km of a road (`globalroads.shp`) or a river (Natural Earth 10 m
-  centre lines).
+- Accessible means within 10 km of a road (GRIP4, Meijer et al. 2018, all 25,758,453 lines,
+  `grip4_global_roads.gpkg`) or a river (Natural Earth 10 m centre lines).
 - Everything is computed on the account grid (WGS84, 10 arcsec, about 309 m at the equator), with
   the 10 km reach measured in metres at each latitude. The reach stops at 84 degrees. Cell
   hectares come from `ha_per_cell_10sec.tif`, and a cell belongs to the country whose boundary
@@ -49,8 +49,8 @@ $$
 
 ## Inputs
 
-From `es_parameters.csv`, scoped to the `ntfp` service: `ntfp_roads_vector_path`,
-`ntfp_rivers_path` (with its source URL), `ntfp_ndvi_mean_path` and `ntfp_value_per_ha_path`
+From `es_parameters.csv`, scoped to the `ntfp` service: `ntfp_roads_vector_path` (with its
+source, `ntfp_roads_source`), `ntfp_rivers_path` (with its source URL), `ntfp_ndvi_mean_path` and `ntfp_value_per_ha_path`
 (with its source URL). The land cover is the `es_config.csv` row's `gep_lulc_input_path`,
 `lulc/esa/lulc_esa_2019.tif`.
 
@@ -66,20 +66,34 @@ on the cluster.
 ## Coverage
 
 The published table is one row for each of the account's 250 countries, base year 2019, in 2019
-USD. 196 carry a positive value, totalling \$13,852,553,747.75 on 1.44 billion accessible
-hectares. 36 are zeros, all measured: 34 have no accessible forest and 11 have a published zero
-rate, 9 of them both. 18 are missing because the CWoN table has no rate for them (ATA, BLM, BVT,
-CCK, ESH, HMD, IOT, KWT, MAF, MCO, MDV, MHL, MSR, NRU, PCN, TKL, TUV, VAT).
+USD, computed on the complete GRIP4 roads. 218 carry a positive value, totalling
+\$20,491,261,549.18 on 2.33 billion accessible hectares. 14 are zeros, all measured: 11 have no
+accessible forest and 11 have a published zero rate, 8 of them both. 18 are missing because the
+CWoN table has no rate for them (ATA, BLM, BVT, CCK, ESH, HMD, IOT, KWT, MAF, MCO, MDV, MHL, MSR,
+NRU, PCN, TKL, TUV, VAT).
 
 ## Reproduction
 
 Rate times saved hectares reproduces every published row, and the rate column equals the staged
-table's 2019 column. The authors' own per-country output is not supplied. Against the ten
-country values in the write-up's table, the library is 0.961 times their sum, from 0.838
-(Russia) to 0.999 (Brazil). The shortfall concentrates at high latitude, consistent with the
-authors' 10 km buffers drawn in Mollweide against the account grid's metric reach, though that is
-not tested country by country. The account grid replaces the authors' Mollweide 300 m grid, which
-gave \$14.07bn, so the change is −1.6%.
+table's 2019 column. The authors' published values, \$14,076,443,646.20 over 196 countries (the
+write-up's headline and the group's results sheet), are reconciled country by country, with
+nothing left over in any country. The \$6,414,817,902.99 between the two totals is:
+
+- the complete roads, +\$6,638,707,801.43, the library's table against its own run on the staged
+  `globalroads.shp`
+- the reach, the library's 10 km measured in metres on the account grid against the authors'
+  buffer polygon, −\$173,795,641.65
+- the grid, the NDVI rule and the country allocation together, −\$48,428,834.44, not attributed
+  among the three
+- forest whose NDVI is missing, which the authors' published values keep, −\$1,665,575.47
+- the window against the global grid and the rounding of the published cells, +\$153.11
+
+On the staged `globalroads.shp`, with that forest kept, the authors' functions (`928dc21`) on
+their global grid give all 196 published values to 10 significant digits. Of their 54 blanks, 29
+have a missing or zero price, which their export drops whatever the area, and in the other 25 no
+forest passes their eligibility rule within that layer's reach. The values are therefore
+reproduced numerically. Which NDVI file, code or setting kept the forest whose NDVI is missing is
+not shown, since the only committed NDVI step (`928dc21`) drops it.
 
 ## Method constants
 
@@ -96,5 +110,10 @@ gave \$14.07bn, so the change is −1.6%.
 - Three rates. The staged table's rates for the Democratic Republic of the Congo, Mozambique and
   the Central African Republic are five times CWoN's own, which divides them by five without a
   stated reason. Applying it gives \$12.76bn. A recorded open decision.
-- The grid. The account grid is agreed (29 October), and its effect against the authors' grid
-  is measured in total only.
+- The grid. The account grid is agreed (29 October). Its effect against the authors' grid is
+  measured only together with the NDVI rule and the allocation (−\$48.43M).
+- The roads. The registered code reads `globalroads.shp`. The copy staged under that name holds
+  21,438,033 of GRIP4's 25,758,453 lines, 16 bytes under the 4 GiB shapefile limit, and no
+  highway, primary or secondary road. The authors' shared copy is identical to it in all six
+  files by sha256. The library reads the complete layer. The match identifies the file the
+  authors shared, not the one their published run read, which is a question for them.

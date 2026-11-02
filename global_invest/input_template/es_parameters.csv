@@ -331,7 +331,8 @@ stormwater,stormwater_countries_on_grid_path,cartographic/ee/ee_r250_3857.gpkg
 stormwater,stormwater_zone_ids_path,cartographic/ee/ee_r250_id_3857_537m.tif
 stormwater,stormwater_retention_by_country_path,global_invest/stormwater/retention_m3_by_country.csv
 ntfp,ntfp_rivers_path,global_invest/ntfp/input/rivers/ne_10m_rivers_lake_centerlines.shp
-ntfp,ntfp_roads_vector_path,global_invest/ntfp/input/global_roads/globalroads.shp
+ntfp,ntfp_roads_vector_path,global_invest/ntfp/input/global_roads/grip4_global_roads.gpkg
+ntfp,ntfp_roads_source,"GRIP4 (Meijer et al. 2018, Environmental Research Letters 13, 064006), the seven regional geodatabases GRIP4_region1-7.gdb merged into one GeoPackage layer, grip4_roads, of 25,758,453 lines. It replaces the staged globalroads.shp, which holds 21,438,033 lines, 16 bytes under the 4 GiB shapefile limit, and no highway, primary or secondary road (GRIP4 types 1 to 3)"
 ntfp,ntfp_rivers_source_url,https://naciscdn.org/naturalearth/10m/physical/ne_10m_rivers_lake_centerlines.zip
 ntfp,ntfp_ndvi_mean_path,global_invest/ntfp/input/mean_ndvi_2015_2019.tif
 ntfp,ntfp_value_per_ha_path,global_invest/ntfp/nontimber_price_iucn_edited.csv

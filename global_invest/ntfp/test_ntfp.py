@@ -60,6 +60,19 @@ def test_es_config_row_hydrates_ntfp(tmp_path):
     assert p.gep_base_year == 2019
 
 
+def test_the_template_names_the_complete_roads_layer():
+    """The staged globalroads.shp holds 21,438,033 of GRIP4's 25,758,453 lines and no road of types 1 to 3. The
+    template names the GeoPackage merged from the seven regional geodatabases, which holds all of them."""
+    import csv
+    import os
+    here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    path = os.path.join(here, 'input_template', 'es_parameters.csv')
+    rows = {row[1]: row[2] for row in csv.reader(open(path, encoding='utf-8-sig'))
+            if len(row) > 2 and row[0] == 'ntfp'}
+    assert rows['ntfp_roads_vector_path'] == 'global_invest/ntfp/input/global_roads/grip4_global_roads.gpkg'
+    assert rows['ntfp_roads_source'].startswith('GRIP4 ')
+
+
 # ---------------------------------------------------------------------------
 # Accessibility: forest within 10 km of a road or a river.
 # ---------------------------------------------------------------------------
@@ -232,7 +245,7 @@ def test_the_reach_widens_with_latitude_because_a_cell_narrows(tmp_path):
 def test_burning_in_stripes_gives_the_same_raster_as_one_call(tmp_path):
     """Striping is an implementation detail and must not change a single cell.
 
-    A one-call burn segfaults on the global grid: 21,438,033 road features into an
+    A one-call burn segfaults on the global grid: 21 million road features into an
     8.4-billion-cell target, held at once. Stripes bound what GDAL holds, and each stripe's
     spatial filter means it only sees the features inside it -- so the burn has to come out
     identical either way, or striping has quietly changed the answer.
@@ -271,3 +284,46 @@ def test_burning_in_stripes_gives_the_same_raster_as_one_call(tmp_path):
 
     assert (burned[4096] > 0).sum() > 0
     assert np.array_equal(burned[4096], burned[37])
+
+
+def test_a_geopackage_and_a_shapefile_of_the_same_lines_burn_the_same_cells(tmp_path):
+    """The roads moved from a shapefile to a GeoPackage, which has no 4 GiB limit. The format must not change a cell.
+
+    The shapefile has no spatial index beside it, the GeoPackage carries its own, and each stripe filters the
+    layer to its own extent, so narrow stripes test the filter on both.
+    """
+    gpd = pytest.importorskip('geopandas')
+    from osgeo import gdal, osr
+    from shapely.geometry import LineString
+
+    from global_invest.ntfp import ntfp_tasks
+
+    width, height, cell = 720, 360, 0.5
+    template = str(tmp_path / 'template.tif')
+    dataset = gdal.GetDriverByName('GTiff').Create(template, width, height, 1, gdal.GDT_Float32)
+    dataset.SetGeoTransform((-180.0, cell, 0, 90.0, 0, -cell))
+    srs = osr.SpatialReference()
+    srs.ImportFromEPSG(4326)
+    dataset.SetProjection(srs.ExportToWkt())
+    dataset.GetRasterBand(1).WriteArray(np.ones((height, width), dtype='float32'))
+    dataset = None
+
+    lines = gpd.GeoDataFrame(geometry=[LineString([(-170, -80), (170, 80)]),
+                                       LineString([(-20, 10), (60, 10)]),
+                                       LineString([(100, -40), (100.2, -39.9)])],
+                             crs='EPSG:4326')
+    original = ntfp_tasks.BURN_STRIPE_ROWS
+    try:
+        ntfp_tasks.BURN_STRIPE_ROWS = 37
+        burned = {}
+        for driver, extension in (('GPKG', 'gpkg'), ('ESRI Shapefile', 'shp')):
+            path = str(tmp_path / ('roads.%s' % extension))
+            lines.to_file(path, driver=driver)
+            out = str(tmp_path / ('burn_%s.tif' % extension))
+            ntfp_tasks.burn_lines_in_stripes([path], template, out, log=lambda *a: None)
+            burned[extension] = gdal.Open(out).ReadAsArray()
+    finally:
+        ntfp_tasks.BURN_STRIPE_ROWS = original
+
+    assert (burned['gpkg'] > 0).sum() > 0
+    assert np.array_equal(burned['gpkg'], burned['shp'])
