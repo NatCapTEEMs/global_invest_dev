@@ -221,21 +221,22 @@ flood,flood_damage_depth_mode,interpolated
 flood,flood_lulc_path,global_invest/flood/input/pipeline_inputs/lulc/lulc_esa_2019_int_reproj.tif
 flood,flood_roads_path,
 flood,flood_pop_path,global_invest/flood/input/pipeline_inputs/pop/GlobPOP_Count_30arc_2020_I32.tif
-flood,flood_depth_aligned_path,global_invest/flood/input/pipeline_inputs/floodplain_depth/aligned_to_lulc
-flood,flood_sda_mapping_path,
-flood,flood_sda_legend_path,
+flood,flood_depth_aligned_path,global_invest/flood/input/pipeline_inputs/floodplain_depth_v2_nowater/aligned_to_lulc
+flood,flood_sda_mapping_path,global_invest/flood/input/pipeline_inputs/lulc_to_sda_mapping/lulc_to_sda_mapping.json
+flood,flood_sda_legend_path,global_invest/flood/input/pipeline_inputs/sda/sda_esa300m_legend.csv
 flood,flood_spa_path,global_invest/flood/input/pipeline_inputs/global_spa_ben/global_prr_spa.tif
-flood,flood_spa_ratio_path,global_invest/flood/input/pipeline_inputs/global_spa_ben/global_upstream_spa_ratio.tif
+flood,flood_spa_ratio_path,global_invest/flood/input/pipeline_inputs/counterfactual_mosaic/global_upstream_spa_ratio.tif
 flood,flood_canonical_eur_path,global_invest/flood/input/pipeline_inputs/flood_damage/country_landtype_flood_damage_JRC_EUR_m2.csv
 flood,flood_landtype_depth_damage_path,global_invest/flood/input/pipeline_inputs/flood_damage/country_landtype_depth_damage.xlsx
 flood,flood_landtype_depth_damage_sha256,c1f0e4e1fd62426708111e348d3f326117872efacf2b32efde50917db4f74195
 flood,flood_sda_damage_wide_path,
 flood,flood_currency_factors_path,global_invest/flood/input/pipeline_inputs/flood_damage/_currency_audit/currency_conversion_factors_EUR2010_to_USD2019.csv
-flood,flood_amplification_path,
+flood,flood_amplification_path,global_invest/flood/input/pipeline_inputs/counterfactual_mosaic
 flood,flood_cn_table_path,
 flood,flood_amplification_pattern,global_amplification_{scenario}_rp{rp}.tif
 flood,flood_protection_documented_only,true
-flood,flood_protection_path,
+flood,flood_protection_path,global_invest/flood/input/pipeline_inputs/protection/flopros_merged_by_iso3.csv
+flood,flood_author_inputs_source,"The authors' flood GEP package (shared flood_gep/inputs on MSI, RUN.md of 25 Aug 2026): JRC 2024 depths with permanent water removed (floodplain_depth_v2_nowater), the counterfactual_mosaic amplification layers and upstream SPA ratio, and the FLOPROS merged protection table"
 flood,flood_protection_evidence_path,
 flood,flood_gep_scenarios,"[""current"", ""degraded_insitu"", ""degraded_bare""]"
 flood,flood_sda_country_dir,
@@ -270,7 +271,7 @@ flood,flood_msi_conda_env,
 flood,flood_gep_for_merge_path,global_invest/flood/flood_gep_for_merge_v2_2024hazard.csv
 flood,flood_avoided_damage_path,global_invest/flood/country_avoided_damage_usd2019.csv
 flood,flood_country_vector_path,cartographic/ee/ee_r250.gpkg
-flood,flood_sda_raster_path,
+flood,flood_sda_raster_path,global_invest/flood/input/pipeline_inputs/sda/sda_esa300m_artif_crop_pasture.tif
 flood,flood_reference_gep_ours_path,global_invest/flood/reference/step4e_flood_gep_USD2019_ours_20260831.csv
 flood,flood_reference_gep_waterkept_path,global_invest/flood/reference/step4e_flood_gep_USD2019_waterkept_20260831.csv
 flood,flood_reference_for_merge_path,global_invest/flood/reference/flood_gep_for_merge_v2_2024hazard.csv

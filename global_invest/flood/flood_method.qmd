@@ -195,10 +195,26 @@ headline. The author has reported about $11.4bn consistently, in correspondence 
 table, so waterremoved is the account's variant; the gap is pinned by a test so it cannot drift
 unnoticed.
 
-### What running the remaining two needs
+### The inputs the template names
 
-The inputs live on MSI at `/projects/standard/jajohns/shared/flood_gep`, read-only. What Sections A
-and B actually need from it is small -- `flood_depth_aligned_path` and `flood_spa_path`, 1.5 GB with
-the optional population grid -- and both are staged in base_data now with the template carrying the
-references. The 129 GB of counterfactual amplification rasters in that tree feed
-`task_compute_flood_gep`, which already runs, so they are not part of this.
+The authors' package lives on MSI at `/projects/standard/jajohns/shared/flood_gep`, read-only, and
+its `RUN.md` names the reported configuration. The template's references point at copies of it in
+base_data's `global_invest/flood/input/pipeline_inputs`:
+
+- the JRC 2024 depths with permanent water removed, `floodplain_depth_v2_nowater/aligned_to_lulc`;
+- the upstream SPA ratio from the counterfactual mosaic, `counterfactual_mosaic/global_upstream_spa_ratio.tif`;
+- the twelve amplification layers the GEP chain reads, `counterfactual_mosaic/global_amplification_{scenario}_rp{rp}.tif`
+  for the in-situ and bare scenarios at six return periods, staged on the cluster only (about 33 GB);
+- the FLOPROS merged protection table, `protection/flopros_merged_by_iso3.csv`;
+- the SDA raster, legend and land-cover mapping, byte-identical to the authors' copies, which a run that
+  skips Section A reads.
+
+Until 1 November 2026 the staged depths were the 2016 release, and the file under the ratio's name in
+`global_spa_ben` was a copy of the SPA mask. Amplification and protection were blank. That copy stays in
+base_data under its old name and is not read.
+
+The curve-number table the authors' runner names is read only when the amplification layers are
+built, not when they are used, so it is not staged. The account's `ee_r250` boundary agrees with the
+authors' within 1e-6 of each country's area in 248 of 250 countries. Antarctica differs because the
+account's polygon reaches -90 degrees, which Web Mercator cannot hold, and Fiji differs by 0.08 km² at
+the antimeridian.

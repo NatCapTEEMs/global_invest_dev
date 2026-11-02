@@ -243,15 +243,37 @@ def test_every_flood_input_is_an_es_parameters_reference():
     assert 'flood_root_dir' not in keys, 'the hand-derived root is gone; inputs are references now'
 
 
+def test_the_template_names_the_inputs_of_the_reported_account():
+    """The reported account runs on the 2024 JRC depths with permanent water removed, the upstream SPA
+    ratio from the counterfactual mosaic, the mosaic's amplification layers and the merged FLOPROS
+    protection table (the authors' RUN.md). The 2016 depths and the global_spa_ben copy, which is the
+    SPA mask under the ratio's name, are not it."""
+    import csv
+    import os
+    here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    path = os.path.join(here, 'input_template', 'es_parameters.csv')
+    rows = {row[1]: row[2] for row in csv.reader(open(path, encoding='utf-8-sig'))
+            if len(row) > 2 and row[0] == 'flood'}
+    staged = 'global_invest/flood/input/pipeline_inputs/'
+    assert rows['flood_depth_aligned_path'] == staged + 'floodplain_depth_v2_nowater/aligned_to_lulc'
+    assert rows['flood_spa_ratio_path'] == staged + 'counterfactual_mosaic/global_upstream_spa_ratio.tif'
+    assert rows['flood_amplification_path'] == staged + 'counterfactual_mosaic'
+    assert rows['flood_amplification_pattern'] == 'global_amplification_{scenario}_rp{rp}.tif'
+    assert rows['flood_protection_path'] == staged + 'protection/flopros_merged_by_iso3.csv'
+    assert rows['flood_skip_damage_tables'] == 'true'
+
+
 def test_the_staged_pipeline_inputs_resolve_on_a_fresh_project_and_a_machine_keeps_its_own():
-    """The seven staged inputs ship as references to base_data's flood/input/pipeline_inputs, so a
+    """The staged inputs ship as references to base_data's flood/input/pipeline_inputs, so a
     fresh project resolves every one; a project copy that already names another location keeps
-    it, and a value set on p before hydration wins, so a machine with its own layout is unmoved."""
+    it, and a value set on p before hydration wins, so a machine with its own layout is unmoved.
+    The amplification layers are staged on the cluster only, so they are not among them."""
     import csv
     import os
     from global_invest.flood import flood_tasks
     staged = ('flood_lulc_path', 'flood_pop_path', 'flood_depth_aligned_path', 'flood_spa_path',
-              'flood_spa_ratio_path', 'flood_canonical_eur_path', 'flood_currency_factors_path')
+              'flood_spa_ratio_path', 'flood_canonical_eur_path', 'flood_currency_factors_path',
+              'flood_protection_path', 'flood_sda_mapping_path', 'flood_sda_raster_path')
     root = tempfile.mkdtemp()
     p = hb.ProjectFlow(project_dir=os.path.join(root, 'gep_flood_control'))
     flood_tasks.publish_inputs(p)
@@ -699,6 +721,85 @@ def test_the_account_country_layer_works_as_the_flood_admin0():
     region = countries[['iso3_r250_label', 'region_wb']]
     joined = admin0[[iso_col]].merge(region, left_on=iso_col, right_on='iso3_r250_label', how='left')
     assert joined['region_wb'].notna().sum() > 200
+
+
+def _web_mercator_scene(root, boundary_epsg):
+    """A 40 x 40 grid of 1 km cells in EPSG:3857 near 5E 50N, every cell built-up SDA under 1 m of water
+    at RP10 and 2 m at RP100, an SPA ratio of 0.5, and one country, AAA, the lon/lat box 5.0-5.2 x
+    50.0-50.1, written in the CRS asked for. The flood rasters are EPSG:3857 and the account boundary
+    EPSG:4326, so the two boundary CRSs must give the same answer."""
+    import os
+    from types import SimpleNamespace
+    import geopandas as gpd
+    import rasterio
+    from rasterio.transform import from_origin
+    from shapely.geometry import box
+    from global_invest.flood import flood_tasks as ft
+
+    os.makedirs(root)
+    profile = dict(driver='GTiff', height=40, width=40, count=1, crs='EPSG:3857',
+                   transform=from_origin(550000.0, 6480000.0, 1000.0, 1000.0))
+    # Section B writes each country's SDA rasters on the country's own window of the grid: here rows
+    # 16-33 and columns 6-28, the cells the box covers.
+    country_profile = dict(profile, height=18, width=23, transform=from_origin(556000.0, 6464000.0, 1000.0, 1000.0))
+
+    def write(path, value, dtype, nodata, grid=profile):
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with rasterio.open(path, 'w', dtype=dtype, nodata=nodata, **grid) as dst:
+            dst.write(np.full((grid['height'], grid['width']), value, dtype=dtype), 1)
+        return path
+
+    boundary = os.path.join(root, 'boundary.gpkg')
+    gpd.GeoDataFrame({'iso3': ['AAA']}, geometry=[box(5.0, 50.0, 5.2, 50.1)], crs='EPSG:4326').to_crs(
+        epsg=boundary_epsg).to_file(boundary, driver='GPKG')
+    depth_dir = os.path.join(root, 'depth')
+    for rp, depth in ((10, 1.0), (100, 2.0)):
+        write(os.path.join(depth_dir, ft.DEPTH_RASTER_PATTERN.format(rp=rp)), depth, 'float32', -9999.0)
+    sda_dir = os.path.join(root, 'sda_country', 'AAA')
+    for rp in (10, 100):
+        write(os.path.join(sda_dir, 'sda_class_AAA_rp%d.tif' % rp), ft.SDA_CODE['artif'], 'uint8', 0, country_profile)
+        write(os.path.join(sda_dir, 'sda_mask_AAA_rp%d.tif' % rp), 1, 'uint8', 0, country_profile)
+    table = os.path.join(root, 'damage_wide.csv')
+    pd.DataFrame([dict(iso3='AAA', sda_type=t, **{ff._fmt_depth_col(d): 10.0 * d for d in ft.DEPTH_BINS_M})
+                  for t in ('artif', 'crop', 'pasture', 'roads')]).to_csv(table, index=False)
+    return SimpleNamespace(
+        flood_country_vector_path=boundary, flood_spa_ratio_path=write(os.path.join(root, 'spa_ratio.tif'), 0.5, 'float32', -9999.0),
+        flood_sda_raster_path=write(os.path.join(root, 'sda_global.tif'), ft.SDA_CODE['artif'], 'uint8', 0),
+        flood_sda_country_dir=os.path.join(root, 'sda_country'), flood_sda_damage_wide_path=table,
+        flood_depth_aligned_path=depth_dir, flood_return_periods=[10, 100], flood_depth_threshold_m=0.1,
+        flood_damage_depth_mode='interpolated', flood_latitude_correct_area=True, flood_apply_service_flow=False,
+        flood_write_damage_rasters=False, flood_write_service_flow_rasters=True, flood_skip_done=False,
+        flood_include_existing_in_summary=True, flood_all_touched=False, flood_use_roads=False,
+        flood_service_flow_path=os.path.join(root, 'service_flow.csv'),
+        flood_valuation_country_dir=os.path.join(root, 'valuation'))
+
+
+def test_a_degree_boundary_on_web_mercator_rasters_gives_the_same_service_flow_and_damage(tmp_path):
+    """The service flow (Section C) and the pixel damages (step 4B) mask EPSG:3857 rasters with the
+    country boundary. The account boundary is EPSG:4326. Unprojected, its degrees read as metres, so
+    the service flow raised "Input shapes do not overlap raster" (smoke job 5469446) and the damages
+    found an empty window and no damage, with no error. Reprojected, a 4326 and a 3857 copy of the same
+    country give the same served area and the same damage, and both are positive."""
+    import os
+    from global_invest.flood import flood_tasks as ft
+
+    results = {}
+    for epsg in (4326, 3857):
+        p = _web_mercator_scene(os.path.join(str(tmp_path), 'epsg%d' % epsg), epsg)
+        ft.compute_service_flow_global(p)
+        ft.compute_pixel_damages(p, scenario='current')
+        damage_files = sorted(os.listdir(os.path.join(p.flood_valuation_country_dir, 'AAA')))
+        damage = pd.concat(pd.read_csv(os.path.join(p.flood_valuation_country_dir, 'AAA', f))
+                           for f in damage_files if f.endswith('.csv'))
+        results[epsg] = (pd.read_csv(p.flood_service_flow_path), damage)
+
+    flow_4326, damage_4326 = results[4326]
+    flow_3857, damage_3857 = results[3857]
+    assert (flow_3857['sda_area_km2_total'] > 0).all() and (flow_3857['mean_spa_ratio_on_sda'] > 0).all()
+    pd.testing.assert_frame_equal(flow_4326, flow_3857)
+    damage_columns = [c for c in damage_3857.columns if 'damage' in c.lower() and pd.api.types.is_numeric_dtype(damage_3857[c])]
+    assert damage_columns and (damage_3857[damage_columns].sum() > 0).any()
+    pd.testing.assert_frame_equal(damage_4326.reset_index(drop=True), damage_3857.reset_index(drop=True))
 
 
 def test_our_flood_gep_reproduces_the_authors_committed_table():

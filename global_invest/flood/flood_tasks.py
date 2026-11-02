@@ -909,12 +909,15 @@ def _service_flow_one_iso3(p, iso3: str, admin0: gpd.GeoDataFrame, spa_src) -> T
 def compute_service_flow_global(p, iso3_list: Optional[List[str]] = None) -> str:
     """Section C driver: SPA -> SDA service flow fraction for every ISO3 x RP."""
     utilities.assert_exists(p.flood_spa_ratio_path, "Upstream SPA ratio raster is required for Section C.")
-    admin0 = load_admin0(p.flood_country_vector_path)
 
     all_rows, total_p, total_s = [], 0, 0
-    run_list = iso3_list if iso3_list else sorted(admin0.iso3.unique())
 
     with rasterio.open(p.flood_spa_ratio_path) as spa_src:
+        # The country masks the per-country SDA rasters, which share the SPA ratio's CRS (the ratio is
+        # reprojected onto them in that CRS below), so the boundary is brought into it first. The
+        # account boundary is EPSG:4326 and the rasters EPSG:3857.
+        admin0 = load_admin0(p.flood_country_vector_path).to_crs(spa_src.crs)
+        run_list = iso3_list if iso3_list else sorted(admin0.iso3.unique())
         for iso in run_list:
             rows, processed, skipped = _service_flow_one_iso3(p, iso, admin0, spa_src)
             all_rows.extend(rows)
@@ -1518,9 +1521,13 @@ def compute_pixel_damages(p, iso3_list: Optional[List[str]] = None,
 
     curves = load_damage_table_wide(p.flood_sda_damage_wide_path)
     assert_every_sda_type_is_priced(curves, p.flood_sda_damage_wide_path)
-    admin0 = load_admin0(p.flood_country_vector_path)
 
     with rasterio.open(p.flood_sda_raster_path) as sda_ds:
+        # The country windows and masks the depth tiles, which assert_same_grid ties to the SDA grid,
+        # so one reprojection into the SDA raster's CRS serves every return period. Without it an
+        # EPSG:4326 boundary's degrees read as metres: on the global grid that is a cell or two near
+        # (0, 0), so a country gets no damage and no error.
+        admin0 = load_admin0(p.flood_country_vector_path).to_crs(sda_ds.crs)
         utilities.warn_if_geographic(sda_ds, "SDA raster")
         pix_area_m2 = utilities.pixel_area_m2(sda_ds.transform)
         sda_meta = sda_ds.meta.copy()
