@@ -42,14 +42,16 @@ def test_the_staged_tables_join_on_the_account_labels():
     base = utilities.service_data_dir(
         hb.ProjectFlow(project_dir=os.path.join(tempfile.mkdtemp(), 'anchors')),
         'health_hypertension')
-    costs = pd.read_csv(os.path.join(base, 'hypertension_cost_per_case.csv'))
+    costs = pd.read_csv(os.path.join(base, 'hypertension_cost_per_case_20261102.csv'))
     prevalence = pd.read_csv(os.path.join(base, 'who_hypertension_prevalence_2019.csv'))
     shares = pd.read_csv(os.path.join(base, 'wb_share_age_30_79_2019.csv'))
     reference = pd.read_csv(os.path.join(base, 'health_hypertension_appendix_table6.csv'))
-    # every cost country has a prevalence, an age share and (except Ghana) a reference row
+    # every cost country has a prevalence, an age share and a reference row, except Ghana (priced
+    # but never valued by the appendix) and Cameroon and Pakistan (added after it)
+    assert len(costs) == 22 and costs['iso3_r250_label'].is_unique
     assert set(costs['iso3_r250_label']) <= set(prevalence['iso3'])
     assert set(costs['iso3_r250_label']) <= set(shares['iso3'])
-    assert set(reference['iso3_r250_label']) == set(costs['iso3_r250_label']) - {'GHA'}
+    assert set(reference['iso3_r250_label']) == set(costs['iso3_r250_label']) - {'GHA', 'CMR', 'PAK'}
 
 
 def test_the_cost_transfer_fits_observed_and_keeps_studies():
