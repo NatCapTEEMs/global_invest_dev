@@ -389,23 +389,44 @@ def natural_resource_share_of_fishing(evfp_array, endowments, activities, region
 
 
 def aquaculture_value_by_country(value_df, year, species_groups_df=None,
-                                 exclude_aquatic_plants=True):
+                                 exclude_aquatic_plants=True, excluded_isscaap_groups=()):
     """FAO FishStatJ aquaculture value for one year, summed over species, area and environment.
 
     The export is long: one row per country-species-area-environment-year, `VALUE` in thousand
     USD under the MEASURE code V_USD_1000. Returns whole dollars on the account's country key,
     since FAO's COUNTRY.UN_CODE is the M49 code that `iso3_r250_id` carries.
+
+    Args:
+        value_df (pd.DataFrame): FAO's Aquaculture_Value table.
+        year (int): the year to take.
+        species_groups_df (pd.DataFrame or None): FAO's CL_FI_SPECIES_GROUPS table, needed for
+            any exclusion.
+        exclude_aquatic_plants (bool): leave out FAO's major group of aquatic plants.
+        excluded_isscaap_groups (iterable): ISSCAAP group names, as the species table spells
+            them, whose species are left out.
+
+    Raises:
+        ValueError: if an exclusion is asked for without the species table, or an ISSCAAP group
+            name is not in it.
     """
     df = value_df[value_df['PERIOD'] == int(year)]
     if 'MEASURE' in df.columns:
         df = df[df['MEASURE'] == AQUACULTURE_VALUE_MEASURE]
+    excluded_isscaap_groups = list(excluded_isscaap_groups)
+    if (exclude_aquatic_plants or excluded_isscaap_groups) and species_groups_df is None:
+        raise ValueError('excluding species needs the species-group table, so that which '
+                         'species were dropped is readable rather than assumed')
     if exclude_aquatic_plants:
-        if species_groups_df is None:
-            raise ValueError('excluding aquatic plants needs the species-group table, so that '
-                             'which species were dropped is readable rather than assumed')
         plants = set(species_groups_df.loc[
             species_groups_df['Major_Group'] == AQUATIC_PLANTS_MAJOR_GROUP, '3A_Code'])
         df = df[~df['SPECIES.ALPHA_3_CODE'].isin(plants)]
+    if excluded_isscaap_groups:
+        unknown = sorted(set(excluded_isscaap_groups) - set(species_groups_df['ISSCAAP_Group_En']))
+        if unknown:
+            raise ValueError(f'ISSCAAP groups not in the species table: {unknown}')
+        dropped = set(species_groups_df.loc[
+            species_groups_df['ISSCAAP_Group_En'].isin(excluded_isscaap_groups), '3A_Code'])
+        df = df[~df['SPECIES.ALPHA_3_CODE'].isin(dropped)]
     # min_count=1: a country whose rows all carry no value has no value, not a zero.
     out = df.groupby('COUNTRY.UN_CODE', as_index=False)['VALUE'].sum(min_count=1)
     out['aquaculture_value_usd'] = out['VALUE'] * 1000.0
@@ -414,13 +435,14 @@ def aquaculture_value_by_country(value_df, year, species_groups_df=None,
 
 
 def aquaculture_gep_by_country(value_df, share_df, countries_df, year,
-                               species_groups_df=None, exclude_aquatic_plants=True):
+                               species_groups_df=None, exclude_aquatic_plants=True,
+                               excluded_isscaap_groups=()):
     """Aquaculture GEP: FAO value times the natural-resource share of the country's GTAP region.
 
     A country FAO does not value stays NaN rather than zero: no data is not no aquaculture.
     """
     values = aquaculture_value_by_country(value_df, year, species_groups_df,
-                                          exclude_aquatic_plants)
+                                          exclude_aquatic_plants, excluded_isscaap_groups)
     df = countries_df.merge(values, on='iso3_r250_id', how='left')
     df = df.merge(share_df, left_on='gtap_region_label', right_on='gtap_region_label', how='left')
     df['aquaculture_gep'] = df['aquaculture_value_usd'] * df['natural_resource_share']

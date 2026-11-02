@@ -258,17 +258,22 @@ def fisheries_aquaculture_gep(p):
                          % (value_path, found, p.fisheries_aquaculture_value_sha256))
     # Reused only when made from these inputs and settings: an existence check would republish
     # the previous release's table after the release changes.
+    excluded_groups = list(p.fisheries_aquaculture_excluded_isscaap_groups)
+    # The code is part of what produced the table, so an edit to the item scope or the share
+    # cannot hide behind unchanged inputs.
     signature = utilities._signature(
         {'base_year': int(p.gep_base_year),
-         'exclude_aquatic_plants': bool(p.fisheries_aquaculture_exclude_aquatic_plants)},
+         'exclude_aquatic_plants': bool(p.fisheries_aquaculture_exclude_aquatic_plants),
+         'excluded_isscaap_groups': excluded_groups},
         {'value': utilities.file_fingerprint(value_path),
          'species_groups': utilities.file_fingerprint(species_path),
-         'gtap_basedata': utilities.file_fingerprint(har_path)})
+         'gtap_basedata': utilities.file_fingerprint(har_path)},
+        [__file__, ff.__file__])
     signature_path = os.path.join(p.cur_dir, AQUACULTURE_SIGNATURE)
     reason = utilities.outputs_reuse_reason([p.fisheries_aquaculture_gep_path], signature,
                                             signature_path)
     if reason is None:
-        hb.log('  aquaculture: reusing %s (same inputs, same settings)'
+        hb.log('  aquaculture: reusing %s (same inputs, settings and code)'
                % p.fisheries_aquaculture_gep_path)
         return True
     hb.log('  aquaculture: computing because %s' % reason)
@@ -307,7 +312,16 @@ def fisheries_aquaculture_gep(p):
     exclude_plants = bool(p.fisheries_aquaculture_exclude_aquatic_plants)
     out = ff.aquaculture_gep_by_country(
         value, share, countries, int(p.gep_base_year),
-        species_groups_df=species, exclude_aquatic_plants=exclude_plants)
+        species_groups_df=species, exclude_aquatic_plants=exclude_plants,
+        excluded_isscaap_groups=excluded_groups)
+    # The production value the ISSCAAP exclusion takes out, both sides over FAO's own country
+    # list, so the scope stays visible.
+    with_groups = ff.aquaculture_value_by_country(
+        value, int(p.gep_base_year), species, exclude_plants)
+    without_groups = ff.aquaculture_value_by_country(
+        value, int(p.gep_base_year), species, exclude_plants, excluded_groups)
+    hb.log('aquaculture: the excluded ISSCAAP groups carry %.2f USD of production value'
+           % (with_groups['aquaculture_value_usd'].sum() - without_groups['aquaculture_value_usd'].sum()))
     # Both figures, always, so the scope choice is visible in the output rather than only in
     # the configuration: on the gross-output valuation the plants are 5.51 percent of the
     # aquaculture value that includes them (FAO release 2024.1.0).
@@ -332,8 +346,10 @@ def fisheries_aquaculture_gep(p):
     hb.log('  the superseded value-added-share figure: %.6g USD'
            % out['aquaculture_gep_on_value_added_share'].sum())
     hb.log('fisheries aquaculture GEP (FAO FishStatJ value x GTAP natural-resource share, '
-           'aquatic plants %s): %d countries with values, total %.4g USD'
-           % ('excluded' if exclude_plants else 'included',
-              out['aquaculture_gep'].notna().sum(), out['aquaculture_gep'].sum()))
+           'aquatic plants %s, %d ISSCAAP groups excluded): %d countries with values, %d zero, '
+           'total %.2f USD'
+           % ('excluded' if exclude_plants else 'included', len(excluded_groups),
+              out['aquaculture_gep'].notna().sum(), int((out['aquaculture_gep'] == 0).sum()),
+              out['aquaculture_gep'].sum()))
     utilities.write_outputs_signature(signature, signature_path)
     return True

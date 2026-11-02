@@ -187,16 +187,21 @@ missing.
 
 ## Source and units
 
-The method is the authors' write-up `Aquaculture.docx` (modified 27 October 2026) and their code,
-`lifengren95/gep_aquaculture` at `2b25bd0`. The production value is FAO's FishStatJ global
+The method is the authors' write-up `Aquaculture.docx` (modified 27 October 2026) and their code
+and table, `lifengren95/gep_aquaculture` at `9c467e8` (30 October 2026). The production value is FAO's FishStatJ global
 aquaculture value, release 2024.1.0, the release the authors' values use and the write-up cites
 ("1950-2022"), which the authors confirmed on 30 October. It is read from FAO's bulk archive
 `Aquaculture_2024.1.0.zip` (sha256 `ccde626f…`), whose value table
 (`fisheries_aquaculture_value_path`) is checked against its recorded sha256 before it is read.
 Values are for 2019, in thousand current US dollars, converted to dollars, summed over species,
-area and environment, with aquatic plants left out (FAO major group `PLANTAE AQUATICAE`,
-`fisheries_aquaculture_exclude_aquatic_plants`). Release 2025.1.0 stays staged beside it,
-unused.
+area and environment, with the items the authors' cleaning removes left out: ISSCAAP division 9,
+the aquatic plants (FAO major group `PLANTAE AQUATICAE`,
+`fisheries_aquaculture_exclude_aquatic_plants`), and divisions 6 (aquatic mammals) and 8
+(pearls, mother-of-pearl, shells, corals and sponges) and group 73 (crocodiles and alligators),
+named as FAO's species table spells them (`fisheries_aquaculture_excluded_isscaap_groups`). A
+name the table does not carry stops the run. In the 2019 release only division 8 holds rows:
+pearl oyster shells (OSH), blacklip pearl oyster (PNM) and freshwater mussel shells (FSH),
+$185,805,115 of production value. Release 2025.1.0 stays staged beside it, unused.
 
 ## Valuation
 
@@ -220,20 +225,21 @@ account uses the gross-output share.
 `fisheries_aquaculture_gep` writes `aquaculture_gep_by_country.csv` into its own task directory,
 holding the r250 identifiers and attributes, `year`, `aquaculture_gep` and
 `aquaculture_gep_on_value_added_share`. 203 countries carry a value, totalling
-\$58,734,867,845.49: 197 positive and 6 zeros FAO reports (BES, DMA, FLK, SPM, SYC, TCA). 47 are
+\$58,697,377,644.24: 197 positive and 6 zeros FAO reports (BES, DMA, FLK, SPM, SYC, TCA). 47 are
 missing. FAO does not list 45 of them for 2019, and the other two, Tonga and Saint Vincent and
 the Grenadines, list only aquatic plants. On the value-added share the total is
-\$103,722,115,372.99. The run logs the total with aquatic plants included, and the table is
-reused only while its inputs and settings are unchanged.
+\$103,634,860,424.83. The run logs the total with aquatic plants included and the production
+value the ISSCAAP exclusion removes, and the table is reused only while its inputs, settings and
+code are unchanged.
 
 ## Reproduction
 
 The shares match the authors' saved table in all 50 GTAP regions within 1.4e-8, and their
-country table at 1e-7. On release 2024.1.0 the library's values equal the authors' in every
-country they both value, within \$34, apart from the three shell items below. With those items
-left out and the authors' shares, the total is \$58,697,376,968.43, \$49.04 from their
-\$58,697,376,919.39. The library's \$58,734,867,845.49 is \$37,490,926.10 above theirs: the
-shell items account for \$37,490,201.25 and the two share tables for the remaining \$724.85.
+country table at 1e-7. On release 2024.1.0, with their item scope, the library's values equal the
+authors' in every country within \$34, and the valued, zero and missing countries are theirs at
+`9c467e8` (197 positive, 6 zero, 47 missing). The library's \$58,697,377,644.24 is \$724.85
+above their \$58,697,376,919.39: \$49.04 from their values, rounded to the dollar, and \$675.81
+from their saved shares, which differ from the library's by at most 1.41e-8 (China \$688.74).
 
 Moving from release 2025.1.0 to 2024.1.0 lowered the total by \$4,399,231,566.34, almost all of
 it China (\$3.43bn) and India (\$0.96bn). Guernsey, Jersey and the Maldives, valued in 2025.1.0,
@@ -241,13 +247,9 @@ are not listed in 2024.1.0 and are missing.
 
 ## What is open
 
-- The shell items. The authors' data leaves out pearl oyster shells (OSH), blacklip pearl oyster
-  (PNM) and freshwater mussel shells (FSH), which the write-up's "all aquaculture species except
-  aquatic plants" does not mention. The library keeps them until the authors say otherwise. They
-  are worth \$37,490,201.25 of GEP (Japan \$26.66M, French Polynesia \$9.62M, China \$1.22M).
-- Zero or missing for countries FAO does not list. The authors code 34 of them as zero, and the
-  library publishes them as missing. Tonga and Saint Vincent and the Grenadines, whose only 2019
-  aquaculture is aquatic plants, are missing here too. No value effect.
+- The write-up's scope sentence, "all aquaculture species except aquatic plants", does not name
+  divisions 6 and 8 and group 73, which the authors' cleaning also removes. A write-up matter for
+  the authors. The item scope and zero-or-missing are settled with them (30 October 2026).
 - The GTAP citation. The write-up cites the GTAP 10 Data Base, and the shares come from the
   account's v12 base data, identical to the authors' saved shares.
 - The rent share. Whether aquaculture takes a GTAP share while most services take CWoN's, and

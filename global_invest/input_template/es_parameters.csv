@@ -41,6 +41,8 @@ fisheries,fisheries_aquaculture_species_groups_path,global_invest/fisheries/aqua
 fisheries,fisheries_aquaculture_species_groups_source_url,https://www.fao.org/fishery/static/Data/Aquaculture_2024.1.0.zip
 fisheries,fisheries_aquaculture_species_groups_source_archive_member,CL_FI_SPECIES_GROUPS.csv
 fisheries,fisheries_aquaculture_exclude_aquatic_plants,true
+fisheries,fisheries_aquaculture_excluded_isscaap_groups,"[""Blue-whales, fin-whales"", ""Sperm-whales, pilot-whales"", ""Eared seals, hair seals, walruses"", ""Miscellaneous aquatic mammals"", ""Pearls, mother-of-pearl, shells"", ""Corals"", ""Sponges"", ""Crocodiles and alligators""]"
+fisheries,fisheries_aquaculture_excluded_isscaap_groups_source,"the authors' cleaning removes ISSCAAP divisions 6 (aquatic mammals), 8 (pearls, mother-of-pearl, shells, corals, sponges) and 9 (aquatic plants, fisheries_aquaculture_exclude_aquatic_plants) and group 73 (crocodiles and alligators), Lifeng's reply of 2026-10-30 and his table at lifengren95/gep_aquaculture 9c467e8. Names as FAO's CL_FI_SPECIES_GROUPS spells them. In release 2024.1.0 only division 8 holds 2019 rows: OSH, PNM and FSH"
 fisheries,fisheries_gtap_basedata_path,gtappy/cge_releases/gtapv7-aez-rd/data/v12-s26-r50/basedata.har
 fisheries,fisheries_subsistence_lynch_path,global_invest/fisheries/subsistence/Rec fish food_20230509_for USGS data release.xlsx
 erosion,erosion_dem_path,global_invest/erosion/global_dem_reproj.tif

@@ -5,6 +5,7 @@ imputation, the deflation, the OLS trend prediction on each country's own mean y
 floor, the source script's country exclusions, and the no-data-is-not-zero join. Anchor tests
 compare the commercial, subsistence and aquaculture components against staged references.
 """
+import json
 import os
 import re
 from types import SimpleNamespace
@@ -514,6 +515,31 @@ def test_aquatic_plants_are_dropped_and_dropping_them_needs_the_species_table():
         ff.aquaculture_value_by_country(value, 2019, None, exclude_aquatic_plants=True)
 
 
+def test_named_isscaap_groups_are_dropped_and_an_unknown_name_is_refused():
+    """The authors' item scope by ISSCAAP group name: the named groups' species leave the value,
+    the rest stay, and a name the species table does not carry stops the run instead of
+    filtering nothing."""
+    value = pd.DataFrame({
+        'COUNTRY.UN_CODE': [4, 4, 4],
+        'SPECIES.ALPHA_3_CODE': ['FCY', 'OSH', 'SWX'],
+        'MEASURE': ['V_USD_1000'] * 3,
+        'PERIOD': [2019] * 3,
+        'VALUE': [100.0, 7.0, 40.0],
+    })
+    species = pd.DataFrame({'3A_Code': ['FCY', 'OSH', 'SWX'],
+                            'Major_Group': ['PISCES', 'MOLLUSCA', 'PLANTAE AQUATICAE'],
+                            'ISSCAAP_Group_En': ['Carps, barbels and other cyprinids',
+                                                 'Pearls, mother-of-pearl, shells', 'Brown seaweeds']})
+    out = ff.aquaculture_value_by_country(value, 2019, species, True, ['Pearls, mother-of-pearl, shells'])
+    assert out['aquaculture_value_usd'].iloc[0] == pytest.approx(100_000.0)
+    kept = ff.aquaculture_value_by_country(value, 2019, species, True)
+    assert kept['aquaculture_value_usd'].iloc[0] == pytest.approx(107_000.0)
+    with pytest.raises(ValueError, match='Pearl shells'):
+        ff.aquaculture_value_by_country(value, 2019, species, True, ['Pearl shells'])
+    with pytest.raises(ValueError, match='species-group table'):
+        ff.aquaculture_value_by_country(value, 2019, None, False, ['Corals'])
+
+
 def _fisheries_runs():
     """Every fisheries project directory on this machine, cold starts included.
 
@@ -620,12 +646,12 @@ def test_the_owners_revised_aquaculture_shares_our_distribution():
 
 
 def test_the_staged_fao_release_reproduces_the_owners_aquaculture_values():
-    """FAO release 2024.1.0, read by the library function, reproduces the owner's per-country
-    2019 values except three items FAO classes as pearls and shells (OSH, PNM, FSH), which his
-    extraction leaves out and the write-up's "all species except aquatic plants" keeps. The
-    library keeps them, an open question for the owner. With them left out, every country agrees
-    within $50 (his values come rounded from FishStatJ) and his GEP within $100 on his shares.
-    The countries he publishes as zero but FAO does not list are missing in the library."""
+    """FAO release 2024.1.0, read by the library function with the configured item scope (the
+    owner's cleaning: ISSCAAP divisions 6, 8 and 9 and group 73), reproduces the owner's
+    per-country 2019 values: every country within $50 (his values come rounded from FishStatJ)
+    and his GEP within $100 on his shares. In 2019 the excluded groups hold only three items,
+    OSH, PNM and FSH. The countries his earlier table codes as zero but FAO does not list are
+    missing in the library, as they are in his later table."""
     from global_invest import utilities
     root = os.path.join(os.path.expanduser('~'), 'Files', 'base_data', 'global_invest', 'fisheries')
     release = os.path.join(root, 'aquaculture', 'release_2024.1.0')
@@ -640,10 +666,14 @@ def test_the_staged_fao_release_reproduces_the_owners_aquaculture_values():
     value = pd.read_csv(os.path.join(release, 'Aquaculture_Value.csv'), dtype={'COUNTRY.UN_CODE': int})
     species = pd.read_csv(os.path.join(release, 'CL_FI_SPECIES_GROUPS.csv'))
     his = pd.read_csv(his_path).set_index('iso3_r250_id')
+    groups = json.loads(params.loc[params['parameter'] == 'fisheries_aquaculture_excluded_isscaap_groups',
+                                   'value'].iloc[0])
     shells = ['OSH', 'PNM', 'FSH']
     kept = ff.aquaculture_value_by_country(value, 2019, species, True).set_index('iso3_r250_id')
-    left_out = ff.aquaculture_value_by_country(
+    left_out = ff.aquaculture_value_by_country(value, 2019, species, True, groups).set_index('iso3_r250_id')
+    by_hand = ff.aquaculture_value_by_country(
         value[~value['SPECIES.ALPHA_3_CODE'].isin(shells)], 2019, species, True).set_index('iso3_r250_id')
+    assert left_out['aquaculture_value_usd'].equals(by_hand['aquaculture_value_usd'])
 
     joined = his.join(left_out, how='left')
     valued = joined['aquaculture_value_2019usd'].notna() & joined['aquaculture_value_usd'].notna()
@@ -657,6 +687,6 @@ def test_the_staged_fao_release_reproduces_the_owners_aquaculture_values():
     zero = his['aquaculture_value_2019usd'] == 0
     assert int((zero & joined['aquaculture_value_usd'].isna()).sum()) == 34
     assert int((zero & (joined['aquaculture_value_usd'] == 0)).sum()) == 6
-    # the shell items are the whole difference between keeping and leaving them out
+    # the shell items are the whole difference the configured groups make in 2019
     shell_value = (kept['aquaculture_value_usd'] - left_out['aquaculture_value_usd'].reindex(kept.index)).fillna(0)
-    assert shell_value.sum() == pytest.approx(185_811_820.0, abs=50_000.0)
+    assert shell_value.sum() == pytest.approx(185_805_115.0, abs=1.0)

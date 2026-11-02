@@ -139,7 +139,7 @@ total_aquaculture_value = df_aquaculture['aquaculture_gep'].sum()
 n_aquaculture = int(df_aquaculture['aquaculture_gep'].notna().sum())
 ```
 
-A separate service: FAO's 2019 aquaculture production value, aquatic plants left out, times the natural-resource share of the GTAP fishing sector's gross output in the country's region. It totals $`{python} f"{total_aquaculture_value:,.0f}"` over `{python} f"{n_aquaculture}"` countries. The figure on the share of value added is shown beside it for comparison.
+A separate service: FAO's 2019 aquaculture production value, with aquatic plants, aquatic mammals, crocodiles and alligators, and pearls, shells, corals and sponges left out as the authors' cleaning does, times the natural-resource share of the GTAP fishing sector's gross output in the country's region. It totals $`{python} f"{total_aquaculture_value:,.0f}"` over `{python} f"{n_aquaculture}"` countries. The figure on the share of value added is shown beside it for comparison.
 
 ```{python}
 df_aquaculture[['iso3_r250_name', 'aquaculture_gep', 'aquaculture_gep_on_value_added_share']]
