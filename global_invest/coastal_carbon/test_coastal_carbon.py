@@ -10,18 +10,25 @@ the marine surface is valued on `_EEZ` rows only (the service's open question --
 its canonical row per country before the join, so a split country is counted once (see
 global_invest/utilities.py).
 """
+import os
 from types import SimpleNamespace
 
 import geopandas as gpd
+import hazelbean as hb
 import numpy as np
 import pandas as pd
 import pytest
+import rasterio
+import rasterio.transform
+from pyproj import Geod
 from shapely.geometry import box
 
 from global_invest.coastal_carbon import coastal_carbon_functions as ccf
 from global_invest.coastal_carbon import coastal_carbon_tasks as cct
 
 ID = 'eemarine_r566_id'
+# The configured soil depth over the depth the soil products report: 30 of 100 cm.
+SOIL_DEPTH_SHARE = 30 / 100
 
 
 # ---------------------------------------------------------------------------
@@ -30,7 +37,7 @@ ID = 'eemarine_r566_id'
 
 def test_mangrove_agb_follows_the_hamilton_friess_latitude_regression():
     lat = np.array([0.0, 40.0, 50.0])
-    d = ccf.calculate_mangrove_density_array(lat)
+    d = ccf.calculate_mangrove_density_array(lat, SOIL_DEPTH_SHARE)
     # AGB (t/ha) = -6.4305 x |lat| + 271.747, then x 0.48 to carbon.
     assert d['agb_c_mg_per_ha'][0] == pytest.approx(271.747 * 0.48)          # 130.43856
     assert d['agb_c_mg_per_ha'][1] == pytest.approx(14.527 * 0.48)           # 6.97296
@@ -43,7 +50,7 @@ def test_mangrove_bgb_ratio_uses_the_ipcc_zone_the_precipitation_puts_the_pixel_
     lat = np.array([10.0, 10.0, 30.0])
     precip = np.array([3000.0, 1000.0, 3000.0])
     agb_t = -6.4305 * 10.0 + 271.747                                          # 207.442
-    d = ccf.calculate_mangrove_density_array(lat, precipitation_arr=precip)
+    d = ccf.calculate_mangrove_density_array(lat, SOIL_DEPTH_SHARE, precipitation_arr=precip)
     assert d['bgb_c_mg_per_ha'][0] == pytest.approx(agb_t * 0.49 * 0.39)      # tropical wet
     assert d['bgb_c_mg_per_ha'][1] == pytest.approx(agb_t * 0.29 * 0.39)      # tropical dry
     # Past 23.5 deg the pixel is subtropical whatever the rain does.
@@ -51,23 +58,38 @@ def test_mangrove_bgb_ratio_uses_the_ipcc_zone_the_precipitation_puts_the_pixel_
     assert d['bgb_c_mg_per_ha'][2] == pytest.approx(agb_t_30 * 0.96 * 0.39)
 
     # With no precipitation raster the whole tropics take the wet ratio.
-    dry_free = ccf.calculate_mangrove_density_array(lat)
+    dry_free = ccf.calculate_mangrove_density_array(lat, SOIL_DEPTH_SHARE)
     assert dry_free['bgb_c_mg_per_ha'][1] == pytest.approx(agb_t * 0.49 * 0.39)
 
 
-def test_mangrove_soc_raster_is_scaled_from_one_metre_to_twenty_centimetres():
+def test_mangrove_soc_raster_is_scaled_from_one_metre_to_the_configured_depth():
     lat = np.array([5.0, 5.0])
-    d = ccf.calculate_mangrove_density_array(lat, soc_arr=np.array([500.0, 0.0]))
-    assert d['soil_c_mg_per_ha'][0] == pytest.approx(500.0 * 0.2)
+    d = ccf.calculate_mangrove_density_array(lat, SOIL_DEPTH_SHARE, soc_arr=np.array([500.0, 0.0]))
+    assert d['soil_c_mg_per_ha'][0] == pytest.approx(150.0)              # 500 x 30/100
     assert d['soil_c_mg_per_ha'][1] == 0.0
     assert d['total_c_mg_per_ha'][0] == pytest.approx(
-        d['agb_c_mg_per_ha'][0] + d['bgb_c_mg_per_ha'][0] + 100.0)
+        d['agb_c_mg_per_ha'][0] + d['bgb_c_mg_per_ha'][0] + 150.0)
 
 
 def test_mangrove_soc_fallback_steps_down_away_from_the_equator():
     lat = np.array([5.0, 12.0, 17.0, 22.0, 40.0])
-    soc = ccf.calculate_mangrove_density_array(lat)['soil_c_mg_per_ha']
-    assert soc.tolist() == [80.0, 75.0, 70.0, 60.0, 50.0]
+    soc = ccf.calculate_mangrove_density_array(lat, SOIL_DEPTH_SHARE)['soil_c_mg_per_ha']
+    # The 1 m bands 400, 375, 350, 300 and 250 Mg C/ha, at 30 of 100 cm.
+    assert soc == pytest.approx([120.0, 112.5, 105.0, 90.0, 75.0])
+
+
+def test_the_soil_share_scales_soil_alone():
+    lat = np.array([5.0, 30.0])
+    at_30 = ccf.calculate_mangrove_density_array(lat, 0.3, soc_arr=np.array([400.0, 200.0]))
+    at_20 = ccf.calculate_mangrove_density_array(lat, 0.2, soc_arr=np.array([400.0, 200.0]))
+    # Moving from 20 to 30 cm multiplies soil by 1.5 and leaves both biomass pools as they were.
+    assert at_30['soil_c_mg_per_ha'] == pytest.approx(at_20['soil_c_mg_per_ha'] * 1.5)
+    assert (at_30['agb_c_mg_per_ha'] == at_20['agb_c_mg_per_ha']).all()
+    assert (at_30['bgb_c_mg_per_ha'] == at_20['bgb_c_mg_per_ha']).all()
+    marsh_30 = ccf.calculate_salt_marsh_density_array(lat, 0.3)
+    marsh_20 = ccf.calculate_salt_marsh_density_array(lat, 0.2)
+    assert marsh_30['soil_c_mg_per_ha'] == pytest.approx(marsh_20['soil_c_mg_per_ha'] * 1.5)
+    assert (marsh_30['agb_c_mg_per_ha'] == marsh_20['agb_c_mg_per_ha']).all()
 
 
 # ---------------------------------------------------------------------------
@@ -75,7 +97,7 @@ def test_mangrove_soc_fallback_steps_down_away_from_the_equator():
 # ---------------------------------------------------------------------------
 
 def test_salt_marsh_biomass_takes_the_tropical_boost_and_the_root_ratio():
-    d = ccf.calculate_salt_marsh_density_array(np.array([10.0, 30.0]))
+    d = ccf.calculate_salt_marsh_density_array(np.array([10.0, 30.0]), SOIL_DEPTH_SHARE)
     # Tropical: 5 t/ha x 1.2 = 6 -> AGB C 2.7, BGB 6 x 2.5 = 15 t/ha -> C 6.15.
     assert d['agb_c_mg_per_ha'][0] == pytest.approx(6.0 * 0.45)
     assert d['bgb_c_mg_per_ha'][0] == pytest.approx(6.0 * 2.5 * 0.41)
@@ -86,39 +108,25 @@ def test_salt_marsh_biomass_takes_the_tropical_boost_and_the_root_ratio():
 
 def test_salt_marsh_soc_raster_and_the_fallback_that_rises_with_latitude():
     lat = np.array([10.0, 30.0, 40.0, 50.0])
-    assert ccf.calculate_salt_marsh_density_array(lat)['soil_c_mg_per_ha'].tolist() == [
-        36.0, 44.0, 50.0, 70.0]
-    d = ccf.calculate_salt_marsh_density_array(np.array([10.0]), soc_arr=np.array([300.0]))
-    assert d['soil_c_mg_per_ha'][0] == pytest.approx(300.0 * 0.2)
-    assert d['total_c_mg_per_ha'][0] == pytest.approx(2.7 + 6.15 + 60.0)
+    # The 1 m bands 180, 220, 250 and 350 Mg C/ha, at 30 of 100 cm.
+    assert ccf.calculate_salt_marsh_density_array(lat, SOIL_DEPTH_SHARE)['soil_c_mg_per_ha'] \
+        == pytest.approx([54.0, 66.0, 75.0, 105.0])
+    d = ccf.calculate_salt_marsh_density_array(np.array([10.0]), SOIL_DEPTH_SHARE,
+                                               soc_arr=np.array([300.0]))
+    assert d['soil_c_mg_per_ha'][0] == pytest.approx(90.0)
+    assert d['total_c_mg_per_ha'][0] == pytest.approx(2.7 + 6.15 + 90.0)
 
 
 # ---------------------------------------------------------------------------
-# Per-polygon density: seagrass
+# One density for every mapped pixel: seagrass
 # ---------------------------------------------------------------------------
 
-def test_seagrass_densities_split_biomass_by_genus_and_zero_the_freshwater_plants():
-    genera = np.array(['Posidonia', 'Zostera|Halodule', 'posidonia', 'Trapa',
-                       'not reported', 'Unknownus', None], dtype=object)
-    d = ccf.calculate_seagrass_pool_densities_array(genera)
-
-    assert d['agb_c_mg_per_ha'][0] == pytest.approx(9.78 * 0.30)
-    assert d['bgb_c_mg_per_ha'][0] == pytest.approx(9.78 * 0.70)
-    assert d['soil_c_mg_per_ha'][0] == 22.0                       # Fourqurean constant
-    assert d['total_c_mg_per_ha'][0] == pytest.approx(9.78 + 22.0)
-
-    # A multi-genus label is read on its first genus; capitalization is normalized.
-    assert d['total_c_mg_per_ha'][1] == pytest.approx(0.94 + 22.0)
-    assert d['total_c_mg_per_ha'][2] == d['total_c_mg_per_ha'][0]
-
-    # Trapa is a freshwater plant sitting in the extent: zero across every pool, INCLUDING
-    # soil, so it cannot contribute the 22 Mg C/ha constant to a country's total.
-    assert d['total_c_mg_per_ha'][3] == 0.0
-    assert d['soil_c_mg_per_ha'][3] == 0.0
-
-    # Unknown, unreported and missing genus all fall back to the Gomis global mean.
-    for i in (4, 5, 6):
-        assert d['total_c_mg_per_ha'][i] == pytest.approx(1.55 + 22.0)
+def test_seagrass_densities_split_the_biomass_and_add_the_soil():
+    d = ccf.seagrass_pool_densities(1.55, 0.3, 24.2)
+    assert d['agb_c_mg_per_ha'] == pytest.approx(0.465)              # 1.55 x 0.3
+    assert d['bgb_c_mg_per_ha'] == pytest.approx(1.085)              # 1.55 x 0.7
+    assert d['soil_c_mg_per_ha'] == 24.2                             # top 30 cm, not scaled
+    assert d['total_c_mg_per_ha'] == pytest.approx(25.75)
 
 
 # ---------------------------------------------------------------------------
@@ -242,17 +250,106 @@ def test_area_by_region_right_keeps_empty_regions_at_zero_and_left_drops_them():
     assert only_reached[ID].tolist() == [1, 2]
 
 
-def test_seagrass_stock_by_region_prices_each_polygon_by_its_genus_then_sums():
-    pieces = gpd.GeoDataFrame(
-        {ID: [1, 1, 2], 'GENUS': ['Posidonia', 'Zostera', 'Trapa'],
-         'area_ha': [2.0, 10.0, 100.0], 'geometry': [box(0, 0, 1, 1)] * 3}, crs='EPSG:4326')
-
-    df = ccf.seagrass_stock_by_region(pieces, ID)
-    # Region 1: 2 ha x (9.78 + 22) + 10 ha x (0.94 + 22) = 63.56 + 229.4 = 292.96 Mg C.
-    assert df.set_index(ID).loc[1, 'seagrass_total_c_stock_mg'] == pytest.approx(292.96)
-    # Region 2 holds 100 ha of a freshwater genus: mapped, but worth nothing here.
-    assert df.set_index(ID).loc[2, 'seagrass_total_c_stock_mg'] == 0.0
+def test_seagrass_stock_by_region_is_the_area_times_each_density():
+    area = pd.DataFrame({ID: [1, 2, 3], 'area_ha': [2.0, 10.0, 0.0]})
+    df = ccf.seagrass_stock_by_region(area, ID, ccf.seagrass_pool_densities(1.55, 0.3, 24.2))
+    row = df.set_index(ID)
+    assert row.loc[1, 'seagrass_agb_c_total_mg'] == pytest.approx(0.93)          # 2 x 0.465
+    assert row.loc[2, 'seagrass_soil_c_total_mg'] == pytest.approx(242.0)        # 10 x 24.2
+    assert row.loc[2, 'seagrass_total_c_stock_mg'] == pytest.approx(257.5)       # 10 x 25.75
+    assert row.loc[3, 'seagrass_total_c_stock_mg'] == 0.0      # a region with no seagrass stays
     assert list(df.columns) == [ID] + ccf.stock_columns('seagrass')
+
+
+def test_presence_area_by_zone_counts_a_shared_pixel_in_each_zone_and_once_as_overlap():
+    presence = np.array([[1, 1, 0], [1, 0, 1]], dtype=bool)
+    masks = {7: np.array([[1, 1, 0], [0, 0, 0]], dtype=bool),
+             9: np.array([[0, 1, 1], [0, 0, 1]], dtype=bool),
+             4: np.array([[0, 0, 1], [0, 1, 0]], dtype=bool)}       # holds only absent pixels
+    row_area = np.array([[10.0], [20.0]])
+    out = ccf.presence_area_by_zone(presence, masks, row_area)
+    # Zone 7 holds (0,0) and (0,1); zone 9 holds (0,1) and (1,2). (0,1) is in both.
+    assert out['area_ha'] == {7: 20.0, 9: 30.0}
+    assert out['shared_ha'] == {7: 10.0, 9: 10.0}
+    assert out['presence_ha'] == 60.0                # (1,0), 20 ha, is present and in no zone
+    assert out['unique_ha'] == 40.0
+    assert out['overlap_counted_ha'] == 10.0         # the zone totals, 50, less unique_ha
+    assert sum(out['area_ha'].values()) == out['unique_ha'] + out['overlap_counted_ha']
+
+
+def test_the_row_area_is_the_ellipsoid_area_pyproj_measures():
+    geod = Geod(ellps='WGS84')
+    cell = 0.000089831528412                         # the GlobalSeagrass pixel, about 10 m
+    for top in (72.338455221235890, 30.0, 1e-4, -45.123):
+        rows = hb.ha_per_cell_rows(top, cell, 3)
+        for k, hectares in enumerate(rows):
+            upper, lower = top - k * cell, top - (k + 1) * cell
+            m2, _ = geod.polygon_area_perimeter([0, cell, cell, 0], [upper, upper, lower, lower])
+            # Measured worst case over these rows 1.4e-9, rounding in a difference of two large
+            # cumulative areas; the sign is random, so it averages out over a tile.
+            assert hectares == pytest.approx(abs(m2) / 10_000.0, rel=5e-9)
+
+
+def _seagrass_fixture(tmp_path):
+    """An 8 x 8 presence tile of 0.001 degree cells over (0, 0)-(0.008, 0.008), and four regions.
+
+    A covers columns 0-3 and B columns 3.0-8 in x, so column 3 lies in both. C covers part of
+    pixel (7, 7) but not its centre. D lies off the tile.
+    """
+    tiles = tmp_path / 'tiles'
+    tiles.mkdir()
+    presence = np.zeros((8, 8), dtype='uint8')
+    for row, col in ((0, 3), (1, 4), (7, 7), (5, 0)):
+        presence[row, col] = 1
+    with rasterio.open(tiles / 'tile_a.tif', 'w', driver='GTiff', width=8, height=8, count=1,
+                       dtype='uint8', nodata=0, crs='EPSG:4326',
+                       transform=rasterio.transform.from_origin(0.0, 0.008, 0.001, 0.001)) as dst:
+        dst.write(presence, 1)
+    regions = gpd.GeoDataFrame(
+        {ID: [1.0, 2.0, 3.0, 4.0], 'eemarine_r566_label': ['A_EEZ', 'B_EEZ', 'C', 'D_EEZ'],
+         'geometry': [box(0.0, 0.0, 0.004, 0.008), box(0.003, 0.0, 0.008, 0.008),
+                      box(0.0076, 0.0, 0.008, 0.001), box(5, 5, 6, 6)]}, crs='EPSG:4326')
+    regions.to_file(tmp_path / 'regions.gpkg', driver='GPKG')
+    return str(tiles), regions
+
+
+@pytest.mark.parametrize('window', [8, 4])
+def test_seagrass_tile_pass_assigns_by_centre_and_reports_the_overlap(tmp_path, monkeypatch, window):
+    # At 4 the tile is four windows, A and B each cover two of them whole, and only the windows a
+    # boundary crosses are burned. At 8 every region is burned. The answer must not move.
+    monkeypatch.setattr(cct, 'SEAGRASS_WINDOW_PIXELS', window)
+    tiles, regions = _seagrass_fixture(tmp_path)
+    area, shared, diagnostic = cct._seagrass_tile_area(os.path.join(tiles, 'tile_a.tif'), regions, ID)
+
+    row_ha = hb.ha_per_cell_rows(0.008, 0.001, 8)
+    assert area[1] == pytest.approx(row_ha[0] + row_ha[5])                # A: (0,3) and (5,0)
+    assert area[2] == pytest.approx(row_ha[0] + row_ha[1] + row_ha[7])    # B: (0,3), (1,4), (7,7)
+    assert 3 not in area                 # C reaches into (7,7) but does not hold its centre
+    assert 4 not in area
+    assert shared[1] == pytest.approx(row_ha[0]) and shared[2] == pytest.approx(row_ha[0])
+    assert diagnostic['positive_pixels'] == 4
+    assert diagnostic['presence_ha'] == pytest.approx(row_ha[[0, 1, 5, 7]].sum())
+    assert diagnostic['unique_ha'] == pytest.approx(diagnostic['presence_ha'])
+    assert diagnostic['overlap_counted_ha'] == pytest.approx(row_ha[0])
+
+
+def test_seagrass_area_task_writes_every_region_and_leaves_no_partial_file(tmp_path):
+    tiles, _ = _seagrass_fixture(tmp_path)
+    p = SimpleNamespace(run_this=True, cur_dir=str(tmp_path), input_dir=str(tmp_path / 'input'),
+                        get_path=lambda *a, **k: '/resolved/' + '/'.join(a),
+                        df_countries=pd.DataFrame(), seagrass_extent_dir_path=tiles,
+                        gep_regions_input_path=str(tmp_path / 'regions.gpkg'), gep_regions_id_col=ID)
+    cct.seagrass_area_within_countries(p)
+
+    area = pd.read_csv(tmp_path / 'seagrass_area_by_countries2019.csv').set_index(ID)
+    row_ha = hb.ha_per_cell_rows(0.008, 0.001, 8)
+    assert sorted(area.index) == [1, 2, 3, 4]                  # every region, zero included
+    assert area.loc[2, 'area_ha'] == pytest.approx(row_ha[0] + row_ha[1] + row_ha[7])
+    assert area.loc[2, 'overlap_ha'] == pytest.approx(row_ha[0])
+    assert area.loc[3, 'area_ha'] == 0.0 and area.loc[4, 'area_ha'] == 0.0
+    tiles_table = pd.read_csv(tmp_path / 'seagrass_tiles2019.csv')
+    assert tiles_table['tile'].tolist() == ['tile_a.tif']
+    assert not [name for name in os.listdir(tmp_path) if '_partial' in name]
 
 
 # ---------------------------------------------------------------------------
@@ -486,3 +583,12 @@ def test_es_config_and_parameters_rows_hydrate_coastal_carbon(tmp_path):
     assert p.gep_regions_input_path.endswith('eemarine_r566_correspondence.gpkg')
     utilities.hydrate_es_parameters(p, 'coastal_carbon', log=lambda *a: None)
     assert p.mangrove_vector_path.endswith('gmw_v3_2019_vec.shp')
+    # Soil to 30 cm of the 1 m the soil products report, and the GlobalSeagrass extent with its
+    # uniform densities.
+    assert (p.coastal_carbon_soil_depth_cm, p.coastal_carbon_soil_source_depth_cm) == (30, 100)
+    assert p.seagrass_extent_dir_path.endswith('global_invest/coastal_carbon/GlobalSeagrass2019_2020')
+    assert p.seagrass_extent_md5 == '2046bf6c62d85f4d57e678bf6ef1cd07'
+    assert p.seagrass_extent_source_url == 'https://doi.org/10.5281/zenodo.18612240'
+    assert (p.seagrass_biomass_c_mg_per_ha, p.seagrass_agb_fraction, p.seagrass_soil_c_mg_per_ha) \
+        == (1.55, 0.3, 24.2)
+    assert not hasattr(p, 'seagrass_vector_path')

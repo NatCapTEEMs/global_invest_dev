@@ -19,10 +19,20 @@ pollination,pollination_zone_labels_path,gtap_invest/region_boundaries/ee_r50_ae
 pollination,pollination_shock_acts,"[""V_F"", ""OSD""]"
 coastal_carbon,mangrove_vector_path,global_invest/coastal_carbon/gmw_v3_2019_vec/gmw_v3_2019_vec.shp
 coastal_carbon,salt_marsh_vector_path,global_invest/coastal_carbon/global_salt_marsh2019.gpkg
-coastal_carbon,seagrass_vector_path,global_invest/coastal_carbon/014_001_WCMC013-014_SeagrassPtPy2021_v7_1/01_Data/WCMC013_014_Seagrasses_Py_v7_1.shp
+coastal_carbon,seagrass_extent_dir_path,global_invest/coastal_carbon/GlobalSeagrass2019_2020
+coastal_carbon,seagrass_extent_source_url,https://doi.org/10.5281/zenodo.18612240
+coastal_carbon,seagrass_extent_md5,2046bf6c62d85f4d57e678bf6ef1cd07
+coastal_carbon,seagrass_extent_source,"Global 10-meter seagrass maps for 2019-2020 (Peng et al. 2026, Nature, doi:10.1038/s41586-026-10704-3), Zenodo record 18612240, CC BY 4.0: 299 binary uint8 GeoTIFF tiles in EPSG:4326 at 10 m, unzipped from GlobalSeagrass2019_2020.zip, whose md5 is the row above and the one Zenodo publishes. The authors' code at develop_yanxu eff0d0b reads the same tiles."
+coastal_carbon,seagrass_biomass_c_mg_per_ha,1.55
+coastal_carbon,seagrass_agb_fraction,0.3
+coastal_carbon,seagrass_soil_c_mg_per_ha,24.2
+coastal_carbon,seagrass_density_source,"Biomass carbon is the Gomis et al. (2025) global mean, split 30 percent above and 70 percent below ground. Soil carbon is the Krause et al. (2025, Nature Communications 16:3798) global median for the top 30 cm. The extent carries no genus, so both densities apply to every mapped pixel, as in the authors' code at develop_yanxu eff0d0b."
 coastal_carbon,mangrove_soc_path,global_invest/coastal_carbon/soc.tha_tnc.mangroves.typology_m_30m_b0..100cm_2019_2020_go_epsg.4326_v1.2.tif
 coastal_carbon,salt_marsh_soc_path,global_invest/coastal_carbon/maxwell_2024_marsoc_0_100cm.tif
 coastal_carbon,precipitation_path,global_invest/coastal_carbon/mean_annual_precipitation_mm.tif
+coastal_carbon,coastal_carbon_soil_depth_cm,30
+coastal_carbon,coastal_carbon_soil_source_depth_cm,100
+coastal_carbon,coastal_carbon_soil_depth_source,"the authors' depth at develop_yanxu eff0d0b: soil carbon is the stock in the top 30 cm. The mangrove and salt marsh soil rasters (Sanderman, MarSOC) and their latitude fallbacks are values for the top 100 cm, taken as a linear share of the profile, depth over source depth. The seagrass soil density is already a top-30 cm value and is not scaled."
 fisheries,fisheries_ramp_end_year,0
 fisheries,fisheries_ramp_to_end_year,true
 fisheries,fisheries_time_varying,true

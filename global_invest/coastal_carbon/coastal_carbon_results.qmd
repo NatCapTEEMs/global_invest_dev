@@ -60,7 +60,7 @@ for repo_root in repo_root_candidates:
             sys.path.insert(0, repo_root)
         break
 
-from global_invest.coastal_carbon import coastal_carbon_initialize
+from global_invest.coastal_carbon import coastal_carbon_initialize, coastal_carbon_tasks
 
 if __name__ == '__main__':
 
@@ -79,69 +79,10 @@ if __name__ == '__main__':
     # this Quarto render task and would recurse during report generation.
     coastal_carbon_initialize.build_gep_service_calculation_task_tree(p, include_seagrass=True)
 
-    # Project level attributes - Data Paths
-
-    # Country boundaries (marine EEZ)
-    p.df_countries_marine_csv_path = p.get_path(
-        'cartographic', 'ee', 'eemarine_r566_correspondence.csv'
-    )
-    p.gdf_countries_marine_vector_path = p.get_path(
-        'cartographic', 'ee', 'eemarine_r566_correspondence.gpkg'
-    )
-
-    # Country boundaries (terrestrial r264). The CSV is consumed by
-    # gep_calculation to collapse the r566 _EEZ Totals down to iso3_r250.
-    p.df_countries_csv_path = p.get_path(
-        'cartographic', 'ee', 'ee_r264_correspondence.csv'
-    )
-    p.gdf_countries_vector_path = p.get_path(
-        'cartographic', 'ee', 'ee_r264_correspondence.gpkg'
-    )
-    p.gdf_countries_vector_simplified_path = p.get_path(
-        'cartographic', 'ee', 'ee_r264_simplified30sec.gpkg'
-    )
-
-    # Mangrove data (Global Mangrove Watch v3)
-    p.mangrove_vector_path = os.path.join(
-        p.base_data_dir, 'coastal_carbon', 'gmw_v3_2019_vec', 'gmw_v3_2019_vec.shp'
-    )
-
-    # Salt marsh data (processed from GWL_FCS30D)
-    p.salt_marsh_vector_path = os.path.join(
-        p.base_data_dir, 'coastal_carbon', 'global_salt_marsh2019.gpkg'
-    )
-
-    # Seagrass extent (UNEP-WCMC013-014 SeagrassPtPy v7.1, polygon shapefile).
-    p.seagrass_vector_path = os.path.join(
-        p.base_data_dir, 'coastal_carbon',
-        '014_001_WCMC013-014_SeagrassPtPy2021_v7_1', '01_Data',
-        'WCMC013_014_Seagrasses_Py_v7_1.shp'
-    )
-
-    # Sanderman et al. 2018 mangrove SOC raster (top 20 cm, ton C/ha).
-    p.mangrove_soc_path = os.path.join(
-        p.base_data_dir, 'coastal_carbon',
-        'soc.tha_tnc.mangroves.typology_m_30m_b0..100cm_2019_2020_go_epsg.4326_v1.2.tif'
-    )
-
-    # Optional: mean annual precipitation raster (mm/yr) for tropical wet/dry split.
-    p.precipitation_path = os.path.join(
-        p.base_data_dir, 'coastal_carbon', 'mean_annual_precipitation_mm.tif'
-    )
-
-    # Reference raster for area calculation (ha per cell)
-    p.ha_per_cell_10sec_path = p.get_path('pyramids', "ha_per_cell_10sec.tif")
-
-    # Carbon prices
-    p.gep_price_input_path = os.path.join(
-        p.base_data_dir, 'coastal_carbon', 'carbon_prices.xlsx'
-    )
-    p.gep_price_convention = "rental scc r2%"
-
-    # Results dictionary
-    p.results = {}
-
-    # Initialize paths
+    # Every input, the soil depth and the seagrass densities come from es_config and
+    # es_parameters, the configuration the tasks read. A path set here instead would win over
+    # the configuration, because hydration keeps an attribute that is already set.
+    coastal_carbon_tasks.publish_inputs(p)
 
     # Run the model
     hb.log(
@@ -255,33 +196,47 @@ for k, v in p.results[service_label].items():
 
 # --- Global distribution map of the three blue carbon ecosystems ---
 ecosystem_map_path = os.path.join(results_display_dir, 'blue_carbon_ecosystems_distribution.png')
+import glob
 import geopandas as gpd
 import matplotlib as mpl
+import rasterio
+import rasterio.windows
 
 world_bg = hb.read_vector(p.gdf_countries_vector_simplified_path)
 
 fig, ax = plt.subplots(figsize=(15, 7))
 world_bg.plot(ax=ax, color='#f3f3f3', edgecolor='#bdbdbd', linewidth=0.3)
 
-ecosystem_layers = [
-    ('Mangroves',   p.mangrove_vector_path, '#2ca02c'),
-    ('Salt marshes', p.salt_marsh_vector_path, '#d62728'),
-    ('Seagrasses',  p.seagrass_vector_path, '#1f77b4'),
-]
+def seagrass_window_centres(extent_dir, step):
+    """The centre of every step x step window of the seagrass tiles that holds a mapped pixel."""
+    xs, ys = [], []
+    for tile_path in sorted(glob.glob(os.path.join(extent_dir, '*.tif'))):
+        with rasterio.open(tile_path) as src:
+            for row_off in range(0, src.height, step):
+                for col_off in range(0, src.width, step):
+                    window = rasterio.windows.Window(col_off, row_off, min(step, src.width - col_off),
+                                                     min(step, src.height - row_off))
+                    if src.read(1, window=window).any():
+                        x, y = src.xy(row_off + window.height // 2, col_off + window.width // 2)
+                        xs.append(x)
+                        ys.append(y)
+    return xs, ys
+
 
 legend_handles = []
-for label, vpath, color in ecosystem_layers:
-    if not (vpath and os.path.exists(vpath)):
-        continue
-    gdf_eco = gpd.read_file(vpath, columns=['geometry'])
-    if gdf_eco.crs is None:
-        gdf_eco = gdf_eco.set_crs('EPSG:4326')
-    elif gdf_eco.crs.to_epsg() != 4326:
-        gdf_eco = gdf_eco.to_crs('EPSG:4326')
+for label, vpath, color in [('Mangroves', p.mangrove_vector_path, '#2ca02c'),
+                            ('Salt marshes', p.salt_marsh_vector_path, '#d62728')]:
+    gdf_eco = gpd.read_file(vpath, columns=['geometry']).to_crs('EPSG:4326')
     centroids = gdf_eco.geometry.representative_point()
     ax.scatter(centroids.x, centroids.y, s=2, color=color, alpha=0.55, linewidth=0, label=label)
     legend_handles.append(mpl.lines.Line2D([0], [0], marker='o', color='w',
                                            markerfacecolor=color, markersize=8, label=label))
+# The seagrass extent is 10 m presence tiles, drawn as the windows of the area pass that hold any.
+seagrass_x, seagrass_y = seagrass_window_centres(p.seagrass_extent_dir_path,
+                                                 coastal_carbon_tasks.SEAGRASS_WINDOW_PIXELS)
+ax.scatter(seagrass_x, seagrass_y, s=2, color='#1f77b4', alpha=0.55, linewidth=0, label='Seagrasses')
+legend_handles.append(mpl.lines.Line2D([0], [0], marker='o', color='w',
+                                       markerfacecolor='#1f77b4', markersize=8, label='Seagrasses'))
 
 ax.set_xlim(-180, 180)
 ax.set_ylim(-60, 80)
@@ -314,6 +269,12 @@ ecosystem_area_cols = [
     'seagrass_area_ha',
 ]
 ecosystem_labels = ['Mangrove', 'Salt marsh', 'Seagrass']
+# The validation compares global stocks, so it sums every r566 row, not only the _EEZ rows.
+global_pg = {col: p.gep_by_country_base_year_r566[col].sum() / 1e9
+             for col in p.gep_by_country_base_year_r566.columns if col.endswith('_mg')}
+global_mha = {col: p.gep_by_country_base_year_r566[col].sum() / 1e6
+              for col in ('mangrove_area_ha', 'salt_marsh_area_ha', 'seagrass_area_ha')}
+soil_share = p.coastal_carbon_soil_depth_cm / p.coastal_carbon_soil_source_depth_cm
 
 total_eez_value = eez_results['coastal_carbon_storage_value'].sum()
 total_eez_stock_pg = eez_results['total_carbon_stock_mg'].sum() / 1e9
@@ -398,14 +359,17 @@ p.coastal_carbon_top_countries_table = (
 )
 
 # --- Seagrass soil-carbon sensitivity analysis ---
-# Sensitivity to seagrass soil carbon: low, mid (baseline), high scenarios (20 cm depth)
+# Low, configured and high soil densities for the configured depth: the Krause et al. (2025)
+# median for the top 30 cm and the range its abstract gives beside it.
+soil_depth_cm = p.coastal_carbon_soil_depth_cm
 seagrass_soc_scenarios = {
-    'Low (11 ton C/ha)': 11,
-    'Mid (22 ton C/ha, baseline)': 22,
-    'High (60 ton C/ha)': 60,
+    'Low (12.4 ton C/ha)': 12.4,
+    f'Configured ({p.seagrass_soil_c_mg_per_ha:g} ton C/ha, baseline)': p.seagrass_soil_c_mg_per_ha,
+    'High (44.9 ton C/ha)': 44.9,
 }
 
-seagrass_baseline_biomass_pg = eez_results['seagrass_total_c_stock_mg'].sum() / 1e9 - 0.93  # Total stock minus soil contribution (0.93 Pg at 20 cm)
+seagrass_baseline_biomass_pg = (eez_results['seagrass_agb_c_total_mg'].sum()
+                                + eez_results['seagrass_bgb_c_total_mg'].sum()) / 1e9
 seagrass_area_mha = eez_results['seagrass_area_ha'].sum() / 1e6
 
 p.seagrass_soc_sensitivity_table = pd.DataFrame({
@@ -432,7 +396,7 @@ p.seagrass_soc_sensitivity_table['Global coastal C stock (Pg C)'] = (
     + p.seagrass_soc_sensitivity_table['Total seagrass stock (Pg C)']
 )
 
-baseline_rental_scc = 13.19  # 2019 dollars per tC
+baseline_rental_scc = eez_results[p.gep_price_convention].iloc[0]  # 2019 dollars per tC
 p.seagrass_soc_sensitivity_table['Global GEP value (bn 2019$)'] = (
     p.seagrass_soc_sensitivity_table['Global coastal C stock (Pg C)'] * 1e9
     * baseline_rental_scc / 1e9
@@ -464,7 +428,7 @@ Mangroves, salt marshes and seagrass meadows store large amounts of organic carb
 display(Image(ecosystem_map_path))
 ```
 
-Notes: This figure uses Global Mangrove Watch v3 [@bunting2022], the GLC_FCS30D salt marsh layer [@zhang2024] and the UNEP-WCMC Global Distribution of Seagrasses v7.1 [@unepwcmc2021]. The three-ecosystem framing follows Macreadie et al. [@macreadie2021].
+Notes: This figure uses Global Mangrove Watch v3 [@bunting2022], the GLC_FCS30D salt marsh layer [@zhang2024] and the GlobalSeagrass 2019-2020 10 m map [@peng2026; @peng2026data], drawn as the 1,024-pixel windows of its tiles that hold any mapped seagrass. The three-ecosystem framing follows Macreadie et al. [@macreadie2021].
 
 
 # Data and Methods
@@ -473,13 +437,13 @@ The spatial domain is each coastal country's marine Exclusive Economic Zone (EEZ
 
 ## Data
 
-Mangrove extent comes from the 2019 Global Mangrove Watch v3 vector product [@bunting2022], which maps mangrove forests globally at 30 m using ALOS PALSAR and Landsat observations. Salt marsh extent comes from a pre-processed vector layer extracted from the 2019 Zhang et al. GLC_FCS30D global land-cover product [@zhang2024]. Seagrass extent comes from the UNEP-WCMC Global Distribution of Seagrasses v7.1 polygon product [@unepwcmc2021], a 2021 compilation of 293,147 polygons based on field observations from the late nineteenth century to 2018. No wall-to-wall global seagrass map exists for 2019, so we use WCMC v7.1 as the best available spatial baseline and treat the temporal mismatch as a major uncertainty. Its area totals fall within the 160,000 to 267,000 km² global extent range synthesized by McKenzie et al. [@mckenzie2020], which is also the extent basis used by Gomis et al. [@gomis2025].
+Mangrove extent comes from the 2019 Global Mangrove Watch v3 vector product [@bunting2022], which maps mangrove forests globally at 30 m using ALOS PALSAR and Landsat observations. Salt marsh extent comes from a pre-processed vector layer extracted from the 2019 Zhang et al. GLC_FCS30D global land-cover product [@zhang2024]. Seagrass extent comes from the GlobalSeagrass 2019-2020 map of Peng et al. [@peng2026], which maps shallow-water seagrass presence at 10 m in 299 tiles [@peng2026data]. We measure its area pixel by pixel, each pixel taking the WGS84 ellipsoid area of its row and the marine region that holds its centre.
 
-Mangrove soil organic carbon comes from the Sanderman et al. 30 m random-forest map for the top 20 cm of soil [@sanderman2018], scaled from the original 1 m product assuming a linear depth profile. We use the median-typology product for 2019 to 2020, reproject it once to the 10 arc-second grid using average resampling, and cache the result for later runs. Salt marsh soil carbon uses a latitude step function based on Maxwell et al. [@maxwell2024], scaled to 20 cm depth, with values rising from ~36 ton C/ha in the tropics to ~70 ton C/ha at high latitudes. Seagrass soil carbon uses the Fourqurean et al. [@fourqurean2012] global mean of 22 ton C/ha for the top 20 cm.
+Mangrove soil organic carbon comes from the Sanderman et al. 30 m random-forest map for the top 1 m of soil [@sanderman2018], scaled to the top `{python} soil_depth_cm` cm assuming a linear depth profile. We use the median-typology product for 2019 to 2020, reproject it once to the 10 arc-second grid using average resampling, and cache the result for later runs. Salt marsh soil carbon uses a latitude step function based on Maxwell et al. [@maxwell2024] for the top 1 m, scaled the same way, with values rising from `{python} f"{180 * soil_share:g}"` ton C/ha in the tropics to `{python} f"{350 * soil_share:g}"` ton C/ha at high latitudes. Seagrass soil carbon uses the Krause et al. [@krause2025] global median of `{python} f"{p.seagrass_soil_c_mg_per_ha:g}"` ton C/ha for the top 30 cm.
 
 ## Quantifying the blue carbon stock
 
-The country-level one-year storage value for 2019 has two steps. First, we estimate the standing organic carbon stock in each coastal country's EEZ. Second, we convert that stock into an annual monetary value for one year in 2019. For each ecosystem, carbon stock is the sum of above-ground biomass carbon, below-ground biomass carbon and soil organic carbon to 20 cm depth.
+The country-level one-year storage value for 2019 has two steps. First, we estimate the standing organic carbon stock in each coastal country's EEZ. Second, we convert that stock into an annual monetary value for one year in 2019. For each ecosystem, carbon stock is the sum of above-ground biomass carbon, below-ground biomass carbon and soil organic carbon to `{python} soil_depth_cm` cm depth.
 
 ### Mangroves
 
@@ -487,19 +451,19 @@ Above-ground biomass density uses the Hamilton and Friess [@hamilton2018] combin
 
 Below-ground biomass is allocated from AGB using the IPCC Wetlands Supplement Table 4.6 climate-zone ratios [@ipcc2014]. Tropical wet pixels (`|lat| < 23.5°` and mean annual precipitation greater than 2,000 mm) use a BGB:AGB ratio of 0.49. Tropical dry pixels use 0.29, and subtropical pixels (`|lat| ≥ 23.5°`) use 0.96. If no precipitation raster is configured, all tropical pixels default to the wet-tropical ratio. This is reasonable for most global mangroves, but it can overestimate BGB along dry-tropical coasts such as Arabia and northern Australia. We convert BGB to carbon using a factor of 0.39 [@howard2014].
 
-Soil organic carbon is read directly from the Sanderman map at the pixel scale (scaled to 20 cm). If the Sanderman raster is not available locally, the pipeline uses a fallback latitude step function that decreases from 80 ton C/ha at the equator to 50 ton C/ha by 25° latitude. For example, a tropical wet equatorial pixel with Sanderman SOC = 80 ton C/ha (scaled from 1 m to 20 cm) has about 130 + 52 + 80 ≈ 262 ton C/ha total ecosystem carbon to 20 cm depth.
+Soil organic carbon is read directly from the Sanderman map at the pixel scale and scaled from 1 m to the top `{python} soil_depth_cm` cm. If the Sanderman raster is not available locally, the pipeline uses a fallback latitude step function for the top 1 m that decreases from 400 ton C/ha within 10° of the equator to 250 ton C/ha beyond 25° latitude, `{python} f"{400 * soil_share:g}"` to `{python} f"{250 * soil_share:g}"` ton C/ha at `{python} soil_depth_cm` cm. For example, a tropical wet equatorial pixel with Sanderman SOC = 400 ton C/ha over 1 m has about 130 + 52 + `{python} f"{400 * soil_share:g}"` ≈ `{python} f"{130.4 + 51.9 + 400 * soil_share:.0f}"` ton C/ha total ecosystem carbon to `{python} soil_depth_cm` cm depth.
 
 ### Salt marshes
 
 Salt marsh above-ground biomass is set to a global median of 5 t/ha [@howard2014]. For tropical marshes (`|lat| < 25°`), we increase this value by 20 percent because warm, frequently flooded marshes tend to be more productive. We estimate below-ground biomass as 2.5 times above-ground biomass, which falls within the published 2:1 to 5:1 range. We convert biomass to carbon using factors of 0.45 for AGB and 0.41 for BGB [@howard2014].
 
-Salt marsh soil organic carbon uses a four-bin latitude step function based on Maxwell et al. [@maxwell2024], scaled to 20 cm: 36 ton C/ha in the tropics, 44 ton C/ha in the warm temperate zone, 50 ton C/ha in the cool temperate zone, and 70 ton C/ha in peat-rich boreal and arctic marshes. A native raster from that source is not yet wired into the pipeline, so this step function captures the broad latitude pattern but not the large within-zone variability in the source dataset.A representative salt marsh pixel at 30°N with median productivity and 44 ton C/ha soil carbon yields about 2.25 + 5.13 + 44 ≈ 51 ton C/ha total to 20 cm depth. Most salt marsh carbon is therefore stored in soil.
+Salt marsh soil organic carbon uses a four-bin latitude step function based on Maxwell et al. [@maxwell2024] for the top 1 m: 180 ton C/ha in the tropics, 220 ton C/ha in the warm temperate zone, 250 ton C/ha in the cool temperate zone, and 350 ton C/ha in peat-rich boreal and arctic marshes, which at `{python} soil_depth_cm` cm is `{python} f"{180 * soil_share:g}"`, `{python} f"{220 * soil_share:g}"`, `{python} f"{250 * soil_share:g}"` and `{python} f"{350 * soil_share:g}"` ton C/ha. A native raster from that source is not yet wired into the pipeline, so this step function captures the broad latitude pattern but not the large within-zone variability in the source dataset. A representative salt marsh pixel at 30°N with median productivity and `{python} f"{220 * soil_share:g}"` ton C/ha soil carbon yields about 2.25 + 5.13 + `{python} f"{220 * soil_share:g}"` ≈ `{python} f"{2.25 + 5.13 + 220 * soil_share:.0f}"` ton C/ha total to `{python} soil_depth_cm` cm depth. Most salt marsh carbon is therefore stored in soil.
 
 ### Seagrasses
 
-Seagrass biomass carbon densities are assigned by polygon using genus-specific means from Gomis, Strydom, Foster et al. [@gomis2025]. Total biomass carbon ranges from 9.78 ton C/ha for *Posidonia* to 0.19 ton C/ha for *Halophila*. Other persistent genera (*Phyllospadix*, *Enhalus*, *Cymodocea*, *Thalassia*, *Amphibolis*, *Thalassodendron*) use ~3.70 ton C/ha; opportunistic genera (*Zostera*, *Syringodium*, *Halodule*) use ~0.94 ton C/ha; and *Ruppia* uses 0.33 ton C/ha. Polygons without genus identification, about 78 percent of the WCMC dataset, receive the Gomis global mean of 1.55 ton C/ha. We split total biomass into 30 percent above-ground and 70 percent below-ground, reflecting the dominance of roots and rhizomes in seagrass biomass [@howard2014; @fourqurean2012]. Freshwater plant genera (*Trapa*, *Myriophyllum*, *Valisneria*, *Najas*, *Heteranthera*, *Stuckenia*, *Utricularia*) are set to zero before aggregation.
+The seagrass extent records presence only, with no genus or meadow type, so every mapped pixel takes the same carbon densities. Biomass carbon is the Gomis et al. global mean of `{python} f"{p.seagrass_biomass_c_mg_per_ha:g}"` ton C/ha [@gomis2025], split `{python} f"{100 * p.seagrass_agb_fraction:g}"` percent above-ground and `{python} f"{100 * (1 - p.seagrass_agb_fraction):g}"` percent below-ground, reflecting the dominance of roots and rhizomes in seagrass biomass [@howard2014; @fourqurean2012].
 
-Seagrass soil organic carbon is set to 22 ton C/ha for the top 20 cm, the direct Fourqurean et al. [@fourqurean2012] global mean. This value is applied uniformly to all polygons, so the current model does not capture spatial heterogeneity in seagrass soil carbon. Empirically, seagrass soil carbon varies substantially by genus and environmental setting: *Posidonia* meadows in Mediterranean anoxic basins can exceed 100 ton C/ha, while *Halophila* meadows in clear, high-energy settings may contain only 2.5 to 7.5 ton C/ha. The global mean of 22 ton C/ha is a reasonable central estimate but masks this variation. A conservative low-carbon scenario (11 ton C/ha) would reflect slower-growing, shorter-lived genera and shallow, well-oxygenated seagrass meadows; a high-carbon scenario (60 ton C/ha) would reflect peat-rich, long-lived meadows in low-energy lagoons and estuaries. We quantify the sensitivity of global value to this uncertainty in the Results section.
+Seagrass soil organic carbon is `{python} f"{p.seagrass_soil_c_mg_per_ha:g}"` ton C/ha for the top 30 cm, the global median of Krause et al. [@krause2025], who report 12.4 to 44.9 ton C/ha beside it. This value is applied uniformly to every mapped pixel, so the current model does not capture spatial heterogeneity in seagrass soil carbon. Empirically, seagrass soil carbon varies substantially by genus and environmental setting: *Posidonia* meadows in Mediterranean anoxic basins can exceed 100 ton C/ha, while *Halophila* meadows in clear, high-energy settings may contain only 2.5 to 7.5 ton C/ha.
 
 
 
@@ -567,53 +531,53 @@ We validate the coastal-carbon results in two steps. First, we compare the monet
 
 Bertram et al. [@bertram2021] estimate global blue carbon wealth from annual carbon sequestration at US$190.7 ± 29.5 billion yr^-1^, using a global mean SCC of US$640.3 ± 4.93 tCO~2~^-1^. Our baseline estimate is US$`{python} f"{total_coastal_carbon_value/1e9:,.2f}"` billion yr^-1^ in 2019 dollars, using an SC-CO~2~ of US$185.05 tCO~2~^-1^ and an annual rental SCC of US$13.19 tC^-1^. Our value is lower for two reasons. Bertram et al. apply a higher full SCC to annual sequestration, while this study applies a rental SCC to standing carbon stock. The physical quantity also differs: annual sequestration in Bertram et al., versus stored carbon stock here.
 
-We then compare physical stock estimates by ecosystem. Differences mainly reflect three choices: the extent layer, the 20 cm soil-depth convention, and the carbon-density product. The key density inputs are the Sanderman 2018 raster for mangrove SOC, latitude step functions for salt marsh SOC, and Fourqurean global mean for seagrass SOC.
+We then compare physical stock estimates by ecosystem, summed over every marine region. Differences mainly reflect three choices: the extent layer, the `{python} soil_depth_cm` cm soil-depth convention, and the carbon-density product. The key density inputs are the Sanderman 2018 raster for mangrove SOC, latitude step functions for salt marsh SOC, and the Krause global median for seagrass SOC.
 
 ## Mangrove
 
-The pipeline produces a global mangrove total of 5.52 Pg C over the GMW v3 2019 extent (~14.7 Mha), decomposed in @tbl-validate-mangrove.
+The pipeline produces a global mangrove total of `{python} f"{global_pg['mangrove_total_c_stock_mg']:.2f}"` Pg C over `{python} f"{global_mha['mangrove_area_ha']:.2f}"` Mha of the GMW v3 2019 extent, decomposed in @tbl-validate-mangrove.
 
 | Component | This study (Pg C) | Published (Pg C) | Source |
 |---|---|---|---|
-| Above-ground biomass C | 2.81 | 1.5 – 3.0 | Hamilton & Friess [@hamilton2018]; Hutchison [@hutchison2014]; Simard [@simard2019] |
-| Below-ground biomass C | 1.15 | 0.7 – 1.5 | IPCC Wetlands Supplement ratios [@ipcc2014] |
-| Soil organic C, top 20 cm | 1.56 | 1.28 | Sanderman [@sanderman2018], scaled to 20 cm |
-| Total ecosystem C | 5.52 | 5.72 ± 0.10 (2020, 13.6 Mha, full depth) | Ju [@ju2025] |
+| Above-ground biomass C | `{python} f"{global_pg['mangrove_agb_c_total_mg']:.2f}"` | 1.5 – 3.0 | Hamilton & Friess [@hamilton2018]; Hutchison [@hutchison2014]; Simard [@simard2019] |
+| Below-ground biomass C | `{python} f"{global_pg['mangrove_bgb_c_total_mg']:.2f}"` | 0.7 – 1.5 | IPCC Wetlands Supplement ratios [@ipcc2014] |
+| Soil organic C, top `{python} soil_depth_cm` cm | `{python} f"{global_pg['mangrove_soil_c_total_mg']:.2f}"` | `{python} f"{6.4 * soil_share:.2f}"` | Sanderman [@sanderman2018], 6.4 Pg C at 1 m scaled to `{python} soil_depth_cm` cm |
+| Total ecosystem C | `{python} f"{global_pg['mangrove_total_c_stock_mg']:.2f}"` | 5.72 ± 0.10 (2020, 13.6 Mha, full depth) | Ju [@ju2025] |
 
 : Global mangrove carbon stock, this study vs published estimates. {#tbl-validate-mangrove}
 
-Our mangrove SOC total (1.56 Pg C) is about 22 percent above the Sanderman et al. 20 cm figure of 1.28 Pg C (6.4 Pg C at 1 m scaled by 0.2) [@sanderman2018]. The main reason is extent: all-touched rasterisation of GMW v3 onto the 10 arc-second grid retains thin coastal fringes that are not fully captured in the original 30 m Sanderman product. Our above-ground biomass total (2.81 Pg C) sits at the upper end of the published range and is consistent with applying the Hamilton and Friess latitude regression [@hamilton2018] over the broader GMW v3 extent. Our total (5.52 Pg C) is close to the Ju et al. [@ju2025] standing-stock estimate of 5.72 Pg C for 2020, reflecting the larger GMW v3 extent partially offset by our 20 cm soil depth convention.
+Our mangrove SOC total (`{python} f"{global_pg['mangrove_soil_c_total_mg']:.2f}"` Pg C) compares with the Sanderman et al. figure of `{python} f"{6.4 * soil_share:.2f}"` Pg C for the top `{python} soil_depth_cm` cm, 6.4 Pg C at 1 m scaled by `{python} f"{soil_share:g}"` [@sanderman2018]. Our above-ground biomass total (`{python} f"{global_pg['mangrove_agb_c_total_mg']:.2f}"` Pg C) applies the Hamilton and Friess latitude regression [@hamilton2018] over the GMW v3 extent. Our total (`{python} f"{global_pg['mangrove_total_c_stock_mg']:.2f}"` Pg C) compares with the Ju et al. [@ju2025] standing-stock estimate of 5.72 Pg C for 2020, which counts soil to full depth.
 
 ## Salt marsh
 
-The pipeline produces a global salt marsh total of 0.90 Pg C over the GLC_FCS30D 2019 extent, decomposed in @tbl-validate-saltmarsh.
+The pipeline produces a global salt marsh total of `{python} f"{global_pg['salt_marsh_total_c_stock_mg']:.2f}"` Pg C over `{python} f"{global_mha['salt_marsh_area_ha']:.2f}"` Mha of the GLC_FCS30D 2019 extent, decomposed in @tbl-validate-saltmarsh.
 
 | Component | This study (Pg C) | Published (Pg C) | Source |
 |---|---|---|---|
-| Above-ground biomass C | 0.038 | 0.03 – 0.05 | Chmura [@chmura2003] |
-| Below-ground biomass C | 0.086 | 0.07 – 0.15 | Howard manual ratios [@howard2014] |
-| Soil organic C, top 20 cm | 0.78 | 0.28–0.42; 0.08 (McLeod 2011) | Maxwell [@maxwell2024]; McLeod [@mcleod2011] |
-| Total ecosystem C | 0.90 | 1.5 – 2.1 (full depth) | Maxwell [@maxwell2024] |
+| Above-ground biomass C | `{python} f"{global_pg['salt_marsh_agb_c_total_mg']:.3f}"` | 0.03 – 0.05 | Chmura [@chmura2003] |
+| Below-ground biomass C | `{python} f"{global_pg['salt_marsh_bgb_c_total_mg']:.3f}"` | 0.07 – 0.15 | Howard manual ratios [@howard2014] |
+| Soil organic C | `{python} f"{global_pg['salt_marsh_soil_c_total_mg']:.2f}"` (top `{python} soil_depth_cm` cm) | 0.28–0.42 (top 20 cm); 0.08 (McLeod 2011) | Maxwell [@maxwell2024]; McLeod [@mcleod2011] |
+| Total ecosystem C | `{python} f"{global_pg['salt_marsh_total_c_stock_mg']:.2f}"` | 1.5 – 2.1 (full depth) | Maxwell [@maxwell2024] |
 
 : Global salt marsh carbon stock, this study vs published estimates. {#tbl-validate-saltmarsh}
 
-Our salt marsh SOC total (0.78 Pg C) is about twice the Maxwell et al. [@maxwell2024] global estimate of 0.28 to 0.42 Pg C for top 20 cm. The main driver is the latitude step function, which assigns 36 to 70 ton C/ha (20 cm) across latitude bands. Maxwell et al. report a global area-weighted mean of ~225 ton C/ha (1 m equivalent), which scales to ~45 ton C/ha at 20 cm depth. Replacing the step function with the native raster from that source is the most important remaining improvement for salt marshes.
+Our salt marsh SOC total (`{python} f"{global_pg['salt_marsh_soil_c_total_mg']:.2f}"` Pg C for the top `{python} soil_depth_cm` cm) compares with the Maxwell et al. [@maxwell2024] global estimate of 0.28 to 0.42 Pg C for the top 20 cm. The latitude step function assigns `{python} f"{180 * soil_share:g}"` to `{python} f"{350 * soil_share:g}"` ton C/ha at `{python} soil_depth_cm` cm across latitude bands. Maxwell et al. report a global area-weighted mean of ~225 ton C/ha (1 m equivalent), which scales to ~`{python} f"{225 * soil_share:.0f}"` ton C/ha at `{python} soil_depth_cm` cm. Replacing the step function with the native raster from that source is the most important remaining improvement for salt marshes.
 
 ## Seagrass
 
-The pipeline produces a global seagrass total of 1.08 Pg C over the WCMC v7.1 extent (~16 – 27 Mha, McKenzie 2020 confidence range), decomposed in @tbl-validate-seagrass.
+The pipeline produces a global seagrass total of `{python} f"{global_pg['seagrass_total_c_stock_mg']:.2f}"` Pg C over `{python} f"{global_mha['seagrass_area_ha']:.2f}"` Mha of the GlobalSeagrass 2019-2020 extent [@peng2026], decomposed in @tbl-validate-seagrass.
 
 | Component | This study (Pg C) | Published (Pg C) | Source |
 |---|---|---|---|
-| Above-ground biomass C | 0.046 | 0.007 – 0.012 | Gomis [@gomis2025] |
-| Below-ground biomass C | 0.107 | 0.017 – 0.028 | Gomis [@gomis2025] |
-| Total biomass C | 0.153 | 0.024 – 0.040 | Gomis [@gomis2025] |
-| Soil organic C, top 20 cm | 0.93 | 0.84–1.68 | Fourqurean [@fourqurean2012]; Macreadie [@macreadie2021] |
-| Total ecosystem C | 1.08 | 4.3 – 8.4 (full depth) | Fourqurean [@fourqurean2012] |
+| Above-ground biomass C | `{python} f"{global_pg['seagrass_agb_c_total_mg']:.3f}"` | 0.007 – 0.012 | Gomis [@gomis2025] |
+| Below-ground biomass C | `{python} f"{global_pg['seagrass_bgb_c_total_mg']:.3f}"` | 0.017 – 0.028 | Gomis [@gomis2025] |
+| Total biomass C | `{python} f"{global_pg['seagrass_agb_c_total_mg'] + global_pg['seagrass_bgb_c_total_mg']:.3f}"` | 0.024 – 0.040 | Gomis [@gomis2025] |
+| Soil organic C | `{python} f"{global_pg['seagrass_soil_c_total_mg']:.2f}"` (top 30 cm) | 0.84–1.68 (top 20 cm) | Fourqurean [@fourqurean2012]; Macreadie [@macreadie2021] |
+| Total ecosystem C | `{python} f"{global_pg['seagrass_total_c_stock_mg']:.2f}"` | 4.3 – 8.4 (full depth) | Fourqurean [@fourqurean2012] |
 
 : Global seagrass carbon stock, this study vs published estimates. {#tbl-validate-seagrass}
 
-Our seagrass biomass-only total is about four to six times the Gomis et al. 2025 range of 0.024 to 0.040 Pg C [@gomis2025]. This happens because about 78 percent of WCMC polygons lack genus information and receive the Gomis global mean of 1.55 ton C/ha. That value is conservative for individual stocks but generous when applied across the full WCMC extent rather than the McKenzie high-confidence subset. The WCMC v7.1 extent of ~27 Mha is also at the upper end of the published range. Our soil total (0.93 Pg C) uses the Fourqurean et al. 2012 global mean of 22 ton C/ha for the top 20 cm, which is conservative relative to the Fourqurean full-ecosystem estimate of 4.3 to 8.4 Pg C because we apply only the soil component and use a subset of the global extent.
+Our seagrass biomass total applies the Gomis et al. global mean of `{python} f"{p.seagrass_biomass_c_mg_per_ha:g}"` ton C/ha [@gomis2025] to every mapped pixel, because the extent carries no genus, and compares with their range of 0.024 to 0.040 Pg C. Our soil total (`{python} f"{global_pg['seagrass_soil_c_total_mg']:.2f}"` Pg C) applies the Krause et al. [@krause2025] median of `{python} f"{p.seagrass_soil_c_mg_per_ha:g}"` ton C/ha for the top 30 cm.
 
 # Conclusion
 

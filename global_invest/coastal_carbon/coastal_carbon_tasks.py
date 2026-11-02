@@ -8,7 +8,11 @@ Each habitat runs the same three tasks -- area within regions, carbon stock, sto
 and the last two tasks combine them and collapse the result to one row per country.
 """
 import contextlib
+import functools
+import glob
 import os
+import time
+from collections import defaultdict
 
 import geopandas as gpd
 import hazelbean as hb
@@ -19,6 +23,7 @@ import rasterio.features
 import rasterio.transform
 import rasterio.warp
 import rasterio.windows
+import shapely
 from rasterio.enums import Resampling
 from shapely.geometry import box
 from tqdm import tqdm
@@ -41,6 +46,10 @@ COVERAGE_SUPERSAMPLE = 10
 # Coarse cells per side of a coverage tile. At that sampling the fine tile is 2560x2560 int64,
 # about 52 MB, which is what keeps a global pass inside memory.
 COVERAGE_TILE_COARSE = 256
+# Pixels per side of a read window in the seagrass extent tiles. Most of a tile is open water, and
+# a window this size is skipped before any region is burned; the densest tile ran in 5.5 s at 1024
+# against 8.0 s at 4096.
+SEAGRASS_WINDOW_PIXELS = 1024
 
 
 def publish_inputs(p):
@@ -48,8 +57,9 @@ def publish_inputs(p):
     correspondence (the gep_regions_input_path cell) is the per-EEZ aggregation surface with its
     gep_regions_id_col; the r264 correspondence (initialize_country_paths) is the iso3_r250-
     collapse crosswalk gep_calculation reads. Science inputs (habitat extents, SOC rasters,
-    precipitation) hydrate from es_parameters -- the optional ones resolve permissively and the
-    stock tasks keep their documented fallbacks. ha_per_cell is pyramid infrastructure, in code."""
+    precipitation, the soil depth and the seagrass densities) hydrate from es_parameters -- the
+    optional ones resolve permissively and the stock tasks keep their documented fallbacks.
+    ha_per_cell is pyramid infrastructure, in code."""
     utilities.hydrate_es_config(p, 'coastal_carbon', log=hb.log)
     utilities.hydrate_es_parameters(p, 'coastal_carbon', log=hb.log)
     utilities.initialize_country_paths(p, simplified='30sec')
@@ -376,7 +386,9 @@ def mangrove_carbon_stock(p):
 
     AGB: Hamilton & Friess (2018) latitude regression.
     BGB: AGB x the IPCC 2014 zone-specific ratio (uses p.precipitation_path when set).
-    SOC: the Sanderman 2018 raster at p.mangrove_soc_path, else the latitude fallback.
+    SOC: the Sanderman 2018 raster at p.mangrove_soc_path, else the latitude fallback, both for
+         the top 1 m and taken as the share p.coastal_carbon_soil_depth_cm /
+         p.coastal_carbon_soil_source_depth_cm of it.
     """
     publish_inputs(p)
     p.mangrove_carbon_stock_path = os.path.join(
@@ -400,8 +412,10 @@ def mangrove_carbon_stock(p):
         if aligned_path:
             extras[kwarg] = aligned_path
 
-    df_stock = _stock_by_region(p, 'mangrove', coverage_path,
-                                ccf.calculate_mangrove_density_array, extras)
+    density_func = functools.partial(
+        ccf.calculate_mangrove_density_array,
+        soil_depth_share=p.coastal_carbon_soil_depth_cm / p.coastal_carbon_soil_source_depth_cm)
+    df_stock = _stock_by_region(p, 'mangrove', coverage_path, density_func, extras)
     df_stock.to_csv(p.mangrove_carbon_stock_path, index=False)
     hb.log(f'Saved mangrove carbon stock by countries: {p.mangrove_carbon_stock_path}')
 
@@ -457,7 +471,7 @@ def salt_marsh_carbon_stock(p):
     AGB: Chmura et al. 2003 median with the tropical productivity boost.
     BGB: AGB x 2.5 (extensive root systems).
     SOC: the Maxwell et al. 2024 MarSOC raster at p.salt_marsh_soc_path, else the latitude
-         fallback.
+         fallback, both for the top 1 m and taken at the configured depth share as for mangrove.
     """
     publish_inputs(p)
     p.salt_marsh_carbon_stock_path = os.path.join(
@@ -478,8 +492,10 @@ def salt_marsh_carbon_stock(p):
     if aligned_path:
         extras['soc_arr'] = aligned_path
 
-    df_stock = _stock_by_region(p, 'salt_marsh', coverage_path,
-                                ccf.calculate_salt_marsh_density_array, extras)
+    density_func = functools.partial(
+        ccf.calculate_salt_marsh_density_array,
+        soil_depth_share=p.coastal_carbon_soil_depth_cm / p.coastal_carbon_soil_source_depth_cm)
+    df_stock = _stock_by_region(p, 'salt_marsh', coverage_path, density_func, extras)
     df_stock.to_csv(p.salt_marsh_carbon_stock_path, index=False)
     hb.log(f'Saved salt marsh carbon stock by countries: {p.salt_marsh_carbon_stock_path}')
 
@@ -496,64 +512,155 @@ def salt_marsh_storage_value(p):
 
 
 # ============================================================================
-# Seagrass: WCMC013-014 SeagrassPtPy v7.1 extent
+# Seagrass: GlobalSeagrass 2019-2020, 10 m presence tiles
 #
-# The one habitat whose density is an attribute of the polygon (its GENUS) rather than of the
-# pixel, so its stock is aggregated from the clipped polygons instead of a streamed raster
-# pass. A missing extent RAISES: seagrass is excluded by building the tree with
-# include_seagrass=False, never by letting a data gap silently understate the coastal total.
+# The extent is a raster of presence with no genus, so the area is measured pixel by pixel on the
+# source grid and every mapped pixel takes the same configured densities. A missing extent RAISES:
+# seagrass is excluded by building the tree with include_seagrass=False, never by letting a data
+# gap silently understate the coastal total.
 # ============================================================================
 
+def _seagrass_tile_area(tif_path, gdf_regions, id_col):
+    """One extent tile's seagrass hectares per marine region, and what the tile holds in all.
+
+    A pixel belongs to every region that holds its centre (all_touched=False), and its area is the
+    WGS84 ellipsoid area of its row. The tile is read in SEAGRASS_WINDOW_PIXELS windows, a window
+    with no seagrass is skipped before anything is burned, and a region that covers a whole window
+    holds every pixel in it without a burn.
+
+    Returns (area_ha, shared_ha, diagnostic): the first two map region id -> hectares as
+    ccf.presence_area_by_zone defines them, summed over the tile's windows.
+    """
+    start = time.monotonic()
+    area_ha, shared_ha = defaultdict(float), defaultdict(float)
+    diagnostic = {'tile': os.path.basename(tif_path), 'positive_pixels': 0, 'presence_ha': 0.0,
+                  'unique_ha': 0.0, 'overlap_counted_ha': 0.0}
+    with rasterio.open(tif_path) as src:
+        cell_degrees = src.transform.a
+        if src.crs.to_epsg() != 4326 or src.transform.e != -cell_degrees:
+            raise ValueError(f'{os.path.basename(tif_path)}: the area per row needs square cells in '
+                             f'EPSG:4326, found {src.crs} with cells {src.res}')
+        tile_box = box(*src.bounds)
+        regions = gdf_regions.iloc[gdf_regions.sindex.query(tile_box, predicate='intersects')]
+        geometries = shapely.intersection(regions.geometry.to_numpy(), tile_box)
+        region_ids = regions[id_col].astype(int).to_numpy()
+        tree = shapely.STRtree(geometries)
+
+        for row_off in range(0, src.height, SEAGRASS_WINDOW_PIXELS):
+            for col_off in range(0, src.width, SEAGRASS_WINDOW_PIXELS):
+                window = rasterio.windows.Window(
+                    col_off, row_off, min(SEAGRASS_WINDOW_PIXELS, src.width - col_off),
+                    min(SEAGRASS_WINDOW_PIXELS, src.height - row_off))
+                presence = src.read(1, window=window) > 0
+                if not presence.any():
+                    continue
+                bounds = rasterio.windows.bounds(window, src.transform)
+                window_box = box(*bounds)
+                masks = {}
+                for i in tree.query(window_box, predicate='intersects'):
+                    if geometries[i].covers(window_box):
+                        masks[region_ids[i]] = np.ones(presence.shape, dtype=bool)
+                        continue
+                    # Only a polygonal piece can hold a pixel centre. A region that merely touches
+                    # the window clips to a line or a point, which GDAL burns as a run of pixels.
+                    pieces = [piece for piece in shapely.get_parts(geometries[i].intersection(window_box))
+                              if piece.geom_type in ('Polygon', 'MultiPolygon')]
+                    if pieces:
+                        # rasterio rather than hazelbean here: the burn is one window of a source
+                        # tile and never becomes a file, and hb.rasterize_to_match writes a whole
+                        # raster matching a template on disk.
+                        masks[region_ids[i]] = rasterio.features.rasterize(
+                            [(piece, 1) for piece in pieces], out_shape=presence.shape,
+                            transform=rasterio.windows.transform(window, src.transform),
+                            fill=0, dtype='uint8', all_touched=False).astype(bool)
+
+                block = ccf.presence_area_by_zone(
+                    presence, masks,
+                    hb.ha_per_cell_rows(bounds[3], cell_degrees, presence.shape[0])[:, None])
+                for region_id, hectares in block['area_ha'].items():
+                    area_ha[region_id] += hectares
+                    shared_ha[region_id] += block['shared_ha'][region_id]
+                diagnostic['positive_pixels'] += int(np.count_nonzero(presence))
+                for key in ('presence_ha', 'unique_ha', 'overlap_counted_ha'):
+                    diagnostic[key] += block[key]
+
+    diagnostic['region_summed_ha'] = sum(area_ha.values())
+    diagnostic['seconds'] = time.monotonic() - start
+    return area_ha, shared_ha, diagnostic
+
+
 def seagrass_area_within_countries(p):
-    """Seagrass area within each region's marine EEZ, keeping GENUS on every clipped polygon.
+    """Seagrass hectares within each marine region, from the GlobalSeagrass 10 m presence tiles.
+
+    Every r566 region is measured, the same surface the other two habitats are clipped to; the
+    `_EEZ` rows are the ones gep_calculation values.
 
     Outputs
     -------
-    seagrass_within_countries2019.gpkg
-        Per-polygon intersection with GENUS, the region id, and area_ha -- the input the
-        genus-aware stock task reads.
     seagrass_area_by_countries2019.{gpkg,csv}
-        Region-level area total.
+        Per marine region, area_ha and overlap_ha, the part of it another region also holds.
+    seagrass_tiles2019.csv
+        Per tile: positive pixels, hectares present, hectares some region holds (once), the
+        overlap-counted hectares, the regions' sum, and seconds.
+
+    The tables are written only after the last tile, each under a temporary name and then renamed
+    into place, so an interrupted run leaves nothing a later task could read as finished.
     """
     publish_inputs(p)
-    p.seagrass_within_countries_path = os.path.join(
-        p.cur_dir, "seagrass_within_countries2019.gpkg"
-    )
     p.seagrass_area_by_countries_base_year_path = os.path.join(
         p.cur_dir, "seagrass_area_by_countries2019.gpkg"
     )
     csv_path = p.seagrass_area_by_countries_base_year_path.replace('.gpkg', '.csv')
+    p.seagrass_tiles_path = os.path.join(p.cur_dir, "seagrass_tiles2019.csv")
     if not p.run_this:
         return
 
-    if not hb.path_exists(getattr(p, 'seagrass_vector_path', None)):
+    extent_dir = getattr(p, 'seagrass_extent_dir_path', None)
+    tile_paths = sorted(glob.glob(os.path.join(extent_dir, '*.tif'))) if hb.path_exists(extent_dir) else []
+    if not tile_paths:
         raise FileNotFoundError(
-            "seagrass extent not found (p.seagrass_vector_path=%r). A built seagrass tree with no "
-            "data would silently understate the coastal GEP total; to exclude seagrass, build the "
-            "tree with include_seagrass=False instead." % (getattr(p, 'seagrass_vector_path', None),))
+            "seagrass extent tiles not found (p.seagrass_extent_dir_path=%r). A built seagrass tree "
+            "with no data would silently understate the coastal GEP total; to exclude seagrass, "
+            "build the tree with include_seagrass=False instead." % (extent_dir,))
 
+    id_col = p.gep_regions_id_col
     gdf_regions = gpd.read_file(p.gep_regions_input_path)
-    gdf_seagrass = gpd.read_file(
-        p.seagrass_vector_path, columns=['GENUS', 'FAMILY']).to_crs(gdf_regions.crs)
-    hb.log(f'Loaded {len(gdf_seagrass)} seagrass polygons, {len(gdf_regions)} marine regions')
+    hb.log(f'Seagrass: {len(tile_paths)} extent tiles in {extent_dir}, {len(gdf_regions)} marine regions')
 
-    pieces = ccf.add_equal_area_ha(ccf.intersect_features_with_regions(
-        gdf_seagrass, gdf_regions, desc='Intersecting seagrass with countries'))
-    pieces.to_file(p.seagrass_within_countries_path, driver="GPKG")
+    area_ha, shared_ha, diagnostics = defaultdict(float), defaultdict(float), []
+    for tif_path in tqdm(tile_paths, desc='Seagrass tiles'):
+        tile_area, tile_shared, diagnostic = _seagrass_tile_area(tif_path, gdf_regions, id_col)
+        for region_id, hectares in tile_area.items():
+            area_ha[region_id] += hectares
+            shared_ha[region_id] += tile_shared[region_id]
+        diagnostics.append(diagnostic)
 
-    area = ccf.area_by_region(pieces, gdf_regions, p.gep_regions_id_col, how='right')
-    area.to_file(p.seagrass_area_by_countries_base_year_path, driver="GPKG")
-    area.drop(columns=['geometry']).to_csv(csv_path, index=False)
+    df_area = pd.DataFrame({id_col: list(area_ha), 'area_ha': list(area_ha.values()),
+                            'overlap_ha': [shared_ha[region_id] for region_id in area_ha]})
+    area = ccf.area_by_region(df_area, gdf_regions, id_col, how='right')
+    area = area.merge(df_area[[id_col, 'overlap_ha']], on=id_col, how='left')
+    area['overlap_ha'] = area['overlap_ha'].fillna(0.0)
+    df_tiles = pd.DataFrame(diagnostics)
+
+    partial = {path: '%s_partial%s' % os.path.splitext(path)
+               for path in (p.seagrass_area_by_countries_base_year_path, csv_path, p.seagrass_tiles_path)}
+    area.to_file(partial[p.seagrass_area_by_countries_base_year_path], driver='GPKG')
+    area.drop(columns=['geometry']).to_csv(partial[csv_path], index=False)
+    df_tiles.to_csv(partial[p.seagrass_tiles_path], index=False)
+    for path, partial_path in partial.items():
+        os.replace(partial_path, path)
+
+    totals = df_tiles[['presence_ha', 'unique_ha', 'overlap_counted_ha', 'region_summed_ha']].sum()
+    hb.log(f'Seagrass: {totals["presence_ha"]:,.3f} ha mapped, {totals["unique_ha"]:,.3f} ha inside '
+           f'a marine region, {totals["overlap_counted_ha"]:,.3f} ha counted again by an overlapping '
+           f'region; {df_tiles["seconds"].sum():,.0f} s over {len(df_tiles)} tiles')
     hb.log(f'Saved seagrass area by countries: {p.seagrass_area_by_countries_base_year_path}')
 
 
 def seagrass_carbon_stock(p):
-    """Per-region seagrass carbon stock (Mg C) from Gomis et al. 2025 genus-specific biomass
-    densities and the Fourqurean et al. 2012 soil constant.
-
-    Reads the polygon-level GPKG the area task wrote (GENUS + region id + area_ha), prices each
-    polygon by its genus density, and sums to the region. Non-marine genera (Trapa,
-    Myriophyllum, Valisneria, Najas and the rest) carry zero density.
+    """Per-region seagrass carbon stock (Mg C): each region's mapped hectares times the configured
+    densities, p.seagrass_biomass_c_mg_per_ha split by p.seagrass_agb_fraction, and
+    p.seagrass_soil_c_mg_per_ha for the configured soil depth.
     """
     publish_inputs(p)
     p.seagrass_carbon_stock_path = os.path.join(
@@ -562,15 +669,18 @@ def seagrass_carbon_stock(p):
     if not p.run_this:
         return
 
-    if not hb.path_exists(getattr(p, 'seagrass_within_countries_path', None)):
+    area_gpkg = getattr(p, 'seagrass_area_by_countries_base_year_path', None)
+    area_csv = area_gpkg.replace('.gpkg', '.csv') if area_gpkg else None
+    if not hb.path_exists(area_csv):
         raise FileNotFoundError(
-            "seagrass polygon-level GPKG missing -- seagrass_area_within_countries "
-            "must run first (same tree). Skipping here would silently zero seagrass in the total.")
+            "seagrass area table missing (%r) -- seagrass_area_within_countries must run first "
+            "(same tree). Skipping here would silently zero seagrass in the total." % (area_csv,))
 
-    gdf_pieces = gpd.read_file(p.seagrass_within_countries_path)
-    hb.log(f'Read {len(gdf_pieces)} seagrass-within-country polygons')
-
-    df_stock = ccf.seagrass_stock_by_region(gdf_pieces, p.gep_regions_id_col)
+    densities = ccf.seagrass_pool_densities(
+        p.seagrass_biomass_c_mg_per_ha, p.seagrass_agb_fraction, p.seagrass_soil_c_mg_per_ha)
+    hb.log('Seagrass densities (Mg C/ha): ' + ', '.join(
+        f'{pool} {value:g}' for pool, value in densities.items()))
+    df_stock = ccf.seagrass_stock_by_region(hb.df_read(area_csv), p.gep_regions_id_col, densities)
     df_stock.to_csv(p.seagrass_carbon_stock_path, index=False)
 
     total_stock = df_stock['seagrass_total_c_stock_mg'].sum()

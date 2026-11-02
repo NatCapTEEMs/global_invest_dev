@@ -14,6 +14,11 @@ directly would count a split country once per sub-region -- see global_invest/ut
 The valuation is storage-only, and identical in form to terrestrial carbon: mapped habitat
 area x per-habitat carbon density = stock (Mg C), stock x the base-year rental social cost of
 carbon = GEP ($).
+
+Soil carbon is the stock in the configured top layer (coastal_carbon_soil_depth_cm). The
+mangrove and salt marsh soil products and their latitude fallbacks are stated for the source
+depth (coastal_carbon_soil_source_depth_cm), and the density functions take the ratio of the
+two as `soil_depth_share`, a linear share of the profile.
 """
 
 import geopandas as gpd
@@ -32,9 +37,6 @@ MG_C_PER_PG = 1e9
 # The marine surface carries one row per EEZ plus land/territorial rows for the same coast;
 # only the EEZ rows are valued, so the coast is counted once.
 EEZ_LABEL_SUFFIX = '_EEZ'
-# External SOC products report the top 1 m; the stock convention here is the top 20 cm, taken
-# as a linear share of the profile.
-SOC_1M_TO_20CM_SCALAR = 0.2
 
 
 # ============================================================================
@@ -52,13 +54,14 @@ MANGROVE_BGB_TO_C = 0.39   # Howard et al. 2014
 # Hamilton & Friess 2018 EQ5: AGB (t/ha) falls linearly with distance from the equator.
 MANGROVE_AGB_LAT_SLOPE_T_HA_PER_DEG = -6.4305
 MANGROVE_AGB_LAT_INTERCEPT_T_HA = 271.747
-# SOC used only when no SOC raster is supplied: Mg C/ha in the top 20 cm, poleward value first
-# and then narrower latitude bands overriding it, so the equator ends up richest.
-MANGROVE_FALLBACK_SOC_POLEWARD_MG_HA = 50.0
-MANGROVE_FALLBACK_SOC_BANDS_MG_HA = ((25.0, 60.0), (20.0, 70.0), (15.0, 75.0), (10.0, 80.0))
+# SOC used only when no SOC raster is supplied: Mg C/ha over the source depth (the top 1 m),
+# poleward value first and then narrower latitude bands overriding it, so the equator ends up
+# richest.
+MANGROVE_FALLBACK_SOC_POLEWARD_MG_HA = 250.0
+MANGROVE_FALLBACK_SOC_BANDS_MG_HA = ((25.0, 300.0), (20.0, 350.0), (15.0, 375.0), (10.0, 400.0))
 
 
-def calculate_mangrove_density_array(latitude_arr, precipitation_arr=None,
+def calculate_mangrove_density_array(latitude_arr, soil_depth_share, precipitation_arr=None,
                                      soc_arr=None):
     """
     Vectorised mangrove total carbon density (Mg C/ha).
@@ -68,9 +71,10 @@ def calculate_mangrove_density_array(latitude_arr, precipitation_arr=None,
     BGB: AGB x IPCC 2014 zone-specific ratio (0.49 tropical wet, 0.29 tropical
          dry, 0.96 subtropical). If precipitation_arr is None, all tropics use
          the wet ratio (0.49). Tropical/subtropical split at |lat| = 23.5 deg.
-    SOC: from soc_arr (Sanderman 2018 raster) when provided; otherwise a
-         latitude step function, 80 down to 50 Mg C/ha by zone -- the 400-to-250
-         Mg C/ha profile for the top 1 m, scaled to the top 20 cm.
+    SOC: from soc_arr (Sanderman 2018 raster, 0-100 cm) when provided; otherwise a
+         latitude step function for the top 1 m, 400 down to 250 Mg C/ha by zone.
+         Either is multiplied by soil_depth_share, the configured depth over the
+         source depth (0.3 for 30 of 100 cm).
     """
     lat_abs = np.abs(latitude_arr).astype(np.float64)
     agb_t_per_ha = np.maximum(
@@ -95,11 +99,12 @@ def calculate_mangrove_density_array(latitude_arr, precipitation_arr=None,
     bgb_c = bgb_t_per_ha * MANGROVE_BGB_TO_C
 
     if soc_arr is not None:
-        soc = soc_arr.astype(np.float64) * SOC_1M_TO_20CM_SCALAR
+        soc = soc_arr.astype(np.float64)
     else:
         soc = np.full_like(lat_abs, MANGROVE_FALLBACK_SOC_POLEWARD_MG_HA, dtype=np.float64)
         for lat_below, soc_mg_per_ha in MANGROVE_FALLBACK_SOC_BANDS_MG_HA:
             soc = np.where(lat_abs < lat_below, soc_mg_per_ha, soc)
+    soc = soc * soil_depth_share
 
     return {
         'agb_c_mg_per_ha':   agb_c,
@@ -116,21 +121,21 @@ SALT_MARSH_AGB_TO_C = 0.45
 SALT_MARSH_BGB_TO_C = 0.41
 SALT_MARSH_TROPICAL_BOOST_LAT = 25.0
 SALT_MARSH_TROPICAL_BOOST_FACTOR = 1.2
-# Same fallback convention as mangrove: poleward value first, narrower bands override it. Salt
-# marsh soils run the other way -- richest at high latitude.
-SALT_MARSH_FALLBACK_SOC_POLEWARD_MG_HA = 70.0
-SALT_MARSH_FALLBACK_SOC_BANDS_MG_HA = ((45.0, 50.0), (35.0, 44.0), (20.0, 36.0))
+# Same fallback convention as mangrove, also for the top 1 m: poleward value first, narrower
+# bands override it. Salt marsh soils run the other way -- richest at high latitude.
+SALT_MARSH_FALLBACK_SOC_POLEWARD_MG_HA = 350.0
+SALT_MARSH_FALLBACK_SOC_BANDS_MG_HA = ((45.0, 250.0), (35.0, 220.0), (20.0, 180.0))
 
 
-def calculate_salt_marsh_density_array(latitude_arr, soc_arr=None):
+def calculate_salt_marsh_density_array(latitude_arr, soil_depth_share, soc_arr=None):
     """
     Vectorised salt marsh total carbon density (Mg C/ha).
 
     AGB: Chmura et al. 2003 median (5 t/ha) with 1.2x tropical boost (|lat| < 25).
     BGB: AGB x 2.5 (extensive root systems).
-    SOC: from soc_arr (Maxwell 2024 MarSOC raster) when provided; otherwise a
-         latitude step function, 36 up to 70 Mg C/ha by zone -- the 180-to-350
-         Mg C/ha profile for the top 1 m, scaled to the top 20 cm.
+    SOC: from soc_arr (Maxwell 2024 MarSOC raster, 0-100 cm) when provided; otherwise a
+         latitude step function for the top 1 m, 180 up to 350 Mg C/ha by zone. Either
+         is multiplied by soil_depth_share, the configured depth over the source depth.
     """
     lat_abs = np.abs(latitude_arr).astype(np.float64)
 
@@ -144,11 +149,12 @@ def calculate_salt_marsh_density_array(latitude_arr, soc_arr=None):
     bgb_c = bgb_t_per_ha * SALT_MARSH_BGB_TO_C
 
     if soc_arr is not None:
-        soc = soc_arr.astype(np.float64) * SOC_1M_TO_20CM_SCALAR
+        soc = soc_arr.astype(np.float64)
     else:
         soc = np.full_like(lat_abs, SALT_MARSH_FALLBACK_SOC_POLEWARD_MG_HA, dtype=np.float64)
         for lat_below, soc_mg_per_ha in SALT_MARSH_FALLBACK_SOC_BANDS_MG_HA:
             soc = np.where(lat_abs < lat_below, soc_mg_per_ha, soc)
+    soc = soc * soil_depth_share
 
     return {
         'agb_c_mg_per_ha':   agb_c,
@@ -158,78 +164,19 @@ def calculate_salt_marsh_density_array(latitude_arr, soc_arr=None):
     }
 
 
-# Seagrass (Gomis et al. 2025 genus-specific biomass + Fourqurean 2012 soil scaled to 1 m)
-SEAGRASS_GENUS_TOTAL_BIOMASS_C_MG_HA = {
-    # Persistent strategy
-    'Posidonia':       9.78,
-    'Phyllospadix':    3.70,
-    'Enhalus':         3.70,
-    'Cymodocea':       3.70,
-    'Thalassia':       3.70,
-    'Amphibolis':      3.70,
-    'Thalassodendron': 3.70,
-    # Opportunistic
-    'Zostera':         0.94,
-    'Syringodium':     0.94,
-    'Halodule':        0.94,
-    # Colonising
-    'Ruppia':          0.33,
-    'Halophila':       0.19,
-}
-SEAGRASS_DEFAULT_BIOMASS_C_MG_HA = 1.55  # Gomis 2025 global mean
-SEAGRASS_BGB_FRACTION = 0.70
-SEAGRASS_AGB_FRACTION = 0.30
-SEAGRASS_SOIL_C_MG_HA_20CM = 22.0  # Fourqurean 2012 global mean for top 20 cm
-SEAGRASS_NON_MARINE_GENERA = frozenset({
-    'Valisneria', 'Trapa', 'Myriophyllum', 'Najas', 'Heteranthera',
-    'Stuckenia', 'Utricularia',
-})
+def seagrass_pool_densities(biomass_c_mg_per_ha, agb_fraction, soil_c_mg_per_ha):
+    """Per-pool seagrass carbon density (Mg C/ha), one value for every mapped pixel.
 
-
-def _normalize_seagrass_genus(genus_str):
-    if not isinstance(genus_str, str):
-        return None
-    primary = genus_str.strip().split('|')[0].strip()
-    if not primary or primary.lower() == 'not reported':
-        return None
-    return primary.capitalize()
-
-
-def _seagrass_biomass_for_genus(genus_str):
-    """Mg C/ha total biomass for a genus, or None if non-marine."""
-    if isinstance(genus_str, str) and genus_str.strip().lower() == 'not reported':
-        return SEAGRASS_DEFAULT_BIOMASS_C_MG_HA
-    g = _normalize_seagrass_genus(genus_str)
-    if g is None:
-        return SEAGRASS_DEFAULT_BIOMASS_C_MG_HA
-    if g in SEAGRASS_NON_MARINE_GENERA:
-        return None
-    return SEAGRASS_GENUS_TOTAL_BIOMASS_C_MG_HA.get(g, SEAGRASS_DEFAULT_BIOMASS_C_MG_HA)
-
-
-def calculate_seagrass_pool_densities_array(genus_array):
+    The extent is a presence map with no genus or meadow type, so one biomass density is split
+    above and below ground by `agb_fraction`, and soil is one density for the configured depth.
     """
-    Vectorised per-pool seagrass densities (Mg C/ha) for an array of genus strings.
-    Non-marine genera (freshwater plants) are zeroed out across all pools so the
-    caller can join by row index without dropping records. Soil density is a
-    constant (Fourqurean 2012 global mean for top 20 cm).
-    """
-    n = len(genus_array)
-    agb = np.zeros(n, dtype=np.float64)
-    bgb = np.zeros(n, dtype=np.float64)
-    soil = np.zeros(n, dtype=np.float64)
-    for i, g in enumerate(genus_array):
-        biomass = _seagrass_biomass_for_genus(g)
-        if biomass is None:
-            continue
-        agb[i] = biomass * SEAGRASS_AGB_FRACTION
-        bgb[i] = biomass * SEAGRASS_BGB_FRACTION
-        soil[i] = SEAGRASS_SOIL_C_MG_HA_20CM
+    agb = biomass_c_mg_per_ha * agb_fraction
+    bgb = biomass_c_mg_per_ha * (1.0 - agb_fraction)
     return {
         'agb_c_mg_per_ha':   agb,
         'bgb_c_mg_per_ha':   bgb,
-        'soil_c_mg_per_ha':  soil,
-        'total_c_mg_per_ha': agb + bgb + soil,
+        'soil_c_mg_per_ha':  soil_c_mg_per_ha,
+        'total_c_mg_per_ha': agb + bgb + soil_c_mg_per_ha,
     }
 
 
@@ -384,23 +331,57 @@ def area_by_region(gdf_pieces, gdf_regions, id_col, how):
     return gpd.GeoDataFrame(totals, geometry='geometry', crs=gdf_regions.crs)
 
 
-def seagrass_stock_by_region(gdf_pieces, id_col):
-    """Per-region seagrass stock (Mg C): each polygon's genus density times its hectares.
+def presence_area_by_zone(presence, zone_masks, pixel_area_ha):
+    """Hectares of present pixels in each zone, a pixel belonging to every zone that holds its centre.
 
-    Seagrass is the one habitat whose density is an attribute of the polygon rather than of the
-    pixel, so it is aggregated from the clipped polygons instead of a streamed raster pass.
+    `zone_masks` maps a zone id to a boolean array shaped like `presence`, True where the zone holds
+    the pixel's centre. `pixel_area_ha` broadcasts to `presence`; on a geographic grid it is one
+    value per row. Zones can overlap, so a pixel inside two zones counts in both zone totals.
+
+    Returns a dict:
+        area_ha: zone id -> hectares the zone holds (zones holding none are absent).
+        shared_ha: zone id -> the part of that area another zone also holds.
+        presence_ha: every present pixel, whether or not a zone holds it.
+        unique_ha: every pixel some zone holds, counted once.
+        overlap_counted_ha: what the zone totals add on top of unique_ha, each pixel's area once
+            for every zone past the first.
     """
-    densities = calculate_seagrass_pool_densities_array(gdf_pieces['GENUS'].values)
-    area_ha = gdf_pieces['area_ha'].values.astype(np.float64)
+    pixel_area_ha = np.broadcast_to(pixel_area_ha, presence.shape)
+    selected = {zone_id: presence & mask for zone_id, mask in zone_masks.items()}
+    holders = np.zeros(presence.shape, dtype=np.int32)
+    for held in selected.values():
+        holders += held
+    multiple = holders > 1
+    area_ha, shared_ha = {}, {}
+    for zone_id, held in selected.items():
+        if held.any():
+            area_ha[zone_id] = float(pixel_area_ha[held].sum())
+            shared_ha[zone_id] = float(pixel_area_ha[held & multiple].sum())
+    return {
+        'area_ha': area_ha,
+        'shared_ha': shared_ha,
+        'presence_ha': float(pixel_area_ha[presence].sum()),
+        'unique_ha': float(pixel_area_ha[holders > 0].sum()),
+        'overlap_counted_ha': float((pixel_area_ha[multiple] * (holders[multiple] - 1)).sum()),
+    }
+
+
+def seagrass_stock_by_region(df_area, id_col, densities):
+    """Per-region seagrass stock (Mg C): the region's hectares times each pool's density.
+
+    One density applies everywhere (seagrass_pool_densities), so the stock is the area table
+    scaled, one row per row of `df_area`. The total is the three pools added.
+    """
+    area_ha = df_area['area_ha'].to_numpy(dtype=np.float64)
     agb, bgb, soil, total = stock_columns('seagrass')
-    per_polygon = pd.DataFrame({
-        id_col: gdf_pieces[id_col].values,
-        agb: densities['agb_c_mg_per_ha'] * area_ha,
-        bgb: densities['bgb_c_mg_per_ha'] * area_ha,
-        soil: densities['soil_c_mg_per_ha'] * area_ha,
-        total: densities['total_c_mg_per_ha'] * area_ha,
+    df_stock = pd.DataFrame({
+        id_col: df_area[id_col].to_numpy(),
+        agb: area_ha * densities['agb_c_mg_per_ha'],
+        bgb: area_ha * densities['bgb_c_mg_per_ha'],
+        soil: area_ha * densities['soil_c_mg_per_ha'],
     })
-    return per_polygon.groupby(id_col)[[agb, bgb, soil, total]].sum().reset_index()
+    df_stock[total] = df_stock[agb] + df_stock[bgb] + df_stock[soil]
+    return df_stock
 
 
 # ============================================================================
