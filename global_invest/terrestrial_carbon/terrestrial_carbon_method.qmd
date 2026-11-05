@@ -21,6 +21,8 @@ author:
     affiliations: University of Minnesota
   - name: Nfamara Dampha
     affiliations: University of Minnesota
+  - name: Chiara Colesanti Senni
+    affiliations: University of Zurich
   - name: Haku Bo
     affiliations: University of Minnesota
 abstract: |
