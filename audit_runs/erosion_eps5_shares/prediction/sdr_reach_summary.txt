@@ -1,0 +1,17 @@
+falsifiers: HOLD, the prediction stands
+analysis grid 16744 x 7221, EPSG 8857, equal to the grid of the author shares, on both sets of rasters
+analysis cells that differ: usle 601, avoided 600, upstream 21, any 683
+analysis cells valid on one side only: usle 396, avoided 396, upstream 0. Largest soil loss among the usle ones 1.598, above 2: 0
+of the differing cells, soil loss above 2, the lowest threshold of the policy: 36. Every other differing cell has a share of zero on both sides
+those cells fall in 7 clusters, on cropland in 33
+eps5 onfarm: author rasters miss the stored author share at 0 cells, staged rasters differ from it at 4 cells, largest 5.96e-08
+eps5 upstream: author rasters miss the stored author share at 0 cells, staged rasters differ from it at 0 cells, largest 0
+eps5 combined: author rasters miss the stored author share at 0 cells, staged rasters differ from it at 0 cells, largest 0
+ses11 onfarm: author rasters miss the stored author share at 0 cells, staged rasters differ from it at 0 cells, largest 0
+ses11 upstream: author rasters miss the stored author share at 0 cells, staged rasters differ from it at 0 cells, largest 0
+ses11 combined: author rasters miss the stored author share at 0 cells, staged rasters differ from it at 0 cells, largest 0
+predicted differences in protected production, eps5: 21 country-crop-component rows, countries SRB, largest 1.56e-08 in the units of the stacks
+predicted differences in protected production, ses11: 0 country-crop-component rows, countries none, largest 0 in the units of the stacks
+cells that take another country between the boundary files: 484 of 120908424
+of those: threshold differs at EPS-5 0, soil loss above the lower EPS-5 threshold 0, nonzero author EPS-5 share 0, country pairs 1
+elapsed 220 s, peak resident memory of the main process 5.7 GB

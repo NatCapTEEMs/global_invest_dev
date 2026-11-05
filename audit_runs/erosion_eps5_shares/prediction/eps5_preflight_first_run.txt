@@ -1,0 +1,21 @@
+PASS  project absent
+PASS  result absent
+PASS  heartbeat.tsv absent
+PASS  comparison absent
+PASS  repaired stacks kept out: this folder and every pinned input are outside the repair folder
+PASS  library snapshot is the export of the pushed commit: commit efe2a63 on origin/feature/es-consistency-pass
+PASS  library snapshot matches its record: 282 files
+PASS  pinned library inputs unchanged: 29 rows
+PASS  pinned author files unchanged: 31 rows
+PASS  author EPS-5 settings: threshold 5 and 2, area 50000, elevation 250, EPSG 8857, severe filter on, all_touched off. The run tag in the author EPS-5 manifest still reads ses11_onfarm_upstream_combined_20260305
+PASS  original stacks: area stack, yield stack and band map are the bytes in the author archive
+PASS  the paths the author EPS-5 run read: 9 of 9 still present, each equal to the archive
+FAIL  staged SDR rasters against the author rasters: [['usle', 'DIFFERENT'], ['avoided', 'DIFFERENT'], ['upstream', 'DIFFERENT']], see sdr_rasters_library_vs_author.csv
+PASS  SES-11 control on MSI files: long table BYTE_IDENTICAL on 15990 rows, rasters BYTE_IDENTICAL BYTE_IDENTICAL BYTE_IDENTICAL
+PASS  SES-11 other tables: baseline to read the EPS-5 comparison against: threshold_policy.csv DIFFERENT, 0 values, 1 text cells; country_ps_diagnostics.csv DIFFERENT, 0 values, 1 text cells; area_conservation_audit.csv DIFFERENT, 133 values, 0 text cells; elasticity_audit.csv BYTE_IDENTICAL, 0 values, 0 text cells
+PASS  author threshold policy follows from SES-11: 107 default-high rows at 5.0, every other byte as in SES-11
+PASS  publish-only pass: hazelbean 7de5785, snapshot imported, tasks invest_sdr upstream_prevention_share prevention_shares gep_calculation erosion_gep_result, threshold 5.0 and the staged rasters and original stacks resolve
+      scratch free 223 TB. Expected outputs under 0.2 GB. Expected run 10 h, 26 GB, see README
+BLOCK rule 37: this launch code is in no repository, and the sbatch refuses until manifest/rule37_resolution.txt names the pushed commit that holds it
+      python 3.11.11, numpy 2.4.6, rasterio 1.4.3, GDAL 3.10.2
+eps5 preflight: NOT CLEARED: staged SDR rasters against the author rasters, rule 37

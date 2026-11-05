@@ -1,0 +1,16 @@
+parameter,value,used_by
+base_data_dir,,msi_parameters.csv and local_parameters.csv
+author_archive_dir,,msi_parameters.csv
+library_ses11_dir,,msi_parameters.csv and local_parameters.csv
+hazelbean_dir,,msi_parameters.csv and local_parameters.csv
+hazelbean_commit,7de5785923eee3e3baca9b8099e1e0eba6f504ca,msi_parameters.csv
+library_commit,efe2a63324eaa04667c88e7e22a898c226628e6f,msi_parameters.csv
+library_dir,,local_parameters.csv
+source_commit,efe2a63324eaa04667c88e7e22a898c226628e6f,local_parameters.csv
+saved_shares_dir,,local_parameters.csv
+frozen_ses11_code_dir,,local_parameters.csv
+author_boundary_path,,local_parameters.csv
+author_ses11_policy_path,,local_parameters.csv
+code_repo_dir,,local_parameters.csv
+code_repo_subdir,audit_runs/erosion_eps5_shares,local_parameters.csv
+code_commit,,local_parameters.csv
