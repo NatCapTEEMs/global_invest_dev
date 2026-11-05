@@ -160,7 +160,7 @@ for k, v in p.results[service_label].items():
 
 ```
 
-Crop production is valued at FAOSTAT production value times the land rental rate, giving $`{python} f"{total_agricultural_value:,.2f}"` in the base year. The tables below aggregate that by income group, region and continent, and end with the per-country table the account reads.
+Crop production is valued at FAOSTAT production times the USD producer price, times the land rental rate, giving $`{python} f"{total_agricultural_value:,.2f}"` in the base year. The tables below aggregate that by income group, region and continent, and end with the per-country table the account reads.
 
 ## GEP by Country in Base Year, mapped
 

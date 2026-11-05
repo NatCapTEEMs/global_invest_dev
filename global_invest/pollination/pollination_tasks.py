@@ -617,7 +617,7 @@ def _save_price_outputs(
     final_cols = [
         "area_code_m49", "iso3", "region_fao", "subregion_fao",
         "area_fao", "item_code_fao", "item_fao", "year",
-        "price_usd_tonne", "usd_source",
+        "price_usd_tonne", "usd_source", "usd_copy_of_lcu",
         "usd_tonne_obs", "usd_fx_implied", "fx_source",
         "slc_filled", "slc_source", "lcu_filled", "lcu_source",
         "price_index",
@@ -905,6 +905,35 @@ def load_fao_classification(cfg: pf.FaoPriceSettings) -> pd.DataFrame:
 
 
 
+def fao_price_settings(p, output_dir):
+    """The FAO price path's settings from the hydrated configuration, writing to output_dir."""
+    return pf.FaoPriceSettings(
+        crosswalk_m49_iso3_path=str(p.get_path(p.pollination_crosswalk_m49_iso3_path)),
+        fao_classification_path=str(p.get_path(p.pollination_fao_classification_path)),
+        crosswalk_fao_cropgrids_path=str(p.get_path(p.pollination_crosswalk_fao_cropgrids_path)),
+        fao_production_bulk_path=str(p.pollination_fao_production_path),
+        fao_prices_bulk_path=str(p.pollination_fao_prices_path),
+        fx_lcu_per_usd_path=str(p.pollination_fx_path),
+        output_dir=str(output_dir),
+        price_years=tuple(p.pollination_price_years),
+        fao_start_year=int(p.pollination_fao_start_year),
+        fao_end_year=int(p.pollination_fao_end_year),
+        excluded_item_codes=load_excluded_item_codes(p),
+        fx_inherit_iso3=load_fx_inherit_iso3(p),
+        imf_fao_names=load_imf_fao_country_names(p),
+        tol_near_equal_lcu_slc=float(p.pollination_price_tol_near_equal_lcu_slc),
+        anchor_max_year_dist=int(p.pollination_price_anchor_max_year_dist),
+        anchor_max_times_off=float(p.pollination_price_anchor_max_times_off),
+        global_median_max_times_off=float(p.pollination_price_global_median_max_times_off),
+        usd_copy_of_lcu_tol=float(p.pollination_price_usd_copy_of_lcu_tol),
+        usd_copy_of_lcu_min_fx=float(p.pollination_price_usd_copy_of_lcu_min_fx),
+        obs_global_median_max_times_off=float(p.pollination_price_obs_global_median_max_times_off),
+        obs_global_median_min_countries=int(p.pollination_price_obs_global_median_min_countries),
+        qc_min_overlap=int(p.pollination_price_qc_min_overlap),
+        qc_bad_median_times_off=float(p.pollination_price_qc_bad_median_times_off),
+        qc_bad_share_over_3x=float(p.pollination_price_qc_bad_share_over_3x))
+
+
 def fao_median_prices(p):
     """Per-crop median producer prices in USD, built here from the staged FAOSTAT bulks.
 
@@ -932,27 +961,7 @@ def fao_median_prices(p):
                % p.fao_median_prices_dir)
         return True
     hb.create_directories(p.fao_median_prices_dir)
-    settings = pf.FaoPriceSettings(
-        crosswalk_m49_iso3_path=str(p.get_path(p.pollination_crosswalk_m49_iso3_path)),
-        fao_classification_path=str(p.get_path(p.pollination_fao_classification_path)),
-        crosswalk_fao_cropgrids_path=str(p.get_path(p.pollination_crosswalk_fao_cropgrids_path)),
-        fao_production_bulk_path=str(p.pollination_fao_production_path),
-        fao_prices_bulk_path=str(p.pollination_fao_prices_path),
-        fx_lcu_per_usd_path=str(p.pollination_fx_path),
-        output_dir=str(os.path.dirname(p.fao_median_prices_dir)),
-        price_years=tuple(p.pollination_price_years),
-        fao_start_year=int(p.pollination_fao_start_year),
-        fao_end_year=int(p.pollination_fao_end_year),
-        excluded_item_codes=load_excluded_item_codes(p),
-        fx_inherit_iso3=load_fx_inherit_iso3(p),
-        imf_fao_names=load_imf_fao_country_names(p),
-        tol_near_equal_lcu_slc=float(p.pollination_price_tol_near_equal_lcu_slc),
-        anchor_max_year_dist=int(p.pollination_price_anchor_max_year_dist),
-        anchor_max_times_off=float(p.pollination_price_anchor_max_times_off),
-        global_median_max_times_off=float(p.pollination_price_global_median_max_times_off),
-        qc_min_overlap=int(p.pollination_price_qc_min_overlap),
-        qc_bad_median_times_off=float(p.pollination_price_qc_bad_median_times_off),
-        qc_bad_share_over_3x=float(p.pollination_price_qc_bad_share_over_3x))
+    settings = fao_price_settings(p, os.path.dirname(p.fao_median_prices_dir))
     run_fao_production(settings)
     run_fao_prices(settings)
     run_fao_values(settings)

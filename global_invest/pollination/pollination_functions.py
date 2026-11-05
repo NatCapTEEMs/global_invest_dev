@@ -570,6 +570,10 @@ class FaoPriceSettings:
     anchor_max_year_dist: int
     anchor_max_times_off: float
     global_median_max_times_off: float
+    usd_copy_of_lcu_tol: float
+    usd_copy_of_lcu_min_fx: float
+    obs_global_median_max_times_off: float
+    obs_global_median_min_countries: int
     qc_min_overlap: int
     qc_bad_median_times_off: float
     qc_bad_share_over_3x: float
@@ -738,7 +742,7 @@ def _build_usd_with_qc(
     fx: pd.DataFrame,
     cfg,
 ) -> pd.DataFrame:
-    """Merge FX, compute USD, apply 4 QC filters."""
+    """Merge FX, compute USD, drop USD copies of local currency, apply the QC filters."""
 
     # 14) Merge FX
     logger.info("=== 14) MERGING FX INTO PRICE PANEL ===")
@@ -756,6 +760,23 @@ def _build_usd_with_qc(
          pp_usd["usd_tonne_obs"].isna() & pp_usd["usd_fx_implied"].notna()],
         ["observed", "filled"], default="missing",
     )
+
+    # 15) A FAO "USD" price can be a copy of the local-currency price. Equal while the exchange rate
+    # is not about 1, it is unknown which one is right, so the price goes missing and the subregion,
+    # region or world fallback applies. The USD value leaves usd_tonne_obs too, so it is no observed
+    # anchor, no part of the global medians and no part of the FX country check.
+    pp_usd["usd_copy_of_lcu"] = (
+        (pp_usd["usd_source"] == "observed")
+        & pp_usd["lcu_tonne"].notna() & (pp_usd["lcu_tonne"] > 0)
+        & ((pp_usd["usd_tonne_obs"] / pp_usd["lcu_tonne"] - 1).abs() < cfg.usd_copy_of_lcu_tol)
+        & pp_usd["lcu_per_usd"].notna() & (pp_usd["lcu_per_usd"] > 0)
+        & (np.log(pp_usd["lcu_per_usd"]).abs() > np.log(cfg.usd_copy_of_lcu_min_fx))
+    )
+    copy_mask = pp_usd["usd_copy_of_lcu"]
+    logger.warning("USD equal to LCU (copy), set to missing: %d rows", copy_mask.sum())
+    pp_usd.loc[copy_mask, ["usd_tonne_obs", "usd_filled", "usd_source"]] = [
+        np.nan, np.nan, "invalid_usd_copy_of_lcu",
+    ]
 
     # 15a) Invalidate USD from bad LCU sources
     logger.info("=== 15a) INVALIDATING USD FROM BAD LCU SOURCES ===")
@@ -818,6 +839,25 @@ def _build_usd_with_qc(
     logger.warning("Global median QC dropping %d rows", bad_global.sum())
     pp_usd.loc[bad_global, ["usd_fx_implied", "usd_filled", "usd_source"]] = [
         np.nan, np.nan, "implausible_vs_global_median_10x",
+    ]
+
+    # 15c-obs) The same check on observed (FAO-reported) USD prices, at its own threshold and only
+    # when enough countries report the crop and year. The observed price stays in usd_tonne_obs, so
+    # it remains an anchor and a part of the global medians and the FX country check. Only usd_filled
+    # goes missing.
+    bad_obs_global = (
+        (pp_usd["usd_source"] == "observed")
+        & pp_usd["global_median_usd"].notna() & (pp_usd["global_median_usd"] > 0)
+        & (pp_usd["n_obs"] >= cfg.obs_global_median_min_countries)
+        & pp_usd["usd_tonne_obs"].notna() & (pp_usd["usd_tonne_obs"] > 0)
+        & (
+            (pp_usd["usd_tonne_obs"] > pp_usd["global_median_usd"] * cfg.obs_global_median_max_times_off)
+            | (pp_usd["usd_tonne_obs"] < pp_usd["global_median_usd"] / cfg.obs_global_median_max_times_off)
+        )
+    )
+    logger.warning("Observed USD global median QC dropping %d rows", bad_obs_global.sum())
+    pp_usd.loc[bad_obs_global, ["usd_filled", "usd_source"]] = [
+        np.nan, "implausible_observed_vs_global_median_%gx" % cfg.obs_global_median_max_times_off,
     ]
 
     # 15d) QC: FX reliability by country

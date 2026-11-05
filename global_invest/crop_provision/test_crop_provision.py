@@ -214,6 +214,68 @@ def test_task_reader_reshapes_the_semicolon_delimited_coefficient_table(tmp_path
     assert out.set_index(['FAO', 'year'])['rental_rate'].loc[(1, 2011)] == 0.35
 
 
+def _crop_rows_after_attach():
+    # Thousand USD gross, USD rent, at the decade lookup's rates. CCC has no rate there.
+    return pd.DataFrame({
+        'iso3_r250_label': ['AAA', 'AAA', 'BBB', 'CCC', 'DDD', None],
+        'year': [2018, 2019, 2019, 2019, 2019, 2019],
+        'gross_production_value': [10.0, 10.0, 20.0, 30.0, np.nan, 5.0],
+        'rental_rate': [0.5, 0.5, 0.25, pd.NA, 0.25, 0.5],
+        'crop_provision_gep': [5000.0, 5000.0, 5000.0, np.nan, np.nan, 2500.0]})
+
+
+ANNUAL_RATES = pd.DataFrame({'wb_code': ['AAA', 'CCC', 'DDD'], 'yr2018': [0.9, 0.9, 0.9], 'yr2019': [0.1, 0.2, 0.3]})
+
+
+def test_base_year_takes_the_annual_rate_with_rent_in_usd_and_other_years_stay():
+    out = cp.apply_base_year_annual_rental_rates(_crop_rows_after_attach(), ANNUAL_RATES, 2019)
+    assert out.iloc[1][['rental_rate', 'crop_provision_gep']].tolist() == [0.1, 1000.0], '10 thousand x 0.1'
+    assert out.iloc[0][['rental_rate', 'crop_provision_gep']].tolist() == [0.5, 5000.0], 'not the base year'
+
+
+def test_a_country_the_annual_table_does_not_list_goes_missing_with_no_fallback():
+    out = cp.apply_base_year_annual_rental_rates(_crop_rows_after_attach(), ANNUAL_RATES, 2019)
+    bbb = out[out['iso3_r250_label'] == 'BBB'].iloc[0]
+    assert np.isnan(bbb['rental_rate']) and np.isnan(bbb['crop_provision_gep']), 'it had 0.25 in the decade lookup'
+    assert bbb['gross_production_value'] == 20.0, 'gross stays, erosion values it'
+    unlabelled = out[out['iso3_r250_label'].isna()].iloc[0]
+    assert np.isnan(unlabelled['rental_rate']) and np.isnan(unlabelled['crop_provision_gep'])
+
+
+def test_a_country_new_to_the_annual_table_gains_a_rate_and_a_blank_gross_stays_missing():
+    out = cp.apply_base_year_annual_rental_rates(_crop_rows_after_attach(), ANNUAL_RATES, 2019)
+    ccc = out[out['iso3_r250_label'] == 'CCC'].iloc[0]
+    assert ccc['rental_rate'] == 0.2 and ccc['crop_provision_gep'] == pytest.approx(6000.0)
+    ddd = out[out['iso3_r250_label'] == 'DDD'].iloc[0]
+    assert ddd['rental_rate'] == 0.3 and np.isnan(ddd['crop_provision_gep'])
+
+
+def test_annual_rates_keep_the_country_identity_through_the_country_sum():
+    out = cp.apply_base_year_annual_rental_rates(_crop_rows_after_attach(), ANNUAL_RATES, 2019)
+    out['iso3_r250_id'] = out['iso3_r250_label'].map({'AAA': 1, 'BBB': 2, 'CCC': 3, 'DDD': 4})
+    by_country = utilities.sum_items_to_country_year(out.dropna(subset=['iso3_r250_id']), 'crop_provision_gep')
+    row = by_country[(by_country['iso3_r250_id'] == 3) & (by_country['year'] == 2019)].iloc[0]
+    assert row['crop_provision_gep'] == pytest.approx(row['rental_rate'] * row['gross_production_value'] * 1000)
+    assert np.isnan(by_country[by_country['iso3_r250_id'] == 2].iloc[0]['crop_provision_gep'])
+    assert np.isnan(by_country[by_country['iso3_r250_id'] == 2].iloc[0]['gross_production_value'])
+
+
+def test_annual_rates_are_not_extrapolated_and_a_duplicate_country_raises():
+    with pytest.raises(ValueError, match='yr2021'):
+        cp.apply_base_year_annual_rental_rates(_crop_rows_after_attach(), ANNUAL_RATES, 2021)
+    twice = pd.concat([ANNUAL_RATES, ANNUAL_RATES.iloc[[0]]])
+    with pytest.raises(ValueError, match='AAA'):
+        cp.apply_base_year_annual_rental_rates(_crop_rows_after_attach(), twice, 2019)
+
+
+def test_annual_reader_takes_latin1_and_checks_the_recorded_hash(tmp_path):
+    path = str(tmp_path / 'rates.csv')
+    pd.DataFrame({'wb_code': ['CIV'], 'country': ['C\xf4te'], 'yr2019': [0.1]}).to_csv(path, index=False, encoding='latin-1')
+    assert cpt.read_annual_rental_rates(path, utilities.sha256_file(path))['country'].tolist() == ['C\xf4te']
+    with pytest.raises(ValueError, match='sha256'):
+        cpt.read_annual_rental_rates(path, 'not-the-hash')
+
+
 def test_es_config_row_hydrates_crop_provision(tmp_path):
     from global_invest import utilities
     p = SimpleNamespace()
@@ -771,7 +833,7 @@ def test_impute_refuses_to_fill_one_country_item_pair_twice():
 def test_the_staged_2019_fill_places_each_pair_once_and_never_on_a_dissolved_states_code(tmp_path):
     """On the staged FAOSTAT Value of Production and the pollination values table, the 2019 fill
     places 5,214 country-item pairs, one row each, none on Ethiopia PDR (62), Serbia and
-    Montenegro (186), Sudan (former) (206) or Czechoslovakia (51), worth $1,115,866,904,924.72
+    Montenegro (186), Sudan (former) (206) or Czechoslovakia (51), worth $1,115,790,900,662.61
     before the rental rate. Every reported value stays as reported. Skips where base_data is
     absent."""
     import hazelbean as hb
@@ -798,7 +860,7 @@ def test_the_staged_2019_fill_places_each_pair_once_and_never_on_a_dissolved_sta
     assert len(filled) == len(pairs) == 5214
     assert not filled['area_code'].isin([62, 186, 206, 51]).any()
     assert (filled['crop_provision_gep'].sum() * utilities.FAOSTAT_THOUSAND_USD
-            == pytest.approx(1115866904924.72, rel=1e-12))
+            == pytest.approx(1115790900662.61, rel=1e-12))
     was_reported = reported['crop_provision_gep'].notna().to_numpy()
     kept = out.iloc[:len(reported)]
     assert (kept['crop_provision_gep'].to_numpy()[was_reported]
@@ -877,3 +939,252 @@ def test_country_gross_value_covers_valued_rows_so_the_rent_identity_holds():
     assert row['gross_production_value'] == 3.0, 'alias gross value must not enter the sum'
     # identity with rate 0.315 and thousand-USD gross: 0.315 * 3.0 * 1000 = 945
     assert row['crop_provision_gep'] == pytest.approx(0.315 * row['gross_production_value'] * 1000)
+
+
+def _base_year_frames():
+    values = pd.DataFrame({
+        'area_code': [1, 1, 1, 1],
+        'area_code_M49': ["'010"] * 4,
+        'country': ['Aaaland'] * 4,
+        'crop_code': [100, 100, 200, 300],
+        'crop': ['Wheat', 'Wheat', 'Rye', 'Oats'],
+        'year': [2019, 2018, 2019, 2019],
+        'crop_provision_gep': [50.0, 40.0, np.nan, 7.0],
+    })
+    fao_values = pd.DataFrame({
+        'area_code_m49': ['010', '010'],
+        'iso3': ['AAA', 'AAA'],
+        'area_fao': ['Aaaland', 'Aaaland'],
+        'item_code_fao': [100, 200],
+        'item_fao': ['Wheat', 'Rye'],
+        'year': [2019, 2019],
+        'total_production_tonnes': [10.0, 4.0],
+        'price_source_agg_level': ['country', 'subregion'],
+        'value_usd': [9999.0, 2000.0],
+    })
+    return values, fao_values
+
+
+def test_production_times_price_values_every_base_year_pair_from_the_values_table():
+    # The crop_benefits basis: the base year's reported wheat value gives way to production times
+    # price, rye's gap is filled as before, and oats, which FAOSTAT reports and the values table
+    # cannot price, keeps its row with no value. 2018 keeps FAOSTAT's reported value.
+    values, fao_values = _base_year_frames()
+    out = cp.value_at_production_times_price(values, fao_values, 2019, {10: 1}, [100, 200, 300])
+    keyed = out.set_index(['crop', 'year'])
+    assert keyed.at[('Wheat', 2019), 'crop_provision_gep'] == pytest.approx(9.999)
+    assert keyed.at[('Wheat', 2019), 'value_source'] == 'price_country'
+    assert keyed.at[('Rye', 2019), 'crop_provision_gep'] == pytest.approx(2.0)
+    assert keyed.at[('Rye', 2019), 'value_source'] == 'price_subregion'
+    assert pd.isna(keyed.at[('Oats', 2019), 'crop_provision_gep'])
+    assert keyed.at[('Wheat', 2018), 'crop_provision_gep'] == 40.0
+    assert keyed.at[('Wheat', 2018), 'value_source'] == 'faostat'
+    assert len(out) == len(values)
+    # The reported-first basis leaves the reported wheat and oats alone.
+    first = cp.impute_missing_crop_values(values, fao_values, 2019, {10: 1}, [100, 200, 300]).set_index(['crop', 'year'])
+    assert first.at[('Wheat', 2019), 'crop_provision_gep'] == 50.0
+    assert first.at[('Oats', 2019), 'crop_provision_gep'] == 7.0
+
+
+def test_an_item_is_filled_by_its_code_where_the_two_tables_spell_it_differently():
+    # The item list carries FAOSTAT's Latin-1 read of mate and the values table its UTF-8 name, so
+    # the fill is keyed on the item code.
+    values = pd.DataFrame({'area_code': [1, 1], 'area_code_M49': ["'032", "'032"], 'country': ['Argentina'] * 2,
+                           'crop_code': [671, 15], 'crop': ['MatÃ© leaves', 'Wheat'], 'year': [2019, 2019],
+                           'crop_provision_gep': [np.nan, np.nan]})
+    fao_values = pd.DataFrame({'area_code_m49': ['032', '032'], 'iso3': ['ARG'] * 2, 'area_fao': ['Argentina'] * 2,
+                               'item_code_fao': [671, 15], 'item_fao': ['Maté leaves', 'Wheat'], 'year': [2019, 2019],
+                               'total_production_tonnes': [100.0, 10.0], 'price_source_agg_level': ['country'] * 2,
+                               'value_usd': [5000.0, 3000.0]})
+    by_name = cp.impute_missing_crop_values(values, fao_values, 2019, {32: 1}, ['MatÃ© leaves', 'Wheat']).set_index('crop_code')
+    assert pd.isna(by_name.at[671, 'crop_provision_gep'])
+    assert by_name.at[15, 'crop_provision_gep'] == pytest.approx(3.0)
+    by_code = cp.impute_missing_crop_values(values, fao_values, 2019, {32: 1}, [671, 15]).set_index('crop_code')
+    assert by_code.at[671, 'crop_provision_gep'] == pytest.approx(5.0)
+
+
+def _zero_frames(fao_value_usd, items=(100, 200, 300)):
+    values = pd.DataFrame({
+        'area_code': [1, 1, 1, 1],
+        'area_code_M49': ["'036"] * 4,
+        'country': ['Australia'] * 4,
+        'crop_code': [100, 200, 300, 100],
+        'crop': ['Wheat', 'Rye', 'Oats', 'Wheat'],
+        'year': [2019, 2019, 2019, 2018],
+        'crop_provision_gep': [50.0, 60.0, np.nan, 40.0],
+    })
+    fao_values = pd.DataFrame({
+        'area_code_m49': ['036'] * len(fao_value_usd),
+        'iso3': ['AUS'] * len(fao_value_usd),
+        'area_fao': ['Australia'] * len(fao_value_usd),
+        'item_code_fao': list(items)[:len(fao_value_usd)],
+        'item_fao': ['Wheat', 'Rye', 'Oats'][:len(fao_value_usd)],
+        'year': [2019] * len(fao_value_usd),
+        'total_production_tonnes': [0.0, 10.0, 5.0][:len(fao_value_usd)],
+        'price_source_agg_level': ['country', 'country', 'missing'][:len(fao_value_usd)],
+        'value_usd': list(fao_value_usd),
+    })
+    return values, fao_values
+
+
+def test_production_times_price_keeps_a_source_zero_apart_from_a_missing_value():
+    # A values-table zero is a valued zero, and a missing source value stays missing. The
+    # reported-first fill still takes positive values only, so a zero never fills its gaps.
+    values, fao_values = _zero_frames([0.0, 100.0, np.nan])
+    out = cp.value_at_production_times_price(values, fao_values, 2019, {36: 1}, [100, 200, 300])
+    keyed = out.set_index(['crop', 'year'])
+    assert keyed.at[('Wheat', 2019), 'crop_provision_gep'] == 0.0
+    assert keyed.at[('Wheat', 2019), 'value_source'] == 'price_country'
+    assert keyed.at[('Rye', 2019), 'crop_provision_gep'] == pytest.approx(0.1)
+    assert pd.isna(keyed.at[('Oats', 2019), 'crop_provision_gep'])
+    assert keyed.at[('Wheat', 2018), 'crop_provision_gep'] == 40.0
+    gap = values.assign(crop_provision_gep=[np.nan, 60.0, np.nan, 40.0])
+    first = cp.impute_missing_crop_values(gap, fao_values, 2019, {36: 1}, [100, 200, 300]).set_index(['crop', 'year'])
+    assert pd.isna(first.at[('Wheat', 2019), 'crop_provision_gep'])
+    assert first.at[('Rye', 2019), 'crop_provision_gep'] == 60.0
+
+
+def test_production_times_price_on_an_all_zero_table_values_every_pair_at_zero():
+    values, fao_values = _zero_frames([0.0, 0.0, 0.0])
+    out = cp.value_at_production_times_price(values, fao_values, 2019, {36: 1}, [100, 200, 300])
+    at_year = out[out['year'] == 2019]
+    assert (at_year['crop_provision_gep'] == 0.0).all() and len(at_year) == 3
+
+
+def test_a_values_table_that_matches_no_item_leaves_the_gaps_blank_and_raises_nothing():
+    values, fao_values = _zero_frames([5.0, 6.0, 7.0], items=(900, 901, 902))
+    out = cp.value_at_production_times_price(values, fao_values, 2019, {36: 1}, [100, 200, 300])
+    assert out.loc[out['year'] == 2019, 'crop_provision_gep'].isna().all()
+    assert out.loc[out['year'] == 2018, 'crop_provision_gep'].tolist() == [40.0]
+    assert len(out) == len(values)
+    first = cp.impute_missing_crop_values(values, fao_values, 2019, {36: 1}, [100, 200, 300])
+    assert first['crop_provision_gep'].tolist()[:2] == [50.0, 60.0]
+    assert pd.isna(first['crop_provision_gep'].iloc[2]) and len(first) == len(values)
+
+
+# =================================================================================================
+# The commercial task's reuse: its tables rebuild when anything they are made from changes.
+# =================================================================================================
+
+def _write_vop(path, wheat_2018=40.0):
+    rows = [(1, "'010", 'Aaaland', 100, 'Wheat', wheat_2018, 50.0), (1, "'010", 'Aaaland', 200, 'Rye', 4.0, 5.0),
+            (2, "'020", 'Bbbland', 100, 'Wheat', 80.0, 60.0), (2, "'020", 'Bbbland', 200, 'Rye', 8.0, 6.0)]
+    frame = pd.DataFrame(rows, columns=['Area Code', 'Area Code (M49)', 'Area', 'Item Code', 'Item', 'Y2018', 'Y2019'])
+    frame = frame.assign(**{'Element Code': 57, 'Element': 'Gross Production Value', 'Unit': '1000 USD', 'Y2018F': 'A', 'Y2019F': 'A'})
+    frame.to_csv(path, index=False, encoding='ISO-8859-1')
+
+
+def _write_values(path, price=2000.0):
+    rows = [('010', 'AAA', 'Aaaland', code, item, year, 10.0, 'country', price * 10.0)
+            for code, item in ((100, 'Wheat'), (200, 'Rye')) for year in (2018, 2019)]
+    rows += [('020', 'BBB', 'Bbbland', code, item, year, 10.0, 'country', 3000.0) for code, item in ((100, 'Wheat'), (200, 'Rye')) for year in (2018, 2019)]
+    pd.DataFrame(rows, columns=['area_code_m49', 'iso3', 'area_fao', 'item_code_fao', 'item_fao', 'year', 'total_production_tonnes',
+                                'price_source_agg_level', 'value_usd']).to_csv(path, index=False)
+
+
+def _write_coefs(path, rate=0.35):
+    pd.DataFrame({'Order': [1, 2], 'FAO': [1.0, 2.0], 'ISO3': ['AAA', 'BBB'], 'Country/territory': ['Aaaland', 'Bbbland'],
+                  '2011-2020': [rate, 0.25]}).to_csv(path, sep=';', index=False)
+
+
+def _write_annual_rates(p, rate=0.1):
+    path = p.crop_provision_cwon_annual_rental_rate_path
+    pd.DataFrame({'wb_code': ['AAA', 'BBB'], 'yr2018': [rate, 0.2], 'yr2019': [rate, 0.2]}).to_csv(path, index=False, encoding='latin-1')
+    p.crop_provision_cwon_annual_rental_rate_sha256 = utilities.sha256_file(path)
+
+
+def _crop_project(tmp_path, monkeypatch):
+    """A whole gep_calculation project on small files: two countries, two crops, two years."""
+    import geopandas as gpd
+    from shapely.geometry import Point
+    monkeypatch.setattr(cpt, 'publish_inputs', lambda p: p)
+    source = tmp_path / 'source'
+    source.mkdir()
+    (tmp_path / 'task').mkdir()
+    p = SimpleNamespace(run_this=1, cur_dir=str(tmp_path / 'task'), results={}, gep_base_year=2019.0, get_path=str,
+                        df_countries=COUNTRIES.copy(), crop_provision_base_year_value_basis='production_x_price',
+                        fao_input_path=str(source / 'vop.csv'), cwon_crop_coefficients_path=str(source / 'coefs.csv'),
+                        faostat_aggregate_areas_path=str(source / 'areas.csv'), faostat_aggregate_items_path=str(source / 'items.csv'),
+                        crop_provision_default_items_path=str(source / 'default_items.csv'), crop_provision_fao_values_table_path=str(source / 'values.csv'),
+                        crop_provision_cwon_annual_rental_rate_path=str(source / 'annual.csv'), df_countries_csv_path=str(source / 'countries.csv'),
+                        gdf_countries_vector_simplified_path=str(source / 'countries.gpkg'))
+    p.gdf_countries_simplified = p.gdf_countries_vector_simplified_path
+    _write_vop(p.fao_input_path)
+    _write_values(p.crop_provision_fao_values_table_path)
+    _write_coefs(p.cwon_crop_coefficients_path)
+    _write_annual_rates(p)
+    pd.DataFrame({'area_fao': ['World']}).to_csv(p.faostat_aggregate_areas_path, index=False)
+    pd.DataFrame({'item_fao': ['Cereals, primary']}).to_csv(p.faostat_aggregate_items_path, index=False)
+    pd.DataFrame({'item_fao': ['Wheat', 'Rye']}).to_csv(p.crop_provision_default_items_path, index=False)
+    COUNTRIES.to_csv(p.df_countries_csv_path, index=False)
+    gpd.GeoDataFrame({'ee_r264_id': [1, 2, 3]}, geometry=[Point(0, 0), Point(1, 1), Point(2, 2)], crs='EPSG:4326').to_file(p.gdf_countries_vector_simplified_path, driver='GPKG')
+    return p
+
+
+def _tables(p):
+    return {name: open(path, 'rb').read() for name, path in p.results['crop_provision'].items()}
+
+
+def test_the_task_reuses_its_tables_while_nothing_they_are_made_from_changed(tmp_path, monkeypatch):
+    p = _crop_project(tmp_path, monkeypatch)
+    assert cpt.gep_calculation(p) is not None
+    before = _tables(p)
+    assert cpt.gep_calculation(p) is None, 'an unchanged project reuses'
+    assert _tables(p) == before
+
+
+def test_a_new_base_year_rebuilds_the_tables_at_that_year(tmp_path, monkeypatch):
+    p = _crop_project(tmp_path, monkeypatch)
+    cpt.gep_calculation(p)
+    p.gep_base_year = 2018.0
+    assert cpt.gep_calculation(p) is not None, 'the base year is outside the crop_provision_ settings'
+    published = pd.read_csv(p.results['crop_provision']['gep_by_country_base_year'])
+    assert set(published['year'].dropna()) == {2018}
+
+
+def _change_vop(p):
+    _write_vop(p.fao_input_path, wheat_2018=41.0)
+
+
+def _change_coefs(p):
+    _write_coefs(p.cwon_crop_coefficients_path, rate=0.5)
+
+
+def _change_aggregate_areas(p):
+    pd.DataFrame({'area_fao': ['World', 'Bbbland']}).to_csv(p.faostat_aggregate_areas_path, index=False)
+
+
+def _change_aggregate_items(p):
+    pd.DataFrame({'item_fao': ['Cereals, primary', 'Rye']}).to_csv(p.faostat_aggregate_items_path, index=False)
+
+
+def _change_default_items(p):
+    pd.DataFrame({'item_fao': ['Wheat']}).to_csv(p.crop_provision_default_items_path, index=False)
+
+
+def _change_countries(p):
+    p.df_countries = COUNTRIES.assign(income_grp='1. High income')
+    p.df_countries.to_csv(p.df_countries_csv_path, index=False)
+
+
+def _change_values(p):
+    _write_values(p.crop_provision_fao_values_table_path, price=2500.0)
+
+
+def _change_annual_rates(p):
+    _write_annual_rates(p, rate=0.15)
+
+
+def _change_basis(p):
+    p.crop_provision_base_year_value_basis = 'reported_first'
+
+
+@pytest.mark.parametrize('change', [_change_vop, _change_coefs, _change_aggregate_areas, _change_aggregate_items, _change_default_items,
+                                    _change_countries, _change_values, _change_annual_rates, _change_basis])
+def test_a_changed_input_rebuilds_the_tables_and_moves_them(tmp_path, monkeypatch, change):
+    p = _crop_project(tmp_path, monkeypatch)
+    cpt.gep_calculation(p)
+    before = _tables(p)
+    change(p)
+    assert cpt.gep_calculation(p) is not None, 'a warm project must not republish the old tables'
+    assert _tables(p) != before
