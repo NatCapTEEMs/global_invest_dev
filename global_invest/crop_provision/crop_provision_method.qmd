@@ -67,7 +67,9 @@ removed outright, so it is no observed anchor and no part of the global median o
 check. An observed USD price more than 20 times above or below the crop-year global median, where at
 least 10 countries report, stays an observed anchor and stays in that median and check, and only the
 price the row uses goes missing. Either way the row takes the subregion, region or world fallback,
-whose medians leave the dropped price out. The filters move 10 rows of the
+whose medians leave the dropped price out. The 20 times threshold applies to observed USD prices
+only. A price filled from an exchange rate faces separate checks at 10 times, against the closest
+observed USD price within 10 years and against the crop-year global median. The two filters move 10 rows of the
 2019 table and lower this account by \$719,607,630.30. With them off, the 2019 rows equal
 crop_benefits' own saved table at `cc5b441` on every row the two share, and the 32 further rows are
 natural rubber (836), which crop_benefits added on 17 October 2026. No saved table at `0ac7841d` has
@@ -168,7 +170,7 @@ The implementation can be traced through `gep_calculation` in `crop_provision_ta
 `items_without_group_totals` and `impute_missing_crop_values` in
 `crop_provision_functions.py`, and the selection, aggregate and rental-rate helpers in
 `../utilities.py`. The annual-price construction is in `run_fao_values` and
-`_merge_production_value` in `../pollination/pollination_tasks.py`.
+`_merge_production_value` in `../shared_processing/crop_prices_tasks.py`.
 
 The earlier version of this note reported a global total about 5% above CWoN. That comparison
 is not established for the current selection and gap-filling rules and is not used here as

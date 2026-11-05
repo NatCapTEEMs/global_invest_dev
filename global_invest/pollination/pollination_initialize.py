@@ -12,6 +12,7 @@ stitch task; it dispatches static vs dynamic on p.dynamic_es (mirrors add_terres
 """
 from global_invest import utilities
 from global_invest.pollination import pollination_tasks
+from global_invest.shared_processing import crop_prices_tasks
 
 
 def build_gep_service_calculation_task_tree(p):
@@ -22,7 +23,7 @@ def build_gep_service_calculation_task_tree(p):
     other is heavy and deterministic once its inputs exist."""
     p.download_pollination_inputs_task = p.add_task(
         utilities.download_inputs_task('pollination'), skip_existing=1)
-    p.fao_median_prices_task = p.add_task(pollination_tasks.fao_median_prices, skip_existing=1)
+    p.fao_median_prices_task = p.add_task(crop_prices_tasks.fao_median_prices, skip_existing=1)
     # The yield and production chain: Monfreda 2000 yields carried to the base year by FAO
     # country ratios, then multiplied by CropGrids harvested area. These are what the rebuilt
     # value raster is priced from.
