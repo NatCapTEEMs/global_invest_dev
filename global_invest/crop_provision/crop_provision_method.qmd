@@ -35,6 +35,9 @@ $$
 
 Here $V$ is gross production value in US dollars, $r$ is the dimensionless CWoN cropland
 rental share, and $d(t)$ is the most recent available decade starting no later than $t$.
+In the base year $r$ is instead the country's rate for that year in the annual table CWoN 2024
+applies, `land_ef_regional_cropland_rental_rates_new.csv`. The other years keep the decade
+lookup, so the series is not comparable across the base year.
 $K_{c,t}$ is the set of items retained by the selection below. The
 base-year account uses 2019 values, expressed in 2019 USD. Summing the country values gives
 the global total for that year. Years are not summed together.
@@ -51,46 +54,71 @@ dependence. The rental share and the dependence ratio come from frameworks that 
 partition crop revenue between them, so the crop provision and pollination rows can overlap.
 The size of that overlap is not measured here, and their netting is open with the group.
 
-### Reported values and item selection
+### Value basis and item selection
 
-The calculation reads the staged FAOSTAT Value of Production bulk, retaining element 57
-(gross production value in current thousand US dollars), the configured crop-item list,
-and countries rather than FAOSTAT regional aggregates. The item list determines the
-commercial crop scope. It is not a selection of all items in the FAOSTAT file.
+At the base year every selected country-crop pair is valued at production times price: annual
+FAOSTAT production in tonnes multiplied by that year's producer price in USD per tonne, with the
+price falling back from country to subregion, region and world. This is the basis of the
+crop_benefits chain (W. Sidemo Holm, develop `cc5b441`, `src/crop_benefits/fao/values.py`),
+which the pollination module's FAO preprocessing ports and stages as
+`fao_values_1993_2024.csv`. The table applies crop_benefits' two price filters at `0ac7841d`. A USD
+price that copies the local-currency price while the exchange rate is more than 1.1 times from 1 is
+removed outright, so it is no observed anchor and no part of the global median or the exchange-rate
+check. An observed USD price more than 20 times above or below the crop-year global median, where at
+least 10 countries report, stays an observed anchor and stays in that median and check, and only the
+price the row uses goes missing. Either way the row takes the subregion, region or world fallback,
+whose medians leave the dropped price out. The filters move 10 rows of the
+2019 table and lower this account by \$719,607,630.30. With them off, the 2019 rows equal
+crop_benefits' own saved table at `cc5b441` on every row the two share, and the 32 further rows are
+natural rubber (836), which crop_benefits added on 17 October 2026. No saved table at `0ac7841d` has
+been compared. Crop provision and pollination value a crop on one gross basis, and the library's
+erosion results read these values through their per-crop valuation. The setting `crop_provision_base_year_value_basis` selects it (`production_x_price`).
+
+The selection comes from the staged FAOSTAT Value of Production bulk: the configured crop-item
+list, element 57 rows, and countries rather than FAOSTAT regional aggregates. Its rows give the
+account its country-crop keys and every year other than the base year, which keeps FAOSTAT's
+reported gross production value. The item list determines the commercial crop scope. It is not
+a selection of all items in the FAOSTAT file or in the values table, so cotton seed (329) and
+palm kernels (256), which are not members of FAOSTAT's QV Crops group (2041), stay out.
 
 FAOSTAT reports both individual items and group totals that add them up. The configured list
 carries three such totals, Oilcrops Primary, Roots and Tubers, Total and Sugar Crops Primary
-(FAO item codes 1730, 1720 and 1723). The account removes them in every country, before
-reading the reported values and before filling gaps, as the authors' current code does. No
-crop is then counted both inside a group total and on its own. Where FAOSTAT values only a
-group total, the member crops that carry production and no value are filled like any other
-gap.
+(FAO item codes 1730, 1720 and 1723). The account removes them in every country before reading
+or pricing anything, as the authors' current code does, so no crop is counted both inside a
+group total and on its own.
 
-### Filling missing values
+Items are matched to the values table on their names and on their FAO codes. The item list
+spells mate as FAOSTAT's file reads under Latin-1 and the values table spells it in UTF-8, so a
+name match alone leaves every mate pair unpriced, and a code match alone misses the items
+FAOSTAT's value file never lists (other sugar crops 161, hempseed 336).
 
-At the base year, a selected country-crop pair without a reported value can take a positive
-value from the staged `fao_values_1993_2024.csv` table. Existing nonmissing FAOSTAT values,
-including zeros, are retained. The fill table is produced by the pollination module's FAO
-preprocessing: annual production in tonnes multiplied by an annual producer price in
-USD per tonne, with price fallbacks from country to subregion, region and world.
+### Pricing the base year
 
-The pollination raster valuation reads the 2019-window median-price table built by the same
-preprocessing. Crop provision differs in what it prices: it retains FAOSTAT's reported gross
-values where they exist and prices only the gaps, rather than repricing all production.
+Every base-year pair takes the values table's production times price. A pair FAOSTAT reports and
+the values table cannot price keeps its row with a missing value, so the keys do not change and
+the gap shows: in 2019 these are eight reported pairs with no priced production row (Benin's dry
+beans, Turkey's dates and six Yemeni and Dominican items) and the five valued pairs of the two
+livestock items the list carries (1166, 1185). The values table's rows for Taiwan, Hong Kong and
+Macao are not used, because the account's country register treats those FAOSTAT China components
+as aggregates and keeps China (FAO 351) on the mainland's production.
 
-A fill requires a country code that can be linked to the rental-rate lookup. Filled rows
-record the price level in `value_source` (`price_country`, `price_subregion`,
-`price_region`, `price_world`). Reported values are marked `faostat`. A dissolved state's
-rows (Ethiopia PDR, Serbia and Montenegro, Sudan (former), Czechoslovakia) are never filled:
-each country-crop pair is filled once, on its successor's FAO code, which carries the rental
-share.
+Each row records its price level in `value_source` (`price_country`, `price_subregion`,
+`price_region`, `price_world`). A dissolved state's rows (Ethiopia PDR, Serbia and Montenegro,
+Sudan (former), Czechoslovakia) are never priced: each country-crop pair is priced once, on its
+successor's FAO code, which carries the rental share. The other basis,
+`crop_provision_base_year_value_basis = reported_first`, keeps FAOSTAT's reported value where it
+exists and prices only the pairs without one.
 
 ### Rental shares, units and outputs
 
-The same CWoN rental share applies to reported and filled values. A missing rental share
-leaves the item value missing. The calculation converts thousand USD to USD and aggregates
+The same CWoN rental share applies to every value in a year, priced or reported. A missing rental
+share leaves the item value missing. In the base year a country the annual table does not list has
+no rate, as CWoN's own merge drops it (`land.do` lines 1637 to 1638), and no regional or earlier rate
+stands in. Of the rows the annual table lists, 35 have a blank `usda_region` and take their value
+through `usda_region_filled`, including the 18 countries that have a rate only in this table. The rule behind
+the table's regional assignment is not documented in the package. The subsistence component keeps the decade lookup. The calculation converts thousand USD to USD and aggregates
 items to country-year totals using the account's country correspondence. A country-year whose
-every item value is missing stays missing (22 such countries in 2019), never a summed zero.
+every item value is missing stays missing (5 such countries in 2019), never a summed zero.
 Country sums include available item values. A numeric country total does not establish
 complete crop coverage.
 
@@ -101,17 +129,18 @@ country and crop: dissolved FAOSTAT areas (Ethiopia PDR, Sudan (former), Serbia 
 Montenegro, Czechoslovakia) join the successor country beside its current rows. These 6,852 rows
 across the panel never carry a valued gep and are preserved as source data. At
 country level, `gross_production_value` is the gross value of the VALUED rows, so the
-identity gep = rate × gross × 1000 holds (verified across all 174 valued 2019 countries,
+identity gep = rate × gross × 1000 holds (verified across all 191 valued 2019 countries,
 largest deviation under $0.001). Summing every row would pull in dissolved-area gross value
 the rent never valued, which breaks the identity for ETH, SDN, SRB and CZE by up to $3.2bn.
 
 The outputs include country-crop-year, country-year and base-year country CSVs. The country
 GeoPackage attaches national values to country geometries for mapping. It is not a spatial
 disaggregation within countries. The reference column `crop_provision_gep_reference` carries
-the reported values alone through the same rental-rate calculation. It reproduces the
+the reported values alone through the decade lookup, in every year. It reproduces the
 authors' current code run on its own inputs, which fills no gaps (the staged reference,
-$474.22bn over 114 countries in 2019), so the difference between the two columns is the
-filled values. It is not proof of the producing run behind a historical spreadsheet value.
+$474.22bn over 114 countries in 2019), so at the base year the difference between the two columns
+is the production times price basis, the pairs FAOSTAT does not value, and the annual rather than
+decade rental rate. It is not proof of the producing run behind a historical spreadsheet value.
 
 ### Relationship to the CropGrids rasters
 
@@ -155,7 +184,7 @@ rental-share assumption or the completeness of every country's crop coverage.
 
 ## Coverage
 
-The published table is one row for each of the account's 250 countries, base year 2019, in constant 2019 USD. Of the 250, 174 carry a value and 76 are missing, and none is zero. The 76 are the 22 countries whose 2019 FAOSTAT rows have no CWoN rental rate, so no item can be valued (21 of them do carry gross production values, Réunion carries none), plus the 54 with no FAOSTAT rows at all. A zero would mean the computation returned zero. A missing row means the data to compute one is absent.
+The published table is one row for each of the account's 250 countries, base year 2019, in constant 2019 USD. Of the 250, 191 carry a value and 59 are missing, and none is zero. The 59 are the 5 countries whose 2019 FAOSTAT rows have no rate in the annual table, so no item can be valued (Cook Islands, Nauru, Niue and Puerto Rico do carry gross production values, Réunion carries none), plus the 54 with no FAOSTAT rows at all. A zero would mean the computation returned zero. A missing row means the data to compute one is absent.
 
 ## Subsistence crop provision
 

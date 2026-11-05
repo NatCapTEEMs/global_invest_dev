@@ -1388,3 +1388,152 @@ def test_a_country_factor_within_tolerance_reads_as_near_equal_not_as_a_factor()
     assert row.loc[('B', 2001), 'lcu_filled'] == pytest.approx(300.0)
     assert row.loc[('C', 2001), 'lcu_source'] == 'slc_filled_assume_equal'
     assert row.loc[('D', 2001), 'lcu_source'] == 'missing'
+
+
+# The FAO price path's quality checks on one panel, with the service owner's thresholds.
+_PRICE_QC = dict(anchor_max_year_dist=10, anchor_max_times_off=10.0, global_median_max_times_off=10.0,
+                 usd_copy_of_lcu_tol=0.001, usd_copy_of_lcu_min_fx=1.1, obs_global_median_max_times_off=20.0,
+                 obs_global_median_min_countries=10, fao_start_year=1993, qc_min_overlap=50,
+                 qc_bad_median_times_off=3.0, qc_bad_share_over_3x=0.5)
+
+
+def _qc(**changes):
+    return SimpleNamespace(**{**_PRICE_QC, **changes})
+
+
+def _price_rows(rows, item='x'):
+    """pp3 and fx from (iso3, year, observed USD, reported LCU, LCU per USD) rows."""
+    frame = pd.DataFrame(rows, columns=['iso3', 'year', 'usd_tonne_obs', 'lcu_tonne', 'lcu_per_usd'], dtype=object)
+    for column in ['usd_tonne_obs', 'lcu_tonne', 'lcu_per_usd']:
+        frame[column] = pd.to_numeric(frame[column])
+    frame['year'] = frame['year'].astype(int)
+    frame['Item'] = item
+    frame['country'] = frame['iso3']
+    frame['region_fao'] = 'R'
+    frame['subregion_fao'] = 'S'
+    frame['lcu_filled'] = frame['lcu_tonne']
+    frame['lcu_source'] = np.where(frame['lcu_tonne'].notna(), 'observed', 'missing')
+    fx = frame[['iso3', 'year', 'lcu_per_usd']].drop_duplicates()
+    return frame.drop(columns='lcu_per_usd'), fx
+
+
+def _row(out, iso3, year=2019):
+    return out[(out['iso3'] == iso3) & (out['year'] == year)].iloc[0]
+
+
+def test_usd_copy_of_local_currency_goes_missing_only_when_the_exchange_rate_is_not_about_one():
+    pp3, fx = _price_rows([
+        ('COP', 2019, 500.0, 500.0, 100.0),      # a copy: equal, the rate far from 1
+        ('NEA', 2019, 500.4, 500.0, 100.0),      # equal within the 0.1 percent tolerance
+        ('OFF', 2019, 510.0, 500.0, 100.0),      # not equal
+        ('PEG', 2019, 500.0, 500.0, 1.05),       # equal, the rate within 1.1 of 1, so it can be real
+        ('DIV', 2019, 500.0, 500.0, 1 / 100.0)])  # a rate far below 1 counts as far from 1
+    out = pf._build_usd_with_qc(pp3, fx, _qc())
+    for iso3 in ['COP', 'NEA', 'DIV']:
+        row = _row(out, iso3)
+        assert row['usd_copy_of_lcu'] and row['usd_source'] == 'invalid_usd_copy_of_lcu', iso3
+        assert np.isnan(row['usd_filled']) and np.isnan(row['usd_tonne_obs']), iso3
+    for iso3, price in [('OFF', 510.0), ('PEG', 500.0)]:
+        row = _row(out, iso3)
+        assert not row['usd_copy_of_lcu'] and row['usd_source'] == 'observed' and row['usd_filled'] == price, iso3
+
+
+def test_a_copy_is_no_anchor_for_a_later_fx_filled_price():
+    """The filled price sits 100 times from the copy. With the filter off the copy is its anchor and
+    drops it. With the filter on no anchor is left, so the FX price stands."""
+    pp3, fx = _price_rows([('AAA', 2018, 1000.0, 1000.0, 100.0), ('AAA', 2019, np.nan, 1000.0, 100.0)])
+    on = pf._build_usd_with_qc(pp3, fx, _qc())
+    assert _row(on, 'AAA')['usd_source'] == 'filled' and _row(on, 'AAA')['usd_filled'] == pytest.approx(10.0)
+    off = pf._build_usd_with_qc(pp3, fx, _qc(usd_copy_of_lcu_tol=0.0))
+    assert _row(off, 'AAA')['usd_source'] == 'implausible_vs_closest_observed_10x'
+
+
+def test_a_copy_leaves_the_global_median_the_filled_prices_are_checked_against():
+    """Without the copy the item-year median is 10, 100 times below the filled price. With the copy in,
+    the median is 2,505 and the filled price passes."""
+    pp3, fx = _price_rows([('COP', 2019, 5000.0, 5000.0, 100.0), ('OBS', 2019, 10.0, np.nan, 1.0),
+                           ('FIL', 2019, np.nan, 1000.0, 1.0)])
+    on = pf._build_usd_with_qc(pp3, fx, _qc())
+    assert _row(on, 'FIL')['usd_source'] == 'implausible_vs_global_median_10x'
+    assert _row(on, 'OBS')['global_median_usd'] == 10.0 and _row(on, 'OBS')['n_obs'] == 1
+    off = pf._build_usd_with_qc(pp3, fx, _qc(usd_copy_of_lcu_tol=0.0))
+    assert _row(off, 'FIL')['usd_source'] == 'filled' and _row(off, 'OBS')['global_median_usd'] == 2505.0
+
+
+def test_a_copy_leaves_the_fx_country_check():
+    """A country whose only overlap is two copies looks 100 times off with the filter off, which
+    invalidates all its filled prices. With the filter on it has no overlap to judge."""
+    pp3, fx = _price_rows([('AAA', 2017, 1000.0, 1000.0, 100.0), ('AAA', 2018, 1000.0, 1000.0, 100.0),
+                           ('AAA', 2019, np.nan, 1000.0, 100.0)])
+    no_anchor_check = dict(anchor_max_times_off=1e9, qc_min_overlap=2)
+    on = pf._build_usd_with_qc(pp3, fx, _qc(**no_anchor_check))
+    assert _row(on, 'AAA')['usd_source'] == 'filled'
+    off = pf._build_usd_with_qc(pp3, fx, _qc(usd_copy_of_lcu_tol=0.0, **no_anchor_check))
+    assert _row(off, 'AAA')['usd_source'] == 'invalid_fx_country'
+
+
+def _observed_panel(extreme, n_at_median=9):
+    rows = [('M%02d' % i, 2019, 100.0, np.nan, 1.0) for i in range(n_at_median)]
+    return rows + [('EXT', 2019, extreme, np.nan, 1.0)]
+
+
+@pytest.mark.parametrize('extreme, dropped', [(2000.0, False), (2000.5, True), (5.0, False), (4.99, True)])
+def test_observed_price_is_dropped_strictly_beyond_twenty_times_the_median_in_both_directions(extreme, dropped):
+    out = pf._build_usd_with_qc(*_price_rows(_observed_panel(extreme)), _qc())
+    row = _row(out, 'EXT')
+    assert row['usd_tonne_obs'] == extreme, 'the observed price stays for reference'
+    if dropped:
+        assert row['usd_source'] == 'implausible_observed_vs_global_median_20x' and np.isnan(row['usd_filled'])
+    else:
+        assert row['usd_source'] == 'observed' and row['usd_filled'] == extreme
+
+
+def test_observed_price_check_needs_ten_reporting_countries_and_a_copy_does_not_count():
+    # Nine reporters: the extreme stands.
+    assert _row(pf._build_usd_with_qc(*_price_rows(_observed_panel(9000.0, n_at_median=8)), _qc()),
+                'EXT')['usd_source'] == 'observed'
+    # A tenth row that is a copy leaves nine reporters with the filter on, and makes ten with it off.
+    rows = _observed_panel(9000.0, n_at_median=8) + [('COP', 2019, 100.0, 100.0, 100.0)]
+    assert _row(pf._build_usd_with_qc(*_price_rows(rows), _qc()), 'EXT')['usd_source'] == 'observed'
+    assert (_row(pf._build_usd_with_qc(*_price_rows(rows), _qc(usd_copy_of_lcu_tol=0.0)), 'EXT')['usd_source']
+            == 'implausible_observed_vs_global_median_20x')
+
+
+def test_a_dropped_observed_price_stays_an_anchor_and_stays_in_the_median():
+    """Unlike a copy, an implausible observed price keeps its place in usd_tonne_obs."""
+    rows = _observed_panel(9000.0) + [('EXT', 2020, np.nan, 5.0, 1.0)]
+    out = pf._build_usd_with_qc(*_price_rows(rows), _qc())
+    assert _row(out, 'EXT', 2020)['usd_source'] == 'implausible_vs_closest_observed_10x'
+    assert _row(out, 'EXT')['n_obs'] == 10
+
+
+def test_a_dropped_price_falls_back_to_the_geographic_medians_without_itself():
+    pp_usd = pf._build_usd_with_qc(*_price_rows(_observed_panel(9000.0)), _qc())
+    prices = pp_usd.rename(columns={'usd_filled': 'price_usd_tonne', 'Item': 'item_fao'})
+    prices['area_code_m49'] = prices['iso3']
+    prices['item_code_fao'] = 1
+    production = pd.DataFrame({'element': 'Production', 'year': 2019, 'area_code_m49': ['EXT', 'M00'], 'item_code_fao': 1,
+                               'subregion_fao': 'S', 'region_fao': 'R', 'value': 2.0})
+    out = pt._merge_production_value(production, *pf._compute_annual_prices(prices, None)).set_index('area_code_m49')
+    assert out.loc['EXT', 'price_source_agg_level'] == 'subregion' and out.loc['EXT', 'price_usd_tonne'] == 100.0
+    assert out.loc['EXT', 'value_usd'] == 200.0
+    assert out.loc['M00', 'price_source_agg_level'] == 'country'
+
+
+def test_price_panel_saves_the_copy_flag(tmp_path):
+    pp_usd = pf._build_usd_with_qc(*_price_rows([('COP', 2019, 500.0, 500.0, 100.0)]), _qc())
+    pp_usd = pp_usd.assign(**{'Item Code': 1, 'Area Code (M49)': '001', 'price_index': np.nan, 'slc_filled': np.nan,
+                              'slc_source': 'missing', 'fx_source': 'wb'})
+    pt._save_price_outputs(pp_usd, str(tmp_path), SimpleNamespace(fao_start_year=2019, fao_end_year=2019))
+    saved = pd.read_csv(tmp_path / 'fao_prices_2019_2019.csv')
+    assert saved['usd_copy_of_lcu'].tolist() == [True] and saved['usd_source'].tolist() == ['invalid_usd_copy_of_lcu']
+
+
+def test_price_filter_thresholds_are_configuration():
+    rows = pd.read_csv(os.path.join(os.path.dirname(pf.__file__), '..', 'input_template', 'es_parameters.csv'),
+                       names=['service', 'parameter', 'value'], usecols=[0, 1, 2], engine='python',
+                       on_bad_lines='skip').set_index('parameter')['value']
+    assert float(rows['pollination_price_usd_copy_of_lcu_tol']) == 0.001
+    assert float(rows['pollination_price_usd_copy_of_lcu_min_fx']) == 1.1
+    assert float(rows['pollination_price_obs_global_median_max_times_off']) == 20.0
+    assert int(rows['pollination_price_obs_global_median_min_countries']) == 10

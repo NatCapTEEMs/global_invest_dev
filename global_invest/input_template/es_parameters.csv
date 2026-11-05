@@ -362,12 +362,16 @@ crop_provision,faostat_aggregate_items_path,global_invest/fao/faostat_aggregate_
 crop_provision,crop_provision_default_items_path,global_invest/crop_provision/fao_crop_items.csv
 crop_provision,crop_provision_fao_values_table_path,global_invest/pollination/fao/fao_values_1993_2024.csv
 crop_provision,crop_provision_fao_values_table_source,"built by pollination's fao_median_prices task (the ported crop_benefits chain): production tonnes x that year's USD producer price, the price falling back country to subregion to region to world, with the level in price_source_agg_level"
+crop_provision,crop_provision_base_year_value_basis,production_x_price
 crop_provision,crop_provision_reference_by_country_path,global_invest/crop_provision/reference/gep_by_country_2019_reference_169073e.csv
 crop_provision,crop_provision_reference_by_country_source,"the authors' repository main at 169073e (github.com/mcwayrm/gep_commerical_agriculture, 2026-10-18, which removes the three FAOSTAT group totals), its own calculate() on its committed inputs, 2019 rows: 474216381706.00 USD over 114 valued countries, no gap filling. Its FAO bulk and CWoN table give the same 2019 values and rates as the staged ones for the 158 items. The previous reference, gep_by_country_2019_reference.csv (623117396403.00, the January 2026 list with the group totals), stays beside it."
 crop_provision,crop_provision_reference_superseded_by_country_path,global_invest/crop_provision/reference/gep_by_country_2019_reference.csv
 crop_provision,fao_input_source_url,https://bulks-faostat.fao.org/production/Value_of_Production_E_All_Data.zip
 crop_provision,fao_input_source_archive_member,Value_of_Production_E_All_Data.csv
 crop_provision,cwon_crop_coefficients_path,global_invest/crop_provision/CWON2024_crop_coef.csv
+crop_provision,crop_provision_cwon_annual_rental_rate_path,global_invest/crop_provision/cwon/land_ef_regional_cropland_rental_rates_new.csv
+crop_provision,crop_provision_cwon_annual_rental_rate_sha256,9a3e76187fe56ef25dc7d11e1777ebdd34a6d9989b1f9a00dabccd7f8f5f5568
+crop_provision,crop_provision_cwon_annual_rental_rate_source,"the cropland rental rates CWoN 2024 applies, from the World Bank reproducibility package (FR_WLD_2024_195), Input/Predefined, copied unchanged, with README_provenance.md beside it. land.do imports it at line 1594 and merges it at lines 1637 to 1638 with keep(3), so a country it does not list has no rent. Read at the base year only. Other years and the subsistence component keep cwon_crop_coefficients_path"
 crop_provision,crop_subsistence_rulis_path,global_invest/crop_provision/subsistence/fao_rulis_own_consumption.csv
 crop_provision,crop_subsistence_lowder_path,global_invest/crop_provision/subsistence/lowder_2021_farm_size_shares.csv
 crop_provision,crop_subsistence_area_value_path,global_invest/crop_provision/subsistence/FAO_area_value.csv
@@ -440,6 +444,10 @@ pollination,pollination_price_tol_near_equal_lcu_slc,0.01
 pollination,pollination_price_anchor_max_year_dist,10
 pollination,pollination_price_anchor_max_times_off,10
 pollination,pollination_price_global_median_max_times_off,10
+pollination,pollination_price_usd_copy_of_lcu_tol,0.001
+pollination,pollination_price_usd_copy_of_lcu_min_fx,1.1
+pollination,pollination_price_obs_global_median_max_times_off,20
+pollination,pollination_price_obs_global_median_min_countries,10
 pollination,pollination_price_qc_min_overlap,50
 pollination,pollination_price_qc_bad_median_times_off,3
 pollination,pollination_price_qc_bad_share_over_3x,0.5

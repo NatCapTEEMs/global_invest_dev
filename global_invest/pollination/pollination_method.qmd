@@ -97,7 +97,11 @@ rather than a second one:
 5. **Value raster.** Production times the producer price we build ourselves (each country's own
    2019 price for the crop, else the same crop's FAO subregion, region or world median) times
    each crop's dependence on animal pollination, with coffee blended per country from what it
-   grows.
+   grows. As in crop_benefits at 0ac7841d, a USD price that copies the local-currency price while the
+   exchange rate is more than 1.1 times from 1 is removed outright. An observed USD price more than 20
+   times above or below the crop-year global median, where at least 10 countries report, stays an observed
+   anchor and stays in that median, and only the price the row uses goes missing. Either way the geographic
+   fallback applies. The saved rasters were priced before these two checks.
 
 Checked against the author's own 2019 rasters on 2026-08-30: the FAO panel matches his row for row,
 and global production over 157 crops is 9,008.3 million tonnes on both sides.
