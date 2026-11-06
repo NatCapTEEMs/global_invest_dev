@@ -352,7 +352,7 @@ def test_the_country_table_matches_the_authors_corrected_run_where_the_border_ru
 
     That run used the February SDR rasters (`usle_2019_revised_feb_13.tif`) and the v3 upstream
     share, so the library side is the table computed on the same rasters, kept beside the current
-    one. The current shares are tested against the matching reference in the test below."""
+    one. The shares on the fresh rasters are tested against the matching reference in the test below."""
     import os
     reference_path = os.path.join(
         os.path.expanduser('~'), 'Files', 'base_data', 'global_invest', 'erosion', 'reference',
@@ -395,8 +395,26 @@ def test_the_country_table_matches_the_authors_corrected_run_where_the_border_ru
               / both[column + '_theirs'] < 0.01).mean()
     assert within > 0.4, within
 
+# The SHA-256 of the two SPAM stacks, as a prevention_shares run signature records them.
+SUPPLIED_STACKS = {'erosion_area_stack_path': '8f322e2d7645ece9fac3f95b97fd687327ed680222936fbb398ec3ea85d270aa',
+                   'erosion_yield_stack_path': 'fd44c8c4094f967c5a7b2d92a89af243194f4d36eeda5f609047c66fbaa22d5c'}
+REPAIRED_STACKS = {'erosion_area_stack_path': '45a03033addd71544b169f7fc0882e20820e82e4d4e8e6ef5adbe0f0a79db202',
+                   'erosion_yield_stack_path': 'a92d3e5a47c902daf526eeabf4e2edce5320e379f0ee579d896f1189957387da'}
+
+def _stacks_read_by(prevention_shares_dir):
+    """The SHA-256 of the two SPAM stacks a prevention_shares folder read, from its run signature."""
+    import json
+    with open(os.path.join(prevention_shares_dir, 'run_signature.json'), encoding='utf-8') as f:
+        inputs = json.load(f)['inputs']
+    return {name: inputs[name]['sha256'] for name in SUPPLIED_STACKS}
+
 def test_the_country_shares_equal_the_authors_released_run():
-    """The current country shares against the authors' released table (v2.0.0-LUP, 618f67e).
+    """The country shares on the supplied SPAM stacks against the authors' released table (v2.0.0-LUP, 618f67e).
+
+    The released table is computed on the supplied stacks, so the library side is its own table on
+    those stacks, preserved beside the canonical one. The run signature in that folder must name
+    the supplied stacks, so the identity of the input is tested and not read from a folder name.
+    The canonical shares are on the repaired stacks and are checked in the test below.
 
     Both are computed from the same rasters by the same share code, on the same boundaries and
     with the same cell-centre rule, so every share and every missing row agrees exactly. A
@@ -413,11 +431,20 @@ def test_the_country_shares_equal_the_authors_released_run():
     reference_path = os.path.join(
         os.path.expanduser('~'), 'Files', 'base_data', 'global_invest', 'erosion', 'reference',
         'integrated_country_gep_v2_0_0_lup_618f67e.csv')
-    ours_path = os.path.join(
-        os.path.expanduser('~'), 'Files', 'global_invest', 'projects', 'gep_erosion',
-        'intermediate', 'prevention_shares', 'integrated_country_gep.csv')
-    if not (os.path.exists(reference_path) and os.path.exists(ours_path)):
+    intermediate = os.path.join(
+        os.path.expanduser('~'), 'Files', 'global_invest', 'projects', 'gep_erosion', 'intermediate')
+    preserved = os.path.join(intermediate, 'prevention_shares.displaced_pre_repaired_stacks')
+    live = os.path.join(intermediate, 'prevention_shares')
+    # A project holding the preserved folder always runs this, so a lost file fails and does not
+    # skip. A project that never left the supplied stacks has its supplied-stack table in place.
+    if os.path.isdir(preserved):
+        folder = preserved
+    elif os.path.exists(reference_path) and os.path.isdir(live):
+        folder = live
+    else:
         pytest.skip('the staged reference or an erosion run is not on this machine')
+    assert _stacks_read_by(folder) == SUPPLIED_STACKS, folder
+    ours_path = os.path.join(folder, 'integrated_country_gep.csv')
 
     theirs = pd.read_csv(reference_path, float_precision='round_trip').set_index('iso3')
     ours = pd.read_csv(ours_path, float_precision='round_trip').set_index('iso3')
@@ -443,6 +470,72 @@ def test_the_country_shares_equal_the_authors_released_run():
         assert np.array_equal(at_their_crop_values[priced].to_numpy(), theirs.loc[priced, column].to_numpy(),
                               equal_nan=True), column
         assert math.fsum(at_their_crop_values.dropna()) == math.fsum(theirs[column].dropna()), column
+
+def test_the_canonical_tables_are_the_verified_run_on_the_repaired_stacks():
+    """The canonical erosion tables against the receipts of their run on the repaired SPAM stacks.
+
+    The raster job and the valuation each listed the SHA-256 of what they wrote, so a match means
+    the canonical folders hold those outputs byte for byte. The valuation tasks' run signatures are
+    left out, since they name the project a run was in and move on a recompute with equal values.
+    The raster job's signature stays in, since it names the stacks that were read.
+
+    Values and masks are checked apart from the bytes: every country against the bridge recorded
+    from the isolated run, and every mask against the supplied-stack table and the author's SES-11
+    table, because the repair moves values and no mask. This skips only where the machine holds
+    neither the receipts nor a project on the repaired stacks. A later canonical run needs its own
+    receipts named here, so a change is explained rather than absorbed."""
+    import hashlib
+    import math
+
+    root = os.path.join(os.path.expanduser('~'), 'Files', 'global_invest')
+    receipts = os.path.join(root, 'audit_runs', 'erosion_spam_repair_20261103', 'shares')
+    project = os.path.join(root, 'projects', 'gep_erosion')
+    intermediate = os.path.join(project, 'intermediate')
+    live = os.path.join(intermediate, 'prevention_shares')
+    on_repaired_stacks = (os.path.exists(os.path.join(live, 'run_signature.json'))
+                          and _stacks_read_by(live) == REPAIRED_STACKS)
+    if not (os.path.isdir(receipts) or on_repaired_stacks):
+        pytest.skip('neither the repaired-stack receipts nor a project on those stacks is on this machine')
+    assert _stacks_read_by(live) == REPAIRED_STACKS
+
+    parameters = pd.read_csv(os.path.join(project, 'input', 'es_parameters.csv'), dtype=str)
+    for parameter, file_name in (('erosion_area_stack_path', 'spam2020_harvested_area_stack_TA_repaired_20261103.tif'),
+                                 ('erosion_yield_stack_path', 'spam2020_yield_stack_TA_repaired_20261103.tif')):
+        assert parameters.loc[parameters['parameter'] == parameter, 'value'].tolist() == [
+            'global_invest/erosion/' + file_name]
+
+    for task, receipt, n_files, left_out in (
+            ('prevention_shares', 'result/prevention_shares_sha256.txt', 17, ()),
+            ('per_crop_valuation', 'result_valuation/per_crop_valuation_sha256.txt', 3, ('run_signature.json',)),
+            ('gep_calculation', 'result_valuation/gep_calculation_sha256.txt', 3, ('run_signature.json',))):
+        with open(os.path.join(receipts, receipt), encoding='utf-8') as f:
+            listed = [line.split() for line in f]
+        assert len(listed) == n_files, receipt
+        for digest, name in listed:
+            if name not in left_out:
+                with open(os.path.join(intermediate, task, name), 'rb') as f:
+                    assert hashlib.sha256(f.read()).hexdigest() == digest, (task, name)
+
+    read = lambda path: pd.read_csv(path, float_precision='round_trip', encoding='utf-8-sig')
+    bridge = read(os.path.join(root, 'audit_runs', 'erosion_fgh_closure_20261106', 'results',
+                               'bridge_ses11_author_to_library_main.csv')).set_index('iso3_r250_label')
+    canonical_table = read(os.path.join(intermediate, 'gep_calculation', 'gep_by_country_base_year.csv'))
+    supplied_table = read(os.path.join(intermediate, 'gep_calculation.displaced_pre_repaired_stacks',
+                                       'gep_by_country_base_year.csv'))
+    assert bridge.index.is_unique and len(bridge) == 250
+    assert canonical_table['iso3_r250_label'].is_unique
+    assert set(canonical_table['iso3_r250_label']) == set(bridge.index)
+    canonical = canonical_table.set_index('iso3_r250_label')['erosion_gep'].reindex(bridge.index)
+    supplied = supplied_table.set_index('iso3_r250_label')['erosion_gep'].reindex(bridge.index)
+
+    assert np.array_equal(canonical.to_numpy(), bridge['library_main_repaired'].to_numpy(), equal_nan=True)
+    assert ((canonical > 0).sum(), (canonical == 0).sum(), canonical.isna().sum()) == (169, 10, 71)
+    assert not (canonical < 0).any()
+    for other in (supplied, bridge['author_spam_crop_3nov']):
+        assert np.array_equal(canonical.isna().to_numpy(), other.isna().to_numpy())
+        assert np.array_equal((canonical == 0).to_numpy(), (other == 0).to_numpy())
+    assert math.fsum(canonical.dropna()) == 65636585888.84358
+    assert math.fsum(canonical.dropna()) - math.fsum(supplied.dropna()) == -453193249.10622406
 
 
 # ---------------------------------------------------------------------------
