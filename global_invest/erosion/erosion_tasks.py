@@ -1802,6 +1802,11 @@ def resample_band_to_match(stack_path, band, match_path, working_dir, resample_m
 
 
 EROSION_SHOCK_SIGNATURE = 'erosion_shock_signature.json'   # beside the table, in the shared es_shocks dir
+# Settings only the per-crop valuation reads. The prevention shares and the ES shock cannot move with
+# them, so their signatures leave them out and changing one rebuilds no raster work.
+PER_CROP_VALUATION_SETTINGS = ('erosion_valuation_method', 'erosion_crop_values_relative_file',
+                               'erosion_crop_values_path', 'erosion_fao_item_spam2020_crop_correspondence_path')
+PREVENTION_COMPONENTS = ('onfarm', 'upstream', 'combined')
 
 
 def erosion_shock(p):
@@ -1922,7 +1927,8 @@ def erosion_shock(p):
     shock_maps = sorted({m for by_year in p.scenario_lulc_paths.values() for m in by_year.values()}
                         | set(glob.glob(os.path.join(p.erosion_exposure_dir, '*.tif'))))
     shock_outputs = [p.erosion_shock_output_path]
-    reason = utilities.reuse_reason(p, 'erosion', shock_outputs, EROSION_SHOCK_SIGNATURE, light_inputs=shock_maps)
+    reason = utilities.reuse_reason(p, 'erosion', shock_outputs, EROSION_SHOCK_SIGNATURE, light_inputs=shock_maps,
+                                    ignore=PER_CROP_VALUATION_SETTINGS)
     if reason is None:
         hb.log('  erosion shock: reusing %s (same exposure rasters, maps and settings)' % p.erosion_shock_output_path)
         return
@@ -2153,7 +2159,8 @@ def erosion_shock(p):
     out = utilities.filter_to_model_domain(out, p.erosion_shock_output_path, 'erosion', log=hb.log)
     utilities.assert_shock_table_sound(out, scenarios, 'erosion')
     out.to_csv(p.erosion_shock_output_path, index=False)
-    utilities.write_reuse_signature(p, 'erosion', shock_outputs, EROSION_SHOCK_SIGNATURE, light_inputs=shock_maps)
+    utilities.write_reuse_signature(p, 'erosion', shock_outputs, EROSION_SHOCK_SIGNATURE, light_inputs=shock_maps,
+                                    ignore=PER_CROP_VALUATION_SETTINGS)
     end = out[out['year'] == es_shock_end_year]
     hb.log('  erosion shock (dynamic): %d rows, %d scenarios, %d anchors, alpha=%.3f, primary=%s'
           % (len(out), len(scenarios), len(anchor_years), alpha, primary.upper()))
@@ -2350,7 +2357,7 @@ def prevention_shares(p):
         p.erosion_gep_output_dir, 'integrated_country_gep.csv')
     if not p.run_this:
         return
-    reason = utilities.reuse_reason(p, 'erosion', list(service_results.values()))
+    reason = utilities.reuse_reason(p, 'erosion', list(service_results.values()), ignore=PER_CROP_VALUATION_SETTINGS)
     if reason is None:
         hb.log('erosion reuses its prevention-share outputs: the signature is unchanged.')
         return True
@@ -2358,7 +2365,70 @@ def prevention_shares(p):
     hb.create_directories(p.erosion_gep_output_dir)
     paths = erosion_paths(p)
     integrate_and_write(p, paths)
-    utilities.write_reuse_signature(p, 'erosion', list(service_results.values()))
+    utilities.write_reuse_signature(p, 'erosion', list(service_results.values()), ignore=PER_CROP_VALUATION_SETTINGS)
+    return True
+
+
+def per_crop_valuation(p):
+    """Each crop valued at its own protected share and elasticity, on crop_provision's crop values.
+
+    Reads the country-crop protected production prevention_shares writes, crop_provision's per-crop
+    gross production value before its rental rate, the FAO item to SPAM 2020 crop correspondence
+    and the elasticity table, and writes one row per country and item and one per country, for the
+    on-farm, upstream and combined components. Nothing here touches a raster, so a change to the
+    valuation reruns this step and gep_calculation only.
+
+    crop_provision's table is found the way water_supply finds it: a configured
+    erosion_crop_values_path, else the path crop_provision registered in this run, else
+    erosion_crop_values_relative_file from the project directory.
+    """
+    publish_inputs(p)
+    service_results = p.results.setdefault('erosion', {})
+    service_results['country_item_gep_per_crop'] = os.path.join(p.cur_dir, 'country_item_gep_per_crop.csv')
+    service_results['country_gep_per_crop'] = os.path.join(p.cur_dir, 'country_gep_per_crop.csv')
+    if not p.run_this:
+        return
+    crop_values_path = getattr(p, 'erosion_crop_values_path', None)
+    if crop_values_path is None:
+        crop_values_path = p.results.get('crop_provision', {}).get('gep_by_country_year_crop')
+    if crop_values_path is None:
+        crop_values_path = os.path.normpath(os.path.join(p.project_dir, p.erosion_crop_values_relative_file))
+    if not hb.path_exists(crop_values_path):
+        raise NameError('erosion values crops at crop_provision\'s per-crop table, and there is none at %s. '
+                        'Run crop_provision first or set erosion_crop_values_path.' % crop_values_path)
+    country_crop_path = str(erosion_paths(p).output.country_crop_long)
+    if not hb.path_exists(country_crop_path):
+        raise NameError('erosion has no country-crop protected production at %s. prevention_shares '
+                        'writes it, so run that first.' % country_crop_path)
+    outputs = [service_results['country_item_gep_per_crop'], service_results['country_gep_per_crop']]
+    light_inputs = [crop_values_path, country_crop_path, __file__, ef.__file__]
+    reason = utilities.reuse_reason(p, 'erosion', outputs, light_inputs=light_inputs)
+    if reason is None:
+        hb.log('erosion reuses its per-crop valuation: the signature is unchanged.')
+        return True
+    hb.log('erosion values crop by crop, %s' % reason)
+
+    values = ef.crop_values_by_country_item(pd.read_csv(crop_values_path, low_memory=False), int(p.erosion_base_year))
+    correspondence = pd.read_csv(p.erosion_fao_item_spam2020_crop_correspondence_path, encoding='utf-8-sig')
+    own = ef.own_elasticity_by_cpc(pd.read_csv(p.erosion_elasticity_csv_path, encoding='utf-8-sig'))
+    protection = pd.read_csv(country_crop_path)
+    pairs = pd.concat([ef.per_crop_gep(values, correspondence, protection[protection['component'] == component], own)
+                       .assign(component=component) for component in PREVENTION_COMPONENTS], ignore_index=True)
+    by_component = {component: ef.per_crop_country_gep(pairs[pairs['component'] == component])
+                    for component in PREVENTION_COMPONENTS}
+    country = by_component['combined'].drop(columns='gep_const2019_usd')
+    for component, frame in by_component.items():
+        country = country.merge(frame[['iso3', 'gep_const2019_usd']].rename(
+            columns={'gep_const2019_usd': 'gep_const2019_usd_%s' % component}), on='iso3', how='left')
+    pairs.to_csv(outputs[0], index=False)
+    country.to_csv(outputs[1], index=False)
+    hb.log('erosion per-crop valuation: %s USD combined over %d countries, %d of them partial sums. %s USD '
+           'of crop value has no SPAM production of its crop and %s USD is not a crop'
+           % (format(country['gep_const2019_usd_combined'].sum(), ',.2f'),
+              int(country['gep_const2019_usd_combined'].notna().sum()), int(country['partial_sum'].sum()),
+              format(country['crop_value_without_spam_share_usd'].sum(), ',.2f'),
+              format(country['crop_value_not_a_crop_usd'].sum(), ',.2f')))
+    utilities.write_reuse_signature(p, 'erosion', outputs, light_inputs=light_inputs)
     return True
 
 
@@ -2389,18 +2459,33 @@ def gep_calculation(p):
 
     The combined component is the account's, because the service is what on-farm cover and
     everything upslope prevent together, not either alone.
+
+    erosion_valuation_method says which valuation the account takes: 'per_crop', each crop at its
+    own protected share and elasticity on crop_provision's values (per_crop_valuation), or
+    'country_shock', the country's FAOSTAT crop total times one production-weighted shock
+    (integrated_country_gep.csv). A table written under the other method, or from another source
+    table, is rebuilt rather than republished, because the signature names both.
     """
     publish_inputs(p)
     published_map_name = f'erosion_prevention_share_{int(p.gep_base_year)}.tif'
     service_results, already_done = utilities.begin_gep_calculation(
         p, 'erosion', extra_results={published_map_name: os.path.join(p.cur_dir, published_map_name)})
-    if not p.run_this or already_done:
+    if not p.run_this:
         return
-
     paths = erosion_paths(p)
-    if not hb.path_exists(str(paths.output.integrated_country_gep)):
-        raise NameError('erosion has no integrated_country_gep.csv at %s. prevention_shares '
-                        'writes it, so run that first.' % paths.output.integrated_country_gep)
+    sources = {'per_crop': service_results.get('country_gep_per_crop'),
+               'country_shock': str(paths.output.integrated_country_gep)}
+    if p.erosion_valuation_method not in sources:
+        raise ValueError('erosion_valuation_method is %r; it takes %s.'
+                         % (p.erosion_valuation_method, ' or '.join(sorted(sources))))
+    source = sources[p.erosion_valuation_method]
+    outputs = [service_results['gep_by_country_base_year']]
+    if already_done and utilities.reuse_reason(p, 'erosion', outputs, light_inputs=[source]) is None:
+        return
+    if not source or not hb.path_exists(source):
+        raise NameError('erosion has no %s valuation table at %s. %s writes it, so run that first.'
+                        % (p.erosion_valuation_method, source,
+                           'per_crop_valuation' if p.erosion_valuation_method == 'per_crop' else 'prevention_shares'))
 
     # The published map: the combined prevention share warped off the InVEST projection onto the
     # account's 30 arc-second pyramid. Nearest neighbour, because the raster is a proportion and
@@ -2417,26 +2502,28 @@ def gep_calculation(p):
             target_bb=[-180.0, -90.0, 180.0, 90.0],
             target_sr_wkt=wgs84.ExportToWkt())
 
-    df = hb.df_read(str(paths.output.integrated_country_gep))
+    df = hb.df_read(source)
     column = 'gep_const2019_usd_combined'
     if column not in df.columns:
-        raise NameError('integrated_country_gep.csv carries no %s column, only %s'
-                        % (column, sorted(df.columns)[:8]))
+        raise NameError('%s carries no %s column, only %s'
+                        % (os.path.basename(source), column, sorted(df.columns)[:8]))
 
     # The integrated table is one row per territory, not per country: France carries seven rows,
     # Australia three, and eleven codes repeat in all. Summing to the code first is what makes the
     # join one-to-one; without it the merge widens the 250-country table to 268 rows, reports a
     # country count that counts territories, and hands any downstream join France seven times.
     # The total is unchanged either way, because every territory still contributes exactly once.
+    # The per-crop table is one row per country already, so the sum leaves it as it is.
     values = (df[['iso3', column]]
               .rename(columns={'iso3': 'iso3_r250_label', column: 'erosion_gep'})
               .groupby('iso3_r250_label', as_index=False)['erosion_gep'].sum(min_count=1))
     df_gep = utilities.country_attributes(p).merge(values, on='iso3_r250_label', how='left')
     df_gep['year'] = int(p.gep_base_year)
     hb.df_write(df_gep, service_results['gep_by_country_base_year'])
-    hb.log('Total erosion GEP for base year %d: %s over %d countries'
-           % (int(p.gep_base_year), format(df_gep['erosion_gep'].sum(), ',.2f'),
+    hb.log('Total erosion GEP for base year %d (%s): %s over %d countries'
+           % (int(p.gep_base_year), p.erosion_valuation_method, format(df_gep['erosion_gep'].sum(), ',.2f'),
               int(df_gep['erosion_gep'].notna().sum())))
+    utilities.write_reuse_signature(p, 'erosion', outputs, light_inputs=[source])
     return True
 
 # --- Production area-damage seam (erosion_method = damage_area) ---

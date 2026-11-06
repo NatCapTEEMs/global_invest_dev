@@ -889,3 +889,134 @@ def test_seals7_biophysical_table_is_rebuilt_only_when_its_source_changes(tmp_pa
     et.build_seals7_biophysical_table(str(src), str(out))
     assert os.stat(str(out)).st_mtime_ns != first, 'the table was reused although its source changed'
     assert '0.3' in out.read_text(encoding='utf-8')
+
+
+# ---------------------------------------------------------------------------------------------
+# The per-crop valuation: crop_provision's values, each item at its own SPAM crop's share.
+# ---------------------------------------------------------------------------------------------
+def _per_crop_inputs():
+    values = pd.DataFrame({
+        'iso3': ['AAA'] * 6 + ['BBB', 'CCC'],
+        'fao_item_code': [15, 79, 116, 27, 56, 1166, 27, 15],
+        'fao_item_name': ['Wheat', 'Millet', 'Potatoes', 'Rice', 'Maize (corn)', 'Other meat', 'Rice', 'Wheat'],
+        'value_source': ['faostat'] * 8,
+        'crop_value_usd': [1000.0, 400.0, 200.0, 300.0, np.nan, 50.0, 100.0, 80.0]})
+    correspondence = pd.DataFrame({
+        'fao_item_code': [15, 79, 79, 116, 27, 56, 1166],
+        'fao_cpc_code': ['0111', '0118', '0118', '01510', '0113', '0112', '21119.90'],
+        'spam2020_crop_label': ['whea', 'mill', 'pmil', 'pota', 'rice', 'maiz', '']})
+    protection = pd.DataFrame({
+        'ISO3': ['AAA', 'AAA', 'AAA', 'AAA', 'CCC'],
+        'crop': ['whea', 'mill', 'pmil', 'pota', 'whea'],
+        'total_production_tons': [100.0, 30.0, 10.0, 50.0, 10.0],
+        'share_protected_production': [0.5, 0.2, 0.6, 0.4, 0.0],
+        'elasticity_used': [0.30, 0.30, 0.10, 0.08, 0.30]})
+    # CPC 0116 is rye and 01510 potatoes. FAO's item code for potatoes is also 116, which is why
+    # the join is on CPC.
+    elasticity = pd.DataFrame({'Item Code': [116.0, 1510.0], 'Item_code_fao': [116.0, 1510.0],
+                               'crop': ['Rye', 'Potatoes'], 'elasticity': [0.30, 0.15]})
+    return values, correspondence, protection, elasticity
+
+
+def test_each_crop_is_valued_at_its_own_share_and_elasticity():
+    # Wheat at its own share and the library elasticity, millet at the tonne-pooled share and
+    # elasticity of its two SPAM crops, potatoes at their own elasticity, joined on CPC, not on the
+    # FAO code that rye's row also carries.
+    values, correspondence, protection, elasticity = _per_crop_inputs()
+    own = ec.own_elasticity_by_cpc(elasticity)
+    out = ec.per_crop_gep(values, correspondence, protection, own).set_index(['iso3', 'fao_item_code'])
+    assert out.loc[('AAA', 15), 'gep_const2019_usd'] == pytest.approx(1000.0 * 0.5 * 0.30)
+    assert out.loc[('AAA', 79), 'protected_share'] == pytest.approx((30 * 0.2 + 10 * 0.6) / 40)
+    assert out.loc[('AAA', 79), 'elasticity_used'] == pytest.approx((6 * 0.30 + 6 * 0.10) / 12)
+    assert out.loc[('AAA', 79), 'gep_const2019_usd'] == pytest.approx(400.0 * 0.3 * 0.2)
+    assert out.loc[('AAA', 116), 'elasticity_used'] == pytest.approx(0.15)
+    assert out.loc[('AAA', 116), 'gep_const2019_usd'] == pytest.approx(200.0 * 0.4 * 0.15)
+    assert out.loc[('AAA', 27), 'status'] == 'no SPAM production of the crop'
+    assert out.loc[('AAA', 56), 'status'] == 'no value'
+    assert out.loc[('AAA', 1166), 'status'] == 'not a crop'
+    for pair in [('AAA', 27), ('AAA', 56), ('AAA', 1166), ('BBB', 27)]:
+        assert pd.isna(out.loc[pair, 'gep_const2019_usd'])
+    # A present zero share values at zero.
+    assert out.loc[('CCC', 15), 'gep_const2019_usd'] == 0.0
+
+
+def test_a_country_total_keeps_missing_apart_from_zero_and_says_what_it_leaves_out():
+    values, correspondence, protection, elasticity = _per_crop_inputs()
+    pairs = ec.per_crop_gep(values, correspondence, protection, ec.own_elasticity_by_cpc(elasticity))
+    country = ec.per_crop_country_gep(pairs).set_index('iso3')
+    assert country.loc['AAA', 'gep_const2019_usd'] == pytest.approx(150.0 + 24.0 + 12.0)
+    assert country.loc['AAA', 'crop_value_valued_usd'] == pytest.approx(1600.0)
+    assert country.loc['AAA', 'crop_value_without_spam_share_usd'] == pytest.approx(300.0)
+    assert country.loc['AAA', 'crop_value_not_a_crop_usd'] == pytest.approx(50.0)
+    assert country.loc['AAA', 'partial_sum']
+    assert pd.isna(country.loc['BBB', 'gep_const2019_usd'])
+    assert country.loc['CCC', 'gep_const2019_usd'] == 0.0 and not country.loc['CCC', 'partial_sum']
+
+
+def test_an_item_with_a_value_and_no_correspondence_row_raises():
+    values, correspondence, protection, elasticity = _per_crop_inputs()
+    with pytest.raises(ValueError, match='no row in the SPAM 2020'):
+        ec.per_crop_gep(values, correspondence[correspondence['fao_item_code'] != 116], protection,
+                        ec.own_elasticity_by_cpc(elasticity))
+
+
+def test_crop_values_are_crop_provisions_gross_values_one_row_per_pair():
+    # The base year only, thousand USD to USD, a pair whose second row is empty collapses onto the
+    # valued row, and a pair crop_provision leaves blank stays missing.
+    table = pd.DataFrame({
+        'iso3_r250_label': ['AAA', 'AAA', 'AAA', 'AAA', 'AAA', None, 'AAA'],
+        'crop_code': [15, 15, 79, 79, 56, 15, 27],
+        'crop': ['Wheat', 'Wheat', 'Millet', 'Millet', 'Maize (corn)', 'Wheat', 'Rice'],
+        'year': [2019, 2018, 2019, 2019, 2019, 2019, 2019],
+        'value_source': ['faostat', 'faostat', None, 'price_country', None, 'faostat', 'price_country'],
+        'gross_production_value': [1.5, 9.9, np.nan, 0.4, np.nan, 7.0, 0.0]})
+    out = ec.crop_values_by_country_item(table, 2019).set_index(['iso3', 'fao_item_code'])
+    assert len(out) == 4
+    assert out.loc[('AAA', 27), 'crop_value_usd'] == 0.0
+    assert out.loc[('AAA', 15), 'crop_value_usd'] == pytest.approx(1500.0)
+    assert out.loc[('AAA', 79), 'crop_value_usd'] == pytest.approx(400.0)
+    assert out.loc[('AAA', 79), 'value_source'] == 'price_country'
+    assert pd.isna(out.loc[('AAA', 56), 'crop_value_usd'])
+    twice = pd.concat([table, table.iloc[[0]]])
+    with pytest.raises(ValueError, match='two rows'):
+        ec.crop_values_by_country_item(twice, 2019)
+
+
+def test_a_per_crop_setting_does_not_rebuild_the_prevention_shares(tmp_path):
+    # The prevention shares take hours and cannot move with a valuation setting, so their signature
+    # leaves those settings out. Any other erosion setting still forces the rebuild.
+    from types import SimpleNamespace
+    from global_invest import utilities
+    output = tmp_path / 'integrated_country_gep.csv'
+    output.write_text('iso3\nAAA\n', encoding='utf-8')
+    p = SimpleNamespace(erosion_threshold_high_t_ha_yr=11.0, erosion_valuation_method='per_crop',
+                        erosion_crop_values_relative_file='a.csv')
+    ignore = et.PER_CROP_VALUATION_SETTINGS
+    utilities.write_reuse_signature(p, 'erosion', [str(output)], ignore=ignore)
+    p.erosion_valuation_method = 'country_shock'
+    p.erosion_crop_values_relative_file = 'b.csv'
+    p.erosion_fao_item_spam2020_crop_correspondence_path = str(tmp_path / 'absent.csv')
+    assert utilities.reuse_reason(p, 'erosion', [str(output)], ignore=ignore) is None
+    p.erosion_threshold_high_t_ha_yr = 5.0
+    assert 'erosion_threshold_high_t_ha_yr' in utilities.reuse_reason(p, 'erosion', [str(output)], ignore=ignore)
+
+
+def test_the_staged_correspondence_places_every_faostat_crop_on_a_spam_2020_crop():
+    import hazelbean as hb
+    import tempfile
+    p = hb.ProjectFlow(project_dir=os.path.join(tempfile.mkdtemp(), 'anchors'))
+    corr = pd.read_csv(p.get_path(os.path.join('global_invest', 'erosion', 'fao_item_spam2020_crop_correspondence.csv')),
+                       encoding='utf-8-sig', dtype={'fao_cpc_code': str})
+    groups = pd.read_csv(p.get_path(os.path.join('global_invest', 'fao', 'faostat_item_groups.csv')),
+                         encoding='utf-8-sig', dtype=str)
+    bandmap = pd.read_csv(p.get_path(os.path.join('global_invest', 'erosion', 'spam2020_bandmap.csv')))
+    crop_column = next(c for c in bandmap.columns if c.lower() in ('crop', 'crop_name', 'name'))
+    spam = set(bandmap[crop_column].astype(str).str.strip().str.lower())
+    placed = corr['spam2020_crop_label'].fillna('')
+    assert not corr.duplicated(['fao_item_code', 'spam2020_crop_label']).any()
+    assert set(placed[placed != '']) == spam and len(spam) == 46
+    assert ec.crop_item_codes(groups) <= set(corr['fao_item_code'])
+    two = corr.groupby('fao_item_code').size()
+    assert set(two[two > 1].index) == {79, 656}
+    assert set(corr.loc[placed == '', 'fao_item_code']) == {1166, 1185}
+    assert corr['fao_cpc_code'].notna().all()

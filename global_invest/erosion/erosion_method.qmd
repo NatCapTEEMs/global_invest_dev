@@ -31,19 +31,44 @@ not added to total GEP.
    formula $PS^{comb} = 1 - (1 - PS^{on})(1 - PS^{up})$.
 3. **Protected production.** Each crop's protected production is the prevention share times its
    SPAM2020 yield and harvested area, summed over the country's pixels.
-4. **Shock.** A country's shock is protected production weighted by each crop's erosion-to-yield
-   elasticity, over total production: $\text{Shock}_k = \sum_c PP_{c,k}\, \varepsilon_c / \sum_c
-   \text{Prod}_{c,k}$. Elasticities follow Sartori et al. (2019), about 0.30 for cereals and 0.15 for
-   roots, oilseeds and vegetables, with 0.08 where a crop has none.
-5. **Value.** $\text{GEP}_k = \text{GPV}_k \times \text{Shock}_k$, with GPV the country's FAOSTAT crop
-   gross production value in constant 2019 USD. GDP enters only to report the value as a share of
-   GDP.
+4. **Value, crop by crop.** Each FAO item is valued at its own SPAM 2020 crop's protected share
+   and its own elasticity: $\text{GEP}_k = \sum_i V_{i,k}\, s_{m(i),k}\, \varepsilon_i$. $V_{i,k}$
+   is the item's 2019 gross production value as crop provision carries it before the rental rate,
+   production times a 2019 USD producer price (`crop_provision_base_year_value_basis =
+   production_x_price`). $m(i)$ is the SPAM 2020 crop the correspondence
+   `fao_item_spam2020_crop_correspondence.csv` gives the item, and millet and coffee, which IFPRI
+   lists for two SPAM crops each, take the two crops' shares pooled by SPAM tonnes. $s_{m,k}$ is
+   that crop's protected production over its production in the country. $\varepsilon_i$ is the
+   item's own elasticity where the elasticity table lists its CPC code, and otherwise the SPAM
+   crop's, which follows Sartori et al. (2019), about 0.30 for cereals and 0.15 for roots,
+   oilseeds and vegetables, with 0.08 where a crop has none (`per_crop_gep` in
+   `erosion_functions.py`, the `per_crop_valuation` task). No floor applies.
+5. **Country shock, kept for comparison.** The earlier reading weights each crop's protected
+   share and elasticity by its production into one country shock and multiplies it by the
+   country's FAOSTAT crop gross production value: $\text{Shock}_k = \sum_c PP_{c,k}\,
+   \varepsilon_c / \sum_c \text{Prod}_{c,k}$ and $\text{GEP}_k = \text{GPV}_k \times
+   \text{Shock}_k$. It is still written to `integrated_country_gep.csv`, and
+   `erosion_valuation_method = country_shock` makes it the account's again. GDP enters only to
+   report the value as a share of GDP.
 
 The three components (on-farm, upstream, combined) are computed side by side. The account reports
 the combined one, summed to the account's r250 countries.
 
-**Missing inputs.** A country without a crop gross production value or without a shock is missing,
-not zero. A zero comes only from a present zero gross production value or a present zero shock.
+**Crop values.** Erosion reads crop provision's per-crop table
+(`gep_by_country_year_crop.csv`, `gross_production_value`, thousand USD), found as water supply
+finds it, so the two services value a crop with the same number on the same keys. A pair crop
+provision leaves blank stays missing. An item crop provision carries that is not a crop (the
+livestock items 1166 and 1185) has no SPAM crop in the correspondence and is left out, and an item
+whose SPAM crop has no SPAM production in the country has no share and is left out too. The 24
+countries where that happens carry partial sums ($1.30bn of $3,113.15bn of valued crop output is
+left out), flagged `partial_sum` in `country_gep_per_crop.csv`. Taiwan, Hong Kong and Macao have
+protected shares and no crop provision row, so they are missing.
+
+**Missing inputs.** A country without a crop gross production value or without a protected share
+is missing, not zero. A zero comes only from a present zero value or a present zero share.
+
+The three paragraphs below describe the country-shock reading's own crop value, which the
+per-crop valuation does not use.
 
 **Fallback crop value.** The fallback works at the country total, not crop by crop. Where FAOSTAT
 gives a country no crop gross production value at all, the whole country total is replaced by a
@@ -165,4 +190,4 @@ standalone, which is the practical way to iterate on it without invoking the eco
 
 ## Coverage
 
-The saved local table is one row for each of the account's 250 countries, base year 2019, in constant 2019 USD. Of the 250, 161 carry a value, 21 are computed zeros, and 68 rows are missing, kept as missing rather than zero because an input carries no data for those countries. The combined value sums to $21.23bn. Ten of the missing rows (ALA, AND, ESH, GLP, GUF, LIE, MCO, MTQ, SMR, XKX) have a shock but no crop gross production value. A zero means the computation returned zero. A missing row means the data to compute one is absent.
+The saved local table is one row for each of the account's 250 countries, base year 2019, in constant 2019 USD. Of the 250, 169 carry a positive value, 10 are computed zeros and 71 rows are missing, kept as missing rather than zero because an input carries no data for those countries. The combined value sums to $66.21bn ($66,207,658,499.27), against $52.66bn under the country shock. Of the missing rows, 58 have no SPAM production and so no protected share, three (HKG, MAC and TWN) have a share and no crop provision row, and ten (ALA, AND, ESH, GLP, GUF, LIE, MCO, MTQ, SMR and XKX) have a share and no crop value. A zero means the computation returned zero. A missing row means the data to compute one is absent.

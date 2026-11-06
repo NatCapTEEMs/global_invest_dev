@@ -599,12 +599,16 @@ def _signature(settings, inputs, light_inputs=()):
     return {'settings': settings, 'inputs': fingerprints}
 
 
-def _service_settings_and_inputs(p, service):
-    """The service's own es_parameters values and a content fingerprint of each `_path` among them."""
+def _service_settings_and_inputs(p, service, ignore=()):
+    """The service's own es_parameters values and a content fingerprint of each `_path` among them.
+
+    `ignore` names settings the outputs do not depend on, so a task whose outputs cannot move with
+    them is not rebuilt when they change.
+    """
     prefix = service + '_'
     settings, inputs = {}, {}
     for name, value in sorted(vars(p).items()):
-        if not name.startswith(prefix) or callable(value):
+        if not name.startswith(prefix) or callable(value) or name in ignore:
             continue
         if name.endswith('_path') and isinstance(value, str):
             inputs[name] = file_fingerprint(value)
@@ -654,7 +658,7 @@ def write_outputs_signature(signature, signature_path):
     hb.write_to_file(json.dumps(signature, indent=2, sort_keys=True, default=str), signature_path)
 
 
-def reuse_reason(p, service, outputs, signature_name='run_signature.json', light_inputs=()):
+def reuse_reason(p, service, outputs, signature_name='run_signature.json', light_inputs=(), ignore=()):
     """Why a service task cannot reuse what is on disk, or None when it can.
 
     The signature is the service's own es_parameters values plus a fingerprint of every input path
@@ -670,18 +674,21 @@ def reuse_reason(p, service, outputs, signature_name='run_signature.json', light
         outputs (list): the files reuse would republish.
         signature_name (str): the signature filename, written beside the first output.
         light_inputs (iterable): paths fingerprinted by size and mtime.
+        ignore (iterable): settings these outputs do not depend on. Pass the same names to
+            write_reuse_signature.
 
     Returns:
         str | None: the reason to recompute, naming what differs, or None to reuse.
     """
-    settings, inputs = _service_settings_and_inputs(p, service)
+    settings, inputs = _service_settings_and_inputs(p, service, ignore)
     return outputs_reuse_reason(outputs, _signature(settings, inputs, light_inputs),
                                 os.path.join(os.path.dirname(outputs[0]), signature_name))
 
 
-def write_reuse_signature(p, service, outputs, signature_name='run_signature.json', light_inputs=()):
+def write_reuse_signature(p, service, outputs, signature_name='run_signature.json', light_inputs=(),
+                          ignore=()):
     """Record what produced these outputs, so the next run can tell whether it may reuse them."""
-    settings, inputs = _service_settings_and_inputs(p, service)
+    settings, inputs = _service_settings_and_inputs(p, service, ignore)
     write_outputs_signature(_signature(settings, inputs, light_inputs),
                             os.path.join(os.path.dirname(outputs[0]), signature_name))
 
