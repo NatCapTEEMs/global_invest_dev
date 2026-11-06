@@ -75,6 +75,9 @@ erosion,erosion_fao_gpv_iso3_csv_path,global_invest/erosion/faostat_gpv_2019_iso
 erosion,erosion_fao_prices_csv_path,global_invest/erosion/faostat_prices_2019_completed_revised.csv
 erosion,erosion_fao_item_groups_path,global_invest/fao/faostat_item_groups.csv
 erosion,erosion_gdp_csv_path,global_invest/erosion/worldbank_gdp_2019.csv
+erosion,erosion_valuation_method,per_crop
+erosion,erosion_crop_values_relative_file,../gep_crop_provision/intermediate/gep_calculation/gep_by_country_year_crop.csv
+erosion,erosion_fao_item_spam2020_crop_correspondence_path,global_invest/erosion/fao_item_spam2020_crop_correspondence.csv
 erosion,region_boundary_path,gtap_invest/region_boundaries/ee_r50_aez18_correspondence.gpkg
 erosion,erosion_shock_acts,"[""PDR"", ""WHT"", ""GRO"", ""V_F"", ""OSD"", ""C_B"", ""PFB"", ""OCR""]"
 erosion,erosion_crop_to_sector,"{""rice"": ""PDR"", ""whea"": ""WHT"", ""maiz"": ""GRO"", ""barl"": ""GRO"", ""sorg"": ""GRO"", ""mill"": ""GRO"", ""pmil"": ""GRO"", ""ocer"": ""GRO"", ""bana"": ""V_F"", ""plnt"": ""V_F"", ""citr"": ""V_F"", ""temf"": ""V_F"", ""trof"": ""V_F"", ""vege"": ""V_F"", ""toma"": ""V_F"", ""onio"": ""V_F"", ""pota"": ""V_F"", ""swpo"": ""V_F"", ""yams"": ""V_F"", ""cass"": ""V_F"", ""orts"": ""V_F"", ""soyb"": ""OSD"", ""grou"": ""OSD"", ""sunf"": ""OSD"", ""rape"": ""OSD"", ""sesa"": ""OSD"", ""oilp"": ""OSD"", ""cnut"": ""OSD"", ""ooil"": ""OSD"", ""sugc"": ""C_B"", ""sugb"": ""C_B"", ""cott"": ""PFB"", ""ofib"": ""PFB"", ""coff"": ""OCR"", ""rcof"": ""OCR"", ""coco"": ""OCR"", ""teas"": ""OCR"", ""toba"": ""OCR"", ""rubb"": ""OCR"", ""bean"": ""OCR"", ""lent"": ""OCR"", ""cowp"": ""OCR"", ""pige"": ""OCR"", ""chic"": ""OCR"", ""opul"": ""OCR"", ""rest"": ""OCR""}"

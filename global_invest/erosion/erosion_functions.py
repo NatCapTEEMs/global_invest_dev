@@ -10,9 +10,12 @@ in four steps, and each one is a function below:
    `avoided / (avoided + gross)`; the upstream layer prevents its own share; the two combine as a
    union rather than a sum, so a pixel protected twice is not counted twice
    (`onfarm_prevention_share`, `combined_prevention_share`, `restrict_to_valued_pixels`).
-3. A country's production shock, as the production-weighted mean of each crop's protected share
-   times that crop's yield elasticity to erosion (`country_erosion_shock`).
-4. The value, as the country's crop gross production value times that shock (`country_gep`).
+3. Each SPAM crop's protected share of its production in a country, from the prevention shares.
+4. The value, crop by crop: each FAO item's gross production value, the value crop_provision
+   carries before its rental rate, times its SPAM crop's protected share times its yield
+   elasticity to erosion, summed over the country's items (`per_crop_gep`). The earlier reading,
+   one production-weighted shock times the country's crop total (`country_erosion_shock`,
+   `country_gep`), is still computed beside it.
 
 The threshold and prevention steps run over rasters the module reads elsewhere; the shock and
 value steps run over frames. Splitting them out is what lets the arithmetic be tested on four
@@ -27,6 +30,7 @@ import pandas as pd
 import os
 
 import hazelbean as hb
+from global_invest import utilities
 
 import sys
 import logging
@@ -200,6 +204,177 @@ def country_gep(df_shock, df_crop_gpv, df_gdp, component):
     return out[['component', 'iso3', 'protected_production_tons', 'total_production_tons',
                 'share_protected_production', 'erosion_shock_share', 'crop_gpv_const2019_2019',
                 'gdp_const2019_2019', 'gep_const2019_usd', 'gdp_loss_pct']]
+
+
+def crop_values_by_country_item(df_crop_values, year):
+    """crop_provision's gross production value per country and FAO item, in USD.
+
+    Erosion values a crop at the number crop_provision carries before its rental rate. Under
+    crop_provision's production_x_price basis that is production times a 2019 USD producer price
+    from the pollination chain's values table for every pair, and under its reported_first basis
+    FAOSTAT's reported current-USD value where FAOSTAT reports one. Either way this reads the table
+    as crop_provision wrote it. A dissolved state can leave a second, empty row on a pair, so rows
+    are collapsed with a sum that keeps an all-empty pair missing and a zero a zero.
+
+    Args:
+        df_crop_values (pd.DataFrame): crop_provision's gep_by_country_year_crop table, with
+            `iso3_r250_label`, `crop_code`, `crop`, `year`, `value_source` and
+            `gross_production_value` (thousand USD, before the rental rate).
+        year (int): the valuation year.
+
+    Returns:
+        pd.DataFrame: one row per country and item, `iso3`, `fao_item_code`, `fao_item_name`,
+        `value_source` and `crop_value_usd`. A pair crop_provision leaves blank stays missing, and
+        a row without an r250 country is not valued.
+
+    Raises:
+        ValueError: if a pair carries a value on two rows, since summing them would count one crop
+            twice.
+    """
+    df = df_crop_values[(df_crop_values['year'] == year) & df_crop_values['iso3_r250_label'].notna()].copy()
+    df['fao_item_code'] = df['crop_code'].astype(int)
+    key = ['iso3_r250_label', 'fao_item_code']
+    valued = df[df['gross_production_value'].notna()]
+    twice = valued[valued.duplicated(key, keep=False)]
+    if not twice.empty:
+        raise ValueError('crop_provision values %d country-item pairs on two rows at %d, for example %s.'
+                         % (twice.groupby(key).ngroups, year, sorted(set(zip(twice[key[0]], twice[key[1]])))[:5]))
+    out = df.groupby(key, as_index=False).agg(
+        fao_item_name=('crop', 'first'), value_source=('value_source', 'first'),
+        gross_production_value=('gross_production_value', lambda s: s.sum(min_count=1)))
+    out['crop_value_usd'] = out['gross_production_value'] * utilities.FAOSTAT_THOUSAND_USD
+    return out.rename(columns={'iso3_r250_label': 'iso3'})[
+        ['iso3', 'fao_item_code', 'fao_item_name', 'value_source', 'crop_value_usd']]
+
+
+def cpc_key(code):
+    """A CPC code as one number, so FAOSTAT's '01491.01' and the elasticity table's 1491.01 meet."""
+    return round(float(str(code).strip().lstrip("'")), 2)
+
+
+def own_elasticity_by_cpc(df_elasticity):
+    """Each item's own erosion-to-yield elasticity, keyed on its CPC code.
+
+    The table's `Item Code` is the CPC code without its leading zero. Its column `Item_code_fao`
+    holds the same CPC code, not the FAO item code, so joining it on FAO item codes would attach
+    rye's row (CPC 0116) to potatoes (FAO 116) and miss every other item.
+
+    Args:
+        df_elasticity (pd.DataFrame): the elasticity table, with `Item Code` and `elasticity`.
+
+    Returns:
+        dict: `cpc_key(code)` to the elasticity, clipped into [0, 1].
+
+    Raises:
+        ValueError: if two rows carry the same CPC code.
+    """
+    codes = df_elasticity['Item Code'].map(cpc_key)
+    if codes.duplicated().any():
+        raise ValueError('the elasticity table repeats CPC codes %s' % sorted(codes[codes.duplicated()])[:5])
+    return dict(zip(codes, pd.to_numeric(df_elasticity['elasticity'], errors='coerce').clip(0.0, 1.0)))
+
+
+def per_crop_gep(df_values, df_correspondence, df_country_crop, own_elasticity):
+    """Each crop valued at its own protected share and elasticity: GEP_k = sum_i V_ki s_k,m(i) e_i.
+
+    V is the item's gross production value, m(i) the SPAM 2020 crop or crops the correspondence
+    gives it, s that crop's protected share of its production in the country, and e the item's own
+    elasticity where the elasticity table lists its CPC code, otherwise the SPAM crop's. An item
+    placed on two crops (millet, coffee) takes their shares pooled by SPAM tonnes. No floor applies.
+
+    Args:
+        df_values (pd.DataFrame): `crop_values_by_country_item`'s output.
+        df_correspondence (pd.DataFrame): one row per FAO item and SPAM crop, with `fao_item_code`,
+            `fao_cpc_code` and `spam2020_crop_label`, blank for an item that is not a crop.
+        df_country_crop (pd.DataFrame): one prevention component's rows, one per country and SPAM
+            crop, with `ISO3`, `crop`, `total_production_tons`, `share_protected_production` and
+            `elasticity_used` (the library elasticity of that crop).
+        own_elasticity (dict): `own_elasticity_by_cpc`'s output.
+
+    Returns:
+        pd.DataFrame: one row per country and item, the value columns plus `spam2020_crops`,
+        `status` ('valued', 'not a crop', 'no value' or 'no SPAM production of the crop'),
+        `protected_share`, `elasticity_library`, `elasticity_own`, `elasticity_used` and
+        `gep_const2019_usd`, missing unless the pair is valued.
+
+    Raises:
+        ValueError: if a valued item has no row in the correspondence.
+    """
+    corr = df_correspondence.copy()
+    corr['spam2020_crop_label'] = corr['spam2020_crop_label'].fillna('').astype(str).str.strip()
+    unmapped = (set(df_values.loc[df_values['crop_value_usd'].notna(), 'fao_item_code'])
+                - set(corr['fao_item_code']))
+    if unmapped:
+        raise ValueError('FAO items %s carry a crop value and no row in the SPAM 2020 '
+                         'correspondence.' % sorted(unmapped))
+    crops = corr.loc[corr['spam2020_crop_label'] != '', ['fao_item_code', 'spam2020_crop_label']]
+    prot = df_country_crop.rename(columns={'ISO3': 'iso3', 'crop': 'spam2020_crop_label'}).copy()
+    prot['t'] = pd.to_numeric(prot['total_production_tons'], errors='coerce')
+    prot['ts'] = prot['t'] * pd.to_numeric(prot['share_protected_production'], errors='coerce').clip(0.0, 1.0)
+    prot['tse'] = prot['ts'] * pd.to_numeric(prot['elasticity_used'], errors='coerce').clip(0.0, 1.0)
+    library = prot.groupby('spam2020_crop_label')['elasticity_used'].first().clip(0.0, 1.0)
+
+    key = ['iso3', 'fao_item_code']
+    long = df_values[key].merge(crops, on='fao_item_code', how='left')
+    long = long.merge(prot[['iso3', 'spam2020_crop_label', 't', 'ts', 'tse']],
+                      on=['iso3', 'spam2020_crop_label'], how='left')
+    long['e_map'] = long['spam2020_crop_label'].map(library)
+    grouped = long.groupby(key)
+    agg = grouped[['t', 'ts', 'tse']].sum(min_count=1)
+    agg['e_map'] = grouped['e_map'].mean()
+    agg['spam2020_crops'] = grouped['spam2020_crop_label'].agg(lambda s: '+'.join(sorted(s.dropna())))
+
+    out = df_values.merge(agg.reset_index(), on=key, how='left')
+    out['protected_share'] = out['ts'] / out['t']
+    # The order of operations is the checked bridge's (audit_runs/erosion_william_bridge_20261103),
+    # so its per-pair values reproduce to the last bit.
+    se_library = out['tse'] / out['t']
+    out['elasticity_library'] = se_library / out['protected_share']
+    zero = out['protected_share'] == 0
+    out.loc[zero, 'elasticity_library'] = out.loc[zero, 'e_map']
+    own_by_item = (corr.drop_duplicates('fao_item_code').set_index('fao_item_code')['fao_cpc_code']
+                   .map(cpc_key).map(own_elasticity))
+    out['elasticity_own'] = out['fao_item_code'].map(own_by_item)
+    out['status'] = np.select(
+        [out['spam2020_crops'].fillna('') == '', out['crop_value_usd'].isna(), ~(out['t'] > 0)],
+        ['not a crop', 'no value', 'no SPAM production of the crop'], 'valued')
+    out['elasticity_used'] = out['elasticity_own'].where(out['elasticity_own'].notna(), out['elasticity_library'])
+    valued = out['status'] == 'valued'
+    out['gep_const2019_usd'] = np.where(
+        valued, out['crop_value_usd'] * out['protected_share'] * out['elasticity_used'], np.nan)
+    return out[key + ['fao_item_name', 'value_source', 'crop_value_usd', 'spam2020_crops', 'status',
+                      'protected_share', 'elasticity_library', 'elasticity_own', 'elasticity_used',
+                      'gep_const2019_usd']]
+
+
+def per_crop_country_gep(df_pairs):
+    """Country totals of the per-crop valuation, with the value it leaves out and why.
+
+    Args:
+        df_pairs (pd.DataFrame): `per_crop_gep`'s output.
+
+    Returns:
+        pd.DataFrame: one row per country, `crop_value_usd` (every valued item),
+        `crop_value_valued_usd`, `crop_value_without_spam_share_usd`, `crop_value_not_a_crop_usd`,
+        the pair counts, `partial_sum` (True where items with a value have no share) and
+        `gep_const2019_usd`, missing where no pair is valued.
+    """
+    df = df_pairs.copy()
+    for status, column in (('valued', 'valued'), ('no SPAM production of the crop', 'without_spam_share'),
+                           ('not a crop', 'not_a_crop')):
+        df['crop_value_%s_usd' % column] = df['crop_value_usd'].where(df['status'] == status)
+        df['pairs_%s' % column] = (df['status'] == status).astype(int)
+    df['pairs_no_value'] = (df['status'] == 'no value').astype(int)
+    out = df.groupby('iso3').agg(
+        crop_value_usd=('crop_value_usd', lambda s: s.sum(min_count=1)),
+        crop_value_valued_usd=('crop_value_valued_usd', lambda s: s.sum(min_count=1)),
+        crop_value_without_spam_share_usd=('crop_value_without_spam_share_usd', lambda s: s.sum(min_count=1)),
+        crop_value_not_a_crop_usd=('crop_value_not_a_crop_usd', lambda s: s.sum(min_count=1)),
+        pairs_valued=('pairs_valued', 'sum'), pairs_without_spam_share=('pairs_without_spam_share', 'sum'),
+        pairs_not_a_crop=('pairs_not_a_crop', 'sum'), pairs_no_value=('pairs_no_value', 'sum'),
+        gep_const2019_usd=('gep_const2019_usd', lambda s: s.sum(min_count=1))).reset_index()
+    out['partial_sum'] = out['crop_value_without_spam_share_usd'].fillna(0) > 0
+    return out
 
 
 def upstream_prevention_share(accumulated_avoided, accumulated_potential, ndv=-9999.0):
