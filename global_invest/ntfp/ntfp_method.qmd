@@ -6,94 +6,190 @@ format:
     standalone: true
 ---
 
-Non-timber forest products cover what forests yield other than wood. The account values them per
-hectare of forest people can actually reach. The base year is 2019 and the price convention
-recorded in `es_config.csv` is `value per accessible hectare`. No share is taken out for human
-inputs (λ = 1), as the write-up states: the per-hectare value already embeds it.
+Non-timber forest products cover what forests yield other than wood. The account values them as
+the non-wood forest product (NWFP) value per hectare times each country's FAO total forest. The
+base year is 2019 and the price convention recorded in `es_config.csv` is
+`value per hectare of total forest`. No share is taken out for human inputs (λ = 1), as the
+write-up states: the per-hectare value already embeds it.
 
 ## Source
 
+The rate is IUCN's NWFP value per hectare per country, the series CWoN 2024 publishes
+(`nontimber_price_iucn_edited.csv`, equal to IUCN's 2019 series in all 232 countries it covers).
+The source report, *Global Assessment of the Economic Value of Non-Wood Forest Ecosystem
+Services* (World Bank P178446), predicts the value on the NWFP service area, averages it over each
+country's total forest (PDF page 61, printed 53) and multiplies by FAO total forest (PDF page 63,
+printed 55). CWoN's code does the same (`forest_nontimber.do` line 340), and its comment calls
+the published value an average "per hectare of forest, by country" (`tornqvist_index_master.do`
+line 156). The account follows that construction.
+
 The write-up is `Non-Timber Forest Product Provision.docx` in the shared folder of current
 write-ups (version of 29 October 2026). The registered author code is `Observarun/geo-ntfp` at
-`928dc21`, a fork of `martaszk/geo_ntfp` that adds the NDVI screen. The library follows its rules
-on the account's own grid.
+`928dc21`, a fork of `martaszk/geo_ntfp`. It multiplies the rate by accessible forest, which the
+account reports as a comparison table.
 
 ## Quantity
 
-Hectares of accessible, vegetated forest per country:
+FAO total forest per country in 2019, in hectares, written by `fao_forest`:
 
-- Forest is ESA CCI 2019 land cover, classes 50 to 90 inclusive.
-- A forest cell is kept where the 2015 to 2019 mean NDVI (MODIS MOD13Q1) is at least 0.20. A
-  cell with no NDVI is dropped. The floor is compared in the raster's own integers, so a cell at
-  exactly 0.20 is kept, where the authors' float comparison drops it.
-- Accessible means within 10 km of a road (GRIP4, Meijer et al. 2018, all 25,758,453 lines,
-  `grip4_global_roads.gpkg`) or a river (Natural Earth 10 m centre lines).
-- Everything is computed on the account grid (WGS84, 10 arcsec, about 309 m at the equator), with
-  the 10 km reach measured in metres at each latitude. The reach stops at 84 degrees. Cell
-  hectares come from `ha_per_cell_10sec.tif`, and a cell belongs to the country whose boundary
-  covers its centre.
+- FAO FRA 2020 for every country, interpolated linearly between 2015 and 2020, which is CWoN's
+  rule (`forest_timber_depletion.do` line 518). FRA 2020 reports thousand hectares, so the value is
+  multiplied by 1,000 (236 countries).
+- A country FRA 2020 cannot give stays missing (14 countries). Nothing is filled from the land
+  cover or from CWoN, and nothing is set to zero that FRA does not report as zero.
+
+The area CWoN publishes (`forest_nontimber_total_area.xlsx`, 151 countries in 2019) is the area
+its own NWFP value multiplies. `cwon_forest` writes it for the comparison below, and the account's
+value does not read it. It equals FRA 2020 interpolated in 145 of the 151, 115 bit for bit and 30
+to within a billionth. The other six are from FRA 2010, as the next section sets out.
+
+Both files are copied unchanged from the CWoN 2024 reproducibility package (FR_WLD_2024_195) into
+`base_data/global_invest/ntfp/cwon_2024_forest_area/`, with their SHA-256 and provenance.
+`es_parameters.csv` names the package ZIP and the member for each, so
+`utilities.download_missing_inputs` fetches either where it is not staged.
+
+## Six areas from FRA 2010
+
+CWoN's code ranks FRA 2020 first. It reads FRA 2010 for 1970 to 2010, overwrites every year FRA
+2020 reports (`forest_timber_depletion.do` line 511), then interpolates and extrapolates the rest
+(line 518). Yet for BOL, CIV, CZE, GBR, MKD and SWZ the published 2019 area is FRA 2010's 2005 to
+2010 trend extrapolated to 2019, to the hectare, not FRA 2020.
+
+The cause is in how FRA 2020 rows get a country code. The block keeps only the `name` column
+(line 440) and maps by hand the names its lookup cannot read (lines 450 to 464), testing a variable
+`country`. With no such variable, Stata reads `country` as an abbreviation of `countrycode`, which
+is empty for exactly these rows, so no mapping applies. The rows without a code are dropped (line
+469), and these countries keep only their FRA 2010 years. Across CWoN's whole 2019 series, 199 of
+209 areas are FRA 2020 and 10 are FRA 2010 extrapolated. The 10 are every published country whose
+FRA 2020 name is mapped by hand (the six, CPV and VEN) and two names the code never maps (MAF and
+MNP). The hand mappings that name a form FRA 2020 does not use (ETH, SDN, TUR, TZA) change
+nothing, since the lookup reads FRA 2020's own names for these four, and they stay on FRA 2020.
+
+The account values these six on FRA 2020, like every other country, because FRA 2020 is the
+vintage CWoN's code ranks first and their FRA 2010 areas come from a matching fault. The
+previous rule, CWoN's published area where CWoN has one and FRA 2020 elsewhere, valued the same
+223 countries at \$31,809,823,610.73, which is \$71,924,158.11 more than the account. CWoN's
+published areas alone cover 149 of them, at \$30,281,055,011.16 against the account's
+\$30,209,130,853.06 there. The whole difference is in the six:
+
+| Country | CWoN area (ha) | FRA 2020 (ha) | Account minus CWoN area (USD) |
+|---|---:|---:|---:|
+| CIV | 10,399,400 | 2,949,598 | −58,314,162.51 |
+| BOL | 54,427,600 | 51,072,452 | −19,132,707.02 |
+| SWZ | 602,600 | 496,348 | −712,907.61 |
+| MKD | 1,039,400 | 1,000,072 | −155,333.86 |
+| CZE | 2,675,000 | 2,675,350 | +6,243.71 |
+| GBR | 2,945,800 | 3,183,000 | +6,384,709.19 |
+
+The other 145 CWoN areas move the total by a hundred-millionth of a dollar.
 
 ## Price
 
-The CWoN 2024 non-wood forest product value per hectare per country, in current USD, read at the
-GEP base year from `nontimber_price_iucn_edited.csv`.
+The rate at the GEP base year from `nontimber_price_iucn_edited.csv`, in current USD, unadjusted.
 
 ## Valuation
 
-`ntfp_gep_by_country` filters the value series to the base year, joins it onto the accessible-area
-table by country label, and multiplies:
+`gep_calculation` joins the rate onto the FAO area by country label and multiplies:
 
 $$
-\text{NTFP GEP} = \text{accessible forest (ha)} \times \text{NWFP value (USD/ha)}
+\text{NTFP GEP} = \text{FAO total forest (ha)} \times \text{NWFP value (USD/ha)}
 $$
+
+A missing area or rate gives a missing value, and a zero of either gives zero.
+
+## Alternatives
+
+Each is its own task and table, run by the same tree with no switch, and none is the account's
+value.
+
+- `divide_by_five_sensitivity` writes `gep_by_country_divide_by_five.csv`. It divides the rate by
+  five for the Democratic Republic of the Congo, Mozambique and the Central African Republic, as
+  CWoN's code does at `forest_nontimber.do` line 305 with no reason given. The countries and the
+  divisor are `ntfp_divide_by_five_labels` and `ntfp_divide_by_five_divisor` in `es_parameters.csv`.
+- `cwon_forest` and `cwon_forest_comparison` write `cwon_forest_ha_by_country.csv` and
+  `gep_by_country_cwon_forest.csv`, the rate times the area CWoN publishes, for the 149 countries
+  CWoN values that carry a rate. It reproduces CWoN's own value (below).
+- `esa_forest` and `esa_forest_sensitivity` write `esa_forest_ha_by_country.csv` and
+  `gep_by_country_esa_forest.csv`. They value all mapped ESA forest, classes 50 to 90 with the NDVI
+  screen, on the account grid, wherever a road or river reaches it or not. The comparison of the
+  area source with the reach rests on this table.
+- `accessible_forest` and `accessible_forest_valuation` write `accessible_forest_ha_by_country.csv`
+  and `gep_by_country_accessible_forest.csv`, the earlier valuation, kept for comparison.
+
+The ESA and accessible forest tasks read global rasters on the account grid. Forest is ESA CCI 2019 land cover,
+classes 50 to 90 inclusive, kept where the 2015 to 2019 mean NDVI (MODIS MOD13Q1) is at least
+0.20. A cell with no NDVI is dropped, and the floor is compared in the raster's own integers. Cell
+hectares come from `ha_per_cell_10sec.tif`, and a cell belongs to the country whose boundary covers
+its centre. Accessible means within 10 km of a road (GRIP4, Meijer et al. 2018, all 25,758,453
+lines, `grip4_global_roads.gpkg`) or a river (Natural Earth 10 m centre lines), measured in metres
+at each latitude up to 84 degrees. Both tasks run on the cluster and skip once their table exists.
 
 ## Inputs
 
-From `es_parameters.csv`, scoped to the `ntfp` service: `ntfp_roads_vector_path` (with its
-source, `ntfp_roads_source`), `ntfp_rivers_path` (with its source URL), `ntfp_ndvi_mean_path` and `ntfp_value_per_ha_path`
-(with its source URL). The land cover is the `es_config.csv` row's `gep_lulc_input_path`,
-`lulc/esa/lulc_esa_2019.tif`.
+From `es_parameters.csv`, scoped to the `ntfp` service: `ntfp_value_per_ha_path` and
+`ntfp_fra_forest_input_path` for the account's value, `ntfp_cwon_forest_area_input_path` for the
+comparison, `ntfp_divide_by_five_labels` and `ntfp_divide_by_five_divisor` for that sensitivity,
+and `ntfp_roads_vector_path`, `ntfp_rivers_path` and `ntfp_ndvi_mean_path` for the forest rasters.
+Each carries its source in a `_source` or `_source_note` row. The two FAO inputs also carry a
+`_source_url` and `_source_archive_member`. The rate table is not in the CWoN package, and its note
+names the public file whose values it carries, `Input_data/nontimber_ecosystem_services_iucn.csv`
+of `martaszk/geo_ntfp`, equal in all 6,032 cells. The land cover is the `es_config.csv` row's
+`gep_lulc_input_path`, `lulc/esa/lulc_esa_2019.tif`.
 
 ## Output
 
-`accessible_forest` writes `accessible_forest_ha_by_country.csv`, and `gep_calculation` writes
-`gep_by_country_base_year.csv` into its own task directory, holding the r250 identifiers and
-attributes, `accessible_forest_ha`, `nwfp_value_per_ha`, `ntfp_gep` and `year`.
-
-The accessibility step reads five global rasters of 8.4 billion cells each, in blocks, and runs
-on the cluster.
+`gep_calculation` writes `gep_by_country_base_year.csv` into its own task directory, holding the
+r250 identifiers and attributes, `fao_forest_ha`, `fao_forest_source`, `nwfp_value_per_ha`,
+`ntfp_gep` and `year`.
 
 ## Coverage
 
-The published table is one row for each of the account's 250 countries, base year 2019, in 2019
-USD, computed on the complete GRIP4 roads. 218 carry a positive value, totalling
-\$20,491,261,549.18 on 2.33 billion accessible hectares. 14 are zeros, all measured: 11 have no
-accessible forest and 11 have a published zero rate, 8 of them both. 18 are missing because the
-CWoN table has no rate for them (ATA, BLM, BVT, CCK, ESH, HMD, IOT, KWT, MAF, MCO, MDV, MHL, MSR,
-NRU, PCN, TKL, TUV, VAT).
+One row for each of the account's 250 countries, base year 2019, in 2019 USD.
+\$31,737,899,452.62 over 223 valued countries, 211 positive and 12 zero, on 4.06 billion FAO
+hectares.
+
+- 12 are zero. Nine have a zero rate in the published rate table (AIA, BMU, COK, FSM, GRL, KIR,
+  MYT, SJM, SPM), so their value is zero for any area, and FAO reports zero forest in three (FLK,
+  GIB, QAT).
+- 18 are missing because the rate table has no row for them (ATA, BLM, BVT, CCK, ESH, HMD, IOT,
+  KWT, MAF, MCO, MDV, MHL, MSR, NRU, PCN, TKL, TUV, VAT).
+- 9 carry a rate and no FAO area. FRA 2020 counts Åland under Finland and Hong Kong and Macao under
+  China (FRA 2020 main report, page 5). Serbia's series includes Kosovo, whose 461 thousand
+  hectares are part of the 2010 total in FRA 2010's Serbia report, the total FRA 2020 repeats. The
+  forest of ALA, HKG, MAC and XKX therefore enters the account in FIN, CHN and SRB, at those
+  countries' rates. TWN, CXR, ATF, SGS and UMI are outside FRA 2020. SGS and UMI have a zero rate
+  in the published table.
+
+Against the earlier valuation, 7 positive values become missing (TWN \$63.87M, XKX \$2.32M, ALA
+\$1.34M, HKG \$1.31M, CXR \$0.39M, MAC and ATF), 3 become zero (FLK, GIB, QAT), 3 zeros become
+positive because FAO reports forest where no ESA forest is accessible (EGY, MLT, MRT), and SGS and
+UMI go from zero to missing.
 
 ## Reproduction
 
-Rate times saved hectares reproduces every published row, and the rate column equals the staged
-table's 2019 column. The authors' published values, \$14,076,443,646.20 over 196 countries (the
-write-up's headline and the group's results sheet), are reconciled country by country, with
-nothing left over in any country. The \$6,414,817,902.99 between the two totals is:
+The comparison table, the rate times CWoN's own areas, gives \$30,281,055,011.16 on the 149
+countries CWoN values in 2019. It equals CWoN's published value to within \$0.40 in 146 of them
+and is five times it in COD, MOZ and CAF, whose rate CWoN divides by five and the account does
+not. With the divide-by-five applied to it, the total is \$28,877,638,160.27, against CWoN's
+published \$28,877,638,160.26, at most \$0.40 apart in any country. The rate file prints IUCN's
+float32 values to 10 significant digits, and with the float32 values the largest gap is a
+millionth of a dollar. On the account's FRA 2020 areas, the divide-by-five table equals CWoN's
+published value to within \$0.40 in 143 of the 149 and differs in the six areas CWoN took from FRA
+2010.
 
-- the complete roads, +\$6,638,707,801.43, the library's table against its own run on the staged
-  `globalroads.shp`
-- the reach, the library's 10 km measured in metres on the account grid against the authors'
-  buffer polygon, −\$173,795,641.65
-- the grid, the NDVI rule and the country allocation together, −\$48,428,834.44, not attributed
-  among the three
-- forest whose NDVI is missing, which the authors' published values keep, −\$1,665,575.47
-- the window against the global grid and the rounding of the published cells, +\$153.11
+## Alternatives, measured
 
-On the staged `globalroads.shp`, with that forest kept, the authors' functions (`928dc21`) on
-their global grid give all 196 published values to 10 significant digits. Of their 54 blanks, 29
-have a missing or zero price, which their export drops whatever the area, and in the other 25 no
-forest passes their eligibility rule within that layer's reach. The values are therefore
-reproduced numerically. Which NDVI file, code or setting kept the forest whose NDVI is missing is
-not shown, since the only committed NDVI step (`928dc21`) drops it.
+| USD 2019 | All valued countries | 149 countries CWoN values |
+|---|---:|---:|
+| Account, FAO FRA 2020 total forest | 31,737,899,452.62 (223) | 30,209,130,853.06 |
+| CWoN's published forest area | 30,281,055,011.16 (149) | 30,281,055,011.16 |
+| Divide-by-five on FAO forest | 30,334,482,601.73 (223) | 28,805,714,002.16 |
+| All mapped ESA forest | 28,698,224,200.33 (232) | 27,198,510,413.08 |
+| Accessible ESA forest, earlier valuation | 20,491,261,549.18 (232) | 19,435,175,714.64 |
+
+On the 149 countries, accessibility accounts for \$7.76bn of the \$10.77bn between the last row and
+the first, and the area source, ESA forest against FAO statistics, for \$3.01bn. ESA forest exceeds
+FAO forest in 55 of the 149.
 
 ## Method constants
 
@@ -103,17 +199,7 @@ not shown, since the only committed NDVI step (`928dc21`) drops it.
 
 ## What is open
 
-- The denominator. The source report averages the per-hectare value over a country's total
-  forest and multiplies by total forest area, while the account applies it to accessible forest
-  only. On 148 shared countries that area base accounts for −\$17.10bn of the gap to CWoN's
-  total. The question is with Marta (open question 15).
-- Three rates. The staged table's rates for the Democratic Republic of the Congo, Mozambique and
-  the Central African Republic are five times CWoN's own, which divides them by five without a
-  stated reason. Applying it gives \$12.76bn. A recorded open decision.
-- The grid. The account grid is agreed (29 October). Its effect against the authors' grid is
-  measured only together with the NDVI rule and the allocation (−\$48.43M).
-- The roads. The registered code reads `globalroads.shp`. The copy staged under that name holds
-  21,438,033 of GRIP4's 25,758,453 lines, 16 bytes under the 4 GiB shapefile limit, and no
-  highway, primary or secondary road. The authors' shared copy is identical to it in all six
-  files by sha256. The library reads the complete layer. The match identifies the file the
-  authors shared, not the one their published run read, which is a question for them.
+- The divide-by-five. No reason for it is stated in CWoN's code, the source report, the package
+  documents or the CWoN 2024 report. It stays a separate sensitivity until one is found.
+- Taiwan. FRA 2020 does not cover it, and the national inventory completed in 2015 reports 2.197
+  million hectares. The account leaves it missing.

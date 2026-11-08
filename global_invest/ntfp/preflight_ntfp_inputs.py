@@ -16,7 +16,8 @@ import hazelbean as hb
 from global_invest import utilities
 
 INPUTS = ('gep_lulc_input_path', 'ntfp_ndvi_mean_path', 'ntfp_roads_vector_path',
-          'ntfp_rivers_path', 'ntfp_value_per_ha_path')
+          'ntfp_rivers_path', 'ntfp_value_per_ha_path', 'ntfp_cwon_forest_area_input_path',
+          'ntfp_fra_forest_input_path')
 
 
 def main():

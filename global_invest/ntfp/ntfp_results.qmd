@@ -56,11 +56,11 @@ service_label = 'ntfp'
 df = hb.df_read(p.results[service_label]['gep_by_country_base_year'])
 total_ntfp_value = df['ntfp_gep'].sum()
 valued_countries = int(pd.to_numeric(df['ntfp_gep'], errors='coerce').gt(0).sum())
-p.gep_by_country_base_year_table = df[['iso3_r250_name', 'accessible_forest_ha',
+p.gep_by_country_base_year_table = df[['iso3_r250_name', 'fao_forest_ha', 'fao_forest_source',
                                        'nwfp_value_per_ha', 'ntfp_gep']]
 ```
 
-The analysis estimates a non-timber forest product GEP of $`{python} f"{total_ntfp_value:,.0f}"` for the base year (`{python} f"{int(p.gep_base_year)}"`) across `{python} f"{valued_countries}"` countries. The method takes the CWoN non-wood forest product value per hectare and applies it to the forest within 10 km of a road or a river that is also green enough to yield a product, on the reasoning that a product nobody can reach is not harvested and bare ground yields nothing. The country total therefore sits below CWoN's own published value, because the part notionally earned on forest nobody can reach is dropped rather than redistributed. Countries the rate table does not cover carry no value rather than zero.
+The analysis estimates a non-timber forest product GEP of $`{python} f"{total_ntfp_value:,.0f}"` for the base year (`{python} f"{int(p.gep_base_year)}"`) across `{python} f"{valued_countries}"` countries with a positive value. The method takes the non-wood forest product value per hectare, which the source averages over all of a country's forest, and multiplies it by the country's FAO total forest from FRA 2020, as CWoN does. A country with no rate or no FAO area carries no value rather than zero. The full run also writes four comparison tables beside this one, none of them the account's value: the rate over the forest area CWoN publishes, CWoN's divide-by-five for three countries, the rate over all mapped ESA forest, and the earlier valuation over accessible forest.
 
 ## GEP by Country in Base Year, mapped
 

@@ -1,11 +1,12 @@
-"""Full NTFP GEP run: accessible-forest valuation -> report.
+"""Full NTFP GEP run: FAO total forest valuation, its alternatives -> report.
 
 Thin runner: builds ONE tree and executes it. Inputs are published by each task itself
 (publish_inputs in the tasks module); base_data_dir is resolved by ProjectFlow (default /
 machine.env), never hardcoded here.
 
-A full run builds the reachable-forest mask, values the accessible hectares and renders the
-report; every heavy step is guarded by an existence check, so a rerun resumes where it stopped.
+A full run values FAO total forest from FRA 2020, writes the CWoN-area, divide-by-five, ESA-forest
+and accessible-forest tables beside it, and renders the report. Every heavy step is guarded by an existence check, so
+a rerun resumes where it stopped.
 """
 import hazelbean as hb
 

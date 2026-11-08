@@ -346,10 +346,21 @@ stormwater,stormwater_retention_by_country_path,global_invest/stormwater/retenti
 ntfp,ntfp_rivers_path,global_invest/ntfp/input/rivers/ne_10m_rivers_lake_centerlines.shp
 ntfp,ntfp_roads_vector_path,global_invest/ntfp/input/global_roads/grip4_global_roads.gpkg
 ntfp,ntfp_roads_source,"GRIP4 (Meijer et al. 2018, Environmental Research Letters 13, 064006), the seven regional geodatabases GRIP4_region1-7.gdb merged into one GeoPackage layer, grip4_roads, of 25,758,453 lines. It replaces the staged globalroads.shp, which holds 21,438,033 lines, 16 bytes under the 4 GiB shapefile limit, and no highway, primary or secondary road (GRIP4 types 1 to 3)"
-ntfp,ntfp_rivers_source_url,https://naciscdn.org/naturalearth/10m/physical/ne_10m_rivers_lake_centerlines.zip
+ntfp,ntfp_rivers_source_note,"Natural Earth 10 m rivers and lake centerlines: unzip every member of https://naciscdn.org/naturalearth/10m/physical/ne_10m_rivers_lake_centerlines.zip into this folder, since the shapefile needs its .shx, .dbf and .prj and a single fetched member cannot give them"
 ntfp,ntfp_ndvi_mean_path,global_invest/ntfp/input/mean_ndvi_2015_2019.tif
 ntfp,ntfp_value_per_ha_path,global_invest/ntfp/nontimber_price_iucn_edited.csv
-ntfp,ntfp_value_per_ha_source_url,https://reproducibility.worldbank.org/catalog/194/download/549
+ntfp,ntfp_value_per_ha_source_note,"the source module's rate table, staged from its submission: IUCN's NWFP value per hectare for 232 countries keyed on iso3_r250, 1995 to 2020, equal in all 6032 cells to Input_data/nontimber_ecosystem_services_iucn.csv of github.com/martaszk/geo_ntfp at 104298d, which carries them semicolon-separated on ISO3. The CWoN package does not hold it"
+ntfp,ntfp_cwon_forest_area_input_path,global_invest/ntfp/cwon_2024_forest_area/forest_nontimber_total_area.xlsx
+ntfp,ntfp_cwon_forest_area_input_source_url,https://reproducibility.worldbank.org/catalog/194/download/549
+ntfp,ntfp_cwon_forest_area_input_source_archive_member,FR_WLD_2024_195/Reproducibility package/Output/Latest/forest_nontimber_total_area.xlsx
+ntfp,ntfp_cwon_forest_area_source,"CWoN 2024 reproducibility package FR_WLD_2024_195, Output/Latest: the total forest area in hectares CWoN multiplies its NWFP value by, one YR column per year, published for the 151 countries it values in 2019. Read only for the comparison with CWoN's own value. README_provenance.md beside it"
+ntfp,ntfp_fra_forest_input_path,global_invest/ntfp/cwon_2024_forest_area/for_fao_fra2020_bulk_download.csv
+ntfp,ntfp_fra_forest_input_source_url,https://reproducibility.worldbank.org/catalog/194/download/549
+ntfp,ntfp_fra_forest_input_source_archive_member,FR_WLD_2024_195/Reproducibility package/Input/User_update/for_fao_fra2020_bulk_download.csv
+ntfp,ntfp_fra_forest_source,"FAO Global Forest Resources Assessment 2020 bulk download as the same package stages it (Input/User_update): forest area in thousand hectares for 1990, 2000, 2010, 2015 and 2020, interpolated to the base year for every country. The account's area"
+ntfp,ntfp_divide_by_five_labels,"[""COD"", ""MOZ"", ""CAF""]"
+ntfp,ntfp_divide_by_five_divisor,5
+ntfp,ntfp_divide_by_five_source,"CWoN 2024 forest_nontimber.do line 305 divides the NWFP value per hectare of these countries by five and states no reason. A sensitivity only: the account's value keeps the published rates"
 ntfp,ntfp_msi_conda_env,
 landslide_mitigation,landslide_mitigation_vsl_panel_path,global_invest/landslide_mitigation/vsl_2026_11/vsl_by_country_2019.csv
 landslide_mitigation,landslide_mitigation_vsl_panel_source,"the account's shared VSL panel of 2 Nov 2026 (vsl_2026_11, provenance beside it): the v0.2.1 life-years-lost transfer (m-braaksma/landslide_mitigation c85c9ad) with the US anchor at $9.9M in 2019 US$ and GDP per capita from World Bank NY.GDP.PCAP.KD (constant 2015 US$, 2019) in place of PPP, as Matt Braaksma's email of 30 Oct 2026 states. Constant US$ is read as NY.GDP.PCAP.KD, his updated code not being public. Median-age life-years lost, elasticity 1, region then global median fallback, 250 of 250 covered with tier recorded. The v0.2.1 panel stays in vsl_2026_09. Blank the path row to recover the OECD schedule"

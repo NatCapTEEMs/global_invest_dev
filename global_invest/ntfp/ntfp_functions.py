@@ -1,10 +1,19 @@
-"""Non-timber forest products (NTFP): CWoN NWFP value per accessible forest hectare.
+"""Non-timber forest products (NTFP): the NWFP value per hectare times FAO total forest.
 
-The source repo (geo_ntfp) multiplies the CWoN 2024 NWFP value per hectare per country by
-the hectares of ACCESSIBLE forest: ESA CCI forest classes within a 10 km buffer of roads
-and rivers. The source carries two script variants (a vector-buffer calculation and a
-distance-raster pipeline) and commits no output; the library grows the reach on the account's
-own grid (see ntfp_tasks).
+The rate is IUCN's non-wood forest product value per hectare per country, which CWoN 2024
+publishes as an average over all of a country's forest and multiplies by FAO total forest area
+(the source report, PDF pages 61 and 63, printed 53 and 55, and `forest_nontimber.do` line 340).
+The account does the same: the rate unadjusted, times FAO FRA 2020 total forest interpolated to
+the base year by CWoN's own rule, in every country. A country FRA 2020 cannot give stays missing.
+
+Three alternatives sit beside it as their own tables, never as the account's value: the rate
+times the area CWoN publishes, the rate times all mapped ESA forest, and CWoN's divide-by-five for
+three countries. The earlier valuation, the rate times accessible forest, is kept as a fourth
+table.
+
+The source repo (geo_ntfp) multiplies the rate by the hectares of ACCESSIBLE forest: ESA CCI
+forest classes within a 10 km buffer of roads and rivers. The library grows that reach on the
+account's own grid (see ntfp_tasks).
 
 The roads layer is the configured `ntfp_roads_vector_path`
 (`global_invest/ntfp/input/global_roads/grip4_global_roads.gpkg`), the GRIP4 roads (Meijer et al.
@@ -45,26 +54,191 @@ def nwfp_rate_long(price_wide_df):
     return long.dropna(subset=['nwfp_value_per_ha'])
 
 
-def ntfp_gep_by_country(accessible_forest_ha_df, value_per_ha_df, year):
-    """One row per country: CWoN's non-wood forest product rate applied to reachable forest.
+def ntfp_gep_by_country(area_df, value_per_ha_df, year, area_column, value_column='ntfp_gep'):
+    """One row per country: the non-wood forest product rate times a forest area.
 
-    CWoN publishes an annual value per hectare per country. That rate is applied to the forest
-    people can actually reach, which is the forest within 10 km of a road or a river and green
-    enough to yield a product.
+    The account's value takes FAO total forest as the area. The same product over the area CWoN
+    publishes, all mapped ESA forest, or accessible forest gives the alternatives kept beside it. A missing area or a
+    missing rate gives a missing value, and a zero of either gives zero.
 
     Args:
-        accessible_forest_ha_df (pd.DataFrame): iso3_r250_label, accessible_forest_ha.
+        area_df (pd.DataFrame): iso3_r250_label and the area column, one row per country.
         value_per_ha_df (pd.DataFrame): iso3_r250_label, year, nwfp_value_per_ha.
         year (int): the GEP base year to value at.
+        area_column (str): the hectares to multiply, e.g. fao_forest_ha.
+        value_column (str): the name of the product column.
 
     Returns:
-        pd.DataFrame: iso3_r250_label, accessible_forest_ha, nwfp_value_per_ha and ntfp_gep.
+        pd.DataFrame: area_df's columns, nwfp_value_per_ha and value_column.
     """
+    if not area_df['iso3_r250_label'].is_unique:
+        raise ValueError('the area table repeats a country label')
     values = value_per_ha_df[value_per_ha_df['year'] == int(year)]
-    df = accessible_forest_ha_df.merge(
+    if not values['iso3_r250_label'].is_unique:
+        raise ValueError('the rate table repeats a country label in %d' % int(year))
+    df = area_df.merge(
         values[['iso3_r250_label', 'nwfp_value_per_ha']], on='iso3_r250_label', how='left')
-    df['ntfp_gep'] = df['accessible_forest_ha'] * df['nwfp_value_per_ha']
+    df[value_column] = df[area_column] * df['nwfp_value_per_ha']
     return df
+
+
+def divided_rates(value_per_ha_df, labels, divisor):
+    """The rate table with the rate of each named country divided by a constant.
+
+    CWoN divides the NWFP value per hectare by five for three countries
+    (`forest_nontimber.do` line 305) and states no reason. The account keeps the published rate,
+    and this gives the alternative as a sensitivity. A named country the table does not carry is
+    a configuration error, not a silent no-op.
+
+    Args:
+        value_per_ha_df (pd.DataFrame): iso3_r250_label, year, nwfp_value_per_ha.
+        labels (list): the iso3_r250_labels to divide.
+        divisor (float): what their rate is divided by.
+
+    Returns:
+        pd.DataFrame: a copy with those rates divided, every other row unchanged.
+    """
+    absent = sorted(set(labels) - set(value_per_ha_df['iso3_r250_label']))
+    if absent:
+        raise ValueError('the rate table has no row for %s' % absent)
+    out = value_per_ha_df.copy()
+    named = out['iso3_r250_label'].isin(labels)
+    out.loc[named, 'nwfp_value_per_ha'] = out.loc[named, 'nwfp_value_per_ha'] / float(divisor)
+    return out
+
+
+# =============================================================================
+# FAO total forest. CWoN multiplies the rate by FAO total forest area, from FAO
+# FRA 2020 interpolated by year. The account reads FRA 2020 directly and
+# interpolates it the way CWoN does, in every country (fao_forest_ha_by_country).
+# The area CWoN publishes is kept as a comparison (cwon_forest_ha_by_country):
+# it equals FRA 2020 in 145 of its 151 countries, and the other six are FRA 2010
+# extrapolated.
+# =============================================================================
+
+CWON_AREA_SERIES = 'Forest, non-timber ecosystem service total area (ha)'
+CWON_MISSING = '..'
+FRA_THOUSAND_HA = 1000.0
+FAO_SOURCE_FRA = 'FAO FRA 2020, interpolated'
+
+
+def cwon_forest_area(cwon_area_wide_df, year):
+    """CWoN's published total forest area for one year, in hectares, keyed by its country code.
+
+    The table is the package's `forest_nontimber_total_area.xlsx`: one row per country, a
+    `YR<year>` column per year, and `..` where CWoN publishes no value. Any other text in the
+    column is an error, so a changed export cannot turn into a missing value unnoticed.
+
+    Args:
+        cwon_area_wide_df (pd.DataFrame): countrycode, series and one YR<year> column per year.
+        year (int): the year to read.
+
+    Returns:
+        pd.Series: hectares by countrycode, missing where CWoN publishes none.
+    """
+    import pandas as pd
+
+    series = set(cwon_area_wide_df['series'].dropna())
+    if series != {CWON_AREA_SERIES}:
+        raise ValueError('expected the series %r in hectares, found %s' % (CWON_AREA_SERIES, sorted(series)))
+    if not cwon_area_wide_df['countrycode'].is_unique:
+        raise ValueError('the CWoN area table repeats a country code')
+    text = cwon_area_wide_df['YR%d' % int(year)]
+    missing = text.astype(str).str.strip() == CWON_MISSING
+    area = pd.to_numeric(text.where(~missing), errors='coerce')
+    unreadable = area.isna() & ~missing & text.notna()
+    if unreadable.any():
+        raise ValueError('the CWoN area column holds text other than %r: %s'
+                         % (CWON_MISSING, sorted(text[unreadable].astype(str).unique())))
+    return pd.Series(area.to_numpy(dtype=float), index=cwon_area_wide_df['countrycode'].to_numpy(),
+                     name='cwon_forest_ha')
+
+
+def fra_forest_area(fra_long_df, year):
+    """FAO FRA 2020 forest area for one year, in hectares, by ISO3 code.
+
+    FRA 2020 reports 1990, 2000, 2010, 2015 and 2020, in thousand hectares. A year between two
+    reported years is interpolated linearly between the nearest one on each side, which is CWoN's
+    rule (`forest_timber_depletion.do`, the `ipolate` at line 518). A year with no reported value
+    on one side stays missing here: CWoN would extrapolate, and the FRA 2020 years bracket every
+    year up to 2020.
+
+    Args:
+        fra_long_df (pd.DataFrame): iso3, year, forest, one row per country and reported year.
+        year (int): the year wanted.
+
+    Returns:
+        pd.Series: hectares by iso3, missing where FRA cannot give the year.
+    """
+    import pandas as pd
+
+    rows = fra_long_df[['iso3', 'year', 'forest']].dropna(subset=['iso3', 'forest'])
+    if rows.duplicated(['iso3', 'year']).any():
+        raise ValueError('FRA repeats a country-year')
+    wide = rows.pivot(index='iso3', columns='year', values='forest')
+    years = np.array(sorted(int(y) for y in wide.columns))
+    out = {}
+    for iso3, values in wide.iterrows():
+        held = years[values.reindex(years).notna().to_numpy()]
+        if int(year) in held:
+            out[iso3] = float(values[int(year)]) * FRA_THOUSAND_HA
+            continue
+        below, above = held[held < int(year)], held[held > int(year)]
+        if len(below) and len(above):
+            y0, y1 = below.max(), above.min()
+            v0, v1 = float(values[y0]), float(values[y1])
+            out[iso3] = (v0 + (v1 - v0) * (int(year) - y0) / (y1 - y0)) * FRA_THOUSAND_HA
+        else:
+            out[iso3] = float('nan')
+    return pd.Series(out, name='fra_forest_ha', dtype=float)
+
+
+def area_on_country_keys(countries_df, area, column):
+    """An area series keyed by ISO3 code, mapped onto the country keys as one named column."""
+    if not countries_df['iso3_r250_label'].is_unique:
+        raise ValueError('the country list repeats a label')
+    out = countries_df[['iso3_r250_id', 'iso3_r250_label']].copy()
+    out[column] = out['iso3_r250_label'].map(area)
+    return out
+
+
+def fao_forest_ha_by_country(countries_df, fra_area):
+    """FAO total forest per country: FRA 2020 interpolated to the base year, in every country.
+
+    FRA 2020 is the vintage CWoN's code ranks first (`forest_timber_depletion.do` line 511), read
+    and interpolated by the same rule for every country. CWoN's published area differs from it in
+    six countries (BOL, CIV, CZE, GBR, MKD, SWZ), where FRA 2020 rows went unmatched to a country
+    code and FRA 2010's trend was extrapolated instead. That area is kept apart, as
+    cwon_forest_ha_by_country. A country FRA 2020 cannot give stays missing. Nothing is filled
+    from the land cover or from CWoN, and nothing is set to zero that FRA does not report as zero.
+
+    Args:
+        countries_df (pd.DataFrame): iso3_r250_id and iso3_r250_label, one row per country.
+        fra_area (pd.Series): hectares by ISO3 code, from fra_forest_area.
+
+    Returns:
+        pd.DataFrame: iso3_r250_id, iso3_r250_label, fao_forest_ha and fao_forest_source.
+    """
+    out = area_on_country_keys(countries_df, fra_area, 'fao_forest_ha')
+    out['fao_forest_source'] = np.where(out['fao_forest_ha'].notna(), FAO_SOURCE_FRA, None)
+    return out
+
+
+def cwon_forest_ha_by_country(countries_df, cwon_area):
+    """The total forest area CWoN publishes per country, for the comparison with CWoN's own value.
+
+    It is the area CWoN's NWFP value multiplies, so the rate times it gives CWoN's own value up to
+    the rate file's printing precision, except in the three countries whose rate CWoN divides by
+    five. Missing wherever CWoN publishes no area, with nothing filled.
+
+    Args:
+        countries_df (pd.DataFrame): iso3_r250_id and iso3_r250_label, one row per country.
+        cwon_area (pd.Series): hectares by country code, from cwon_forest_area.
+
+    Returns:
+        pd.DataFrame: iso3_r250_id, iso3_r250_label and cwon_forest_ha.
+    """
+    return area_on_country_keys(countries_df, cwon_area, 'cwon_forest_ha')
 
 
 # =============================================================================

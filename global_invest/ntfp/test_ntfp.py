@@ -1,5 +1,8 @@
-"""Unit tests for NTFP: the valuation, the configuration rows and the accessibility stage."""
+"""Unit tests for NTFP: the valuation, the FAO area, the alternatives, the configuration rows and
+the accessibility stage."""
 import inspect
+import json
+import os
 from types import SimpleNamespace
 
 import numpy as np
@@ -10,17 +13,35 @@ from global_invest.ntfp import ntfp_functions
 from global_invest.ntfp import ntfp_functions as nf
 
 
-def test_the_published_rate_is_applied_to_the_reachable_area():
-    # The rate is CWoN's own, per hectare, and it is applied to the hectares people can reach.
-    # AAA: $1/ha over 100 reachable hectares is $100, not the $200 CWoN spread over all 200.
-    area = pd.DataFrame({'iso3_r250_label': ['AAA', 'BBB'], 'accessible_forest_ha': [100.0, 50.0]})
+def test_the_published_rate_is_applied_to_the_named_area_in_the_base_year():
+    # $1/ha over 200 hectares of FAO forest is $200. Only the base-year rate is used: AAA's 2020
+    # row would have given a different value.
+    area = pd.DataFrame({'iso3_r250_label': ['AAA', 'BBB'], 'fao_forest_ha': [200.0, 50.0]})
     values = pd.DataFrame({'iso3_r250_label': ['AAA', 'AAA', 'BBB'],
                            'year': [2019, 2020, 2019],
                            'nwfp_value_per_ha': [1.0, 4.5, 2.0]})
-    out = ntfp_functions.ntfp_gep_by_country(area, values, 2019).set_index('iso3_r250_label')
-    assert out['ntfp_gep'].to_dict() == {'AAA': 100.0, 'BBB': 100.0}
-    # Only the requested year is used: AAA's 2020 row would have given a different rate.
+    out = ntfp_functions.ntfp_gep_by_country(area, values, 2019, 'fao_forest_ha').set_index('iso3_r250_label')
+    assert out['ntfp_gep'].to_dict() == {'AAA': 200.0, 'BBB': 100.0}
     assert out.loc['AAA', 'nwfp_value_per_ha'] == 1.0
+
+
+def test_a_missing_area_or_rate_stays_missing_and_a_zero_stays_zero():
+    area = pd.DataFrame({'iso3_r250_label': ['NOAREA', 'NORATE', 'ZEROAREA', 'ZERORATE'],
+                         'fao_forest_ha': [np.nan, 10.0, 0.0, 10.0]})
+    values = pd.DataFrame({'iso3_r250_label': ['NOAREA', 'ZEROAREA', 'ZERORATE'], 'year': [2019] * 3,
+                           'nwfp_value_per_ha': [3.0, 3.0, 0.0]})
+    out = nf.ntfp_gep_by_country(area, values, 2019, 'fao_forest_ha').set_index('iso3_r250_label')['ntfp_gep']
+    assert np.isnan(out['NOAREA']) and np.isnan(out['NORATE'])
+    assert out['ZEROAREA'] == 0.0 and out['ZERORATE'] == 0.0
+
+
+def test_a_repeated_country_in_either_table_is_refused():
+    area = pd.DataFrame({'iso3_r250_label': ['AAA', 'AAA'], 'fao_forest_ha': [1.0, 2.0]})
+    values = pd.DataFrame({'iso3_r250_label': ['AAA'], 'year': [2019], 'nwfp_value_per_ha': [1.0]})
+    with pytest.raises(ValueError):
+        nf.ntfp_gep_by_country(area, values, 2019, 'fao_forest_ha')
+    with pytest.raises(ValueError):
+        nf.ntfp_gep_by_country(area.iloc[:1], pd.concat([values, values]), 2019, 'fao_forest_ha')
 
 
 def test_source_script_constants_are_pinned():
@@ -115,22 +136,21 @@ def test_hectares_by_zone_sums_into_the_zone_id_and_keeps_outside_at_index_zero(
     assert out[0] == 0.0        # outside every zone
 
 
-def test_the_country_total_falls_below_cwons_because_unreachable_forest_is_dropped():
-    # CWoN's rate covers all forest. Applying it to only the reachable part drops the value
-    # notionally earned where nobody can go, which is the source module's choice and ours.
-    accessible = pd.DataFrame({'iso3_r250_label': ['AAA', 'BBB', 'NOACCESS'],
-                               'accessible_forest_ha': [600.0, 250.0, 0.0]})
-    rates = pd.DataFrame({'iso3_r250_label': ['AAA', 'BBB', 'NOACCESS'], 'year': [2019] * 3,
-                          'nwfp_value_per_ha': [12.0, 10.0, 2.0]})
+def test_the_account_values_all_forest_and_the_earlier_valuation_only_the_reachable_part():
+    # The rate is an average over all of a country's forest, so the account multiplies it by all
+    # of it: 1,000 and 500 FAO hectares at $12 and $10 are CWoN's own $12,000 and $5,000. The
+    # earlier valuation, kept as its own table, applies the same rate to the reachable hectares.
+    fao = pd.DataFrame({'iso3_r250_label': ['AAA', 'BBB'], 'fao_forest_ha': [1000.0, 500.0]})
+    accessible = pd.DataFrame({'iso3_r250_label': ['AAA', 'BBB'], 'accessible_forest_ha': [600.0, 250.0]})
+    rates = pd.DataFrame({'iso3_r250_label': ['AAA', 'BBB'], 'year': [2019] * 2,
+                          'nwfp_value_per_ha': [12.0, 10.0]})
 
-    out = nf.ntfp_gep_by_country(accessible, rates, 2019).set_index('iso3_r250_label')
+    main = nf.ntfp_gep_by_country(fao, rates, 2019, 'fao_forest_ha').set_index('iso3_r250_label')
+    earlier = nf.ntfp_gep_by_country(accessible, rates, 2019, 'accessible_forest_ha',
+                                     'ntfp_gep_accessible_forest').set_index('iso3_r250_label')
 
-    assert out.loc['AAA', 'ntfp_gep'] == pytest.approx(7200.0)   # 600 ha at $12
-    assert out.loc['BBB', 'ntfp_gep'] == pytest.approx(2500.0)   # 250 ha at $10
-    # CWoN priced 1,000 and 500 hectares, so its own totals would be $12,000 and $5,000.
-    assert out['ntfp_gep'].sum() == pytest.approx(9700.0)
-    # A country with no reachable forest earns nothing rather than an undefined amount.
-    assert out.loc['NOACCESS', 'ntfp_gep'] == pytest.approx(0.0)
+    assert main['ntfp_gep'].to_dict() == {'AAA': 12000.0, 'BBB': 5000.0}
+    assert earlier['ntfp_gep_accessible_forest'].to_dict() == {'AAA': 7200.0, 'BBB': 2500.0}
 
 
 def test_ndvi_floor_drops_bare_and_unseen_forest():
@@ -327,3 +347,236 @@ def test_a_geopackage_and_a_shapefile_of_the_same_lines_burn_the_same_cells(tmp_
 
     assert (burned['gpkg'] > 0).sum() > 0
     assert np.array_equal(burned['gpkg'], burned['shp'])
+
+
+# ---------------------------------------------------------------------------
+# FAO total forest: FRA 2020 interpolated in every country. CWoN's published area apart.
+# ---------------------------------------------------------------------------
+
+def cwon_table(rows, series=nf.CWON_AREA_SERIES):
+    return pd.DataFrame({'countrycode': [r[0] for r in rows], 'series': series,
+                         'YR2019': [r[1] for r in rows]})
+
+
+def test_cwon_area_reads_hectares_and_keeps_its_missing_mark_missing():
+    area = nf.cwon_forest_area(cwon_table([('AAA', 1500), ('BBB', '..'), ('CCC', 0)]), 2019)
+    assert area['AAA'] == 1500.0 and area['CCC'] == 0.0
+    assert np.isnan(area['BBB'])
+
+
+def test_cwon_area_refuses_other_text_another_series_or_a_repeated_code():
+    with pytest.raises(ValueError):
+        nf.cwon_forest_area(cwon_table([('AAA', 'n.a.')]), 2019)
+    with pytest.raises(ValueError):
+        nf.cwon_forest_area(cwon_table([('AAA', 1)], series='Forest area (1000 ha)'), 2019)
+    with pytest.raises(ValueError):
+        nf.cwon_forest_area(cwon_table([('AAA', 1), ('AAA', 2)]), 2019)
+
+
+def test_fra_area_interpolates_between_the_nearest_reported_years_in_thousand_hectares():
+    fra = pd.DataFrame({'iso3': ['AAA'] * 3 + ['BBB'] * 2 + ['CCC'] * 2,
+                        'year': [2010, 2015, 2020, 2010, 2015, 2010, 2020],
+                        'forest': [90.0, 100.0, 150.0, 5.0, 6.0, 10.0, 20.0]})
+    area = nf.fra_forest_area(fra, 2019)
+    # 100 + (150 - 100) * 4 / 5 thousand hectares.
+    assert area['AAA'] == pytest.approx(140_000.0, rel=1e-15)
+    # No year after 2019 reported: missing, not extrapolated.
+    assert np.isnan(area['BBB'])
+    # 2015 missing: the nearest years on each side are 2010 and 2020.
+    assert area['CCC'] == pytest.approx(19_000.0, rel=1e-15)
+    assert nf.fra_forest_area(fra, 2015)['AAA'] == 100_000.0
+    with pytest.raises(ValueError):
+        nf.fra_forest_area(pd.concat([fra, fra.iloc[:1]]), 2019)
+
+
+def test_fao_area_is_fra_in_every_country_and_fills_nothing_else():
+    countries = pd.DataFrame({'iso3_r250_id': [1, 2, 3, 4], 'iso3_r250_label': ['CWN', 'FRA', 'NON', 'ZER']})
+    fra = pd.Series({'CWN': 999.0, 'FRA': 250.0, 'ZER': 0.0})
+    out = nf.fao_forest_ha_by_country(countries, fra).set_index('iso3_r250_label')
+    assert out.loc['CWN', 'fao_forest_ha'] == 999.0 and out.loc['CWN', 'fao_forest_source'] == nf.FAO_SOURCE_FRA
+    assert out.loc['FRA', 'fao_forest_ha'] == 250.0 and out.loc['FRA', 'fao_forest_source'] == nf.FAO_SOURCE_FRA
+    assert np.isnan(out.loc['NON', 'fao_forest_ha']) and out.loc['NON', 'fao_forest_source'] is None
+    assert out.loc['ZER', 'fao_forest_ha'] == 0.0
+    assert list(out['iso3_r250_id']) == [1, 2, 3, 4]
+    with pytest.raises(ValueError):
+        nf.fao_forest_ha_by_country(pd.concat([countries, countries.iloc[:1]]), fra)
+
+
+def test_cwon_area_table_carries_the_published_area_and_fills_nothing():
+    countries = pd.DataFrame({'iso3_r250_id': [1, 2, 3], 'iso3_r250_label': ['CWN', 'FRA', 'ZER']})
+    out = nf.cwon_forest_ha_by_country(countries, pd.Series({'CWN': 500.0, 'FRA': np.nan, 'ZER': 0.0}))
+    out = out.set_index('iso3_r250_label')
+    assert list(out.columns) == ['iso3_r250_id', 'cwon_forest_ha']
+    assert out.loc['CWN', 'cwon_forest_ha'] == 500.0 and out.loc['ZER', 'cwon_forest_ha'] == 0.0
+    assert np.isnan(out.loc['FRA', 'cwon_forest_ha'])
+
+
+def test_the_account_area_never_reads_cwon_and_the_comparison_never_reads_fra():
+    from global_invest.ntfp import ntfp_tasks
+    for task in (ntfp_tasks.fao_forest, ntfp_tasks.gep_calculation, ntfp_tasks.divide_by_five_sensitivity):
+        source = inspect.getsource(task)
+        assert 'ntfp_cwon_' not in source and 'cwon_forest' not in source
+    for task in (ntfp_tasks.cwon_forest, ntfp_tasks.cwon_forest_comparison):
+        source = inspect.getsource(task)
+        assert 'ntfp_fra_' not in source and 'fao_forest' not in source
+
+
+def _staged_fao_sources():
+    import tempfile
+    import hazelbean as hb
+    base = hb.ProjectFlow(project_dir=os.path.join(tempfile.mkdtemp(), 'fao')).base_data_dir
+    folder = os.path.join(base, 'global_invest', 'ntfp', 'cwon_2024_forest_area')
+    paths = (os.path.join(folder, 'forest_nontimber_total_area.xlsx'),
+             os.path.join(folder, 'for_fao_fra2020_bulk_download.csv'),
+             os.path.join(base, 'global_invest', 'ntfp', 'nontimber_price_iucn_edited.csv'))
+    if not all(os.path.exists(path) for path in paths):
+        pytest.skip('the CWoN 2024 forest area or the rate table is not staged in base data on this machine')
+    return paths
+
+
+def test_the_staged_sources_are_the_package_files_and_fra_reproduces_cwon_where_it_should():
+    """The staged files are the package's and the rate table by SHA-256, FRA 2020 interpolated to
+    2019 gives CWoN's own area in every country CWoN publishes except the six it extrapolates from
+    FRA 2010, and FRA 2020 has an area wherever CWoN does."""
+    import hashlib
+    cwon_path, fra_path, rate_path = _staged_fao_sources()
+    assert hashlib.sha256(open(cwon_path, 'rb').read()).hexdigest().startswith('62e64298c1aae48e')
+    assert hashlib.sha256(open(fra_path, 'rb').read()).hexdigest().startswith('ca906a4595fef3e1')
+    assert hashlib.sha256(open(rate_path, 'rb').read()).hexdigest().startswith('0094846d3180e343')
+
+    cwon = nf.cwon_forest_area(pd.read_excel(cwon_path), 2019).dropna()
+    fra = nf.fra_forest_area(pd.read_csv(fra_path, low_memory=False), 2019)
+    assert len(cwon) == 151
+    assert fra.reindex(cwon.index).notna().all()
+    gap = (fra[cwon.index] - cwon).abs()
+    apart = sorted(gap[gap > 1e-6 * cwon.clip(lower=1.0)].index)
+    assert apart == sorted(['BOL', 'CIV', 'CZE', 'GBR', 'MKD', 'SWZ'])
+
+
+def test_the_account_and_the_cwon_comparison_totals_on_the_staged_inputs():
+    """The account's value and the comparison, rebuilt from the staged inputs with the library's
+    own functions. Pinned to the cent: the CSV parser moves an area by at most a float64 step or
+    two between machines, which is millionths of a dollar on these totals."""
+    import math
+    cwon_path, fra_path, rate_path = _staged_fao_sources()
+    rate = nf.nwfp_rate_long(pd.read_csv(rate_path, encoding='utf-8-sig'))
+    rate = rate[rate['year'] == 2019].set_index('iso3_r250_label')['nwfp_value_per_ha']
+    fra = nf.fra_forest_area(pd.read_csv(fra_path, low_memory=False), 2019)
+    cwon = nf.cwon_forest_area(pd.read_excel(cwon_path), 2019)
+    account = (rate * fra.reindex(rate.index)).dropna()
+    comparison = (rate * cwon.reindex(rate.index)).dropna()
+    assert len(account) == 223 and len(comparison) == 149
+    assert math.fsum(account) == pytest.approx(31_737_899_452.62, abs=0.01)
+    assert math.fsum(comparison) == pytest.approx(30_281_055_011.16, abs=0.01)
+    assert math.fsum(account[comparison.index]) == pytest.approx(30_209_130_853.06, abs=0.01)
+    six = ['BOL', 'CIV', 'CZE', 'GBR', 'MKD', 'SWZ']
+    assert math.fsum(account[six] - comparison[six]) == pytest.approx(-71_924_158.11, abs=0.01)
+
+
+# ---------------------------------------------------------------------------
+# The alternatives: each its own task and table, none of them the account's value.
+# ---------------------------------------------------------------------------
+
+def test_divided_rates_divides_only_the_named_countries_and_refuses_an_absent_one():
+    rates = pd.DataFrame({'iso3_r250_label': ['COD', 'MOZ', 'BRA'], 'year': [2019] * 3,
+                          'nwfp_value_per_ha': [10.0, 5.0, 2.0]})
+    out = nf.divided_rates(rates, ['COD', 'MOZ'], 5).set_index('iso3_r250_label')['nwfp_value_per_ha']
+    assert out.to_dict() == {'COD': 2.0, 'MOZ': 1.0, 'BRA': 2.0}
+    assert rates['nwfp_value_per_ha'].tolist() == [10.0, 5.0, 2.0]
+    with pytest.raises(ValueError):
+        nf.divided_rates(rates, ['CAF'], 5)
+
+
+def test_the_account_value_reads_the_published_rate_and_the_divide_by_five_only_its_own_table():
+    from global_invest.ntfp import ntfp_tasks
+    assert 'divided_rates' not in inspect.getsource(ntfp_tasks.gep_calculation)
+    assert 'fao_forest_ha' in inspect.getsource(ntfp_tasks.gep_calculation)
+    assert 'divided_rates' in inspect.getsource(ntfp_tasks.divide_by_five_sensitivity)
+
+
+def test_the_template_registers_the_fao_area_and_the_divide_by_five():
+    import csv
+    here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    path = os.path.join(here, 'input_template', 'es_parameters.csv')
+    rows = {row[1]: row[2] for row in csv.reader(open(path, encoding='utf-8-sig'))
+            if len(row) > 2 and row[0] == 'ntfp'}
+    assert rows['ntfp_cwon_forest_area_input_path'].endswith('cwon_2024_forest_area/forest_nontimber_total_area.xlsx')
+    assert rows['ntfp_fra_forest_input_path'].endswith('cwon_2024_forest_area/for_fao_fra2020_bulk_download.csv')
+    assert json.loads(rows['ntfp_divide_by_five_labels']) == ['COD', 'MOZ', 'CAF']
+    assert json.loads(rows['ntfp_divide_by_five_divisor']) == 5
+    # Both FAO inputs can be fetched by utilities.download_missing_inputs: the package ZIP and the
+    # member that is the staged file.
+    package = 'FR_WLD_2024_195/Reproducibility package/'
+    for name, member in (('ntfp_cwon_forest_area_input', 'Output/Latest/forest_nontimber_total_area.xlsx'),
+                         ('ntfp_fra_forest_input', 'Input/User_update/for_fao_fra2020_bulk_download.csv')):
+        assert rows[name + '_source_url'] == 'https://reproducibility.worldbank.org/catalog/194/download/549'
+        assert rows[name + '_source_archive_member'] == package + member
+    # The rate table is not in that package, so it carries a note naming its source, not a URL
+    # that would save the package ZIP under the rate table's name.
+    assert 'ntfp_value_per_ha_source_url' not in rows
+    assert 'geo_ntfp' in rows['ntfp_value_per_ha_source_note']
+    # The rivers are a shapefile in a ZIP. One fetched file cannot carry its sidecars, so a URL row
+    # would save the ZIP under the .shp name. The note keeps the URL for a person to unzip.
+    assert 'ntfp_rivers_source_url' not in rows
+    assert 'ne_10m_rivers_lake_centerlines.zip' in rows['ntfp_rivers_source_note']
+
+
+def test_the_full_tree_runs_every_alternative_as_its_own_task_with_no_switch():
+    from global_invest.ntfp import ntfp_initialize
+
+    class Tree:
+        def __init__(self):
+            self.names = []
+
+        def add_task(self, function, **kwargs):
+            self.names.append(function.__name__)
+            return function.__name__
+
+    calculation = ntfp_initialize.build_gep_service_calculation_task_tree(Tree()).names
+    assert calculation == ['fao_forest', 'gep_calculation']
+    full = ntfp_initialize.build_gep_service_task_tree(Tree()).names
+    assert full == ['fao_forest', 'gep_calculation', 'divide_by_five_sensitivity', 'cwon_forest',
+                    'cwon_forest_comparison', 'accessible_forest', 'esa_forest', 'esa_forest_sensitivity',
+                    'accessible_forest_valuation', 'gep_result']
+
+
+def _grid(tmp_path, name, array, gdal_type):
+    from osgeo import gdal, osr
+    path = str(tmp_path / name)
+    ds = gdal.GetDriverByName('GTiff').Create(path, array.shape[1], array.shape[0], 1, gdal_type)
+    ds.SetGeoTransform((0.0, 1.0, 0.0, 3.0, 0.0, -1.0))
+    srs = osr.SpatialReference()
+    srs.ImportFromEPSG(4326)
+    ds.SetProjection(srs.ExportToWkt())
+    ds.GetRasterBand(1).WriteArray(array)
+    ds = None
+    return path
+
+
+def test_esa_forest_counts_every_screened_forest_cell_whatever_the_reach(tmp_path):
+    """The land cover passed as the reach covers every forest cell, so the accessible-forest call
+    gives all forest: ESA classes 50 to 90 that pass the NDVI floor, summed by country."""
+    from osgeo import gdal
+    from global_invest.ntfp import ntfp_tasks
+
+    lulc = np.array([[50, 70, 10], [90, 100, 60], [55, 0, 80]], dtype=np.int16)
+    ids = np.array([[1, 1, 2], [2, 2, 1], [1, 0, 2]], dtype=np.int32)
+    ha = np.arange(1, 10, dtype=np.float64).reshape(3, 3)
+    ndvi = np.array([[3000, 1500, 9000], [2000, 9000, -9999], [2500, 2500, 4000]], dtype=np.int16)
+    reach = np.zeros((3, 3), dtype=np.uint8)
+    paths = {k: _grid(tmp_path, k + '.tif', a, t) for k, a, t in (
+        ('lulc', lulc, gdal.GDT_Int16), ('ids', ids, gdal.GDT_Int32), ('ha', ha, gdal.GDT_Float64),
+        ('ndvi', ndvi, gdal.GDT_Int16), ('reach', reach, gdal.GDT_Byte))}
+
+    total = ntfp_tasks.accessible_forest_hectares_by_country(
+        paths['lulc'], paths['lulc'], paths['ids'], paths['ha'], 2, ndvi_path=paths['ndvi'])
+    forest = (lulc >= 50) & (lulc <= 90) & (ndvi != -9999) & (ndvi >= 2000)
+    expected = np.bincount(ids.ravel(), weights=np.where(forest, ha, 0.0).ravel(), minlength=3)
+    assert total.tolist() == expected.tolist()
+    # Country 1: cells of 1 ha (class 50, NDVI 0.3) and 7 ha (class 55); the 2 ha cell fails the
+    # floor and the 6 ha cell has no NDVI. Country 2: 4 ha (class 90 at the floor) and 9 ha.
+    assert total[1] == 8.0 and total[2] == 13.0
+
+    reached = ntfp_tasks.accessible_forest_hectares_by_country(
+        paths['lulc'], paths['reach'], paths['ids'], paths['ha'], 2, ndvi_path=paths['ndvi'])
+    assert reached.sum() == 0.0

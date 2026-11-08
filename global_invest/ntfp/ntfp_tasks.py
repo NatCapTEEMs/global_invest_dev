@@ -1,6 +1,12 @@
-"""NTFP GEP tasks: accessible forest hectares per country, then the CWoN NWFP value per hectare.
+"""NTFP GEP tasks: the NWFP value per hectare times FAO total forest, with its alternatives.
 
-Everything is on the account's own grid, WGS84 at 10 arcsec, the grid `ha_per_cell_10sec.tif`
+`fao_forest` and `gep_calculation` give the account's value from two tables and no raster. The
+alternatives each have their own task and table: `divide_by_five_sensitivity`, the rate times the
+area CWoN publishes (`cwon_forest`, `cwon_forest_comparison`), the rate times all mapped ESA
+forest (`esa_forest`, `esa_forest_sensitivity`) and the earlier valuation over accessible forest
+(`accessible_forest`, `accessible_forest_valuation`).
+
+The two forest rasters are on the account's own grid, WGS84 at 10 arcsec, the grid `ha_per_cell_10sec.tif`
 defines. Accessibility is the reach grown 10 km from the road and river lines, and the forest
 mask is screened by a five-year mean NDVI. The roads (`ntfp_roads_vector_path`) and rivers
 (`ntfp_rivers_path`, Natural Earth 10 m centre lines) are the configured inputs. They carry the file
@@ -347,13 +353,17 @@ def accessible_forest(p):
     """
     publish_inputs(p)
     p.ntfp_accessible_forest_path = os.path.join(p.cur_dir, 'accessible_forest_ha_by_country.csv')
+    # The rasters on the account grid, published for esa_forest, which counts all forest on them.
+    p.ntfp_lulc_10sec_path = os.path.join(p.cur_dir, 'lulc_10sec.tif')
+    p.ntfp_country_id_10sec_path = os.path.join(p.cur_dir, 'country_id_10sec.tif')
+    p.ntfp_ndvi_10sec_path = (os.path.join(p.cur_dir, 'ndvi_10sec.tif')
+                              if hb.path_exists(getattr(p, 'ntfp_ndvi_mean_path', None)) else None)
     if not p.run_this:
         return
     if hb.path_exists(p.ntfp_accessible_forest_path):
         hb.log('Accessible forest already computed. Skipping.')
         return
 
-    import numpy as np
     from osgeo import gdal
 
     # Every raster here lands on the account's own grid, whose projection, extent and cell size
@@ -365,7 +375,7 @@ def accessible_forest(p):
     # Nearest neighbour rather than dominant class: 10 arcsec is about 309 m at the equator,
     # near enough the land cover's own 300 m that there is no majority to take, and classifying
     # before or after a nearest-neighbour resample gives the same cells either way.
-    lulc_path = os.path.join(p.cur_dir, 'lulc_10sec.tif')
+    lulc_path = p.ntfp_lulc_10sec_path
     if not hb.path_exists(lulc_path):
         hb.log('ntfp: putting the land cover on the account grid')
         warp_to_analysis_grid(p.gep_lulc_input_path, lulc_path, template_path, 'near',
@@ -376,7 +386,7 @@ def accessible_forest(p):
     # source module takes, done once for every country at once. A cell goes to whichever polygon
     # covers its centre. Reprojecting a ready-made id raster instead would assign border and
     # coastal cells by nearest neighbour, which is a different rule.
-    countries_path = os.path.join(p.cur_dir, 'country_id_10sec.tif')
+    countries_path = p.ntfp_country_id_10sec_path
     if not hb.path_exists(countries_path):
         hb.log('ntfp: burning the country ids onto the account grid')
         # Centre rule, so a cell belongs to exactly one country. Burning every country a cell
@@ -389,9 +399,8 @@ def accessible_forest(p):
 
     # Bilinear because NDVI is continuous, and the integer type is kept so the threshold is
     # compared in the raster's own units rather than on scaled floats.
-    ndvi_path = None
-    if hb.path_exists(getattr(p, 'ntfp_ndvi_mean_path', None)):
-        ndvi_path = os.path.join(p.cur_dir, 'ndvi_10sec.tif')
+    ndvi_path = p.ntfp_ndvi_10sec_path
+    if ndvi_path is not None:
         if not hb.path_exists(ndvi_path):
             hb.log('ntfp: putting the five-year mean NDVI on the account grid')
             warp_to_analysis_grid(p.ntfp_ndvi_mean_path, ndvi_path, template_path, 'bilinear',
@@ -424,18 +433,109 @@ def accessible_forest(p):
                            'empty one, and rerun -- the existence guard will otherwise keep '
                            'reusing it.' % (countries_path, ndvi_path, access_path))
 
-    countries = p.df_countries[['iso3_r250_id', 'iso3_r250_label']].drop_duplicates('iso3_r250_id')
-    countries = countries[countries['iso3_r250_id'].notna()]
-    countries['accessible_forest_ha'] = [
-        float(hectares[int(i)]) if int(i) <= COUNTRY_ID_MAX else float('nan')
-        for i in countries['iso3_r250_id']]
+    countries = hectares_table(p, hectares, 'accessible_forest_ha')
     hb.df_write(countries, p.ntfp_accessible_forest_path)
     hb.log(f'ntfp: {countries["accessible_forest_ha"].sum():,.0f} accessible forest hectares '
            f'over {int((countries["accessible_forest_ha"] > 0).sum())} countries')
     return True
 
+
+def country_keys(p):
+    """One row per country id, with its label: the keys every NTFP table is written on."""
+    countries = p.df_countries[['iso3_r250_id', 'iso3_r250_label']].drop_duplicates('iso3_r250_id')
+    return countries[countries['iso3_r250_id'].notna()].copy()
+
+
+def hectares_table(p, hectares, column):
+    """A zonal total by country id as a table on the country keys, missing past COUNTRY_ID_MAX."""
+    countries = country_keys(p)
+    countries[column] = [float(hectares[int(i)]) if int(i) <= COUNTRY_ID_MAX else float('nan')
+                         for i in countries['iso3_r250_id']]
+    return countries
+
+
+def esa_forest(p):
+    """All mapped ESA forest hectares per country, on the rasters accessible_forest builds.
+
+    The forest mask is the same, ESA classes 50 to 90 with the NDVI screen, and every forest cell
+    counts whether a road or river reaches it or not. It feeds esa_forest_sensitivity only.
+
+    It reads the land cover, country ids and NDVI on the account grid from accessible_forest's
+    directory, so on a machine holding only that task's table it cannot run and says so. The
+    table can then be staged from a cluster run of the same call.
+    """
+    publish_inputs(p)
+    p.ntfp_esa_forest_path = os.path.join(p.cur_dir, 'esa_forest_ha_by_country.csv')
+    if not p.run_this:
+        return
+    if hb.path_exists(p.ntfp_esa_forest_path):
+        hb.log('ESA forest already computed. Skipping.')
+        return
+
+    rasters = [p.ntfp_lulc_10sec_path, p.ntfp_country_id_10sec_path, p.ha_per_cell_10sec_path]
+    if p.ntfp_ndvi_10sec_path is not None:
+        rasters.append(p.ntfp_ndvi_10sec_path)
+    absent = [r for r in rasters if not hb.path_exists(r)]
+    if absent:
+        raise RuntimeError('esa_forest needs the rasters accessible_forest builds on the account '
+                           'grid, and these are not here: %s. Run accessible_forest\'s raster stage '
+                           'on the cluster, or stage %s from such a run.' % (absent, p.ntfp_esa_forest_path))
+
+    # Every forest class is above zero, so the land cover is itself a reach covering every forest
+    # cell, and the call that counts accessible forest counts all of it.
+    hectares = accessible_forest_hectares_by_country(
+        p.ntfp_lulc_10sec_path, p.ntfp_lulc_10sec_path, p.ntfp_country_id_10sec_path,
+        p.ha_per_cell_10sec_path, COUNTRY_ID_MAX, ndvi_path=p.ntfp_ndvi_10sec_path)
+    if not hectares[1:].any():
+        raise RuntimeError('esa_forest: the zonal total is zero everywhere. Check %s and %s.'
+                           % (p.ntfp_lulc_10sec_path, p.ntfp_country_id_10sec_path))
+    countries = hectares_table(p, hectares, 'esa_forest_ha')
+    hb.df_write(countries, p.ntfp_esa_forest_path)
+    hb.log(f'ntfp: {countries["esa_forest_ha"].sum():,.0f} ESA forest hectares '
+           f'over {int((countries["esa_forest_ha"] > 0).sum())} countries')
+    return True
+
+
+def fao_forest(p):
+    """FAO total forest per country in the base year, the area the account values.
+
+    FAO FRA 2020 interpolated to the base year by CWoN's rule, in every country, from the copy the
+    CWoN 2024 reproducibility package stages, registered in es_parameters. Hectares. A country FRA
+    2020 cannot give stays missing, with no source named.
+    """
+    publish_inputs(p)
+    p.ntfp_fao_forest_path = os.path.join(p.cur_dir, 'fao_forest_ha_by_country.csv')
+    if not p.run_this:
+        return
+    if hb.path_exists(p.ntfp_fao_forest_path):
+        hb.log('FAO forest already computed. Skipping.')
+        return
+
+    year = int(p.gep_base_year)
+    fra = nf.fra_forest_area(hb.df_read(p.ntfp_fra_forest_input_path), year)
+    table = nf.fao_forest_ha_by_country(country_keys(p), fra)
+    hb.df_write(table, p.ntfp_fao_forest_path)
+    counts = table['fao_forest_source'].fillna('none').value_counts().to_dict()
+    hb.log('ntfp: FAO total forest %s ha in %d, by source %s, missing for %s'
+           % (format(table['fao_forest_ha'].sum(), ',.0f'), year, counts,
+              sorted(table.loc[table['fao_forest_ha'].isna(), 'iso3_r250_label'])))
+    return True
+
+
+def valuation_table(p, area_path, area_column, value_column, value_per_ha):
+    """The rate times one area table, joined onto the shared country attributes."""
+    area = hb.df_read(area_path)
+    df = nf.ntfp_gep_by_country(area, value_per_ha, int(p.gep_base_year), area_column, value_column)
+    df = utilities.country_attributes(p).merge(df.drop(columns=['iso3_r250_id'], errors='ignore'),
+                                               on='iso3_r250_label', how='left')
+    df['year'] = int(p.gep_base_year)
+    hb.log('ntfp: %s %s over %d valued countries'
+           % (value_column, format(df[value_column].sum(), ',.2f'), int(df[value_column].notna().sum())))
+    return df
+
+
 def gep_calculation(p):
-    """GEP valuation for NTFP: accessible forest hectares times the CWoN NWFP value per hectare."""
+    """GEP valuation for NTFP: FAO total forest times the NWFP value per hectare, unadjusted."""
     publish_inputs(p)
     service_results, already_done = utilities.begin_gep_calculation(p, 'ntfp')
     if already_done:
@@ -443,18 +543,116 @@ def gep_calculation(p):
 
     if not p.run_this:
         return p
-    accessible = hb.df_read(p.ntfp_accessible_forest_path)
     value_per_ha = nf.nwfp_rate_long(hb.df_read(p.ntfp_value_per_ha_path))
-    df_gep = nf.ntfp_gep_by_country(accessible, value_per_ha, int(p.gep_base_year))
-
-    countries = utilities.country_attributes(p)
-    df_gep = countries.merge(df_gep.drop(columns=['iso3_r250_id'], errors='ignore'),
-                             on='iso3_r250_label', how='left')
-    df_gep['year'] = int(p.gep_base_year)
+    df_gep = valuation_table(p, p.ntfp_fao_forest_path, 'fao_forest_ha', 'ntfp_gep', value_per_ha)
     hb.df_write(df_gep, service_results['gep_by_country_base_year'])
-    hb.log('Total ntfp GEP for base year %d: %s over %d countries'
-           % (int(p.gep_base_year), format(df_gep['ntfp_gep'].sum(), ',.2f'),
-              int(df_gep['ntfp_gep'].notna().sum())))
+    return True
+
+
+def divide_by_five_sensitivity(p):
+    """The account's valuation with CWoN's divide-by-five applied, as a sensitivity only.
+
+    CWoN divides the rate by five for the countries in `ntfp_divide_by_five_labels` and states no
+    reason. This table shows what that does to the account's value, which keeps the published
+    rate.
+    """
+    publish_inputs(p)
+    p.ntfp_divide_by_five_path = os.path.join(p.cur_dir, 'gep_by_country_divide_by_five.csv')
+    if not p.run_this:
+        return
+    if hb.path_exists(p.ntfp_divide_by_five_path):
+        hb.log('Divide-by-five sensitivity already computed. Skipping.')
+        return
+    value_per_ha = nf.divided_rates(nf.nwfp_rate_long(hb.df_read(p.ntfp_value_per_ha_path)),
+                                    p.ntfp_divide_by_five_labels, p.ntfp_divide_by_five_divisor)
+    hb.df_write(valuation_table(p, p.ntfp_fao_forest_path, 'fao_forest_ha',
+                                'ntfp_gep_divide_by_five', value_per_ha), p.ntfp_divide_by_five_path)
+    return True
+
+
+def cwon_forest(p):
+    """The total forest area CWoN publishes per country in the base year, for the comparison.
+
+    CWoN 2024's `forest_nontimber_total_area.xlsx`, registered in es_parameters, read as published.
+    Hectares, missing wherever CWoN publishes none. It feeds cwon_forest_comparison only.
+    """
+    publish_inputs(p)
+    p.ntfp_cwon_forest_path = os.path.join(p.cur_dir, 'cwon_forest_ha_by_country.csv')
+    if not p.run_this:
+        return
+    if hb.path_exists(p.ntfp_cwon_forest_path):
+        hb.log('CWoN forest already computed. Skipping.')
+        return
+
+    import pandas as pd
+
+    year = int(p.gep_base_year)
+    cwon = nf.cwon_forest_area(pd.read_excel(p.ntfp_cwon_forest_area_input_path), year)
+    table = nf.cwon_forest_ha_by_country(country_keys(p), cwon)
+    hb.df_write(table, p.ntfp_cwon_forest_path)
+    hb.log('ntfp: CWoN total forest %s ha in %d over %d countries'
+           % (format(table['cwon_forest_ha'].sum(), ',.0f'), year, int(table['cwon_forest_ha'].notna().sum())))
+    return True
+
+
+def cwon_forest_comparison(p):
+    """The rate times the area CWoN publishes, as a comparison with CWoN's own value.
+
+    The same unadjusted rate over CWoN's area rather than FRA 2020's. It reproduces CWoN's own
+    NWFP value except where CWoN divides the rate by five. It values the 149 countries CWoN
+    publishes an area and a rate for, against the account's 223. On those 149, its difference from
+    the account is the six areas CWoN extrapolates from FRA 2010.
+    """
+    publish_inputs(p)
+    p.ntfp_cwon_forest_comparison_path = os.path.join(p.cur_dir, 'gep_by_country_cwon_forest.csv')
+    if not p.run_this:
+        return
+    if hb.path_exists(p.ntfp_cwon_forest_comparison_path):
+        hb.log('CWoN forest comparison already computed. Skipping.')
+        return
+    value_per_ha = nf.nwfp_rate_long(hb.df_read(p.ntfp_value_per_ha_path))
+    hb.df_write(valuation_table(p, p.ntfp_cwon_forest_path, 'cwon_forest_ha',
+                                'ntfp_gep_cwon_forest', value_per_ha), p.ntfp_cwon_forest_comparison_path)
+    return True
+
+
+def esa_forest_sensitivity(p):
+    """The rate times all mapped ESA forest, as a sensitivity on the area source.
+
+    The same rate over the land cover's own forest rather than FAO's statistics. It separates
+    what the area source does from what accessibility does.
+    """
+    publish_inputs(p)
+    p.ntfp_esa_forest_sensitivity_path = os.path.join(p.cur_dir, 'gep_by_country_esa_forest.csv')
+    if not p.run_this:
+        return
+    if hb.path_exists(p.ntfp_esa_forest_sensitivity_path):
+        hb.log('ESA forest sensitivity already computed. Skipping.')
+        return
+    value_per_ha = nf.nwfp_rate_long(hb.df_read(p.ntfp_value_per_ha_path))
+    hb.df_write(valuation_table(p, p.ntfp_esa_forest_path, 'esa_forest_ha',
+                                'ntfp_gep_esa_forest', value_per_ha), p.ntfp_esa_forest_sensitivity_path)
+    return True
+
+
+def accessible_forest_valuation(p):
+    """The earlier valuation, the rate times accessible forest, kept for comparison.
+
+    The source module's own valuation. The source report averages the rate over all forest and
+    multiplies by FAO total forest, so the rate over accessible forest only discounts access a
+    second time if non-service forest enters that average as zero.
+    """
+    publish_inputs(p)
+    p.ntfp_accessible_forest_valuation_path = os.path.join(p.cur_dir, 'gep_by_country_accessible_forest.csv')
+    if not p.run_this:
+        return
+    if hb.path_exists(p.ntfp_accessible_forest_valuation_path):
+        hb.log('Accessible forest valuation already computed. Skipping.')
+        return
+    value_per_ha = nf.nwfp_rate_long(hb.df_read(p.ntfp_value_per_ha_path))
+    hb.df_write(valuation_table(p, p.ntfp_accessible_forest_path, 'accessible_forest_ha',
+                                'ntfp_gep_accessible_forest', value_per_ha),
+                p.ntfp_accessible_forest_valuation_path)
     return True
 
 
