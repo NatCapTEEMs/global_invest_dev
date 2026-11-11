@@ -1302,67 +1302,6 @@ def usd_deflation_factor(cpi_df, from_year, to_year):
     return float(annual.loc[to_year] / annual.loc[from_year])
 
 
-def fill_base_year_gaps_from_adjacent_years(df, base_year, cpi_df, value_label,
-                                            country_column='countrycode'):
-    """A wide CWoN panel's base-year column with source gaps filled from the adjacent years.
-
-    A gap is a base-year cell that is missing, or zero while an adjacent year (the year before
-    or the year after) is positive: the CWoN current-dollar panels read zero or NaN for
-    country-years the edition did not value, and a resource earning rent either side of the base
-    year did not earn nothing in it. Everything else is preserved: a zero flanked by nonpositive
-    neighbours is a genuine zero, a NONZERO base-year value is never replaced, and a gap with no
-    positive neighbour stays missing -- flagged in the provenance table, never filled from
-    another source such as WDI.
-
-    The donor is the mean of the positive adjacent values, each converted into base-year dollars
-    with the account's shared CPI (usd_deflation_factor); with one positive neighbour, that year
-    alone. Symmetric, deterministic, and using only the panel's own local information.
-
-    Args:
-        df (pd.DataFrame): the CWoN panel with YR<year> columns.
-        base_year (int): the account's base year.
-        cpi_df (pd.DataFrame): the shared FRED CPIAUCSL frame.
-        value_label (str): what the panel holds, for the provenance rows.
-        country_column (str): the panel's country key.
-
-    Returns:
-        tuple: (the frame with the base-year column repaired, a provenance DataFrame with one
-        row per repair or flag: country, value_label, original, reason, donor years, nominal
-        donor values, conversion factors and replacement).
-    """
-    base = 'YR%d' % base_year
-    years = [base_year - 1, base_year + 1]
-    out = df.copy()
-    for column in [base] + ['YR%d' % y for y in years]:
-        out[column] = pd.to_numeric(out.get(column), errors='coerce')
-    factors = {y: usd_deflation_factor(cpi_df, y, base_year) for y in years}
-    records = []
-    for i, row in out.iterrows():
-        original = row[base]
-        positives = [(y, float(row['YR%d' % y])) for y in years
-                     if pd.notna(row['YR%d' % y]) and row['YR%d' % y] > 0]
-        if pd.notna(original) and original != 0:
-            continue
-        if original == 0 and not positives:
-            continue  # a genuine zero: nonpositive on both sides
-        record = {'country': row[country_column], 'value': value_label,
-                  'original': original,
-                  'donor_years': ' '.join(str(y) for y, _ in positives),
-                  'donor_nominal': ' '.join('%r' % v for _, v in positives),
-                  'conversion_factors': ' '.join('%r' % factors[y] for y, _ in positives)}
-        if not positives:
-            record['reason'], record['replacement'] = 'missing_no_donor', np.nan
-        else:
-            record['reason'] = 'missing_2019' if pd.isna(original) else 'zero_with_positive_neighbour'
-            record['replacement'] = float(np.mean([v * factors[y] for y, v in positives]))
-            out.loc[i, base] = record['replacement']
-        records.append(record)
-    provenance = pd.DataFrame(records, columns=['country', 'value', 'original', 'reason',
-                                                'donor_years', 'donor_nominal',
-                                                'conversion_factors', 'replacement'])
-    return out, provenance
-
-
 def international_to_usd(df, pli_df, year, value_col, iso3_col='iso3_r250_label'):
     """Convert per-country international-dollar (PPP) values into market USD of the same year.
 
