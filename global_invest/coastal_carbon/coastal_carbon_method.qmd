@@ -55,7 +55,7 @@ Global), which is what turns polygon geometry into hectares. This is the area th
 
 **Seagrass area.** The area is measured on the 10 m source grid. A mapped pixel belongs to every
 marine region that holds its centre (the rasterisation's `all_touched=False`), and its area is the
-area of its row's cell on the WGS84 ellipsoid (`hb.ha_per_cell_rows`, which agrees with pyproj's
+area of its row's cell on the WGS84 ellipsoid (`hb.get_area_of_pixel_column_from_center_lats` at the row's centre latitude, which agrees with pyproj's
 geodesic area of the same cell within 1.4e-9 on the rows tested). The r566 regions do not overlap one another, so a
 pixel should fall in at most one, but the pass does not assume it: a pixel in two regions is
 counted in both, and the table reports, per region, the part another region also holds

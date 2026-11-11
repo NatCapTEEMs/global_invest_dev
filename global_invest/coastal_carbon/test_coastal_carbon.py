@@ -277,11 +277,16 @@ def test_presence_area_by_zone_counts_a_shared_pixel_in_each_zone_and_once_as_ov
     assert sum(out['area_ha'].values()) == out['unique_ha'] + out['overlap_counted_ha']
 
 
+def _row_ha(top, cell, n_rows):
+    """Hectares per cell of n_rows rows of square cells below latitude top, as the seagrass pass computes them."""
+    return hb.get_area_of_pixel_column_from_center_lats(cell, top - cell * (np.arange(n_rows) + 0.5)) / 10_000.0
+
+
 def test_the_row_area_is_the_ellipsoid_area_pyproj_measures():
     geod = Geod(ellps='WGS84')
     cell = 0.000089831528412                         # the GlobalSeagrass pixel, about 10 m
     for top in (72.338455221235890, 30.0, 1e-4, -45.123):
-        rows = hb.ha_per_cell_rows(top, cell, 3)
+        rows = _row_ha(top, cell, 3)
         for k, hectares in enumerate(rows):
             upper, lower = top - k * cell, top - (k + 1) * cell
             m2, _ = geod.polygon_area_perimeter([0, cell, cell, 0], [upper, upper, lower, lower])
@@ -321,7 +326,7 @@ def test_seagrass_tile_pass_assigns_by_centre_and_reports_the_overlap(tmp_path, 
     tiles, regions = _seagrass_fixture(tmp_path)
     area, shared, diagnostic = cct._seagrass_tile_area(os.path.join(tiles, 'tile_a.tif'), regions, ID)
 
-    row_ha = hb.ha_per_cell_rows(0.008, 0.001, 8)
+    row_ha = _row_ha(0.008, 0.001, 8)
     assert area[1] == pytest.approx(row_ha[0] + row_ha[5])                # A: (0,3) and (5,0)
     assert area[2] == pytest.approx(row_ha[0] + row_ha[1] + row_ha[7])    # B: (0,3), (1,4), (7,7)
     assert 3 not in area                 # C reaches into (7,7) but does not hold its centre
@@ -342,7 +347,7 @@ def test_seagrass_area_task_writes_every_region_and_leaves_no_partial_file(tmp_p
     cct.seagrass_area_within_countries(p)
 
     area = pd.read_csv(tmp_path / 'seagrass_area_by_countries2019.csv').set_index(ID)
-    row_ha = hb.ha_per_cell_rows(0.008, 0.001, 8)
+    row_ha = _row_ha(0.008, 0.001, 8)
     assert sorted(area.index) == [1, 2, 3, 4]                  # every region, zero included
     assert area.loc[2, 'area_ha'] == pytest.approx(row_ha[0] + row_ha[1] + row_ha[7])
     assert area.loc[2, 'overlap_ha'] == pytest.approx(row_ha[0])

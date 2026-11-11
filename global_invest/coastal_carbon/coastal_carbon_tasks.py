@@ -540,6 +540,8 @@ def _seagrass_tile_area(tif_path, gdf_regions, id_col):
         if src.crs.to_epsg() != 4326 or src.transform.e != -cell_degrees:
             raise ValueError(f'{os.path.basename(tif_path)}: the area per row needs square cells in '
                              f'EPSG:4326, found {src.crs} with cells {src.res}')
+        row_ha = hb.get_area_of_pixel_column_from_center_lats(
+            cell_degrees, src.bounds.top - cell_degrees * (np.arange(src.height) + 0.5)) / 10000.0
         tile_box = box(*src.bounds)
         regions = gdf_regions.iloc[gdf_regions.sindex.query(tile_box, predicate='intersects')]
         geometries = shapely.intersection(regions.geometry.to_numpy(), tile_box)
@@ -575,8 +577,7 @@ def _seagrass_tile_area(tif_path, gdf_regions, id_col):
                             fill=0, dtype='uint8', all_touched=False).astype(bool)
 
                 block = ccf.presence_area_by_zone(
-                    presence, masks,
-                    hb.ha_per_cell_rows(bounds[3], cell_degrees, presence.shape[0])[:, None])
+                    presence, masks, row_ha[row_off:row_off + presence.shape[0], None])
                 for region_id, hectares in block['area_ha'].items():
                     area_ha[region_id] += hectares
                     shared_ha[region_id] += block['shared_ha'][region_id]
