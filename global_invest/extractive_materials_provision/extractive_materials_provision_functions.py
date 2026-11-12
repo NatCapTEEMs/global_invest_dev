@@ -171,8 +171,8 @@ def read_mineral_values(path: str):
 
 
 def read_GDP_values(path: str):
-    """Read World Bank GDP in current local currency units."""
-    return _read_wdi_indicator(path, "GDP_current_LCU")
+    """Read World Bank GDP in current US dollars (NY.GDP.MKTP.CD)."""
+    return _read_wdi_indicator(path, "GDP_current_USD")
 
 
 def read_GDP_deflator_values(path: str):
@@ -180,9 +180,40 @@ def read_GDP_deflator_values(path: str):
     return _read_wdi_indicator(path, "GDP_deflator")
 
 
-def read_PPP_values(path: str):
-    """Read World Bank GDP PPP conversion factors in LCU per international dollar."""
-    return _read_wdi_indicator(path, "PA.NUS.PPP")
+def get_us_deflator_factors(df_deflator: pd.DataFrame, base_year: int):
+    """US GDP-deflator ratios for each year, rebased to base_year USD.
+
+    Uses the USA series only, regardless of the country whose rents are valued.
+    Missing/invalid source-year observations stay missing rather than becoming zero.
+    """
+    us = df_deflator.loc[
+        df_deflator["Country Code"].eq("USA"), ["year", "GDP_deflator"]
+    ].copy()
+    base = us.loc[us["year"].eq(base_year), "GDP_deflator"]
+    if len(base) != 1 or pd.isna(base.iloc[0]) or base.iloc[0] <= 0:
+        raise ValueError(f"Valid US GDP deflator for {base_year} is required.")
+    if us["year"].duplicated().any():
+        raise ValueError("US GDP deflator contains duplicate years.")
+    us["us_deflator_factor"] = (
+        base.iloc[0] / us["GDP_deflator"].where(us["GDP_deflator"] > 0)
+    )
+    return us[["year", "us_deflator_factor"]]
+
+
+def calculate_mineral_gep_2019_usd(df: pd.DataFrame):
+    """Mineral rents times current USD GDP, rebased by US deflator, times 0.49."""
+    for column in ("mineral_rent_percent", "GDP_current_USD", "us_deflator_factor"):
+        df[column] = pd.to_numeric(df[column], errors="coerce")
+    if (df["GDP_current_USD"].dropna() < 0).any():
+        raise ValueError("GDP_current_USD cannot be negative.")
+    if (df["us_deflator_factor"].dropna() <= 0).any():
+        raise ValueError("US deflator factors must be positive.")
+    return (
+        df["mineral_rent_percent"] / 100
+        * df["GDP_current_USD"]
+        * df["us_deflator_factor"]
+        * 0.49
+    )
 
 def group_countries(df: pd.DataFrame):
     """
