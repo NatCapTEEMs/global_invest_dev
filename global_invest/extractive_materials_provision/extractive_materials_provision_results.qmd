@@ -57,7 +57,7 @@ $$
 Calculating nature’s contribution to the value of mining production utilizes λ (lambda coefficient) to measure the share attributed to nature’s contributions. The share of nature’s contributions to mineral production resource rents is calibrated to the nonrenewable natural capital assets of metals and minerals, such as bauxite, copper, gold, iron ore, lead, nickel, phosphate, silver, tin, cobalt, molybdenum, platinum, and lithium. The values are reported in real 2019 US dollars and calculated using the Törnqvist volume index method.
 The CWON methodology aligns with the System of National Accounts and the System of Environmental-Economic Accounting in estimating the resource rents.
 
-The calculation uses GDP in current USD and the U.S. GDP-deflator ratio (2019 / year t) to express all years in constant 2019 USD. No PPP conversion is applied.
+The calculation uses GDP in current USD and the U.S. GDP-deflator ratio (2019 / year t) to express all years in constant 2019 USD.
 
 
 ## 3. Validation
