@@ -71,7 +71,7 @@ from IPython.display import Image, display
 
 # Service label for this QMD
 service_label = 'coastal_protection'
-country_value_column = f'Value ({p.base_year} int$)'
+country_value_column = f'Value ({p.base_year} USD)'
 
 # Load the results
 for k, v in p.results[service_label].items():
@@ -108,14 +108,6 @@ for k, v in p.results[service_label].items():
         hb.df_write(
             p.gep_by_country_base_year_table,
             os.path.join(result_dir, 'gep_by_country_base_year_table.csv'),
-        )
-        fallback_table_path = os.path.join(
-            result_dir, 'missing_coral_reef_values.csv'
-        )
-        p.missing_coral_reef_values_table = (
-            hb.df_read(fallback_table_path)
-            if os.path.exists(fallback_table_path)
-            else pd.DataFrame()
         )
         for group_column, attribute_name in groupings.items():
             if group_column in df.columns:
@@ -254,54 +246,4 @@ display(p.gep_by_subregion_base_year_table)
 ## GEP by Country in `{python} p.base_year`
 ```{python}
 display(p.gep_by_country_base_year_table)
-```
-
-## Countries with Missing Coral Reef Values
-```{python}
-missing_coral_display = p.missing_coral_reef_values_table.rename(
-    columns={
-        'iso3_r250_name': 'Country',
-        'value_2011_usd': 'Value (2011 $)',
-        'value_2019_int_dollar': 'Value (2019 int$)',
-        'missing_components': 'Missing components',
-    }
-)
-missing_coral_display['Missing components'] = (
-    missing_coral_display['Missing components']
-    .fillna('NaN')
-    .str.replace('; ', '<br>', regex=False)
-)
-display(
-    missing_coral_display.style
-    .hide(axis='index')
-    .format(
-        {
-            'Value (2011 $)': '{:,.2f}',
-            'Value (2019 int$)': '{:,.2f}',
-        },
-        na_rep='NaN',
-        escape=None,
-    )
-    .set_properties(
-        subset=['Missing components'],
-        **{
-            'white-space': 'normal',
-            'word-wrap': 'break-word',
-            'height': '3em',
-            'vertical-align': 'top',
-        },
-    )
-    .set_table_styles(
-        [
-            {
-                'selector': 'th',
-                'props': [('white-space', 'normal')],
-            },
-            {
-                'selector': 'td',
-                'props': [('vertical-align', 'top')],
-            },
-        ]
-    )
-)
 ```
