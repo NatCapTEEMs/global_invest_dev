@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import logging
+import math
 import pandas as pd
 
 
@@ -252,7 +253,7 @@ def get_us_inflation_factor(path, source_year: int, target_year: int):
 
 def convert_usd_to_target_year(value_usd, inflation_factor):
     """Adjust USD values for US inflation; retain genuine zeros and missing data."""
-    if not pd.notna(inflation_factor) or inflation_factor <= 0:
+    if not math.isfinite(inflation_factor) or inflation_factor <= 0:
         raise ValueError('Inflation factor must be positive and finite.')
     return pd.to_numeric(value_usd, errors='coerce') * inflation_factor
 
