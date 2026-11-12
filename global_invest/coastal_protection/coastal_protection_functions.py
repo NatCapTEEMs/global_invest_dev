@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import logging
+import math
 import pandas as pd
 
 
@@ -241,22 +242,20 @@ def merge_world_bank_factors(df: pd.DataFrame, *factor_dfs):
     return df
 
 
-def convert_usd_to_2019_int_dollars(
-    value_usd, exchange_rate, ppp_factor, deflator_factor=None
-):
-    """Convert source-year USD to 2019 LCU and 2019 PPP-adjusted international dollars.
+def get_us_inflation_factor(path, source_year: int, target_year: int):
+    """Return the US GDP-deflator ratio for adjusting USD into target-year USD."""
+    factors = get_gdp_deflator_factor(path, source_year, target_year)
+    us = factors.loc[factors['Country Code'].eq('USA'), 'deflator_factor']
+    if len(us) != 1 or pd.isna(us.iloc[0]) or us.iloc[0] <= 0:
+        raise ValueError('Valid United States GDP deflators are required.')
+    return float(us.iloc[0])
 
-    ``exchange_rate`` must match source-value year.  Supply ``deflator_factor`` only
-    when source LCU must first be expressed in 2019 LCU.  Returns source-year LCU,
-    2019 LCU, and 2019 international dollars, in that order.
-    """
-    source_lcu = _multiply_preserve_zeros(value_usd, exchange_rate)
-    target_lcu = source_lcu
-    if deflator_factor is not None:
-        target_lcu = _multiply_preserve_zeros(source_lcu, deflator_factor)
-    int_dollar = _divide_preserve_zeros(target_lcu, ppp_factor)
-    return source_lcu, target_lcu, int_dollar
 
+def convert_usd_to_target_year(value_usd, inflation_factor):
+    """Adjust USD values for US inflation; retain genuine zeros and missing data."""
+    if not math.isfinite(inflation_factor) or inflation_factor <= 0:
+        raise ValueError('Inflation factor must be positive and finite.')
+    return pd.to_numeric(value_usd, errors='coerce') * inflation_factor
 
 def group_sum_preserving_nan(df: pd.DataFrame, groupby_cols, value_cols):
     """Aggregate values without turning all-missing groups into zero."""
