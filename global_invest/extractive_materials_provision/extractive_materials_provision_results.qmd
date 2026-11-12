@@ -18,19 +18,17 @@ format:
 # - World Bank WDI API downloads:
 #   * NY.GDP.MINR.RT.ZS: Mineral rents (% of GDP)
 #     https://api.worldbank.org/v2/en/indicator/NY.GDP.MINR.RT.ZS?downloadformat=csv
-#   * NY.GDP.MKTP.CN: GDP (current LCU); unit = current local currency units
-#     https://api.worldbank.org/v2/en/indicator/NY.GDP.MKTP.CN?downloadformat=csv
-#   * PA.NUS.PPP: PPP conversion factor; unit = LCU per international $
-#     https://api.worldbank.org/v2/en/indicator/PA.NUS.PPP?downloadformat=csv
+#   * NY.GDP.MKTP.CD: GDP (current US$); unit = current USD
+#     https://api.worldbank.org/v2/en/indicator/NY.GDP.MKTP.CD?downloadformat=csv
 #   * NY.GDP.DEFL.ZS: GDP deflator
 #     https://api.worldbank.org/v2/en/indicator/NY.GDP.DEFL.ZS?downloadformat=csv
 # - API files are cached in p.input_dir/world_bank/ (project input/world_bank/).
 # - If API download fails, code uses p.base_data_dir/extractive_materials_provision/.
 # - For country c and year t, calculation is:
 #   GEP[c,t] = mineral_rent_percent[c,t] / 100
-#              * GDP_current_LCU[c,t] / PA.NUS.PPP[c,t]
-#              * GDP_deflator[c,p.base_year] / GDP_deflator[c,t] * 0.49
-# - Output is fixed p.base_year international dollars; p.base_year is set above.
+#              * GDP_current_USD[c,t]
+#              * US_GDP_deflator[p.base_year] / US_GDP_deflator[t] * 0.49
+# - Output is constant p.base_year USD; p.base_year is set above.
 -->
 
 # Global GEP Extractive Materials Provision
@@ -50,7 +48,7 @@ $$
 
 The value added of mining production is calculated as  (resource rents). We use the mineral rents data by the Changing Wealth of Nations (CWON), the World Bank (2024).
 Mineral rents are the difference between the value of production for a stock of minerals at world prices and their total costs of production. Minerals included in the calculation are tin, gold, lead, zinc, iron, copper, nickel, silver, bauxite, and phosphate. The resource rent is calculated as the difference between revenues from extraction, the cost of extraction from intermediate inputs, labor, and the user cost of produced capital used in the extraction process. This indicator is expressed in percent of GDP (World Bank, 2024).
-Gross domestic product is the value of final goods and services earned in an economic territory during an accounting period. This indicator is expressed in 2019 international dollars (World Bank, 2024).
+Gross domestic product is the value of final goods and services produced in an economic territory during an accounting period. We use World Bank GDP in current US dollars (NY.GDP.MKTP.CD), adjusted to constant 2019 USD using the U.S. GDP deflator.
 
 $$
 \theta = \text{Mineral rents (\%)} \times \text{Real GDP (\$)}
@@ -59,7 +57,7 @@ $$
 Calculating nature’s contribution to the value of mining production utilizes λ (lambda coefficient) to measure the share attributed to nature’s contributions. The share of nature’s contributions to mineral production resource rents is calibrated to the nonrenewable natural capital assets of metals and minerals, such as bauxite, copper, gold, iron ore, lead, nickel, phosphate, silver, tin, cobalt, molybdenum, platinum, and lithium. The values are reported in real 2019 US dollars and calculated using the Törnqvist volume index method.
 The CWON methodology aligns with the System of National Accounts and the System of Environmental-Economic Accounting in estimating the resource rents.
 
-The calculation uses the GDP PPP conversion factor and GDP deflator to express each year in fixed base-year international dollars.
+The calculation uses GDP in current USD and the U.S. GDP-deflator ratio (2019 / year t) to express all years in constant 2019 USD. No PPP conversion is applied.
 
 
 ## 3. Validation
@@ -136,7 +134,7 @@ from IPython.display import Image, display
 
 # Service label for this QMD
 service_label = 'extractive_materials_provision'
-gep_display_label = f'GEP ({p.base_year} int$)'
+gep_display_label = f'GEP ({p.base_year} USD)'
 
 
 def format_gep_table(table, group_column, group_label):
@@ -247,7 +245,7 @@ for k, v in p.results[service_label].items():
         sm = plt.cm.ScalarMappable(cmap='YlGn', norm=norm)
         sm._A = []
         cbar = fig.colorbar(sm, ax=ax, orientation='vertical', fraction=0.03, pad=0.02)
-        cbar.set_label(f"Gross Economic Product (GEP), {p.base_year} int$")
+        cbar.set_label(f"Gross Economic Product (GEP), {p.base_year} USD")
         cbar.ax.yaxis.set_major_formatter(mpl.ticker.FuncFormatter(lambda x, _: f'{int(x):,}'))
 
         if missing_mask.any():
@@ -278,14 +276,14 @@ for k, v in p.results[service_label].items():
         plt.plot(p.gep_by_year_table['year'], p.gep_by_year_table['Value'], marker='o')
         plt.title('GEP by Year')  
         plt.xlabel('Year')
-        plt.ylabel(f'Gross Economic Product (GEP), {p.base_year} int$')
+        plt.ylabel(f'Gross Economic Product (GEP), {p.base_year} USD')
         plt.grid(True)
         plt.savefig(os.path.join(p.intermediate_dir, service_label, 'gep_result', 'gep_by_year_plot.png'), dpi=300)
         plt.close()
 
 ```
 
-In `{python} p.base_year`, total extractive materials provision is `{python} f"{total_extractive_materials_provision_value:,.2f}"` (`{python} p.base_year` int$). We then disaggregate this total by income group, region, continent, and country before presenting GEP over time.
+In `{python} p.base_year`, total extractive materials provision is `{python} f"{total_extractive_materials_provision_value:,.2f}"` (`{python} p.base_year` USD). We then disaggregate this total by income group, region, continent, and country before presenting GEP over time.
 
 ```{python}
 # Display the GEP by income group table   
