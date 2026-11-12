@@ -11,8 +11,7 @@ from global_invest.coastal_protection import coastal_protection_functions
 SERVICE_LABEL = 'coastal_protection'
 COUNTRY_OUTPUT_NAME = 'gep_by_country_base_year.csv'
 YEAR_OUTPUT_NAME = 'gep_by_year.csv'
-CORAL_FALLBACK_OUTPUT_NAME = 'missing_coral_reef_values.csv'
-COUNTRY_VALUE_COLUMN = 'Value (2019 int$)'
+COUNTRY_VALUE_COLUMN = 'Value (2019 USD)'
 
 COUNTRY_INFO_COLUMNS = [
     'iso3_r250_id', 'iso3_r250_label', 'iso3_r250_name',
@@ -22,15 +21,11 @@ COUNTRY_INFO_COLUMNS = [
 ]
 MANGROVE_OUTPUT_COLUMNS = [
     'mangrove_value_2019_usd',
-    'mangrove_value_2019_lcu',
-    'mangrove_value_2019_int_dollar',
     'coastal_protection_gep_mangrove',
 ]
 CORAL_OUTPUT_COLUMNS = [
     'coral_reef_value_2011_usd',
-    'coral_reef_value_2011_lcu',
-    'coral_reef_value_2019_lcu',
-    'coral_reef_value_2019_int_dollar',
+    'coral_reef_value_2019_usd',
     'coastal_protection_gep_coral_reef',
 ]
 NUMERIC_COUNTRY_OUTPUT_COLUMNS = [
@@ -50,17 +45,8 @@ def coastal_protection(p):
     p.coral_reef_ref_path = os.path.join(
         data_dir, 'coral_reefs_annual_expected_benefit_nfamara.xlsx'
     )
-    p.wb_exchange_rate_ref_path = os.path.join(
-        data_dir, 'API_PA.NUS.FCRF_DS2_en_csv_v2_32.csv'
-    )
-    p.wb_ppp_ref_path = os.path.join(
-        data_dir, 'API_PA.NUS.PPP_DS2_en_csv_v2_38116.csv'
-    )
     p.wb_deflator_ref_path = os.path.join(
         data_dir, 'API_NY.GDP.DEFL.ZS_DS2_en_csv_v2_24026.csv'
-    )
-    p.treasury_exchange_rate_fallback_path = os.path.join(
-        data_dir, 'treasury_exchange_rate_fallbacks.csv'
     )
     # Compatibility alias for callers using the former attribute name.
     p.df_gdp_inflation_deflator_path = p.wb_deflator_ref_path
@@ -91,22 +77,10 @@ def _coerce_numeric_output_columns(df, columns):
 
 def _country_outputs_have_current_schema(country_output, geopackage_output):
     """Check whether cached country outputs use current columns and total rule."""
-    fallback_output = os.path.join(
-        os.path.dirname(os.path.dirname(country_output)),
-        'gep_result', CORAL_FALLBACK_OUTPUT_NAME,
-    )
-    if not os.path.exists(fallback_output):
-        return False
     try:
         country_df = hb.df_read(country_output)
         country_gdf = hb.read_vector(geopackage_output)
-        fallback_df = hb.df_read(fallback_output)
     except Exception:
-        return False
-    if list(fallback_df.columns) != [
-        'iso3_r250_name', 'value_2011_usd',
-        'value_2019_int_dollar', 'missing_components',
-    ]:
         return False
 
     component_columns = [
@@ -150,7 +124,7 @@ def _country_outputs_have_current_schema(country_output, geopackage_output):
 
 
 def gep_calculation(p):
-    """Convert mangrove and coral-reef values to 2019 PPP-adjusted int$."""
+    """Harmonize mangrove and coral-reef values in 2019 USD."""
     service_results = p.results.setdefault(SERVICE_LABEL, {})
     # Match crop_provision: calculation outputs live in current task directory.
     country_output = os.path.join(p.cur_dir, COUNTRY_OUTPUT_NAME)
@@ -175,95 +149,29 @@ def gep_calculation(p):
     base_year = p.base_year
     coral_value_year = p.coral_reef_value_year
 
-    # Read source values once. Exchange-rate data serves both source years.
+    # Read source monetary values (mangrove in 2019 USD; coral in 2011 USD).
     df_mangrove_value = coastal_protection_functions.read_mangrove_values(
         p.cwon_input_ref_path
     )
     df_coral_reef_value = coastal_protection_functions.read_coral_reef_values(
         p.coral_reef_ref_path
     )
-    df_fx = coastal_protection_functions.read_world_bank_year_values(
-        p.wb_exchange_rate_ref_path,
-        [coral_value_year, base_year],
-        'fx_lcu_per_usd',
-    )
-    treasury_fx_fallbacks = coastal_protection_functions.read_exchange_rate_fallbacks(
-        p.treasury_exchange_rate_fallback_path,
-        [coral_value_year, base_year],
-    )
-    df_fx = coastal_protection_functions.apply_exchange_rate_fallbacks(
-        df_fx, treasury_fx_fallbacks
-    )
-    df_fx = (
-        df_fx.pivot_table(
-            index='Country Code',
-            columns='year',
-            values='fx_lcu_per_usd',
-            aggfunc='first',
-        )
-        .rename(columns={
-            coral_value_year: 'fx_source_year_lcu_per_usd',
-            base_year: 'fx_base_year_lcu_per_usd',
-        })
-        .rename_axis(columns=None)
-        .reset_index()
-    )
-    # Mangrove values are already in 2019 USD; retain existing latest-prior
-    # PPP behavior for this separate 2019-USD source.
-    df_mangrove_ppp = coastal_protection_functions.read_world_bank_latest_values(
-        p.wb_ppp_ref_path,
-        base_year,
-        'ppp_base_year_lcu_per_int_dollar',
-    )
-    # Coral values are in 2011 USD. Use only the requested 2019 PPP observation;
-    # missing PPP is handled below with deflated 2011 USD instead of prior PPP.
-    df_coral_ppp = coastal_protection_functions.read_world_bank_year_values(
-        p.wb_ppp_ref_path,
-        base_year,
-        'ppp_base_year_lcu_per_int_dollar',
-    ).drop(columns='year')
-    df_deflator = coastal_protection_functions.get_gdp_deflator_factor(
+    us_inflation_factor = coastal_protection_functions.get_us_inflation_factor(
         p.wb_deflator_ref_path, coral_value_year, base_year
     )
-    df_deflator['deflator_fallback_used'] = df_deflator[
-        'deflator_factor'
-    ].isna()
-    world_deflator_factor = df_deflator['deflator_factor'].mean()
-    if pd.isna(world_deflator_factor):
-        raise ValueError('No usable World Bank GDP-deflator factors found.')
-    df_deflator['deflator_factor'] = df_deflator[
-        'deflator_factor'
-    ].fillna(world_deflator_factor)
 
-    # Mangrove: 2019 USD -> 2019 LCU -> 2019 int$.
+    # Mangrove values are already 2019 USD.
     df_mangrove = _merge_source_values(
         p.gdf_countries, df_mangrove_value, 'ee_r264_label', base_year
     )
-    df_mangrove = coastal_protection_functions.merge_world_bank_factors(
-        df_mangrove, df_fx, df_mangrove_ppp
-    )
-    _, mangrove_lcu, mangrove_int_dollar = (
-        coastal_protection_functions.convert_usd_to_2019_int_dollars(
-            df_mangrove['mangrove_value_2019_usd'],
-            df_mangrove['fx_base_year_lcu_per_usd'],
-            df_mangrove['ppp_base_year_lcu_per_int_dollar'],
-        )
-    )
-    df_mangrove['mangrove_value_2019_lcu'] = mangrove_lcu
-    df_mangrove['mangrove_value_2019_int_dollar'] = mangrove_int_dollar
     df_mangrove = _group_service_values(
-        df_mangrove,
-        [
-            'mangrove_value_2019_usd',
-            'mangrove_value_2019_lcu',
-            'mangrove_value_2019_int_dollar',
-        ],
+        df_mangrove, ['mangrove_value_2019_usd']
     )
     df_mangrove['coastal_protection_gep_mangrove'] = df_mangrove[
-        'mangrove_value_2019_int_dollar'
+        'mangrove_value_2019_usd'
     ]
 
-    # Coral: 2011 USD -> 2011 LCU -> 2019 LCU -> 2019 int$.
+    # Coral: 2011 USD -> 2019 USD using the US GDP deflator.
     df_coral = _merge_source_values(
         p.gdf_countries, df_coral_reef_value, 'ee_r264_name', coral_value_year
     )
@@ -277,100 +185,19 @@ def gep_calculation(p):
         .drop_duplicates(subset=['iso3_r250_label', 'year', 'coral_reef_value'])
         .drop(columns='_primary_correspondence')
     )
-    df_coral = coastal_protection_functions.merge_world_bank_factors(
-        df_coral, df_fx, df_deflator, df_coral_ppp
-    )
-    treasury_fallback_codes = set(
-        treasury_fx_fallbacks['Country Code'].astype(str)
-    )
-    df_coral['treasury_fx_fallback_used'] = df_coral[
-        'ee_r264_label'
-    ].isin(treasury_fallback_codes)
-    missing_deflator = (
-        df_coral['deflator_factor'].isna()
-        | df_coral['deflator_fallback_used'].fillna(False)
-    )
-    df_coral['deflator_fallback_used'] = missing_deflator
-    df_coral['deflator_factor'] = df_coral['deflator_factor'].fillna(
-        world_deflator_factor
-    )
     df_coral['coral_reef_value_2011_usd'] = df_coral['coral_reef_value']
-    coral_source_lcu, coral_target_lcu, coral_int_dollar = (
-        coastal_protection_functions.convert_usd_to_2019_int_dollars(
-            df_coral['coral_reef_value_2011_usd'],
-            df_coral['fx_source_year_lcu_per_usd'],
-            df_coral['ppp_base_year_lcu_per_int_dollar'],
-            df_coral['deflator_factor'],
+    df_coral['coral_reef_value_2019_usd'] = (
+        coastal_protection_functions.convert_usd_to_target_year(
+            df_coral['coral_reef_value_2011_usd'], us_inflation_factor
         )
     )
-    # If 2019 PPP is missing, report the original 2011 USD converted to 2019 USD
-    # using the country deflator, or the world-average deflator when unavailable.
-    direct_usd_deflated = (
-        df_coral['coral_reef_value_2011_usd']
-        * df_coral['deflator_factor']
-    )
-    missing_ppp = df_coral[
-        'ppp_base_year_lcu_per_int_dollar'
-    ].isna()
-    df_coral['ppp_direct_usd_used'] = missing_ppp
-    coral_int_dollar = coral_int_dollar.fillna(direct_usd_deflated)
-    df_coral['coral_reef_value_2019_int_dollar'] = coral_int_dollar
-
-    def _missing_components(row):
-        reasons = []
-        if row['treasury_fx_fallback_used']:
-            reasons.append('PA.NUS.FCRF (2011)')
-        if row['deflator_fallback_used']:
-            reasons.append('NY.GDP.DEFL.ZS (2011-2019)')
-        if row['ppp_direct_usd_used']:
-            reasons.append('PA.NUS.PPP (2019)')
-        return '; '.join(reasons)
-
-    df_coral['missing_components'] = df_coral.apply(
-        _missing_components, axis=1
-    )
-    fallback_columns = [
-        'iso3_r250_name',
-        'coral_reef_value_2011_usd', 'coral_reef_value_2019_int_dollar',
-        'missing_components',
-    ]
-    coral_fallback_table = df_coral.loc[
-        df_coral['missing_components'].ne(''), fallback_columns
-    ].rename(columns={
-        'coral_reef_value_2011_usd': 'value_2011_usd',
-        'coral_reef_value_2019_int_dollar': 'value_2019_int_dollar',
-    })
-    coral_fallback_table = coral_fallback_table.sort_values('iso3_r250_name')
-    coral_fallback_table = _coerce_numeric_output_columns(
-        coral_fallback_table,
-        ['value_2011_usd', 'value_2019_int_dollar'],
-    )
-    fallback_output_path = os.path.join(
-        p.intermediate_dir, SERVICE_LABEL, 'gep_result',
-        CORAL_FALLBACK_OUTPUT_NAME,
-    )
-    hb.create_directories(fallback_output_path)
-    hb.df_write(coral_fallback_table, fallback_output_path)
-    hb.log(
-        f'Coral fallback factors used: Treasury FX rows={len(treasury_fx_fallbacks)}, '
-        f'world-average deflator rows={missing_deflator.sum()}, '
-        f'direct-USD-deflated rows={missing_ppp.sum()}.'
-    )
-    df_coral['coral_reef_value_2011_lcu'] = coral_source_lcu
-    df_coral['coral_reef_value_2019_lcu'] = coral_target_lcu
-    df_coral['coral_reef_value_2019_int_dollar'] = coral_int_dollar
     df_coral['year'] = base_year
     df_coral = _group_service_values(
         df_coral,
-        [
-            'coral_reef_value_2011_usd',
-            'coral_reef_value_2011_lcu',
-            'coral_reef_value_2019_lcu',
-            'coral_reef_value_2019_int_dollar',
-        ],
+        ['coral_reef_value_2011_usd', 'coral_reef_value_2019_usd'],
     )
     df_coral['coastal_protection_gep_coral_reef'] = df_coral[
-        'coral_reef_value_2019_int_dollar'
+        'coral_reef_value_2019_usd'
     ]
 
     # Missing both components means missing total. A missing single component counts as zero.
