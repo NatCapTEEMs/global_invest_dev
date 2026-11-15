@@ -620,14 +620,18 @@ def timber_provision_shock(p):
     # WHICH RESOURCE the shock measures (D17 'net_return' is the default; D19 'aboveground_carbon'
     # is the alternative proxy construction, set by the variant's caller).
     measure = getattr(p, 'timber_provision_resource_measure', None) or 'net_return'
-    if measure not in ('net_return', 'aboveground_carbon'):
-        raise ValueError("p.timber_provision_resource_measure must be 'net_return' or 'aboveground_carbon', got %r" % measure)
+    if measure not in ('net_return', 'aboveground_carbon', 'harvestable_flow'):
+        raise ValueError("p.timber_provision_resource_measure must be 'net_return', 'aboveground_carbon' or "
+                         "'harvestable_flow', got %r" % measure)
     value_path = getattr(p, 'timber_provision_value_raster_path', None)
     if measure == 'net_return' and not hb.path_exists(value_path):
         raise NameError('timber value raster not found at %s' % value_path)
     if es_shock_base_year not in p.scenario_lulc_paths.get(base_scenario, {}):
         raise NameError('timber needs the base-year map (%d) among the baseline maps to fix the eligible area' % es_shock_base_year)
     base_lulc_path = p.scenario_lulc_paths[base_scenario][es_shock_base_year]
+    if measure == 'harvestable_flow':
+        return _harvestable_flow_shock(p, base_scenario, scenarios, anchor_years, es_shock_base_year, zone_labels,
+                                       base_lulc_path)
     # Reuse the table when it was made from these very maps and settings; the per-map guards below
     # still cost minutes of verification, and a pass that finds the table must return in seconds.
     shock_maps = sorted({m for by_year in p.scenario_lulc_paths.values() for m in by_year.values()})
@@ -797,4 +801,310 @@ def timber_provision_shock(p):
     hb.log('  timber shock: %d rows, %d scenarios -> %s'
            % (len(out), out['scenario'].nunique() if rows else 0,
               p.timber_provision_shock_output_path))
+    return True
+
+
+# --- Age-aware harvestable flow (resource measure 'harvestable_flow') ----------------------------
+# Selected only by p.timber_provision_resource_measure = 'harvestable_flow'; the other measures and
+# the default never reach this code. Every setting below is required, set by the run that selects
+# the measure, and none has a default. The state chain runs inside timber_provision_shock, as the
+# aboveground-carbon rasters do, so it shares that task's scenario maps, base map and zones.
+#
+# The initial state is an input with this contract; no library task produces it, because building
+# it (forest types, ages, management, access) is project data:
+#   - one GeoTIFF on the run grid with six float32 bands in FOREST_STATE_BANDS order;
+#   - type: a forest_type_id of the growth table on every cell the base-year map calls forest, and 0
+#     on every other cell (the first step refuses any disagreement);
+#   - age and since_cut in years (finite on forest cells), stock in m3/ha within [0, vmax] of the
+#     type, managed and accessible as 0 or 1.
+
+HARVESTABLE_FLOW_SETTINGS = ('growth_parameters_path', 'initial_state_path', 'new_forest', 'harvest_rule',
+                             'recovery_rule', 'salvage_fraction', 'reference_flow')
+REFERENCE_FLOWS = ('base_map_first_interval',)
+REFERENCE_LABEL = 'base_map_reference'
+ZONE_QUANTITIES = ('forest_ha', 'timberland_open_ha', 'timberland_ha', 'opening_m3', 'growth_m3', 'harvest_m3', 'removed_m3',
+                   'salvage_m3', 'closing_m3', 'eligible_m3')
+
+
+def _harvestable_flow_settings(p):
+    """The measure's explicit choices, read from p. A missing one raises; nothing is filled in."""
+    missing = ['p.timber_provision_' + k for k in HARVESTABLE_FLOW_SETTINGS
+               if getattr(p, 'timber_provision_' + k, None) in (None, '')]
+    if missing:
+        raise NameError('the harvestable_flow measure needs %s; none of them has a default' % ', '.join(missing))
+    settings = {k: getattr(p, 'timber_provision_' + k) for k in HARVESTABLE_FLOW_SETTINGS}
+    if settings['reference_flow'] not in REFERENCE_FLOWS:
+        raise ValueError('timber_provision_reference_flow must be one of %s, got %r'
+                         % (REFERENCE_FLOWS, settings['reference_flow']))
+    if set(settings['new_forest']) != {'type', 'managed', 'accessible'}:
+        raise ValueError('timber_provision_new_forest must give exactly type, managed and accessible, got %r'
+                         % settings['new_forest'])
+    return settings
+
+
+def _advance_forest_state_raster(previous_path, lulc_path, ha_path, zone_ids_path, n_zones, n_years, settings,
+                                 params, out_path, base_lulc_path=None):
+    """One step of a scenario's forest-state chain on the run grid, block by block.
+
+    Reads the previous state raster (bands FOREST_STATE_BANDS), advances it n_years to the map at
+    lulc_path, writes the new state and returns the per-zone totals of the step. A map cell without
+    land-cover data is not a conversion: the cell keeps its forest status. When base_lulc_path is
+    given (the step that starts from the configured initial state), the state must type exactly the
+    cells the base map calls forest, or the step refuses.
+
+    Returns:
+        pd.DataFrame: region_id plus ZONE_QUANTITIES, in ha and m3.
+    """
+    paths = [previous_path, lulc_path, ha_path, zone_ids_path] + ([base_lulc_path] if base_lulc_path else [])
+    sources = [rasterio.open(path) for path in paths]
+    previous, lulc, ha, zones = sources[:4]
+    if previous.count != len(tp.FOREST_STATE_BANDS):
+        raise ValueError('%s has %d bands, the forest state needs %d (%s)'
+                         % (previous_path, previous.count, len(tp.FOREST_STATE_BANDS), ', '.join(tp.FOREST_STATE_BANDS)))
+    _assert_one_grid({os.path.basename(s.name): (s.shape, s.transform, s.crs) for s in sources})
+    totals = np.zeros((len(ZONE_QUANTITIES), n_zones + 1))
+    mismatch = np.zeros(3, dtype=np.int64)
+    worst_residual = 0.0
+    profile = dict(previous.profile, count=len(tp.FOREST_STATE_BANDS), dtype='float32', nodata=None)
+    partial = out_path + '.partial.tif'
+    try:
+        with rasterio.open(partial, 'w', **profile) as out:
+            for _, window in previous.block_windows(1):
+                bands = previous.read(window=window).astype('float64')
+                state = dict(zip(tp.FOREST_STATE_BANDS, bands))
+                state['managed'], state['accessible'] = state['managed'] > 0, state['accessible'] > 0
+                if base_lulc_path:
+                    base_map = sources[4].read(1, window=window)
+                    known = (base_map != sources[4].nodata) if sources[4].nodata is not None else np.ones(base_map.shape, dtype=bool)
+                    base_forest = np.isin(base_map, [tp.SEALS7_FOREST_ID])
+                    vmax = np.full(base_map.shape, np.inf)
+                    for code, prm in params.items():
+                        vmax[state['type'] == code] = prm['vmax_m3_per_ha'] * (1 + 1e-6)   # float32 storage
+                    valid = (np.isfinite(state['age']) & (state['age'] >= 0) & np.isfinite(state['since_cut'])
+                             & (state['since_cut'] >= 0) & np.isfinite(state['stock']) & (state['stock'] >= 0)
+                             & (state['stock'] <= vmax))
+                    flags = np.isin(bands[4], (0, 1)) & np.isin(bands[5], (0, 1))
+                    mismatch += [int((known & base_forest & (state['type'] <= 0)).sum()),
+                                 int((known & ~base_forest & (state['type'] > 0)).sum()),
+                                 int(((state['type'] > 0) & ~valid).sum() + (~flags).sum())]
+                lulc_block = lulc.read(1, window=window)
+                unknown = (lulc_block == lulc.nodata) if lulc.nodata is not None else np.zeros(lulc_block.shape, dtype=bool)
+                forest_now = np.where(unknown, state['type'] > 0, np.isin(lulc_block, [tp.SEALS7_FOREST_ID]))
+                timberland_open = (state['type'] > 0) & state['managed'] & state['accessible']
+                new, flows = tp.advance_forest_state(state, n_years, forest_now, settings['new_forest'], params,
+                                                     settings['harvest_rule'], settings['recovery_rule'],
+                                                     float(settings['salvage_fraction']))
+                worst_residual = max(worst_residual, float(np.abs(tp.stock_ledger_residual(flows)).max(initial=0.0)))
+                out.write(np.stack([np.asarray(new[b], dtype='float32') for b in tp.FOREST_STATE_BANDS]), window=window)
+                cell_ha = ha.read(1, window=window).astype('float64')
+                cell_ha = np.where(np.isfinite(cell_ha) & (cell_ha > 0), cell_ha, 0.0)
+                zone = zones.read(1, window=window).astype(np.int64)
+                zone = np.where((zone > 0) & (zone <= n_zones), zone, 0).ravel()
+                forest = new['type'] > 0
+                quantities = (forest * cell_ha, timberland_open * cell_ha, (forest & new['managed'] & new['accessible']) * cell_ha,
+                              flows['opening'] * cell_ha, flows['growth'] * cell_ha, flows['harvest'] * cell_ha,
+                              flows['removed'] * cell_ha, flows['salvage'] * cell_ha, flows['closing'] * cell_ha,
+                              flows['eligible'] * cell_ha)
+                for i, quantity in enumerate(quantities):
+                    totals[i] += np.bincount(zone, weights=quantity.ravel(), minlength=n_zones + 1)
+    finally:
+        for s in sources:
+            s.close()
+    if mismatch.any():
+        os.remove(partial)
+        raise ValueError('the initial forest state breaks its contract: %d base-map forest cell(s) carry no forest '
+                         'type, %d typed cell(s) are not forest on the base map, and %d cell(s) have an invalid age, '
+                         'since_cut, stock or 0/1 flag. Build the initial state on the model\'s own base map; it is '
+                         'never relabelled here.' % tuple(mismatch))
+    if worst_residual > 1e-6:
+        os.remove(partial)
+        raise ValueError('forest stock ledger does not close: largest residual %.3g m3/ha' % worst_residual)
+    os.replace(partial, out_path)
+    table = pd.DataFrame(totals.T, columns=list(ZONE_QUANTITIES)).assign(region_id=np.arange(n_zones + 1))
+    return table[table['region_id'] > 0][['region_id'] + list(ZONE_QUANTITIES)]
+
+
+def _forest_state_chain(p, label, maps_by_year, start, ha_path, zone_ids_path, n_zones, settings, params,
+                        signed_settings, base_lulc_path):
+    """Advance the initial state through one scenario's maps, reusing a step only when its provenance matches.
+
+    Each step's signature holds the measure's settings, the growth table by content, the previous
+    state's digest (recorded when that state was written, never recomputed) and the step's map, cell
+    areas and zones by size and mtime. A change anywhere upstream therefore rebuilds every later
+    step, and the large rasters are not re-read to decide reuse.
+
+    Returns:
+        dict: year -> (per-zone table, interval length in years).
+    """
+    previous_path, previous_year, previous_identity = start
+    out = {}
+    for year in sorted(maps_by_year):
+        state_path = os.path.join(p.cur_dir, 'timber_forest_state_%s_%d.tif' % (label, year))
+        table_path = os.path.join(p.cur_dir, 'timber_harvestable_flow_by_zone_%s_%d.csv' % (label, year))
+        signature_path = state_path + '.signature.json'
+        signature = utilities._signature(
+            dict(signed_settings, scenario=label, year=int(year), previous_year=int(previous_year)),
+            {'previous_state': previous_identity,
+             'growth_parameters': utilities.file_fingerprint(settings['growth_parameters_path'])},
+            light_inputs=[maps_by_year[year], base_lulc_path, ha_path, zone_ids_path])
+        reason = utilities.outputs_reuse_reason([state_path, table_path], signature, signature_path)
+        if reason is None:
+            recorded = json.loads(open(signature_path, encoding='utf-8').read())['output']
+            if recorded['state'] != utilities.file_fingerprint(state_path, content=False):
+                reason = 'the state raster changed after it was written'
+            elif recorded['table'] != utilities.file_fingerprint(table_path):
+                reason = 'the zone table changed after it was written'
+        if reason is None:
+            table = hb.df_read(table_path)
+        else:
+            hb.log('  harvestable flow: %s %d computing because %s' % (label, year, reason))
+            if hb.path_exists(signature_path):
+                os.remove(signature_path)
+            table = _advance_forest_state_raster(previous_path, maps_by_year[year], ha_path, zone_ids_path, n_zones,
+                                                 int(year) - int(previous_year), settings, params, state_path,
+                                                 base_lulc_path if previous_path == settings['initial_state_path'] else None)
+            table.to_csv(table_path, index=False)
+            signature['output'] = {'sha256': utilities.sha256_file(state_path),
+                                   'state': utilities.file_fingerprint(state_path, content=False),
+                                   'table': utilities.file_fingerprint(table_path)}
+            utilities.write_outputs_signature(signature, signature_path)
+        recorded = json.loads(open(signature_path, encoding='utf-8').read())['output']
+        out[int(year)] = (table, int(year) - int(previous_year))
+        previous_path, previous_year = state_path, year
+        previous_identity = {'path': state_path, 'sha256': recorded['sha256']}
+    return out
+
+
+def _harvestable_flow_shock(p, base_scenario, scenarios, anchor_years, es_shock_base_year, zone_labels,
+                            base_lulc_path):
+    """The age-aware timber shock: per-hectare change in the harvest the forest state yields.
+
+    The fed column, shock_pct_v3, is 100 (f / f_ref - 1) with f the region's mean annual harvest
+    over the interval ending at the anchor year per hectare of the timberland (managed, accessible
+    forest) present during that interval, and f_ref the reference flow the setting names. A map
+    change takes effect at the anchor year, so the interval's timberland is the one it started
+    with. Only the per-hectare factor is fed, and the area and total factors are written beside
+    it; whether that keeps a forest-area change from entering twice depends on GTAP carrying the
+    same land change, which nothing here checks. This is an experimental construction, not a
+    calibrated aoall shock, and the annual values interpolate interval means between anchors. shock_pct and shock_pct_contemp compare the scenario with
+    the baseline scenario in the same year, shock_pct_fixedbase is that difference over f_ref, as
+    in the other measures. A region with no reference flow, no reference timberland, or no
+    timberland at an anchor has no defined factor and is declared, not shocked.
+    """
+    from global_invest.terrestrial_carbon import terrestrial_carbon_functions as tcf
+    settings = _harvestable_flow_settings(p)
+    params = tp.growth_parameters_from_table(hb.df_read(settings['growth_parameters_path']))
+    ha_path = getattr(p, 'ha_per_cell_10sec_path', None) or p.get_path(*utilities.HA_PER_CELL_10SEC_REF_PARTS)
+    ha_path = _aligned_to_reference(p, ha_path, base_lulc_path, 'ha_per_cell')
+    area_summary_path = os.path.join(p.cur_dir, 'timber_cell_area_by_zone.csv')
+    zone_ids_path = os.path.splitext(area_summary_path)[0] + '_zone_ids.tif'
+    zone_signature = utilities._signature({'id_column': p.terrestrial_carbon_shock_id_col},
+                                          {'boundary': utilities.file_fingerprint(p.region_boundary_path)},
+                                          light_inputs=[ha_path, base_lulc_path])
+    zone_signature_path = area_summary_path + '.signature.json'
+    if utilities.outputs_reuse_reason([area_summary_path, zone_ids_path], zone_signature, zone_signature_path) is not None:
+        # hazelbean reuses a zone-id raster it finds on disk, and the covered-zone cache follows it.
+        for stale in (zone_signature_path, area_summary_path, zone_ids_path, os.path.join(p.cur_dir, GRID_COVERED_ZONES)):
+            if hb.path_exists(stale):
+                os.remove(stale)
+        utilities.summarize_raster_by_region(ha_path, p.region_boundary_path, area_summary_path,
+                                             year=es_shock_base_year, id_column=p.terrestrial_carbon_shock_id_col)
+        utilities.write_outputs_signature(zone_signature, zone_signature_path)
+    n_zones = int(max(zone_labels))
+    signed_settings = {k: (v if k != 'growth_parameters_path' else os.path.basename(str(v))) for k, v in settings.items()}
+    signed_settings.update(measure='harvestable_flow', accounting='harvestable_flow_age_v1', base_year=es_shock_base_year)
+    start = (settings['initial_state_path'], es_shock_base_year,
+             utilities.file_fingerprint(settings['initial_state_path'], content=False))
+    chains = {REFERENCE_LABEL: _forest_state_chain(p, REFERENCE_LABEL, {anchor_years[0]: base_lulc_path}, start, ha_path,
+                                                   zone_ids_path, n_zones, settings, params, signed_settings, base_lulc_path)}
+    for scenario in dict.fromkeys([base_scenario] + list(scenarios)):
+        maps = {y: p.scenario_lulc_paths[scenario][y] for y in anchor_years}
+        chains[scenario] = _forest_state_chain(p, scenario, maps, start, ha_path, zone_ids_path, n_zones, settings,
+                                               params, signed_settings, base_lulc_path)
+
+    covered = _grid_covered_zones(p, area_summary_path)
+    zones_by_region = {}
+    for zone_id, (endw, reg) in zone_labels.items():
+        zones_by_region.setdefault(reg, []).append(zone_id)
+    in_scope = {reg: ids for reg, ids in zones_by_region.items() if covered is None or all(int(z) in covered for z in ids)}
+    declared = {reg: 'not fully covered by the run grid' for reg in zones_by_region if reg not in in_scope}
+
+    def regional(label, year):
+        table, n_years = chains[label][year]
+        by_zone = table.set_index('region_id')
+        return {reg: tuple(float(by_zone.reindex(ids)[c].sum()) / (n_years if c == 'harvest_m3' else 1)
+                           for c in ('harvest_m3', 'timberland_open_ha', 'forest_ha', 'closing_m3', 'timberland_ha'))
+                for reg, ids in in_scope.items()}
+    reference = regional(REFERENCE_LABEL, anchor_years[0])
+    all_years = list(range(es_shock_base_year, anchor_years[-1] + 1))
+    rows, side_by_side = [], []
+    for scenario in scenarios:
+        by_year = {y: regional(scenario, y) for y in anchor_years}
+        bau = {y: regional(base_scenario, y) for y in anchor_years}
+        for reg, ids in in_scope.items():
+            if reg in declared:
+                continue
+            flow_ref, area_ref = reference[reg][:2]
+            flow, area = (np.array([by_year[y][reg][i] for y in anchor_years]) for i in (0, 1))
+            f = tp.harvestable_flow_factors(flow, area, flow_ref, area_ref)
+            f_bau = tp.harvestable_flow_factors([bau[y][reg][0] for y in anchor_years],
+                                                [bau[y][reg][1] for y in anchor_years], flow_ref, area_ref)
+            vs_bau = tp.harvestable_flow_factors(flow, area, [bau[y][reg][0] for y in anchor_years],
+                                                 [bau[y][reg][1] for y in anchor_years])['per_ha_factor']
+            if not np.isfinite(f['per_ha_factor']).all():
+                declared[reg] = ('no defined per-hectare factor: reference flow %.6g m3/yr, reference timberland '
+                                 '%.6g ha, timberland at the anchors %s ha' % (flow_ref, area_ref, area.tolist()))
+                continue
+            v3 = 100.0 * (f['per_ha_factor'] - 1.0)
+            columns = {'shock_pct_v3': v3, 'shock_pct_fixedbase': 100.0 * (f['per_ha_factor'] - f_bau['per_ha_factor']),
+                       'shock_pct_contemp': 100.0 * (vs_bau - 1.0)}
+            annual = {c: (tcf.interpolate_annual_shock(all_years, anchor_years, v, es_shock_base_year)
+                          if np.isfinite(v).all() else [np.nan] * len(all_years)) for c, v in columns.items()}
+            for zone_id in ids:
+                endw = zone_labels[zone_id][0]
+                for i, year in enumerate(all_years):
+                    rows.append({'ENDW': endw, 'ACTS': p.terrestrial_carbon_shock_acts, 'REG': reg, 'scenario': scenario,
+                                 'year': year, 'shock_pct': annual['shock_pct_contemp'][i],
+                                 'shock_pct_fixedbase': annual['shock_pct_fixedbase'][i],
+                                 'shock_pct_contemp': annual['shock_pct_contemp'][i], 'shock_pct_v3': annual['shock_pct_v3'][i]})
+            for i, year in enumerate(anchor_years):
+                side_by_side.append({'scenario': scenario, 'REG': reg, 'year': year,
+                                     'forest_ha': by_year[year][reg][2], 'timberland_during_interval_ha': area[i],
+                                     'timberland_at_anchor_ha': by_year[year][reg][4],
+                                     'stock_m3': by_year[year][reg][3], 'harvest_m3_per_year': flow[i],
+                                     'reference_harvest_m3_per_year': flow_ref, 'reference_timberland_ha': area_ref,
+                                     'area_factor': f['area_factor'][i], 'per_ha_factor': f['per_ha_factor'][i],
+                                     'total_factor': f['total_factor'][i], 'per_ha_factor_vs_baseline_scenario': vs_bau[i],
+                                     'shock_pct_v3': v3[i]})
+    rows = [r for r in rows if r['REG'] not in declared]
+    side_by_side = [r for r in side_by_side if r['REG'] not in declared]
+    for reg in sorted(declared):
+        hb.log('  harvestable flow: %s declared, not shocked: %s' % (reg, declared[reg]))
+    ledger = pd.concat([table.assign(scenario=label, year=year, interval_years=n_years)
+                        for label, chain in chains.items() for year, (table, n_years) in chain.items()])
+    ledger['ledger_residual_m3'] = ledger['closing_m3'] - (ledger['opening_m3'] + ledger['growth_m3']
+                                                           - ledger['harvest_m3'] - ledger['removed_m3'])
+    ledger.to_csv(os.path.join(p.cur_dir, 'timber_harvestable_flow_ledger_by_zone.csv'), index=False)
+    pd.DataFrame(side_by_side).to_csv(os.path.join(p.cur_dir, 'timber_harvestable_flow_by_region.csv'), index=False)
+
+    out = pd.DataFrame(rows, columns=['ENDW', 'ACTS', 'REG', 'scenario', 'year', 'shock_pct', 'shock_pct_fixedbase',
+                                      'shock_pct_contemp', 'shock_pct_v3'])
+    out = utilities.filter_to_model_domain(out, p.timber_provision_shock_output_path, 'timber_provision', log=hb.log)
+    utilities.assert_shock_table_sound(out, scenarios, 'timber_provision', column='shock_pct_v3')
+    out['timber_resource_measure'] = 'harvestable_flow'
+    out['timber_provision_accounting'] = 'harvestable_flow_age_v1'
+    out['harvest_basis'] = settings['harvest_rule']
+    out['reference_flow'] = settings['reference_flow']
+    shock_signature = os.path.join(os.path.dirname(p.timber_provision_shock_output_path), TIMBER_SHOCK_SIGNATURE)
+    if hb.path_exists(shock_signature):
+        os.remove(shock_signature)
+    out.to_csv(p.timber_provision_shock_output_path, index=False)
+    hb.write_to_file(json.dumps({'excluded_regions': sorted(declared), 'reason': declared}, indent=2),
+                     os.path.join(os.path.dirname(p.timber_provision_shock_output_path), EXCLUDED_REGIONS))
+    # Signed with the measure and its settings, so a later run of another measure cannot reuse this table.
+    shock_maps = sorted({m for by_year in p.scenario_lulc_paths.values() for m in by_year.values()})
+    utilities.write_reuse_signature(p, 'timber_provision', [p.timber_provision_shock_output_path],
+                                    TIMBER_SHOCK_SIGNATURE, light_inputs=shock_maps)
+    hb.log('  timber shock (harvestable_flow): %d rows, %d declared region(s) -> %s'
+           % (len(out), len(declared), p.timber_provision_shock_output_path))
     return True

@@ -368,3 +368,404 @@ def test_a_different_crs_fails():
 def test_noise_far_below_the_tolerance_still_passes_at_every_corner():
     tiny = Affine(PIXEL, 0.0, -180.0 + 1e-16, 0.0, -PIXEL, 90.0 - 1e-16)
     _assert_one_grid(grids(tiny))
+
+
+# --- age-aware harvestable flow (measure 'harvestable_flow') -------------------------------------
+# Every growth value below is SYNTHETIC, chosen to exercise the accounting. None is a Brazil
+# parameter or proposed for use.
+SYNTHETIC_GROWTH = pd.DataFrame([
+    dict(forest_type_id=1, harvest_mode='cycle', min_age=60, cycle_years=35, intensity_m3_per_ha=30.0,
+         vmax_m3_per_ha=250.0, k=0.03, shape=2.0, rotation_age=np.nan, source='SYNTHETIC test value'),
+    dict(forest_type_id=2, harvest_mode='cycle', min_age=25, cycle_years=35, intensity_m3_per_ha=10.0,
+         vmax_m3_per_ha=180.0, k=0.04, shape=2.0, rotation_age=np.nan, source='SYNTHETIC test value'),
+    dict(forest_type_id=3, harvest_mode='rotation', rotation_age=7, vmax_m3_per_ha=400.0, k=0.25, shape=2.0,
+         min_age=np.nan, cycle_years=np.nan, intensity_m3_per_ha=np.nan, source='SYNTHETIC test value'),
+])
+GROWTH = tp.growth_parameters_from_table(SYNTHETIC_GROWTH)
+NEW_FOREST = {'type': 2, 'managed': True, 'accessible': True}
+
+
+def _state(types, ages, since=None, managed=True, accessible=True, stock=None):
+    t = np.asarray(types, dtype='float64')
+    forest = t > 0
+    age = np.where(forest, np.asarray(ages, dtype='float64'), np.nan)
+    if stock is None:
+        stock = np.zeros(t.shape)
+        for code, prm in GROWTH.items():
+            stock[t == code] = tp.merchantable_volume(age[t == code], prm)
+    return dict(type=t, age=age, since_cut=np.where(forest, 0.0 if since is None else np.asarray(since, dtype='float64'), np.nan),
+                stock=np.asarray(stock, dtype='float64'), managed=np.broadcast_to(managed, t.shape) & forest,
+                accessible=np.broadcast_to(accessible, t.shape) & forest)
+
+
+def _advance(state, n, forest_now, rule='scheduled', **kw):
+    return tp.advance_forest_state(state, n, forest_now, NEW_FOREST, GROWTH, rule, 'curve_equivalent_age', 0.0, **kw)
+
+
+def test_age_aware_growth_table_has_no_defaults():
+    for drop in ('source', 'k', 'rotation_age'):
+        bad = SYNTHETIC_GROWTH.copy()
+        bad.loc[2, drop] = np.nan
+        with pytest.raises(ValueError):
+            tp.growth_parameters_from_table(bad)
+    with pytest.raises(ValueError):
+        tp.growth_parameters_from_table(SYNTHETIC_GROWTH.assign(harvest_mode='clearcut'))
+    with pytest.raises(ValueError):
+        _advance(_state([3], [6]), 1, [True], rule='assumed')
+    with pytest.raises(ValueError):
+        tp.advance_forest_state(_state([3], [6]), 1, [True], NEW_FOREST, GROWTH, 'scheduled', 'young_curve', 0.0)
+
+
+def test_age_aware_selective_cut_depletes_the_stock():
+    new, flows = _advance(_state([1], [200], since=[34]), 1, [True])
+    uncut = float(tp.merchantable_volume(201, GROWTH[1]))
+    assert flows['harvest'][0] == 30.0
+    assert new['stock'][0] == pytest.approx(uncut - 30.0, rel=1e-12)       # not the uncut curve value
+    assert new['age'][0] == 201.0 and new['since_cut'][0] == 0.0
+
+
+def test_age_aware_plantation_resets_and_new_forest_waits_for_its_own_age():
+    new, flows = _advance(_state([3], [6]), 1, [True])
+    assert flows['harvest'][0] == pytest.approx(float(tp.merchantable_volume(7, GROWTH[3])), rel=1e-12)
+    assert new['age'][0] == 0.0 and new['stock'][0] == 0.0 and new['type'][0] == 3     # label unchanged
+    young, flows = _advance(_state([0], [0]), 7, [True])                  # new forest at the map year
+    assert young['type'][0] == 2 and young['age'][0] == 0.0 and young['stock'][0] == 0.0 and flows['harvest'][0] == 0.0
+    later, flows = _advance(young, 24, [True])
+    assert flows['harvest'][0] == 0.0 and later['stock'][0] > 0.0          # below min_age 25: grows, no harvest
+
+
+def test_age_aware_ledger_closes_through_harvest_clearing_conversion_and_new_forest():
+    s = _state([1, 2, 3, 3, 0, 1], [200, 30, 3, 6, 0, 120], since=[34, 20, 0, 0, 0, 10])
+    s, flows = _advance(s, 9, [True, True, True, False, True, True], type_now=[1, 2, 2, 3, 0, 1])
+    assert np.abs(tp.stock_ledger_residual(flows)).max() < 1e-9
+    assert flows['removed'][2] > 0 and flows['removed'][3] > 0 and flows['harvest'].sum() > 0
+    assert s['type'].tolist() == [1, 2, 2, 0, 2, 1] and s['stock'][2] == 0.0 and s['stock'][4] == 0.0
+    assert (s['stock'] >= 0).all()
+
+
+def test_age_aware_step_length_does_not_change_the_result():
+    s = _state([3, 2, 1], [2, 20, 300], since=[0, 30, 34])
+    one, f_one = _advance(s, 10, [True] * 3)
+    step, harvest = s, 0.0
+    for _ in range(10):
+        step, f = _advance(step, 1, [True] * 3)
+        harvest = harvest + f['harvest']
+    for key in ('age', 'stock', 'since_cut'):
+        assert np.array_equal(one[key], step[key])
+    assert np.allclose(f_one['harvest'], harvest, rtol=0, atol=1e-12)
+
+
+def test_age_aware_rule_none_reports_eligible_volume_without_cutting():
+    s = _state([3, 1], [7, 200], since=[0, 35])
+    assert tp.eligible_volume(s, GROWTH).sum() > 0 and s['age'].tolist() == [7.0, 200.0]
+    new, flows = _advance(s, 10, [True, True], rule='none')
+    assert flows['harvest'].sum() == 0.0 and flows['eligible'].sum() > 0 and new['age'][0] == 17.0
+
+
+def test_harvestable_flow_factors_are_undefined_at_a_zero_reference():
+    f = tp.harvestable_flow_factors([5.0, 5.0, 0.0], [10.0, 10.0, 0.0], [0.0, 2.0, 2.0], [10.0, 0.0, 10.0])
+    assert np.isnan(f['per_ha_factor']).all()
+    f = tp.harvestable_flow_factors(6.0, 20.0, 4.0, 10.0)
+    assert f['area_factor'] == 2.0 and f['per_ha_factor'] == pytest.approx(0.75) and f['total_factor'] == 1.5
+
+
+# --- integration fixture: SYNTHETIC seals7 maps through the state, zonal and shock steps -----------
+# PLUMBING ONLY. The maps, the initial state and the growth table are synthetic; no saved Brazil
+# SEALS map has the provenance to serve as evidence. The shocks below test the accounting, not GTAP
+# science.
+FOREST, CROP = tp.SEALS7_FOREST_ID, 2
+CELL = 1.0 / 360.0
+
+
+def _tif(path, array, nodata=None):
+    import rasterio
+    from rasterio.transform import from_origin
+    a = np.asarray(array)
+    a = a[None] if a.ndim == 2 else a
+    with rasterio.open(str(path), 'w', driver='GTiff', height=a.shape[1], width=a.shape[2], count=a.shape[0],
+                       dtype=a.dtype, crs='EPSG:4326', transform=from_origin(0.0, 0.0, CELL, CELL), nodata=nodata) as dst:
+        dst.write(a)
+    return str(path)
+
+
+def _fixture(tmp_path):
+    import geopandas as gpd
+    from shapely.geometry import box
+    rows, cols = 6, 12
+    base = np.full((rows, cols), FOREST, dtype='uint8')
+    base[5, :] = CROP
+    t = np.zeros((rows, cols)); age = np.full((rows, cols), np.nan); since = np.full((rows, cols), np.nan)
+    managed = np.zeros((rows, cols)); accessible = np.zeros((rows, cols))
+    t[0:4, 0:4], age[0:4, 0:4] = 3, (np.arange(16).reshape(4, 4) % 7)          # AAA plantation, staggered ages
+    t[4, 0:4], age[4, 0:4], since[4, 0:4] = 1, 200, 30                           # AAA managed native, cut in 2028
+    t[0:3, 4:8], age[0:3, 4:8] = 2, 10                                           # BBB secondary, below min_age
+    t[3:5, 4:8], age[3:5, 4:8], since[3:5, 4:8] = 1, 200, 34                     # BBB protected native
+    t[0:5, 8:12], age[0:5, 8:12] = 1, 200                                        # CCC unmanaged native
+    since[(t > 0) & np.isnan(since)] = 0.0
+    managed[0:5, 0:8] = 1; managed[0:5, 8:12] = 0
+    accessible[0:5, 0:12] = 1; accessible[3:5, 4:8] = 0
+    stock = np.zeros((rows, cols))
+    for code, prm in GROWTH.items():
+        stock[t == code] = tp.merchantable_volume(age[t == code], prm)
+    paths = SimpleNamespace(base=_tif(tmp_path / 'lulc_2023.tif', base, nodata=255),
+                            state=_tif(tmp_path / 'initial_forest_state_2023.tif',
+                                       np.stack([t, age, since, stock, managed, accessible]).astype('float32')),
+                            ha=_tif(tmp_path / 'ha_per_cell.tif', (7.0 + 0.1 * np.arange(rows)[:, None] * np.ones(cols)).astype('float32')))
+    SYNTHETIC_GROWTH.to_csv(tmp_path / 'growth.csv', index=False)
+    regions = gpd.GeoDataFrame({'zone_id': [1, 2, 3], 'endw': ['AEZ1'] * 3, 'endw_id': [1, 1, 1], 'reg': ['AAA', 'BBB', 'CCC']},
+                               geometry=[box(c0 * CELL, -rows * CELL, c1 * CELL, 0.0) for c0, c1 in ((0, 4), (4, 8), (8, 12))],
+                               crs='EPSG:4326')
+    regions.to_file(tmp_path / 'regions.gpkg', driver='GPKG')
+    clear_2030, regrow_2040 = base.copy(), base.copy()
+    clear_2030[0, 0:4] = CROP                                                    # AAA plantation row cleared
+    regrow_2040[5, 0:4] = FOREST                                                 # row 0 back, plus new forest
+    maps = {'baseline': {2023: paths.base, 2030: _tif(tmp_path / 'baseline_2030.tif', base, 255), 2040: _tif(tmp_path / 'baseline_2040.tif', base, 255)},
+            'policy_same': {2030: _tif(tmp_path / 'same_2030.tif', base, 255), 2040: _tif(tmp_path / 'same_2040.tif', base, 255)},
+            'policy_clear': {2030: _tif(tmp_path / 'clear_2030.tif', clear_2030, 255), 2040: _tif(tmp_path / 'clear_2040.tif', regrow_2040, 255)}}
+    work, shocks = tmp_path / 'work', tmp_path / 'es_shocks'
+    work.mkdir(); shocks.mkdir()
+    p = SimpleNamespace(cur_dir=str(work), region_boundary_path=str(tmp_path / 'regions.gpkg'),
+                        terrestrial_carbon_shock_id_col='zone_id', terrestrial_carbon_shock_acts='frs',
+                        ha_per_cell_10sec_path=paths.ha, scenario_lulc_paths=maps,
+                        timber_provision_shock_output_path=str(shocks / 'timber_provision_interpolated.csv'),
+                        timber_provision_resource_measure='harvestable_flow',
+                        timber_provision_growth_parameters_path=str(tmp_path / 'growth.csv'),
+                        timber_provision_initial_state_path=paths.state, timber_provision_new_forest=dict(NEW_FOREST),
+                        timber_provision_harvest_rule='scheduled', timber_provision_recovery_rule='curve_equivalent_age',
+                        timber_provision_salvage_fraction=0.0, timber_provision_reference_flow='base_map_first_interval')
+    return p, paths
+
+
+def _run(p, paths):
+    from global_invest.timber_provision import timber_provision_tasks as t
+    t._harvestable_flow_shock(p, 'baseline', ['baseline', 'policy_same', 'policy_clear'], [2030, 2040], 2023,
+                              {1: ('AEZ1', 'AAA'), 2: ('AEZ1', 'BBB'), 3: ('AEZ1', 'CCC')}, paths.base)
+    work = p.cur_dir
+    return (pd.read_csv(p.timber_provision_shock_output_path), pd.read_csv(os.path.join(work, 'timber_harvestable_flow_by_region.csv')),
+            pd.read_csv(os.path.join(work, 'timber_harvestable_flow_ledger_by_zone.csv')))
+
+
+def _state_mtimes(p):
+    return {f: os.stat(os.path.join(p.cur_dir, f)).st_mtime_ns for f in os.listdir(p.cur_dir) if f.startswith('timber_forest_state_') and f.endswith('.tif')}
+
+
+def test_harvestable_flow_fixture_accounts_shocks_and_declares(tmp_path):
+    import json
+    import rasterio
+    p, paths = _fixture(tmp_path)
+    shock, regional, ledger = _run(p, paths)
+    # The stock ledger closes in every zone and step.
+    assert ledger['ledger_residual_m3'].abs().max() < 1e-6 * ledger['closing_m3'].abs().max()
+    # Units: forest area is the sum of the cells' hectares.
+    ha = 7.0 + 0.1 * np.arange(6)
+    aaa = ledger[(ledger.scenario == 'baseline') & (ledger.year == 2030) & (ledger.region_id == 1)].iloc[0]
+    assert aaa['forest_ha'] == pytest.approx(4 * ha[:5].sum(), rel=1e-6) and aaa['harvest_m3'] > 0
+    # BBB: secondary forest is below its minimum age and the native forest is protected, so no harvest.
+    assert ledger[ledger.region_id == 2]['harvest_m3'].sum() == 0.0
+    # CCC has no timberland: no reference flow, declared and not shocked.
+    declared = json.load(open(os.path.join(os.path.dirname(p.timber_provision_shock_output_path), 'timber_provision_excluded_regions.json')))
+    assert declared['excluded_regions'] == ['BBB', 'CCC'] and 'CCC' not in set(shock['REG'])
+    # Same maps as the baseline: zero against the baseline in every year; the baseline matches the reference at 2030.
+    same = shock[shock.scenario == 'policy_same']
+    assert (same['shock_pct_contemp'] == 0.0).all()
+    base_2030 = regional[(regional.scenario == 'baseline') & (regional.year == 2030)].iloc[0]
+    assert base_2030['per_ha_factor'] == pytest.approx(1.0, abs=1e-12) and base_2030['area_factor'] == pytest.approx(1.0)
+    # Clearing changes area and flow; only the per-hectare factor is fed.
+    clear = regional[(regional.scenario == 'policy_clear') & (regional.year == 2040)].iloc[0]
+    assert clear['area_factor'] < 1.0
+    assert clear['shock_pct_v3'] == pytest.approx(100 * (clear['per_ha_factor'] - 1)) != pytest.approx(100 * (clear['total_factor'] - 1))
+    # Re-established and new forest start at age 0 with no stock.
+    with rasterio.open(os.path.join(p.cur_dir, 'timber_forest_state_policy_clear_2040.tif')) as src:
+        t, age, stock = src.read(1), src.read(2), src.read(4)
+    assert (t[0, 0:4] == 2).all() and (age[0, 0:4] == 0).all() and (stock[0, 0:4] == 0).all() and (t[5, 0:4] == 2).all()
+    assert set(shock['timber_provision_accounting']) == {'harvestable_flow_age_v1'} and set(shock['harvest_basis']) == {'scheduled'}
+
+
+def test_harvestable_flow_fixture_reuses_and_invalidates_by_provenance(tmp_path):
+    p, paths = _fixture(tmp_path)
+    first = _run(p, paths)
+    before = _state_mtimes(p)
+    again = _run(p, paths)
+    assert _state_mtimes(p) == before                                       # nothing recomputed
+    for a, b in zip(first, again):
+        pd.testing.assert_frame_equal(a, b)
+    changed = np.full((6, 12), FOREST, dtype='uint8')
+    changed[5, :] = CROP
+    changed[0:2, 0:4] = CROP                                                 # the 2030 policy map changes
+    _tif(p.scenario_lulc_paths['policy_clear'][2030], changed, 255)
+    _run(p, paths)
+    after = _state_mtimes(p)
+    rebuilt = sorted(f for f in after if after[f] != before[f])
+    assert rebuilt == ['timber_forest_state_policy_clear_2030.tif', 'timber_forest_state_policy_clear_2040.tif']
+
+
+def test_harvestable_flow_table_is_signed_by_its_measure(tmp_path):
+    from global_invest.timber_provision import timber_provision_tasks as t
+    p, paths = _fixture(tmp_path)
+    _run(p, paths)
+    maps = sorted({m for by_year in p.scenario_lulc_paths.values() for m in by_year.values()})
+    out = [p.timber_provision_shock_output_path]
+    assert utilities.reuse_reason(p, 'timber_provision', out, t.TIMBER_SHOCK_SIGNATURE, light_inputs=maps) is None
+    default = SimpleNamespace(**{k: v for k, v in vars(p).items() if not k.startswith('timber_provision_')
+                                 or k == 'timber_provision_shock_output_path'})
+    assert 'resource_measure' in utilities.reuse_reason(default, 'timber_provision', out, t.TIMBER_SHOCK_SIGNATURE, light_inputs=maps)
+
+
+def test_harvestable_flow_settings_are_all_required(tmp_path):
+    from global_invest.timber_provision import timber_provision_tasks as t
+    p, _ = _fixture(tmp_path)
+    for key in t.HARVESTABLE_FLOW_SETTINGS:
+        q = SimpleNamespace(**vars(p))
+        delattr(q, 'timber_provision_' + key)
+        with pytest.raises(NameError, match=key):
+            t._harvestable_flow_settings(q)
+
+
+def test_existing_measures_and_default_dispatch_are_unchanged(tmp_path):
+    """Regression fixture for the net_return default and the aboveground_carbon measure.
+
+    The expected totals were produced by the code at commit 5f714b3, before the harvestable_flow
+    measure was added, on the same synthetic fixture. Agreement shows the existing measures and the
+    default selection are unchanged. It is a compatibility check, not a validation of either method.
+    """
+    import geopandas as gpd
+    from shapely.geometry import box
+    from global_invest.timber_provision import timber_provision_initialize as ti
+    from global_invest.timber_provision import timber_provision_tasks as t
+    rng = np.random.default_rng(20261112)
+    base = np.full((6, 12), FOREST, dtype='uint8')
+    base[5, :] = CROP
+    scen = base.copy()
+    scen[0, 0:4] = CROP
+    scen[5, 8:12] = FOREST
+    scen[2, 6] = 255
+    value = rng.uniform(-50, 400, size=(6, 12)).astype('float32')
+    value[1, 1] = np.nan
+    density = rng.uniform(0, 150, size=(6, 12)).astype('float32')
+    ha = (7.0 + 0.1 * np.arange(6)[:, None] * np.ones(12)).astype('float32')
+    maps = {'base': _tif(tmp_path / 'base.tif', base, 255), 'scen': _tif(tmp_path / 'scen.tif', scen, 255)}
+    boundary = str(tmp_path / 'regions.gpkg')
+    gpd.GeoDataFrame({'zone_id': [1, 2, 3]}, geometry=[box(c0 * CELL, -6 * CELL, c1 * CELL, 0) for c0, c1 in ((0, 4), (4, 8), (8, 12))],
+                     crs='EPSG:4326').to_file(boundary, driver='GPKG')
+    eligible = str(tmp_path / 'eligible.tif')
+    t._write_eligible_value(_tif(tmp_path / 'value.tif', value), maps['base'], eligible)
+    base_forest = _tif(tmp_path / 'agbc_base.tif', tp.forest_biomass_carbon_base(density, ha, base, lulc_ndv=255))
+    new_forest = _tif(tmp_path / 'agbc_new.tif', (np.full((6, 12), 80.0) * ha).astype('float32'))
+    expected = {('net_return', 'base'): [2592.407908, 3204.373512, 3625.956979],
+                ('net_return', 'scen'): [1795.638774, 3204.373512, 3625.956979],
+                ('aboveground_carbon', 'base'): [11270.481535, 10053.503141, 10211.281868],
+                ('aboveground_carbon', 'scen'): [9133.28314, 10053.503141, 12611.281868]}
+    for (measure, label), totals in expected.items():
+        summary = str(tmp_path / ('%s_%s.csv' % (measure, label)))
+        raster = str(tmp_path / ('%s_%s.tif' % (measure, label)))
+        if measure == 'net_return':
+            t._value_one_timber_map((label, 2030, maps[label], eligible, raster, summary, boundary, 'zone_id'))
+        else:
+            t._biomass_one_map((label, 2030, maps[label], base_forest, new_forest, raster, summary, boundary, 'zone_id'))
+        assert pd.read_csv(summary).sort_values('zone_id')['total'].round(6).tolist() == totals
+
+    class Tree(SimpleNamespace):
+        def add_task(self, fn, **kwargs):
+            self.added.append(fn.__name__)
+
+    for measure, tasks in ((None, ['timber_value_density_table', 'timber_provision_shock']),
+                           ('net_return', ['timber_value_density_table', 'timber_provision_shock']),
+                           ('aboveground_carbon', ['timber_provision_shock']),
+                           ('harvestable_flow', ['timber_provision_shock'])):
+        tree = Tree(added=[], **({} if measure is None else {'timber_provision_resource_measure': measure}))
+        ti.add_timber_provision_shock_tasks(tree)
+        assert tree.added == tasks
+
+
+def _public(p, tmp_path, measure='harvestable_flow'):
+    """The fixture's p, completed with what the public task reads, for timber_provision_shock(p) itself."""
+    q = SimpleNamespace(**vars(p))
+    q.input_dir = str(tmp_path / 'input')
+    q.get_path = lambda *a, **k: str(tmp_path / 'unresolved' / '/'.join(a))
+    q.run_this = True
+    q.es_shock_base_year, q.es_shock_years, q.es_shock_base_scenario = 2023, [2023, 2030, 2040], 'baseline'
+    q.terrestrial_carbon_shock_endw_col, q.terrestrial_carbon_shock_reg_col = 'endw_id', 'reg'
+    q.terrestrial_carbon_shock_endw_format, q.terrestrial_carbon_shock_value_col = 'AEZ%d', 'mean'
+    q.terrestrial_quantity_input_path = p.scenario_lulc_paths['baseline'][2023]
+    if measure is None:
+        del q.timber_provision_resource_measure
+    return q
+
+
+def test_harvestable_flow_runs_through_the_public_shock_task(tmp_path):
+    from global_invest.timber_provision import timber_provision_tasks as t
+    p, paths = _fixture(tmp_path)
+    q = _public(p, tmp_path)
+    assert t.timber_provision_shock(q) is True
+    public = pd.read_csv(q.timber_provision_shock_output_path)
+    assert set(public['scenario']) == {'policy_same', 'policy_clear'} and set(public['REG']) == {'AAA'}
+    direct, _, _ = _run(p, paths)                                           # the helper on the same fixture
+    pd.testing.assert_frame_equal(public.reset_index(drop=True),
+                                  direct[direct.scenario != 'baseline'].reset_index(drop=True))
+
+
+def test_a_skipped_timber_shock_task_only_publishes_its_path(tmp_path):
+    from global_invest.timber_provision import timber_provision_tasks as t
+    for measure in ('harvestable_flow', None):
+        (tmp_path / str(measure)).mkdir()
+        p, _ = _fixture(tmp_path / str(measure))
+        q = _public(p, tmp_path / str(measure), measure)
+        del q.timber_provision_shock_output_path
+        q.run_this, q.es_shock_dir = 0, str(tmp_path / str(measure) / 'es_shocks')
+        assert t.timber_provision_shock(q) is None
+        assert q.timber_provision_shock_output_path == os.path.join(q.es_shock_dir, 'timber_provision_interpolated.csv')
+        assert not os.listdir(q.cur_dir) and not os.path.exists(q.timber_provision_shock_output_path)
+
+
+def test_the_default_measure_never_reaches_the_harvestable_flow_code(tmp_path, monkeypatch):
+    from global_invest.timber_provision import timber_provision_tasks as t
+    p, _ = _fixture(tmp_path)
+    q = _public(p, tmp_path, measure=None)
+    monkeypatch.setattr(t, '_harvestable_flow_shock', lambda *a, **k: pytest.fail('default reached harvestable_flow'))
+    with pytest.raises(NameError, match='timber value raster'):              # the net_return branch's own input check
+        t.timber_provision_shock(q)
+
+
+def test_a_changed_cached_table_or_boundary_is_rebuilt(tmp_path):
+    import geopandas as gpd
+    p, paths = _fixture(tmp_path)
+    first = _run(p, paths)
+    before = _state_mtimes(p)
+    table = os.path.join(p.cur_dir, 'timber_harvestable_flow_by_zone_policy_clear_2030.csv')
+    tampered = pd.read_csv(table)
+    tampered.loc[0, 'harvest_m3'] *= 2
+    tampered.to_csv(table, index=False)
+    again = _run(p, paths)
+    after = _state_mtimes(p)
+    assert sorted(f for f in after if after[f] != before[f]) == ['timber_forest_state_policy_clear_2030.tif']
+    for a, b in zip(first, again):                                          # restored, and 2040 reused
+        pd.testing.assert_frame_equal(a, b)
+    zone_ids = os.path.join(p.cur_dir, 'timber_cell_area_by_zone_zone_ids.tif')
+    zones_before = os.stat(zone_ids).st_mtime_ns
+    regions = gpd.read_file(p.region_boundary_path)
+    regions.loc[regions.reg == 'CCC', 'zone_id'] = 4                        # the boundary changes
+    regions.to_file(p.region_boundary_path, driver='GPKG')
+    from global_invest.timber_provision import timber_provision_tasks as t
+    t._harvestable_flow_shock(p, 'baseline', ['baseline', 'policy_same', 'policy_clear'], [2030, 2040], 2023,
+                              {1: ('AEZ1', 'AAA'), 2: ('AEZ1', 'BBB'), 4: ('AEZ1', 'CCC')}, paths.base)
+    rebuilt = _state_mtimes(p)
+    assert os.stat(zone_ids).st_mtime_ns != zones_before and all(rebuilt[f] != after[f] for f in after)
+
+
+def test_an_initial_state_that_breaks_its_contract_is_refused(tmp_path):
+    import rasterio
+    from global_invest.timber_provision import timber_provision_tasks as t
+    p, paths = _fixture(tmp_path)
+    with rasterio.open(paths.state) as src:
+        bands = src.read()
+    for band, row, col, value, what in ((0, 0, 0, 0.0, r'contract: 1 base-map forest cell\(s\) carry no forest type, 0 typed'),
+                                        (0, 5, 0, 3.0, r'contract: 0 base-map forest .* 1 typed cell\(s\) are not forest'),
+                                        (3, 0, 1, 1e6, r'contract: 0 base-map .* 0 typed .* and 1 cell\(s\) have an invalid'),
+                                        (4, 0, 2, 0.5, r'contract: 0 base-map .* 0 typed .* and 1 cell\(s\) have an invalid')):
+        bad = bands.copy()
+        bad[band, row, col] = value
+        _tif(paths.state, bad)
+        for f in os.listdir(p.cur_dir):
+            os.remove(os.path.join(p.cur_dir, f))
+        with pytest.raises(ValueError, match=what):
+            _run(p, paths)

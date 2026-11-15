@@ -446,3 +446,195 @@ def forest_biomass_carbon_on_map(base_forest_carbon, new_forest_carbon, lulc, fo
     kept = np.where(was_forest & (is_forest | unknown), base, np.float32(0.0))
     gained = np.where(~was_forest & is_forest & ~unknown, new, np.float32(0.0))
     return (kept + gained).astype('float32')
+
+
+# --- Age-aware harvestable flow (resource measure 'harvestable_flow') ----------------------------
+# Opt-in and never a default. A forest state is kept per cell beside the land-cover map: forest
+# type, stand age, years since the last selective cut, merchantable stock (m3/ha), and whether the
+# cell is managed and accessible. Harvest does not change the land-cover label, so the state cannot
+# be read off the map. Each annual step grows the stock along the type's Chapman-Richards curve
+# from the age at which the curve holds the current stock, then removes what the harvest rule
+# cuts. A land-cover change between two maps takes effect at the later map's year: clearing
+# removes the stand and its stock, and new forest enters at age 0 with zero stock. Every growth,
+# harvest and recovery value is configuration with a stated source; nothing here supplies one.
+
+FOREST_STATE_BANDS = ('type', 'age', 'since_cut', 'stock', 'managed', 'accessible')
+HARVEST_RULES = ('none', 'scheduled')
+RECOVERY_RULES = ('curve_equivalent_age',)
+GROWTH_PARAMETER_COLUMNS = {
+    'rotation': ('rotation_age', 'vmax_m3_per_ha', 'k', 'shape'),
+    'cycle': ('min_age', 'cycle_years', 'intensity_m3_per_ha', 'vmax_m3_per_ha', 'k', 'shape'),
+    'none': ('vmax_m3_per_ha', 'k', 'shape'),
+}
+
+
+def growth_parameters_from_table(df):
+    """Per-forest-type growth and harvest parameters from the configured table. No defaults.
+
+    Args:
+        df (pd.DataFrame): one row per forest type: forest_type_id (>= 1), harvest_mode
+            ('rotation', 'cycle' or 'none'), the columns GROWTH_PARAMETER_COLUMNS lists for that
+            mode, and a non-empty source.
+
+    Returns:
+        dict: forest_type_id -> {'mode': harvest_mode, column: float, ...}.
+
+    Raises:
+        ValueError: on a duplicate or invalid type, an unknown mode, a missing value or source.
+    """
+    params = {}
+    for row in df.to_dict('records'):
+        code, mode = int(row['forest_type_id']), str(row['harvest_mode'])
+        if code < 1 or code in params:
+            raise ValueError('forest_type_id must be unique and >= 1 (0 means not forest), got %d' % code)
+        if mode not in GROWTH_PARAMETER_COLUMNS:
+            raise ValueError('forest type %d: harvest_mode must be one of %s, got %r'
+                             % (code, sorted(GROWTH_PARAMETER_COLUMNS), mode))
+        source = row.get('source')
+        if not isinstance(source, str) or not source.strip():
+            raise ValueError('forest type %d has no source' % code)
+        missing = [c for c in GROWTH_PARAMETER_COLUMNS[mode] if not np.isfinite(float(row.get(c, np.nan)))]
+        if missing:
+            raise ValueError('forest type %d (%s) has no value for %s' % (code, mode, ', '.join(missing)))
+        params[code] = dict(mode=mode, **{c: float(row[c]) for c in GROWTH_PARAMETER_COLUMNS[mode]})
+    return params
+
+
+def merchantable_volume(age, prm):
+    """Chapman-Richards merchantable volume (m3/ha): vmax (1 - exp(-k age)) ** shape, 0 at age 0."""
+    a = np.maximum(np.asarray(age, dtype='float64'), 0.0)
+    return prm['vmax_m3_per_ha'] * (1.0 - np.exp(-prm['k'] * a)) ** prm['shape']
+
+
+def volume_equivalent_age(stock, prm):
+    """The age at which the type's curve holds `stock`, the inverse of merchantable_volume; inf at vmax."""
+    root = np.clip(np.asarray(stock, dtype='float64') / prm['vmax_m3_per_ha'], 0.0, 1.0) ** (1.0 / prm['shape'])
+    with np.errstate(divide='ignore'):
+        return -np.log1p(-root) / prm['k']
+
+
+def eligible_volume(state, params):
+    """Volume (m3/ha) each cell may yield this year under its type's harvest mode. Changes no state.
+
+    Rotation types yield their whole stock once age >= rotation_age; cycle types yield
+    min(intensity, stock) once age >= min_age and cycle_years have passed since the last cut. Only
+    managed, accessible forest is eligible. A stand that is eligible and not cut stays eligible,
+    so this is a standing backlog, not an annual flow.
+    """
+    t, age, since, stock = state['type'], state['age'], state['since_cut'], state['stock']
+    can = (t > 0) & state['managed'] & state['accessible']
+    out = np.zeros(t.shape)
+    for code, prm in params.items():
+        this = can & (t == code)
+        if prm['mode'] == 'rotation':
+            cut = this & (age >= prm['rotation_age'])
+            out[cut] = stock[cut]
+        elif prm['mode'] == 'cycle':
+            cut = this & (age >= prm['min_age']) & (since >= prm['cycle_years'])
+            out[cut] = np.minimum(prm['intensity_m3_per_ha'], stock[cut])
+    return out
+
+
+def advance_forest_state(state, n_years, forest_now, new_forest, params, harvest_rule, recovery_rule,
+                         salvage_fraction, type_now=None):
+    """Advance a forest state by n_years annual steps to the next map, then apply that map.
+
+    Args:
+        state (dict): arrays named FOREST_STATE_BANDS (type 0 = not forest; age and since_cut NaN
+            off forest; stock in m3/ha, 0 off forest; managed and accessible boolean).
+        n_years (int): years between the state and the map, >= 1.
+        forest_now (np.ndarray): bool, forest in the next map.
+        new_forest (dict): 'type', 'managed' and 'accessible' given to cells that become forest.
+        params (dict): from growth_parameters_from_table; every type present must be in it.
+        harvest_rule (str): 'none' (growth only) or 'scheduled' (every eligible stand is cut, an
+            assumed management schedule).
+        recovery_rule (str): 'curve_equivalent_age', the only rule implemented: a logged stand
+            regrows along its type's curve from the age at which the curve holds its residual stock.
+        salvage_fraction (float): share of a removed stand's stock counted as a one-off harvest.
+        type_now (np.ndarray): optional forest type in the next map; a forest cell whose type
+            changes is a conversion and restarts at age 0.
+
+    Returns:
+        tuple: (new state, flows). flows holds per-cell totals over the interval in m3/ha:
+        opening, growth, harvest, removed (stock taken out by clearing or conversion), salvage,
+        closing, and eligible (the volume eligible in the final year before its harvest).
+    """
+    if harvest_rule not in HARVEST_RULES:
+        raise ValueError('harvest_rule must be one of %s, got %r' % (HARVEST_RULES, harvest_rule))
+    if recovery_rule not in RECOVERY_RULES:
+        raise ValueError('recovery_rule must be one of %s, got %r' % (RECOVERY_RULES, recovery_rule))
+    if int(n_years) < 1:
+        raise ValueError('a forest state advances by at least one year, got %r' % n_years)
+    s = {k: np.array(state[k], dtype=bool if k in ('managed', 'accessible') else 'float64') for k in FOREST_STATE_BANDS}
+    unknown = sorted(set(np.unique(s['type'][s['type'] > 0]).astype(int)) - set(params))
+    if unknown:
+        raise ValueError('no growth parameters for forest type(s) %s' % unknown)
+    opening = s['stock'].copy()
+    growth = np.zeros(opening.shape)
+    harvest = np.zeros(opening.shape)
+    for _ in range(int(n_years)):
+        forest = s['type'] > 0
+        s['age'][forest] += 1.0
+        s['since_cut'][forest] += 1.0
+        for code, prm in params.items():
+            c = s['type'] == code
+            before = s['stock'][c]
+            after = np.maximum(merchantable_volume(volume_equivalent_age(before, prm) + 1.0, prm), before)
+            growth[c] += after - before
+            s['stock'][c] = after
+        eligible = eligible_volume(s, params)
+        if harvest_rule == 'scheduled':
+            cut = eligible > 0
+            harvest += np.where(cut, eligible, 0.0)
+            s['stock'] -= np.where(cut, eligible, 0.0)
+            s['since_cut'][cut] = 0.0
+            for code, prm in params.items():
+                if prm['mode'] == 'rotation':
+                    reset = cut & (s['type'] == code)
+                    s['age'][reset] = 0.0
+                    s['stock'][reset] = 0.0
+    forest_now = np.asarray(forest_now, dtype=bool)
+    was = s['type'] > 0
+    cleared = was & ~forest_now
+    established = ~was & forest_now
+    converted = np.zeros(forest_now.shape, dtype=bool)
+    if type_now is not None:
+        converted = was & forest_now & (np.asarray(type_now) != s['type'])
+    if np.any(established) and int(new_forest['type']) not in params:
+        raise ValueError('new forest type %r has no growth parameters' % new_forest['type'])
+    removed = np.where(cleared | converted, s['stock'], 0.0)
+    restart = established | converted
+    s['type'] = np.where(cleared, 0, np.where(established, int(new_forest['type']),
+                                              np.where(converted, type_now if type_now is not None else 0, s['type'])))
+    s['age'] = np.where(cleared, np.nan, np.where(restart, 0.0, s['age']))
+    s['since_cut'] = np.where(cleared, np.nan, np.where(restart, 0.0, s['since_cut']))
+    s['stock'] = np.where(cleared | restart, 0.0, s['stock'])
+    s['managed'] = np.where(cleared, False, np.where(restart, bool(new_forest['managed']), s['managed']))
+    s['accessible'] = np.where(cleared, False, np.where(restart, bool(new_forest['accessible']), s['accessible']))
+    flows = dict(opening=opening, growth=growth, harvest=harvest, removed=removed,
+                 salvage=salvage_fraction * removed, closing=s['stock'].copy(), eligible=eligible)
+    return s, flows
+
+
+def stock_ledger_residual(flows):
+    """closing - (opening + growth - harvest - removed), per cell; zero when the stock is conserved."""
+    return flows['closing'] - (flows['opening'] + flows['growth'] - flows['harvest'] - flows['removed'])
+
+
+def harvestable_flow_factors(flow, area, flow_ref, area_ref):
+    """F/F_ref = (A/A_ref) x (f/f_ref) with f = F/A, elementwise; NaN where a ratio is undefined.
+
+    No epsilon is added: a zero reference flow or area has no ratio, and a year with no timberland
+    has no per-hectare flow. Which factor reaches GTAP, and with what calibration, is not decided
+    here.
+
+    Returns:
+        dict: area_factor, per_ha_factor and total_factor arrays.
+    """
+    flow, area, flow_ref, area_ref = (np.asarray(x, dtype='float64') for x in (flow, area, flow_ref, area_ref))
+    with np.errstate(divide='ignore', invalid='ignore'):
+        area_factor = np.where(area_ref > 0, area / area_ref, np.nan)
+        total_factor = np.where(flow_ref > 0, flow / flow_ref, np.nan)
+        per_ha_factor = np.where((area_ref > 0) & (flow_ref > 0) & (area > 0),
+                                 (flow / area) / (flow_ref / area_ref), np.nan)
+    return dict(area_factor=area_factor, per_ha_factor=per_ha_factor, total_factor=total_factor)
