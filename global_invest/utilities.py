@@ -8,10 +8,10 @@ those countries once per sub-region. If you need an r264 crosswalk (e.g. for a c
 services do this; terrestrial_carbon/coastal_carbon instead sum on r250 and keep r264 only for the map).
 
 Diagnostic -- if a national total is inflated by this, the gap decomposes exactly into China x6, India x6
-and the four 2-way splits. A gap of any other shape is a legitimate sum, not this bug. This is how the bug
-reached terrestrial_carbon + coastal_carbon and not the other five GEP services.
+and the four 2-way splits. A gap of any other shape is a legitimate sum, not this double count.
 """
 from osgeo import gdal
+from osgeo import osr
 import filecmp
 import json
 import mapclassify
@@ -67,9 +67,8 @@ def initialize_pyramid_paths(p):
     """The shared pyramid rasters, published under one name for every service that needs them.
 
     Hectares per cell at 10 arc-seconds is fixed geometry, not a run choice, so like the country
-    correspondence it is code rather than a cell in a CSV. What it is not is something each
-    service should resolve for itself: two of them did, under two different attribute names, which
-    is how one drifts onto a different grid than the other without anyone noticing.
+    correspondence it is code rather than a cell in a CSV. Every service reads it from here under
+    one attribute name, so no service drifts onto a different grid than another.
 
     Args:
         p (ProjectFlow): the project, which gains ha_per_cell_10sec_path.
@@ -87,8 +86,8 @@ def summarize_raster_by_region(value_raster_path, region_boundary_path, out_path
     """Per-polygon total / mean / pixel count of a value raster, via hb.zonal_statistics_flex.
 
     Shared by every GEP service that aggregates a value raster to regions (terrestrial_carbon's
-    stock calculation and shock zones; pollination's USD value raster). Promoted here on its second
-    caller. Heavy imports stay inside so importing utilities stays light.
+    stock calculation and shock zones; pollination's USD value raster). Heavy imports stay inside so
+    importing utilities stays light.
 
     id_column: the vector column holding a unique integer id per polygon ('ee_r264_id' for the
     country valuation, 'ee_r50_aez18_id' for the shock zones). The output emits the boundary's own
@@ -103,20 +102,17 @@ def summarize_raster_by_region(value_raster_path, region_boundary_path, out_path
     # all_touched=False is the centre rule: a cell goes to whichever zone covers its centre point,
     # so it has exactly one owner and the answer does not depend on anything but geography. Under
     # all_touched=True every zone whose outline touches a cell claims it, and because the claims
-    # are burned into one id raster the zone rasterised LAST keeps it -- which means a country's
-    # number moved with its row order in the boundary file. Nothing was double counted either way;
-    # what was arbitrary was the split between neighbours.
+    # are burned into one id raster the zone rasterised LAST keeps it, so a country's number moves
+    # with its row order in the boundary file. Nothing is double counted either way; what is
+    # arbitrary is the split between neighbours.
     #
-    # What this costs, measured rather than assumed. Both boundaries have 100% of their vertices on
-    # the 10 arc-second grid, because that is what they were built from, so a value raster on that
-    # grid has no partly covered cells and the two rules agree exactly. terrestrial_carbon is on it
-    # for both its call sites: 0 of 8,398,080,000 cells change zone, on the r264 country boundary
-    # and on the r50xAEZ18 shock boundary alike. pollination is on a 0.05 degree grid and does
-    # move: the world total falls 0.1211%, from 388.90bn to 388.43bn, while 92 of the 204 countries
-    # present in both runs move more than 5% and Iraq loses 65.63% of its value.
+    # Both boundaries have 100% of their vertices on the 10 arc-second grid, so a value raster on
+    # that grid (terrestrial_carbon) has no partly covered cells and the two rules agree exactly. A
+    # raster on a coarser grid (pollination, 0.05 degree) does differ between the rules, by up to
+    # tens of percent for single countries.
     #
-    # NOTE the flag alone changes nothing where a run already exists: hazelbean reuses a zone ids
-    # raster it finds on disk, so the cached one keeps the old rule until it is deleted.
+    # hazelbean reuses a zone ids raster it finds on disk, so a cached raster keeps the rule it was
+    # built under until it is deleted.
     zone_ids_raster = os.path.splitext(out_path)[0] + '_zone_ids.tif'
     stats = hb.zonal_statistics_flex(
         value_raster_path, region_boundary_path, zone_ids_raster_path=zone_ids_raster,
@@ -149,14 +145,12 @@ def summarize_raster_by_region(value_raster_path, region_boundary_path, out_path
 
 def render_service_results(p):
     """Render each service's <service>_results.qmd via quarto, streaming output. Shared by every
-    module's gep_result task (was duplicated with drift in terrestrial_carbon and coastal_carbon;
-    promoted here -- keeping the superset of both -- when pollination became the third copy).
+    module's gep_result task.
 
-    Behaviour (the coastal variant's, the most complete): a missing qmd RAISES; bibliography/CSL
-    sidecars next to the qmd are copied so citeproc resolves them in cur_dir; the render runs with
-    the repo root on PYTHONPATH so the qmd can import global_invest; a non-zero quarto exit RAISES.
-    The qmd copy and sidecars are removed afterwards so nobody edits a copy expecting the source
-    to change.
+    Behaviour: a missing qmd RAISES; bibliography/CSL sidecars next to the qmd are copied so
+    citeproc resolves them in cur_dir; the render runs with the repo root on PYTHONPATH so the
+    qmd can import global_invest; a non-zero quarto exit RAISES. The qmd copy and sidecars are
+    removed afterwards so nobody edits a copy expecting the source to change.
     """
 
     # A cluster node has no quarto, and the render is a report over results that already
@@ -204,10 +198,9 @@ def render_service_results(p):
         env['PROJECTFLOW_ROOT'] = p.project_dir
 
         # --to html is explicit because quarto renders EVERY format a qmd declares when it is
-        # omitted. Coastal carbon declares pdf and docx alongside html, so an unqualified render
-        # pulled in lualatex and died on a TeX Live too old to reach the current repository.
-        # The results report is the HTML page in every service; the other formats stay available
-        # to anyone who asks quarto for them directly.
+        # omitted, and a qmd that also declares pdf or docx (coastal carbon) then needs a working
+        # TeX installation. The results report is the HTML page in every service; the other
+        # formats stay available to anyone who asks quarto for them directly.
         cmd = ['quarto', 'render', results_qmd_project_path, '--to', 'html', '--verbose']
         hb.log('Running quarto command: %s' % ' '.join(cmd))
         process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
@@ -261,9 +254,8 @@ def required_base_scenario(p, service):
 
     The library carries NO default spelling: the frozen tables spell the nature-off baseline
     differently per service (baseline_ignore_dependencies vs baseline_ignore_damages), so any
-    baked-in default is wrong for someone -- before this, seven call sites defaulted it three
-    different ways. The consumer names its base once (e.g. from its scenarios CSV) and
-    resolve_base_scenario matches it against each table's actual labels.
+    baked-in default is wrong for someone. The consumer names its base once (e.g. from its
+    scenarios CSV) and resolve_base_scenario matches it against each table's actual labels.
     """
     base_scn = getattr(p, 'es_shock_base_scenario', None)
     if not base_scn:
@@ -301,26 +293,25 @@ def resolve_base_scenario(scenario_labels, scenario_map, base_scn, service, log=
 #
 # A shock table that is WRONG looks exactly like one that is right: well-formed CSV, plausible
 # numbers, no exception. Nothing downstream re-derives it, so a bad table reaches GTAP as a shock and
-# is never questioned. Three real failures had that shape:
+# is never questioned. Three failures have that shape:
 #
 #   scenario silently dropped  a label absent from a frozen dependency table makes the building loop
 #                              `continue`, so the scenario contributes NO rows and GTAP runs with a
 #                              zero where a shock should be.
-#   value contamination        SEALS once fed a coefficient of 1811.0 into an allocation because
-#                              float('0_18_1_1') parses rather than raising. A shock two orders of
-#                              magnitude out is the same class of thing and is equally quiet.
-#   duplicated rows            a per-entity value replicated across sub-rows then summed. This is how
-#                              the national GEP total came out 23.5% high.
+#   value contamination        a value orders of magnitude out, e.g. from float('0_18_1_1'), which
+#                              parses to 1811.0 rather than raising. It is equally quiet.
+#   duplicated rows            a per-entity value replicated across sub-rows then summed, which
+#                              inflates every total built on it.
 #
 # So state what must be true of the table, and check it where it is built.
 # ---------------------------------------------------------------------------------------------
 
-# Contamination bound, NOT a plausibility bound. Measured legitimate maxima (2026-08-15, from the
-# frozen dependency tables under each static task's own formula, scenario - base at end year):
+# Contamination bound, NOT a plausibility bound. Measured legitimate maxima (from the frozen
+# dependency tables under each static task's own formula, scenario - base at end year):
 # terrestrial_carbon 84.0 (low_demand), pollination 133.1 (net_zero), erosion 8.0; dynamic-path
 # observed maxima are far lower (carbon 16.8 on the ZAF test AOI). 500 clears the largest legitimate
-# value ~3.7x and still catches order-of-magnitude contamination (a SEALS coefficient once reached
-# 1811 because float('0_18_1_1') parses). Tighter per-service ceilings are a domain-owner call:
+# value ~3.7x and still catches order-of-magnitude contamination (float('0_18_1_1') parses to
+# 1811). Tighter per-service ceilings are a domain-owner call:
 # carbon/pollination are unbounded percent-change ratios (a near-zero base-year denominator can make
 # a large value legitimate), erosion/fisheries are bounded percentage points (<=8 / <=2 upstream).
 SHOCK_ABS_MAX = 500.0
@@ -329,8 +320,8 @@ SHOCK_ABS_MAX = 500.0
 # GTAP land endowments: exactly the AEZS set, and the land block of ENDW, in the model sets.har
 # (AEZ1-AEZ18; ENDW adds the labour types, Capital and NatRes). The r50xAEZ18 shock boundary also
 # carries an AEZ0 residual polygon that no GTAP element corresponds to, so a shock row on it cannot
-# be consumed whatever its value. Membership, not magnitude, is what makes such a row invalid --
-# AEZ0 rows have sat inside a delivered carbon table at |shock| well under the contamination bound.
+# be consumed whatever its value. Membership, not magnitude, is what makes such a row invalid:
+# an AEZ0 row can carry |shock| well under the contamination bound.
 GTAP_LAND_ENDW = tuple("AEZ%d" % i for i in range(1, 19))
 
 
@@ -342,7 +333,7 @@ def filter_to_model_domain(df, output_path, label, valid_endw=GTAP_LAND_ENDW, en
     reject: it is a row the model cannot consume, and it should not reach a bound check at all.
 
     Only ENDW is filtered. AEZ1-AEZ18 is fixed across GTAP-AEZ aggregations and can be asserted here;
-    the ACTS and REG sets are aggregation-specific (s26/r50 for today's consumer) and pinning them in
+    the ACTS and REG sets are aggregation-specific (s26/r50 for the current consumer) and pinning them in
     a shared science library would bake one consumer aggregation into every other.
 
     Args:
@@ -385,10 +376,9 @@ KEY_ENUMERATION_LIMIT = 600
 def _enumerate_keys(keys, limit=KEY_ENUMERATION_LIMIT):
     """Every key, or a bounded sample that SAYS it is one, plus the distinct zones and scenario-years.
 
-    A count paired with an unlabelled excerpt reads as the whole set: 'D19 biomass: 6 ... First few:
-    [five keys]' was acted on as five zones, and the sixth went unexamined (2026-09-24). The distinct
-    zone and scenario-year lists are always complete because they are bounded by the run's own
-    dimensions, and they are what a reader actually acts on.
+    A count paired with an unlabelled excerpt reads as the whole set, so a truncated list says how
+    many keys it leaves out. The distinct zone and scenario-year lists are always complete because
+    they are bounded by the run's own dimensions, and they are what a reader actually acts on.
     """
     keys = list(keys)
     zones = sorted({str(k[2]) for k in keys})
@@ -544,6 +534,63 @@ def assert_shock_table_sound(df, requested_scenarios, label, abs_max=SHOCK_ABS_M
     return True
 
 
+ANCHOR_INTERPOLATION = 'pchip'   # the selected specification
+
+
+def anchored_series(x, anchor_x, anchor_y, method=ANCHOR_INTERPOLATION):
+    """Expand anchor-year values to every year, shape-preserving by default.
+
+    The selected specification is PCHIP: shape-preserving piecewise cubic Hermite interpolation
+    between the 2023, 2030, 2040 and 2050 anchors. It retains the anchor values exactly and cannot
+    overshoot between adjacent anchors, which piecewise-linear interpolation also does -- but linear
+    interpolation of a LEVEL makes the implied annual increment jump discontinuously at the anchor
+    years, which is the artefact PCHIP removes. Measured on the bounded carbon stocks, the mean
+    jump at 2030/2040 falls from 2.9e6 to 6.3e5 Mg C/yr while cumulative change is unaltered.
+
+    Every module interpolates anchors through this one function, so the specification changes in
+    one place.
+
+    Args:
+        x (array-like): the years to evaluate.
+        anchor_x (array-like): the anchor years, ascending, at least two.
+        anchor_y (array-like): the value at each anchor.
+        method (str): 'pchip' (the specification) or 'linear' (retained for sensitivity
+            comparison and for quantities whose anchors must not be smoothed).
+
+    Returns:
+        numpy.ndarray: one value per entry of `x`.
+
+    Raises:
+        ValueError: on an unknown method, or fewer than two anchors.
+    """
+    import numpy as np
+    # None means "the specification", so a caller that threads an optional method through does not
+    # have to know what the default is.
+    if method is None:
+        method = ANCHOR_INTERPOLATION
+    anchor_x = np.asarray(anchor_x, dtype=float)
+    anchor_y = np.asarray(anchor_y, dtype=float)
+    if anchor_x.size < 2:
+        raise ValueError('anchored_series needs at least two anchors, got %d' % anchor_x.size)
+    if method == 'linear':
+        return np.interp(x, anchor_x, anchor_y)
+    if method != 'pchip':
+        raise ValueError("anchored_series method must be 'pchip' or 'linear', got %r" % method)
+    # Two anchors make PCHIP the straight line between them, so scipy is not needed and the
+    # dependency is not imposed on a run that only has endpoints (fisheries' ramp, for one).
+    if anchor_x.size == 2:
+        return np.interp(x, anchor_x, anchor_y)
+    from scipy.interpolate import PchipInterpolator
+    x = np.asarray(x, dtype=float)
+    values = PchipInterpolator(anchor_x, anchor_y, axis=0)(x)
+    # Evaluating the cubic Hermite at a knot is not bit-exact: a 0.0 anchor can come back as a tiny
+    # negative, which a strict non-negativity check rejects. The anchors are data, not something to
+    # re-derive, so they are restored exactly.
+    for position, anchor in enumerate(anchor_x):
+        values[x == anchor] = anchor_y[position]
+    return values
+
+
 def _signature(settings, inputs, light_inputs=()):
     """The signature dict: settings by value, inputs by content, light inputs by size and mtime."""
     fingerprints = dict(inputs)
@@ -552,12 +599,16 @@ def _signature(settings, inputs, light_inputs=()):
     return {'settings': settings, 'inputs': fingerprints}
 
 
-def _service_settings_and_inputs(p, service):
-    """The service's own es_parameters values and a content fingerprint of each `_path` among them."""
+def _service_settings_and_inputs(p, service, ignore=()):
+    """The service's own es_parameters values and a content fingerprint of each `_path` among them.
+
+    `ignore` names settings the outputs do not depend on, so a task whose outputs cannot move with
+    them is not rebuilt when they change.
+    """
     prefix = service + '_'
     settings, inputs = {}, {}
     for name, value in sorted(vars(p).items()):
-        if not name.startswith(prefix) or callable(value):
+        if not name.startswith(prefix) or callable(value) or name in ignore:
             continue
         if name.endswith('_path') and isinstance(value, str):
             inputs[name] = file_fingerprint(value)
@@ -570,11 +621,9 @@ def outputs_reuse_reason(outputs, signature, signature_path):
     """Why `outputs` cannot be reused, or None when they can.
 
     An existence check answers "is there an output?" when the question is "was it made from what
-    we are running now?". Four services gate a whole calculation on their final file existing, so
-    a rerun after a fix silently republishes the old answer: flood reported COMPLETED in 2h15m and
-    returned the previous run's figures in every digit. The opposite failure is as real: a pass
-    that recomputes a finished table because nothing recorded what produced it cost the NGFS rerun
-    about an hour and a half on 21 Sep 2026, twice in one day.
+    we are running now?". Gating on existence alone silently republishes the old answer after a
+    change; recomputing because nothing recorded what produced a finished table repeats hours of
+    work. The recorded signature answers the real question.
 
     Args:
         outputs (list): the files reuse would republish.
@@ -609,7 +658,7 @@ def write_outputs_signature(signature, signature_path):
     hb.write_to_file(json.dumps(signature, indent=2, sort_keys=True, default=str), signature_path)
 
 
-def reuse_reason(p, service, outputs, signature_name='run_signature.json', light_inputs=()):
+def reuse_reason(p, service, outputs, signature_name='run_signature.json', light_inputs=(), ignore=()):
     """Why a service task cannot reuse what is on disk, or None when it can.
 
     The signature is the service's own es_parameters values plus a fingerprint of every input path
@@ -625,18 +674,21 @@ def reuse_reason(p, service, outputs, signature_name='run_signature.json', light
         outputs (list): the files reuse would republish.
         signature_name (str): the signature filename, written beside the first output.
         light_inputs (iterable): paths fingerprinted by size and mtime.
+        ignore (iterable): settings these outputs do not depend on. Pass the same names to
+            write_reuse_signature.
 
     Returns:
         str | None: the reason to recompute, naming what differs, or None to reuse.
     """
-    settings, inputs = _service_settings_and_inputs(p, service)
+    settings, inputs = _service_settings_and_inputs(p, service, ignore)
     return outputs_reuse_reason(outputs, _signature(settings, inputs, light_inputs),
                                 os.path.join(os.path.dirname(outputs[0]), signature_name))
 
 
-def write_reuse_signature(p, service, outputs, signature_name='run_signature.json', light_inputs=()):
+def write_reuse_signature(p, service, outputs, signature_name='run_signature.json', light_inputs=(),
+                          ignore=()):
     """Record what produced these outputs, so the next run can tell whether it may reuse them."""
-    settings, inputs = _service_settings_and_inputs(p, service)
+    settings, inputs = _service_settings_and_inputs(p, service, ignore)
     write_outputs_signature(_signature(settings, inputs, light_inputs),
                             os.path.join(os.path.dirname(outputs[0]), signature_name))
 
@@ -660,11 +712,8 @@ def add_rows_missing_from_template(local_path, template_path, key_columns, log=p
     an ssh host, a scratch path, a drive location -- and the template ships those blank precisely
     so the copy can own them.
 
-    The third case is the one that bites without saying so. `gep_lulc_input_path` was added to
-    pollination's template row while the project's copy already had that row from an earlier run,
-    so the row was present, the key was present, and the cell was empty: the run reached
-    `p.gep_lulc_input_path` and raised AttributeError on a value the template had been carrying
-    for some time.
+    The third case is the one that fails without saying so: the row and the key are present but
+    the cell is empty, so the run raises AttributeError on a value the template carries.
 
     Args:
         local_path (str): the project's input/ copy, modified in place when it is behind.
@@ -803,9 +852,9 @@ def hydrate_es_config(p, service, log=print):
             seed_input_template(p, str(value), log, required=False)
             # leave_ref_path_if_fail: hydration publishes paths for later tasks rather than
             # consuming them, so a config path this machine does not hold should fail in the task
-            # that reads it, naming that file, rather than here, naming the service. Landslide is
-            # the case: its raw input directory is a cluster asset, so hydrating its config raised
-            # even for the results-only run, which reads a staged table and never touches it.
+            # that reads it, naming that file, rather than here, naming the service. Landslide's
+            # raw input directory, for example, is a cluster asset that its results-only run,
+            # reading a staged table, never touches.
             value = p.get_path(str(value), leave_ref_path_if_fail=True)
         else:
             try:
@@ -961,8 +1010,7 @@ def assert_zonal_conservation(country_totals_sum, raster_path, service, lower=0.
     """The conservation invariant for a value-raster country aggregation: the country sums must
     add up to the raster's own total. A shortfall beyond `lower` means value fell outside every
     polygon (or zones were dropped). An excess beyond `upper` means DOUBLE-COUNTING -- the exact
-    failure the split-country guard exists for. Verified at 100.0000% on pollination's real
-    raster before being encoded here."""
+    failure the split-country guard exists for."""
     total = raster_sum(raster_path)
     if total == 0:
         raise ValueError(f'{service}: conservation check impossible, the raster sums to zero.')
@@ -1112,9 +1160,8 @@ def assert_join_coverage(joined_df, value_column, expected_rows, service, log=pr
 
 
 # The choropleth every service's report closes with. It is here rather than pasted into each
-# results page because only seven of the twenty pages had it, each with its own copy, and a
-# service should not need its own geopackage to draw one: the shared country geometry plus the
-# per-country table this service already writes is enough.
+# results page so every page draws the same map, and a service needs no geopackage of its own to
+# draw one: the shared country geometry plus the per-country table the service writes is enough.
 CHOROPLETH_COLORMAP = 'OrRd'
 CHOROPLETH_FIGSIZE = (15, 10)
 CHOROPLETH_DPI = 300
@@ -1194,12 +1241,9 @@ def sum_by_zone(value, zone_ids, n_zones):
 
 
 # ---------------------------------------------------------------------------------------------
-# The two steps every service's gep_calculation shares.
-#
-# Measured across the 22 valuations before these were written: all 22 register a results dict,
-# name gep_by_country_base_year, and skip when it exists; 22 write the table; 20 log the total;
-# 18 set the year; 16 collapse to r250. The variation in the last two is not a choice anyone
-# made, it is what happens when the same twelve lines are retyped twenty-two times.
+# The two steps every service's gep_calculation shares: register a results dict naming
+# gep_by_country_base_year and skip when it exists; collapse to r250, set the year, write the
+# table and log the total.
 #
 # What is NOT here, deliberately: the merge that joins a service's values to the country list.
 # ntfp joins on iso3_r250_label with how='left', stormwater on iso3_r250_id with how='right',
@@ -1325,11 +1369,9 @@ def report_dir():
 def gep_summary_tables(df, value_column, out_dir, log=None):
     """The country table and the four grouped tables a results page displays.
 
-    Writes each one beside the report as `gep_by_<grouping>_base_year_table.csv`, which is the
-    filename eight services already produced by hand before this was shared, so the outputs are
-    unchanged and only the duplication goes away. A grouping whose column the frame does not carry
-    is skipped rather than raising: fire_protection covers 161 countries and does not reach every
-    income group.
+    Writes each one beside the report as `gep_by_<grouping>_base_year_table.csv`. A grouping whose
+    column the frame does not carry is skipped rather than raising: fire_protection covers 161
+    countries and does not reach every income group.
 
     Args:
         df (pd.DataFrame): the service's country table.
@@ -1359,10 +1401,10 @@ def published_country_columns(df, service):
     """The columns a published country table carries, in the order every service uses.
 
     Attributes first, then the year, then the account's own value columns, then whatever
-    supporting quantities the service reports. Three kinds of column are left out: the
+    supporting quantities the service reports. Two kinds of column are left out: the
     `ee_r264_*` correspondence columns, which several services keep on the frame because the map
     merge joins on them but which are the source side of a collapse the table has already made;
-    the redundant columns above; and nothing else, so a new value column a service adds still
+    and the redundant columns above. Nothing else is, so a new value column a service adds still
     appears without anyone editing this list.
 
     Args:
@@ -1390,10 +1432,8 @@ def write_gep_by_country(p, df, path, log=None):
     and a reader summing the column cannot tell which countries were considered. It is the
     authors' items 1 and 4 in one place -- the r250 list, and true zero against missing.
 
-    Eight services were short: wildfire 159 rows, crop 177, livestock 178, pollination 193,
-    extractive materials 216, coastal protection 225, water supply 253. Each had joined its own
-    data against the country list rather than the country list against its data, so a country its
-    source never mentions simply fell out. None of them carried a single NA, which is the tell.
+    The country list is joined against the service's data, not the data against the list, so a
+    country the source never mentions still gets its row.
 
     A true zero is the service's own business and is left alone: coastal protection writing 0 for
     a landlocked country is correct and must not become NA here.
@@ -1419,6 +1459,12 @@ def write_gep_by_country(p, df, path, log=None):
             'country list; it carries %s.' % list(df.columns)[:12])
     values = df[[c for c in df.columns if c not in attributes or c == 'iso3_r250_label']]
     full = countries.merge(values, on='iso3_r250_label', how='left')
+    # `year` is the table's metadata, not a value: a country added as NA still belongs to the
+    # table's year, so it carries it when the table has exactly one.
+    if 'year' in full.columns:
+        years = values['year'].dropna().unique()
+        if len(years) == 1:
+            full['year'] = full['year'].fillna(years[0]).astype(type(years[0]))
     added = len(full) - df['iso3_r250_label'].nunique()
     if added:
         log('Country list: %d rows, %d added as NA that the service produced no value for.'
@@ -1436,8 +1482,7 @@ def register_result(p, service, name, path):
     Registration is not bookkeeping. `distribute_results` copies what this registry names and
     nothing else, and it is the only place a raster is converted into a POG. A map that is never
     registered never leaves `intermediate/`, so nobody outside a run can open it and condition 16
-    has nothing to check -- which is why the library reported clean on the POG condition while
-    six services were each writing a map that went nowhere.
+    has nothing to check.
 
     Args:
         p (ProjectFlow): the project.
@@ -1487,7 +1532,7 @@ def country_attributes(p, columns=None):
     The r264 correspondence splits large countries into territories, so joining a per-country
     value against it repeats that country once per sub-region. Going through
     collapse_countries_to_r250 is what stops that, and putting it here means every service does
-    it rather than the sixteen that remembered.
+    it.
 
     Args:
         p (ProjectFlow): the project, after publish_inputs.
@@ -1501,7 +1546,7 @@ def country_attributes(p, columns=None):
 
 
 # =============================================================================
-# The imports the moved helpers need.
+# The imports the helpers below need.
 import hashlib
 import os
 import warnings
@@ -1519,10 +1564,8 @@ from rasterio.windows import Window
 # =============================================================================
 
 
-# These four were module defaults for the plotting helpers, with a comment saying a
-# configure_maps(p) call overrode them at run time. That call was removed in the structural pass,
-# so the defaults became unconditional and the four es_parameters rows naming them went dead. They
-# are arguments now, supplied by the caller from the CSV.
+# The plotting helpers carry no module-level map defaults: their settings are arguments, supplied
+# by the caller from es_parameters.csv.
 
 
 # -----------------------------------------------------------------------------
@@ -1541,9 +1584,9 @@ def service_data_dir(p, service):
     get_path caches one file per ref_path; this is the directory-shaped counterpart, because
     the callers ask for the directory. Only the shared directory's top-level files are
     copied: the anchors live flat, and the shared dirs also hold working subtrees
-    (Archive/, Results/, ...) that are not inputs and can be large. The raise survives: no
-    local copy and no shared copy still fails loudly, and a shared directory holding
-    nothing copyable seeds nothing.
+    (Archive/, Results/, ...) that are not inputs and can be large. No local copy and no
+    shared copy still fails loudly, and a shared directory holding nothing copyable seeds
+    nothing.
 
     Args:
         p: the ProjectFlow, for `base_data_dir` and `shared_data_dirs`.
@@ -1625,7 +1668,7 @@ def write_raster(path, data, meta, nodata=None):
 
 
 # The files, not their directories: get_path searches the task's own directory first, so a
-# directory reference resolved into intermediate/pollination/ rather than into base data.
+# directory reference resolves into the task's intermediate directory rather than into base data.
 
 
 
@@ -1659,8 +1702,7 @@ def read_lookup_of_sets(path, first_key_column, second_key_column, value_column,
     """A three-column reference table as {(first, second): set_of_values}.
 
     The land-cover class sets are the shape this exists for: which ids count as agricultural and
-    which as natural, in each of two coding schemes. They were four module constants, and the two
-    ESA ones sat in a different file from the ESA codebook they belong with.
+    which as natural, in each of two coding schemes.
     """
     df = hb.df_read(path)
     out = {}
@@ -1786,9 +1828,8 @@ def file_fingerprint(path, content: bool = True) -> dict:
     all move the mtime while the bytes stay put, and every one of those invalidates hours of
     downstream work that did not need redoing.
 
-    Hashing is cheap against what it prevents: 278 MB of land cover is 0.63 seconds on MSI, about
-    440 MB/s, so flood's whole 1.7 GB input set costs about four seconds where a false rebuild of
-    Section D costs two and a half hours.
+    Hashing is cheap against what it prevents: at about 440 MB/s on MSI, flood's whole 1.7 GB
+    input set costs about four seconds, where a false rebuild of Section D costs hours.
 
     Args:
         path: the file to fingerprint.
@@ -1848,14 +1889,9 @@ def write_csv(df: pd.DataFrame, path):
     """hb.df_write, plus the parent directory, which it does not create.
 
     A write that would produce the bytes already on disk leaves the file alone, mtime included.
-    Downstream reuse is decided by `file_fingerprint`, which keys on size and mtime, so a task that
-    rewrites an identical file tells everything after it that its input changed. Flood's Section C
-    does exactly that: it skips all 1500 units, rewrites the same global summary, and Section D
-    then recomputes 250 countries because the mtime moved -- about two and a half hours, every run,
-    to arrive at the file it already had.
-
-    Rewriting unchanged output is never what a caller wants, so this is fixed here rather than at
-    the eight places that fingerprint a file.
+    Otherwise a fingerprint keyed on size and mtime (`file_fingerprint(..., content=False)`) tells
+    everything downstream that its input changed, and triggers a rebuild that arrives at the file
+    it already had. Rewriting unchanged output is never what a caller wants.
     """
     path = str(path)
     hb.create_directories(os.path.dirname(path))
@@ -1929,10 +1965,8 @@ def build_interval_labels(edges: np.ndarray, label_format: str = "usd_millions")
 def savefig(path, dpi: int = 300, **kwargs):
     """Write the current figure, tightly cropped, and close it.
 
-    The call below is plt.savefig, not this function. Without the prefix it recurses, and the
-    recursion is invisible because the inner call passes bbox_inches, which a two-argument
-    signature does not take: the TypeError arrives before the RecursionError, and reads like a
-    matplotlib version problem rather than a name that resolves to the wrong thing.
+    The call below must stay plt.savefig: an unprefixed savefig resolves to this function, and
+    the resulting TypeError on bbox_inches reads like a matplotlib version problem.
     """
     hb.create_directories(os.path.dirname(str(path)))
     plt.tight_layout()
@@ -2073,11 +2107,9 @@ def plot_publication_choropleth_categorical(
 
 
 # ---------------------------------------------------------------------------------------------
-# Country columns and raster geometry. Promoted here on their second caller: each of these existed
-# in both erosion and flood, and pick_iso3_column had already drifted -- flood tried ISO_A3 before
-# ADM0_A3 and erosion the reverse, so a boundary file carrying both was read differently by the two
-# services. ISO_A3 wins here: it is the official code, where ADM0_A3 is Natural Earth's own and
-# fills gaps with invented ones.
+# Country columns and raster geometry, shared by erosion and flood so a boundary file carrying
+# both ISO_A3 and ADM0_A3 is read the same way by both services. ISO_A3 wins: it is the official
+# code, where ADM0_A3 is Natural Earth's own and fills gaps with invented ones.
 # ---------------------------------------------------------------------------------------------
 def pick_iso3_column(gdf):
     """The first ISO3-like column present, or None.
@@ -2135,9 +2167,8 @@ def attach_income_group(df, df_countries, iso3_column="iso3", column="income_gro
     """Join the World Bank income group from the shared country table.
 
     Every service that reports by income group reads the same column, so one country cannot sit in
-    a different group in two accounts. A per-service dict in code drops every country missing
-    from it -- a 115-country list would remove about 77 of erosion's ~192 countries from those
-    figures without saying so.
+    a different group in two accounts. A per-service dict in code silently drops every country
+    missing from it.
 
     Args:
         df (DataFrame): rows carrying an ISO3 column.
@@ -2184,16 +2215,14 @@ def income_group_colors(groups):
 
 # =============================================================================================
 # FAOSTAT Value of Production: the pipeline crop_provision, livestock_provision and
-# extractive_materials_provision share. Each of these existed once per service, with the service's
-# own name baked into the value column; the value column is a parameter here instead. Promoted on
-# the third caller. Livestock's versions were the supersets and are the ones kept: items select by
-# FAO item code as well as by name, and the value before the rental rate is carried alongside it.
+# extractive_materials_provision share. The value column is a parameter; items select by FAO item
+# code as well as by name, and the value before the rental rate is carried alongside it.
 # =============================================================================================
 FAOSTAT_VALUE_UNIT = '1000 USD'
 FAOSTAT_GROSS_PRODUCTION_VALUE_ELEMENT = 57
 FAOSTAT_THOUSAND_USD = 1000.0
-# What the bulk file spanned when this was written. Kept for the test fixture to build a
-# realistic frame; the reader takes its years from the file it is handed, because these drift.
+# The span of the staged bulk file, used by the test fixture to build a realistic frame. The
+# reader takes its years from the file it is handed, because a FAO release adds years.
 FAOSTAT_FIRST_YEAR = 1961
 FAOSTAT_LAST_YEAR = 2023
 FAOSTAT_TURKIYE_AREA_CODE = 223
@@ -2217,10 +2246,8 @@ def clean_faostat_values(df_raw, items, value_column, aggregate_areas):
     Returns:
         pd.DataFrame: area_code, area_code_M49, country, crop_code, crop, year, <value_column>.
     """
-    # The years the file actually carries, not a span written down when it was last looked at.
-    # The constants said 1961 to 2022 while the staged file already ran to Y2023, so that year was
-    # never renamed and dropped out without a word. A FAO release adds a year routinely, and a
-    # service that silently ignores it is worse than one that fails.
+    # The years the file actually carries, not a fixed span: a FAO release adds a year routinely,
+    # and a fixed span drops the new year without a word.
     years = sorted(int(c[1:]) for c in df_raw.columns
                    if len(c) == 5 and c.startswith('Y') and c[1:].isdigit())
     if not years:
@@ -2292,14 +2319,36 @@ def apply_rental_rates(df_values, df_coefs, value_column):
 
 
 def sum_items_to_country_year(df, value_column):
-    """Item rows summed to one row per country and year."""
+    """Item rows summed to one row per country and year.
+
+    A country-year whose every item value is missing stays MISSING: a bare sum maps an all-NaN
+    group to zero, which publishes a country nobody valued as a zero. A group with any valued
+    item keeps its sum, including a genuine zero.
+
+    `gross_production_value` sums over the VALUED rows only, so it is the gross value behind
+    the published value, never gross value the valuation skipped. For a caller whose valued
+    rows share one rate per country-year and whose gross column is thousand USD against a USD
+    value (crop provision), this makes the country identity value = rate x gross x 1000 hold;
+    a caller with per-row rates or other units gets the valued-row restriction, not that
+    identity. Summing every row instead pulls in dissolved-source-area rows (Ethiopia PDR
+    beside Ethiopia) that carry gross value the rent never valued, which breaks crop's identity
+    for ETH, SDN, SRB and CZE. The item table keeps those source rows untouched.
+    """
+    valued_mask = pd.to_numeric(df[value_column], errors='coerce').notna()
     agg_dict = {value_column: 'sum'}
-    if 'gross_production_value' in df.columns:
-        agg_dict['gross_production_value'] = 'sum'
     out = hb.df_groupby(df, ['iso3_r250_id', 'year'], agg_dict=agg_dict,
                         preserve='keep_all_valid')
+    if 'gross_production_value' in df.columns:
+        out = out.drop(columns=['gross_production_value'], errors='ignore')
+        gpv = df[valued_mask].groupby(['iso3_r250_id', 'year'])['gross_production_value'] \
+            .sum().rename('gross_production_value')
+        out = out.merge(gpv, left_on=['iso3_r250_id', 'year'], right_index=True, how='left')
     out = out.sort_values(by=['iso3_r250_id', 'year'], ascending=[True, True])
     out[value_column] = pd.to_numeric(out[value_column], errors='coerce')
+    n_valued = df[valued_mask].groupby(['iso3_r250_id', 'year']).size().rename('_n_valued')
+    out = out.merge(n_valued, left_on=['iso3_r250_id', 'year'], right_index=True, how='left')
+    out.loc[out['_n_valued'].isna(), value_column] = np.nan
+    out = out.drop(columns='_n_valued')
     hb.log('Grouped by country-year (%d rows).' % out.shape[0])
     return out
 
@@ -2413,9 +2462,32 @@ def expand_country_values_to_regions(df_regions, df_by_country, value_column):
 
 
 
-def drop_aggregates_where_components_exist(df, aggregate_items, value_column,
+def faostat_item_group_members(membership_df, domain=None):
+    """The FAOSTAT item-group membership as a two-column integer frame.
+
+    Args:
+        membership_df (pd.DataFrame): the staged Definitions and Standards Item Group listing,
+            with `Domain Code`, `Item Group Code` and `Item Code` columns (or already-normalized
+            `item_group_code`/`item_code`).
+        domain (str): restrict to one FAOSTAT domain, e.g. 'QV' for Value of Production.
+
+    Returns:
+        pd.DataFrame: unique (item_group_code, item_code) integer pairs.
+    """
+    m = membership_df.copy()
+    if domain is not None and 'Domain Code' in m.columns:
+        m = m[m['Domain Code'] == domain]
+    m = m.rename(columns={'Item Group Code': 'item_group_code', 'Item Code': 'item_code'})
+    for column in ('item_group_code', 'item_code'):
+        m[column] = pd.to_numeric(m[column], errors='coerce')
+    m = m.dropna(subset=['item_group_code', 'item_code'])
+    return (m[['item_group_code', 'item_code']].astype(int).drop_duplicates()
+            .reset_index(drop=True))
+
+
+def drop_aggregates_where_components_exist(df, aggregate_items, value_column, membership_df,
                                            country_column='area_code', log=None):
-    """FAOSTAT group totals kept only where the items beneath them are missing.
+    """FAOSTAT group totals kept except where their OWN members are individually valued.
 
     FAOSTAT publishes crop and livestock value at two levels: the individual item, and the group
     total that adds those items up for you. "Oilcrops Primary" is oil palm plus coconuts plus the
@@ -2423,20 +2495,25 @@ def drop_aggregates_where_components_exist(df, aggregate_items, value_column,
     twice, and it does so invisibly, because the result is a plausible number in the right units.
 
     Malaysia 2019 is the clearest case: oil palm $10.09bn plus coconuts $0.16bn is exactly
-    Oilcrops Primary at $10.25bn, and counting both put Malaysia at 179% of its own total crop
-    production. Across all countries, 87 of 156 exceeded 100% of what FAOSTAT says they grow;
-    livestock was worse, at 106 of 152.
+    Oilcrops Primary at $10.25bn, and counting both puts Malaysia at 179% of its own total crop
+    production.
 
-    Deleting the group totals is not the fix, because this release stopped publishing individual
+    Deleting every group total is not the fix, because this release stopped publishing individual
     items for many countries -- Argentina and India have no individual crop values at all in 2019,
-    only group totals. So a group total is dropped for a country-year that has any individual item
-    and kept for one that has none, which is the only rule that both avoids the double count and
-    keeps those countries in the account.
+    only group totals. And dropping a group because the country has ANY individual item is not the
+    fix either: a country can carry "Roots and Tubers, Total" beside an individually valued Wheat,
+    which the group never contained. So a group total is dropped exactly for a country-year where
+    at least one of ITS OWN MEMBERS (per the FAOSTAT item-group definitions) is individually
+    valued, and kept otherwise. A dropped group with only some members valued loses its unvalued
+    members' share, which the log reports; whether to allocate such remainders is an accounting
+    decision, not this function's.
 
     Args:
-        df (pd.DataFrame): the long cleaned FAOSTAT frame.
+        df (pd.DataFrame): the long cleaned FAOSTAT frame, with `crop` and `crop_code`.
         aggregate_items (iterable): the group-total item names.
         value_column (str): the value column.
+        membership_df (pd.DataFrame): the item-group membership, as staged or normalized
+            (see faostat_item_group_members).
         country_column (str): the column identifying the country.
         log (callable): where to report what was dropped.
 
@@ -2452,18 +2529,37 @@ def drop_aggregates_where_components_exist(df, aggregate_items, value_column,
     if not is_aggregate.any():
         return df
 
-    valued = df[value_column].notna()
-    has_components = (df[~is_aggregate & valued]
-                      .groupby([country_column, 'year']).size().rename('n').reset_index())
-    marked = df.merge(has_components, on=[country_column, 'year'], how='left')
-    redundant = marked['crop'].isin(aggregates) & marked['n'].notna()
+    members = faostat_item_group_members(membership_df)
+    out = df.reset_index(drop=True)
+    is_aggregate = out['crop'].isin(aggregates)
+    codes = pd.to_numeric(out['crop_code'], errors='coerce')
+    valued = out[value_column].notna()
 
-    dropped_value = marked.loc[redundant & marked[value_column].notna(), value_column].sum()
-    kept = marked.loc[marked['crop'].isin(aggregates) & marked['n'].isna(), country_column].nunique()
-    log('Group totals: %d rows dropped where the individual items are present (%.6g in the value '
-        'column), and kept for %d countries that have no individual items at all.'
-        % (int(redundant.sum()), dropped_value, kept))
-    return marked[~redundant].drop(columns='n')
+    valued_pairs = (out.loc[~is_aggregate & valued, [country_column, 'year']]
+                    .assign(item_code=codes[~is_aggregate & valued])
+                    .dropna(subset=['item_code']).drop_duplicates())
+    valued_pairs['item_code'] = valued_pairs['item_code'].astype(int)
+    group_rows = (out.loc[is_aggregate, [country_column, 'year']]
+                  .assign(item_group_code=codes[is_aggregate])
+                  .dropna(subset=['item_group_code']))
+    group_rows['item_group_code'] = group_rows['item_group_code'].astype(int)
+    group_rows['row'] = group_rows.index
+    expanded = group_rows.merge(members, on='item_group_code')
+    hits = expanded.merge(valued_pairs, on=[country_column, 'year', 'item_code'])
+    redundant = out.index.isin(hits['row'])
+
+    n_members_hit = hits.groupby('row').size()
+    n_members = members.groupby('item_group_code').size()
+    partial = sum(1 for row in n_members_hit.index
+                  if n_members_hit[row] < n_members.get(int(codes[row]), 0))
+    dropped_value = out.loc[redundant & valued, value_column].sum()
+    kept = out.loc[is_aggregate & ~redundant, country_column].nunique()
+    log('Group totals: %d rows dropped where their own members are individually valued '
+        '(%.6g in the value column; %d of them with only PARTIAL member coverage, whose '
+        'unvalued members\' share is lost with them), and kept in %d countries whose groups '
+        'have no individually valued member.'
+        % (int(redundant.sum()), dropped_value, partial, kept))
+    return out[~redundant]
 
 
 def warp_raster_to_pyramid_sum(src_path, dst_path, arcseconds):
@@ -2490,13 +2586,67 @@ def warp_raster_to_pyramid_sum(src_path, dst_path, arcseconds):
                          % (arcseconds, rungs))
     degrees = hb.pyramid_compatible_resolutions[float(arcseconds)]
     ndv = hb.get_ndv_from_path(src_path)
-    gdal.Warp(dst_path, src_path,
-              xRes=degrees, yRes=degrees,
-              outputBounds=(-180.0, -90.0, 180.0, 90.0),
-              dstSRS='EPSG:4326',
-              resampleAlg='sum',
-              srcNodata=ndv, dstNodata=ndv,
-              creationOptions=['COMPRESS=DEFLATE', 'TILED=YES'])
+
+    # Exact overlap aggregation rather than gdal.Warp's sum resampling: measured on the
+    # pollination value raster (180 arcseconds, global), the warp returned 109.6 percent of the
+    # source total at 300 arcseconds and 81.3 percent at 900, so its weights do not conserve.
+    # Each sparse matrix row holds the fraction of every source row (column) covered by one
+    # target row (column); every source cell's fractions sum to one, so the global sum is
+    # conserved by construction rather than by trust in a resampler.
+    from scipy.sparse import coo_matrix
+
+    def overlap(n_src, src_origin, src_step, n_dst, dst_origin, dst_step):
+        dst_lo_all = min(dst_origin, dst_origin + n_dst * dst_step)
+        step = abs(dst_step)
+        rows, cols, vals = [], [], []
+        for j in range(n_src):
+            lo, hi = src_origin + j * src_step, src_origin + (j + 1) * src_step
+            lo, hi = min(lo, hi), max(lo, hi)
+            first = int(np.floor((lo - dst_lo_all) / step))
+            last = int(np.ceil((hi - dst_lo_all) / step))
+            for k in range(max(0, first), min(n_dst, last)):
+                t_lo = dst_lo_all + k * step
+                t_hi = t_lo + step
+                cover = (min(hi, t_hi) - max(lo, t_lo)) / (hi - lo)
+                if cover <= 0:
+                    continue
+                # k counts bands from the low coordinate; map it to the raster index,
+                # which counts from dst_origin in the direction of dst_step.
+                i = k if dst_step > 0 else n_dst - 1 - k
+                rows.append(i); cols.append(j); vals.append(cover)
+        return coo_matrix((vals, (rows, cols)), shape=(n_dst, n_src)).tocsr()
+
+    src = gdal.Open(src_path)
+    gt = src.GetGeoTransform()
+    a = src.GetRasterBand(1).ReadAsArray().astype('float64')
+    valid = np.isfinite(a)
+    if ndv is not None:
+        valid &= (a != ndv)
+    a = np.where(valid, a, 0.0)
+
+    n_dst_y, n_dst_x = int(round(180.0 / degrees)), int(round(360.0 / degrees))
+    wy = overlap(src.RasterYSize, gt[3], gt[5], n_dst_y, 90.0, -degrees)
+    wx = overlap(src.RasterXSize, gt[0], gt[1], n_dst_x, -180.0, degrees)
+    out = wy @ a @ wx.T
+    covered = (wy @ valid.astype('float64') @ wx.T) > 0
+    out_ndv = float(ndv) if ndv is not None else -9999.0
+    out = np.where(covered, out, out_ndv).astype('float32')
+
+    driver = gdal.GetDriverByName('GTiff')
+    ds = driver.Create(dst_path, n_dst_x, n_dst_y, 1, gdal.GDT_Float32,
+                       options=['COMPRESS=DEFLATE', 'TILED=YES'])
+    ds.SetGeoTransform((-180.0, degrees, 0.0, 90.0, 0.0, -degrees))
+    srs = osr.SpatialReference()
+    srs.ImportFromEPSG(4326)
+    ds.SetProjection(srs.ExportToWkt())
+    band = ds.GetRasterBand(1)
+    band.SetNoDataValue(out_ndv)
+    band.WriteArray(out)
+    # Sum-preserved per-cell quantities are extensive by construction; declaring it on the file
+    # is what makes make_path_pog build sum overviews instead of defaulting to covariate means.
+    ds.SetMetadataItem('POG_VARIABLE_CLASS', 'extensive')
+    band.FlushCache()
+    ds = None
     return dst_path
 
 
@@ -2543,9 +2693,8 @@ def publish_raster_as_pog(path, log=None):
 def distribute_results(p, service, log=None):
     """Copy a service's registered results into the project's output directory.
 
-    Five services carried this loop verbatim, differing only in the service key they looked up --
-    which is the shape that goes wrong when a service is renamed and one copy is missed, because
-    `p.results[<wrong key>]` raises in a task that runs last and only on a full tree.
+    One loop for every service, so a renamed service cannot leave behind a copy that looks up the
+    wrong key: `p.results[<wrong key>]` raises in a task that runs last and only on a full tree.
 
     Args:
         p (ProjectFlow): the project, inside gep_results_distribution.

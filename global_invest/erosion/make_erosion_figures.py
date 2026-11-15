@@ -3,8 +3,8 @@
 A script rather than a task because nothing in the account reads what it draws. The valuation
 writes `integrated_country_gep.csv` and `gep_calculation` turns that into the per-country table
 every other service publishes; the thirty-four PNGs here are read by no task, no results page and
-no gate. They were a flat script before the fold-in, and running the pipeline redrew them on every
-pass whether or not anyone wanted them.
+no gate. As a task, the pipeline would redraw them on every pass whether or not anyone wanted
+them.
 
 They are kept because they are the manuscript's figures, not the account's. Run this after a
 valuation has produced `integrated_country_gep.csv`:
@@ -52,7 +52,7 @@ def load_world_boundary_prefer_run(paths) -> gpd.GeoDataFrame:
 
 
 def generate_all_maps_and_figures(p, paths):
-    """Driver that produces every map/figure/CSV described in the module docstring below (originally a flat script)."""
+    """Driver that produces every map, figure and CSV the module docstring describes."""
     # =============================================================================
     # 2) LOAD DATA
     # =============================================================================
@@ -701,9 +701,9 @@ def plot_raster_global(tif_path: str, title: str, out_png: str, downsample_facto
 
 
 if __name__ == '__main__':
-    # erosion_paths reads the numbers from erosion_gep_output_dir, which publish_inputs sets to
-    # wherever the valuation wrote them, and the figure directory from cur_dir. There is no
-    # cur_dir outside a task, so name one before either call.
+    # erosion_paths reads the numbers from erosion_gep_output_dir when it is set (prevention_shares
+    # sets it inside a run) and from cur_dir otherwise, and the figure directory from cur_dir.
+    # There is no cur_dir outside a task, so name one before either call.
     p = hb.ProjectFlow(project_name='gep_erosion', run_mode='check')
     p.cur_dir = os.path.join(p.project_dir, 'output', 'erosion_figures')
     hb.create_directories([p.cur_dir])

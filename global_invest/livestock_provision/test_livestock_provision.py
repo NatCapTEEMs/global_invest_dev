@@ -1,10 +1,10 @@
 """Unit tests for livestock_provision.
 
 Every function the task calls is pinned on a hand-built table small enough that the expected
-number is written out in the assertion: the FAOSTAT clean-up with its code-or-name item
-selection, the decade rental-rate lookup, the as-of attribution, the country join, the two
-groupings, and the GLEAM feed-share lambda (step two of the port). The task module's two readers
-are pinned on files written into tmp_path.
+number is written out in the assertion: the CWoN reshape, revenue x rental rate with its
+missing-not-zero rule, the product-rent check, the country join and the GLEAM feed-share lambda.
+The staged CWoN tables are checked against the figure they give. The FAOSTAT helpers tested
+further down are the shared utilities crop_provision uses.
 """
 from types import SimpleNamespace
 
@@ -121,42 +121,6 @@ def test_merge_crop_with_coefs_applies_the_decade_in_force_and_leaves_uncovered_
     assert pd.isna(out.loc[(2, 2015)])           # country absent from the CWoN table
 
 
-def test_attach_countries_does_not_repeat_a_split_country_and_converts_to_usd():
-    items = pd.DataFrame({
-        'area_code_M49': [10, 10, 20],
-        'area_code': [1, 1, 2],
-        'country': ['Aaaland', 'Aaaland', 'Bbbland'],
-        'crop_code': [1017, 882, 1017],
-        'crop': ['Meat of goat', 'Raw milk of cattle', 'Meat of goat'],
-        'year': [2019, 2019, 2019],
-        'rental_rate': [0.3, 0.3, 0.4],
-        'livestock_provision_gep': [30.0, 15.0, 40.0],
-    })
-    out = lp.attach_countries(items, COUNTRIES)
-
-    # AAA is split across two r264 rows; the join must still produce three rows, not five.
-    assert len(out) == 3
-    # FAOSTAT's thousand USD becomes plain USD here, as in crop_provision.
-    assert out['livestock_provision_gep'].tolist() == [30000.0, 15000.0, 40000.0]
-    assert out.set_index('crop_code').loc[1017, 'iso3_r250_label'].tolist() == ['AAA', 'BBB']
-
-
-def test_attach_countries_keeps_a_row_whose_code_the_correspondence_lacks():
-    items = pd.DataFrame({
-        'area_code_M49': [10, 999],
-        'area_code': [1, 9],
-        'country': ['Aaaland', 'Nowhere'],
-        'crop_code': [1017, 1017],
-        'crop': ['Meat of goat', 'Meat of goat'],
-        'year': [2019, 2019],
-        'rental_rate': [0.3, 0.3],
-        'livestock_provision_gep': [30.0, 7.0],
-    })
-    out = lp.attach_countries(items, COUNTRIES)
-    assert len(out) == 2
-    unmatched = out[out['area_code_M49'] == 999].iloc[0]
-    assert pd.isna(unmatched['iso3_r250_label'])
-    assert unmatched['livestock_provision_gep'] == 7000.0
 
 
 def test_group_crops_then_group_countries_sum_to_the_same_total():
@@ -175,6 +139,39 @@ def test_group_crops_then_group_countries_sum_to_the_same_total():
     by_year = utilities.sum_countries_to_year(by_country, 'livestock_provision_gep').set_index('year')['livestock_provision_gep']
     assert by_year.loc[2019] == 85.0
     assert by_year.loc[2018] == 1.0
+
+
+def test_a_country_with_no_valued_item_is_missing_not_zero():
+    # Antigua-like: gross value but no rental rate, so no item carries a value. A bare sum
+    # would publish such countries as zeros. They are missing.
+    item_rows = pd.DataFrame({
+        'iso3_r250_id': [10, 10, 30, 30, 40],
+        'year': [2019] * 5,
+        'livestock_provision_gep': [30.0, np.nan, np.nan, np.nan, 0.0],
+        'gross_production_value': [300.0, 50.0, 80.0, np.nan, 10.0],
+    })
+    by_country = utilities.sum_items_to_country_year(item_rows, 'livestock_provision_gep')
+    per_country = by_country.set_index('iso3_r250_id')['livestock_provision_gep']
+    assert per_country.loc[10] == 30.0
+    assert pd.isna(per_country.loc[30])            # no valued item: missing, not zero
+    assert per_country.loc[40] == 0.0              # a valued zero stays a zero
+
+
+def test_the_feed_share_applies_to_gross_value_the_rental_rate_never_touched():
+    # The feed share needs no rental rate, so a country without one keeps its feed-share value
+    # when the caller passes the gross summed over every item.
+    df_country_year = pd.DataFrame({
+        'iso3_r250_id': [1, 2], 'year': [2019, 2019],
+        'gross_production_value': [1000.0, np.nan],     # rent-valued gross only
+        'gross_production_value_all': [1000.0, 400.0],  # every item's gross
+        'livestock_provision_gep': [120.0, np.nan],
+    })
+    df_lambda = pd.DataFrame({'iso3_r250_id': [1, 2], 'lambda': [0.9, 0.5]})
+    out = lp.feed_share_gep(df_country_year, df_lambda,
+                            gross_column='gross_production_value_all').set_index('iso3_r250_id')
+    assert out.loc[1, 'livestock_provision_gep_feed_share'] == pytest.approx(900.0)
+    assert out.loc[2, 'livestock_provision_gep_feed_share'] == pytest.approx(200.0)
+    assert pd.isna(out.loc[2, 'livestock_provision_gep'])
 
 
 def test_normalize_m49_codes_unquotes_casts_and_maps_successors():
@@ -215,26 +212,6 @@ def test_the_feed_category_lists_are_pinned():
     assert len(lp.GLEAM_TOTAL_FEED_COLS) == 8
 
 
-def test_task_reader_cleans_the_faostat_bulk_file(tmp_path):
-    """The bulk file is Latin-1, so an accented area name comes back mangled at any other
-    encoding and the country would then miss its join."""
-    path = str(tmp_path / 'Value_of_Production_E_All_Data.csv')
-    raw = _raw_faostat_frame()
-    raw.loc[0, 'Area'] = 'Côte'
-    raw.to_csv(path, index=False, encoding='ISO-8859-1')
-
-    out = lpt.read_crop_values(path, items=[1017], aggregate_areas=['World'])
-    assert set(out['country']) == {'Côte'}
-    assert out.set_index('year')['livestock_provision_gep'].loc[1961] == 1.0
-
-
-def test_task_reader_reshapes_the_semicolon_delimited_coefficient_table(tmp_path):
-    path = str(tmp_path / 'CWON2024_crop_coef.csv')
-    pd.DataFrame({'Order': [1], 'FAO': [1.0], 'ISO3': ['AAA'], 'Country/territory': ['Aaaland'],
-                  '1961-1970': [0.30], '2011-2020': [0.35]}).to_csv(path, sep=';', index=False)
-
-    out = lpt.read_crop_coefs(path)
-    assert out.set_index(['FAO', 'year'])['rental_rate'].loc[(1, 2011)] == 0.35
 
 
 def test_es_config_row_hydrates_livestock_provision(tmp_path):
@@ -247,8 +224,9 @@ def test_es_config_row_hydrates_livestock_provision(tmp_path):
 
 
 def test_dashboard_categories_give_an_upper_bound_not_an_estimate():
-    """The public dashboard serves six of the eight categories, and both absent ones belong to
-    the denominator, so the share it yields is too high. The flag must say so."""
+    """A frame missing denominator-only categories, as one ruminant species' dashboard table is
+    (no "other" categories), yields a share that is too high. The flag must say so. The union over
+    species carries all eight."""
     full = pd.DataFrame([{'iso3_r250_id': 1, 'iso3_r250_label': 'AAA',
                           'By-products': 0.0, 'Crop residues': 2.0, 'Fodder crop': 0.0,
                           'Grass and leaves': 4.0, 'Grains': 3.0, 'Oil seed cakes': 1.0,
@@ -313,9 +291,9 @@ def test_the_harvested_dashboard_table_gives_an_estimate_not_a_bound():
 
 
 def test_feed_share_attribution_runs_beside_the_rental_rate_not_instead_of_it():
-    # The account attributes livestock value with the CWoN land rental rate, which belongs to the
-    # crop method and stands in for the share of feed ecosystems provided. Both columns must come
-    # out of one run, because choosing between them is the group's decision and they differ a lot.
+    # The account's headline is the authors' method, CWoN revenue times the CWoN land rental rate.
+    # The GLEAM feed share is a diagnostic written beside it from the same run, never in its
+    # place, so the headline column must come through untouched.
     df_country_year = pd.DataFrame({
         'iso3_r250_id': [1, 2, 3],
         'year': [2019, 2019, 2019],
@@ -336,19 +314,6 @@ def test_feed_share_attribution_runs_beside_the_rental_rate_not_instead_of_it():
     assert pd.isna(out.loc[3, 'livestock_provision_gep_feed_share'])
     assert out.loc[3, 'livestock_provision_gep'] == pytest.approx(60.0)
 
-
-def test_both_value_columns_leave_the_country_join_in_dollars():
-    # FAOSTAT reports value in thousands of dollars and attach_countries converts. The conversion
-    # reached the attributed column only, so the gross value stayed in thousands and the
-    # feed-share attribution downstream came out a thousand times too small. Both must convert.
-    df_crop_value = pd.DataFrame({
-        'area_code_M49': [10], 'area_code': [1], 'country': ['Aaaland'], 'year': [2019],
-        'livestock_provision_gep': [1_000.0],       # thousands of USD, after the rental rate
-        'gross_production_value': [5_000.0],        # thousands of USD, before it
-    })
-    out = lp.attach_countries(df_crop_value, COUNTRIES)
-    assert out['livestock_provision_gep'].iloc[0] == pytest.approx(1_000_000.0)
-    assert out['gross_production_value'].iloc[0] == pytest.approx(5_000_000.0)
 
 
 def test_the_feed_share_reproduces_the_reference_lambda():
@@ -383,3 +348,86 @@ def test_the_feed_share_reproduces_the_reference_lambda():
                         left_on='iso3_r250_label', right_on='country_code', how='inner')
     assert len(joined) > 150
     assert (joined['feed_share'] - joined['reference_lambda']).abs().max() < 1e-12
+
+
+def _cwon_wide(rows, years, extra=None):
+    frame = pd.DataFrame({'countrycode': [r[0] for r in rows], 'countryname': [r[0] for r in rows],
+                          'series': ['s'] * len(rows)})
+    for c, column in (extra or {}).items():
+        frame[c] = column
+    for i, year in enumerate(years):
+        frame['YR%d' % year] = [r[1][i] for r in rows]
+    return frame
+
+
+def test_a_cwon_table_reshapes_to_one_row_per_country_and_year():
+    wide = _cwon_wide([('AAA', [1.0, 2.0]), ('BBB', [np.nan, 4.0])], [2018, 2019])
+    out = lp.cwon_series_long(wide, 'livestock_revenue').set_index(['countrycode', 'year'])
+    assert out.loc[('AAA', 2019), 'livestock_revenue'] == 2.0
+    assert pd.isna(out.loc[('BBB', 2018), 'livestock_revenue'])
+    assert len(out) == 4
+
+
+def test_the_reader_takes_the_world_banks_two_dots_as_missing(tmp_path):
+    path = tmp_path / 'land_rental_rates.xlsx'
+    pd.DataFrame({'countrycode': ['AAA', 'BBB'], 'countryname': ['A', 'B'], 'series': ['s', 's'],
+                  'YR2019': [0.25, '..']}).to_excel(path, index=False)
+    out = lpt.read_cwon_table(str(path), 'rental_rate').set_index('countrycode')
+    assert out.loc['AAA', 'rental_rate'] == 0.25
+    assert pd.isna(out.loc['BBB', 'rental_rate'])
+
+
+def test_rent_is_revenue_times_rate_and_missing_when_either_is_missing():
+    revenue = pd.DataFrame({'countrycode': ['AAA', 'BBB', 'CCC', 'DDD'], 'year': 2019,
+                            'livestock_revenue': [100.0, np.nan, 50.0, 0.0]})
+    rate = pd.DataFrame({'countrycode': ['AAA', 'BBB', 'DDD', 'EEE'], 'year': 2019,
+                         'rental_rate': [0.2, 0.3, 0.4, 0.5]})
+    out = lp.cwon_livestock_rent(revenue, rate).set_index('countrycode')['livestock_provision_gep']
+    assert out['AAA'] == pytest.approx(20.0)
+    assert pd.isna(out['BBB']) and pd.isna(out['CCC']) and pd.isna(out['EEE'])
+    assert out['DDD'] == 0.0
+
+
+def test_a_repeated_country_year_in_a_cwon_table_raises():
+    revenue = pd.DataFrame({'countrycode': ['AAA', 'AAA'], 'year': 2019, 'livestock_revenue': [1.0, 2.0]})
+    rate = pd.DataFrame({'countrycode': ['AAA'], 'year': 2019, 'rental_rate': [0.2]})
+    with pytest.raises(ValueError):
+        lp.cwon_livestock_rent(revenue, rate)
+
+
+def test_the_product_rent_check_sums_products_and_keeps_all_missing_missing():
+    rent = pd.DataFrame({'countrycode': ['AAA', 'BBB'], 'year': 2019,
+                         'livestock_provision_gep': [30.0, np.nan]})
+    products = pd.DataFrame({'countrycode': ['AAA', 'AAA', 'BBB'], 'itemcode': [1, 2, 1],
+                             'item': ['milk', 'meat', 'milk'], 'year': 2019,
+                             'product_rent': [10.0, 20.0, np.nan]})
+    out = lp.product_rent_check(rent, products).set_index('countrycode')
+    assert out.loc['AAA', 'product_rent_sum'] == 30.0 and out.loc['AAA', 'difference'] == 0.0
+    assert pd.isna(out.loc['BBB', 'product_rent_sum'])
+
+
+def test_cwon_codes_join_the_r250_list_once_and_an_unknown_code_is_kept():
+    rent = pd.DataFrame({'countrycode': ['AAA', 'CHI'], 'year': 2019,
+                         'livestock_provision_gep': [5.0, 1.0]})
+    out = lp.attach_countries(rent, COUNTRIES)
+    assert len(out) == 2
+    assert out.loc[out['countrycode'] == 'AAA', 'iso3_r250_id'].tolist() == [10]
+    assert pd.isna(out.loc[out['countrycode'] == 'CHI', 'iso3_r250_id']).all()
+
+
+def test_the_staged_cwon_tables_give_the_2019_rent_and_agree_with_the_product_rents():
+    import os, tempfile, hazelbean as hb
+    base = os.path.join(utilities.service_data_dir(
+        hb.ProjectFlow(project_dir=os.path.join(tempfile.mkdtemp(), 'anchors')),
+        'livestock_provision'), 'cwon')
+    revenue = lpt.read_cwon_table(os.path.join(base, 'land_pasture_revenue_total.xlsx'), 'livestock_revenue')
+    rate = lpt.read_cwon_table(os.path.join(base, 'land_rental_rates.xlsx'), 'rental_rate')
+    rent = lp.cwon_livestock_rent(revenue, rate)
+    rent_2019 = rent[rent['year'] == 2019]['livestock_provision_gep']
+    assert np.isclose(rent_2019.sum(), 92876485554.5402, rtol=0, atol=0.01)
+    assert int((rent_2019 > 0).sum()) == 189 and int((rent_2019 == 0).sum()) == 0
+    products = lpt.read_cwon_table(os.path.join(base, 'land_pasture_rent_cd.xlsx'), 'product_rent')
+    check = lp.product_rent_check(rent, products)
+    check = check[check['year'] == 2019]
+    assert (check['livestock_provision_gep'].isna() == check['product_rent_sum'].isna()).all()
+    assert check['difference'].abs().max() < 1e-5

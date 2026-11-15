@@ -4,9 +4,13 @@ This layer owns every file read and write. The science it calls lives in
 health_hypertension_functions, which never opens a file.
 
 The raster work reduces to one number per country: the sum of annual NDVI times population over
-urban pixels, computed blockwise on WorldPop's own 1 km grid with the urban mask and country
-ids warped or rasterized onto it. Everything after that is country-level arithmetic. The
-appendix's own results table is carried beside the result as the comparison anchor.
+urban pixels, computed blockwise on WorldPop's own 1 km grid. The task warps the annual NDVI onto
+that grid and rasterizes the country ids onto it. The urban mask is not resampled here: the
+configured settlement raster (`health_hypertension_urban_input_path`, GHS-SMOD classes prepared
+on the WorldPop grid) is read directly in the population raster's windows, and a pixel is urban
+when its class reaches `health_hypertension_urban_smod_min`. Everything after that is
+country-level arithmetic. The appendix's own results table is carried beside the result as the
+comparison anchor.
 """
 import os
 
@@ -35,7 +39,7 @@ def urban_greenness(p):
     """Per-country sum of NDVI times population over urban pixels, on WorldPop's grid.
 
     Warps the annual NDVI onto the population grid, rasterizes the country ids onto it, and
-    accumulates blockwise so the three global rasters never sit in memory together.
+    accumulates blockwise so the four global rasters never sit in memory together.
     """
     publish_inputs(p)
     p.health_country_id_path = os.path.join(p.cur_dir, 'iso3_r250_ids_1km.tif')
@@ -95,6 +99,8 @@ def gep_calculation(p):
     if already_done:
         return
 
+    if not p.run_this:
+        return p
     countries = utilities.collapse_countries_to_r250(p.df_countries)
     greenness = pd.read_csv(p.health_urban_ndvi_pop_path)
     df = countries.merge(greenness, on='iso3_r250_id', how='left')
@@ -150,4 +156,6 @@ def gep_calculation(p):
 def gep_result(p):
     """Render the results report(s). Shared implementation in utilities."""
     publish_inputs(p)
+    if not p.run_this:
+        return p
     utilities.render_service_results(p)

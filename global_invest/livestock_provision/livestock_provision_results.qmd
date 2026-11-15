@@ -53,21 +53,16 @@ p.execute()
 ```{python}
 #| output: false
 
-from global_invest import utilities
+### DISPLAY SETUP CODE: Based on the results in the prior cells, make the objects that will actually get displayed: small CSVs and the map PNG.
 
-### DISPLAY SETUP CODE: Based on the results in the prior cells, make the objectgs that will actually get displayed, like smol csvs or gpkg-as-pngs
-
+import matplotlib as mpl
 import matplotlib.pyplot as plt
-import pandas as pd
-import os
-import hazelbean as hb
-from global_invest.livestock_provision import livestock_provision_functions
-from global_invest.livestock_provision import livestock_provision_tasks
+from IPython.display import Image, display
+
+from global_invest import utilities
 
 pd.set_option('display.float_format', '{:,.2f}'.format)
 pd.set_option('display.max_rows', 1000)  # Set max rows to display
-from IPython.display import Image, display
-# pd.set_option('styler.render.index', False)
 
 # Service label for this QMD
 service_label = 'livestock_provision'
@@ -82,24 +77,21 @@ for k, v in p.results[service_label].items():
     # SERVICE-SPECIFIC CODE CUSTOMIZATION GOES HERE: Put whatever you think should be displayed
     # E.g., generate manuscript-ready tables, calculate total values for inline text, make plot pngs, etc
     if k == 'gep_by_country_base_year':
-        total_agricultural_value = df['livestock_provision_gep'].sum()
+        total_agricultural_value = df['livestock_provision_gep'].sum(min_count=1)
         p.gep_by_country_base_year_table = df[['iso3_r250_name', 'livestock_provision_gep']]
 
-        # Group by useful aggregation columns explicitly and assign each as an attribute to p
+        # Group by useful aggregation columns explicitly and assign each as an attribute to p.
+        # min_count=1: a group whose countries are all missing (Antarctica, Seven seas) stays
+        # missing rather than summing to a zero nobody measured.
         if 'income_grp' in df.columns:
-            p.gep_by_income_grp_base_year_table = df.groupby('income_grp', as_index=False)['livestock_provision_gep'].sum()
-            p.gep_by_income_grp_base_year_table = p.gep_by_income_grp_base_year_table[['income_grp', 'livestock_provision_gep']]
+            p.gep_by_income_grp_base_year_table = df.groupby('income_grp', as_index=False)['livestock_provision_gep'].sum(min_count=1)
         if 'region_un' in df.columns:
-            p.gep_by_region_un_base_year_table = df.groupby('region_un', as_index=False)['livestock_provision_gep'].sum()
-            p.gep_by_region_un_base_year_table = p.gep_by_region_un_base_year_table[['region_un', 'livestock_provision_gep']]
+            p.gep_by_region_un_base_year_table = df.groupby('region_un', as_index=False)['livestock_provision_gep'].sum(min_count=1)
         if 'continent' in df.columns:
-            p.gep_by_continent_base_year_table = df.groupby('continent', as_index=False)['livestock_provision_gep'].sum()
-            p.gep_by_continent_base_year_table = p.gep_by_continent_base_year_table[['continent', 'livestock_provision_gep']]
+            p.gep_by_continent_base_year_table = df.groupby('continent', as_index=False)['livestock_provision_gep'].sum(min_count=1)
         if 'subregion' in df.columns:
-            p.gep_by_subregion_base_year_table = df.groupby('subregion', as_index=False)['livestock_provision_gep'].sum()
+            p.gep_by_subregion_base_year_table = df.groupby('subregion', as_index=False)['livestock_provision_gep'].sum(min_count=1)
 
-            # p.gep_by_subregion_base_year_table = p.gep_by_country_base_year_table[['subregion', 'livestock_provision_gep']]
-        
         # Save each plot table as a CSV in the current directory
         hb.df_write(p.gep_by_country_base_year_table, os.path.join(utilities.report_dir(), 'gep_by_country_base_year_table.csv'))
         hb.df_write(p.gep_by_income_grp_base_year_table, os.path.join(utilities.report_dir(), 'gep_by_income_grp_base_year_table.csv'))
@@ -108,10 +100,6 @@ for k, v in p.results[service_label].items():
         hb.df_write(p.gep_by_subregion_base_year_table, os.path.join(utilities.report_dir(), 'gep_by_subregion_base_year_table.csv'))
 
         # Using the gpkg in gep_calculation, plot the GEP by country on a map
-
-        import numpy as np
-        import matplotlib as mpl
-
         gpkg_path = p.results[service_label]['gep_by_country_base_year'].replace('.csv', '.gpkg')
         gdf = hb.read_vector(gpkg_path)
         gdf = gdf[['iso3_r250_id', 'iso3_r250_name', 'livestock_provision_gep', 'geometry']]  # Keep only relevant columns
@@ -131,7 +119,7 @@ for k, v in p.results[service_label].items():
         sm = plt.cm.ScalarMappable(cmap='OrRd', norm=norm)
         sm._A = []
         cbar = fig.colorbar(sm, ax=ax, orientation='vertical', fraction=0.03, pad=0.02)
-        cbar.set_label("Gross Economic Product (GEP) in Base Year")
+        cbar.set_label("Gross Ecosystem Product (GEP) in Base Year")
         cbar.ax.yaxis.set_major_formatter(mpl.ticker.FuncFormatter(lambda x, _: f'{int(x):,}'))
 
         ax.set_title('GEP by Country in Base Year')
@@ -143,7 +131,7 @@ for k, v in p.results[service_label].items():
 
     if k == 'gep_by_year':
         p.gep_by_year_table = df[['year', 'livestock_provision_gep']]
-        # Drop livestock_provision_geps that are zero
+        # Keep the years with a positive value (zero and missing years are not plotted)
         p.gep_by_year_table = p.gep_by_year_table[p.gep_by_year_table['livestock_provision_gep'] > 0]
         hb.df_write(p.gep_by_year_table, os.path.join(utilities.report_dir(), 'gep_by_year_table.csv'))
 
@@ -152,14 +140,14 @@ for k, v in p.results[service_label].items():
         plt.plot(p.gep_by_year_table['year'], p.gep_by_year_table['livestock_provision_gep'], marker='o')
         plt.title('GEP by Year')  
         plt.xlabel('Year')
-        plt.ylabel('Gross Economic Product (GEP)')
+        plt.ylabel('Gross Ecosystem Product (GEP)')
         plt.grid(True)
         plt.savefig(os.path.join(utilities.report_dir(), 'gep_by_year_plot.png'), dpi=300)
         plt.close()
 
 ```
 
-Livestock production attributable to ecosystem-provided feed is valued at $`{python} f"{total_agricultural_value:,.2f}"` in the base year. The attribution currently uses a land rental rate standing in for the feed share, so the number is provisional. The tables below aggregate it by income group, region and continent.
+Livestock provision, CWoN livestock revenue times the CWoN land rental rate, is valued at $`{python} f"{total_agricultural_value:,.2f}"` in the base year. The tables below aggregate it by income group, region, continent and subregion. A group whose countries are all missing shows as missing.
 
 ## GEP by Country in Base Year, mapped
 
@@ -169,22 +157,22 @@ display(Image(os.path.join(utilities.report_dir(), 'gep_by_country_base_year_map
 
 ## GEP by Income Group in Base Year
 ```{python}
-# Display the GEP by income group table   
+# Display the GEP by income group table
 display(p.gep_by_income_grp_base_year_table)
 ```
 ## GEP by Region in Base Year
 ```{python}
-# Display the GEP by income group table   
+# Display the GEP by region table
 display(p.gep_by_region_un_base_year_table)
 ```
 ## GEP by Continent in Base Year
 ```{python}
-# Display the GEP by income group table   
+# Display the GEP by continent table
 display(p.gep_by_continent_base_year_table)
 ```
 ## GEP by Subregion in Base Year
 ```{python}
-# Display the GEP by income group table   
+# Display the GEP by subregion table
 display(p.gep_by_subregion_base_year_table)
 ```
 ## GEP  Over Time
@@ -192,7 +180,7 @@ display(p.gep_by_subregion_base_year_table)
 
 display(Image(os.path.join(utilities.report_dir(), 'gep_by_year_plot.png')))
 
-# Display the GEP by income group table   
+# Display the GEP by year table
 display(p.gep_by_year_table)
 ```
 

@@ -2,8 +2,8 @@
 
 air_filtration_gep is the deposition channel (the sheet's air_filtration service);
 sandstorm_prevention_gep is the dust channel (the sheet's sandstorm prevention service) --
-one workbook, one module, two sheet rows. See the functions module for the identified rules
-and the VSL vintage gap.
+one workbook, one module, two sheet rows, priced at the account's shared VSL panel. See the
+functions module for the workbook's identified properties and its VSL provenance gap.
 """
 import os
 
@@ -21,8 +21,8 @@ def publish_inputs(p):
     utilities.hydrate_es_config(p, 'air_filtration', log=hb.log)
     utilities.hydrate_es_parameters(p, 'air_filtration', log=hb.log)
     utilities.initialize_country_paths(p)
-    # The air quality group's country-level value-of-life table, which is the source behind the
-    # workbook's VSL column and the one the valuation reads.
+    # The account's shared VSL panel, the rebuilt EPA life-years-lost table both mortality
+    # services read (landslide_mitigation points its panel row at the same file).
     # hydrate_es_parameters already set this from es_parameters; resolve it against base data.
     p.air_filtration_vsl_path = p.get_path(p.air_filtration_vsl_path)
     if not hasattr(p, 'results'):
@@ -38,27 +38,45 @@ def gep_calculation(p):
     if already_done:
         return
 
+    if not p.run_this:
+        return p
     workbook = pd.read_excel(p.air_filtration_workbook_path)
     af.verify_global_average_fill(workbook)
 
     r250_order = hb.df_read(os.path.join(utilities.service_data_dir(p, 'air_filtration'), 'r250_gpkg_order.csv'))
 
-    # The valuation reads the group's country table rather than the workbook's VSL column, and
-    # says where the two disagree. They are the same build, so a disagreement is a question for
-    # the group, not a reason to stop: the run reports it and carries on with the table.
-    vsl_table = hb.df_read(p.air_filtration_vsl_path)
-    vsl, matched, disagreeing, unsourced = af.vsl_from_country_table(
-        workbook, r250_order, vsl_table)
-    hb.log(f'VSL sourced from the country table for {matched} of {len(r250_order)} countries.')
-    for row in unsourced.itertuples():
-        hb.log(f'  {row.country} ({row.iso3}) is priced per country in the workbook at '
-               f'{row.workbook_vsl:,.0f} but is absent from the table, so the workbook figure '
-               f'stands and this value is not one we can source.')
-    for row in disagreeing.itertuples():
-        hb.log(f'  VSL differs for {row.country} ({row.iso3}): workbook {row.workbook_vsl:,.0f}, '
-               f'table {row.table_vsl:,.0f}, {row.relative_difference:.1%} apart.')
+    # The valuation prices at the account's shared VSL panel rather than the workbook's own
+    # column. The departure from the workbook is the decided repricing, so the run reports its
+    # size rather than each row.
+    panel = hb.df_read(p.air_filtration_vsl_path)
+    # Life-years lost from the authors' elderly age (their updated code) instead of the panel's
+    # median age. The age file is keyed on GENC codes, and GENC 'NA' is Namibia, so only empty
+    # cells are missing.
+    ages = pd.read_csv(p.air_filtration_age_structure_path, encoding='utf-8-sig', keep_default_na=False,
+                       na_values=[''], dtype=str)
+    genc = pd.read_csv(p.air_filtration_genc_correspondence_path, encoding='utf-8-sig', keep_default_na=False,
+                       na_values=[''])
+    ages = ages.merge(genc[['genc_code', 'iso3_r250_id']], left_on='GENC', right_on='genc_code', how='left',
+                      validate='many_to_one')
+    if ages['iso3_r250_id'].isna().any():
+        raise ValueError('age-structure codes without an r250 country: %s'
+                         % sorted(ages.loc[ages['iso3_r250_id'].isna(), 'GENC'].unique()))
+    elderly = af.age_at_population_percentile(ages, float(p.air_filtration_elderly_age_percentile), 'iso3_r250_id')
+    vsl_table = af.vsl_with_age_statistic(panel, elderly)
+    hb.log('VSL from the elderly age (%g%%): %s'
+           % (float(p.air_filtration_elderly_age_percentile), vsl_table['vsl_source'].value_counts().to_dict()))
+    vsl, repriced = af.vsl_from_shared_panel(workbook, r250_order, vsl_table)
+    max_departure = float(repriced['relative_difference'].max()) if len(repriced) else 0.0
+    hb.log('VSL from the shared panel for all %d countries; %d rows depart from the workbook '
+           'column, the largest by %.0f%%.'
+           % (len(r250_order), len(repriced), 100 * max_departure))
 
-    df = af.air_quality_gep_by_country(workbook, r250_order, vsl=vsl)
+    # The countries the source states it could not estimate publish as missing, not as the
+    # zero deaths the workbook stores for them.
+    not_estimated = hb.df_read(p.air_filtration_not_estimated_path)['iso3_r250_label']
+    df = af.air_quality_gep_by_country(workbook, r250_order, vsl=vsl,
+                                       not_estimated_labels=not_estimated)
+    hb.log('%d countries the source did not estimate publish as missing.' % len(not_estimated))
 
     attr_cols = ['iso3_r250_id', 'iso3_r250_label', 'iso3_r250_name',
                  'continent', 'region_un', 'region_wb', 'income_grp', 'subregion']
@@ -68,14 +86,19 @@ def gep_calculation(p):
     hb.df_write(df_gep[attr_cols + ['year', 'air_filtration_gep', 'sandstorm_prevention_gep']],
                 service_results['gep_by_country_base_year'])
 
-    hb.log(f'Total air_filtration GEP (deposition channel) for base year {p.gep_base_year}: '
-           f'{df_gep["air_filtration_gep"].sum():,.2f}')
-    hb.log(f'Total sandstorm_prevention GEP (dust channel): '
-           f'{df_gep["sandstorm_prevention_gep"].sum():,.2f}')
+    # The same deaths at the panel's median-age VSL, so the run states the age change's size.
+    median_age_vsl, _ = af.vsl_from_shared_panel(workbook, r250_order, panel)
+    median_age = af.air_quality_gep_by_country(workbook, r250_order, vsl=median_age_vsl,
+                                               not_estimated_labels=not_estimated)
+    for column, channel in (('air_filtration_gep', 'deposition'), ('sandstorm_prevention_gep', 'dust')):
+        hb.log(f'Total {column} ({channel} channel) for base year {p.gep_base_year}: '
+               f'{df_gep[column].sum():,.2f}, at the median-age VSL {median_age[column].sum():,.2f}')
     return True
 
 
 def gep_result(p):
     """Render the results report(s). Shared implementation in utilities."""
     publish_inputs(p)
+    if not p.run_this:
+        return p
     utilities.render_service_results(p)

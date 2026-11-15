@@ -9,13 +9,11 @@ The valuation follows the InVEST urban mental health model: removing a pixel's g
 raise its residents' depression risk by exp(-10 ln(RR) NDVI), so the cases today's nature
 prevents are the observed cases times that factor minus one, summed over urban pixels and
 priced at the societal cost of a depression case. The meta-analytic odds ratio converts to a
-risk ratio at the country's own prevalence as the baseline (Zhang and Yu 1998), the same
-conversion the hypertension strand uses.
+risk ratio (Zhang and Yu 1998, the hypertension strand's conversion) at the authors' reference-group
+risk p0 = 0.115, one value for every country; the country's prevalence enters only the case count.
 """
 import numpy as np
 import pandas as pd
-
-from global_invest.health_hypertension.health_hypertension_functions import risk_ratio_from_odds_ratio
 
 
 def prevented_cases_factor(ndvi, risk_ratio_per_01):
@@ -38,7 +36,8 @@ def health_depression_gep(df):
     Args:
         df (pd.DataFrame): one row per country, carrying `prevalence` (fraction with
             depression), `urban_prevented_factor_pop_sum` (the prevented-cases factor times
-            population summed over urban pixels, already at the country's risk ratio) and
+            population summed over urban pixels, already at the common risk ratio from the
+            reference-group risk p0) and
             `cost_per_case_usd` (societal cost of one case).
 
     Returns:

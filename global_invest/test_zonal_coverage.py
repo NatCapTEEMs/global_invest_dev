@@ -106,9 +106,8 @@ def test_an_exclusion_does_not_excuse_a_different_gap():
 # --- the failure message must name every key it counts --------------------------------------------
 
 def test_the_message_names_every_missing_key_it_counts():
-    """A count paired with an unlabelled excerpt reads as the whole set. Six missing zones reported
-    under `First few:` with five printed had its sixth go unexamined, so the message now enumerates
-    every key and always carries the complete distinct-zone list."""
+    """A count paired with an unlabelled excerpt reads as the whole set, so the message enumerates
+    every key it counts and always carries the complete distinct-zone list."""
     frame = full_frame()
     dropped = frame[~((frame.scenario == 'net_zero') & (frame.year == 2030))]
     with pytest.raises(ValueError) as raised:

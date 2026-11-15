@@ -93,3 +93,42 @@ def city_savings_by_country(city_df):
     city_savings_identity(city_df)
     grouped = city_df.groupby('iso3_r250_id', as_index=False)[CITY_SAVINGS_COLUMN].sum(min_count=1)
     return grouped.rename(columns={CITY_SAVINGS_COLUMN: 'local_climate_regulation_gep'})
+
+
+def cas_cooling_by_country(cas_df, countries_df):
+    """The CAS 2019 cooling results onto the account's country ids.
+
+    The workbook keys countries by English name, so the join folds accents and hyphens and
+    matches ONLY the account's own iso3_r250_name column -- the sovereign-name columns hand
+    territories their parent's name (Kosovo reads "Serbia"), which is the ambiguity this
+    avoids. An unmatched or ambiguous name raises with its row rather than dropping value.
+    """
+    import unicodedata
+    import pandas as pd
+
+    def fold(name):
+        folded = unicodedata.normalize('NFKD', str(name)).encode('ascii', 'ignore').decode()
+        return folded.replace('-', ' ').strip().lower()
+
+    # The account correspondence spells CIV "Cote d'lvoire" with a lowercase L, a long-standing
+    # upstream typo; the alias maps the correct spelling onto it.
+    aliases = {"cote d'ivoire": "cote d'lvoire"}
+    lookup = {}
+    for name, rid in zip(countries_df['iso3_r250_name'], countries_df['iso3_r250_id']):
+        key = fold(name)
+        if key and key != 'nan':
+            lookup.setdefault(key, set()).add(int(rid))
+    rows = []
+    for record in cas_df.itertuples():
+        key = fold(record.COUNTRY)
+        ids = lookup.get(aliases.get(key, key))
+        if not ids:
+            raise ValueError('CAS cooling country not in the account correspondence: %r'
+                             % record.COUNTRY)
+        if len(ids) > 1:
+            raise ValueError('CAS cooling country %r matches several account ids: %s'
+                             % (record.COUNTRY, sorted(ids)))
+        rows.append((next(iter(ids)), float(record.total_usd), float(record.total_kwh)))
+    out = pd.DataFrame(rows, columns=['iso3_r250_id', 'local_climate_regulation_gep',
+                                      'cooling_kwh'])
+    return out.groupby('iso3_r250_id', as_index=False).sum()

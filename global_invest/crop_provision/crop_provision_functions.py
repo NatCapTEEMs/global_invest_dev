@@ -1,15 +1,18 @@
 # -*- coding: utf-8 -*-
 """Crop-provision science: FAOSTAT gross production value x the CWoN land rental rate.
 
-The quantity-and-price stage is fused in the source data where FAOSTAT fused it: the Value of
-Production bulk reports gross production value per country, crop and year. Where FAOSTAT's
-current-USD series carries production and no value -- its USD value stops wherever its own USD
-producer-price series stops -- the pair is filled from production tonnes times the median USD
-producer price the pollination chain stages, at the deepest level that table resolves (country,
-subregion, region, world). Attribution is the Changing Wealth of Nations 2024 land rental rate,
-a per-country share that varies by decade, applied by an as-of merge so each year takes the
-rate of the decade it falls in, to filled and read rows alike. The result is converted from FAOSTAT's thousand USD to plain USD once, before any
-grouping, and collapsed onto the r250 country list.
+At the base year every pair is valued at production tonnes times that year's USD producer price,
+the table the pollination chain stages from the crop_benefits chain, at the deepest level that
+table resolves (country, subregion, region, world), so crop provision and pollination share one
+gross basis (`value_at_production_times_price`). The other basis,
+`crop_provision_base_year_value_basis = reported_first`, takes FAOSTAT's reported Value of
+Production where there is one and fills only the pairs FAOSTAT reports production for and no
+current-USD value (`impute_missing_crop_values`). Other years keep FAOSTAT's reported values under
+either basis. Attribution is the Changing Wealth of Nations 2024 land rental rate. The base year
+takes CWoN's annual rate for the country (`apply_base_year_annual_rental_rates`). Other years and
+the reference column take a per-country share that varies by decade, applied by an as-of merge so
+each year takes the rate of the decade it falls in. The result is converted from FAOSTAT's thousand USD to plain USD once, before any grouping, and collapsed onto
+the r250 country list.
 
 The subsistence component sits at the bottom of this module, the way the Lynch subsistence value
 sits beside the commercial rent in fisheries: same folder, own task, own table, never summed into
@@ -19,21 +22,11 @@ makes the overlap between the two components exact rather than a matter of judge
 Every function here is a pure transformation over frames, which is what the tests exercise. The
 task module reads the FAOSTAT bulk file and the rental-rate table and passes the frames in.
 """
-import logging
-
 import numpy as np
 import pandas as pd
 import hazelbean as hb
 
 from global_invest import utilities
-
-# FAOSTAT's Value of Production table stacks several elements and units in one file. The
-# valuation reads gross production value in current USD, which the file reports as element 57
-# with unit "1000 USD".
-
-
-
-
 
 
 def attach_countries_in_usd(df_crop_value, df_countries, value_column='crop_provision_gep'):
@@ -63,6 +56,43 @@ def attach_countries_in_usd(df_crop_value, df_countries, value_column='crop_prov
     return df
 
 
+def apply_base_year_annual_rental_rates(df_crop, df_rates, base_year, value_column='crop_provision_gep'):
+    """Base-year rows at CWoN's annual rental rate for the country. Other years stay as they are.
+
+    The table has one row per `wb_code` and one `yr<year>` column per year. A country it lists takes
+    that rate even where the decade lookup has none. A country it does not list has no rate, so its
+    rows go missing, as CWoN's own merge drops them, and no regional or earlier rate stands in.
+
+    Args:
+        df_crop (pd.DataFrame): crop rows after attach_countries_in_usd, with iso3_r250_label, year,
+            rental_rate, gross_production_value (thousand USD) and value_column (USD).
+        df_rates (pd.DataFrame): the annual table, with wb_code and yr<year> columns.
+        base_year (int): the year to value at the annual table's rate.
+        value_column (str): the rent column.
+
+    Returns:
+        pd.DataFrame: the rows, with rental_rate and value_column replaced at the base year.
+
+    Raises:
+        ValueError: if the table has no column for the base year or lists a country twice.
+    """
+    year_column = 'yr%d' % base_year
+    if year_column not in df_rates.columns:
+        raise ValueError('the annual rental-rate table has no %s column, and its rates are not extrapolated.'
+                         % year_column)
+    if df_rates['wb_code'].duplicated().any():
+        raise ValueError('the annual rental-rate table lists %s more than once.'
+                         % sorted(set(df_rates.loc[df_rates['wb_code'].duplicated(), 'wb_code'])))
+    rates = df_rates.set_index('wb_code')[year_column].astype(float)
+    df = df_crop.copy()
+    df['rental_rate'] = pd.to_numeric(df['rental_rate'], errors='coerce')
+    at_year = df['year'] == base_year
+    df.loc[at_year, 'rental_rate'] = df.loc[at_year, 'iso3_r250_label'].map(rates)
+    df.loc[at_year, value_column] = (pd.to_numeric(df.loc[at_year, 'gross_production_value'], errors='coerce')
+                                     * df.loc[at_year, 'rental_rate'] * utilities.FAOSTAT_THOUSAND_USD)
+    return df
+
+
 def normalize_m49_series(values):
     """FAOSTAT M49 codes as plain integers, dissolved states mapped to their successor."""
     out = values.astype(str).str.replace("'", '', regex=False).astype(int)
@@ -76,20 +106,43 @@ def area_codes_by_m49(df_fao_raw, aggregate_areas):
     carry, so a filled row takes its code from here. Aggregate areas are dropped first; that is
     what makes China resolve to the account's China row (FAO 351) rather than to the mainland
     component the account drops as an aggregate.
+
+    The successor map folds a dissolved state onto its successor's M49 (Ethiopia PDR's 230 onto
+    Ethiopia's 231; Serbia and Montenegro, Sudan (former) and Czechoslovakia likewise), so two
+    FAO codes can share one normalized code. The successor's own code is kept, the one whose M49
+    already is the normalized code: the dissolved state's code carries no CWoN rental rate, so a
+    fill keyed to it is valued and then lost. Row order in the file plays no part.
+
+    Raises:
+        ValueError: if a normalized code has several FAO codes and not exactly one of them carries
+            that code as its own M49.
     """
     areas = df_fao_raw[~df_fao_raw['Area'].isin(aggregate_areas)]
     areas = areas[['Area Code', 'Area Code (M49)']].drop_duplicates()
-    m49 = normalize_m49_series(areas['Area Code (M49)'])
-    return dict(zip(m49, areas['Area Code'].astype(int)))
+    register = pd.DataFrame({
+        'area_code': areas['Area Code'].astype(int).to_numpy(),
+        'own_m49': areas['Area Code (M49)'].astype(str).str.replace("'", '', regex=False)
+                   .astype(int).to_numpy(),
+        'm49': normalize_m49_series(areas['Area Code (M49)']).to_numpy()})
+    out = {}
+    for m49, group in register.groupby('m49'):
+        codes = sorted(set(group['area_code']))
+        own = sorted(set(group.loc[group['own_m49'] == m49, 'area_code']))
+        if len(codes) > 1 and len(own) != 1:
+            raise ValueError('M49 %d is shared by FAO area codes %s, and %d of them carry it as '
+                             'their own M49, so which one is canonical is ambiguous.'
+                             % (m49, codes, len(own)))
+        out[int(m49)] = int(codes[0] if len(codes) == 1 else own[0])
+    return out
 
 
 def impute_missing_crop_values(df_crop_value, df_fao_values, year, area_code_by_m49,
-                               items, value_column='crop_provision_gep'):
+                               items, value_column='crop_provision_gep', keep_zero=False):
     """FAOSTAT's missing current-USD values filled from the pollination chain's values table.
 
-    A pair with production and no value is a price gap, not absent production: FAOSTAT's
-    current-USD gross production value stops wherever its own USD producer-price series stops,
-    which is how India carries 2019 rice production and no 2019 rice value. The fill reads the
+    A pair with production and no reported current-USD value is filled rather than treated as
+    absent production; India, for example, carries 2019 rice production and no 2019 rice value.
+    Why FAOSTAT leaves a value missing is not established here. The fill reads the
     value the pollination chain already computes and stages -- production tonnes times that
     year's producer price in USD, the price falling back country to subregion to region to
     world -- so the two services value a crop one way and this module adds no price code of its
@@ -101,6 +154,10 @@ def impute_missing_crop_values(df_crop_value, df_fao_values, year, area_code_by_
     keyed on the FAO area code the value file carries), so its rows are left out rather than
     valued without the attribution; the caller's log counts them.
 
+    A pair is filled once, on its canonical FAO code (area_codes_by_m49). A dissolved state's
+    empty row shares its successor's normalized M49 but not its code, so it stays empty, and a
+    pair whose only row is the dissolved state's arrives as a new row on the successor's code.
+
     Args:
         df_crop_value (pd.DataFrame): the cleaned long value frame, thousand USD.
         df_fao_values (pd.DataFrame): the staged fao_values table, with area_code_m49, iso3,
@@ -111,10 +168,18 @@ def impute_missing_crop_values(df_crop_value, df_fao_values, year, area_code_by_
         items (iterable): the items the service values; integers select by FAO item code,
             strings by name, as in clean_faostat_values.
         value_column (str): the value column.
+        keep_zero (bool): take a values-table zero as a value. The reported-first fill takes
+            positive values only, so a zero there never stands in for a value FAOSTAT left
+            missing. value_at_production_times_price keeps zeros, so a source zero stays zero and
+            only a missing source value stays missing.
 
     Returns:
         pd.DataFrame: df_crop_value with the filled rows and a value_source column
         ('faostat', or 'price_<level>' for a filled row).
+
+    Raises:
+        ValueError: if the values table carries a country-item pair twice once M49 codes are
+            normalized, or a pair would carry more than one filled row.
     """
     df = df_crop_value.copy()
     df['value_source'] = np.where(df[value_column].notna(), 'faostat', None)
@@ -122,34 +187,43 @@ def impute_missing_crop_values(df_crop_value, df_fao_values, year, area_code_by_
 
     codes = [i for i in items if isinstance(i, int)]
     names = [i for i in items if isinstance(i, str)]
-    values = df_fao_values[(df_fao_values['year'] == year)
-                           & (df_fao_values['value_usd'] > 0)]
+    priced = df_fao_values['value_usd'] >= 0 if keep_zero else df_fao_values['value_usd'] > 0
+    values = df_fao_values[(df_fao_values['year'] == year) & priced]
     values = values[values['item_code_fao'].isin(codes) | values['item_fao'].isin(names)].copy()
     values['m49'] = normalize_m49_series(values['area_code_m49'])
 
     at_year = df['year'] == year
     valued_pairs = set(zip(df_m49[at_year & df[value_column].notna()],
                            df.loc[at_year & df[value_column].notna(), 'crop_code']))
-    gaps = values[[(m, i) not in valued_pairs
-                   for m, i in zip(values['m49'], values['item_code_fao'])]]
+    # A boolean array, not a list: an empty list would select no columns rather than no rows.
+    gaps = values[np.array([(m, i) not in valued_pairs
+                            for m, i in zip(values['m49'], values['item_code_fao'])], dtype=bool)]
     gaps = gaps[gaps['m49'].isin(area_code_by_m49)].copy()
     gaps[value_column] = gaps['value_usd'] / utilities.FAOSTAT_THOUSAND_USD
     gaps['value_source'] = 'price_' + gaps['price_source_agg_level']
+    repeated_gaps = gaps[gaps.duplicated(['m49', 'item_code_fao'], keep=False)]
+    if not repeated_gaps.empty:
+        raise ValueError('%d values-table rows at %d repeat a country-item pair once M49 codes are '
+                         'normalized (M49, item), for example %s.'
+                         % (len(repeated_gaps), year, sorted(set(zip(
+                             repeated_gaps['m49'], repeated_gaps['item_code_fao'])))[:5]))
 
     # A pair whose row exists with an empty value is filled in place; a pair with no row at all
-    # arrives as a new row carrying the FAO area code the rental lookup needs.
+    # arrives as a new row carrying the FAO area code the rental lookup needs. Only the row on the
+    # pair's canonical code is filled in place: filling a dissolved state's row as well would
+    # place one value twice, or alone under a code with no rental rate.
     fill_map = {(m, i): (v, s) for m, i, v, s in zip(
         gaps['m49'], gaps['item_code_fao'], gaps[value_column], gaps['value_source'])}
     filled_pairs = set()
     for position in df.index[at_year & df[value_column].isna()]:
         pair = (df_m49[position], df.at[position, 'crop_code'])
         hit = fill_map.get(pair)
-        if hit is not None:
+        if hit is not None and df.at[position, 'area_code'] == area_code_by_m49[pair[0]]:
             df.at[position, value_column], df.at[position, 'value_source'] = hit
             filled_pairs.add(pair)
 
-    to_append = gaps[[(m, i) not in filled_pairs
-                      for m, i in zip(gaps['m49'], gaps['item_code_fao'])]]
+    to_append = gaps[np.array([(m, i) not in filled_pairs
+                               for m, i in zip(gaps['m49'], gaps['item_code_fao'])], dtype=bool)]
     new_rows = pd.DataFrame({
         'area_code': to_append['m49'].map(area_code_by_m49).astype(int),
         'area_code_M49': to_append['m49'].astype(int),
@@ -160,33 +234,67 @@ def impute_missing_crop_values(df_crop_value, df_fao_values, year, area_code_by_
         value_column: to_append[value_column],
         'value_source': to_append['value_source'],
     })
-    return pd.concat([df, new_rows], ignore_index=True)
+    out = pd.concat([df, new_rows], ignore_index=True)
+
+    # One value per pair: a repeated empty row would otherwise count the same production twice.
+    filled = out['value_source'].astype(str).str.startswith('price_')
+    keys = pd.DataFrame({'m49': normalize_m49_series(out.loc[filled, 'area_code_M49']),
+                         'crop_code': out.loc[filled, 'crop_code']})
+    repeated = keys[keys.duplicated(keep=False)]
+    if not repeated.empty:
+        raise ValueError('%d filled rows at %d repeat a country-item pair (M49, item), for example '
+                         '%s.' % (len(repeated), year, sorted(set(map(tuple, repeated.values)))[:5]))
+    return out
 
 
-def drop_fills_under_group_totals(df_crop_value, aggregate_items, country_column='area_code'):
-    """Remove imputed items in a country-year that FAOSTAT's group totals already value.
+def value_at_production_times_price(df_crop_value, df_fao_values, year, area_code_by_m49, items,
+                                    value_column='crop_provision_gep'):
+    """Every pair at the base year valued at production times price, the crop_benefits basis.
 
-    drop_aggregates_where_components_exist keeps a country-year's group totals when it has no
-    individually valued item (India and Argentina in 2019). impute_missing_crop_values then fills
-    individual items for exactly those country-years, so the imputed rice would be counted again on
-    top of "Cereals, primary". The group totals are FAOSTAT's own complete valuation, so they are
-    kept and the fills there are removed; fills in country-years whose totals were dropped stay.
+    The crop_benefits chain (develop cc5b441, src/crop_benefits/fao/values.py)
+    values a crop at FAOSTAT production times that year's USD producer price, resolved country,
+    subregion, region and world, and the pollination chain stages that table. Valuing every pair
+    that way, rather than at FAOSTAT's reported value where one exists, puts crop provision and
+    pollination on one gross basis. The year's reported values are cleared and every
+    pair is refilled from the values table, so a pair FAOSTAT reports and the values table cannot
+    price keeps its row with a missing value: the keys stay, and the gap shows. A values-table zero
+    stays zero. Other years keep FAOSTAT's reported values.
 
     Args:
-        df_crop_value (pd.DataFrame): the frame after both steps, with crop, year, value_source.
-        aggregate_items (iterable): the group-total item names.
-        country_column (str): the column identifying the country.
+        df_crop_value (pd.DataFrame): the cleaned long value frame, thousand USD.
+        df_fao_values (pd.DataFrame): the staged fao_values table.
+        year (int): the year to value, the account's base year.
+        area_code_by_m49 (dict): normalized M49 code -> FAO area code.
+        items (iterable): the items the service values, as in impute_missing_crop_values.
+        value_column (str): the value column.
 
     Returns:
-        pd.DataFrame: the frame without the double-counted fills.
+        pd.DataFrame: impute_missing_crop_values' output on the cleared year, every valued pair at
+        the year carrying value_source 'price_<level>'.
     """
-    keys = pd.MultiIndex.from_frame(df_crop_value[[country_column, 'year']])
-    carried = keys[df_crop_value['crop'].isin(set(aggregate_items)).to_numpy()]
-    filled = df_crop_value['value_source'].astype(str).str.startswith('price_').to_numpy()
-    return df_crop_value[~(filled & keys.isin(carried))]
+    df = df_crop_value.copy()
+    df.loc[df['year'] == year, value_column] = np.nan
+    return impute_missing_crop_values(df, df_fao_values, year, area_code_by_m49, items, value_column,
+                                      keep_zero=True)
 
 
+def items_without_group_totals(items, aggregate_items):
+    """The commercial item list with every FAOSTAT group total taken out, in every country.
 
+    A group total ("Oilcrops Primary", "Roots and Tubers, Total", "Sugar Crops Primary") adds up
+    crops the list also carries, so counting it beside them counts those crops twice. Taking it out
+    of the list keeps it out of the reported values and out of the gaps the fill looks for alike,
+    and lets the fill value its member crops wherever FAOSTAT reports production without a value.
+
+    Args:
+        items (iterable): the configured item names.
+        aggregate_items (iterable): the configured group-total names.
+
+    Returns:
+        list: the items, in their configured order, without the group totals.
+    """
+    aggregates = set(aggregate_items)
+    return [item for item in items if item not in aggregates]
 
 
 # =================================================================================================
@@ -201,11 +309,11 @@ def drop_fills_under_group_totals(df_crop_value, aggregate_items, country_column
 #   05  valuation        = x the CWoN land rental rate, then deflated to the base year by CPI
 #   00  delivery         = the base-year panel joined onto the account's country list
 #
-# Reproducing the reference is what makes a disagreement with it worth stating, which is the lesson
-# pollination taught: the coffee split was only actionable because both sides ran the same numbers.
-# What the reproduction cannot test is an error the reference makes that this makes too -- so where
-# we found one, the account publishes our arithmetic and the reference's is published beside it.
-# `subsistence_own_consumption` computes both in one pass for exactly that reason.
+# Reproducing the reference is what makes a disagreement with it worth stating: a disagreement is
+# only actionable when both sides run the same numbers. What the reproduction cannot test is an
+# error the reference makes that this makes too -- so where one is known, the account publishes its
+# own arithmetic and the reference's beside it. `subsistence_own_consumption` computes both in one
+# pass for exactly that reason.
 # =================================================================================================
 
 # FAO RuLIS stacks four indicators in one export. The one beside this is the share of agricultural
@@ -377,8 +485,8 @@ def subsistence_own_consumption(df_rulis, df_wb_hist, df_area_value, df_income, 
     sources: FAOSTAT reports cropland in THOUSANDS of hectares against an intensity per SINGLE
     hectare, and the Lowder share is a PERCENTAGE that is never divided by 100. The single /100
     converts only the own-consumption share. The two errors compound to a factor of ten, and this
-    reproduces it deliberately -- `subsistence_own_consumption_corrected` is the same chain with the
-    units read as the sources label them.
+    reproduces it deliberately -- the `own_con_corrected` column is the same chain with the units
+    read as the sources label them.
 
     Args:
         df_rulis (pd.DataFrame): the FAO RuLIS export.
@@ -818,7 +926,7 @@ def agricultural_ppp_factors(df_area_value, df_value_of_production, df_income, y
     that, which holds for the Value of Production table. It does not hold for the production
     intensity this component multiplies by: FAOSTAT publishes `Value of agricultural production
     (Int. $) per Area` only in international dollars, so there is no current-US$ version to read
-    instead and the subsistence estimate came out in the wrong currency.
+    instead, and multiplying by it unconverted puts the estimate in international dollars.
 
     No external conversion table is needed, because FAOSTAT publishes the same quantity both ways.
     Agricultural land times the intensity is total agricultural output in international dollars;

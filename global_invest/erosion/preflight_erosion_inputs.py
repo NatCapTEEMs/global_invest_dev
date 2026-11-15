@@ -24,11 +24,10 @@ from global_invest.erosion import erosion_tasks
 
 # EVERY `*_path` the service hydrates, read off `p` rather than listed here.
 #
-# The first version of this file listed the twelve paths a completed run's prevention-shares
-# manifest recorded, and it passed on MSI while the job died 45 seconds later on
-# `soil/erodibility_30s.tif` -- a file the manifest never mentions because it is an SDR input, and
-# one that sits outside `global_invest/erosion/` so the staging rsync missed it too. A hand-picked
-# list checks what somebody remembered; this checks what the code will actually resolve.
+# A run's prevention-shares manifest never mentions the SDR inputs, such as
+# `soil/erodibility_30s.tif`, which also sits outside `global_invest/erosion/` where a staging copy
+# can miss it. A hand-picked list checks what somebody remembered; this checks what the code will
+# actually resolve.
 def _hydrated_paths(p):
     """Every attribute on `p` whose name ends in `_path`, which is what hydration produces."""
     return sorted(name for name in vars(p)

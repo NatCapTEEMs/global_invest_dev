@@ -1,7 +1,7 @@
 """A pass that finds a finished shock table must return in seconds. The three heavy shock tasks
 (pollination, erosion, timber) record what produced their table -- settings, content of their
 es_parameters inputs, size and mtime of the scenario maps -- and reuse it when nothing changed.
-On 21 Sep 2026 the NGFS rerun recomputed all three on every pass, about an hour lost each time."""
+Recomputing all three on every pass costs about an hour each time."""
 import inspect
 import os
 import time

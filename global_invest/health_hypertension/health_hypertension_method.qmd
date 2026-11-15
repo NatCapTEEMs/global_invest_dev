@@ -11,9 +11,20 @@ surroundings lower the odds of hypertension, so each city's greenness translates
 cases among its adults, priced at the country's published cost of treating one case. The base
 year is 2019.
 
-⚠ Coverage is limited to the countries with a refereed treatment-cost study (20, appendix
-Table A1), by construction; every other country carries NA with the absence named. The
-counterfactual is a zero-vegetation city, which does much of the work in the magnitude.
+Coverage is limited to the countries with a treatment-cost study (22, the updated cost table of
+2 November 2026), by construction. Every other country carries NA with the absence named. The
+counterfactual is a zero-vegetation city, which does much of the work in the magnitude, and the
+whole avoided cost is attributed to greenspace.
+
+## Source
+
+The method is the authors' appendix of 22 October 2026, which is not yet in the shared folder
+of current write-ups. The registered code, `libby-07/gep_health_hypertension` at `ac5c862`
+(October 2025), predates it and differs in five ways: it uses the odds ratio directly, applies
+adult prevalence to the whole population, measures greenness from Landsat at 500 m, prices in
+international dollars and runs for the United States only. The library follows the appendix's
+equations. Its costs are the updated table of 2 November 2026 (see Price), which replaces the
+appendix's Table A1.
 
 ## Quantity
 
@@ -27,8 +38,14 @@ baseline (Grant 2014).
 
 ## Price
 
-The country's per-person hypertension treatment cost in 2019 USD, one refereed study per
-country (appendix Table A1), read from the staged table.
+The country's per-person hypertension cost in 2019 USD, one study per country, from the
+physical-health team's updated cost table of 2 November 2026 (`ht_costs_uv.xlsx`, staged unchanged
+with its provenance beside it). It covers 22 countries. Against the appendix's Table A1 it revises
+15 of the 20 values by more than 5% and adds Cameroon and Pakistan. The cost is the total cost per
+person where the study reports it, otherwise the direct cost per person, otherwise components of
+the direct cost, and each row is converted to 2019 USD as the table's notes state. Mexico's
+\$7,679.70 rests on the study's total cost of USD 6,020,017,806 at 14.85 MXN per USD over 749,701
+cases in 2015, as its note states.
 
 ## Valuation
 
@@ -37,9 +54,28 @@ $$
 $$
 
 with $c_i$ the treatment cost, $x_i$ the prevalence, $\text{RR}_i$ the converted risk ratio,
-$s_i$ the 30-79 population share and $n_j$ the pixel population. The appendix's own Table 6 is
-carried beside the result as the comparison anchor; because the authors' pixel-level choices
-are not fully pinned, agreement is judged at the level-and-rank grade.
+$s_i$ the 30-79 population share and $n_j$ the pixel population.
+
+The appendix's own Table 6 is carried beside the result as the comparison anchor. It values 19
+of the 22 countries (not Ghana, Cameroon or Pakistan) and totals \$104,664,962,067 at the Table A1
+costs. At the updated costs the library is 0.90 times the reference over those 19, from 0.03
+(Poland) to 18.9 (Mexico) times by country, because the two now price a case differently. At
+matching costs the comparison is in avoided cases: the library's are 1.42 times those implied by
+Table 6 and Table A1 in total, from 0.67 to 3.73 times by country.
+
+A second column, `health_hypertension_gep_extended`, prices the same avoided cases in 187
+countries. Where no study exists it transfers the cost from a regression of log cost on log GDP
+per capita over the 22 studies (slope 0.56, R² 0.26, with Duan smearing 2.01), and it keeps the
+observed cost where a study exists. It totals \$158,014,033,621.54 and is not the published value.
+
+## Coverage
+
+The published table is one row for each of the account's 250 countries, base year 2019, in 2019
+USD. Of the 250, 22 carry a value, totalling \$94,425,983,075.38, 0 are computed zeros, and 228
+rows are missing, kept as missing rather than zero because an input carries no data for those
+countries. 169 of the 228 lack only a treatment cost, and the `note` column names what each
+lacks. A zero means the computation returned zero. A missing row means the data to compute one
+is absent.
 
 ## Inputs
 
@@ -47,3 +83,20 @@ All paths and parameters come from `es_parameters.csv` under the `health_hyperte
 key: the WorldPop mosaic, the annual NDVI, the GHS-SMOD urban mask and its threshold, the WHO
 prevalence, the 30-79 shares, the cost table, the odds ratio and the appendix reference, each
 with a source row beside it.
+
+## Output
+
+`gep_calculation` writes `gep_by_country_base_year.csv` into its own task directory, holding the
+r250 identifiers and attributes, `year`, `health_hypertension_gep`, the extended and reference
+columns, and the inputs behind each value: the urban NDVI-weighted population, the prevalence,
+the 30-79 share, the cost per case and its source, the avoided cases and a `note`.
+
+## What is open
+
+- Baseline prevalence. The appendix uses dense-urban prevalence or a study quantile. The
+  library uses the national WHO prevalence among adults 30-79.
+- Greenness exposure. The appendix measures NDVI from Landsat over a 500 m buffer. The library
+  uses the MODIS 1 km annual mean per pixel.
+- The gap to the appendix's Table 6 in avoided cases, 1.42 times at matching costs, is not
+  reconciled. The library's final step and input joins are checked independently, and the
+  rasters are not reproduced (open question 20).

@@ -15,8 +15,9 @@ damage (the sign flip on additional acres).
 Faithful-port notes, kept for anchor fidelity rather than fixed:
 - The source pivots the regression table with a mean aggregator over ALL value columns
   including the CHARACTER significance stars; R's mean() on character is NA, so every wide
-  significance column -- and therefore every *_signif_level in the output -- is 0 by
-  construction. The pvalue columns beside them are real; the levels are not.
+  significance column -- and therefore baseline_signif_level, which reads one -- is 0 by
+  construction. The pvalue columns beside them are real, and the two difference levels are
+  computed from their own p-values, so they are real too.
 - Beta selection is by regression-type id, which in the source is data.table's .GRP: the
   FIRST-APPEARANCE order of (Y_var, Key_X_var, sample) in the input CSV. A reordered input
   would silently reassign the betas, so build_regression_type_ids ASSERTS the expected
@@ -105,7 +106,8 @@ def compute_beta_differences(regression_df):
 
     Returns one row per GID_0 with the baseline beta and the two difference betas
     (nature-vs-human cause; nature-vs-human area), their p-values, and the *_signif_level
-    columns -- 0 by construction, matching the source (see module docstring)."""
+    columns: baseline_signif_level is 0 by construction, matching the source (see module
+    docstring); the two difference levels come from their p-values."""
     wide = _pivot_wide(build_regression_type_ids(regression_df))
 
     beta = pd.DataFrame({'GID_0': wide['GID_0']})
@@ -190,10 +192,9 @@ def compute_gep(avoided_df, damage_per_acre_df, global_average):
 
 
 # GADM codes three of the reference's units differently from the account: Kosovo is XKO where
-# the account's label is XKX, and Z01 and Z07 are Indian sub-regions GADM keeps separate. Joining
-# GID_0 straight onto the r250 label silently dropped all three, stranding their value on rows
-# with no country at all (34.09M USD at the 2019 nature-vs-human-cause variant, which still
-# entered the reported total). The correspondence resolves all three, so the join goes through it.
+# the account's label is XKX, and Z01 and Z07 are Indian sub-regions GADM keeps separate. A join
+# of GID_0 straight onto the r250 label would strand their value on rows with no country, so the
+# join goes through the correspondence, with XKO aliased to XKX.
 GADM_LABEL_ALIASES = {'XKO': 'XKX'}
 FIRE_VALUE_COLUMNS = ('GEP_wildfire_2019_baseline', 'GEP_wildfire_2019_nn_hh',
                       'GEP_wildfire_2019_ttn_tth')

@@ -17,10 +17,10 @@
 # the same on every machine and the CSV is the only thing a machine edits. It reads one of them,
 # the conda environment, because the shell needs it before python exists to read anything.
 #
-# ⚠ WHY THIS RUNS AT ALL: the service moved off Mollweide at 300 m onto the account's grid,
-# WGS84 at 10 arcsec, on 2026-09-02. Every raster the previous run wrote is on the old grid, so
-# nothing is reusable and the country hectares -- the only thing the valuation reads -- have to
-# come out of a fresh raster pass. The $14.07bn on the status row is the last Mollweide run's.
+# ⚠ WHY THIS RUNS AT ALL: the service computes on the account's grid, WGS84 at 10 arcsec
+# (moved off Mollweide at 300 m on 2026-09-02), and the country hectares -- the only thing the
+# valuation reads -- come out of the raster pass this launcher runs. The account's current
+# figure is the grid-native $13.85bn; the old Mollweide run's $14.07bn is history.
 #
 # Memory is a MEASUREMENT of the parts, not a guess at the whole. The reach growth was timed at
 # 1.5 s and 0.3 GB for one band of 180 rows across the full 129,600-column width, and there are
@@ -58,11 +58,10 @@ with open(path, encoding='utf-8-sig') as f:
 PY
 }
 
-# ⚠ The environment can come from NTFP_CONDA_ENV instead of the CSV, and that is the better way
-# on a machine that also pulls. es_parameters.csv is TRACKED, so filling a machine value into it
-# leaves a local modification that every `git pull` has to be stashed around -- which is what
-# flood's checkout on MSI carries today. Export the variable in the submitting shell and the
-# tracked file stays clean:
+# ⚠ The environment can come from NTFP_CONDA_ENV instead of the CSV. Machine values belong in
+# a project's UNTRACKED input/ copy, never in the tracked template this bootstrap reads before
+# any project exists -- filling the template leaves a local modification every `git pull` must
+# be stashed around. Until the bootstrap reads an input/ copy, the variable is the clean path:
 #
 #     NTFP_CONDA_ENV=/users/4/coles081/envs/earth_econ sbatch global_invest/ntfp/run_ntfp_msi.sbatch
 #

@@ -7,8 +7,6 @@ The country recharge depths are the seasonal water yield model's output, read fr
 table and taken as given: the model itself runs elsewhere, per watershed. What is computed here
 is the valuation on top, anchored against the committed `ground_water_gep.csv`.
 """
-import os
-
 import hazelbean as hb
 import pandas as pd
 
@@ -71,6 +69,8 @@ def gep_calculation(p):
     if already_done:
         return
 
+    if not p.run_this:
+        return p
     recharge = hb.df_read(str(p.get_path(p.groundwater_recharge_l_values_input_path)))
 
     aquastat = hb.df_read(str(p.get_path(p.groundwater_recharge_withdrawal_input_path)))
@@ -108,14 +108,15 @@ def gep_calculation(p):
     df_gep = gr.groundwater_gep(recharge, withdrawal, prices,
                                 float(p.groundwater_recharge_pump_efficiency))
 
-    committed = hb.df_read(str(p.get_path(p.groundwater_recharge_reference_path)))
-    df_gep = df_gep.merge(
-        committed.rename(columns={'ground_water_gep': 'groundwater_recharge_gep_reference'})[
-            ['iso3_r250_label', 'groundwater_recharge_gep_reference']],
-        on='iso3_r250_label', how='left')
-
     countries = utilities.collapse_countries_to_r250(p.df_countries)
     df_gep = countries.merge(df_gep, on='iso3_r250_label', how='left')
+
+    committed = hb.df_read(str(p.get_path(p.groundwater_recharge_reference_path)))
+    outside = sorted(set(committed['iso3_r250_label']) - set(countries['iso3_r250_label']))
+    if outside:
+        hb.log('  %d committed-table labels are not r250 countries and are not carried: %s'
+               % (len(outside), ', '.join(outside)))
+    df_gep = gr.with_committed_reference(df_gep, committed)
     df_gep['year'] = int(p.gep_base_year)
     utilities.write_gep_by_country(
         p, df_gep[utilities.published_country_columns(df_gep, 'groundwater_recharge')],
@@ -140,4 +141,6 @@ def gep_calculation(p):
 def gep_result(p):
     """Render the results report(s). Shared implementation in utilities."""
     publish_inputs(p)
+    if not p.run_this:
+        return p
     utilities.render_service_results(p)

@@ -1,7 +1,7 @@
 """Unit tests for the local_climate_regulation port (committed-final anchored).
 
-reference/ ships the current final, the two lineage versions and a city-month sample, so every
-run verifies: the city-level kwh x price identity, the merged-sum lineage identity (the
+The service's base-data directory holds the current final, the two lineage versions and a
+city-month sample, so every run verifies: the city-level kwh x price identity, the merged-sum lineage identity (the
 December 2025 version IS the plain city sum), the current final's parse and totals, and the
 v04 correction's arithmetic on synthetic values. The correction's own inputs are the named
 asks; until they land, the current final is the carried value.
@@ -46,7 +46,7 @@ def test_current_final_parses_to_the_known_totals():
     final.columns = [c.strip() for c in final.columns]
     values = lc.parse_dollar_column(final['local_climate_regulation'])
     assert values.notna().sum() == 174
-    assert np.isclose(values.sum() / 1e9, 14.19, rtol=1e-2)
+    assert values.sum() == 14_188_882_295          # the author's delivered final, the account value
 
 
 def test_v04_correction_arithmetic_on_synthetic_values():
@@ -95,3 +95,30 @@ def test_a_city_file_that_has_drifted_fails_rather_than_summing():
     })
     with pytest.raises(ValueError, match='kwh'):
         lc.city_savings_by_country(city)
+
+
+def test_cas_names_resolve_uniquely_and_the_typo_alias_holds():
+    countries = pd.DataFrame({
+        'iso3_r250_id': [384, 688, 250],
+        'iso3_r250_name': ["Côte d'lvoire", 'Kosovo', 'France'],
+    })
+    cas = pd.DataFrame({'COUNTRY': ["Côte d'Ivoire", 'France'],
+                        'total_usd': [10.0, 20.0], 'total_kwh': [1.0, 2.0]})
+    out = lc.cas_cooling_by_country(cas, countries)
+    assert out.set_index('iso3_r250_id')['local_climate_regulation_gep'].to_dict() == \
+        {384: 10.0, 250: 20.0}
+    with pytest.raises(ValueError):
+        lc.cas_cooling_by_country(pd.DataFrame({'COUNTRY': ['Atlantis'],
+                                                'total_usd': [1.0], 'total_kwh': [1.0]}),
+                                  countries)
+
+
+def test_the_adopted_cas_workbook_totals_what_the_entry_says():
+    import os
+    path = os.path.expanduser('~/Files/base_data/global_invest/cas_submission_2026_09/'
+                              'coolling_effect/02_Country_Results/country_cooling_service_review.xlsx')
+    if not os.path.exists(path):
+        pytest.skip('the CAS cooling workbook is not on this machine')
+    cas = pd.read_excel(path, sheet_name='2019 Results')
+    assert len(cas) == 168
+    assert cas['total_usd'].sum() == pytest.approx(557_728_392_574.80, abs=1.0)

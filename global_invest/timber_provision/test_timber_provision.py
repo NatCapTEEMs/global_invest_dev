@@ -93,19 +93,21 @@ def test_es_config_and_parameters_rows_hydrate_timber_provision(tmp_path):
     assert p.timber_provision_gep_path.endswith('timber_provision_gep.csv')
 
 
-def test_the_flat_sum_is_the_only_reading_the_roundwood_market_can_support():
-    """The units question, settled from outside the pipeline rather than from its own output.
+def test_the_units_plausibility_diagnostic_favours_the_flat_sum_over_a_per_hectare_reading():
+    """A recorded plausibility diagnostic on the raster's units, not a proof of them.
 
     The value raster is EPSG:4326 at 10 arc-second and carries NO unit metadata, so whether a cell
     holds a value or a per-hectare density cannot be read off the file. The committed output cannot
     settle it either, because it was produced by summing the same raster the same way.
 
-    FAOSTAT settles it. World industrial roundwood production in 2019 was 1.985 billion m3, and the
-    world export unit value was $111.01/m3, so the gross value of all industrial roundwood produced
-    on earth was about $220bn. The pipeline's flat sum, $88.74bn, is 40 percent of that -- a high
-    but possible land factor share. Reading the raster as $/ha gives $708bn, which is 321 percent
-    of gross. A land share cannot exceed the gross value it is a share of, so the flat sum is the
-    only reading the market supports.
+    FAOSTAT gives an outside comparison. World industrial roundwood production in 2019 was 1.985
+    billion m3, and the world export unit value was $111.01/m3, so the gross value of industrial
+    roundwood at that proxy price was about $220bn. The pipeline's flat sum, $88.74bn, is 40
+    percent of that, a plausible land factor share. Reading the raster as $/ha gives $708bn, 321
+    percent of it, which a land share of the gross value is not expected to reach. The check
+    records that the flat sum sits below the proxy gross and the per-hectare reading above three
+    times it. It favours the flat reading. It does not prove the units, because the comparison
+    rests on an export-price proxy.
     """
     import os
     path = os.path.join(os.path.expanduser('~'), 'Files', 'base_data', 'global_invest',
@@ -120,14 +122,14 @@ def test_the_flat_sum_is_the_only_reading_the_roundwood_market_can_support():
     gross = produced * (export_v / export_q)
 
     flat, per_hectare = 88_743_966_326.0, 708_472_545_086.0
-    assert flat < gross, 'the flat reading must be a fraction of gross roundwood value'
+    assert flat < gross, 'the recorded diagnostic expects the flat reading below the proxy gross'
     assert per_hectare > 3 * gross, (
-        'the $/ha reading must be impossible, not merely large: it is %.0f%% of gross'
-        % (100 * per_hectare / gross))
+        'the recorded diagnostic expects the $/ha reading above three times the proxy gross: it '
+        'is %.0f%% of it' % (100 * per_hectare / gross))
 
 
 def test_the_cwon_rent_is_read_from_its_named_series_and_missing_stays_missing():
-    """The rental alternative the issues document recommends, published beside ours.
+    """The CWoN rent, the account's timber figure, read from its named series.
 
     CWoN's file is wide by year and carries a `series` label. Reading the year column without
     checking the label would publish whatever series happened to be in the file under the name
@@ -149,8 +151,85 @@ def test_the_cwon_rent_is_read_from_its_named_series_and_missing_stays_missing()
         tp.cwon_forest_rent_by_country(wrong, countries, 2019)
 
 
+def _cwon_table(series, values_by_country):
+    return pd.DataFrame({'countrycode': list(values_by_country), 'series': series,
+                         'YR2019': list(values_by_country.values())})
+
+
+def test_the_computed_rent_is_revenue_times_rate_matched_by_country_code():
+    """The two CWoN tables list countries in different orders and one country only in the revenue
+    table, so a product taken by row position would pair the wrong numbers."""
+    revenue = _cwon_table(tp.CWON_FOREST_REVENUE_SERIES, {'AAA': 1000.0, 'BBB': 2000.0, 'DDD': 50.0})
+    rate = _cwon_table(tp.CWON_FOREST_RENTAL_RATE_SERIES, {'BBB': 0.5, 'AAA': 0.1})
+    countries = pd.DataFrame({'iso3_r250_label': ['BBB', 'AAA', 'DDD']})
+    out = tp.cwon_forest_rent_from_revenue_and_rate(revenue, rate, countries, 2019).set_index('iso3_r250_label')
+    assert out.loc['AAA', 'timber_provision_gep_cwon_rent'] == pytest.approx(100.0)
+    assert out.loc['BBB', 'timber_provision_gep_cwon_rent'] == pytest.approx(1000.0)
+    assert pd.isna(out.loc['DDD', 'timber_provision_gep_cwon_rent'])     # a revenue without a rate
+
+    with pytest.raises(ValueError, match='rental rate'):
+        tp.cwon_forest_rent_from_revenue_and_rate(
+            revenue, rate.assign(series='Forest, rents (current US$)'), countries, 2019)
+    with pytest.raises(ValueError, match='more than once'):
+        tp.cwon_forest_rent_from_revenue_and_rate(pd.concat([revenue, revenue.head(1)]), rate, countries, 2019)
+
+
+def test_a_named_country_without_inputs_is_zero_and_any_other_stays_missing():
+    """CWoN sets a missing forest rent to zero only for the countries its gap-filling names. A named
+    country with both inputs keeps its product, and an unnamed one without them stays missing."""
+    nan = float('nan')
+    revenue = _cwon_table(tp.CWON_FOREST_REVENUE_SERIES, {'SMR': nan, 'SYR': 100.0, 'NRU': nan})
+    rate = _cwon_table(tp.CWON_FOREST_RENTAL_RATE_SERIES, {'SMR': 0.2, 'SYR': 0.22, 'NRU': 0.2})
+    countries = pd.DataFrame({'iso3_r250_label': ['SMR', 'SYR', 'NRU', 'XKX']})
+    out = tp.cwon_forest_rent_from_revenue_and_rate(
+        revenue, rate, countries, 2019, assumed_zero_countries=['SMR', 'SYR']).set_index('iso3_r250_label')
+    rent, assumed = out['timber_provision_gep_cwon_rent'], out['timber_provision_cwon_rent_assumed_zero']
+    assert rent['SMR'] == 0.0 and assumed['SMR']
+    assert rent['SYR'] == pytest.approx(22.0) and not assumed['SYR']
+    assert pd.isna(rent['NRU']) and not assumed['NRU']        # no inputs, not named
+    assert pd.isna(rent['XKX']) and not assumed['XKX']        # in neither table
+
+
+def test_the_staged_cwon_tables_reproduce_the_published_2019_rent(tmp_path):
+    """Revenue times rate on the staged CWoN 2024 tables, against the rent CWoN publishes for 2019.
+
+    Every computed value equals the published one. The published table carries 16 further zeros,
+    small islands and territories with no forest revenue in any year, which CWoN's island rule
+    sets to zero from a list the package does not include, so the computed rent leaves them
+    missing. IMN, NRU and XKX are missing in both, although they too have no revenue in any year.
+    """
+    revenue_path = os.path.join(REFERENCE_DIR, 'cwon2024', 'forest_timber_revenue.xlsx')
+    rate_path = os.path.join(REFERENCE_DIR, 'cwon2024', 'forest_timber_rental_rate.xlsx')
+    rent_path = os.path.join(REFERENCE_DIR, 'cwon', 'forest_timber_rent_cd.dta')
+    if not all(os.path.exists(path) for path in (revenue_path, rate_path, rent_path)):
+        pytest.skip('the staged CWoN timber tables are not on this machine')
+    p = SimpleNamespace(input_dir=str(tmp_path / 'input'), get_path=lambda *a, **k: '/resolved/' + '/'.join(a))
+    utilities.hydrate_es_parameters(p, 'timber_provision', log=lambda *a: None)
+    assert p.timber_provision_cwon_assumed_zero_countries == ['SMR', 'MCO', 'GRL', 'PSE', 'SYR']
+
+    published = pd.read_stata(rent_path)
+    countries = pd.DataFrame({'iso3_r250_label': sorted(published['countrycode'].unique())})
+    out = tp.cwon_forest_rent_from_revenue_and_rate(
+        pd.read_excel(revenue_path, na_values=['..']), pd.read_excel(rate_path, na_values=['..']),
+        countries, 2019, p.timber_provision_cwon_assumed_zero_countries).set_index('iso3_r250_label')
+    rent = out['timber_provision_gep_cwon_rent']
+    reference = tp.cwon_forest_rent_by_country(published, countries, 2019).set_index(
+        'iso3_r250_label')['timber_provision_gep_cwon_rent']
+
+    both = rent.notna() & reference.notna()
+    assert both.sum() == 198 and rent.notna().sum() == 198     # 194 products and 4 named zeros
+    assert np.allclose(rent[both], reference[both], rtol=1e-12, atol=1e-6)
+    assert rent.sum() == pytest.approx(132_130_111_931.1806, rel=1e-12)
+    assert sorted(out.index[out['timber_provision_cwon_rent_assumed_zero']]) == ['GRL', 'MCO', 'PSE', 'SMR']
+    island_zeros = sorted(reference.index[reference.notna() & rent.isna()])
+    assert island_zeros == ['ASM', 'ATG', 'BMU', 'CHI', 'CUW', 'CYM', 'GRD', 'GUM', 'KNA', 'MAF',
+                            'MHL', 'MNP', 'PLW', 'SXM', 'TUV', 'VIR']
+    assert reference[island_zeros].eq(0).all()
+    assert sorted(reference.index[reference.isna()]) == ['IMN', 'NRU', 'XKX']
+
+
 def test_both_timber_valuations_are_published_and_differ_by_the_recorded_ratio():
-    """Publishing one silently would hide a $43bn choice, so every run writes both."""
+    """Every run writes both valuations, so the gap between them stays visible."""
     import glob
     import os
     pattern = os.path.join(os.path.expanduser('~'), 'Files', 'global_invest', 'projects',
@@ -160,27 +239,29 @@ def test_both_timber_valuations_are_published_and_differ_by_the_recorded_ratio()
         pytest.skip('no timber_provision run on this machine')
     for path in produced:
         df = pd.read_csv(path)
-        # timber_provision_gep IS the CWoN rent since 2026-09-02; the spatial estimate is kept
-        # beside it under its own name rather than deleted.
+        # timber_provision_gep IS the CWoN rent; the spatial estimate is kept beside it under its
+        # own name.
         assert 'timber_provision_gep' in df.columns
         assert 'timber_provision_gep_spatial' in df.columns, (
             '%s publishes only one valuation' % path)
         spatial = df['timber_provision_gep_spatial'].sum()
         rental = df['timber_provision_gep'].sum()
-        # 1.49 as measured on 2026-09-02. A wide band, because this pins that the two are the
-        # same order and neither column has silently become the other, not the ratio itself.
+        # The recorded ratio is 1.49. A wide band, because this pins that the two are the same
+        # order and neither column has silently become the other, not the ratio itself.
         assert 1.3 < rental / spatial < 1.7, (
             '%s: rental/spatial is %.2f, not the recorded 1.49' % (path, rental / spatial))
 
 
-def test_the_faostat_bound_is_published_and_neither_valuation_breaks_it_wholesale():
-    """The bound is a third column, not a third estimate.
+def test_the_faostat_gross_diagnostic_is_published_and_neither_valuation_exceeds_it_wholesale():
+    """The gross-value diagnostic is a third column, not a third estimate.
 
     A land factor share is a fraction of the gross value of the wood it comes from, so a country
-    whose timber GEP exceeds the gross value of all the roundwood it produced is impossible. A
+    whose timber GEP exceeds the proxy gross value of the roundwood it produced is flagged. A
     handful of countries do exceed it and are named in the entry: an export unit value is a proxy
-    for a domestic price, so a ratio near 1 is noise. What this asserts is that neither valuation
-    breaks the bound WHOLESALE, which is what would indicate a units error rather than a price one.
+    for a domestic price, so an exceedance is a flag and a ratio near 1 is noise. What this asserts
+    is a recorded plausibility diagnostic: fewer than 10 percent of the valued countries in each
+    valuation sit above the proxy gross. More than that would flag the column for review. It
+    would not by itself establish a units error or a bound.
     """
     import glob
     import os
@@ -191,14 +272,14 @@ def test_the_faostat_bound_is_published_and_neither_valuation_breaks_it_wholesal
         pytest.skip('no timber_provision run on this machine')
     for path in produced:
         df = pd.read_csv(path)
-        assert 'timber_roundwood_gross_value' in df.columns, '%s lacks the bound' % path
+        assert 'timber_roundwood_gross_value' in df.columns, '%s lacks the gross-value diagnostic' % path
         priced = df[df['timber_roundwood_gross_value'] > 0]
         for column in ('timber_provision_gep', 'timber_provision_gep_spatial'):
             valued = priced[priced[column] > 0]
             over = valued[valued[column] > valued['timber_roundwood_gross_value']]
             assert len(over) < 0.1 * len(valued), (
-                '%s: %s exceeds its own gross roundwood value in %d of %d countries, which is a '
-                'units error rather than a price proxy' % (path, column, len(over), len(valued)))
+                '%s: %s exceeds the proxy gross roundwood value in %d of %d countries, above the '
+                'recorded 10 percent plausibility diagnostic' % (path, column, len(over), len(valued)))
 
 
 def test_every_timber_run_reproduces_the_committed_anchor():
@@ -206,8 +287,7 @@ def test_every_timber_run_reproduces_the_committed_anchor():
 
     `test_join_reproduces_the_committed_anchor` reads the staged anchor and joins it, which tests
     the join. This sums the raster the way the pipeline does and compares every timber run on the
-    machine, cold starts included, against the anchor. Commercial fisheries carried a reproduction
-    claim for weeks on the strength of a function-level test, which is the shape this avoids.
+    machine, cold starts included, against the anchor.
     """
     import glob
     import os
@@ -249,7 +329,7 @@ def grids(other):
 
 
 def test_the_reported_origin_noise_passes():
-    """1e-14 degrees of y-origin noise -- the case that blocked the timber seam."""
+    """1e-14 degrees of y-origin noise: representation noise, not misalignment."""
     noisy = Affine(PIXEL, 0.0, -180.0, 0.0, -PIXEL, 90.00000000000001)
     _assert_one_grid(grids(noisy))
 

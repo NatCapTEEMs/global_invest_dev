@@ -1,12 +1,13 @@
-"""Unit tests for the fisheries GEP valuation (CWoN method, synthetic and self-contained).
+"""Tests for the fisheries GEP valuation and the static shock rows.
 
-Pins the ported rent-trend math against hand-derived values: the year-mean CPI imputation,
-the deflation, the OLS trend prediction with its window midpoint, the zero floor, the source
-script's country exclusions, and the no-data-is-not-zero join. The CWoN .dta inputs and the
-source pipeline's output CSV are the open staging asks; when they land, the anchor test joins
-this file the way fire_protection's did.
+Synthetic tests pin the rent-trend math against hand-derived values: the year-mean CPI
+imputation, the deflation, the OLS trend prediction on each country's own mean year, the zero
+floor, the source script's country exclusions, and the no-data-is-not-zero join. Anchor tests
+compare the commercial, subsistence and aquaculture components against staged references.
 """
+import json
 import os
+import re
 from types import SimpleNamespace
 
 import numpy as np
@@ -39,7 +40,7 @@ def test_cpi_imputation_fills_missing_with_that_years_cross_country_mean():
 
 
 def test_rent_cleaning_applies_the_source_exclusions():
-    # The rent now arrives as its parts, so the fixture supplies those rather than a finished
+    # The rent is computed from its parts, so the fixture supplies those rather than a finished
     # column: landed value, the two costs, and subsidy.
     rent = pd.DataFrame({'Year': [2010, 2010, 2009, 2011, 2010],
                          'wb_code': ['CYP', 'AAA', 'CUW', 'CUW', 'BBB'],
@@ -71,6 +72,23 @@ def test_trend_prediction_matches_hand_derived_ols():
     assert np.isclose(row['beta_hat'], 2.0)
     assert np.isclose(row['resrent_2019_hat'], 30.0)
     assert np.isclose(row['positive_resrent_2019_hat'], 30.0)
+
+
+def test_a_country_with_fewer_window_years_projects_on_its_own_line():
+    # BBB has 2011-2018 only (as Curacao after its exclusions): rent = 5 + 3*(t-2011), mean year
+    # 2014.5, so its own line at 2019 is 5 + 3*8 = 29. The fixed midpoint 2013.5 would give 32,
+    # one slope too high. AAA, with the full window, keeps its 30.
+    full = list(range(2009, 2019))
+    short = list(range(2011, 2019))
+    deflated = pd.DataFrame({
+        'wb_code': ['AAA'] * len(full) + ['BBB'] * len(short),
+        'year': full + short,
+        'resrent_2019usd': [10.0 + 2 * (y - 2009) for y in full] + [5.0 + 3 * (y - 2011) for y in short]})
+    trends = ff.fisheries_rent_trends(deflated).set_index('wb_code')
+    assert np.isclose(trends.loc['AAA', 'mean_year'], 2013.5)
+    assert np.isclose(trends.loc['AAA', 'resrent_2019_hat'], 30.0)
+    assert np.isclose(trends.loc['BBB', 'mean_year'], 2014.5)
+    assert np.isclose(trends.loc['BBB', 'resrent_2019_hat'], 29.0)
 
 
 def test_negative_prediction_floors_at_zero_and_single_year_gives_nan():
@@ -112,13 +130,16 @@ def test_es_config_and_parameters_rows_hydrate_the_fisheries_gep(tmp_path):
     # which is how they arrive on every machine we run on.
     assert p.fisheries_cwon_cpi_path.endswith('commercial/cpi2019.dta')
     assert p.fisheries_cwon_econ_rent_path.endswith('commercial/EconRent_Analysis_AllYears.dta')
-    assert p.fisheries_aquaculture_value_path.endswith('aquaculture/Aquaculture_Value.csv')
+    # FAO FishStatJ release 2024.1.0, the release the owner's values use and the write-up cites.
+    assert p.fisheries_aquaculture_value_path.endswith(
+        'aquaculture/release_2024.1.0/Aquaculture_Value.csv')
+    assert p.fisheries_aquaculture_value_source_url.endswith('Aquaculture_2024.1.0.zip')
+    assert re.fullmatch(r'[0-9a-f]{64}', str(p.fisheries_aquaculture_value_sha256))
 
 
 def test_commercial_computed_value_reproduces_the_author_csv():
-    """The author's cleaned per-country capture CSV (2026-07-20, staged 2026-10) is the first
-    machine-readable reference this component has had: the full chain recomputed from the
-    staged CWoN inputs lands on his rows at his integer rounding. Same CWoN data on both
+    """The author's cleaned per-country capture CSV is the reference: the full chain recomputed
+    from the staged CWoN inputs lands on his rows at his integer rounding. Same CWoN data on both
     sides, so agreement tests the two implementations against each other, not the science."""
     import os
     data_dir = utilities.service_data_dir(_base_data_project(), 'fisheries')
@@ -135,6 +156,12 @@ def test_commercial_computed_value_reproduces_the_author_csv():
     ours, ref = merged['positive_resrent_2019_hat'], merged['commfish_provision']
     both = ours.notna() & ref.notna()
     assert both.sum() == 165                                   # 107 valued plus 58 floored zeros
+    # Curacao is the one departure: its window has eight years, and the library projects it on
+    # its own line where the author's fixed midpoint overshoots by exactly one slope.
+    curacao = merged['iso3_r250_label'] == 'CUW'
+    assert np.isclose(ours[curacao].iloc[0], ref[curacao].iloc[0] - merged.loc[curacao, 'beta_hat'].iloc[0],
+                      rtol=0, atol=5.0)
+    both = both & ~curacao
     # The atol is his whole-dollar rounding plus the measured float drift against the staged
     # run's environment, worst $3.96 (Vanuatu); the rtol covers the large countries at 4e-9.
     assert np.allclose(ours[both], ref[both], rtol=1e-6, atol=5.0)
@@ -161,23 +188,45 @@ def test_subsistence_computed_value_reproduces_the_committed_output():
     countries = pd.read_csv(os.path.join(reference_dir, 'subsistence_correspondence.csv'))
     reference = pd.read_csv(os.path.join(reference_dir, 'gep-subsistence-fisheries.csv'))
 
-    out = ff.subsistence_fisheries_by_country(lynch, countries)
+    from global_invest.fisheries import fisheries_tasks
+    out = ff.subsistence_fisheries_by_country(lynch, countries, fisheries_tasks.LYNCH_ADMIN_TO_ISO3)
     merged = out.merge(reference, on='iso3_r250_id', suffixes=('', '_ref'))
     assert len(out) == len(reference) == len(merged) == 250
     ours, ref = merged['subsistence_fisheries_gep'], merged['gep_subistence_fish']
 
     both = ours.notna() & ref.notna()
-    assert both.sum() == 65
+    # 53, not the reference's 65: the twelve territory rows a bare name join gives a verbatim copy
+    # of their sovereign's national estimate are NA (a double count, confirmed against the
+    # release). The committed reference shares the join's lineage, so it still carries the
+    # copies; agreement is checked on everything except them.
+    assert both.sum() == 53
     assert np.allclose(ours[both], ref[both], rtol=1e-8)
 
-    # Where we cannot derive a value the reference states zero, so no money is lost.
-    only_reference = ref.notna() & ours.isna()
-    assert only_reference.sum() == 20
-    assert (ref[only_reference] == 0).all()
-    # And we never invent a country the reference does not value.
-    assert not (ours.notna() & ref.isna()).any()
+    territory_rows = merged.loc[ours.isna() & ref.notna() & (ref > 0), 'iso3_r250_label']
+    assert sorted(territory_rows) == ['ALA', 'BVT', 'CCK', 'CXR', 'ESH', 'GLP', 'GUF', 'MTQ',
+                                      'MYT', 'REU', 'SJM', 'TKL']
 
-    assert np.isclose(ours.sum(), reference['gep_subistence_fish'].sum(), rtol=1e-8)
+    # Where we cannot derive a value the reference states zero, so no money is lost.
+    only_reference = ref.notna() & ours.isna() & (ref == 0)
+    assert only_reference.sum() == 20
+    # The only countries we value and the reference does not are the five its brk_name join
+    # dropped, because the release spells them differently; each carries exactly its own admin's
+    # value, and Kosovo, which shares Serbia's brk_name, receives nothing.
+    restored = merged.loc[ours.notna() & ref.isna(), ['iso3_r250_label', 'subsistence_fisheries_gep']]
+    assert sorted(restored['iso3_r250_label']) == ['BIH', 'CZE', 'KOR', 'SRB', 'USA']
+    by_admin = ff.subsistence_value_by_admin(lynch).set_index('admin')['subsistence_fisheries_gep']
+    for admin, iso3 in fisheries_tasks.LYNCH_ADMIN_TO_ISO3.items():
+        assert restored.set_index('iso3_r250_label').loc[iso3, 'subsistence_fisheries_gep'] == by_admin[admin]
+    assert pd.isna(merged.loc[merged['iso3_r250_label'] == 'XKX', 'subsistence_fisheries_gep']).all()
+
+    # The totals differ by exactly the twelve removed copies and the five restored countries,
+    # and the result is the release's own total. 1e-9, not tighter: the staged CSV stores
+    # rounded values ($0.19 on $7.44bn), the same reason the run-level pin uses it.
+    removed = merged.loc[merged['iso3_r250_label'].isin(territory_rows), 'gep_subistence_fish']
+    assert np.isclose(ours.sum(), reference['gep_subistence_fish'].sum() - removed.sum()
+                      + restored['subsistence_fisheries_gep'].sum(), rtol=1e-9)
+    assert np.isclose(removed.sum(), 482_173_046, rtol=1e-4)
+    assert np.isclose(ours.sum(), by_admin.sum(), rtol=1e-12)
 
 
 def test_subsistence_recompute_matches_the_releases_own_published_total():
@@ -194,7 +243,7 @@ def test_subsistence_recompute_matches_the_releases_own_published_total():
 
 
 def test_subsistence_sums_species_rather_than_taking_the_first_published_value():
-    """Reading TCUV kept whichever value came first, which is order-dependent where an admin
+    """Reading TCUV keeps whichever value comes first, which is order-dependent where an admin
     carries more than one. Summing quantity times price over species has no such ambiguity."""
     lynch = pd.DataFrame({'admin': ['Atlantis', 'Atlantis', 'Erewhon'],
                           'total_biomass_harv_kg_unitofprice': [2.0, 3.0, 1.0],
@@ -207,6 +256,48 @@ def test_subsistence_sums_species_rather_than_taking_the_first_published_value()
     out = ff.subsistence_fisheries_by_country(lynch, countries).set_index('iso3_r250_label')
     assert np.isclose(out.loc['ATL', 'subsistence_fisheries_gep'], 40.0)   # 2x5 + 3x10
     assert np.isnan(out.loc['NOW', 'subsistence_fisheries_gep'])           # absent stays NaN
+
+
+def test_subsistence_territories_do_not_inherit_their_sovereigns_estimate():
+    """A territory's brk_name is its sovereign's, so the name join copies the national
+    estimate onto it; only the row that IS the sovereign keeps the value, satellites stay NA
+    (missing, not zero), and a territory with its own row in the release keeps its own."""
+    lynch = pd.DataFrame({'admin': ['Atlantis', 'Freedonia'],
+                          'total_biomass_harv_kg_unitofprice': [2.0, 7.0],
+                          'final_kg_price_USD': [5.0, 2.0],
+                          'TCUV': [10.0, 14.0]})
+    countries = pd.DataFrame({
+        'brk_name': ['Atlantis', 'Atlantis', 'Freedonia'],
+        'ee_r264_id': [1, 2, 3], 'iso3_r250_id': [1, 2, 3],
+        'iso3_r250_label': ['ATL', 'ATI', 'FRE'],
+        'ee_r264_description': ['Atlantis', 'Atlantis Island Territory', 'Freedonia']})
+    out = ff.subsistence_fisheries_by_country(lynch, countries).set_index('iso3_r250_label')
+    assert np.isclose(out.loc['ATL', 'subsistence_fisheries_gep'], 10.0)  # the sovereign keeps it
+    assert np.isnan(out.loc['ATI', 'subsistence_fisheries_gep'])          # the copy is removed
+    assert np.isclose(out.loc['FRE', 'subsistence_fisheries_gep'], 14.0)  # own row, own value
+
+
+def test_subsistence_places_an_unmatched_release_name_by_iso3_on_one_row_only():
+    """A release name no brk_name carries goes to its ISO3 row through the explicit
+    correspondence: never to a satellite sharing that row's brk_name, never on top of a value
+    already joined, and an admin the release leaves unvalued stays missing."""
+    lynch = pd.DataFrame({'admin': ['Republic of Atlantis', 'Freedonia', 'Erewhon'],
+                          'total_biomass_harv_kg_unitofprice': [2.0, 7.0, np.nan],
+                          'final_kg_price_USD': [5.0, 2.0, np.nan],
+                          'TCUV': [10.0, 14.0, 0.0]})
+    countries = pd.DataFrame({
+        'brk_name': ['Atlantis', 'Atlantis', 'Freedonia', 'Erewhon Land'],
+        'ee_r264_id': [1, 2, 3, 4], 'iso3_r250_id': [1, 2, 3, 4],
+        'iso3_r250_label': ['ATL', 'ATI', 'FRE', 'ERE'],
+        'ee_r264_description': ['Atlantis', 'Atlantis Island Territory', 'Freedonia', 'Erewhon']})
+    out = ff.subsistence_fisheries_by_country(
+        lynch, countries, {'Republic of Atlantis': 'ATL', 'Erewhon': 'ERE'}).set_index('iso3_r250_label')
+    assert np.isclose(out.loc['ATL', 'subsistence_fisheries_gep'], 10.0)
+    assert np.isnan(out.loc['ATI', 'subsistence_fisheries_gep'])
+    assert np.isclose(out.loc['FRE', 'subsistence_fisheries_gep'], 14.0)
+    assert np.isnan(out.loc['ERE', 'subsistence_fisheries_gep'])
+    with pytest.raises(ValueError, match='already carries'):
+        ff.subsistence_fisheries_by_country(lynch, countries, {'Republic of Atlantis': 'FRE'})
 
 
 # ---------------------------------------------------------------------------
@@ -300,8 +391,9 @@ def test_econ_rent_is_computed_from_its_parts_not_read_from_their_column():
     out = ff.compute_econ_rent(raw)
     # 1000 - (300 + 200) - 50 = 450
     assert out['econ_rent'].iloc[0] == pytest.approx(450.0)
-    # A country-year with no recorded subsidy received none, so the rent is 900 - 400 - 0 = 500,
-    # not missing. Treating a blank subsidy as unknown would delete an otherwise complete country.
+    # A missing subsidy is filled with zero, the implemented convention (CWoN's own FAOEconRent
+    # follows it), so the rent is 900 - 400 - 0 = 500, not missing. It is a convention: the table
+    # does not record that this country-year received no subsidy.
     assert out['econ_rent'].iloc[1] == pytest.approx(500.0)
     assert out['econ_rent'].iloc[2] == pytest.approx(325.0)
     # It reproduces their published column, which is the point of computing it rather than reading it.
@@ -310,7 +402,8 @@ def test_econ_rent_is_computed_from_its_parts_not_read_from_their_column():
 
 def test_a_missing_catch_or_cost_leaves_the_rent_undefined_rather_than_zero():
     # Zero rent is a finding: it says this fishery earns nothing above cost. Missing says we could
-    # not compute it. Only subsidy is filled, because absent there really does mean none.
+    # not compute it. Only subsidy is filled, and that zero is a convention, not a record that
+    # none was paid.
     raw = pd.DataFrame({
         'Year': [2015, 2015], 'wb_code': ['NOVAL', 'NOCOST'],
         'FAO_landval2018': [np.nan, 500.0], 'FAOVarCost': [100.0, np.nan],
@@ -380,13 +473,27 @@ def test_only_the_base_year_and_only_the_value_measure_are_summed():
     assert out['aquaculture_value_usd'].iloc[0] == pytest.approx(100_000.0)
 
 
-def test_aquatic_plants_are_dropped_and_dropping_them_needs_the_species_table():
-    """The scope choice that reconciles us with the reference, pinned so it cannot drift silently.
+def test_a_country_whose_aquaculture_rows_all_carry_no_value_stays_missing():
+    # Country 4 has two rows and neither carries a value. A plain sum would report 0 for it;
+    # with no value in any row the country has no value, the same as a country FAO omits.
+    value = pd.DataFrame({
+        'COUNTRY.UN_CODE': [4, 4, 8],
+        'SPECIES.ALPHA_3_CODE': ['FCY', 'SCN', 'FCY'],
+        'MEASURE': ['V_USD_1000'] * 3,
+        'PERIOD': [2019, 2019, 2019],
+        'VALUE': [np.nan, np.nan, 20.0],
+    })
+    out = ff.aquaculture_value_by_country(value, 2019, exclude_aquatic_plants=False).set_index('iso3_r250_id')
+    assert np.isnan(out.loc[4, 'aquaculture_value_usd'])
+    assert out.loc[8, 'aquaculture_value_usd'] == pytest.approx(20_000.0)
 
-    Seaweed is 5.4 percent of world aquaculture value. Including it gives $116.69bn and excluding
-    it $110.50bn against the reference's $110.68bn -- so this one switch is the whole difference,
-    and it was invisible in the source, whose ISSCAAP mapping keeps division 9 while its exported
-    data evidently did not.
+
+def test_aquatic_plants_are_dropped_and_dropping_them_needs_the_species_table():
+    """The scope choice that reconciles the valuation with the reference, pinned so it cannot
+    drift silently.
+
+    Excluding aquatic plants is invisible in the source, whose ISSCAAP mapping keeps division 9
+    while its exported data evidently does not.
     """
     value = pd.DataFrame({
         'COUNTRY.UN_CODE': [4, 4],
@@ -408,6 +515,31 @@ def test_aquatic_plants_are_dropped_and_dropping_them_needs_the_species_table():
         ff.aquaculture_value_by_country(value, 2019, None, exclude_aquatic_plants=True)
 
 
+def test_named_isscaap_groups_are_dropped_and_an_unknown_name_is_refused():
+    """The authors' item scope by ISSCAAP group name: the named groups' species leave the value,
+    the rest stay, and a name the species table does not carry stops the run instead of
+    filtering nothing."""
+    value = pd.DataFrame({
+        'COUNTRY.UN_CODE': [4, 4, 4],
+        'SPECIES.ALPHA_3_CODE': ['FCY', 'OSH', 'SWX'],
+        'MEASURE': ['V_USD_1000'] * 3,
+        'PERIOD': [2019] * 3,
+        'VALUE': [100.0, 7.0, 40.0],
+    })
+    species = pd.DataFrame({'3A_Code': ['FCY', 'OSH', 'SWX'],
+                            'Major_Group': ['PISCES', 'MOLLUSCA', 'PLANTAE AQUATICAE'],
+                            'ISSCAAP_Group_En': ['Carps, barbels and other cyprinids',
+                                                 'Pearls, mother-of-pearl, shells', 'Brown seaweeds']})
+    out = ff.aquaculture_value_by_country(value, 2019, species, True, ['Pearls, mother-of-pearl, shells'])
+    assert out['aquaculture_value_usd'].iloc[0] == pytest.approx(100_000.0)
+    kept = ff.aquaculture_value_by_country(value, 2019, species, True)
+    assert kept['aquaculture_value_usd'].iloc[0] == pytest.approx(107_000.0)
+    with pytest.raises(ValueError, match='Pearl shells'):
+        ff.aquaculture_value_by_country(value, 2019, species, True, ['Pearl shells'])
+    with pytest.raises(ValueError, match='species-group table'):
+        ff.aquaculture_value_by_country(value, 2019, None, False, ['Corals'])
+
+
 def _fisheries_runs():
     """Every fisheries project directory on this machine, cold starts included.
 
@@ -426,14 +558,11 @@ def test_every_subsistence_run_reproduces_the_staged_reference_total():
 
     The three tests above check `subsistence_fisheries_by_country` against the release. That is a
     check on the function; this is a check on what the pipeline actually wrote, for every run on
-    the machine including the cold start. Commercial fisheries carried a reproduction claim in its
-    entry for weeks with nothing staged and nothing comparing, which is what this shape prevents.
+    the machine including the cold start.
 
-    The two sides agree on the TOTAL to the dollar and not on the count: the release publishes 85
-    countries and we publish 65. The twenty are countries the release gives a value of exactly zero
-    with no quantity and no price behind it. A value we cannot derive is not a measurement of zero,
-    so they stay NA here -- and being zero they take nothing out of the total, which is why the
-    totals still match exactly.
+    The two sides agree on the TOTAL and not on the count: twenty countries the release gives a
+    value of exactly zero, with no quantity and no price behind it, stay NA here, because a value
+    we cannot derive is not a measurement of zero. Being zero they take nothing out of the total.
     """
     import glob
     import os
@@ -442,22 +571,122 @@ def test_every_subsistence_run_reproduces_the_staged_reference_total():
         'subsistence', 'gep-subsistence-fisheries.csv')
     if not os.path.exists(reference_path):
         pytest.skip('the staged reference is not on this machine')
-    reference_total = pd.read_csv(reference_path)['gep_subistence_fish'].sum()
+    reference = pd.read_csv(reference_path)
+    reference_total = reference['gep_subistence_fish'].sum()
+    # The twelve territory rows a bare name join gives a verbatim copy of their sovereign's
+    # national estimate are NA, so without the ISO3 placement below a run totals the reference
+    # MINUS those copies. A run made before either rule carries the reference total; both are
+    # recognised rather than failed, and at least one run must carry the current total or the pin
+    # passes on older runs alone.
+    territory_labels = ['ALA', 'BVT', 'CCK', 'CXR', 'ESH', 'GLP', 'GUF', 'MTQ',
+                        'MYT', 'REU', 'SJM', 'TKL']
+    deduplicated_total = reference_total - reference.loc[
+        reference['iso3_r250_label'].isin(territory_labels), 'gep_subistence_fish'].sum()
+    # The five countries the release spells differently from every brk_name are placed by ISO3,
+    # so a current run totals the release itself.
+    lynch = pd.read_excel(os.path.join(os.path.dirname(reference_path),
+                                       'Rec fish food_20230509_for USGS data release.xlsx'),
+                          engine='openpyxl')
+    release_total = ff.subsistence_value_by_admin(lynch)['subsistence_fisheries_gep'].sum()
 
     checked = 0
+    current_runs = 0
     for run in _fisheries_runs():
         for produced in glob.glob(os.path.join(run, '**', 'subsistence_gep_by_country.csv'),
                                   recursive=True):
             ours = pd.read_csv(produced)
             column = [c for c in ours.columns if c.endswith('_gep')][0]
+            total = ours[column].sum()
             # 1e-9, not tighter: the staged CSV stores its values rounded, and the two totals
             # differ by $0.24 on $7.92bn -- 3.1e-11 relative, which is that rounding rather than a
             # disagreement. A tolerance tighter than the reference's own precision tests the file
             # format, not the science.
-            assert ours[column].sum() == pytest.approx(reference_total, rel=1e-9), (
-                '%s totals %r against the staged reference %r'
-                % (produced, ours[column].sum(), reference_total))
+            current = total == pytest.approx(release_total, rel=1e-9)
+            deduplicated = total == pytest.approx(deduplicated_total, rel=1e-9)
+            pre_fix = total == pytest.approx(reference_total, rel=1e-9)
+            assert current or deduplicated or pre_fix, (
+                '%s totals %r against the release %r (staged reference %r, deduplicated %r)'
+                % (produced, total, release_total, reference_total, deduplicated_total))
             assert len(ours) == 250, '%s publishes %d rows' % (produced, len(ours))
             checked += 1
+            current_runs += int(current)
     if not checked:
         pytest.skip('no fisheries run on this machine has written a subsistence table')
+    assert current_runs >= 1, 'no run carries the release total'
+
+
+def test_the_owners_revised_aquaculture_shares_our_distribution():
+    """The owner's revised aquaculture table (his gep_aquaculture repo) uses the gross-output
+    share on the account's own r250 format; this pins the agreement so it cannot lapse, on
+    whichever FAO release the stable project last ran."""
+    import glob
+    his_path = os.path.join(os.path.expanduser('~'), 'Files', 'base_data', 'global_invest',
+                            'fisheries', 'author_drive_2026_10', 'aquaculture_gep_2026oct09.csv')
+    # The stable project only: older cold-start directories can carry the superseded
+    # value-added-share vintage.
+    runs = sorted(glob.glob(os.path.join(
+        os.path.expanduser('~'), 'Files', 'global_invest', 'projects', 'gep_fisheries',
+        'intermediate', 'fisheries_aquaculture_gep', 'aquaculture_gep_by_country.csv')))
+    if not (os.path.exists(his_path) and runs):
+        pytest.skip('the revised owner table or a fisheries run is not on this machine')
+    his = pd.read_csv(his_path)
+    assert his['aquaculture_gep'].sum() == pytest.approx(58_697_376_919, abs=1_000)
+    for ours_path in runs:
+        ours = pd.read_csv(ours_path)
+        merged = ours[['iso3_r250_label', 'aquaculture_gep']].merge(
+            his[['iso3_r250_label', 'aquaculture_gep']], on='iso3_r250_label',
+            suffixes=('_ours', '_his'))
+        both = merged[(merged['aquaculture_gep_ours'] > 0) & (merged['aquaculture_gep_his'] > 0)]
+        assert len(both) >= 190
+        ratio = both['aquaculture_gep_his'] / both['aquaculture_gep_ours']
+        assert ratio.median() == pytest.approx(1.0, abs=0.01)
+        corr = np.corrcoef(np.log(both['aquaculture_gep_ours']),
+                           np.log(both['aquaculture_gep_his']))[0, 1]
+        assert corr > 0.99
+
+
+def test_the_staged_fao_release_reproduces_the_owners_aquaculture_values():
+    """FAO release 2024.1.0, read by the library function with the configured item scope (the
+    owner's cleaning: ISSCAAP divisions 6, 8 and 9 and group 73), reproduces the owner's
+    per-country 2019 values: every country within $50 (his values come rounded from FishStatJ)
+    and his GEP within $100 on his shares. In 2019 the excluded groups hold only three items,
+    OSH, PNM and FSH. The countries his earlier table codes as zero but FAO does not list are
+    missing in the library, as they are in his later table."""
+    from global_invest import utilities
+    root = os.path.join(os.path.expanduser('~'), 'Files', 'base_data', 'global_invest', 'fisheries')
+    release = os.path.join(root, 'aquaculture', 'release_2024.1.0')
+    his_path = os.path.join(root, 'author_drive_2026_10', 'aquaculture_gep_2026oct09.csv')
+    if not (os.path.exists(os.path.join(release, 'Aquaculture_Value.csv')) and os.path.exists(his_path)):
+        pytest.skip('FAO release 2024.1.0 or the owner table is not staged on this machine')
+    params = pd.read_csv(os.path.join(os.path.dirname(ff.__file__), '..', 'input_template',
+                                      'es_parameters.csv'), encoding='utf-8-sig')
+    recorded = params.loc[params['parameter'] == 'fisheries_aquaculture_value_sha256', 'value'].iloc[0]
+    assert utilities.sha256_file(os.path.join(release, 'Aquaculture_Value.csv')) == recorded
+
+    value = pd.read_csv(os.path.join(release, 'Aquaculture_Value.csv'), dtype={'COUNTRY.UN_CODE': int})
+    species = pd.read_csv(os.path.join(release, 'CL_FI_SPECIES_GROUPS.csv'))
+    his = pd.read_csv(his_path).set_index('iso3_r250_id')
+    groups = json.loads(params.loc[params['parameter'] == 'fisheries_aquaculture_excluded_isscaap_groups',
+                                   'value'].iloc[0])
+    shells = ['OSH', 'PNM', 'FSH']
+    kept = ff.aquaculture_value_by_country(value, 2019, species, True).set_index('iso3_r250_id')
+    left_out = ff.aquaculture_value_by_country(value, 2019, species, True, groups).set_index('iso3_r250_id')
+    by_hand = ff.aquaculture_value_by_country(
+        value[~value['SPECIES.ALPHA_3_CODE'].isin(shells)], 2019, species, True).set_index('iso3_r250_id')
+    assert left_out['aquaculture_value_usd'].equals(by_hand['aquaculture_value_usd'])
+
+    joined = his.join(left_out, how='left')
+    valued = joined['aquaculture_value_2019usd'].notna() & joined['aquaculture_value_usd'].notna()
+    assert valued.sum() == 203
+    assert (joined.loc[valued, 'aquaculture_value_usd']
+            - joined.loc[valued, 'aquaculture_value_2019usd']).abs().max() <= 50.0
+    gep = (joined.loc[valued, 'aquaculture_value_usd']
+           * joined.loc[valued, 'natural_resource_share_of_gross_output']).sum()
+    assert abs(gep - his['aquaculture_gep'].sum()) < 100.0
+    # his zeros: 34 countries FAO does not list (missing in the library), 6 zeros FAO reports
+    zero = his['aquaculture_value_2019usd'] == 0
+    assert int((zero & joined['aquaculture_value_usd'].isna()).sum()) == 34
+    assert int((zero & (joined['aquaculture_value_usd'] == 0)).sum()) == 6
+    # the shell items are the whole difference the configured groups make in 2019
+    shell_value = (kept['aquaculture_value_usd'] - left_out['aquaculture_value_usd'].reindex(kept.index)).fillna(0)
+    assert shell_value.sum() == pytest.approx(185_805_115.0, abs=1.0)

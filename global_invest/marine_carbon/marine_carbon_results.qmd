@@ -1,0 +1,142 @@
+---
+format:
+  html:
+    embed-resources: true
+    standalone: true
+execute:
+  echo: false          # results report shows tables/figures, not code
+  warning: false
+---
+
+# Marine Carbon Results
+
+```{python}
+#| output: false
+
+### SETUP CODE: Runs the whole model if it doesn't exist, else loads the results.
+
+import os
+import pandas as pd
+import hazelbean as hb
+
+from global_invest.marine_carbon import marine_carbon_initialize
+
+if __name__ == '__main__':
+
+    p = hb.ProjectFlow()
+    p.project_name = 'gep_marine_carbon'
+    # The rendering task passes the project it is reporting on; the home path is the
+    # fallback for someone opening this qmd directly.
+    p.project_dir = os.environ.get('PROJECTFLOW_ROOT', os.path.join(
+        os.path.expanduser('~'), 'Files', 'global_invest', 'projects', p.project_name))
+    p.set_project_dir(p.project_dir)
+
+    marine_carbon_initialize.build_gep_service_calculation_task_tree(p)
+
+    p.results = {}
+
+    hb.log('Created ProjectFlow object at ' + p.project_dir + '\n    from script ' + p.calling_script + '\n    with base_data set at ' + p.base_data_dir)
+    p.execute()
+```
+
+```{python}
+#| output: false
+
+### DISPLAY SETUP CODE
+
+import pandas as pd
+import os
+import hazelbean as hb
+
+pd.set_option('display.float_format', '{:,.2f}'.format)
+pd.set_option('display.max_rows', 1000)
+
+service_label = 'marine_carbon'
+
+df = hb.df_read(p.results[service_label]['gep_by_country_base_year'])
+allocation = hb.df_read(p.results[service_label]['allocation_with_high_seas'])
+pool_columns = [c for c in allocation.columns if c.startswith('allocated_value_') and c != 'allocated_value_usd']
+high_seas = allocation[allocation['iso3_r250_label'] == 'ABNJ'].iloc[0]
+total_value = allocation['allocated_value_usd'].sum()
+national_value = df['marine_carbon_gep'].sum()
+p.pool_table = pd.DataFrame({
+    'pool': [c[len('allocated_value_'):-len('_usd')] for c in pool_columns],
+    'countries (USD trillion)': [df[c].sum() / 1e12 for c in pool_columns],
+    'high seas (USD trillion)': [high_seas[c] / 1e12 for c in pool_columns],
+    'total (USD trillion)': [allocation[c].sum() / 1e12 for c in pool_columns]})
+p.gep_by_country_base_year_table = df[['iso3_r250_name', 'marine_carbon_gep', 'area_km2', 'share_of_total_ocean_area']]
+```
+
+The four pools value at $`{python} f"{total_value / 1e12:,.2f}"` trillion a year in the base year (`{python} f"{int(p.gep_base_year)}"`). Countries carry $`{python} f"{national_value / 1e12:,.2f}"` trillion through their EEZs, and the high seas carry $`{python} f"{high_seas['allocated_value_usd'] / 1e12:,.2f}"` trillion, `{python} f"{100 * high_seas['share_of_total_ocean_area']:.2f}"`% of the ocean area, in their own row outside the country table. `{python} f"{df['marine_carbon_gep'].notna().sum()}"` countries carry a value and `{python} f"{df['marine_carbon_gep'].isna().sum()}"` are missing, because the marine layer holds no EEZ polygon labelled with them. The service is reported separately and is not added to the summed GEP total, and the method note lists the open questions on scope, the methane price and the areas.
+
+## Value by pool
+
+```{python}
+p.pool_table
+```
+
+```{python}
+#| output: false
+
+import matplotlib.pyplot as plt
+from global_invest import utilities
+
+ax = p.pool_table.set_index('pool')[['countries (USD trillion)', 'high seas (USD trillion)']].plot.barh(
+    stacked=True, color=['#3b7a9e', '#b9cfdc'], figsize=(7, 3))
+ax.set_xlabel('USD trillion per year, base year')
+ax.set_ylabel('')
+pool_split_png_path = os.path.join(utilities.report_dir(), 'value_by_pool_countries_and_high_seas.png')
+utilities.savefig(pool_split_png_path)
+```
+
+```{python}
+from IPython.display import Image
+Image(pool_split_png_path)
+```
+
+## GEP by Country in Base Year, mapped
+
+```{python}
+#| output: false
+
+from global_invest import utilities
+
+map_value_column = f'{service_label}_gep'
+map_png_path = os.path.join(utilities.report_dir(),
+                            f'{service_label}_gep_by_country_base_year_map.png')
+map_png_path = utilities.plot_gep_choropleth(
+    df, map_value_column, p.gdf_countries_vector_simplified_path, map_png_path,
+    title=f'{service_label} GEP by country (EEZ share)', label=map_value_column)
+
+summary_tables = utilities.gep_summary_tables(df, map_value_column, utilities.report_dir(), log=hb.log)
+```
+
+```{python}
+from IPython.display import Image
+Image(map_png_path) if map_png_path else 'No positive value to map.'
+```
+
+## GEP by Income Group in Base Year
+```{python}
+summary_tables.get('income_grp', 'No income group column in this table.')
+```
+
+## GEP by Region in Base Year
+```{python}
+summary_tables.get('region_un', 'No UN region column in this table.')
+```
+
+## GEP by Continent in Base Year
+```{python}
+summary_tables.get('continent', 'No continent column in this table.')
+```
+
+## GEP by Subregion in Base Year
+```{python}
+summary_tables.get('subregion', 'No subregion column in this table.')
+```
+
+## GEP by Country in Base Year
+```{python}
+p.gep_by_country_base_year_table
+```

@@ -16,8 +16,8 @@ import hazelbean as hb
 from global_invest import utilities
 
 # The raw-Spawn density build (uint -> float32 scaling, aboveground+belowground add) is a one-off
-# base-data job, not part of the per-run tree; it lives in howto/rebuild_spawn_total_carbon_density.md
-# and the run consumes its finished product (spawn_total_biomass_carbon_2010.tif) from base_data.
+# base-data job, not part of the per-run tree; it is the gep_preprocess task, and the run consumes
+# its finished product (spawn_total_biomass_carbon_2010.tif) from base_data.
 
 # hazelbean's output_data_type code for Float32. The LULC grid the density rasters are written
 # against is uint8, which would round every density to a whole Mg C/ha.
@@ -34,7 +34,7 @@ LOOKUP_KEY_DTYPE = 'int64'
 
 # =============================================================================
 # Raster reducers. Both stream their pixels because the rasters are global at
-# 300 m; both return what they measured instead of writing it.
+# 300 m.
 # =============================================================================
 
 
@@ -98,9 +98,8 @@ def generate_carbon_density_raster(lulc_path, cz_path, density_lookup, out_path)
             f"Refusing to emit an all-NoData density raster.")
     hb.log(f"Saved: {out_path}")
 
-# Promoted to global_invest.utilities on its second caller (pollination GEP); re-exported here
-# so existing imports keep working. It reads as unused in this file because the caller is the
-# tasks module, which reaches it as tcf.summarize_raster_by_region.
+# Lives in global_invest.utilities, shared with the pollination GEP; re-exported here because the
+# tasks module reaches it as tcf.summarize_raster_by_region, so it reads as unused in this file.
 from global_invest.utilities import summarize_raster_by_region  # noqa: F401  (re-export)
 
 
@@ -129,14 +128,18 @@ def shock_percent(scenario_values, baseline_values, denominator_values=None):
     return (scenario_values - baseline_values) / denominator.replace(0, np.nan) * 100.0
 
 
-def interpolate_annual_shock(years, anchor_years, anchor_values, base_year):
+def interpolate_annual_shock(years, anchor_years, anchor_values, base_year,
+                             method=None):
     """Anchor-year shocks spread over every year, starting from no shock at the base year.
 
     The calculation computes a shock only at the years the scenario maps exist for; the economic
-    model reads one value per year, so the anchors are joined by straight lines with the
-    base year pinned at zero.
+    model reads one value per year, so the anchors are joined with the base year pinned at zero.
+    The join is PCHIP, the selected specification: straight lines between anchors make the annual
+    increment the model actually composes jump discontinuously at 2030 and 2040.
     """
-    return np.interp(years, [base_year] + list(anchor_years), [0.0] + list(anchor_values))
+    from global_invest import utilities
+    return utilities.anchored_series(
+        years, [base_year] + list(anchor_years), [0.0] + list(anchor_values), method=method)
 
 
 def zone_labels_from_boundary(regions_df, id_column, endw_column, reg_column, endw_format):
@@ -241,7 +244,8 @@ def dynamic_shock_rows(scenario_by_year, baseline_by_year, baseline_at_base_year
 
 
 def summed_shock_rows(scenario_by_year_by_scenario, baseline_at_base_year, zone_labels, base_year,
-                      sector, negligible_share=1e-6, log=print):
+                      sector, negligible_share=1e-6, log=print,
+                      covered_zones=None, excluded_out=None):
     """Regional shocks formed from SUMMED quantities rather than from means of zonal ratios.
 
     For a measure that can add quantity where the base year had none -- forest biomass on land
@@ -271,6 +275,33 @@ def summed_shock_rows(scenario_by_year_by_scenario, baseline_at_base_year, zone_
     zones_by_region = {}
     for zone_id, (endw, reg) in zone_labels.items():
         zones_by_region.setdefault(reg, []).append(zone_id)
+
+    # REGIONAL SCOPE. With covered_zones None -- every global run -- every region is required, and
+    # a missing zone raises in regional_total below: the full coverage requirement.
+    #
+    # A bounded AOI cannot satisfy it: on the zaf fixture 46 of 50 regions have no measured zone at
+    # all. Such a region is reported COMPLETELY or not at all, never partially summed, so the
+    # invariant regional_total protects still holds for every region that IS reported -- within it,
+    # every zone was measured. The excluded regions are handed back so the caller can DECLARE them:
+    # write_afeall_hars builds np.zeros over the whole set, so a region merely absent from the table
+    # is exported to GTAP as a zero shock. Making that impossible is the point of this partition.
+    if covered_zones is not None:
+        covered = {int(z) for z in covered_zones}
+        in_scope, out_of_scope = {}, []
+        for reg, ids in zones_by_region.items():
+            if all(int(z) in covered for z in ids):
+                in_scope[reg] = ids
+            else:
+                out_of_scope.append(reg)
+        if excluded_out is not None:
+            excluded_out.extend(sorted(out_of_scope))
+        if not in_scope:
+            raise ValueError('summed measure: the run grid fully covers no GTAP region, so there is '
+                             'nothing this measure can report. Covered zones: %d' % len(covered))
+        log('  summed measure: %d of %d region(s) fully covered and reported; %d excluded as '
+            'unmeasured, which MUST be declared and never exported as zero: %s'
+            % (len(in_scope), len(zones_by_region), len(out_of_scope), ', '.join(sorted(out_of_scope))))
+        zones_by_region = in_scope
 
     def regional_total(series, region, what):
         """The region's summed quantity, from EVERY one of its zones.
@@ -416,7 +447,7 @@ def scc_valuation_rows(stock_by_scenario_year, base_stock, price, base_year, ret
             is reported beside the change from the base year.
 
     Returns:
-        pd.DataFrame: iso3_r250_id, scenario, year (base_year..last anchor, annual, linear between
+        pd.DataFrame: iso3_r250_id, scenario, year (base_year..last anchor, annual, PCHIP between
         anchors), stock_mgc, delta_stock_mgc, delta_value_usd, and with a baseline
         delta_stock_vs_baseline_mgc, delta_value_vs_baseline_usd.
     """
@@ -429,7 +460,16 @@ def scc_valuation_rows(stock_by_scenario_year, base_stock, price, base_year, ret
         years = list(range(base_year, anchors[-1] + 1))
         table = pd.DataFrame({base_year: base_stock, **{y: by_year[y] for y in anchors}})
         table = table.dropna()
-        annual = table.reindex(columns=years).interpolate(axis=1, limit_area='inside')
+        # PCHIP on the STOCK in Mg C -- the physical quantity -- never the multiplicative
+        # productivity transform: a carbon account is additive and does not compound. Anchors are
+        # preserved exactly, so cumulative change and implied cumulative emissions match straight
+        # lines between anchors, while the annual flow does not jump at the reporting years. Against
+        # straight lines on the bounded outputs: anchor identity 2.4e-07 Mg C, cumulative emissions
+        # identical, mean flow jump at 2030/2040 2.9e6 -> 6.3e5 Mg C/yr, NPV @1.4% -3.82%.
+        _present = [c for c in table.columns if table[c].notna().any()]
+        annual = pd.DataFrame(
+            utilities.anchored_series(years, _present, table[_present].to_numpy().T).T,
+            index=table.index, columns=years)
         long = annual.stack().rename('stock_mgc').reset_index()
         long.columns = ['iso3_r250_id', 'year', 'stock_mgc']
         long['scenario'] = scenario
@@ -450,7 +490,11 @@ def scc_valuation_rows(stock_by_scenario_year, base_stock, price, base_year, ret
         anchors = sorted(baseline_by_year)
         years = list(range(base_year, anchors[-1] + 1))
         table = pd.DataFrame({base_year: base_stock, **{y: baseline_by_year[y] for y in anchors}}).dropna()
-        annual = table.reindex(columns=years).interpolate(axis=1, limit_area='inside')
+        # The baseline stock is interpolated the same way: PCHIP on the stock, anchors exact.
+        _present = [c for c in table.columns if table[c].notna().any()]
+        annual = pd.DataFrame(
+            utilities.anchored_series(years, _present, table[_present].to_numpy().T).T,
+            index=table.index, columns=years)
         long = annual.stack().rename('baseline_stock_mgc').reset_index()
         long.columns = ['iso3_r250_id', 'year', 'baseline_stock_mgc']
         out = out.merge(long, on=['iso3_r250_id', 'year'], how='left')

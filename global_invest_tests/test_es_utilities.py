@@ -43,7 +43,7 @@ def test_resolve_base_scenario_tries_candidates_and_is_fatal_when_absent():
 def test_nature_off_spellings_are_mutual_aliases_by_default():
     # The frozen tables disagree on the nature-off baseline's spelling (carbon: _dependencies;
     # pollination/erosion: _damages) -- each spelling must find the other's table without a
-    # consumer-supplied map. Closes the "global_invest open" half of the two-spelling bug.
+    # consumer-supplied map.
     quiet = lambda *a: None
     assert utilities.resolve_raw_scenario(
         ['baseline_ignore_damages', 'below_2c'], {}, 'baseline_ignore_dependencies', 'erosion', log=quiet) == 'baseline_ignore_damages'
@@ -264,3 +264,54 @@ def test_warp_to_pyramid_sum_conserves_the_total_and_lands_on_the_rung(tmp_path)
 
     with pytest.raises(ValueError):
         utilities.warp_raster_to_pyramid_sum(src_path, str(tmp_path / 'bad.tif'), 36)
+
+
+def test_pyramid_sum_warp_conserves_a_dense_global_grid(tmp_path):
+    """The worst measured point: a dense global 180-arcsecond grid (pollination's), where
+    gdal.Warp's sum resampling returned 109.6 percent of the source total at 300 arcseconds
+    and 81.3 percent at 900. The exact-overlap implementation must conserve at both, and the
+    output must declare itself extensive so POG overviews aggregate by sum."""
+    from osgeo import gdal, osr
+    import numpy as np
+    rng = np.random.default_rng(7)
+    array = rng.uniform(0.0, 50.0, (360, 720)).astype(np.float32)  # 0.5 deg here: same 5/3 and 5/1 ratios
+    array[rng.random(array.shape) < 0.3] = -9999.0
+    src_path = str(tmp_path / 'dense_global.tif')
+    ds = gdal.GetDriverByName('GTiff').Create(src_path, 720, 360, 1, gdal.GDT_Float32)
+    ds.SetGeoTransform((-180.0, 0.5, 0.0, 90.0, 0.0, -0.5))
+    srs = osr.SpatialReference(); srs.ImportFromEPSG(4326); ds.SetProjection(srs.ExportToWkt())
+    band = ds.GetRasterBand(1); band.SetNoDataValue(-9999.0); band.WriteArray(array); ds = None
+    expected = float(array[array != -9999.0].sum())
+    for arc in (3600, 1800):  # 2x and 1x the 0.5-degree source: the same ratio family as 300/900 vs 180
+        dst_path = str(tmp_path / ('dense_%d.tif' % arc))
+        utilities.warp_raster_to_pyramid_sum(src_path, dst_path, arc)
+        out = gdal.Open(dst_path)
+        warped = out.GetRasterBand(1).ReadAsArray()
+        got = float(warped[warped != out.GetRasterBand(1).GetNoDataValue()].sum())
+        assert got == pytest.approx(expected, rel=1e-6), arc
+        assert out.GetMetadataItem('POG_VARIABLE_CLASS') == 'extensive'
+
+
+def test_write_gep_by_country_gives_added_countries_the_tables_year(tmp_path):
+    """A country the service produced no value for is added with NA VALUES but the table's
+    YEAR: the year is metadata, so an added row must not leave it blank."""
+    import os
+    from types import SimpleNamespace
+    import numpy as np
+    import pandas as pd
+    from global_invest import utilities
+
+    countries = pd.DataFrame([
+        {'ee_r264_id': 1, 'iso3_r250_id': 76, 'ee_r264_label': 'BRA', 'iso3_r250_label': 'BRA',
+         'ee_r264_name': 'Brazil', 'iso3_r250_name': 'Brazil'},
+        {'ee_r264_id': 2, 'iso3_r250_id': 156, 'ee_r264_label': 'CHN', 'iso3_r250_label': 'CHN',
+         'ee_r264_name': 'China', 'iso3_r250_name': 'China'},
+    ])
+    p = SimpleNamespace(df_countries=countries)
+    service = pd.DataFrame({'iso3_r250_label': ['BRA'], 'year': [2019], 'value': [5.0]})
+    path = os.path.join(str(tmp_path), 'out.csv')
+    utilities.write_gep_by_country(p, service, path, log=lambda *a: None)
+    out = pd.read_csv(path).set_index('iso3_r250_label')
+    assert out.loc['CHN', 'year'] == 2019, 'the added country carries the table year'
+    assert np.isnan(out.loc['CHN', 'value']), 'its value stays missing'
+    assert out.loc['BRA', 'value'] == 5.0

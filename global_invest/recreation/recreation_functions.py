@@ -6,12 +6,13 @@ commit, not an input/-copy edit.
 
 Method in one pass: LULC class shares + protected-area share -> a 0-3 environment class;
 urban share + distance-to-road -> a 1-5 accessibility class; the two cross into a 1-9 site
-rank, of which class 9 is a high-quality site, dissolved into discrete sites by connected
-components. Demand is a per-capita trip budget (participation a) split over distance bands by
-an exponential decay (rate b), both read per country from the demand-parameter table; each
-band's fixed budget divides evenly over the sites its ring reaches, the rest is unmet, and
-realized visits price at the origin country's per-km fuel cost over the round trip to the band
-midpoint. Two further channels add on: overnight stays priced at the hotel-price surface, and
+rank, of which class 9 is a high-quality site. Demand is a per-capita trip budget
+(participation a) split over distance bands by an exponential decay (rate b), both read per
+country from the demand-parameter table. Within each distance band, trips are divided equally
+among reachable high-quality pixels, the rest is unmet, and realized visits price at the origin
+country's per-km fuel cost over the round trip to the band midpoint. Contiguous high-quality
+pixels are labelled into discrete sites (connected components) only to sum each site's visits
+and value for reporting. Two further channels add on: overnight stays priced at the hotel-price surface, and
 arrivals by origin region priced at the staged region-to-region airfare matrix.
 
 Raster ops are pure array functions (unit-testable) wrapped into pygeoprocessing closures by
@@ -53,8 +54,8 @@ GFEI_LITERS_PER_KM = 0.071
 # convention read from the same workbook.
 UNWTO_OVERNIGHTS_UNIT_NIGHTS = 1000.0
 # The participation rate a is annual visits per person, but the tourist flow's population
-# unit is a person-night, so a night carries the rate's daily share (a/365) -- the source's
-# correction of the delivered construction, which priced each night at the full annual rate.
+# unit is a person-night, so a night carries the rate's daily share (a/365). Pricing each night
+# at the full annual rate would count a year of visits per night.
 TOURIST_NIGHTS_PER_YEAR = 365.0
 
 INT_NDV = -1
@@ -254,9 +255,9 @@ def allocate_overnights_array(hotel_array, country_array, country_overnights_map
     """National overnight totals spread proportionally over each country's hotel pixels.
 
     The hotel totals are the NATIONAL counts, computed once over the whole raster and passed
-    in -- a denominator computed inside a blockwise closure hands the full national total to
-    every block that holds one of the country's hotels (Spain came out exactly 22 times its
-    panel total, one repeat per block with a Spanish hotel).
+    in. A denominator computed inside a blockwise closure would hand the full national total to
+    every block that holds one of the country's hotels, multiplying the country's overnights by
+    the number of such blocks.
     """
     result = np.zeros_like(hotel_array, dtype=np.float32)
     for country_id, total_overnights in country_overnights_map.items():

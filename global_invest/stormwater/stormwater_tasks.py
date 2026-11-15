@@ -4,6 +4,7 @@ The InVEST urban stormwater retention run happens outside this tree; retention_b
 sums its raster inside each country, and gep_calculation prices the result."""
 import os
 
+import geopandas as gpd
 import numpy as np
 import pyproj
 import rasterio
@@ -128,7 +129,6 @@ def retention_by_country(p):
     if hb.path_exists(p.stormwater_retention_by_country_path):
         hb.log('stormwater retention table already exists. Skipping the zonal sum.')
         return True
-    import geopandas as gpd
 
     retention_path = os.path.join(p.intermediate_dir, INVEST_WORKSPACE_DIR_NAME,
                                   RETENTION_VOLUME_FILE_NAME)
@@ -163,12 +163,14 @@ def gep_calculation(p):
     if already_done:
         return
 
+    if not p.run_this:
+        return p
     from global_invest.stormwater import stormwater_functions as sf
     retention = hb.df_read(p.stormwater_retention_by_country_path)
     df_gep = sf.stormwater_gep_by_country(retention, sf.STORMWATER_PRICE_PER_M3_PLACEHOLDER)
     df_gep['year'] = int(p.gep_base_year)
     # Carry the country attributes every other service's table carries, so this output can be
-    # read, grouped and reported the same way. Without them the report cannot even name a country.
+    # read, grouped and reported the same way, including by country name.
     attribute_columns = ['iso3_r250_id', 'iso3_r250_name', 'continent', 'region_un',
                          'region_wb', 'income_grp', 'subregion']
     countries = utilities.collapse_countries_to_r250(p.df_countries)[attribute_columns]
@@ -184,4 +186,6 @@ def gep_calculation(p):
 def gep_result(p):
     """Render the results report(s). Shared implementation in utilities."""
     publish_inputs(p)
+    if not p.run_this:
+        return p
     utilities.render_service_results(p)

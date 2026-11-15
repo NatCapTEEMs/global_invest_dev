@@ -1,9 +1,8 @@
 """Fisheries header resolution: the path that carries every scenario once the legacy map goes.
 
-The ngfs session found both gaps this file closes: no test covered resolving a header purely
-through es_shock_climate_labels (the post-deletion path), and the HAR header-read list used to
-depend on header_map alone — an empty map would read no headers and silently drop every
-scenario, whatever the RCP derivation resolved.
+Pins two properties: a header resolves purely through es_shock_climate_labels (the path with no
+legacy map), and the HAR header-read list does not depend on header_map alone, because an empty
+map then reads no headers and silently drops every scenario, whatever the RCP derivation resolved.
 """
 from global_invest.fisheries.fisheries_functions import (
     FISH_HEADER_MAP, RCP_FI_MAP, fisheries_headers_to_read, resolve_fisheries_header)
@@ -28,9 +27,8 @@ def test_climate_only_resolution_covers_all_ngfs_production_scenarios():
                     'baseline_ignore_dependencies': 'rcp45',
                     'current_policies': 'rcp70', 'fragmented_world': 'rcp70', 'stress_test': 'rcp70',
                     # The es20 variant shares its climate with the policy it varies: it cuts the
-                    # service shock, not the RCP. Absent here, the loop below raised KeyError on it
-                    # rather than checking it, so the one scenario whose header could plausibly have
-                    # been mis-derived was the one the test skipped.
+                    # service shock, not the RCP. It is listed so its header is checked like every
+                    # other scenario's.
                     'current_policies-es20': 'rcp70'}
     resolved = {s: resolve_fisheries_header(s, {}, ngfs_climate) for s in ngfs_climate}
     assert set(resolved.values()) == {'FI26', 'FI45', 'FI85'}

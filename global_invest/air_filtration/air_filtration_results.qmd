@@ -59,7 +59,7 @@ total_sandstorm_value = df['sandstorm_prevention_gep'].sum()
 p.gep_by_country_base_year_table = df[['iso3_r250_name', 'air_filtration_gep', 'sandstorm_prevention_gep']]
 ```
 
-The analysis estimates an air-filtration GEP of $`{python} f"{total_air_filtration_value:,.0f}"` for the base year (`{python} f"{int(p.gep_base_year)}"`) (avoided deaths from vegetation's dry pollutant deposition, valued at a GDP-adjusted VSL) and, from the same workbook's dust channel, a sandstorm-prevention GEP of $`{python} f"{total_sandstorm_value:,.0f}"`. The avoided-death columns come from the group's coupled emissions, InMAP and health model and are taken as given; the valuation layer replicates the committed workbook exactly.
+The analysis estimates an air-filtration GEP of $`{python} f"{total_air_filtration_value:,.0f}"` for the base year (`{python} f"{int(p.gep_base_year)}"`) (avoided deaths from vegetation's dry pollutant deposition, valued at the account's shared GDP- and life-years-adjusted VSL) and, from the same workbook's dust channel, a sandstorm-prevention GEP of $`{python} f"{total_sandstorm_value:,.0f}"`. The avoided-death columns come from the group's coupled emissions, InMAP and health model and are taken as given. The valuation arithmetic reproduces the workbook exactly when priced at the workbook's own VSL. The account prices at the shared panel instead, so its deposition total differs from the workbook's $17.81bn. The 53 places the authors could not estimate are missing, not zero.
 
 ## GEP by Country in Base Year, mapped
 

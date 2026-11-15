@@ -1,19 +1,8 @@
-"""Water-supply science. First component: hydropower direct use, CWoN resource-rent method.
-
-The consortium drive's Hydropower folder carries the committed 2019 output
-(gep_hydro_directuse_CWONresrent_20260720.csv) but not the script behind it; the method was
-identified by reverse-engineering against that anchor and is exact across all 94 valued
-countries (ratio constant to 1e-10): the 2019 GEP is CWoN 2024's capitalized hydropower
-wealth divided by the annuity factor at the CWoN-standard 4 percent CAPITALIZATION rate over a
-100-year horizon — the constant annual rent the capitalized value implies. That rate is CWoN's
-and is not the account's 2 percent social discount rate; inverting their capitalization with any
-other rate returns a rent they never capitalized. The test suite asserts both
-the annuity identity and the exact replication. An earlier direct-use script on the drive
-(price x quantity from EIA/World Bank series, Nov 2024) is superseded by this method and not
-ported.
-
-The other water_supply components on the group's sheet (agriculture, household) are not yet
-built anywhere we have seen; the module is laid out to receive them beside hydropower.
+"""The authors' hydropower resource rent, with the value inferred from CWoN wealth beside it,
+agricultural-water valuation using the GEP-WaterUse-Agriculture coefficients and crop values,
+and municipal water. The municipal value is the authors' final table, imported and checked by `municipal_gep_by_country`. The domestic
+valuation at the premium-implied price is kept only as a comparison variant. Provenance is in
+the method note and the evidence record, not here.
 """
 import numpy as np
 import pandas as pd
@@ -22,17 +11,25 @@ import pandas as pd
 # CWoN's, not the account's discount rate; the method page says why.
 HYDROPOWER_HORIZON_YEARS = 100    # the CWoN capitalization horizon
 HYDROPOWER_GEP_YEAR = 2019
-# Countries the reference output leaves EMPTY although the CWoN wealth table values them.
-# No available material explains the drop (the 2026 script is not on the drive; the package
-# lacks its raw workbook), and the reason is an open ask on the deck.
-#
-# These are NOT dropped from the reported value. Blanking them would fit our number to the
-# reference instead of deriving it, which is the one thing the account must not do: a
-# discrepancy we silently reproduce can never surface. The module reports every country the
-# CWoN table values, and emits the reference-matching variant beside it as the comparison
-# anchor, so the replication check still runs and the gap stays visible and countable.
-HYDROPOWER_REFERENCE_EXCLUDED = ('AZE', 'BGR', 'DOM', 'GRC', 'GTM', 'HTI', 'KAZ', 'LBR',
-                                 'MAR', 'MKD', 'NIC', 'POL', 'PRT', 'SLV', 'TJK', 'UKR', 'ZAF')
+
+# The authors' resource rent: the World Bank's CWoN 2024 hydropower valuation workbook, sheet
+# Database, revenues (column W) minus total costs (column Y), nominal USD, hydropower rows.
+HYDROPOWER_WORKBOOK_SHEET = 'Database'
+HYDROPOWER_WORKBOOK_REVENUE = 'Revenues\n(USD nominal)'
+HYDROPOWER_WORKBOOK_COST = 'Total costs\n(USD nominal)'
+HYDROPOWER_WORKBOOK_COLUMN_POSITIONS = {HYDROPOWER_WORKBOOK_REVENUE: 22,   # W
+                                        HYDROPOWER_WORKBOOK_COST: 24}      # Y
+# The workbook uses the World Bank's current country names; the CWoN wealth table, whose
+# countryname and countrycode map the rest, still carries these three under their earlier names.
+HYDROPOWER_WORKBOOK_RENAMES = {'Czechia': 'Czech Republic', 'North Macedonia': 'Macedonia, FYR',
+                               'Turkiye': 'Turkey'}
+
+# The authors' public rent table, their repository's CWON_resource_rent_data.csv: the workbook's
+# revenues and total costs per country-year in whole dollars, resource_rent their difference.
+# It uses the workbook's country names. Where the workbook is staged the two must agree within
+# a dollar, the public file's rounding.
+HYDROPOWER_PUBLIC_RENT = 'resource_rent'
+HYDROPOWER_PUBLIC_WORKBOOK_TOLERANCE_USD = 1.0
 
 
 def annuity_factor(rate, years=HYDROPOWER_HORIZON_YEARS):
@@ -47,24 +44,136 @@ def hydropower_rent_from_wealth(wealth_df, capitalization_rate, year=HYDROPOWER_
     equal to real 2019 USD in the 2019 base year, and the only variant that covers Venezuela).
     Countries without wealth stay NaN: no data is not zero rent.
 
-    Returns hydropower_gep, every country the wealth table values, and beside it
-    hydropower_gep_reference_variant, the same figure with the reference's unexplained
-    exclusions blanked. The first is what the account reports; the second exists only so the
-    replication check has something to compare against."""
+    Returns hydropower_gep_wealth_based, every country the wealth table values. It is published
+    beside the authors' rent as a comparison (see hydropower_rent_table)."""
     df = wealth_df[['countrycode', f'YR{year}']].rename(
         columns={'countrycode': 'iso3_r250_label',
                  f'YR{year}': 'hydropower_wealth_usd'})
-    df['hydropower_gep'] = df['hydropower_wealth_usd'] / annuity_factor(capitalization_rate)
-    df['hydropower_gep_reference_variant'] = df['hydropower_gep'].mask(
-        df['iso3_r250_label'].isin(HYDROPOWER_REFERENCE_EXCLUDED))
+    df['hydropower_gep_wealth_based'] = df['hydropower_wealth_usd'] / annuity_factor(capitalization_rate)
     return df
+
+
+def _wealth_codes(names, wealth_df, source):
+    """Map workbook-style country names to the CWoN wealth table's codes, refusing any it lacks."""
+    codes = wealth_df.set_index('countryname')['countrycode']
+    names = names.replace(HYDROPOWER_WORKBOOK_RENAMES)
+    unmatched = sorted(set(names) - set(codes.index))
+    if unmatched:
+        raise ValueError(f'{source} countries with no code in the CWoN wealth table: {unmatched}')
+    return names.map(codes).values
+
+
+def hydropower_rent_from_public_table(rent_df, wealth_df, year=HYDROPOWER_GEP_YEAR):
+    """The authors' annual hydropower resource rent from their public table, sign kept.
+
+    Args:
+        rent_df (pd.DataFrame): the authors' CWON_resource_rent_data table (Country, Year,
+            tot_revenue, tot_cost, resource_rent).
+        wealth_df (pd.DataFrame): the CWoN wealth table, for its countryname and countrycode.
+        year (int): the year to take.
+
+    Returns:
+        pd.DataFrame: iso3_r250_label, hydropower_rent_signed_usd and hydropower_rent_status
+        (positive, negative, zero, or missing where the rent is not numeric).
+
+    Raises:
+        ValueError: if a country has no code in the wealth table or appears twice in the year.
+    """
+    rows = rent_df[rent_df['Year'] == year]
+    codes = _wealth_codes(rows['Country'], wealth_df, 'public rent table')
+    if len(set(codes)) != len(codes):
+        raise ValueError(f'the public rent table lists a country more than once in {year}')
+    out = pd.DataFrame({'iso3_r250_label': codes,
+                        'hydropower_rent_signed_usd': pd.to_numeric(rows[HYDROPOWER_PUBLIC_RENT],
+                                                                    errors='coerce').values})
+    out['hydropower_rent_status'] = np.select(
+        [out['hydropower_rent_signed_usd'] > 0, out['hydropower_rent_signed_usd'] < 0,
+         out['hydropower_rent_signed_usd'] == 0], ['positive', 'negative', 'zero'], 'missing')
+    return out
+
+
+def hydropower_rent_from_revenue_and_cost(database_df, wealth_df, year=HYDROPOWER_GEP_YEAR):
+    """The workbook's annual hydropower resource rent: revenues minus total costs, sign kept.
+
+    It checks the public table where the private workbook is staged. Countries are keyed through
+    the CWoN wealth table's own names and codes.
+
+    Args:
+        database_df (pd.DataFrame): the workbook's Database sheet as read, header row included.
+        wealth_df (pd.DataFrame): the CWoN wealth table, for its countryname and countrycode.
+        year (int): the year to take.
+
+    Returns:
+        pd.DataFrame: iso3_r250_label and hydropower_rent_workbook_usd (revenues minus total costs,
+        missing where a value is not numeric).
+
+    Raises:
+        ValueError: if revenues or total costs are not in columns W and Y, or a workbook country
+            has no code in the wealth table.
+    """
+    columns = list(database_df.columns)
+    for name, position in HYDROPOWER_WORKBOOK_COLUMN_POSITIONS.items():
+        if name not in columns or columns.index(name) != position:
+            raise ValueError(f'the workbook does not carry {name!r} in column {position + 1}')
+    rows = database_df[(database_df['Year'] == year)
+                       & (database_df['Renewable energy asset'] == 'Hydropower')]
+    rent = (pd.to_numeric(rows[HYDROPOWER_WORKBOOK_REVENUE], errors='coerce')
+            - pd.to_numeric(rows[HYDROPOWER_WORKBOOK_COST], errors='coerce'))
+    return pd.DataFrame({'iso3_r250_label': _wealth_codes(rows['Country'], wealth_df, 'workbook'),
+                         'hydropower_rent_workbook_usd': rent.values})
+
+
+def hydropower_rent_table(wealth_df, capitalization_rate, public_rent_df, database_df=None,
+                          year=HYDROPOWER_GEP_YEAR):
+    """The hydropower table: the authors' resource rent the account reports, and the
+    wealth-based value beside it.
+
+    hydropower_gep is the authors' rule applied to their public rent: a negative calculated rent
+    counts as zero, and a country the table does not list, or lists without a numeric rent,
+    stays missing. hydropower_rent_signed_usd and hydropower_rent_status keep the rent with its
+    sign. hydropower_gep_wealth_based is the CWoN-wealth annual value, a comparison. Where the
+    private workbook is staged, its revenue minus cost (hydropower_rent_workbook_usd) must match
+    the public rent within a dollar in every country either lists.
+
+    Args:
+        wealth_df (pd.DataFrame): the CWoN hydro_wealth_cd table.
+        capitalization_rate (float): the CWoN capitalization rate.
+        public_rent_df (pd.DataFrame): the authors' public CWON_resource_rent_data table.
+        database_df (pd.DataFrame or None): the workbook's Database sheet, or None when the
+            workbook is not staged.
+        year (int): the year to take.
+
+    Returns:
+        pd.DataFrame: one row per country in the wealth table.
+
+    Raises:
+        ValueError: if the workbook and the public table disagree by more than a dollar.
+    """
+    out = hydropower_rent_from_wealth(wealth_df, capitalization_rate, year)
+    out = out.merge(hydropower_rent_from_public_table(public_rent_df, wealth_df, year),
+                    on='iso3_r250_label', how='left', validate='one_to_one')
+    out['hydropower_rent_status'] = out['hydropower_rent_status'].fillna("not in the authors' table")
+    out['hydropower_gep'] = out['hydropower_rent_signed_usd'].clip(lower=0)   # NaN stays NaN
+    if database_df is None:
+        out['hydropower_rent_workbook_usd'] = np.nan
+        return out
+    out = out.merge(hydropower_rent_from_revenue_and_cost(database_df, wealth_df, year),
+                    on='iso3_r250_label', how='left', validate='one_to_one')
+    public, workbook = out['hydropower_rent_signed_usd'], out['hydropower_rent_workbook_usd']
+    listed = public.notna() | workbook.notna()
+    apart = listed & ~((public - workbook).abs() <= HYDROPOWER_PUBLIC_WORKBOOK_TOLERANCE_USD)
+    if apart.any():
+        raise ValueError('the public rent table and the workbook differ by more than $%g in: %s'
+                         % (HYDROPOWER_PUBLIC_WORKBOOK_TOLERANCE_USD,
+                            sorted(out.loc[apart, 'iso3_r250_label'])))
+    return out
 
 
 def water_supply_gep_by_country(hydropower_df, countries_df):
     """Join the hydropower rent onto the r250 country list by iso3 label, one row per country."""
     columns = ['iso3_r250_label', 'hydropower_gep']
-    if 'hydropower_gep_reference_variant' in hydropower_df.columns:
-        columns.append('hydropower_gep_reference_variant')
+    if 'hydropower_gep_wealth_based' in hydropower_df.columns:
+        columns.append('hydropower_gep_wealth_based')
     return countries_df.merge(hydropower_df[columns], on='iso3_r250_label', how='left')
 
 
@@ -128,9 +237,9 @@ WATER_USE_ISO_LOOKUP = {
     'United States of America': 'USA',
     'Venezuela (Bolivarian Republic of)': 'VEN',
     'Viet Nam': 'VNM',
-    # The spellings WATER_USE_COUNTRY_RENAMES produces. That map exists to make the efficiency and
+    # The spellings WATER_USE_COUNTRY_RENAMES produces. That map makes the efficiency and
     # withdrawal tables agree with each other, and the names it settles on are not the ones the
-    # r250 list uses, so these six resolved to nothing until they were named here too.
+    # r250 list uses, so these six need their iso codes here too.
     'Cape Verde': 'CPV',
     'Congo': 'COG',
     "Cote d'Ivoire": 'CIV',
@@ -215,22 +324,19 @@ def water_use_components_by_country(agriculture_df, all_sector_df, countries_df)
 
 
 def water_use_components_from_chain(gep_by_country_year_df, countries_df):
-    """One row per country from OUR calculation: the latest survey year's agriculture value and
-    all-sector sum, keyed to r250 by exact country-name match (iso3_r250_name, then
-    name_long). Unmatched calculation countries keep an empty iso3 so a name drift is visible
-    instead of silently dropped."""
-    # One row, one year. `groupby.last()` returns the last NON-NULL value per column
-    # independently, not the last row, so a country reporting only municipal water in 2015 took
-    # its industrial and agricultural values from 2010 and the whole row was stamped 2015.
-    # Slovakia is the clean example: agriculture from 2015, industry and municipal from 2010,
-    # summed as if one year. No country's published figure matched any single year of its own
-    # chain, and the all-sector total sat between 2010's $26.9T and 2015's $14.9T because it was
-    # neither. The docstring already said "the latest survey year", which is what this now does.
+    """One row per country from OUR calculation: one survey year's agriculture value and
+    all-sector sum (the year reporting the most sectors, ties going to the later year), keyed to
+    r250 by exact country-name match (iso3_r250_name, then name_long, then
+    WATER_USE_ISO_LOOKUP). Unmatched calculation countries keep an empty iso3 so a name drift is
+    visible instead of silently dropped."""
+    # One row, one year: every sector value in a row comes from the same survey year.
+    # `groupby.last()` would not do this, because it takes the last NON-NULL value per column
+    # independently and so mixes years within a row (agriculture from 2015, industry from 2010).
     #
     # The row kept is the year reporting the most sectors, ties going to the later year. Latest-
     # year-outright would throw away a complete 2010 for a 2015 carrying one sector; complete-
     # years-only would drop a country like Norway, which reports no agricultural water use in any
-    # year. Both of those trade a true year for a worse number, and this trades neither.
+    # year.
     sector_cols = ['gep_water_agricultural', 'gep_water_industrial', 'gep_water_municipal']
     sectors_present = gep_by_country_year_df[sector_cols].notna().sum(axis=1)
     ordered = (gep_by_country_year_df.assign(_sectors=sectors_present)
@@ -238,11 +344,9 @@ def water_use_components_from_chain(gep_by_country_year_df, countries_df):
     latest = ordered.groupby('country', as_index=False).tail(1).drop(columns='_sectors')
     latest['water_use_agriculture_value_added'] = latest['gep_water_agricultural']
     latest['water_use_all_sector_value_added'] = latest[sector_cols].sum(axis=1, min_count=1)
-    # The two the account reports, matching the authors' split of 2026-08-31: irrigation, and
-    # domestic covering industrial, commercial and residential. Published as their own columns
-    # because with only agriculture and the total published, domestic exists only as a
-    # subtraction -- workable only because there happen to be three sectors, and useless to a
-    # reader wanting industry apart from residential.
+    # The two sectors the account distinguishes, following the authors' split: irrigation, and
+    # domestic covering industrial, commercial and residential. Published as their own columns so
+    # domestic need not be recovered by subtracting agriculture from the total.
     #
     # These are VALUE ADDED, not a value of water. SDG 6.4.1 is defined as value added over the
     # volume withdrawn, so multiplying the indicator back by the withdrawal returns the value added
@@ -280,6 +384,7 @@ def irrigation_premium_by_country(aquastat_df, cropland_df, year):
     labour and capital are paid, and in crop agriculture that residual is attributed to LAND --
     which rainfed cropland earns too, from soil, climate and terrain. Only the DIFFERENCE is
     attributable to irrigation, so only the difference is carried forward.
+
     Args:
         aquastat_df (pd.DataFrame): the staged AQUASTAT pull, long, with VariableCode, m49, Year,
             Value.
@@ -410,7 +515,7 @@ def irrigation_gep_from_premium(premium_df, rent_share):
 
     A country's negative premium is clipped to zero here: an account cannot report negative
     provisioning, and every negative case is a country whose irrigated share of area exceeds its
-    irrigated share of GVA, which the entry records as a data question rather than a value.
+    irrigated share of GVA, which is a data question rather than a value.
 
     Args:
         premium_df (pd.DataFrame): from irrigation_premium_by_country.
@@ -452,17 +557,52 @@ def implied_raw_water_price(irrigation_gep_total, agricultural_withdrawal_m3):
     return float(irrigation_gep_total) / float(agricultural_withdrawal_m3)
 
 
+def municipal_gep_by_country(results_df, countries_df):
+    """The authors' final municipal values on the account's countries.
+
+    Their model costs each city's least-cost raw-water supply twice, the second time without
+    the sources it selected and the candidates on their flow paths, and sums the difference
+    over the cities valued in both problems, so a country with unvalued cities carries a
+    partial total. The table already carries the account's r250 labels, so this checks it
+    rather than reshapes it. A country they could not value stays missing, never zero.
+
+    Args:
+        results_df (pd.DataFrame): `iso3_r250_label` and `wateruse_municipal_gep`, one row per
+            country.
+        countries_df (pd.DataFrame): the account's countries, with `iso3_r250_label`.
+
+    Returns:
+        pd.DataFrame: iso3_r250_label and water_use_domestic_gep.
+
+    Raises:
+        ValueError: on a missing column, a repeated or unknown label, or a negative value. The
+            replacement problem only removes sources, so its cost cannot fall below the baseline.
+    """
+    for column in ('iso3_r250_label', 'wateruse_municipal_gep'):
+        if column not in results_df.columns:
+            raise ValueError('the municipal results table has no %r column' % column)
+    df = results_df[['iso3_r250_label', 'wateruse_municipal_gep']].copy()
+    if df['iso3_r250_label'].duplicated().any():
+        raise ValueError('repeated labels in the municipal results: %s'
+                         % sorted(df.loc[df['iso3_r250_label'].duplicated(), 'iso3_r250_label']))
+    unknown = sorted(set(df['iso3_r250_label']) - set(countries_df['iso3_r250_label']))
+    if unknown:
+        raise ValueError('municipal results for labels the account does not carry: %s' % unknown)
+    if (df['wateruse_municipal_gep'] < 0).any():
+        raise ValueError('negative municipal values: %s'
+                         % sorted(df.loc[df['wateruse_municipal_gep'] < 0, 'iso3_r250_label']))
+    return df.rename(columns={'wateruse_municipal_gep': 'water_use_domestic_gep'})
+
+
 def _with_country_labels(latest, countries_df):
-    """The name-matching tail of water_use_components_from_chain, unchanged."""
+    """The name-matching tail of water_use_components_from_chain: r250 labels and ids by name."""
 
     by_name = countries_df.drop_duplicates('iso3_r250_name').set_index('iso3_r250_name')['iso3_r250_label']
     by_long = (countries_df.drop_duplicates('name_long').set_index('name_long')['iso3_r250_label']
                if 'name_long' in countries_df.columns else by_name.iloc[0:0])
-    # Exact name, then the long name, then the AQUASTAT spellings the module already lists. That
-    # last fallback existed for the efficiency table and not for this one, so 19 countries the
-    # lookup names -- the United States, Turkiye, Viet Nam, the United Kingdom, Iran, Tanzania,
-    # Cote d'Ivoire among them -- resolved to nothing and dropped out of the account with their
-    # water use, Cote d'Ivoire alone carrying $77.5M of agricultural value that reached no country.
+    # Exact name, then the long name, then the AQUASTAT spellings in WATER_USE_ISO_LOOKUP.
+    # Without that last fallback, countries such as the United States, Turkiye, Viet Nam, the
+    # United Kingdom and Cote d'Ivoire match nothing and their water use reaches no country.
     latest['iso3_r250_label'] = (latest['country'].map(by_name)
                                  .fillna(latest['country'].map(by_long))
                                  .fillna(latest['country'].map(WATER_USE_ISO_LOOKUP)))
@@ -478,9 +618,8 @@ def _with_country_labels(latest, countries_df):
 # The AQUASTAT export names some countries twice, once in full and once short ("Russian
 # Federation" and "Russia", "Republic of Korea" and "South Korea"), and both spellings can
 # resolve to the same r250 id. Left-merging that table onto the country list then FANS OUT:
-# the country gets two rows and is counted twice in every total. Korea and Russia did exactly
-# that, inflating the reported hydropower total by 1.89bn USD, which stayed invisible because
-# the deck quoted the reference file's total rather than the module's own.
+# the country gets two rows and is counted twice in every total, so the table is collapsed to
+# one row per country first.
 # The two `_value_added` columns are the denominators; the two `_gep` columns appear only once
 # a water share is set. Both are listed because one_row_per_country has to carry whichever exist.
 WATER_USE_VALUE_COLUMNS = ('water_use_agriculture_value_added', 'water_use_all_sector_value_added',
@@ -497,8 +636,8 @@ def one_row_per_country(df_components):
 
     Raises:
         ValueError: if two rows for the same country carry DIFFERENT values for a column.
-            That is a genuine conflict about what the country's value is, and picking one
-            silently would be the same class of error as the double-count this prevents.
+            That is a conflict about what the country's value is, and picking one silently
+            would be the same class of error as the double-count this prevents.
     """
     resolved = df_components[df_components['iso3_r250_id'].notna()]
     # Only the columns actually present. The two `_gep` columns exist only when a water share
@@ -518,3 +657,181 @@ def one_row_per_country(df_components):
                  .groupby('iso3_r250_id', as_index=False)
                  .agg({c: 'last' for c in df_components.columns if c != 'iso3_r250_id'}))
     return pd.concat([collapsed, unresolved], ignore_index=True)[list(df_components.columns)]
+
+
+# The agriculture component: the crop-water valuation in GEP-WaterUse-Agriculture (commit
+# e229f881, Code/5-GEP-ag-rain-irr.qmd). Each component is a water-contribution coefficient
+# times the monetary basis of the production it supports. The basis is the CALLER's: the
+# author's reference basis is theta x GPV 2020, and the account's basis is the 2019
+# commercial crop-provision values with SPAM's irrigated and rainfed shares retained --
+# same arithmetic, different basis frame, so the reference reproduction and the account
+# valuation are the same function.
+AGRICULTURE_LAMBDA_COLUMNS = ('lambda_gn_rf', 'lambda_gn_ir', 'lambda_bl_ir', 'lambda_total_ir')
+AGRICULTURE_VMR_LAMBDA_COLUMNS = ('lambda_gn_rf_vmr', 'lambda_gn_ir_vmr')
+
+
+def agriculture_gep_from_lambda(lambda_df, basis_df):
+    """Crop-country agriculture water GEP: coefficient times monetary basis, per source.
+
+    Rainfed green water applies to the rainfed basis, irrigated green and blue water to the
+    irrigated basis. Rows missing every coefficient, or both basis sides, leave the frame,
+    which is the author's merge filter. The crop total sums the three components treating a
+    missing component as zero, the author's rowSums(na.rm = TRUE): a crop with production
+    on one side only carries a one-sided total. That construction is the author's and is
+    replicated, not repaired, so blue, green-rainfed and green-irrigated stay separate
+    columns for any later scoping.
+
+    Args:
+        lambda_df (pd.DataFrame): one row per CropGBWater_crop and iso3_r250_label carrying
+            the AGRICULTURE_LAMBDA_COLUMNS and, when present, the VMR pair.
+        basis_df (pd.DataFrame): one row per CropGBWater_crop and iso3_r250_label with
+            basis_rain and basis_irr, the monetary basis in the unit the GEP should carry.
+
+    Returns:
+        pd.DataFrame: the merged rows with GEP_gn_rf, GEP_gn_ir, GEP_bl_irr, GEP_total_irr
+        and GEP_total, plus GEP_gn_rf_vmr and GEP_gn_ir_vmr when the coefficients carry
+        them. Column names follow the author's country table so the replication comparison
+        reads one to one; the account-facing names are the task layer's concern.
+    """
+    keys = ['CropGBWater_crop', 'iso3_r250_label']
+    df = basis_df.merge(lambda_df, on=keys, how='inner', validate='one_to_one')
+    df = df[~df[list(AGRICULTURE_LAMBDA_COLUMNS)].isna().all(axis=1)]
+    df = df[~df[['basis_rain', 'basis_irr']].isna().all(axis=1)].copy()
+    df['GEP_gn_rf'] = df['lambda_gn_rf'] * df['basis_rain']
+    df['GEP_gn_ir'] = df['lambda_gn_ir'] * df['basis_irr']
+    df['GEP_bl_irr'] = df['lambda_bl_ir'] * df['basis_irr']
+    df['GEP_total_irr'] = df['lambda_total_ir'] * df['basis_irr']
+    if all(c in df.columns for c in AGRICULTURE_VMR_LAMBDA_COLUMNS):
+        df['GEP_gn_rf_vmr'] = df['lambda_gn_rf_vmr'] * df['basis_rain']
+        df['GEP_gn_ir_vmr'] = df['lambda_gn_ir_vmr'] * df['basis_irr']
+    df['GEP_total'] = df[['GEP_gn_rf', 'GEP_gn_ir', 'GEP_bl_irr']].sum(axis=1)
+    return df
+
+
+def aggregate_agriculture_gep_to_country(crop_country_df):
+    """Country rows from the crop-country frame, with the author's missing rule.
+
+    A country's component sums its crops where any crop carries a value and stays missing
+    where none does (the author's sum_if_any), and n_crop counts the crop rows that
+    survived the merge filters. Grouping is by iso3_r250_label alone; the task layer
+    attaches the country attributes.
+    """
+    value_cols = [c for c in crop_country_df.columns if c.startswith('GEP_')]
+    grouped = crop_country_df.groupby('iso3_r250_label')
+    out = grouped[value_cols].sum(min_count=1)
+    out['n_crop'] = grouped.size()
+    return out.reset_index()
+
+
+def agriculture_basis_from_crop_values(crop_values_df, correspondence_df, spam_share_df,
+                                       year, value_column):
+    """The basis frame for agriculture_gep_from_lambda from a per-crop country value table.
+
+    Traces the author's GPV preparation (Code/1-4-prep-FAO-GPV-table.qmd at e229f881) with
+    the caller's values in place of FAOSTAT GPV: items mapped one-to-one or many-to-one sum
+    into their CropGBWater crop; an item shared by several crops (Wheat, Millet) is
+    allocated by each crop's Q_total_for_share within the country and item, undefined when
+    the sharing crops' production sums to zero; the rainfed and irrigated sides are the
+    crop total times the SPAM production shares, left missing where the SPAM row is absent
+    or its production is zero, with the author's status labels. No theta and no rental rate
+    are applied: the value column arrives already on the account's basis, and the output is
+    in the caller's units. One departure from the author: his direct sum uses na.rm = TRUE,
+    so a country-item group holding only missing values would print zero, and here it stays
+    missing, because a missing value in the account's table means no data and a fabricated
+    zero would read as a measured one.
+
+    Args:
+        crop_values_df (pd.DataFrame): iso3_r250_label, crop (the FAOSTAT item name), year
+            and the value column. Historical area aliases may duplicate a country-item pair;
+            they collapse to the single value present, and two DIFFERENT values for one pair
+            raise, because which one the account means is undecided.
+        correspondence_df (pd.DataFrame): CropGBWater_crop, FAOSTAT_Item.
+        spam_share_df (pd.DataFrame): iso3_r250_label, CropGBWater_crop, Q_total_for_share,
+            share_prod_rain, share_prod_irr.
+        year (int): the account year to read from crop_values_df.
+        value_column (str): the column holding the monetary value.
+
+    Returns:
+        tuple: (basis_df, diagnostics). basis_df carries CropGBWater_crop, iso3_r250_label,
+        basis_total, basis_rain, basis_irr and split_status. diagnostics is a dict naming
+        what the basis does NOT carry: 'unmapped_items' (items without a correspondence row,
+        with their total value; rice is among them),
+        'correspondence_items_absent' (mapped items the value table lacks),
+        'shared_value_unallocated' (shared item-country values with no sharing crop in SPAM),
+        'unsplit_value_by_status' (mapped value that received no rain/irr split), and the
+        scalars 'mapped_value_total', 'split_value_total' and 'basis_value_total', the last
+        two equal when the split conserves value.
+
+    Raises:
+        ValueError: if one country-item pair carries two different non-missing values.
+    """
+    keys = ['CropGBWater_crop', 'iso3_r250_label']
+    if spam_share_df.duplicated(keys).any():
+        raise ValueError('SPAM shares must have unique crop-country keys')
+    values = crop_values_df[crop_values_df['year'] == int(year)]
+    if values.empty:
+        raise ValueError(f'no crop-provision values for {year}')
+    item_keys = ['iso3_r250_label', 'crop']
+    distinct = values.groupby(item_keys)[value_column].nunique(dropna=True)
+    conflicted = distinct[distinct > 1]
+    if len(conflicted):
+        raise ValueError(f'conflicting duplicate values at {year} for {conflicted.index.tolist()}')
+    # max over a group whose non-missing values are identical is that value; all-missing stays NaN
+    item_values = values.groupby(item_keys)[value_column].max().reset_index()
+
+    corr = correspondence_df[['CropGBWater_crop', 'FAOSTAT_Item']].drop_duplicates()
+    per_item = corr.groupby('FAOSTAT_Item')['CropGBWater_crop'].nunique()
+    shared_items = set(per_item[per_item > 1].index)
+    mapped = item_values.merge(corr, left_on='crop', right_on='FAOSTAT_Item', how='inner')
+
+    keys = ['CropGBWater_crop', 'iso3_r250_label']
+    direct = (mapped[~mapped['FAOSTAT_Item'].isin(shared_items)]
+              .groupby(keys)[value_column].sum(min_count=1).rename('basis_total').reset_index())
+
+    shared_spam = spam_share_df.merge(corr[corr['FAOSTAT_Item'].isin(shared_items)],
+                                      on='CropGBWater_crop', how='inner')
+    denominator = shared_spam.groupby(['iso3_r250_label', 'FAOSTAT_Item'])['Q_total_for_share'].transform('sum')
+    shared_spam['allocation_share'] = np.where(denominator > 0,
+                                               shared_spam['Q_total_for_share'] / denominator, np.nan)
+    shared_source = item_values[item_values['crop'].isin(shared_items)].rename(
+        columns={'crop': 'FAOSTAT_Item', value_column: 'source_value'})
+    shared = shared_spam.merge(shared_source, on=['iso3_r250_label', 'FAOSTAT_Item'], how='inner')
+    shared['basis_total'] = shared['source_value'] * shared['allocation_share']
+
+    basis = pd.concat([direct, shared[keys + ['basis_total']]], ignore_index=True)
+    if basis.duplicated(keys).any():
+        raise ValueError('the correspondence produced duplicate crop-country rows')
+    basis = basis.merge(spam_share_df[['iso3_r250_label', 'CropGBWater_crop', 'Q_total_for_share',
+                                       'share_prod_rain', 'share_prod_irr']], on=keys, how='left')
+    basis['basis_rain'] = basis['basis_total'] * basis['share_prod_rain']
+    basis['basis_irr'] = basis['basis_total'] * basis['share_prod_irr']
+    positive = basis['basis_total'] > 0
+    basis['split_status'] = np.select(
+        [positive & basis['Q_total_for_share'].isna(),
+         positive & (basis['Q_total_for_share'] == 0),
+         positive & basis['share_prod_rain'].notna() & basis['share_prod_irr'].notna(),
+         basis['basis_total'] == 0],
+        ['missing_SPAM_row', 'zero_SPAM_production', 'split_available', 'zero_value'],
+        default='other')
+    unsplit = basis['split_status'].isin(('missing_SPAM_row', 'zero_SPAM_production'))
+    basis.loc[unsplit, ['basis_rain', 'basis_irr']] = np.nan
+
+    allocated_items = shared.loc[shared['allocation_share'].notna(),
+                                 ['iso3_r250_label', 'FAOSTAT_Item']].drop_duplicates()
+    unallocated = shared_source.merge(allocated_items, on=['iso3_r250_label', 'FAOSTAT_Item'],
+                                      how='left', indicator=True)
+    unallocated = unallocated[(unallocated['_merge'] == 'left_only')
+                              & unallocated['source_value'].notna()]
+    split = basis['split_status'] == 'split_available'
+    diagnostics = {
+        'unmapped_items': (item_values[~item_values['crop'].isin(set(corr['FAOSTAT_Item']))]
+                           .groupby('crop')[value_column].agg(['sum', 'count'])
+                           .sort_values('sum', ascending=False).reset_index()),
+        'correspondence_items_absent': sorted(set(corr['FAOSTAT_Item']) - set(item_values['crop'])),
+        'shared_value_unallocated': unallocated[['iso3_r250_label', 'FAOSTAT_Item', 'source_value']],
+        'unsplit_value_by_status': basis[~split].groupby('split_status')['basis_total'].agg(['sum', 'count']),
+        'mapped_value_total': mapped.drop_duplicates(item_keys)[value_column].sum(),
+        'split_value_total': basis.loc[split, 'basis_total'].sum(),
+        'basis_value_total': basis[['basis_rain', 'basis_irr']].sum().sum(),
+    }
+    return basis[keys + ['basis_total', 'basis_rain', 'basis_irr', 'split_status']], diagnostics

@@ -71,7 +71,7 @@ def test_task_switches_on_the_resource_measure_and_signs_it():
     assert src.index("utilities.reuse_reason(") < src.index("_write_biomass_base_and_new_forest(")
 
 
-# --- the summed-quantity aggregation (D19 option 1, 22 Sep 2026) -------------------------------
+# --- the summed-quantity aggregation (D19 option 1) -------------------------------------------
 import pandas as pd
 from global_invest.terrestrial_carbon import terrestrial_carbon_functions as tcf
 

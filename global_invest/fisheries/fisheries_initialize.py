@@ -20,7 +20,7 @@ def add_fisheries_tasks(p, parent=None):
 
 
 # ---------------------------------------------------------------------------------------------
-# GEP task trees (the valuation side; the shock seam above is unchanged).
+# GEP task trees (the valuation side, separate from the shock seam above).
 # ---------------------------------------------------------------------------------------------
 def build_gep_service_calculation_task_tree(p):
     """GEP calculation tree: CWoN rent trends -> r250 one-row-per-country valuation, plus
@@ -33,7 +33,7 @@ def build_gep_service_calculation_task_tree(p):
 
 
 def build_gep_service_task_tree(p):
-    """Full GEP run: the calculation calculation plus the results/report task."""
+    """Full GEP run: the calculation tree plus the results/report task."""
     p = build_gep_service_calculation_task_tree(p)
     p.fisheries_gep_result_task = p.add_task(fisheries_tasks.gep_result)
     return p

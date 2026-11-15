@@ -4,11 +4,7 @@ import pandas as pd
 import hazelbean as hb
 from global_invest import utilities
 
-from global_invest.crop_provision import crop_provision_initialize
 from global_invest.crop_provision import crop_provision_functions
-
-# Project content/config (was crop_provision_defaults.py; the template keeps content in the task module).
-
 
 def read_crop_values(path, items, aggregate_areas, value_column='crop_provision_gep'):
     """The FAOSTAT bulk file read and cleaned. See clean_crop_values for the science.
@@ -34,6 +30,17 @@ def read_crop_coefs(path):
     return utilities.build_rental_rate_lookup(read_crop_coefs_raw(path))
 
 
+def read_annual_rental_rates(path, expected_sha256):
+    """CWoN's annual cropland rental rates as shipped, checked against their recorded sha256.
+
+    The file is Latin-1 and comma-delimited, keyed on `wb_code`, with one `yr<year>` column per year.
+    """
+    found = utilities.sha256_file(path)
+    if found != str(expected_sha256).strip().lower():
+        raise ValueError('%s has sha256 %s, not the recorded %s' % (path, found, expected_sha256))
+    return pd.read_csv(path, encoding='latin-1')
+
+
 def publish_inputs(p):
     """Every task's first line: the FAO crop-production valuation's es_config row (defaults layer -- a caller-set value wins)
     plus the shared country references and the results registry."""
@@ -52,13 +59,32 @@ def crop_provision(p):
 
 def gep_preprocess(p):
     """
-    Preprocessing tasks are assumed NOT to be run by the user. Instead, it is assumed that the output of a preprocess
+    Preprocessing tasks are assumed NOT to be run by the user. Instead, the output of a preprocess
     task is an input to the actual model, saved at the canonical project attribute p.crop_provision_input_path.
-    These are preprocessing tasks are still provided for reference, but are not intended to be run directly by the user.
-    We will "promote" the data outputed by a preprocess task to the base_data_dir provided to users.
+    Preprocessing tasks are provided for reference, but are not intended to be run directly by the user.
+    Their outputs are "promoted" to the base_data_dir provided to users.
     """
     publish_inputs(p)
+    if not p.run_this:
+        return p
     pass # NYI
+
+def gep_calculation_signature(p):
+    """What gep_calculation's tables are made from, so a change to any of it rebuilds them.
+
+    The service's own settings and inputs, plus what it reads outside the crop_provision_ prefix: the
+    base year, the FAOSTAT bulk, the decade rental rates, the aggregate lists and the country tables.
+    The code is fingerprinted by size and mtime.
+    """
+    settings, inputs = utilities._service_settings_and_inputs(p, 'crop_provision')
+    settings['gep_base_year'] = int(p.gep_base_year)
+    if getattr(p, 'crop_provision_subservices', None):
+        settings['commercial_attribute_subservices'] = list(p.commercial_attribute_subservices)
+    for name in ('fao_input_path', 'cwon_crop_coefficients_path', 'faostat_aggregate_areas_path',
+                 'faostat_aggregate_items_path', 'df_countries_csv_path', 'gdf_countries_vector_simplified_path'):
+        inputs[name] = utilities.file_fingerprint(str(getattr(p, name)))
+    return utilities._signature(settings, inputs, light_inputs=[__file__, crop_provision_functions.__file__, utilities.__file__])
+
 
 def gep_calculation(p):
     """ GEP calculation task for commercial agriculture."""
@@ -71,63 +97,87 @@ def gep_calculation(p):
          'gep_by_country_year_crop': os.path.join(p.cur_dir, 'gep_by_country_year_crop.csv'),
          'gep_by_country_year': os.path.join(p.cur_dir, 'gep_by_country_year.csv'),
          'gep_by_year': os.path.join(p.cur_dir, 'gep_by_year.csv')})
-    if already_done:
+    if not p.run_this:
+        return p
+    # The tables are rebuilt when anything they are made from changes, not only when one is missing,
+    # so a warm project cannot republish values made on another base year, source or basis.
+    outputs = list(service_results.values())
+    signature = gep_calculation_signature(p)
+    signature_path = os.path.join(os.path.dirname(outputs[0]), 'run_signature.json')
+    if already_done and utilities.outputs_reuse_reason(outputs, signature, signature_path) is None:
         return
-
     if not getattr(p, 'crop_provision_subservices', None):
         p.commercial_attribute_subservices = utilities.read_column(
             p.crop_provision_default_items_path, 'item_fao')
 
     aggregate_areas = utilities.read_column(p.faostat_aggregate_areas_path, 'area_fao')
+    items = crop_provision_functions.items_without_group_totals(
+        p.commercial_attribute_subservices,
+        utilities.read_column(p.faostat_aggregate_items_path, 'item_fao'))
     df_fao_raw = pd.read_csv(p.fao_input_path, encoding='ISO-8859-1', low_memory=False)
     df_crop_value = utilities.clean_faostat_values(
-        df_fao_raw, p.commercial_attribute_subservices, 'crop_provision_gep', aggregate_areas)
-    # FAOSTAT publishes both the individual crop and the group total that adds those crops up.
-    # The item list carries both, so a group total is kept only where no individual item is. The
-    # frame before that rule is kept, because valuing it is what reproduces the reference and a
-    # reproduction nobody can re-run is a claim rather than a check (condition 12).
-    df_crop_value_with_group_totals = df_crop_value.copy()
-    aggregate_items = utilities.read_column(p.faostat_aggregate_items_path, 'item_fao')
-    df_crop_value = utilities.drop_aggregates_where_components_exist(
-        df_crop_value, aggregate_items, 'crop_provision_gep')
+        df_fao_raw, items, 'crop_provision_gep', aggregate_areas)
+    # The reported values before any gap is filled. Valuing them is what reproduces the reference,
+    # and a reproduction nobody can re-run is a claim rather than a check (condition 12).
+    df_crop_value_reported = df_crop_value.copy()
     df_crop_coefs = read_crop_coefs(p.cwon_crop_coefficients_path)
 
-    # Pairs with production and no current-USD value at the base year are a FAOSTAT price gap,
-    # filled from the values table the pollination chain stages (its production times that
-    # year's hierarchically resolved USD price); the rental rate below then applies to filled
-    # and read rows alike. The reference frame above stays unfilled, because it exists to
-    # reproduce the reference.
+    # The base year's values come from the values table the pollination chain stages, production
+    # times that year's hierarchically resolved USD price, the crop_benefits basis. Under
+    # 'production_x_price' every pair takes it, so crop provision and pollination share one gross
+    # basis. Under 'reported_first' only the pairs FAOSTAT leaves without a value do. A year's
+    # rental rate below applies to all its rows alike. The reference frame above stays as FAOSTAT
+    # reports it, because it exists to reproduce the reference.
+    # Items are matched on their names and on the FAO codes the reported frame carries. The item
+    # list spells mate as the Latin-1 read of FAOSTAT does ('MatÃ© leaves') and the values table as
+    # UTF-8 ('Maté leaves'), so a name alone leaves every mate pair unfilled. A code alone misses
+    # the items FAOSTAT's value file never lists (other sugar crops 161, hempseed 336), which only
+    # the values table carries.
     base_year = int(p.gep_base_year)
     df_fao_values = pd.read_csv(str(p.get_path(p.crop_provision_fao_values_table_path)))
-    df_crop_value = crop_provision_functions.impute_missing_crop_values(
-        df_crop_value, df_fao_values, base_year,
-        crop_provision_functions.area_codes_by_m49(df_fao_raw, aggregate_areas),
-        p.commercial_attribute_subservices)
-    df_crop_value = crop_provision_functions.drop_fills_under_group_totals(
-        df_crop_value, aggregate_items)
-    filled = df_crop_value[df_crop_value['value_source'].astype(str).str.startswith('price_')]
-    hb.log('  %d country-crop pairs at %d carried production and no FAOSTAT USD value; filled '
-           'from the staged pollination values table (%s), %s thousand USD before the rental rate'
-           % (len(filled), base_year,
+    area_code_by_m49 = crop_provision_functions.area_codes_by_m49(df_fao_raw, aggregate_areas)
+    fill_items = list(items) + sorted(int(code) for code in df_crop_value['crop_code'].unique())
+    if p.crop_provision_base_year_value_basis == 'production_x_price':
+        df_crop_value = crop_provision_functions.value_at_production_times_price(
+            df_crop_value, df_fao_values, base_year, area_code_by_m49, fill_items)
+    elif p.crop_provision_base_year_value_basis == 'reported_first':
+        df_crop_value = crop_provision_functions.impute_missing_crop_values(
+            df_crop_value, df_fao_values, base_year, area_code_by_m49, fill_items)
+    else:
+        raise ValueError('crop_provision_base_year_value_basis is %r; it takes production_x_price or '
+                         'reported_first.' % p.crop_provision_base_year_value_basis)
+    at_year = df_crop_value['year'] == base_year
+    filled = df_crop_value[at_year & df_crop_value['value_source'].astype(str).str.startswith('price_')]
+    hb.log('  %s at %d: %d country-crop pairs valued from the staged pollination values table (%s), %s '
+           'thousand USD before the rental rate. %d pairs at %d carry no value'
+           % (p.crop_provision_base_year_value_basis, base_year, len(filled),
               ', '.join('%s %d' % (level, count) for level, count
                         in filled['value_source'].value_counts().items()),
-              f"{filled['crop_provision_gep'].sum():,.0f}"))
+              f"{filled['crop_provision_gep'].sum():,.0f}",
+              int((at_year & df_crop_value['crop_provision_gep'].isna()).sum()), base_year))
 
     df_gep_by_country_year_crop = utilities.apply_rental_rates(
         df_crop_value, df_crop_coefs, 'crop_provision_gep')
     df_gep_by_country_year_crop = utilities.normalize_m49_codes(df_gep_by_country_year_crop)
     df_gep_by_country_year_crop = crop_provision_functions.attach_countries_in_usd(
         df_gep_by_country_year_crop, p.df_countries)
+    # The base year takes the annual rates CWoN 2024 applies. Other years and the reference below
+    # keep the decade lookup, so the series is not comparable across the base year.
+    df_gep_by_country_year_crop = crop_provision_functions.apply_base_year_annual_rental_rates(
+        df_gep_by_country_year_crop,
+        read_annual_rental_rates(str(p.get_path(p.crop_provision_cwon_annual_rental_rate_path)),
+                                 p.crop_provision_cwon_annual_rental_rate_sha256),
+        base_year)
 
     df_gep_by_country_year = utilities.sum_items_to_country_year(
         df_gep_by_country_year_crop, 'crop_provision_gep')
 
     df_gep_by_year = utilities.sum_countries_to_year(df_gep_by_country_year, 'crop_provision_gep')
 
-    # The reference's own crop selection, valued the same way, so the two selections can be
-    # compared per country.
+    # The reported values alone at the decade lookup in every year, which is the reference's own
+    # calculation. At the base year the account differs from it in value basis and in rental rate.
     df_reference = utilities.apply_rental_rates(
-        df_crop_value_with_group_totals, df_crop_coefs, 'crop_provision_gep')
+        df_crop_value_reported, df_crop_coefs, 'crop_provision_gep')
     df_reference = utilities.normalize_m49_codes(df_reference)
     df_reference = crop_provision_functions.attach_countries_in_usd(df_reference, p.df_countries)
     df_reference = utilities.sum_items_to_country_year(df_reference, 'crop_provision_gep')
@@ -157,22 +207,25 @@ def gep_calculation(p):
     value_gep_base_year = df_gep_by_country_base_year['crop_provision_gep'].sum()
 
     hb.log(f"Total GEP value for base year {base_year}: {value_gep_base_year}")
+    utilities.write_outputs_signature(signature, signature_path)
 
     return value_gep_base_year
 
 def crop_subsistence_gep(p):
-    """Subsistence-crop GEP: the reference method with its unit error corrected, and the
-    uncorrected arithmetic published beside it so the correction is checkable per country.
+    """Subsistence-crop GEP: the account's share-based estimate, with the reference's arithmetic
+    published beside it so each change from it is checkable per country.
 
     A separate component from the commercial figure, written to its own table and never summed into
     it, exactly as the Lynch subsistence value sits beside the commercial rent in fisheries.
 
-    `crop_subsistence_gep` is the account's figure and is ours: FAOSTAT reports cropland in
-    thousands of hectares against an intensity per single hectare, and the Lowder share is a
-    percentage, so reading each as its source labels it is not a variant of the method but the
-    method done right. `crop_subsistence_gep_reference` is the reference's own arithmetic through
-    the identical four downstream stages, reproducing its published panel to 2.3e-14, so the
-    correction's size is measurable rather than taken on trust. The delivered table is also put on
+    `crop_subsistence_gep` is the account's figure: every unit read as its source labels it
+    (FAOSTAT cropland in thousands of hectares against an intensity per single hectare, the Lowder
+    share a percentage), the own-consumption SHARE imputed where no survey reached a country, the
+    CWoN land rental rate, and FAOSTAT's own agricultural PPP factor taking the international-dollar
+    intensity to US dollars. Two columns beside it separate the changes:
+    `crop_subsistence_gep_units_only` is the reference chain with the units corrected, and
+    `crop_subsistence_gep_reference` is the reference's own arithmetic through the same four
+    downstream stages, reproducing its published panel to 2.3e-14. The delivered table is put on
     the account's country list by the house collapse, keeping every valued country rather than the
     sixteen the reference's own join delivers.
     """
@@ -223,11 +276,11 @@ def crop_subsistence_gep(p):
     df_gdp['Year'] = df_gdp['Year'].astype(int)
 
     base_year = int(p.gep_base_year)
-    # The account's figure is the one our code stands behind, so the units read as their sources
-    # label them is what `crop_subsistence_gep` holds. The reference's arithmetic travels the same
-    # four stages and is published beside it as `crop_subsistence_gep_reference`, which is what
-    # makes the reproduction checkable rather than asserted. Both come off one run, so the
-    # difference between the columns is the units and nothing else.
+    # The reference's chain, run twice through the same four stages: once with the units read as
+    # their sources label them (`crop_subsistence_gep_units_only`) and once with its own arithmetic
+    # (`crop_subsistence_gep_reference`, which makes the reproduction checkable rather than
+    # asserted). Both come off one run, so the difference between those two columns is the units
+    # and nothing else.
     delivered = {}
     for value_column in ('own_con_corrected', 'own_con'):
         df_panel = df_own[['Country', 'Year', 'alpha-3', value_column]].rename(
@@ -310,10 +363,14 @@ def crop_subsistence_gep(p):
 def gep_result(p):
     """Render the results report(s). Shared implementation in utilities."""
     publish_inputs(p)
+    if not p.run_this:
+        return p
     utilities.render_service_results(p)
 
 def gep_results_distribution(p):
     """Copy this service's results into the output directory. Shared implementation in
-    utilities, which is also where the service key stops being written out by hand."""
+    utilities."""
     publish_inputs(p)
+    if not p.run_this:
+        return p
     utilities.distribute_results(p, 'crop_provision')

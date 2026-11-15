@@ -236,3 +236,7 @@ docs/gep_issues_*.md
 # Notes written for the group but not sent yet, which read other people's services to say where
 # the account stands. Chiara decides what goes out and to whom.
 docs/note_*.md
+docs/gep_open_decisions*.md
+
+# Working material (publishing scripts, review docs, status pages): local, never pushed.
+/docs/

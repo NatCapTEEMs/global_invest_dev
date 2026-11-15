@@ -154,3 +154,28 @@ def test_a_measured_negative_share_is_kept_not_filled():
     regions = pd.DataFrame({'Country': ['A', 'B'], 'Sub-region': ['R1'] * 2, 'Region': ['W'] * 2})
     out = rf.valued_generation(priced, att, country_regions=regions).set_index('Country')
     assert out.loc['A', 'nat_contrib'] == -0.05
+
+
+def test_the_combined_export_keeps_all_missing_countries_missing(tmp_path):
+    """Through the actual publisher: a country whose EVERY technology row is missing must stay
+    missing in the combined one-row-per-country export, where a bare groupby sum() would publish
+    it as zero. A measured zero stays zero, and a partially valued country sums its valid rows."""
+    import numpy as np
+    from global_invest.renewable_energy_provision import renewable_energy_provision_tasks as rt
+
+    df = pd.DataFrame({
+        'iso3_r250_label': ['aaa', 'aaa', 'bbb', 'bbb', 'ccc', 'ccc', 'ddd', 'ddd'],
+        'Year': [2019] * 8,
+        'renewable_energy_provision_gep': [np.nan, np.nan,   # all technologies missing
+                                           0.0, np.nan,      # a measured zero
+                                           2.0, np.nan,      # partially valued
+                                           1.0, 2.0],        # fully valued
+    })
+    out = str(tmp_path / 'combined.csv')
+    rt.write_published(df, out, one_row_per_country=True)
+    published = pd.read_csv(out).set_index('iso3_r250_label')['renewable_energy_provision_gep']
+    assert len(published) == 4, 'one row per country'
+    assert np.isnan(published['aaa']), 'all-missing must stay missing, not become zero'
+    assert published['bbb'] == 0.0, 'a measured zero stays zero'
+    assert published['ccc'] == 2.0
+    assert published['ddd'] == 3.0

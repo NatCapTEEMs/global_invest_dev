@@ -11,20 +11,19 @@ they would otherwise be, and the damage those floods cause is smaller. That redu
 is what this account values.
 
 The scope is river flooding only. Coastal flooding, storm surge and pluvial flooding lie outside
-it, following the hazard product the account uses. Coverage is 250 countries at 537 m, reported
-in USD 2019.
+it, following the hazard product the account uses. The author's pipeline computes on a 537 m
+accounting grid. The published table is national: all 250 account rows in USD 2019, of which
+162 carry an estimate and 88 carry none.
 
 ## Method
 
 Valuing this service requires answering a question that cannot be observed: how much flood damage
-would occur if landscapes stopped absorbing rain. The account simulates a counterfactual world in
-which ecosystems no longer retain water, routes the same storms through it, and takes the
+would occur if the landscape's vegetation no longer held water back. The account simulates a
+counterfactual world with degraded retention, routes the same storms through it, and takes the
 difference.
 
 Everything turns on one number per location, the **depth amplification**: the ratio of flood depth
-in the degraded world to flood depth in the current one. Hydrology has no standard name for it,
-because it has not previously been needed -- it exists here only because there is a paired
-counterfactual world to run.
+in the degraded world to flood depth in the current one.
 
 ### Step 1, how absorbent each piece of land is
 
@@ -61,12 +60,35 @@ At-a-station hydraulic geometry gives the split between width, depth and velocit
 discharge produces 8% more depth. The exponent is the least constrained element of the chain and
 is swept over 0.3 to 0.5.
 
+### The depth-damage table
+
+Damage per square metre at each depth comes from the JRC global depth-damage functions (Huizinga
+et al., 2017) as the authors rebuild them (`global_flood_gep` at `c0e49dd`,
+`counterfactual/rebuild_damage_table.py`, at its defaults, which the authors' method note records
+in section 11.6). The source is `country_landtype_depth_damage.xlsx`: 1,231 rows, 214 countries,
+six land types, checked against its recorded sha256 before it is read. Urban land (ESA class 190,
+SDA class `artif`) takes the Residential curve on the land-use basis, cropland takes the
+Agriculture curve, which the source gives per hectare and the rebuild divides by 10,000, and
+pasture takes cropland's. No roads class is priced. A land type a country lacks gives a zero
+curve. The cropland and pasture curves are zero for 18 countries: 17 have no Agriculture row and
+the Faroe Islands' row is zero. The Residential curves are zero for 18 small countries and
+territories, the same 18. Every
+value is converted from EUR2010 to USD2019 by one factor, 1.3260896 × 1.16006069 = 1.53834442.
+
+The canonical components table (`country_landtype_flood_damage_JRC_EUR_m2.csv`) is not used: its
+Residential curves are zero for every country, so urban land would take no damage. The run
+therefore sets `flood_skip_damage_tables`, and `task_rebuild_damage_table` writes the table
+Section D reads. The rebuilt table reproduces the authors' two checks in their section 11.7:
+196 of 214 urban curves are non-zero at 6 m, and Belgium's is USD2019 246.67 per m² (EUR2010
+160.35).
+
 ## Two counterfactuals
 
 **Bare soil** removes land cover entirely, setting curve numbers to the fallow values of the
 reference tables. This is the world a gross product asks about, and it is the reference the
-erosion account uses, so the two services are measured against one hypothetical landscape and can
-be summed.
+erosion account uses, so the two services are measured against one hypothetical landscape. That
+makes their figures comparable on a common baseline; whether they can be added is an overlap
+question the shared baseline does not settle by itself.
 
 **In-situ degradation** raises curve numbers less: soils compacted and canopy thinned, the land
 still present. Closer to what realistic degradation would produce, and reported alongside rather
@@ -98,15 +120,19 @@ alignment fault rather than a result.
 
 The amplification field is built from rainfall and flow direction rather than from the hazard
 maps, so it survives a change of hazard product. Building it is two weeks of single-threaded flow
-accumulation over 75 billion cells; everything downstream of it is hours. `RUN.md` documents both
-paths.
+accumulation over 75 billion cells; everything downstream of it is hours. The author's `RUN.md`
+documents both paths.
 
 
 ## Before trusting any rerun of the pipeline
 
-The account as it stands does **not** rerun the pipeline: `gep_calculation` reads the author's own
-per-country export, so the number here is his verified one. This section matters only if that
-changes.
+`gep_calculation` publishes the computed bare-counterfactual table when the chain has produced
+one — a computed table without the bare column is refused rather than silently substituted — and
+the author's per-country export otherwise, recording which was used. The saved published table
+was written from the author's export and equals it on all 250 rows (162 with an estimate, 88
+missing, identical missingness, largest numeric difference 0). That is a check of the import,
+not a reproduction of the pipeline. This section is the warning label for anyone rerunning the
+upstream pipeline.
 
 ### The failure that made this account wrong twice
 
@@ -129,21 +155,24 @@ problem. Both were found because a country looked implausible. Recovering them r
 set believed complete, so it detects regressions — a lost file, a partial copy, an interrupted
 extraction — **but not a package that was never downloaded**, which was the original failure.
 
-A missing amplification raster behaves the same way: the pipeline warns, falls back to current
-depths and returns a GEP of zero, so the job completes and the number is wrong. `RUN.md` carries a
-three-line check that the mosaic resolves, and `msi/final_run.sbatch` verifies the totals itself and
-prints ALL MATCH or the quantity that differs.
+A missing amplification raster is refused: `_open_amplification_raster` raises rather than
+falling back to current depths, because that fallback completed the job with a wrong zero.
+Inside a raster that does open, a nodata cell still reads as an amplification of 1.0
+(`_amp_tile`), so the tile check above remains the only guard against a missing flow-direction
+package. The author's `RUN.md` carries a three-line check that the mosaic resolves, and his
+`msi/final_run.sbatch` verifies the totals itself and prints ALL MATCH or the quantity that
+differs.
 
-### The account should compute this itself
+### Archived run evidence, 2026-09-01 cold start
 
-**The account computes this figure rather than reading it.** That was not true until 2026-09-01
-and this page said so; it is true now.
-
-Four of the six tasks run here: `task_compute_service_flow`, `task_compute_flood_damages`,
+What follows records that archived run; the current publisher rule is above. Four of the six tasks ran: `task_compute_service_flow`, `task_compute_flood_damages`,
 `task_compute_flood_gep` and `task_generate_maps_and_figures`. The GEP chain with the
-counterfactuals gives **$11,403,596,548** across 250 rows, positive in 163, against the author's
-published $11.40bn -- his rounding to one decimal, and his committed table agrees with ours to the
-cent, 250 of 250 countries, largest per-country difference $0.000000. `gep = ead_bare - ead_current`
+counterfactuals gave **$11,403,596,548** across 250 rows, positive in 163: that run valued
+Iceland at $0.021 where the author's table carries NA, so its NA mask differed by one country,
+and the agreement to the cent held on the 162 rows both sides value — shared nonmissing
+agreement, not a 250-of-250 match. The CURRENT published table instead is the author's export,
+equal on all 250 rows (162 positive, 88 missing, identical missingness, largest numeric
+difference 0). In that archived run, `gep = ead_bare - ead_current`
 holds to 1.2e-07 on every row, and the damage side reproduces at $887,827,659,820 /
 $194,256,309,530 / $551,051,565,602.
 
@@ -166,10 +195,26 @@ headline. The author has reported about $11.4bn consistently, in correspondence 
 table, so waterremoved is the account's variant; the gap is pinned by a test so it cannot drift
 unnoticed.
 
-### What running the remaining two needs
+### The inputs the template names
 
-The inputs live on MSI at `/projects/standard/jajohns/shared/flood_gep`, read-only. What Sections A
-and B actually need from it is small -- `flood_depth_aligned_path` and `flood_spa_path`, 1.5 GB with
-the optional population grid -- and both are staged in base_data now with the template carrying the
-references. The 129 GB of counterfactual amplification rasters in that tree feed
-`task_compute_flood_gep`, which already runs, so they are not part of this.
+The authors' package lives on MSI at `/projects/standard/jajohns/shared/flood_gep`, read-only, and
+its `RUN.md` names the reported configuration. The template's references point at copies of it in
+base_data's `global_invest/flood/input/pipeline_inputs`:
+
+- the JRC 2024 depths with permanent water removed, `floodplain_depth_v2_nowater/aligned_to_lulc`;
+- the upstream SPA ratio from the counterfactual mosaic, `counterfactual_mosaic/global_upstream_spa_ratio.tif`;
+- the twelve amplification layers the GEP chain reads, `counterfactual_mosaic/global_amplification_{scenario}_rp{rp}.tif`
+  for the in-situ and bare scenarios at six return periods, staged on the cluster only (about 33 GB);
+- the FLOPROS merged protection table, `protection/flopros_merged_by_iso3.csv`;
+- the SDA raster, legend and land-cover mapping, byte-identical to the authors' copies, which a run that
+  skips Section A reads.
+
+Until 1 November 2026 the staged depths were the 2016 release, and the file under the ratio's name in
+`global_spa_ben` was a copy of the SPA mask. Amplification and protection were blank. That copy stays in
+base_data under its old name and is not read.
+
+The curve-number table the authors' runner names is read only when the amplification layers are
+built, not when they are used, so it is not staged. The account's `ee_r250` boundary agrees with the
+authors' within 1e-6 of each country's area in 248 of 250 countries. Antarctica differs because the
+account's polygon reaches -90 degrees, which Web Mercator cannot hold, and Fiji differs by 0.08 km² at
+the antimeridian.

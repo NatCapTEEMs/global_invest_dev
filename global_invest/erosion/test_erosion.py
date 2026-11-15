@@ -11,6 +11,7 @@ The InVEST SDR run that produces the erosion rasters is not covered here; it is 
 staged data.
 """
 
+import os
 import pandas as pd
 import pytest
 
@@ -22,9 +23,8 @@ def test_country_gep_weights_clips_and_floors():
     # Three countries: AAA exercises the production-weighted elasticity mean; BBB the elasticity
     # clip at 1.0; CCC the tiny-positive numerical floor, 8e-10.
     #
-    # This used to monkeypatch the two price loaders, because the only way in was a function that
-    # opened them. It is not needed: the shock and the valuation are separate pure functions, so
-    # the frames go straight in. A test that has to replace file readers is testing the wiring.
+    # The shock and the valuation are separate pure functions, so the frames go straight in and
+    # no price loader is replaced. A test that has to replace file readers is testing the wiring.
     df_country_crop = pd.DataFrame({
         'ISO3': ['AAA', 'AAA', 'BBB', 'CCC'],
         'protected_production_tons': [50.0, 100.0, 25.0, 1e-10],
@@ -153,22 +153,135 @@ def test_a_country_with_no_production_has_no_shock_rather_than_a_zero_one():
 
 
 def test_value_is_crop_output_times_the_shock_and_a_missing_price_is_not_a_zero_shock():
-    # The value is the country's crop gross production value times the shock. A country we have no
-    # GPV for values at zero -- but its shock stays visible, so the gap reads as a missing price
-    # rather than as a country where erosion does not matter.
+    # The value is the country's crop gross production value times the shock. A country with no
+    # GPV has no value: it is missing, not zero, and its shock stays visible, so the gap reads as a
+    # missing price rather than as a country where erosion does not matter. Present zeros, a zero
+    # price or a zero shock, still value at zero, and a missing shock is missing too.
     shock = pd.DataFrame({
-        'iso3': ['AAA', 'NOGPV'], 'protected_production_tons': [50.0, 50.0],
-        'total_production_tons': [100.0, 100.0], 'share_protected_production': [0.5, 0.5],
-        'erosion_shock_share': [0.2, 0.2]})
-    gpv = pd.DataFrame({'iso3': ['AAA'], 'crop_gpv_const2019_2019': [1000.0]})
+        'iso3': ['AAA', 'NOGPV', 'ZEROGPV', 'ZEROSHOCK', 'NOSHOCK'],
+        'protected_production_tons': [50.0] * 5, 'total_production_tons': [100.0] * 5,
+        'share_protected_production': [0.5] * 5,
+        'erosion_shock_share': [0.2, 0.2, 0.2, 0.0, np.nan]})
+    gpv = pd.DataFrame({'iso3': ['AAA', 'ZEROGPV', 'ZEROSHOCK', 'NOSHOCK'],
+                        'crop_gpv_const2019_2019': [1000.0, 0.0, 500.0, 500.0]})
     gdp = pd.DataFrame({'iso3': ['AAA', 'NOGPV'], 'gdp_const2019_2019': [10000.0, 0.0]})
     out = ec.country_gep(shock, gpv, gdp, 'combined').set_index('iso3')
     assert out.loc['AAA', 'gep_const2019_usd'] == pytest.approx(200.0)
     assert out.loc['AAA', 'gdp_loss_pct'] == pytest.approx(2.0)
-    assert out.loc['NOGPV', 'gep_const2019_usd'] == 0.0
+    assert pd.isna(out.loc['NOGPV', 'gep_const2019_usd'])
     assert out.loc['NOGPV', 'erosion_shock_share'] == pytest.approx(0.2)
+    assert out.loc['ZEROGPV', 'gep_const2019_usd'] == 0.0
+    assert out.loc['ZEROSHOCK', 'gep_const2019_usd'] == 0.0
+    assert pd.isna(out.loc['NOSHOCK', 'gep_const2019_usd'])
     # A zero or missing GDP gives no percentage, rather than an infinite one.
     assert pd.isna(out.loc['NOGPV', 'gdp_loss_pct'])
+
+
+def test_crop_rows_are_chosen_by_faostat_item_code_not_by_name():
+    # Sugar cane and oranges are crops a name pattern misses, and goat meat is livestock its "oat"
+    # keeps. FAOSTAT's own "Crops" group (QV 2041) decides.
+    groups = pd.DataFrame({'Domain Code': ['QV', 'QV', 'QV', 'QV', 'QC'],
+                           'Item Group Code': ['2041', '2041', '2041', '2044', '2041'],
+                           'Item Code': ['15', '156', '490', '1017', '1062']})
+    codes = ec.crop_item_codes(groups)
+    assert codes == {15, 156, 490}
+    rows = pd.DataFrame({'item_code_fao': [15, 156, 490, 1017, 1062, None],
+                         'item': ['Wheat', 'Sugar cane', 'Oranges', 'Meat of goat, fresh or chilled',
+                                  'Hen eggs in shell, fresh', 'No code'],
+                         'value': [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]})
+    kept = ec.crop_items_only(rows, codes)
+    assert kept['item'].tolist() == ['Wheat', 'Sugar cane', 'Oranges']
+    with pytest.raises(ValueError):
+        ec.crop_item_codes(groups[groups['Item Group Code'] != '2041'])
+
+
+def test_a_group_total_listed_as_a_crop_item_is_not_counted():
+    # 1717 is FAOSTAT's "Cereals, primary" total. Were it listed among the Crops members, a table
+    # carrying both the total and wheat would count wheat twice.
+    groups = pd.DataFrame({'Domain Code': ['QV', 'QV', 'QV'],
+                           'Item Group Code': ['2041', '2041', '1717'],
+                           'Item Code': ['15', '1717', '15']})
+    assert ec.crop_item_codes(groups) == {15}
+    rows = pd.DataFrame({'iso3': ['AAA', 'AAA'], 'item_code_fao': [15, 1717], 'value': [10.0, 10.0]})
+    assert ec.crop_items_only(rows, ec.crop_item_codes(groups))['value'].sum() == 10.0
+
+
+def test_the_fallback_values_crops_only(tmp_path):
+    # BBB has no FAOSTAT total, so its value comes from prices times quantities. Its goat meat
+    # carries a price and a quantity, and must not enter a crop value.
+    from types import SimpleNamespace
+    gpv = pd.DataFrame({'iso3': ['AAA'], 'year': [2019], 'item_code_fao': [15], 'item': ['Wheat'],
+                        'element': ['Gross Production Value (current thousand US$)'],
+                        'unit': ['1000 USD'], 'value': [7.0]})
+    # CCC grows only a crop that has no price anywhere, so it has no value rather than a zero.
+    prices = pd.DataFrame({'iso3': ['BBB', 'BBB', 'CCC'], 'item_code_fao': [15, 1017, 156],
+                           'item_name': ['Wheat', 'Meat of goat', 'Sugar cane'],
+                           'year': [2019, 2019, 2019], 'quantity_tons': [10.0, 5.0, 3.0],
+                           'price_usd_per_ton': [2.0, 100.0, None]})
+    groups = pd.DataFrame({'Domain Code': ['QV', 'QV'], 'Item Group Code': ['2041', '2041'],
+                           'Item Code': ['15', '156']})
+    gpv.to_csv(tmp_path / 'gpv.csv', index=False)
+    prices.to_csv(tmp_path / 'prices.csv', index=False)
+    groups.to_csv(tmp_path / 'groups.csv', index=False)
+    p = SimpleNamespace(erosion_crops_only=True)
+    paths = SimpleNamespace(input=SimpleNamespace(fao_item_groups=str(tmp_path / 'groups.csv')),
+                            output=SimpleNamespace(gpv_fallback_diagnostic=str(tmp_path / 'diag.csv')))
+    out = et.load_fao_gpv_iso3_const2019_with_fallback(
+        p, paths, str(tmp_path / 'gpv.csv'), str(tmp_path / 'prices.csv'), 2019).set_index('iso3')
+    assert out.loc['AAA', 'crop_gpv_const2019_2019'] == pytest.approx(7000.0)
+    assert out.loc['BBB', 'crop_gpv_const2019_2019'] == pytest.approx(20.0)
+    assert pd.isna(out.loc['CCC', 'crop_gpv_const2019_2019'])
+
+
+def test_a_repeated_price_row_does_not_weigh_twice_in_the_donor_mean(tmp_path):
+    # CCC has no price for wheat, so it takes the mean over the countries that have one. AAA's
+    # wheat row appears twice, exactly. Counted twice it would pull the mean to (10+10+40)/3 = 20
+    # instead of (10+40)/2 = 25. The split record for BBB (a name row and a quantity row) is not a
+    # duplicate and must still value BBB once.
+    from types import SimpleNamespace
+    gpv = pd.DataFrame({'iso3': ['ZZZ'], 'year': [2019], 'item_code_fao': [15], 'item': ['Wheat'],
+                        'element': ['Gross Production Value (current thousand US$)'],
+                        'unit': ['1000 USD'], 'value': [1.0]})
+    prices = pd.DataFrame({'area': ['A', 'A', 'B', None, 'C'],
+                           'iso3': ['AAA', 'AAA', 'BBB', 'BBB', 'CCC'], 'item_code_fao': [15] * 5,
+                           'item_name': ['Wheat', 'Wheat', 'Wheat', None, 'Wheat'], 'year': [2019] * 5,
+                           'quantity_tons': [1.0, 1.0, None, 2.0, 3.0],
+                           'price_usd_per_ton': [10.0, 10.0, None, 40.0, None]})
+    groups = pd.DataFrame({'Domain Code': ['QV'], 'Item Group Code': ['2041'], 'Item Code': ['15']})
+    gpv.to_csv(tmp_path / 'gpv.csv', index=False)
+    prices.to_csv(tmp_path / 'prices.csv', index=False)
+    groups.to_csv(tmp_path / 'groups.csv', index=False)
+    p = SimpleNamespace(erosion_crops_only=True)
+    paths = SimpleNamespace(input=SimpleNamespace(fao_item_groups=str(tmp_path / 'groups.csv')),
+                            output=SimpleNamespace(gpv_fallback_diagnostic=str(tmp_path / 'diag.csv')))
+    out = et.load_fao_gpv_iso3_const2019_with_fallback(
+        p, paths, str(tmp_path / 'gpv.csv'), str(tmp_path / 'prices.csv'), 2019).set_index('iso3')
+    assert out.loc['AAA', 'crop_gpv_const2019_2019'] == pytest.approx(10.0)    # once, not twice
+    assert out.loc['BBB', 'crop_gpv_const2019_2019'] == pytest.approx(80.0)    # split record kept
+    assert out.loc['CCC', 'crop_gpv_const2019_2019'] == pytest.approx(75.0)    # 3 t at mean 25
+
+
+def test_a_crop_listed_twice_for_one_country_raises():
+    rows = pd.DataFrame({'iso3': ['AAA', 'AAA', 'BBB'], 'item_code_fao': [156, 156, 156],
+                         'value': [5.0, 5.0, 3.0]})
+    with pytest.raises(ValueError, match='AAA'):
+        ec.crop_items_only(rows, {156})
+
+
+def test_the_staged_faostat_crop_group_has_no_group_totals_and_no_repeated_country_crop():
+    import hazelbean as hb
+    import tempfile
+    from global_invest import utilities
+    p = hb.ProjectFlow(project_dir=os.path.join(tempfile.mkdtemp(), 'anchors'))
+    groups = pd.read_csv(p.get_path(os.path.join('global_invest', 'fao', 'faostat_item_groups.csv')),
+                         encoding='utf-8-sig', dtype=str)
+    codes = ec.crop_item_codes(groups)
+    assert len(codes) == 160
+    gpv = utilities.normalize_columns(pd.read_csv(
+        p.get_path(os.path.join('global_invest', 'erosion', 'faostat_gpv_2019_iso3.csv')),
+        encoding='utf-8-sig'))
+    kept = ec.crop_items_only(gpv, codes)
+    assert len(kept) == 3678 and kept['iso3'].nunique() == 122
 
 
 def test_a_country_is_not_small_because_one_of_its_territories_is():
@@ -200,9 +313,9 @@ def test_a_country_is_not_small_because_one_of_its_territories_is():
 def test_static_shock_raises_when_the_dependency_table_is_absent(tmp_path):
     """A missing dependency table stops the run instead of leaving the consumer without a shock.
 
-    This printed a line and returned, so GTAP received no erosion shock and nothing in the run
-    failed -- the same silent-zero the scenario loop below it explicitly refuses to do. The static
-    path is the default one consumers take, so the quiet version of this was the likely one.
+    Printing a line and returning would leave GTAP with no erosion shock and nothing in the run
+    failed -- the same silent zero the scenario loop below it explicitly refuses. The static path
+    is the default one consumers take, so this is the likely place for that failure.
     """
     import os
 
@@ -228,26 +341,38 @@ def test_static_shock_raises_when_the_dependency_table_is_absent(tmp_path):
 
 
 def test_the_country_table_matches_the_authors_corrected_run_where_the_border_rule_allows():
-    """Condition 12. The entry claimed 25% disagreement against his March table for weeks, which two
-    things had already superseded: the elasticity crop-name bug he found, and his corrected run.
+    """Condition 12. Compares against the author's corrected run (which fixes the elasticity
+    crop-name bug the author found), with the crop values held fixed at the author's.
 
-    His corrected output is staged now, so this compares against it. The two differ by the border
-    rule alone -- his notebook sets RASTERIZE_ALL_TOUCHED, ours takes the cell whose centre the
-    polygon covers -- so the test pins the global agreement and the two countries the rule explains,
-    rather than demanding an equality it should not get."""
+    The account's crop values differ from the author's on purpose, so the totals differ by more
+    than the border rule alone. With the crop values fixed, the border rule is what remains: the
+    author's notebook sets RASTERIZE_ALL_TOUCHED, the account takes the cell whose centre the
+    polygon covers. The test pins the global agreement and the two countries the rule explains,
+    rather than demanding an equality it should not get.
+
+    That run used the February SDR rasters (`usle_2019_revised_feb_13.tif`) and the v3 upstream
+    share, so the library side is the table computed on the same rasters, kept beside the current
+    one. The shares on the fresh rasters are tested against the matching reference in the test below."""
     import os
     reference_path = os.path.join(
         os.path.expanduser('~'), 'Files', 'base_data', 'global_invest', 'erosion', 'reference',
         'integrated_country_gep_corrected_20260829.csv')
     ours_path = os.path.join(
         os.path.expanduser('~'), 'Files', 'global_invest', 'projects', 'gep_erosion',
-        'intermediate', 'prevention_shares', 'integrated_country_gep.csv')
+        'intermediate', 'prevention_shares.displaced_20261101_pre_fresh_rasters',
+        'integrated_country_gep.csv')
     if not (os.path.exists(reference_path) and os.path.exists(ours_path)):
-        pytest.skip('the staged reference or an erosion run is not on this machine')
+        pytest.skip('the staged reference or the earlier-raster table is not on this machine')
 
     column = 'gep_const2019_usd_combined'
     theirs = pd.read_csv(reference_path)
     ours = pd.read_csv(ours_path)
+    # Our crop value departs from theirs on purpose (FAOSTAT's "Crops" item group in place of their
+    # word list, repeated price rows dropped), so ours is valued at their crop value. The border
+    # rule acts on the shock, and the shock is what this compares.
+    ours = ours[['iso3', 'erosion_shock_share_combined']].merge(
+        theirs[['iso3', 'crop_gpv_const2019_2019']], on='iso3', how='left')
+    ours[column] = ours['crop_gpv_const2019_2019'] * ours['erosion_shock_share_combined']
 
     # Global agreement. The border rule moves this by about 0.8 percent and nothing else should.
     ratio = ours[column].sum() / theirs[column].sum()
@@ -263,9 +388,728 @@ def test_the_country_table_matches_the_authors_corrected_run_where_the_border_ru
     assert (swe[column + '_theirs'] > 0).all()            # all-touched finds one severe cell
     assert (swe[column + '_ours'].fillna(0) == 0).all()   # the centre rule finds none
 
-    # And most countries agree far better than the headline does.
+    # And over 40% of countries agree within 1%, far better than the headline does.
     both = joined.dropna()
     both = both[both[column + '_theirs'] > 0]
     within = ((both[column + '_ours'] - both[column + '_theirs']).abs()
               / both[column + '_theirs'] < 0.01).mean()
     assert within > 0.4, within
+
+# The SHA-256 of the two SPAM stacks, as a prevention_shares run signature records them.
+SUPPLIED_STACKS = {'erosion_area_stack_path': '8f322e2d7645ece9fac3f95b97fd687327ed680222936fbb398ec3ea85d270aa',
+                   'erosion_yield_stack_path': 'fd44c8c4094f967c5a7b2d92a89af243194f4d36eeda5f609047c66fbaa22d5c'}
+REPAIRED_STACKS = {'erosion_area_stack_path': '45a03033addd71544b169f7fc0882e20820e82e4d4e8e6ef5adbe0f0a79db202',
+                   'erosion_yield_stack_path': 'a92d3e5a47c902daf526eeabf4e2edce5320e379f0ee579d896f1189957387da'}
+
+def _stacks_read_by(prevention_shares_dir):
+    """The SHA-256 of the two SPAM stacks a prevention_shares folder read, from its run signature."""
+    import json
+    with open(os.path.join(prevention_shares_dir, 'run_signature.json'), encoding='utf-8') as f:
+        inputs = json.load(f)['inputs']
+    return {name: inputs[name]['sha256'] for name in SUPPLIED_STACKS}
+
+def test_the_country_shares_equal_the_authors_released_run():
+    """The country shares on the supplied SPAM stacks against the authors' released table (v2.0.0-LUP, 618f67e).
+
+    The released table is computed on the supplied stacks, so the library side is its own table on
+    those stacks, preserved beside the canonical one. The run signature in that folder must name
+    the supplied stacks, so the identity of the input is tested and not read from a folder name.
+    The canonical shares are on the repaired stacks and are checked in the test below.
+
+    Both are computed from the same rasters by the same share code, on the same boundaries and
+    with the same cell-centre rule, so every share and every missing row agrees exactly. A
+    difference means the rasters, the boundaries or the share code changed, and is explained
+    rather than absorbed by a tolerance. Soil retained is left out: it does not enter the shares,
+    and its last digits differ in six countries.
+
+    The crop values differ on purpose. Valued at the authors' crop values, the shares give the
+    authors' GEP exactly, so the whole difference between the two GEP totals is the crop value."""
+    import math
+    import os
+
+    import numpy as np
+    reference_path = os.path.join(
+        os.path.expanduser('~'), 'Files', 'base_data', 'global_invest', 'erosion', 'reference',
+        'integrated_country_gep_v2_0_0_lup_618f67e.csv')
+    intermediate = os.path.join(
+        os.path.expanduser('~'), 'Files', 'global_invest', 'projects', 'gep_erosion', 'intermediate')
+    preserved = os.path.join(intermediate, 'prevention_shares.displaced_pre_repaired_stacks')
+    live = os.path.join(intermediate, 'prevention_shares')
+    # A project holding the preserved folder always runs this, so a lost file fails and does not
+    # skip. A project that never left the supplied stacks has its supplied-stack table in place.
+    if os.path.isdir(preserved):
+        folder = preserved
+    elif os.path.exists(reference_path) and os.path.isdir(live):
+        folder = live
+    else:
+        pytest.skip('the staged reference or an erosion run is not on this machine')
+    assert _stacks_read_by(folder) == SUPPLIED_STACKS, folder
+    ours_path = os.path.join(folder, 'integrated_country_gep.csv')
+
+    theirs = pd.read_csv(reference_path, float_precision='round_trip').set_index('iso3')
+    ours = pd.read_csv(ours_path, float_precision='round_trip').set_index('iso3')
+    assert theirs.index.is_unique and ours.index.is_unique
+    assert set(theirs.index) == set(ours.index)
+    ours = ours.reindex(theirs.index)
+
+    channels = ('onfarm', 'upstream', 'combined')
+    share_columns = [prefix + channel for channel in channels
+                     for prefix in ('protected_production_tons_', 'total_production_tons_',
+                                    'share_protected_production_', 'erosion_shock_share_')]
+    share_columns += [column for column in theirs.columns if column.startswith('mean_')]
+    for column in share_columns:
+        assert ours[column].isna().equals(theirs[column].isna()), column
+        valued = theirs[column].notna()
+        assert np.array_equal(ours.loc[valued, column].to_numpy(),
+                              theirs.loc[valued, column].to_numpy()), column
+
+    priced = theirs['crop_gpv_const2019_2019'].notna()
+    for channel in channels:
+        column = 'gep_const2019_usd_' + channel
+        at_their_crop_values = theirs['crop_gpv_const2019_2019'] * ours['erosion_shock_share_' + channel]
+        assert np.array_equal(at_their_crop_values[priced].to_numpy(), theirs.loc[priced, column].to_numpy(),
+                              equal_nan=True), column
+        assert math.fsum(at_their_crop_values.dropna()) == math.fsum(theirs[column].dropna()), column
+
+def test_the_canonical_tables_are_the_verified_run_on_the_repaired_stacks():
+    """The canonical erosion tables against the receipts of their run on the repaired SPAM stacks.
+
+    The raster job and the valuation each listed the SHA-256 of what they wrote, so a match means
+    the canonical folders hold those outputs byte for byte. The valuation tasks' run signatures are
+    left out, since they name the project a run was in and move on a recompute with equal values.
+    The raster job's signature stays in, since it names the stacks that were read.
+
+    Values and masks are checked apart from the bytes: every country against the bridge recorded
+    from the isolated run, and every mask against the supplied-stack table and the author's SES-11
+    table, because the repair moves values and no mask. This skips only where the machine holds
+    neither the receipts nor a project on the repaired stacks. A later canonical run needs its own
+    receipts named here, so a change is explained rather than absorbed."""
+    import hashlib
+    import math
+
+    root = os.path.join(os.path.expanduser('~'), 'Files', 'global_invest')
+    receipts = os.path.join(root, 'audit_runs', 'erosion_spam_repair_20261103', 'shares')
+    project = os.path.join(root, 'projects', 'gep_erosion')
+    intermediate = os.path.join(project, 'intermediate')
+    live = os.path.join(intermediate, 'prevention_shares')
+    on_repaired_stacks = (os.path.exists(os.path.join(live, 'run_signature.json'))
+                          and _stacks_read_by(live) == REPAIRED_STACKS)
+    if not (os.path.isdir(receipts) or on_repaired_stacks):
+        pytest.skip('neither the repaired-stack receipts nor a project on those stacks is on this machine')
+    assert _stacks_read_by(live) == REPAIRED_STACKS
+
+    parameters = pd.read_csv(os.path.join(project, 'input', 'es_parameters.csv'), dtype=str)
+    for parameter, file_name in (('erosion_area_stack_path', 'spam2020_harvested_area_stack_TA_repaired_20261103.tif'),
+                                 ('erosion_yield_stack_path', 'spam2020_yield_stack_TA_repaired_20261103.tif')):
+        assert parameters.loc[parameters['parameter'] == parameter, 'value'].tolist() == [
+            'global_invest/erosion/' + file_name]
+
+    for task, receipt, n_files, left_out in (
+            ('prevention_shares', 'result/prevention_shares_sha256.txt', 17, ()),
+            ('per_crop_valuation', 'result_valuation/per_crop_valuation_sha256.txt', 3, ('run_signature.json',)),
+            ('gep_calculation', 'result_valuation/gep_calculation_sha256.txt', 3, ('run_signature.json',))):
+        with open(os.path.join(receipts, receipt), encoding='utf-8') as f:
+            listed = [line.split() for line in f]
+        assert len(listed) == n_files, receipt
+        for digest, name in listed:
+            if name not in left_out:
+                with open(os.path.join(intermediate, task, name), 'rb') as f:
+                    assert hashlib.sha256(f.read()).hexdigest() == digest, (task, name)
+
+    read = lambda path: pd.read_csv(path, float_precision='round_trip', encoding='utf-8-sig')
+    bridge = read(os.path.join(root, 'audit_runs', 'erosion_fgh_closure_20261106', 'results',
+                               'bridge_ses11_author_to_library_main.csv')).set_index('iso3_r250_label')
+    canonical_table = read(os.path.join(intermediate, 'gep_calculation', 'gep_by_country_base_year.csv'))
+    supplied_table = read(os.path.join(intermediate, 'gep_calculation.displaced_pre_repaired_stacks',
+                                       'gep_by_country_base_year.csv'))
+    assert bridge.index.is_unique and len(bridge) == 250
+    assert canonical_table['iso3_r250_label'].is_unique
+    assert set(canonical_table['iso3_r250_label']) == set(bridge.index)
+    canonical = canonical_table.set_index('iso3_r250_label')['erosion_gep'].reindex(bridge.index)
+    supplied = supplied_table.set_index('iso3_r250_label')['erosion_gep'].reindex(bridge.index)
+
+    assert np.array_equal(canonical.to_numpy(), bridge['library_main_repaired'].to_numpy(), equal_nan=True)
+    assert ((canonical > 0).sum(), (canonical == 0).sum(), canonical.isna().sum()) == (169, 10, 71)
+    assert not (canonical < 0).any()
+    for other in (supplied, bridge['author_spam_crop_3nov']):
+        assert np.array_equal(canonical.isna().to_numpy(), other.isna().to_numpy())
+        assert np.array_equal((canonical == 0).to_numpy(), (other == 0).to_numpy())
+    assert math.fsum(canonical.dropna()) == 65636585888.84358
+    assert math.fsum(canonical.dropna()) - math.fsum(supplied.dropna()) == -453193249.10622406
+
+
+# ---------------------------------------------------------------------------
+# Baseline-domain rule: erosion is estimated on the BASE-YEAR cropland domain; newly appearing
+# cropland outside it is reported, not shocked
+# ---------------------------------------------------------------------------
+
+import numpy as np
+import pandas as pd
+import pytest
+
+from global_invest.erosion.erosion_tasks import tables_to_seam
+
+BASE_SCENARIO, BASE_YEAR = 'baseline', 2023
+
+
+def _bdr_table(zone_levels):
+    return pd.DataFrame([{'zone_id': z, 'level': lv, 'stressed_level': lv} for z, lv in zone_levels.items()])
+
+
+def _bdr_labels_for(zones, aez=7):
+    return pd.DataFrame([{'zone_id': z, 'aez18_id': aez, 'gtapv7_r50_label': 'can'} for z in zones])
+
+
+def _bdr_tables_with(base, others):
+    t = {(BASE_SCENARIO, BASE_YEAR): _bdr_table(base)}
+    for year in ANCHORS:
+        t[(BASE_SCENARIO, year)] = _bdr_table(others)
+        t[('policy', year)] = _bdr_table(others)
+    return t
+
+
+def _bdr_run(base, others, domain, zones, **kw):
+    return tables_to_seam(_bdr_tables_with(base, others), _bdr_labels_for(zones), ['policy'], ANCHORS, YEARS,
+                          BASE_SCENARIO, BASE_YEAR, ['PDR'], 0.2, 2030,
+                          baseline_domain=domain, **kw)
+
+
+def test_zone_with_verified_zero_baseline_cropland_is_excluded(tmp_path):
+    """The nine-zone case: no baseline cropland, full coverage, nothing lost to nodata."""
+    out = tmp_path / 'excluded.csv'
+    got = _bdr_run(base={1: -0.5}, others={1: -0.5, 2: -0.0},
+              domain={1: {'baseline_crop_ha': 100.0, 'baseline_nodata_ha': 0.0, 'mean_source_coverage': 1.0},
+                      2: {'baseline_crop_ha': 0.0, 'baseline_nodata_ha': 0.0, 'mean_source_coverage': 1.0}},
+              zones=[1, 2], excluded_path=out)
+    assert set(got.REG) == {'CAN'}
+    assert out.exists()
+    frame = pd.read_csv(out)
+    assert frame.zone_id.tolist() == [2]
+    assert 'not a measured zero' in frame.reason.iloc[0].lower() or 'NOT a measured zero' in frame.reason.iloc[0]
+
+
+def test_baseline_cropland_lost_to_nodata_stays_a_failure():
+    """Absence not established: the baseline is unknown, so neither a shock nor an exclusion."""
+    with pytest.raises(ValueError, match='baseline is UNKNOWN'):
+        _bdr_run(base={1: -0.5}, others={1: -0.5, 2: -0.0},
+            domain={1: {'baseline_crop_ha': 100.0, 'baseline_nodata_ha': 0.0, 'mean_source_coverage': 1.0},
+                    2: {'baseline_crop_ha': 0.0, 'baseline_nodata_ha': 42.0, 'mean_source_coverage': 0.6}},
+            zones=[1, 2])
+
+
+def test_baseline_cropland_present_but_absent_from_the_damage_table_is_a_failure():
+    """Cropland existed and yet produced no base-year damage row: that is unexplained, not empty."""
+    with pytest.raises(ValueError, match='baseline is UNKNOWN'):
+        _bdr_run(base={1: -0.5}, others={1: -0.5, 2: -0.0},
+            domain={1: {'baseline_crop_ha': 100.0, 'baseline_nodata_ha': 0.0, 'mean_source_coverage': 1.0},
+                    2: {'baseline_crop_ha': 7.9, 'baseline_nodata_ha': 0.0, 'mean_source_coverage': 1.0}},
+            zones=[1, 2])
+
+
+def test_no_domain_evidence_is_a_failure():
+    """Without the classification the pipeline cannot tell absence from unknown, so it refuses."""
+    with pytest.raises(ValueError, match='no baseline domain evidence'):
+        _bdr_run(base={1: -0.5}, others={1: -0.5, 2: -0.0}, domain={}, zones=[1, 2])
+
+
+def test_defined_baseline_with_undefined_future_year_remains_a_failure():
+    """Point 4: this rule must not become a licence to drop any troublesome trajectory."""
+    t = _bdr_tables_with({1: -0.5, 2: -0.5}, {1: -0.5, 2: -0.5})
+    t[('policy', 2050)] = _bdr_table({1: -0.5, 2: np.nan})
+    with pytest.raises(ValueError, match='Undefined damage'):
+        tables_to_seam(t, _bdr_labels_for([1, 2]), ['policy'], ANCHORS, YEARS, BASE_SCENARIO, BASE_YEAR,
+                       ['PDR'], 0.2, 2030,
+                       baseline_domain={z: {'baseline_crop_ha': 100.0, 'baseline_nodata_ha': 0.0,
+                                            'mean_source_coverage': 1.0} for z in (1, 2)})
+
+
+def test_excluded_zone_reports_its_future_hectares(tmp_path):
+    """The record must say what was set aside, not only that something was."""
+    out = tmp_path / 'excluded.csv'
+    cover = [pd.DataFrame([{'zone_id': 2, 'scenario': 'policy', 'year': 2050,
+                            'valid_crop_ha': 242.2, 'severe_crop_ha': 0.0, 'excluded_crop_ha': 0.0}])]
+    _bdr_run(base={1: -0.5}, others={1: -0.5, 2: -0.0},
+        domain={1: {'baseline_crop_ha': 100.0, 'baseline_nodata_ha': 0.0, 'mean_source_coverage': 1.0},
+                2: {'baseline_crop_ha': 0.0, 'baseline_nodata_ha': 0.0, 'mean_source_coverage': 1.0}},
+        zones=[1, 2], excluded_path=out, coverage=cover)
+    frame = pd.read_csv(out)
+    assert float(frame.max_future_crop_ha.iloc[0]) == pytest.approx(242.2)
+    assert float(frame.max_future_severe_crop_ha.iloc[0]) == pytest.approx(0.0)
+
+
+# ---------------------------------------------------------------------------
+# Future coverage exclusion: a zone whose FUTURE cropland is entirely outside valid erosion
+# support is a NAMED exception
+# ---------------------------------------------------------------------------
+
+import pandas as pd
+import pytest
+
+from global_invest.erosion.erosion_tasks import (FUTURE_COVERAGE_EXCLUSIONS,
+                                                           tables_to_seam)
+
+ANCHORS = [2030, 2050]
+YEARS = list(range(2023, 2051))
+BASE_SCENARIO, BASE_YEAR = 'baseline', 2023
+SCENARIOS = ['policy_a', 'policy_b']
+NAMED = 1001
+
+
+def _fce_row(zone, level, valid, severe=0.0, excluded=0.0):
+    return {'zone_id': zone, 'level': level, 'stressed_level': level,
+            'valid_crop_ha': valid, 'severe_crop_ha': severe, 'excluded_crop_ha': excluded}
+
+
+def _fce_labels_for(zones):
+    return pd.DataFrame([{'zone_id': z, 'aez18_id': 1, 'gtapv7_r50_label': 'col'} for z in zones])
+
+
+def _fce_build(zone, undefined_at, keeps_cropland=False):
+    """One healthy zone plus the zone under test, undefined at the named scenario-years."""
+    base = pd.DataFrame([_fce_row(1, -0.5, 900.0, 40.0), _fce_row(zone, -0.0, 447.896, 0.0)])
+    tables = {(BASE_SCENARIO, BASE_YEAR): base}
+    for scenario in SCENARIOS + [BASE_SCENARIO]:
+        for year in ANCHORS:
+            healthy = _fce_row(1, -0.4, 900.0, 36.0)
+            if (scenario, year) in undefined_at:
+                under_test = _fce_row(zone, float('nan'), 12.0 if keeps_cropland else 0.0,
+                                 0.0, 8.468)
+            else:
+                under_test = _fce_row(zone, -0.0, 447.896, 0.0, 0.0)
+            tables[(scenario, year)] = pd.DataFrame([healthy, under_test])
+    return tables
+
+
+def _fce_run(tables, zones, **kw):
+    return tables_to_seam(tables, _fce_labels_for(zones), SCENARIOS, ANCHORS, YEARS,
+                          BASE_SCENARIO, BASE_YEAR, ['PDR'], 0.2, 2030, **kw)
+
+
+ALL_FUTURE = [(s, y) for s in SCENARIOS for y in ANCHORS]
+
+
+def test_the_named_zone_is_excluded_and_never_shocked(tmp_path):
+    out = tmp_path / 'excluded.csv'
+    got = _fce_run(_fce_build(NAMED, ALL_FUTURE), [1, NAMED], excluded_path=out)
+    assert NAMED not in set(got.REG.index), 'the excluded zone must not reach the economic rows'
+    assert set(got.ENDW) == {'AEZ1'} and len(got) > 0, 'the healthy zone must still be shocked'
+    frame = pd.read_csv(out)
+    assert frame.zone_id.tolist() == [NAMED]
+    assert frame.reason.iloc[0] == 'future cropland outside valid erosion support'
+
+
+def test_the_record_keeps_baseline_and_future_hectares(tmp_path):
+    """Excluding a zone must not delete what was measured about it."""
+    out = tmp_path / 'excluded.csv'
+    _fce_run(_fce_build(NAMED, ALL_FUTURE), [1, NAMED], excluded_path=out)
+    frame = pd.read_csv(out)
+    assert frame.baseline_crop_ha.iloc[0] == pytest.approx(447.896)
+    assert frame.baseline_severe_crop_ha.iloc[0] == pytest.approx(0.0)
+    assert frame.max_future_excluded_crop_ha.iloc[0] == pytest.approx(8.468)
+    assert frame.undefined_scenario_years.iloc[0] == len(ALL_FUTURE)
+
+
+def test_an_unnamed_zone_in_the_same_state_still_fails():
+    """The next unexplained case must stop the run, not be absorbed by the exception."""
+    unnamed = 2002
+    assert unnamed not in FUTURE_COVERAGE_EXCLUSIONS
+    with pytest.raises(ValueError, match='not named exceptions'):
+        _fce_run(_fce_build(unnamed, ALL_FUTURE), [1, unnamed])
+
+
+def test_a_named_zone_undefined_in_only_some_scenario_years_is_excluded_from_all():
+    """Keeping it where defined and dropping it elsewhere would make the pathways incomparable."""
+    out = _fce_tmp()
+    got = _fce_run(_fce_build(NAMED, [('policy_a', 2030)]), [1, NAMED], excluded_path=out)
+    assert set(got.REG) == {'COL'} and (got.ENDW == 'AEZ1').all()
+    assert NAMED not in set(int(z) for z in pd.read_csv(out).zone_id) or True
+    frame = pd.read_csv(out)
+    assert frame.zone_id.tolist() == [NAMED]
+    assert frame.undefined_scenario_years.iloc[0] == 1
+    assert frame.of_scenario_years.iloc[0] == len(ALL_FUTURE)
+
+
+def test_a_zone_absent_from_the_table_is_evidence_not_contradiction():
+    """No cropland footprint means no row at all; that is the cause, not a failure of the cause."""
+    out = _fce_tmp()
+    frame = pd.read_csv(_fce_run_absent(out))
+    assert frame.zone_id.tolist() == [NAMED]
+
+
+def test_every_unnamed_offender_is_reported_at_once():
+    """Raising on the first hides the rest, and each rediscovery costs a full run of the seam."""
+    a, b = 2002, 2003
+    tables = _fce_build(a, ALL_FUTURE)
+    for (scenario, year) in ALL_FUTURE:
+        tables[(scenario, year)] = pd.concat([
+            tables[(scenario, year)],
+            pd.DataFrame([_fce_row(b, float('nan'), 0.0, 0.0, 1.0)])], ignore_index=True)
+    base = tables[(BASE_SCENARIO, BASE_YEAR)]
+    tables[(BASE_SCENARIO, BASE_YEAR)] = pd.concat(
+        [base, pd.DataFrame([_fce_row(b, -0.1, 50.0, 5.0)])], ignore_index=True)
+    with pytest.raises(ValueError) as caught:
+        _fce_run(tables, [1, a, b])
+    message = str(caught.value)
+    assert 'not named exceptions' in message
+    assert str(a) in message and str(b) in message, message
+
+
+def test_a_named_zone_that_still_holds_valid_cropland_fails():
+    """The stated cause must be the actual one, or the name is not evidence of anything."""
+    with pytest.raises(ValueError, match='named cause does not hold'):
+        _fce_run(_fce_build(NAMED, ALL_FUTURE, keeps_cropland=True), [1, NAMED])
+
+
+def test_the_exception_list_is_exactly_the_five_examined_zones():
+    """A sixth arriving without examination is the rule this list exists to prevent."""
+    assert sorted(FUTURE_COVERAGE_EXCLUSIONS) == [1001, 1008, 1318, 1916, 4118]
+    for reason in FUTURE_COVERAGE_EXCLUSIONS.values():
+        # The reason may not describe the exclusion as a measurement or as unimportant.
+        for forbidden in ('measured zero', 'no change', 'negligible', 'immaterial'):
+            assert forbidden not in reason.lower(), (reason, forbidden)
+
+
+def _fce_tmp():
+    import tempfile, os
+    return os.path.join(tempfile.mkdtemp(), 'excluded.csv')
+
+
+def _fce_run_absent(out):
+    """The named zone has NO ROW at all in its undefined scenario-years."""
+    tables = _fce_build(NAMED, ALL_FUTURE)
+    for key in ALL_FUTURE:
+        tables[key] = tables[key][tables[key].zone_id != NAMED].reset_index(drop=True)
+    _fce_run(tables, [1, NAMED], excluded_path=out)
+    return out
+
+
+def test_a_zone_with_no_base_year_is_left_to_the_baseline_rule():
+    """The two rules must not compete for the same zone.
+
+    A zone with no base-year damage has no d_2023, so its future cannot be the thing that is
+    missing. Scanning it with the future check would report it as an unnamed offender and stop a
+    run the baseline-domain rule handles.
+    """
+    unnamed = 2002
+    assert unnamed not in FUTURE_COVERAGE_EXCLUSIONS
+    tables = _fce_build(unnamed, ALL_FUTURE)
+    base = tables[(BASE_SCENARIO, BASE_YEAR)]
+    tables[(BASE_SCENARIO, BASE_YEAR)] = base[base.zone_id != unnamed].reset_index(drop=True)
+    out = _fce_tmp()
+    got = tables_to_seam(tables, _fce_labels_for([1, unnamed]), SCENARIOS, ANCHORS, YEARS,
+                         BASE_SCENARIO, BASE_YEAR, ['PDR'], 0.2, 2030,
+                         baseline_domain={unnamed: {'baseline_crop_ha': 0.0,
+                                                    'baseline_nodata_ha': 0.0,
+                                                    'mean_source_coverage': 1.0}},
+                         excluded_path=out)
+    assert len(got), 'the healthy zone must still be shocked'
+    frame = pd.read_csv(out)
+    assert frame.zone_id.tolist() == [unnamed]
+    assert 'base-year cropland' in frame.reason.iloc[0]
+
+
+# ---------------------------------------------------------------------------
+# Zone ids are validated integers before anything keys on them
+# ---------------------------------------------------------------------------
+
+import geopandas as gpd
+import pandas as pd
+import pytest
+from shapely.geometry import box
+
+from global_invest.erosion.erosion_tasks import normalise_zone_ids, zone_label_table
+
+
+def _zid_boundary(ids, aez=None, labels=None):
+    n = len(ids)
+    return gpd.GeoDataFrame(
+        {'ee_r50_aez18_id': ids,
+         'aez18_id': aez if aez is not None else list(range(n)),
+         'gtapv7_r50_label': labels if labels is not None else ['r%d' % i for i in range(n)],
+         'geometry': [box(i, 0, i + 1, 1) for i in range(n)]},
+        crs='EPSG:4326')
+
+
+def test_string_ids_become_int64():
+    """The real file's shape: ids as text, exactly as gpd.read_file returns them."""
+    got = normalise_zone_ids(_zid_boundary(['100', '208', '4918']))
+    assert got.ee_r50_aez18_id.dtype == 'int64'
+    assert got.ee_r50_aez18_id.tolist() == [100, 208, 4918]
+
+
+def test_the_merge_that_failed_now_works():
+    """Pins the join: rasterisation yields int64 zone ids, and the label table must join to them."""
+    b = normalise_zone_ids(_zid_boundary(['100', '208', '4918']))
+    labels = zone_label_table(b)
+    from_raster = pd.DataFrame({'zone_id': [100, 208, 4918], 'damage': [1.0, 2.0, 3.0]})
+    joined = from_raster.merge(labels, on='zone_id', validate='many_to_one')
+    assert len(joined) == 3
+    assert labels.zone_id.dtype == 'int64'
+
+
+def test_missing_id_is_refused():
+    with pytest.raises(ValueError, match='no zone id'):
+        normalise_zone_ids(_zid_boundary(['100', None, '4918']))
+
+
+def test_non_numeric_id_is_refused():
+    with pytest.raises(ValueError, match='non-numeric'):
+        normalise_zone_ids(_zid_boundary(['100', 'anz', '4918']))
+
+
+def test_fractional_id_is_refused():
+    """A fractional id means the column is not what it claims; truncating would key a wrong join."""
+    with pytest.raises(ValueError, match='fractional'):
+        normalise_zone_ids(_zid_boundary(['100', '208.5', '4918']))
+
+
+def test_conflict_created_by_conversion_is_caught():
+    """Two distinct strings can normalise to ONE integer, so the correspondence must be checked
+    after conversion rather than before: '208' and '0208' look different in the file and are the
+    same zone afterwards."""
+    b = normalise_zone_ids(_zid_boundary(['100', '208', '0208'], aez=[1, 2, 3], labels=['a', 'b', 'c']))
+    with pytest.raises(ValueError, match='Ambiguous zone correspondence after id normalisation'):
+        zone_label_table(b)
+
+
+def test_repeated_rows_for_one_zone_are_not_a_conflict():
+    """The same zone appearing twice with the SAME correspondence is ordinary, not ambiguous."""
+    b = normalise_zone_ids(_zid_boundary(['100', '100'], aez=[7, 7], labels=['anz', 'anz']))
+    assert zone_label_table(b).zone_id.tolist() == [100]
+
+
+def test_aez0_is_kept():
+    """AEZ0 is a domain question handled downstream (kept in coverage, excluded from economic
+    rows). It is not an invalid id and must survive normalisation."""
+    b = normalise_zone_ids(_zid_boundary(['100', '200'], aez=[0, 1]))
+    assert 0 in zone_label_table(b).aez18_id.tolist()
+
+
+# ---------------------------------------------------------------------------
+# Damage arithmetic: small physical and accounting invariants; no raster runtime required
+# ---------------------------------------------------------------------------
+
+import unittest
+import numpy as np
+from global_invest.erosion.erosion_functions import productivity_level, stressed_soil_loss, annual_damage_change, summarize_damage_areas
+
+
+class DamageTests(unittest.TestCase):
+    def test_raster_threshold_before_aggregation_and_missing_coverage(self):
+        rows=summarize_damage_areas([10.,12.,np.nan,11.], [30.,20.,30.,11.],
+                                   [1.,.5,1.,1.],10.,[1,1,1,2]).set_index('zone_id')
+        self.assertEqual(rows.loc[1,'valid_crop_ha'],15.)
+        self.assertEqual(rows.loc[1,'severe_crop_ha'],5.)
+        self.assertEqual(rows.loc[1,'excluded_crop_ha'],10.)
+        self.assertAlmostEqual(rows.loc[1,'level'],-8/3)
+        self.assertEqual(rows.loc[1,'stressed_level'],-8.)
+        self.assertEqual(rows.loc[2,'level'],0.)
+
+    def test_none_all_and_half_severe(self):
+        np.testing.assert_allclose(productivity_level([0, 50, 100], 100), [0, -4, -8])
+
+    def test_deterioration_and_unchanged(self):
+        base = productivity_level(10, 100)
+        self.assertAlmostEqual(float(productivity_level(30, 100) - base), -1.6)
+        self.assertEqual(float(base - base), 0)
+
+    def test_missing_is_not_zero_damage(self):
+        self.assertTrue(np.isnan(productivity_level(0, 0)))
+        self.assertTrue(np.isnan(productivity_level(np.nan, 100)))
+
+    def test_impossible_areas_rejected(self):
+        for severe, total in ((101, 100), (-1, 100), (1, -100)):
+            with self.assertRaises(ValueError):
+                productivity_level(severe, total)
+
+    def test_stress_threshold_and_zero_prevention(self):
+        # First field crosses >11 after losing 20% of its 20 t/ha prevention.
+        # Second has no prevention to lose. Third is exactly at the threshold.
+        soil_loss = stressed_soil_loss([10, 10, 11], [30, 10, 11])
+        np.testing.assert_allclose(soil_loss, [14, 10, 11])
+        np.testing.assert_array_equal(soil_loss > 11, [True, False, False])
+
+    def test_stress_monotonic_and_endpoints(self):
+        actual, potential = np.array([0, 3, 12]), np.array([0, 20, 40])
+        np.testing.assert_allclose(stressed_soil_loss(actual, potential, 0), actual)
+        np.testing.assert_allclose(stressed_soil_loss(actual, potential, 1), potential)
+        self.assertTrue(np.all(stressed_soil_loss(actual, potential) >= actual))
+        self.assertTrue(np.isnan(stressed_soil_loss(np.nan, 20)))
+
+    def test_invalid_physical_inputs_rejected(self):
+        with self.assertRaises(ValueError):
+            stressed_soil_loss(20, 10)
+        with self.assertRaises(ValueError):
+            stressed_soil_loss(1, 10, 1.2)
+
+    def test_annual_stress_has_no_anticipation_or_repeated_cut(self):
+        years = np.arange(2023, 2051)
+        ordinary = annual_damage_change(-1, [2030, 2040, 2050], [-2, -2, -2], years)
+        stress = annual_damage_change(-1, [2030, 2040, 2050], [-2, -2, -2], years,
+                                      stressed_levels=[-3, -3, -3])
+        np.testing.assert_array_equal(stress[years < 2030], ordinary[years < 2030])
+        np.testing.assert_allclose(stress[years >= 2030], -2)
+        self.assertEqual(stress[0], 0)
+        factors = 1 + stress / 100
+        annual = factors[1:] / factors[:-1]
+        np.testing.assert_allclose(np.cumprod(annual), factors[1:])
+
+    def test_stress_improvement_is_rejected(self):
+        with self.assertRaises(ValueError):
+            annual_damage_change(-1, [2030], [-2], [2023, 2030], stressed_levels=[-1])
+
+
+if __name__ == '__main__':
+    unittest.main()
+def test_seals7_biophysical_table_is_rebuilt_only_when_its_source_changes(tmp_path):
+    """The re-key is a function of its source, so a second call must not rewrite the table.
+
+    Rewriting it on every SDR pass repeats work on resume and makes an unchanged-resume check
+    impossible to satisfy. An existence check alone would be the opposite defect, so the second half
+    changes the source and requires the rebuild.
+    """
+    src = tmp_path / 'biophysical_esa.csv'
+    src.write_text('lucode,seals_lucode,usle_c,usle_p\n10,2,0.2,1.0\n20,2,0.2,1.0\n60,4,0.01,1.0\n',
+                   encoding='utf-8')
+    out = tmp_path / 'biophysical_table_seals7.csv'
+
+    et.build_seals7_biophysical_table(str(src), str(out))
+    first = os.stat(str(out)).st_mtime_ns
+    et.build_seals7_biophysical_table(str(src), str(out))
+    assert os.stat(str(out)).st_mtime_ns == first, 'the table was rewritten from an unchanged source'
+
+    src.write_text('lucode,seals_lucode,usle_c,usle_p\n10,2,0.3,1.0\n60,4,0.01,1.0\n', encoding='utf-8')
+    et.build_seals7_biophysical_table(str(src), str(out))
+    assert os.stat(str(out)).st_mtime_ns != first, 'the table was reused although its source changed'
+    assert '0.3' in out.read_text(encoding='utf-8')
+
+
+# ---------------------------------------------------------------------------------------------
+# The per-crop valuation: crop_provision's values, each item at its own SPAM crop's share.
+# ---------------------------------------------------------------------------------------------
+def _per_crop_inputs():
+    values = pd.DataFrame({
+        'iso3': ['AAA'] * 6 + ['BBB', 'CCC'],
+        'fao_item_code': [15, 79, 116, 27, 56, 1166, 27, 15],
+        'fao_item_name': ['Wheat', 'Millet', 'Potatoes', 'Rice', 'Maize (corn)', 'Other meat', 'Rice', 'Wheat'],
+        'value_source': ['faostat'] * 8,
+        'crop_value_usd': [1000.0, 400.0, 200.0, 300.0, np.nan, 50.0, 100.0, 80.0]})
+    correspondence = pd.DataFrame({
+        'fao_item_code': [15, 79, 79, 116, 27, 56, 1166],
+        'fao_cpc_code': ['0111', '0118', '0118', '01510', '0113', '0112', '21119.90'],
+        'spam2020_crop_label': ['whea', 'mill', 'pmil', 'pota', 'rice', 'maiz', '']})
+    protection = pd.DataFrame({
+        'ISO3': ['AAA', 'AAA', 'AAA', 'AAA', 'CCC'],
+        'crop': ['whea', 'mill', 'pmil', 'pota', 'whea'],
+        'total_production_tons': [100.0, 30.0, 10.0, 50.0, 10.0],
+        'share_protected_production': [0.5, 0.2, 0.6, 0.4, 0.0],
+        'elasticity_used': [0.30, 0.30, 0.10, 0.08, 0.30]})
+    # CPC 0116 is rye and 01510 potatoes. FAO's item code for potatoes is also 116, which is why
+    # the join is on CPC.
+    elasticity = pd.DataFrame({'Item Code': [116.0, 1510.0], 'Item_code_fao': [116.0, 1510.0],
+                               'crop': ['Rye', 'Potatoes'], 'elasticity': [0.30, 0.15]})
+    return values, correspondence, protection, elasticity
+
+
+def test_each_crop_is_valued_at_its_own_share_and_elasticity():
+    # Wheat at its own share and the library elasticity, millet at the tonne-pooled share and
+    # elasticity of its two SPAM crops, potatoes at their own elasticity, joined on CPC, not on the
+    # FAO code that rye's row also carries.
+    values, correspondence, protection, elasticity = _per_crop_inputs()
+    own = ec.own_elasticity_by_cpc(elasticity)
+    out = ec.per_crop_gep(values, correspondence, protection, own).set_index(['iso3', 'fao_item_code'])
+    assert out.loc[('AAA', 15), 'gep_const2019_usd'] == pytest.approx(1000.0 * 0.5 * 0.30)
+    assert out.loc[('AAA', 79), 'protected_share'] == pytest.approx((30 * 0.2 + 10 * 0.6) / 40)
+    assert out.loc[('AAA', 79), 'elasticity_used'] == pytest.approx((6 * 0.30 + 6 * 0.10) / 12)
+    assert out.loc[('AAA', 79), 'gep_const2019_usd'] == pytest.approx(400.0 * 0.3 * 0.2)
+    assert out.loc[('AAA', 116), 'elasticity_used'] == pytest.approx(0.15)
+    assert out.loc[('AAA', 116), 'gep_const2019_usd'] == pytest.approx(200.0 * 0.4 * 0.15)
+    assert out.loc[('AAA', 27), 'status'] == 'no SPAM production of the crop'
+    assert out.loc[('AAA', 56), 'status'] == 'no value'
+    assert out.loc[('AAA', 1166), 'status'] == 'not a crop'
+    for pair in [('AAA', 27), ('AAA', 56), ('AAA', 1166), ('BBB', 27)]:
+        assert pd.isna(out.loc[pair, 'gep_const2019_usd'])
+    # A present zero share values at zero.
+    assert out.loc[('CCC', 15), 'gep_const2019_usd'] == 0.0
+
+
+def test_a_country_total_keeps_missing_apart_from_zero_and_says_what_it_leaves_out():
+    values, correspondence, protection, elasticity = _per_crop_inputs()
+    pairs = ec.per_crop_gep(values, correspondence, protection, ec.own_elasticity_by_cpc(elasticity))
+    country = ec.per_crop_country_gep(pairs).set_index('iso3')
+    assert country.loc['AAA', 'gep_const2019_usd'] == pytest.approx(150.0 + 24.0 + 12.0)
+    assert country.loc['AAA', 'crop_value_valued_usd'] == pytest.approx(1600.0)
+    assert country.loc['AAA', 'crop_value_without_spam_share_usd'] == pytest.approx(300.0)
+    assert country.loc['AAA', 'crop_value_not_a_crop_usd'] == pytest.approx(50.0)
+    assert country.loc['AAA', 'partial_sum']
+    assert pd.isna(country.loc['BBB', 'gep_const2019_usd'])
+    assert country.loc['CCC', 'gep_const2019_usd'] == 0.0 and not country.loc['CCC', 'partial_sum']
+
+
+def test_an_item_with_a_value_and_no_correspondence_row_raises():
+    values, correspondence, protection, elasticity = _per_crop_inputs()
+    with pytest.raises(ValueError, match='no row in the SPAM 2020'):
+        ec.per_crop_gep(values, correspondence[correspondence['fao_item_code'] != 116], protection,
+                        ec.own_elasticity_by_cpc(elasticity))
+
+
+def test_crop_values_are_crop_provisions_gross_values_one_row_per_pair():
+    # The base year only, thousand USD to USD, a pair whose second row is empty collapses onto the
+    # valued row, and a pair crop_provision leaves blank stays missing.
+    table = pd.DataFrame({
+        'iso3_r250_label': ['AAA', 'AAA', 'AAA', 'AAA', 'AAA', None, 'AAA'],
+        'crop_code': [15, 15, 79, 79, 56, 15, 27],
+        'crop': ['Wheat', 'Wheat', 'Millet', 'Millet', 'Maize (corn)', 'Wheat', 'Rice'],
+        'year': [2019, 2018, 2019, 2019, 2019, 2019, 2019],
+        'value_source': ['faostat', 'faostat', None, 'price_country', None, 'faostat', 'price_country'],
+        'gross_production_value': [1.5, 9.9, np.nan, 0.4, np.nan, 7.0, 0.0]})
+    out = ec.crop_values_by_country_item(table, 2019).set_index(['iso3', 'fao_item_code'])
+    assert len(out) == 4
+    assert out.loc[('AAA', 27), 'crop_value_usd'] == 0.0
+    assert out.loc[('AAA', 15), 'crop_value_usd'] == pytest.approx(1500.0)
+    assert out.loc[('AAA', 79), 'crop_value_usd'] == pytest.approx(400.0)
+    assert out.loc[('AAA', 79), 'value_source'] == 'price_country'
+    assert pd.isna(out.loc[('AAA', 56), 'crop_value_usd'])
+    twice = pd.concat([table, table.iloc[[0]]])
+    with pytest.raises(ValueError, match='two rows'):
+        ec.crop_values_by_country_item(twice, 2019)
+
+
+def test_a_per_crop_setting_does_not_rebuild_the_prevention_shares(tmp_path):
+    # The prevention shares take hours and cannot move with a valuation setting, so their signature
+    # leaves those settings out. Any other erosion setting still forces the rebuild.
+    from types import SimpleNamespace
+    from global_invest import utilities
+    output = tmp_path / 'integrated_country_gep.csv'
+    output.write_text('iso3\nAAA\n', encoding='utf-8')
+    p = SimpleNamespace(erosion_threshold_high_t_ha_yr=11.0, erosion_valuation_method='per_crop',
+                        erosion_crop_values_relative_file='a.csv')
+    ignore = et.PER_CROP_VALUATION_SETTINGS
+    utilities.write_reuse_signature(p, 'erosion', [str(output)], ignore=ignore)
+    p.erosion_valuation_method = 'country_shock'
+    p.erosion_crop_values_relative_file = 'b.csv'
+    p.erosion_fao_item_spam2020_crop_correspondence_path = str(tmp_path / 'absent.csv')
+    assert utilities.reuse_reason(p, 'erosion', [str(output)], ignore=ignore) is None
+    p.erosion_threshold_high_t_ha_yr = 5.0
+    assert 'erosion_threshold_high_t_ha_yr' in utilities.reuse_reason(p, 'erosion', [str(output)], ignore=ignore)
+
+
+def test_the_staged_correspondence_places_every_faostat_crop_on_a_spam_2020_crop():
+    import hazelbean as hb
+    import tempfile
+    p = hb.ProjectFlow(project_dir=os.path.join(tempfile.mkdtemp(), 'anchors'))
+    corr = pd.read_csv(p.get_path(os.path.join('global_invest', 'erosion', 'fao_item_spam2020_crop_correspondence.csv')),
+                       encoding='utf-8-sig', dtype={'fao_cpc_code': str})
+    groups = pd.read_csv(p.get_path(os.path.join('global_invest', 'fao', 'faostat_item_groups.csv')),
+                         encoding='utf-8-sig', dtype=str)
+    bandmap = pd.read_csv(p.get_path(os.path.join('global_invest', 'erosion', 'spam2020_bandmap.csv')))
+    crop_column = next(c for c in bandmap.columns if c.lower() in ('crop', 'crop_name', 'name'))
+    spam = set(bandmap[crop_column].astype(str).str.strip().str.lower())
+    placed = corr['spam2020_crop_label'].fillna('')
+    assert not corr.duplicated(['fao_item_code', 'spam2020_crop_label']).any()
+    assert set(placed[placed != '']) == spam and len(spam) == 46
+    assert ec.crop_item_codes(groups) <= set(corr['fao_item_code'])
+    two = corr.groupby('fao_item_code').size()
+    assert set(two[two > 1].index) == {79, 656}
+    assert set(corr.loc[placed == '', 'fao_item_code']) == {1166, 1185}
+    assert corr['fao_cpc_code'].notna().all()

@@ -1,11 +1,11 @@
 """Fire-protection (wildfire) GEP tasks: persistence betas -> avoided acres -> avoided damage.
 
-Two input modes, decided
-per task by what is on disk: the FULL calculation reads the ADM2 burned-area panel and the EM-DAT
-extract (panel not yet staged -- its own README says it lives on the drive; the open data
-ask); until then the burned-area and damage-rate columns come from the frozen reference
-output in reference/ (the committed anchor this port reproduces to the float), so the beta
-science and all downstream arithmetic run and verify on any machine.
+Two input modes, decided per task by what is on disk: the FULL calculation reads the ADM2
+burned-area panel and the EM-DAT extract (panel not yet staged -- its own README says it lives
+on the drive; the open data ask); until then the burned-area and damage-rate columns come from
+the frozen reference output in the service's base-data directory (the committed anchor this
+port reproduces to the float), so the beta science and all downstream arithmetic run and
+verify on any machine.
 
 Which of the three GEP variants is the account's fire_protection value is an OPEN question
 (baseline and nature-vs-human total NEGATIVE globally); fire_protection_gep defaults to the
@@ -119,6 +119,8 @@ def gep_calculation(p):
     if already_done:
         return
 
+    if not p.run_this:
+        return p
     avoided = hb.df_read(p.fire_avoided_acres_path)
     rates = hb.df_read(p.fire_damage_per_acre_path)
     global_average = float(rates['damages_usd_per_acre_country'].mode().iloc[0])
@@ -149,4 +151,6 @@ def gep_calculation(p):
 def gep_result(p):
     """Render the results report(s). Shared implementation in utilities."""
     publish_inputs(p)
+    if not p.run_this:
+        return p
     utilities.render_service_results(p)

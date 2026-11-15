@@ -18,7 +18,7 @@ For each scenario, at each SEALS anchor year:
 
 1. **Sufficiency (300 m).** For every cropland pixel, count natural-habitat pixels within a ~2 km
    latitude-adjusted elliptical kernel and normalise against a 30 % habitat threshold, giving a
-   0–1 sufficiency index (≥30 % habitat nearby → 1; 15 % → 0.5; none → 0). SEALS7 classes: cropland
+   0–1 sufficiency index (≥30 % habitat nearby → 1, 15 % → 0.5, none → 0). SEALS7 classes: cropland
    = 2, natural habitat = {3, 4, 5}. The ellipse (rather than a circle) keeps the foraging radius
    ~2 km on the ground as longitude degrees shorten away from the equator.
 
@@ -57,6 +57,10 @@ into the shared ES-shock directory (`p.es_shock_dir`). The downstream `build_com
 step consumes it unchanged and is agnostic to whether the shock was computed dynamically (as here) or,
 for other services, read from a precomputed table.
 
+## Coverage
+
+The published table is one row for each of the account's 250 countries, base year 2019, in constant 2019 USD. Of the 250, 193 carry a value, 3 are computed zeros, and 54 rows are missing, kept as missing rather than zero because an input carries no data for those countries. A zero means the computation returned zero. A missing row means the data to compute one is absent.
+
 ## Inputs
 
 | Input | Source |
@@ -70,21 +74,70 @@ The FAO / CropGrids / Monfreda stages are not run on the **shock** side: they bu
 value raster, which is fixed across scenarios, so the finished raster is used directly here.
 
 They are run on the **GEP** side, where the account needs the value raster for a base year rather
-than a scenario. That chain is ours, in `pollination_tasks.py`, and it is the author's method
-rather than a second one:
+than a scenario. That chain is ours, in `pollination_tasks.py` and the shared
+`../shared_processing/crop_prices_tasks.py`, and it is the author's method rather than a second one:
 
 1. **FAO panel.** Filter the FAOSTAT production bulk to `Yield` and `Production` over 1993–2024
-   for the crop items in the FAO classification (`run_fao_production`).
+   for the crop items in the FAO classification (`run_fao_production` in `../shared_processing/crop_prices_tasks.py`).
 2. **Yield-change ratios.** Median FAO yield in a window at the base year over a window at 2000,
    per country and crop, with subregion, region and world medians alongside for the countries FAO
-   does not report (`fao_yield_change`).
+   does not report (`fao_yield_change`). A country-crop FAO reports in only one window keeps that
+   window's yield with no ratio: the target normalization reads the base-year yield alone, so a
+   missing 2000-window yield no longer demotes a country to its subregion median (upstream
+   crop_benefits adopted the same fix). The base-year window is the single year 2019, as are the
+   producer prices, which is the group's adopted rule, with no surrounding-year fallback. The early
+   window keeps its five years around 2000, which is its Monfreda-matching role and serves only
+   the ratio method. The country-to-subregion-to-region-to-world GEOGRAPHIC fallback is a
+   different mechanism and is unchanged.
 3. **Yield rasters.** Monfreda's 2000 yields aligned to the CropGrids grid, gaps filled from the
    nearest valid cell in the same country, then each country rescaled so its area-weighted mean
    matches the FAO number for the base year (`pollination_yield_rasters`).
 4. **Production rasters.** Yield times CropGrids harvested area, written as tonnes per square
    kilometre (`pollination_production_rasters`).
-5. **Value raster.** Production times the world producer price we build ourselves times each crop's
-   dependence on animal pollination, with coffee blended per country from what it grows.
+5. **Value raster.** Production times the producer price we build ourselves (each country's own
+   2019 price for the crop, else the same crop's FAO subregion, region or world median) times
+   each crop's dependence on animal pollination, with coffee blended per country from what it
+   grows. As in crop_benefits at 0ac7841d, a USD price that copies the local-currency price while the
+   exchange rate is more than 1.1 times from 1 is removed outright. An observed USD price more than 20
+   times above or below the crop-year global median, where at least 10 countries report, stays an observed
+   anchor and stays in that median, and only the price the row uses goes missing. Either way the geographic
+   fallback applies. The saved rasters were priced before these two checks.
 
 Checked against the author's own 2019 rasters on 2026-08-30: the FAO panel matches his row for row,
 and global production over 157 crops is 9,008.3 million tonnes on both sides.
+
+## GEP value: habitat sufficiency and country totals
+
+The account reports the crop value that habitat currently supports: the value raster times
+pollination sufficiency (`pollination_reported_variant = habitat_sufficiency`).
+
+1. **Sufficiency (300 m).** On the ESA CCI 2019 land-cover map, each farmland pixel gets the share
+   of natural habitat within 2 km, divided by 0.3 and capped at 1, with the author's class lists.
+2. **Sufficiency (5 km).** The 300 m values are averaged over the farmland pixels inside each 5 km
+   CropGrids cell. CropGrids stores its coordinates in float32, so the 5 km grid's stored
+   transform sits up to 6e-6 degrees off the exact 0.05-degree grid. The average is taken on the
+   exact grid, where every 300 m pixel lies inside one cell, and the result is stored on the value
+   raster's grid. Averaged on the stored transform instead, edge slivers gave 42,945 cells without
+   farmland a sufficiency and added 0.39% to the total. The author's code carries that offset, so
+   the library differs from his as-run result by that amount.
+3. **Weighting.** The 5 km value is multiplied by the 5 km sufficiency cell by cell, after
+   checking that the two rasters share CRS, shape and transform.
+4. **Country totals.** The weighted raster is summed within the account's r264 country polygons,
+   each cell going to the polygon that holds its centre, and the r264 rows are collapsed to the
+   250 r250 countries.
+
+For 2019 the value raster totals $392.59bn, the weighted raster $164.31bn and the country table
+$164.07bn.
+
+**Coverage and boundaries, disclosed:**
+
+- 539,386 cells with crop value (2.13% of the unweighted value, $8.36bn) have no ESA farmland
+  pixel and therefore no sufficiency. They are missing in the weighted value, not zero.
+- 0.14% of the weighted value ($0.23bn) lies in cells whose centre falls outside every r264
+  polygon, mostly coastal cells, and is not in any country total.
+- The country totals use the account's r264 boundaries. The author's own country sums use a
+  World Bank boundary raster, so some countries differ, mostly through border and coastal cells.
+  The correspondence assigns Northern Cyprus to Türkiye and counts Taiwan and Kosovo separately.
+- The value is gross crop value at stake, while crop provision is a land rent, so pollination
+  exceeds crop provision in 15 of the 172 countries that have both (Finland 2.98 times, Canada
+  1.76 times). The two are not additive and measure different things.

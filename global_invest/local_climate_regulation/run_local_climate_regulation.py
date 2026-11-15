@@ -5,8 +5,8 @@ Thin runner: builds ONE tree and executes it. Inputs are published by each task 
 machine.env), never hardcoded here.
 
 Requires (es_parameters row): local_climate_regulation_gep.csv under base_data/global_invest/
-local_climate_regulation/ (the drive's committed final; also shipped in reference/ as the
-anchor, with the v02 and December 2025 lineage versions and a city-month sample). The v04
+local_climate_regulation/ (the drive's committed final, which is also the test anchor; the same
+directory holds the v02 and December 2025 lineage versions and a city-month sample). The v04
 correction's own inputs -- the IEA-CMCC CDD file and the v2_nkd energy workbook -- are the
 open asks; with them the correction becomes reproducible from raw.
 """
@@ -24,6 +24,8 @@ def run_project(p):
 
     # Every task publishes its own inputs (publish_inputs in the tasks module): no setup call.
     build_task_tree(p)
+
+    p.skip_tasks(p.tasks_to_skip)
 
     hb.log('Created ProjectFlow object at ' + p.project_dir + '\n    from script ' + p.calling_script)
     p.execute()

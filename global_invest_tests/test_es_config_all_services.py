@@ -1,10 +1,10 @@
 """Contract test over the SHIPPED es_config.csv: every service's row hydrates.
 
-Chiara's point that most services had no test at all: this parametrizes over the real template,
-so adding a row (or editing a cell) is automatically under test. For each service: non-empty
-cells arrive on p (paths through get_path, integers typed), empty cells set nothing, and a
-skeleton row (crosswalk only) hydrates nothing but the crosswalk columns. Science-level tests
-per service remain a separate, open gap -- this pins only the configuration contract.
+This parametrizes over the real template, so adding a row (or editing a cell) is automatically
+under test. For each service: non-empty cells arrive on p (paths through get_path, integers
+typed), empty cells set nothing, and a skeleton row (crosswalk only) hydrates nothing but the
+crosswalk columns. Science-level tests live with each service; this pins only the configuration
+contract.
 """
 import os
 import types
@@ -50,11 +50,8 @@ def test_both_carbon_services_share_the_sheet_group_but_not_the_subgroup():
 
 
 def test_pollination_takes_no_ready_made_value_raster():
-    # This used to check that the base year and the raster filename named the same year, because
-    # the config pointed at poll_value_global_<year>usd.tif and the two could drift apart. The
-    # service now builds its own raster in pollination_value_raster, so the cell is empty and the
-    # pairing it guarded no longer exists. What matters instead is that nothing reintroduces a
-    # ready-made raster without also deciding which year it is denominated in.
+    # Pollination builds its own value raster in pollination_value_raster, so the cell is empty. A
+    # ready-made raster must not come back without also deciding which year it is denominated in.
     row = TEMPLATE[TEMPLATE['service'] == 'pollination'].iloc[0]
     quantity = row['gep_quantity_input_path']
     assert utilities.is_not_a_value(quantity), (

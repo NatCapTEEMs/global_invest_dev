@@ -1,8 +1,7 @@
 """Unit tests for extractive_materials_provision's valuation.
 
-Every function is pinned on a hand-built frame. The reshape test carries the expression the
-module used before the read moved into the task layer, so the two are compared directly rather
-than the new one being trusted.
+Every function is pinned on a hand-built frame. The reshape is also compared directly against
+the drop-the-descriptive-columns-then-melt expression, which it must match on a clean header.
 """
 from types import SimpleNamespace
 
@@ -37,8 +36,8 @@ def test_the_wide_indicator_melts_to_one_row_per_country_and_year():
 
 
 def test_the_reshape_matches_the_expression_it_replaced():
-    """The original dropped three named columns and melted the rest. Selecting the year columns
-    instead gives the same frame, and does so whatever the first header is called."""
+    """Dropping the three named descriptive columns and melting the rest gives the same frame as
+    selecting the year columns, which also works whatever the first header is called."""
     wide = a_wide_indicator_frame()
     original = wide.drop(columns=['Country Name', 'Indicator Name', 'Indicator Code']).melt(
         id_vars=['Country Code'], var_name='year', value_name='mineral_rent')

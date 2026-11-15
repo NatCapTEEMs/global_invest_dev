@@ -10,9 +10,12 @@ in four steps, and each one is a function below:
    `avoided / (avoided + gross)`; the upstream layer prevents its own share; the two combine as a
    union rather than a sum, so a pixel protected twice is not counted twice
    (`onfarm_prevention_share`, `combined_prevention_share`, `restrict_to_valued_pixels`).
-3. A country's production shock, as the production-weighted mean of each crop's protected share
-   times that crop's yield elasticity to erosion (`country_erosion_shock`).
-4. The value, as the country's crop gross production value times that shock (`country_gep`).
+3. Each SPAM crop's protected share of its production in a country, from the prevention shares.
+4. The value, crop by crop: each FAO item's gross production value, the value crop_provision
+   carries before its rental rate, times its SPAM crop's protected share times its yield
+   elasticity to erosion, summed over the country's items (`per_crop_gep`). The earlier reading,
+   one production-weighted shock times the country's crop total (`country_erosion_shock`,
+   `country_gep`), is still computed beside it.
 
 The threshold and prevention steps run over rasters the module reads elsewhere; the shock and
 value steps run over frames. Splitting them out is what lets the arithmetic be tested on four
@@ -27,15 +30,11 @@ import pandas as pd
 import os
 
 import hazelbean as hb
-
 from global_invest import utilities
+
 import sys
-import time
 import logging
-import warnings
 import geopandas as gpd
-import rasterio
-import rasterio.features
 import xarray as xr
 from rasterio.enums import Resampling
 from rasterio.crs import CRS as rioCRS
@@ -191,11 +190,12 @@ def country_gep(df_shock, df_crop_gpv, df_gdp, component):
 
     Returns:
         pandas.DataFrame: the shock columns plus `crop_gpv_const2019_2019`,
-        `gdp_const2019_2019`, `gep_const2019_usd` and `gdp_loss_pct`.
+        `gdp_const2019_2019`, `gep_const2019_usd` and `gdp_loss_pct`. A country missing its crop
+        gross production value or its shock has a missing value, not a zero. A zero comes only
+        from a present zero price or a present zero shock.
     """
     out = df_shock.merge(df_crop_gpv, on='iso3', how='left').merge(df_gdp, on='iso3', how='left')
-    out['gep_const2019_usd'] = (out['crop_gpv_const2019_2019'].fillna(0.0)
-                                * out['erosion_shock_share'].fillna(0.0))
+    out['gep_const2019_usd'] = out['crop_gpv_const2019_2019'] * out['erosion_shock_share']
     out['gdp_loss_pct'] = np.where(
         out['gdp_const2019_2019'].notna() & (out['gdp_const2019_2019'] > 0),
         100.0 * out['gep_const2019_usd'] / out['gdp_const2019_2019'],
@@ -204,6 +204,177 @@ def country_gep(df_shock, df_crop_gpv, df_gdp, component):
     return out[['component', 'iso3', 'protected_production_tons', 'total_production_tons',
                 'share_protected_production', 'erosion_shock_share', 'crop_gpv_const2019_2019',
                 'gdp_const2019_2019', 'gep_const2019_usd', 'gdp_loss_pct']]
+
+
+def crop_values_by_country_item(df_crop_values, year):
+    """crop_provision's gross production value per country and FAO item, in USD.
+
+    Erosion values a crop at the number crop_provision carries before its rental rate. Under
+    crop_provision's production_x_price basis that is production times a 2019 USD producer price
+    from the pollination chain's values table for every pair, and under its reported_first basis
+    FAOSTAT's reported current-USD value where FAOSTAT reports one. Either way this reads the table
+    as crop_provision wrote it. A dissolved state can leave a second, empty row on a pair, so rows
+    are collapsed with a sum that keeps an all-empty pair missing and a zero a zero.
+
+    Args:
+        df_crop_values (pd.DataFrame): crop_provision's gep_by_country_year_crop table, with
+            `iso3_r250_label`, `crop_code`, `crop`, `year`, `value_source` and
+            `gross_production_value` (thousand USD, before the rental rate).
+        year (int): the valuation year.
+
+    Returns:
+        pd.DataFrame: one row per country and item, `iso3`, `fao_item_code`, `fao_item_name`,
+        `value_source` and `crop_value_usd`. A pair crop_provision leaves blank stays missing, and
+        a row without an r250 country is not valued.
+
+    Raises:
+        ValueError: if a pair carries a value on two rows, since summing them would count one crop
+            twice.
+    """
+    df = df_crop_values[(df_crop_values['year'] == year) & df_crop_values['iso3_r250_label'].notna()].copy()
+    df['fao_item_code'] = df['crop_code'].astype(int)
+    key = ['iso3_r250_label', 'fao_item_code']
+    valued = df[df['gross_production_value'].notna()]
+    twice = valued[valued.duplicated(key, keep=False)]
+    if not twice.empty:
+        raise ValueError('crop_provision values %d country-item pairs on two rows at %d, for example %s.'
+                         % (twice.groupby(key).ngroups, year, sorted(set(zip(twice[key[0]], twice[key[1]])))[:5]))
+    out = df.groupby(key, as_index=False).agg(
+        fao_item_name=('crop', 'first'), value_source=('value_source', 'first'),
+        gross_production_value=('gross_production_value', lambda s: s.sum(min_count=1)))
+    out['crop_value_usd'] = out['gross_production_value'] * utilities.FAOSTAT_THOUSAND_USD
+    return out.rename(columns={'iso3_r250_label': 'iso3'})[
+        ['iso3', 'fao_item_code', 'fao_item_name', 'value_source', 'crop_value_usd']]
+
+
+def cpc_key(code):
+    """A CPC code as one number, so FAOSTAT's '01491.01' and the elasticity table's 1491.01 meet."""
+    return round(float(str(code).strip().lstrip("'")), 2)
+
+
+def own_elasticity_by_cpc(df_elasticity):
+    """Each item's own erosion-to-yield elasticity, keyed on its CPC code.
+
+    The table's `Item Code` is the CPC code without its leading zero. Its column `Item_code_fao`
+    holds the same CPC code, not the FAO item code, so joining it on FAO item codes would attach
+    rye's row (CPC 0116) to potatoes (FAO 116) and miss every other item.
+
+    Args:
+        df_elasticity (pd.DataFrame): the elasticity table, with `Item Code` and `elasticity`.
+
+    Returns:
+        dict: `cpc_key(code)` to the elasticity, clipped into [0, 1].
+
+    Raises:
+        ValueError: if two rows carry the same CPC code.
+    """
+    codes = df_elasticity['Item Code'].map(cpc_key)
+    if codes.duplicated().any():
+        raise ValueError('the elasticity table repeats CPC codes %s' % sorted(codes[codes.duplicated()])[:5])
+    return dict(zip(codes, pd.to_numeric(df_elasticity['elasticity'], errors='coerce').clip(0.0, 1.0)))
+
+
+def per_crop_gep(df_values, df_correspondence, df_country_crop, own_elasticity):
+    """Each crop valued at its own protected share and elasticity: GEP_k = sum_i V_ki s_k,m(i) e_i.
+
+    V is the item's gross production value, m(i) the SPAM 2020 crop or crops the correspondence
+    gives it, s that crop's protected share of its production in the country, and e the item's own
+    elasticity where the elasticity table lists its CPC code, otherwise the SPAM crop's. An item
+    placed on two crops (millet, coffee) takes their shares pooled by SPAM tonnes. No floor applies.
+
+    Args:
+        df_values (pd.DataFrame): `crop_values_by_country_item`'s output.
+        df_correspondence (pd.DataFrame): one row per FAO item and SPAM crop, with `fao_item_code`,
+            `fao_cpc_code` and `spam2020_crop_label`, blank for an item that is not a crop.
+        df_country_crop (pd.DataFrame): one prevention component's rows, one per country and SPAM
+            crop, with `ISO3`, `crop`, `total_production_tons`, `share_protected_production` and
+            `elasticity_used` (the library elasticity of that crop).
+        own_elasticity (dict): `own_elasticity_by_cpc`'s output.
+
+    Returns:
+        pd.DataFrame: one row per country and item, the value columns plus `spam2020_crops`,
+        `status` ('valued', 'not a crop', 'no value' or 'no SPAM production of the crop'),
+        `protected_share`, `elasticity_library`, `elasticity_own`, `elasticity_used` and
+        `gep_const2019_usd`, missing unless the pair is valued.
+
+    Raises:
+        ValueError: if a valued item has no row in the correspondence.
+    """
+    corr = df_correspondence.copy()
+    corr['spam2020_crop_label'] = corr['spam2020_crop_label'].fillna('').astype(str).str.strip()
+    unmapped = (set(df_values.loc[df_values['crop_value_usd'].notna(), 'fao_item_code'])
+                - set(corr['fao_item_code']))
+    if unmapped:
+        raise ValueError('FAO items %s carry a crop value and no row in the SPAM 2020 '
+                         'correspondence.' % sorted(unmapped))
+    crops = corr.loc[corr['spam2020_crop_label'] != '', ['fao_item_code', 'spam2020_crop_label']]
+    prot = df_country_crop.rename(columns={'ISO3': 'iso3', 'crop': 'spam2020_crop_label'}).copy()
+    prot['t'] = pd.to_numeric(prot['total_production_tons'], errors='coerce')
+    prot['ts'] = prot['t'] * pd.to_numeric(prot['share_protected_production'], errors='coerce').clip(0.0, 1.0)
+    prot['tse'] = prot['ts'] * pd.to_numeric(prot['elasticity_used'], errors='coerce').clip(0.0, 1.0)
+    library = prot.groupby('spam2020_crop_label')['elasticity_used'].first().clip(0.0, 1.0)
+
+    key = ['iso3', 'fao_item_code']
+    long = df_values[key].merge(crops, on='fao_item_code', how='left')
+    long = long.merge(prot[['iso3', 'spam2020_crop_label', 't', 'ts', 'tse']],
+                      on=['iso3', 'spam2020_crop_label'], how='left')
+    long['e_map'] = long['spam2020_crop_label'].map(library)
+    grouped = long.groupby(key)
+    agg = grouped[['t', 'ts', 'tse']].sum(min_count=1)
+    agg['e_map'] = grouped['e_map'].mean()
+    agg['spam2020_crops'] = grouped['spam2020_crop_label'].agg(lambda s: '+'.join(sorted(s.dropna())))
+
+    out = df_values.merge(agg.reset_index(), on=key, how='left')
+    out['protected_share'] = out['ts'] / out['t']
+    # The order of operations is the checked bridge's (audit_runs/erosion_william_bridge_20261103),
+    # so its per-pair values reproduce to the last bit.
+    se_library = out['tse'] / out['t']
+    out['elasticity_library'] = se_library / out['protected_share']
+    zero = out['protected_share'] == 0
+    out.loc[zero, 'elasticity_library'] = out.loc[zero, 'e_map']
+    own_by_item = (corr.drop_duplicates('fao_item_code').set_index('fao_item_code')['fao_cpc_code']
+                   .map(cpc_key).map(own_elasticity))
+    out['elasticity_own'] = out['fao_item_code'].map(own_by_item)
+    out['status'] = np.select(
+        [out['spam2020_crops'].fillna('') == '', out['crop_value_usd'].isna(), ~(out['t'] > 0)],
+        ['not a crop', 'no value', 'no SPAM production of the crop'], 'valued')
+    out['elasticity_used'] = out['elasticity_own'].where(out['elasticity_own'].notna(), out['elasticity_library'])
+    valued = out['status'] == 'valued'
+    out['gep_const2019_usd'] = np.where(
+        valued, out['crop_value_usd'] * out['protected_share'] * out['elasticity_used'], np.nan)
+    return out[key + ['fao_item_name', 'value_source', 'crop_value_usd', 'spam2020_crops', 'status',
+                      'protected_share', 'elasticity_library', 'elasticity_own', 'elasticity_used',
+                      'gep_const2019_usd']]
+
+
+def per_crop_country_gep(df_pairs):
+    """Country totals of the per-crop valuation, with the value it leaves out and why.
+
+    Args:
+        df_pairs (pd.DataFrame): `per_crop_gep`'s output.
+
+    Returns:
+        pd.DataFrame: one row per country, `crop_value_usd` (every valued item),
+        `crop_value_valued_usd`, `crop_value_without_spam_share_usd`, `crop_value_not_a_crop_usd`,
+        the pair counts, `partial_sum` (True where items with a value have no share) and
+        `gep_const2019_usd`, missing where no pair is valued.
+    """
+    df = df_pairs.copy()
+    for status, column in (('valued', 'valued'), ('no SPAM production of the crop', 'without_spam_share'),
+                           ('not a crop', 'not_a_crop')):
+        df['crop_value_%s_usd' % column] = df['crop_value_usd'].where(df['status'] == status)
+        df['pairs_%s' % column] = (df['status'] == status).astype(int)
+    df['pairs_no_value'] = (df['status'] == 'no value').astype(int)
+    out = df.groupby('iso3').agg(
+        crop_value_usd=('crop_value_usd', lambda s: s.sum(min_count=1)),
+        crop_value_valued_usd=('crop_value_valued_usd', lambda s: s.sum(min_count=1)),
+        crop_value_without_spam_share_usd=('crop_value_without_spam_share_usd', lambda s: s.sum(min_count=1)),
+        crop_value_not_a_crop_usd=('crop_value_not_a_crop_usd', lambda s: s.sum(min_count=1)),
+        pairs_valued=('pairs_valued', 'sum'), pairs_without_spam_share=('pairs_without_spam_share', 'sum'),
+        pairs_not_a_crop=('pairs_not_a_crop', 'sum'), pairs_no_value=('pairs_no_value', 'sum'),
+        gep_const2019_usd=('gep_const2019_usd', lambda s: s.sum(min_count=1))).reset_index()
+    out['partial_sum'] = out['crop_value_without_spam_share_usd'].fillna(0) > 0
+    return out
 
 
 def upstream_prevention_share(accumulated_avoided, accumulated_potential, ndv=-9999.0):
@@ -232,54 +403,13 @@ def upstream_prevention_share(accumulated_avoided, accumulated_potential, ndv=-9
 
 
 
-def _required_path(p, attribute, constant_name):
-    """The project's value for a path, or a failure that names what is missing.
-
-    A `getattr(p, attribute, SOME_CONSTANT)` default would be an absolute path from the machine
-    the source scripts were written on: a project that did not set the attribute would fall back
-    to a directory that does not exist here, and the run would fail later with a missing-file
-    error naming somebody else's home directory. Failing here instead
-    names the parameter to add to es_parameters.csv.
-
-    Args:
-        p (ProjectFlow): the project.
-        attribute (str): the attribute the project should carry.
-        constant_name (str): what this path is, for the error message.
-
-    Returns:
-        str: the resolved path.
-
-    Raises:
-        NameError: when the project does not carry the attribute.
-    """
-    value = getattr(p, attribute, None)
-    if value is None:
-        raise NameError('erosion needs %s (%s). Add a row for it to es_parameters.csv; there is '
-                        'no default.' % (attribute, constant_name))
-    return str(value)
-
-
-
 
 
 
 # =============================================================================
 # SECTION A — InVEST SDR run (from step1_sdr_invest_run.ipynb)
 # =============================================================================
-# 0) PATH CONFIG (CANONICAL)
-# =============================================================================
-# Set by configure_sdr / configure_prevention_shares / configure_maps from the project's
-# es_parameters rows. None until then: a constant default here would be an absolute path from
-# the machines the source scripts were written on, so a project that forgot a row would run
-# against a directory that does not exist here. _required_path names the missing row instead.
 
-
-
-# Use MERGED watershed ONLY
-
-# Sanitized watersheds used to prevent overflow + CRS parse failures in report
-
-# Optional drainage raster (leave empty to disable)
 
 
 # =============================================================================
@@ -376,51 +506,10 @@ def build_args(p, watersheds_path) -> dict:
     }
 
 
-# ==============================
-# 1) CONFIG — EDIT AS NEEDED
-# ==============================
-
 # =============================================================================
 # SECTION B -- On-farm + upstream erosion prevention-share GEP valuation
 #              (from Combine_PS_SES11_3_3_2026.ipynb)
 # =============================================================================
-
-# Primary erosion inputs (SDR-derived)
-
-# Precomputed upstream prevention share raster (from your DEM+D8 workflow)
-
-# Optional upstream LULC attribution shares (diagnostics only)
-
-# Boundary with ISO3 column
-
-# Optional DEM used ONLY for threshold policy (low-elevation rule). If not present, rule is skipped.
-
-# Crops: SPAM2020 stacks
-
-# Elasticity table (used only in valuation Option A)
-
-# Valuation inputs
-
-# Output directory
-
-# -------- Scientific knobs --------
-
-# If True: PS is computed only for severe pixels on cropland (recommended)
-
-# Elasticity fallback if crop not found
-
-# Shock floor (applied only to (0 < shock < floor))
-
-
-
-# Rasterization behavior. False is the centre rule, and configure_prevention_shares defaults to
-# the same thing, so a task that reads this before the run is configured gets the same rule.
-
-# Crops-only filter for FAO GPV
-
-# DEM validity rules (prevents low-elevation misclassification)
-
-# -------- Enforce equal-area analysis CRS --------
 
 # Reprojection strategies
 RESAMPLE_USLE_AVOID = Resampling.average
@@ -434,8 +523,8 @@ RESAMPLE_DEM        = Resampling.average
 # 3) Elasticity loader (with SPAM support)
 # ==========================================================
 # The alias map is passed in, not read from a module constant (exact FAO item names
-# first; the source repo's stem-only aliases never exact-matched the FAO names, so every crop
-# silently took the 0.08 fallback).
+# first; the source repo's stem-only aliases never exact-match the FAO names, so there every crop
+# silently takes the 0.08 fallback).
 
 
 def get_elasticity_for_crop(crop_key: str, elast_map: dict, fallback: float,
@@ -459,65 +548,74 @@ def compute_country_areas_km2(gdf: gpd.GeoDataFrame) -> pd.Series:
 # ==========================================================
 # 5) FAO GPV loader + crops-only filter + fallback
 # ==========================================================
-def _filter_crops_only(df: pd.DataFrame) -> pd.DataFrame:
-    cols = df.columns
-    item_col = "item" if "item" in cols else ("item name" if "item name" in cols else None)
-    group_col = "domain" if "domain" in cols else None
-    if not item_col and not group_col:
-        warnings.warn("FAO GPV: no item/domain labels; cannot restrict to crops — using all rows.")
-        return df
+# FAOSTAT's own definition of a crop: the members of its QV item group 2041, "Crops".
+FAOSTAT_QV_CROPS_GROUP = '2041'
 
-    def _s(s): return s.astype(str).str.lower()
 
-    include = pd.Series(False, index=df.index)
-    if item_col:
-        s = _s(df[item_col])
-        include = include | s.str.contains(r"\bcrop", na=False)
-        include = include | s.str.contains(
-            "apple|apricot|barley|bean|cabbage|carrot|cereal|cherr|chilli|cocoa|coffee|cotton|"
-            "cucumber|date|eggplant|fig|fruit|grape|lentil|maize|melon|millet|nut|oat|onion|pea|peanut|"
-            "pepper|potato|rice|rye|sesame|sorghum|soy|sunflower|tomato|vegetable|wheat|yuca|cassava",
-            na=False
-        )
-    if group_col:
-        s = _s(df[group_col])
-        include = include | s.str.contains(r"\bcrop", na=False)
+def crop_item_codes(item_groups):
+    """FAOSTAT's crop item codes: the members of the QV item group "Crops" (2041).
 
-    neg = pd.Series(False, index=df.index)
-    for col in [c for c in [item_col, group_col] if c]:
-        s = _s(df[col])
-        neg = neg | s.str.contains("livestock|animal|fish|fisher|forestry|forest", na=False)
-        neg = neg | (s.str.contains("agriculture", na=False) & ~s.str.contains("crop", na=False))
-        neg = neg | s.str.contains("crops? and livestock", na=False)
+    Args:
+        item_groups (pd.DataFrame): FAOSTAT's item-group definitions, with `Domain Code`,
+            `Item Group Code` and `Item Code`.
 
-    out = df[include & ~neg].copy()
-    if out.empty:
-        warnings.warn("FAO GPV: crops-only filter removed all rows — falling back to original dataset.")
-        return df
+    Returns:
+        set: the integer item codes of the crop group. A code that is itself a QV group total
+        (Crops, Cereals primary and the like) is never returned: its value repeats its members'
+        values, so counting it would count them twice.
+
+    Raises:
+        ValueError: if the table has no QV "Crops" members, since filtering on an empty set
+            would value no crop at all.
+    """
+    qv = item_groups[item_groups['Domain Code'].astype(str) == 'QV']
+    rows = qv[qv['Item Group Code'].astype(str).str.strip() == FAOSTAT_QV_CROPS_GROUP]
+    codes = set(pd.to_numeric(rows['Item Code'], errors='coerce').dropna().astype(int))
+    codes -= set(pd.to_numeric(qv['Item Group Code'], errors='coerce').dropna().astype(int))
+    if not codes:
+        raise ValueError('FAOSTAT item groups carry no QV "Crops" (2041) members.')
+    return codes
+
+
+def crop_item_mask(df, crop_codes):
+    """True on the rows of a FAOSTAT table whose item code is a crop.
+
+    Args:
+        df (pd.DataFrame): rows with `item_code_fao` (normalized column names).
+        crop_codes (set): `crop_item_codes`' output.
+
+    Returns:
+        pd.Series: a boolean mask. A row without a numeric item code is not a crop.
+    """
+    return pd.to_numeric(df['item_code_fao'], errors='coerce').isin(crop_codes)
+
+
+def crop_items_only(df, crop_codes):
+    """The rows of a FAOSTAT value table whose item code is a crop.
+
+    The code decides, not the item name. A name pattern misses sugar cane, oranges, bananas and
+    other crops, and its "oat" also keeps goat meat.
+
+    Args:
+        df (pd.DataFrame): FAOSTAT rows with `item_code_fao` (normalized column names).
+        crop_codes (set): `crop_item_codes`' output.
+
+    Returns:
+        pd.DataFrame: the crop rows. A row without a numeric item code is not a crop.
+
+    Raises:
+        ValueError: if a country lists the same crop twice, because summing both rows would
+            double that crop's value in the country total.
+    """
+    out = df[crop_item_mask(df, crop_codes)].copy()
+    if 'iso3' in out.columns:
+        repeated = out[out.duplicated(['iso3', 'item_code_fao'], keep=False)]
+        if not repeated.empty:
+            raise ValueError('FAOSTAT crop value listed twice for country-item pairs: %s'
+                             % sorted(set(zip(repeated['iso3'], repeated['item_code_fao'])))[:5])
     return out
 
 
-
-    # False is the centre rule: a cell goes to the country covering its centre point, so it has
-    # exactly one owner and the answer depends on geography alone. Under True every country whose
-    # outline touches a cell claims it, and because the claims are burned into one id raster the
-    # country rasterised LAST keeps it, which puts a country's value at the mercy of its row order
-    # in the boundary file. This is the rule utilities.py already aggregates on.
-
-
-# =============================================================================
-# SECTION C — Maps & figures (from combined_maps_figures_SES_final.ipynb)
-# =============================================================================
-
-# =============================================================================
-# 0) CONFIG
-# =============================================================================
-
-# (no mkdir at import -- configure_maps re-resolves FIG_DIR from p and creates it at run time)
-
-
-
-    # Shared plotting constants (module globals since the utils fold).
 
 # ---------------------------------------------------------------------------------------------
 # Helpers the rest of the module shares: array cleaning, formatting and column picking.
@@ -598,19 +696,106 @@ def _bincount_weighted_mean(ids: np.ndarray, x: np.ndarray, max_id: int) -> np.n
     return np.divide(s, c, out=np.full_like(s, np.nan), where=c > 0)
 
 
+# --- Area-damage arithmetic (the NGFS damage_area seam) ---
+# Panagos-style area damage and physical erosion-prevention stress.
+# 
+# Pure arithmetic for the NGFS damage specification. Missing data remain missing;
+# the caller must aggregate severe and total cropland on the same valid support.
+def productivity_level(severe_crop_ha, valid_crop_ha, alpha=0.08):
+    """Negative productivity level in percent; zero cropland is undefined."""
+    if not 0 <= alpha <= 1:
+        raise ValueError('alpha must be a fraction in [0, 1]')
+    severe, total = np.broadcast_arrays(np.asarray(severe_crop_ha, dtype=float),
+                                      np.asarray(valid_crop_ha, dtype=float))
+    if np.any(np.isinf(severe) | np.isinf(total)):
+        raise ValueError('Areas must be finite or missing')
+    valid = np.isfinite(severe) & np.isfinite(total)
+    if np.any(valid & ((severe < 0) | (total < 0) | (severe > total))):
+        raise ValueError('Require 0 <= severe cropland <= valid total cropland')
+    result = np.full(total.shape, np.nan)
+    np.divide(-100 * alpha * severe, total, out=result, where=valid & (total > 0))
+    return result
 
 
+def summarize_damage_areas(usle, potential, crop_fraction, hectares, zones,
+                           common_support=None, threshold=11., provision_loss=.2):
+    """Zonal areas and damage on aligned SDR rasters in t/ha/year.
+
+    Zone 0 is outside the analysis domain. Missing soil data are reported as
+    excluded cropland hectares, never recoded as zero erosion. Thresholding occurs
+    before zonal averaging; a cell at exactly 11 is not classified as severe.
+    """
+    import pandas as pd
+    loss, bare, crop, ha, ids = np.broadcast_arrays(*[np.asarray(x) for x in
+        (usle, potential, crop_fraction, hectares, zones)])
+    if np.any(np.isfinite(crop) & ((crop<0)|(crop>1))):
+        raise ValueError('Cropland fraction outside [0,1]')
+    if np.any(np.isfinite(ha)&(ha<=0)):
+        raise ValueError('Cell hectares must be positive')
+    if np.any(~np.isfinite(ids)) or np.any(ids<0) or np.any(ids!=np.floor(ids)):
+        raise ValueError('Zone ids must be nonnegative integers')
+    footprint=(ids>0)&np.isfinite(crop)&np.isfinite(ha)
+    valid=footprint&np.isfinite(loss)&np.isfinite(bare)
+    if common_support is not None:
+        valid &= np.broadcast_to(np.asarray(common_support,dtype=bool),ids.shape)
+    stress=stressed_soil_loss(np.where(valid,loss,np.nan),np.where(valid,bare,np.nan),provision_loss)
+    weight=np.where(footprint,crop*ha,0.)
+    def aggregate(mask):
+        return np.bincount(ids.ravel().astype(int),weights=np.where(mask,weight,0.).ravel())
+    total=aggregate(valid); severe=aggregate(valid&(loss>threshold))
+    stressed=aggregate(valid&(stress>threshold)); excluded=aggregate(footprint&~valid)
+    active=np.flatnonzero((total+excluded)>0)
+    return pd.DataFrame(dict(zone_id=active,valid_crop_ha=total[active],
+        severe_crop_ha=severe[active],stressed_severe_crop_ha=stressed[active],
+        excluded_crop_ha=excluded[active],
+        level=productivity_level(severe[active],total[active]),
+        stressed_level=productivity_level(stressed[active],total[active])))
 
 
+def stressed_soil_loss(usle, rkls, provision_loss=0.2):
+    """Reduce on-site prevented soil loss, holding potential erosion fixed.
+
+All quantities are t/ha/year. The caller applies the agreed onset and thresholds
+the resulting soil loss, rather than scaling a signed productivity level.
+"""
+    if not 0 <= provision_loss <= 1:
+        raise ValueError('provision_loss must be a fraction in [0, 1]')
+    actual, potential = np.broadcast_arrays(np.asarray(usle, dtype=float),
+                                            np.asarray(rkls, dtype=float))
+    valid = np.isfinite(actual) & np.isfinite(potential)
+    if np.any(np.isinf(actual) | np.isinf(potential)):
+        raise ValueError('Soil loss must be finite or missing')
+    if np.any(valid & ((actual < 0) | (potential < actual))):
+        raise ValueError('Require 0 <= actual soil loss <= potential soil loss')
+    return np.where(valid, actual + provision_loss * (potential - actual), np.nan)
 
 
+def annual_damage_change(base_level, anchor_years, ordinary_levels, years,
+                         base_year=2023, stressed_levels=None, stress_from=2030):
+    """Interpolate negative productivity levels, then subtract the 2023 level.
 
-
-
-
-
-
-
-
-
-
+    A physical stress begins at its onset, with no anticipation in preceding
+    years. Stress onset must be an anchor so its physical level is known.
+    """
+    anchors = np.asarray(anchor_years, dtype=int)
+    levels = np.asarray(ordinary_levels, dtype=float)
+    dates = np.asarray(years, dtype=int)
+    if (anchors.ndim != 1 or levels.shape != anchors.shape or anchors.size == 0
+            or np.any(np.diff(anchors) <= 0) or np.any(anchors <= base_year)):
+        raise ValueError('Need sorted unique anchor years after the base year and matching levels')
+    if np.any(dates < base_year) or np.any(dates > anchors[-1]):
+        raise ValueError('Requested dates are outside the trajectory')
+    if not np.isfinite(base_level) or not np.all(np.isfinite(levels)):
+        raise ValueError('Missing damage levels cannot define a trajectory')
+    result = np.interp(dates, np.r_[base_year, anchors], np.r_[base_level, levels])
+    if stressed_levels is not None:
+        stress = np.asarray(stressed_levels, dtype=float)
+        if stress.shape != levels.shape or not np.all(np.isfinite(stress)):
+            raise ValueError('Need finite stressed levels at every anchor')
+        if stress_from not in anchors:
+            raise ValueError('Stress onset needs a physical anchor')
+        if np.any(stress > levels + 1e-10):
+            raise ValueError('Losing prevention must not improve productivity on the same support')
+        active = dates >= stress_from
+        result[active] = np.interp(dates[active], anchors, stress)
+    return result - base_level

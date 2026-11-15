@@ -13,6 +13,8 @@ def run_project(p):
     # Task tree
     build_task_tree(p)
 
+    p.skip_tasks(p.tasks_to_skip)
+
     # Project level attributes
 
     # Run the model
