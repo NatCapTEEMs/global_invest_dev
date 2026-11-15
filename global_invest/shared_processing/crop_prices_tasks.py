@@ -335,7 +335,8 @@ def _add_iso3_and_fx(
     imf_files = sorted(glob.glob(os.path.join(imf_fx_path, "dataset_*.csv")))
     if not imf_files:
         logger.warning("No IMF FX file found in %s; skipping IMF FX", imf_fx_path)
-        imf_fx = pd.DataFrame(columns=["iso3", "year", "lcu_per_usd", "fx_source"])
+        # Empty, with wb_fx's dtypes: pandas 3 turns the concat below to object dtype otherwise.
+        imf_fx = wb_fx.iloc[:0].copy()
     else:
         imf_raw = pd.read_csv(imf_files[0])
         imf_fx = imf_raw.query(

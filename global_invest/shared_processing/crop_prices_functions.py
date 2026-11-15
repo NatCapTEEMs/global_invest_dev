@@ -288,7 +288,8 @@ def _build_usd_with_qc(
     tmp = pp_usd.merge(obs_anchor, on=["iso3", "Item"], how="left")
     tmp["anchor_year_dist"] = (tmp["year"] - tmp["anchor_year"]).abs()
     tmp = tmp.sort_values("anchor_year_dist")
-    closest_idx = tmp.groupby(["iso3", "Item", "year"])["anchor_year_dist"].idxmin().dropna().astype(int)
+    # Rows with no anchor are dropped first: pandas 3 raises on idxmin over an all-NA group.
+    closest_idx = tmp.dropna(subset=["anchor_year_dist"]).groupby(["iso3", "Item", "year"])["anchor_year_dist"].idxmin()
     nearest = tmp.loc[closest_idx, ["iso3", "Item", "year", "anchor_year", "anchor_usd", "anchor_year_dist"]].copy()
     pp_usd = pp_usd.merge(nearest, on=["iso3", "Item", "year"], how="left")
 
