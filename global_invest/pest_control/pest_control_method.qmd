@@ -6,8 +6,8 @@ format:
     standalone: true
 ---
 
-Biological pest control is valued as the extra yield natural enemies provide on organically
-managed cropland, at the organic producer price. The base year is 2019.
+Biological pest control is valued as the share of the organic harvest owed to natural enemies, at
+the organic producer price. The base year is 2019.
 
 The scope is organic agriculture only, by design: the underlying evidence measures the yield
 effect of predators where synthetic pesticides are absent, and no comparable estimate exists
@@ -16,83 +16,200 @@ taken out (λ = 1), unlike the neighbouring crop rows.
 
 ## Source
 
-The write-up is `Pest_Control.docx` (26 October 2026) in the shared folder of current write-ups.
-The effect sizes are Boldorini et al. (2024), Table S3. The authors' current scripts are not yet
-received, so the library follows the write-up's appendix where it can and departs from it in
-the three places listed under What is open.
+The write-up is `Pest_Control.docx` (3 November 2026), with
+`pest_control_additionaldocumentation.docx` (4 November 2026), in the shared folder of current
+write-ups. The code follows the organic cleaning, the valuation and the Monte Carlo of
+`wsidemoholm/value_org` at fb40d8c. On the service owner's advice, conventional yields and prices
+come from the FAOSTAT tables of the ported `crop_benefits` chain, which crop provision also values,
+in place of that repository's price imputation.
 
 ## Quantity
 
-Organic production per crop and country: FiBL's organic area extract, times the country's
-conventional FAOSTAT yield, times an organic-to-conventional yield ratio per FAO crop group
-(`pest_control_yield_ratio_*`). FiBL aggregate rows with no FAOSTAT production analogue are
-excluded and their share logged, never guessed.
+Organic production per crop and country is the organic area, times the country's conventional
+FAOSTAT yield, times an organic-to-conventional yield ratio per FAO crop group.
+
+The yield ratios are the service owner's group models, run on the exact file its code downloads: Ponisio et al.
+(2015), doi:10.5061/dryad.hf305, `DataForSubmitting.csv`, MD5 3bd682813cea2be9a5acba17ce35cc30, taken from its Zenodo
+copy, record 5002287. All 15 numbers in Table 1 of the additional documentation and the 3 for cereals in the August
+appendix match at their printed precision. The owner's own `yield_ratios_FAO.csv` is not held, so agreement at full
+precision is not shown.
+
+The organic area is FiBL's extract, cleaned as the service owner does:
+
+- FiBL's country and crop names go to FAOSTAT's. FiBL crops under one FAOSTAT item are summed.
+- A country without a FAOSTAT crop series and a crop without a FAOSTAT counterpart are removed.
+- A FAOSTAT aggregate, such as unspecified fruit, is left unvalued, because no yield or price
+  belongs to it.
+- A negative area becomes zero. A cell holding two numbers as text gives its first number, which
+  matters in 2019 only for rye in Austria and Ukraine.
+- A record above ten times its neighbouring years and also above the crop's whole harvested area
+  takes the mean of those years.
+
+In 2019 FiBL reports 11,931,709 hectares. Of these, 703 are in countries without a FAOSTAT series,
+702,518 in crops without a counterpart and 1,098,251 in aggregates. One record is corrected:
+walnuts in Kyrgyzstan, from 3,199 to 175 hectares. Across all years the same rule corrects seven
+records, the number the additional documentation gives.
 
 ## Price
 
-The organic producer price: the country's FAOSTAT 2019 producer price for the crop (the item's
-global median where the country reports none), times the organic-to-conventional price premium
-(`pest_control_price_premium`).
-
-Where FAOSTAT reports no yield or producer price for a crop and country that FiBL gives organic
-area, the missing factor is imputed with the global median across the countries that do report
-it for the same crop, so a real organic area is not dropped for want of a price. A country
-missing every factor stays missing rather than imputed into existence.
+The organic producer price is the conventional price times an organic-to-conventional price ratio.
+The conventional price is the shared table's 2019 USD price, resolved at the country, or else its
+subregion, its region or the world. The price ratio is the one matched for that crop, country and
+year in the USDA trade data, or else the mean of the FAO group across all 2,459 matched ratios.
 
 ## Valuation
 
 Per crop $i$, country $j$:
 
 $$
-\text{Value}_{ij} = \left(e^{\text{lnRR}_{g(i)}} - 1\right) \; A_{ij} \; y_{ij} \, r_{g(i)} \; p_{ij} \, \pi
+\text{Value}_{ij} = \left(1 - e^{-\text{lnRR}_{g(i)}}\right) \; A_{ij} \; y_{ij} \, r_{g(i)} \; p_{ij} \, \pi_{ij}
 $$
 
-where $\text{lnRR}_{g(i)}$ is the crop group's meta-analytic log response ratio
-(`pest_control_effect_lnrr_*`: the cereal effect for cereals, the vegetable effect for
-vegetables, oilseeds and pulses, the other-crops effect for fruit, nuts and stimulants, zero
-for every other group), $A$ the organic area, $y$ the conventional yield, $r$ the yield ratio,
-$p$ the producer price and $\pi$ the price premium, 1.38. Countries sum over crops, and the
-published table carries all 250 account countries with NA where nothing is valued.
+where $\text{lnRR}_{g(i)}$ is the crop group's meta-analytic log response ratio, $A$ the organic
+area, $y$ the conventional yield, $r$ the yield ratio, $p$ the conventional price and $\pi$ the
+price ratio. The first factor is the fraction of the observed yield that disappears without natural
+enemies. The vegetable effect applies to vegetables, oilseeds and pulses, and the other-crops effect
+to fruit, nuts and stimulants. Cereals are not valued, because their effect does not differ
+significantly from zero (`pest_control_include_cereals`). Roots and tubers, sugar crops and forage
+carry no benefit. A crop in a group outside these lists is unclassified and stays missing.
 
-The committed `pest_control_gep.csv` is carried beside the result as the comparison anchor. It
-is a Monte Carlo mean from a pipeline that is not on the drive, so the run log reports coverage
-and the Pearson correlation of log values over the countries both tables value, rather than a
-to-the-cent match. The total scales linearly in $\pi$. On the
-132 countries both tables value, the library's total is 3.4% above the committed one at
-$\pi = 1.38$, and 25% below it at $\pi = 1$.
+## Uncertainty
+
+The published value is the mean of 10,000 Monte Carlo simulations, with the 2.5th and 97.5th
+percentiles beside it. Each simulation draws:
+
+- one lnRR per effect category from a normal distribution, used for every crop in that category
+- one yield ratio per FAO group from a log-normal distribution
+- one price ratio per FAO group from a log-normal distribution, for crops without a matched ratio
+
+Draws are shared across countries so errors do not cancel when values are summed. Areas, yields,
+conventional prices and matched price ratios stay fixed.
+
+**The interval leaves out conventional price uncertainty, and its size is not measured.** The service
+owner also draws each imputed price from its prediction interval, and the shared FAOSTAT table has no
+such spread. In the central value, 93.3% sits on a country's own price and 6.7% on a price resolved at
+the subregion, region or world, held fixed.
+
+The table also carries the central value, every parameter at its point estimate. It exceeds the
+mean mainly because the benefit's expected value is below its value at the mean lnRR. The world uncertainty
+table holds the exact expectation of the draws as a check on their mean.
+
+By exact calculation, the other-crops benefit carries 95.6% of the modeled parameter variance of the world
+value, the vegetable benefit 2.9%, the yield ratios 1.2% and the group-mean price ratios under 0.1%. These
+shares assume independent draws across parameter families and hold matched price ratios, conventional prices,
+yields and areas fixed. They are not shares of all scientific uncertainty, because model choice, transfer,
+coverage and the omitted price draws sit outside them. They were measured on the first run of this code, at the
+rounded yield ratios and before the shared price filters, and are not re-measured.
 
 ## Coverage
 
-The published table is one row for each of the account's 250 countries, base year 2019, in 2019
-USD. Of the 250, 138 carry a value, totalling \$6,467,213,436.55, 2 are computed zeros (Mali and
-Tajikistan), and 110 rows are missing, kept as missing rather than zero because an input carries
-no data for those countries. A zero means the computation returned zero. A missing row means
-the data to compute one is absent. The library values eight countries the committed table does
-not (AND, GIN, GMB, LIE, MLI, MUS, REU, TJK).
+The figures below are from the isolated run at the exact yield ratios on the filtered shared prices, which is not yet
+the published table.
+
+The table is one row for each of the account's 250 countries, base year 2019, in 2019 USD. Of the
+250, 124 carry a value, totalling \$5,195,473,666.75, with a 95% interval for the world of
+\$1,389,762,095.71 to \$8,402,623,749.17, 9 are zeros and 117 are missing. That total is the Monte Carlo
+mean. The exact expectation of the same draws is \$5,181,246,896.82.
+
+A total covers only the crops with data, so `pest_control_coverage` says what each number means, and
+no missing contribution is estimated:
+
+| Coverage | Countries | Value | Meaning |
+|---|---:|---:|---|
+| `complete_value` | 80 | \$4,033,690,572.87 | a total, and every crop with a benefit in its crop table has inputs |
+| `partial_value` | 44 | \$1,161,783,093.88 | a total, beside 110 crops with a benefit that lack an input |
+| `complete_zero` | 9 | \$0 | only crops without a benefit in its crop table, a zero by the write-up's rule |
+| `zero_with_missing` | 1 | missing | Paraguay: its computed crops are zero, but one crop with a benefit lacks an input, so the zero is not known |
+| `missing_inputs` | 3 | missing | Gambia, Guinea and Mauritius: organic crops, none with inputs |
+| `left_out_area_only` | 15 | missing | organic area only in aggregates or crops without a FAOSTAT counterpart |
+| `no_organic_area` | 98 | missing | FiBL reports no organic area in 2019 |
+
+The 118 crops with a benefit that lack an input hold 68,005 hectares against 4,754,739 valued, so
+98.6% of the crop table's area with a benefit is valued. A crop without a benefit contributes
+nothing with or without its inputs, so it does not count as missing. "Complete" refers to the crop
+table only. Another 1,801,472 hectares never reach it (15.1% of FiBL's area), including 1,158,621 in
+`complete_value` countries, and `pest_control_area_left_out_ha` holds them per country.
+
+The 9 zeros follow the write-up's rule and are not measured. Seven hold cereals, which the write-up
+leaves out because their effect does not differ significantly from zero, and turn positive when
+`pest_control_include_cereals` is on. Mali and Tajikistan hold only seed cotton, in a group absent from
+the effect-size studies.
+
+The service owner's code keeps a country only when its mean is above zero, so the 9 zeros read as missing
+in that table. Paraguay reads missing on both sides, for different reasons. The service owner's published
+simulations hold only its sugar cane and wheat, both without a benefit, so its mean is zero and the filter
+removes it. The library's crop table also holds 47.3 hectares of other oil seeds, which carry a benefit and
+have no FAOSTAT yield or price, so the coverage rule makes its total missing. That rule is how the library
+treats a missing input, and it shows no error in the service owner's code. The other missing countries are
+missing in both. These statements rest on the code and the published simulations, because the current table
+is not held.
 
 ## Inputs
 
-All paths and parameters come from `es_parameters.csv` under the `pest_control` service key:
-the FiBL area extract, the FAOSTAT 2019 yield and price slices, the FAO/CPC crop
-classification, the three effect sizes, the six yield ratios, the price premium and the
-committed reference, each with a source row beside it.
+All paths and parameters come from `es_parameters.csv` under the `pest_control` service key,
+each with a source row beside it: the FiBL extract, the United Kingdom statistics, the FAO
+classification, the matched price ratios, the shared FAOSTAT tables, the 2019 FAOSTAT slice for
+crop items and harvested area, the effect sizes and yield ratios with their standard errors, and
+the number of draws and the seed.
 
 ## Output
 
 `gep_calculation` writes `gep_by_country_base_year.csv` into its own task directory, holding the
-r250 identifiers and attributes, `year`, `pest_control_gep` and `pest_control_gep_reference`,
-and `pest_control_by_crop_country.csv` beside it with the per-crop rows.
+r250 identifiers and attributes, `year`, `pest_control_gep`, `pest_control_gep_lower`,
+`pest_control_gep_upper`, `pest_control_gep_central`, `pest_control_gep_reference`,
+`pest_control_coverage`, the counts `pest_control_crops`, `pest_control_crops_valued`,
+`pest_control_crops_no_benefit` and `pest_control_crops_missing`, and the hectares
+`pest_control_area_valued_ha`, `pest_control_area_no_benefit_ha`, `pest_control_area_missing_ha` and
+`pest_control_area_left_out_ha`. Beside it, `pest_control_by_crop_country.csv` holds the per-crop rows
+with the note naming any missing factor, `pest_control_world_uncertainty.csv` the world statistics,
+`pest_control_coverage_summary.csv` the same counts for the world with the value by coverage, and
+`pest_control_organic_area_spikes.csv` the corrected records.
+
+## Reference
+
+The reference column applies the service owner's current summary to the owner's published
+simulations (Zenodo record 17993071, December 2025). Those simulations are older than fb40d8c: they
+use other yield ratios and other prices, and draw ratios per row, so their means compare and their
+intervals do not. The reference totals \$5,386,426,093.48 over the same 124 countries. This is a
+comparison with the published simulations, not a reproduction of fb40d8c.
+
+## What the value rests on
+
+The interval draws parameters and holds the choices below fixed. These are sizes of those choices, not
+estimates, and none changes the code. They were measured on the first run of this code, at the rounded yield ratios
+and before the shared price filters, and are not re-measured. Percentages are of that run's exact expectation,
+\$5,190,393,846.19, except the shares of the central value.
+
+- The benefit's evidence. Boldorini et al. (2024) hold 47 yield comparisons from 19 studies. The other-crops
+  effect comes from 9 of them, in 7 studies of apples, cocoa and coffee, and carries 85.4% of the central
+  value. Crops named in those yield experiments hold 20.6% of it. Grapes, tea and olives hold 46.9% and
+  have no yield experiment.
+- One study. Dropping one of the 19 from a refit of their public data moves the expectation between -13.4%
+  (a cocoa study in Indonesia) and +18.5% (a coffee study in Brazil).
+- The model. Boldorini et al. report no detectable yield effect once crop phylogeny is accounted for, on
+  13 species, and urge caution. At those estimates the expectation falls 33.0% and the interval crosses
+  zero. Their climate moderators on yield are not significant, on 47 comparisons, which a refit of their model
+  repeats (p = 0.36). A test without a significant difference does not show that the effect transfers.
+- The yield ratios. The stimulant ratio is 7 coffee comparisons in 3 studies, and tea takes it with no
+  comparison of its own. The write-up's comparison, de la Cruz et al. (2023), moves the expectation +5.6%
+  in total: +11.1% for fruit and nuts alone, -5.7% for stimulants alone. Dropping one study moves it at most
+  1.7%. By continent, oilseeds differ (p < 0.001, with 109 of 119 rows in North America). Fruit and nuts,
+  vegetables and pulses show no significant difference at the 5% level, which does not show that they transfer,
+  since Latin America, Africa and Oceania hold 1.1%, 1.1% and 0.6% of the rows. Stimulants sit on one continent,
+  so they cannot be tested.
+- Where the evidence sits. Asia holds 39.4% of the central value and 12.1% of the yield-ratio rows. North
+  America holds 12.5% of the value and 45.0% of the rows.
+- The price ratios. The write-up's comparison, Crowder and Reganold (2015), moves the expectation +18.3% on
+  rows without a matched ratio. The group mean on every row moves it -5.3%.
 
 ## What is open
 
-The write-up differs from the implementation in three places, and alignment waits on the
-authors' cleaned scripts:
-
-- Cereals. The write-up leaves them unvalued because their effect is not significantly different
-  from zero. The library values them at the cereal effect, \$718,037,931.97 over 79 countries,
-  11.1% of the total.
-- Missing prices and yields. The write-up imputes them with a mixed-effects model on log prices.
-  The library takes the crop's global median.
-- The price premium. The write-up uses a ratio per crop from matched USDA GATS pairs, with the
-  FAO crop group's mean as the fallback. The library applies the overall mean, 1.38, to every
-  crop.
+- The owner's current table. `pest_control_2019.csv` from a run of fb40d8c is not held. It cannot be rebuilt
+  from what is held, because that run also reads the FAOSTAT release and the IMF exchange-rate export it was
+  made with.
+- Viet Nam's tea. Its matched price ratio is 38.01, the largest of the 2,459, and carries
+  \$232.6 million at the central value, against \$10.0 million at the group mean. The code applies
+  it as matched, as the service owner's does.
+- Prices above the country. Coffee in Uganda and Tanzania takes the shared table's subregion price of
+  \$844.50 per tonne, against about \$2,900 in the published simulations.
+- Two-number cells. A cell's second number has no label, and the first number is kept.
