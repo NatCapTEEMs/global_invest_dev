@@ -459,17 +459,31 @@ def forest_biomass_carbon_on_map(base_forest_carbon, new_forest_carbon, lulc, fo
 # year's harvest: clearing removes the stand and its stock, and new forest enters at age 0 with zero
 # stock, so a planted stand first yields when it reaches its own harvest age. Every growth, harvest
 # and recovery value is configuration with a stated source; nothing here supplies one.
+#
+# A cell may hold several cohorts, each a share of the cell's area with its own type, age, cut
+# history and stock. A regional plantation mixture is one cohort per genus at the region's area
+# shares, so each genus is cut at its own rotation age; no blended type averages the rotations. A map
+# applies to the whole cell: clearing removes every cohort, and a cell that becomes forest takes the
+# new-forest cohorts at their shares. Each type states the volume basis its stock and harvest are
+# measured on, and volumes on different bases are never added. A type whose yield is unknown is
+# 'unmeasured': its area is carried and reported, it has no stock and no harvest, and it is left out
+# of the per-hectare denominator rather than counted as yielding nothing. Forest area comes only from
+# the maps; no economic output creates or removes forest here.
 
 FOREST_STATE_BANDS = ('type', 'age', 'since_cut', 'stock', 'managed', 'accessible')
+COHORT_BANDS = FOREST_STATE_BANDS + ('share',)
 HARVEST_RULES = ('none', 'scheduled')
 RECOVERY_RULES = ('curve_equivalent_age',)
 PROVENANCE_STATUSES = ('observed', 'assumed', 'synthetic')
-PROVENANCE_INPUTS = FOREST_STATE_BANDS + ('growth_parameters',)
+PROVENANCE_INPUTS = COHORT_BANDS + ('growth_parameters',)
 GROWTH_PARAMETER_COLUMNS = {
     'rotation': ('rotation_age', 'vmax_m3_per_ha', 'k', 'shape'),
     'cycle': ('min_age', 'cycle_years', 'intensity_m3_per_ha', 'vmax_m3_per_ha', 'k', 'shape'),
     'none': ('vmax_m3_per_ha', 'k', 'shape'),
+    'unmeasured': (),
 }
+UNMEASURED_BASIS = 'unmeasured'
+SHARE_TOLERANCE = 1e-6
 
 
 def growth_parameters_from_table(df):
@@ -477,14 +491,19 @@ def growth_parameters_from_table(df):
 
     Args:
         df (pd.DataFrame): one row per forest type: forest_type_id (>= 1), harvest_mode
-            ('rotation', 'cycle' or 'none'), the columns GROWTH_PARAMETER_COLUMNS lists for that
-            mode, and a non-empty source.
+            ('rotation', 'cycle', 'none' or 'unmeasured'), the columns GROWTH_PARAMETER_COLUMNS
+            lists for that mode, a volume_basis naming what its volumes measure (for example stem
+            volume over bark, or commercial volume of trees over 50 cm DBH), and a non-empty source.
+            An 'unmeasured' type has a known area and no known yield: it takes no growth values and
+            no volume basis.
 
     Returns:
-        dict: forest_type_id -> {'mode': harvest_mode, column: float, ...}.
+        dict: forest_type_id -> {'mode': harvest_mode, 'volume_basis': label, column: float, ...};
+        an unmeasured type's volume_basis is UNMEASURED_BASIS.
 
     Raises:
-        ValueError: on a duplicate or invalid type, an unknown mode, a missing value or source.
+        ValueError: on a duplicate or invalid type, an unknown mode, a missing value, volume basis
+            or source.
     """
     params = {}
     for row in df.to_dict('records'):
@@ -497,10 +516,15 @@ def growth_parameters_from_table(df):
         source = row.get('source')
         if not isinstance(source, str) or not source.strip():
             raise ValueError('forest type %d has no source' % code)
+        basis = row.get('volume_basis')
+        if mode == 'unmeasured':
+            basis = UNMEASURED_BASIS
+        elif not isinstance(basis, str) or not basis.strip() or basis == UNMEASURED_BASIS:
+            raise ValueError('forest type %d (%s) has no volume_basis' % (code, mode))
         missing = [c for c in GROWTH_PARAMETER_COLUMNS[mode] if not np.isfinite(float(row.get(c, np.nan)))]
         if missing:
             raise ValueError('forest type %d (%s) has no value for %s' % (code, mode, ', '.join(missing)))
-        params[code] = dict(mode=mode, **{c: float(row[c]) for c in GROWTH_PARAMETER_COLUMNS[mode]})
+        params[code] = dict(mode=mode, volume_basis=basis.strip(), **{c: float(row[c]) for c in GROWTH_PARAMETER_COLUMNS[mode]})
     return params
 
 
@@ -581,6 +605,8 @@ def advance_forest_state(state, n_years, forest_now, new_forest, params, harvest
         s['age'][forest] += 1.0
         s['since_cut'][forest] += 1.0
         for code, prm in params.items():
+            if prm['mode'] == 'unmeasured':
+                continue
             c = s['type'] == code
             before = s['stock'][c]
             after = np.maximum(merchantable_volume(volume_equivalent_age(before, prm) + 1.0, prm), before)
@@ -618,6 +644,90 @@ def advance_forest_state(state, n_years, forest_now, new_forest, params, harvest
     flows = dict(opening=opening, growth=growth, harvest=harvest, removed=removed,
                  salvage=salvage_fraction * removed, closing=s['stock'].copy(), eligible=eligible)
     return s, flows
+
+
+def new_forest_cohorts(new_forest):
+    """The cohorts a cell takes when it becomes forest, as a list of dicts whose shares sum to 1.
+
+    Args:
+        new_forest (dict or list): one cohort as a dict of type, managed and accessible, which takes
+            the whole cell, or a list of dicts of type, managed, accessible and share.
+
+    Raises:
+        ValueError: on a missing or extra key, a share that is not positive, or shares that do not
+            sum to 1.
+    """
+    specs = [dict(new_forest, share=1.0)] if isinstance(new_forest, dict) else [dict(c) for c in new_forest]
+    for c in specs:
+        if set(c) != {'type', 'managed', 'accessible', 'share'}:
+            raise ValueError('a new-forest cohort gives exactly type, managed, accessible and share, got %r' % sorted(c))
+    shares = np.array([float(c['share']) for c in specs])
+    if not len(specs) or (shares <= 0).any() or abs(shares.sum() - 1.0) > SHARE_TOLERANCE:
+        raise ValueError('new-forest cohort shares must be positive and sum to 1, got %s' % shares.tolist())
+    return specs
+
+
+def empty_cohort(shape):
+    """A cohort layer holding no forest: type 0, NaN age and since_cut, no stock, share 0."""
+    return dict(type=np.zeros(shape), age=np.full(shape, np.nan), since_cut=np.full(shape, np.nan), stock=np.zeros(shape),
+                managed=np.zeros(shape, dtype=bool), accessible=np.zeros(shape, dtype=bool), share=np.zeros(shape))
+
+
+def cohort_share_violations(cohorts):
+    """Cells whose cohort shares break the contract, as a boolean array.
+
+    A typed cohort's share is in (0, 1], an untyped cohort's share is 0, and on a cell with any typed
+    cohort the typed shares sum to 1 within SHARE_TOLERANCE.
+    """
+    shape = np.shape(cohorts[0]['type'])
+    total, bad, typed_any = np.zeros(shape), np.zeros(shape, dtype=bool), np.zeros(shape, dtype=bool)
+    for c in cohorts:
+        typed = np.asarray(c['type']) > 0
+        share = np.asarray(c['share'], dtype='float64')
+        bad |= np.where(typed, ~((share > 0) & (share <= 1.0 + SHARE_TOLERANCE)), share != 0)
+        total += np.where(typed, share, 0.0)
+        typed_any |= typed
+    return bad | (typed_any & (np.abs(total - 1.0) > SHARE_TOLERANCE))
+
+
+def advance_forest_cohorts(cohorts, n_years, forest_now, new_forest, params, harvest_rule, recovery_rule,
+                           salvage_fraction):
+    """Advance every cohort of every cell n_years to the next map, then apply that map to whole cells.
+
+    Each cohort advances by advance_forest_state, so it ages, grows and is cut at its own type's
+    harvest age. The map then applies per cell: a cell that is no longer forest loses every cohort, a
+    forest cell keeps its cohorts and their shares, and a cell that becomes forest takes the
+    new-forest cohorts. One cohort with share 1 on every forest cell is the single-cohort state.
+
+    Args:
+        cohorts (list): cohort layers, each a dict of COHORT_BANDS arrays, with shares as
+            cohort_share_violations requires.
+        n_years, params, harvest_rule, recovery_rule, salvage_fraction: as in advance_forest_state.
+        forest_now (np.ndarray): bool, forest in the next map.
+        new_forest (dict or list): as in new_forest_cohorts.
+
+    Returns:
+        tuple: (new cohorts, flows), with max(len(cohorts), number of new-forest cohorts) layers.
+        flows holds one advance_forest_state flows dict per layer, per hectare of that cohort, so a
+        cell's flow per hectare is the share-weighted sum over its cohorts.
+    """
+    specs = new_forest_cohorts(new_forest)
+    forest_now = np.asarray(forest_now, dtype=bool)
+    layers = list(cohorts) + [empty_cohort(forest_now.shape) for _ in range(len(specs) - len(cohorts))]
+    cell_was = np.zeros(forest_now.shape, dtype=bool)
+    for c in layers:
+        cell_was |= np.asarray(c['type']) > 0
+    out, flows = [], []
+    for k, c in enumerate(layers):
+        was = np.asarray(c['type']) > 0
+        spec = specs[k] if k < len(specs) else dict(type=0, managed=False, accessible=False, share=0.0)
+        now = forest_now & (was | (~cell_was if k < len(specs) else False))
+        new, f = advance_forest_state(c, n_years, now, spec, params, harvest_rule, recovery_rule, salvage_fraction)
+        new['share'] = np.where(was & ~now, 0.0, np.where(~was & now, float(spec['share']),
+                                                           np.asarray(c['share'], dtype='float64')))
+        out.append(new)
+        flows.append(f)
+    return out, flows
 
 
 def stock_ledger_residual(flows):

@@ -380,7 +380,7 @@ SYNTHETIC_GROWTH = pd.DataFrame([
          vmax_m3_per_ha=180.0, k=0.04, shape=2.0, rotation_age=np.nan, source='SYNTHETIC test value'),
     dict(forest_type_id=3, harvest_mode='rotation', rotation_age=7, vmax_m3_per_ha=400.0, k=0.25, shape=2.0,
          min_age=np.nan, cycle_years=np.nan, intensity_m3_per_ha=np.nan, source='SYNTHETIC test value'),
-])
+]).assign(volume_basis='synthetic_m3')
 GROWTH = tp.growth_parameters_from_table(SYNTHETIC_GROWTH)
 NEW_FOREST = {'type': 2, 'managed': True, 'accessible': True}
 SYNTHETIC_PROVENANCE = pd.DataFrame({'input': list(tp.PROVENANCE_INPUTS), 'status': 'synthetic',
@@ -610,6 +610,12 @@ def _run(p, paths, scenarios=('baseline', 'policy_same', 'policy_clear'), anchor
             pd.read_csv(os.path.join(work, 'timber_harvestable_flow_ledger_by_zone.csv')))
 
 
+def _per_zone(ledger):
+    """The ledger summed over forest types: one row per chain, year and zone."""
+    from global_invest.timber_provision import timber_provision_tasks as t
+    return ledger.groupby(['scenario', 'year', 'region_id'], as_index=False)[list(t.ZONE_QUANTITIES)].sum()
+
+
 def _state_mtimes(p):
     return {f: os.stat(os.path.join(p.cur_dir, f)).st_mtime_ns for f in os.listdir(p.cur_dir) if f.startswith('timber_forest_state_') and f.endswith('.tif')}
 
@@ -623,7 +629,8 @@ def test_harvestable_flow_fixture_accounts_shocks_and_declares(tmp_path):
     assert ledger['ledger_residual_m3'].abs().max() < 1e-6 * ledger['closing_m3'].abs().max()
     # Units: forest area is the sum of the cells' hectares.
     ha = 7.0 + 0.1 * np.arange(6)
-    aaa = ledger[(ledger.scenario == 'baseline') & (ledger.year == 2030) & (ledger.region_id == 1)].iloc[0]
+    zones = _per_zone(ledger)
+    aaa = zones[(zones.scenario == 'baseline') & (zones.year == 2030) & (zones.region_id == 1)].iloc[0]
     assert aaa['forest_ha'] == pytest.approx(4 * ha[:5].sum(), rel=1e-6) and aaa['harvest_m3'] > 0
     # BBB: secondary forest is below its minimum age and the native forest is protected, so no harvest.
     assert ledger[ledger.region_id == 2]['harvest_m3'].sum() == 0.0
@@ -643,7 +650,7 @@ def test_harvestable_flow_fixture_accounts_shocks_and_declares(tmp_path):
     with rasterio.open(os.path.join(p.cur_dir, 'timber_forest_state_policy_clear_2040.tif')) as src:
         t, age, stock = src.read(1), src.read(2), src.read(4)
     assert (t[0, 0:4] == 2).all() and (age[0, 0:4] == 0).all() and (stock[0, 0:4] == 0).all() and (t[5, 0:4] == 2).all()
-    assert set(shock['timber_provision_accounting']) == {'harvestable_flow_age_v1'} and set(shock['harvest_basis']) == {'scheduled'}
+    assert set(shock['timber_provision_accounting']) == {'harvestable_flow_age_v2'} and set(shock['harvest_basis']) == {'scheduled'}
 
 
 def test_harvestable_flow_fixture_reuses_and_invalidates_by_provenance(tmp_path):
@@ -881,7 +888,8 @@ def test_identical_maps_give_a_zero_contemporaneous_shock_whatever_the_harvest_t
 def test_every_chain_starts_from_the_same_state_and_management(tmp_path):
     p, paths = _fixture(tmp_path)
     _, _, ledger = _run(p, paths)
-    first = ledger[ledger.year == 2030].set_index(['scenario', 'region_id'])[['opening_m3', 'timberland_open_ha', 'harvest_m3']]
+    zones = _per_zone(ledger)
+    first = zones[zones.year == 2030].set_index(['scenario', 'region_id'])[['opening_m3', 'timberland_open_ha', 'harvest_m3']]
     for label in ('baseline', 'policy_same', 'policy_clear'):
         pd.testing.assert_frame_equal(first.loc[label], first.loc['base_map_reference'])
 
@@ -917,7 +925,8 @@ def test_a_baseline_without_harvest_in_an_interval_is_declared_not_given_an_epsi
     p.scenario_lulc_paths = {'baseline': {y: paths.base for y in (2023, 2024, 2030)},
                              'policy_same': {y: paths.base for y in (2024, 2030)}}
     shock, regional, ledger = _run(p, paths, ('baseline', 'policy_same'), (2024, 2030))
-    aaa = ledger[(ledger.scenario == 'baseline') & (ledger.region_id == 1)].set_index('year')['harvest_m3']
+    zones = _per_zone(ledger)
+    aaa = zones[(zones.scenario == 'baseline') & (zones.region_id == 1)].set_index('year')['harvest_m3']
     assert aaa[2024] > 0 and aaa[2030] == 0.0
     declared = json.load(open(os.path.join(os.path.dirname(p.timber_provision_shock_output_path), 'timber_provision_excluded_regions.json')))
     assert declared['reason']['AAA'].startswith('no defined contemporaneous per-hectare factor')
@@ -932,7 +941,8 @@ def test_a_map_change_first_changes_the_next_years_harvest(tmp_path):
     p.scenario_lulc_paths = {'baseline': {y: paths.base for y in [2023] + years},
                              'policy_clear': {y: paths.base if y < 2030 else cleared for y in years}}
     shock, _, ledger = _run(p, paths, ('baseline', 'policy_clear'), years)
-    aaa = ledger[ledger.region_id == 1].set_index(['year', 'scenario'])[['harvest_m3', 'timberland_open_ha']].unstack()
+    zones = _per_zone(ledger)
+    aaa = zones[zones.region_id == 1].set_index(['year', 'scenario'])[['harvest_m3', 'timberland_open_ha']].unstack()
     for column in ('harvest_m3', 'timberland_open_ha'):                     # 2030's harvest is cut before its map
         assert (aaa.loc[:2030, (column, 'policy_clear')] == aaa.loc[:2030, (column, 'baseline')]).all()
     assert aaa.loc[2031, ('timberland_open_ha', 'policy_clear')] < aaa.loc[2031, ('timberland_open_ha', 'baseline')]
@@ -948,8 +958,8 @@ def test_input_provenance_is_required_complete_and_written_beside_the_shock(tmp_
                                   SYNTHETIC_PROVENANCE)
     for bad in (SYNTHETIC_PROVENANCE[SYNTHETIC_PROVENANCE['input'] != 'age'],
                 pd.concat([SYNTHETIC_PROVENANCE, SYNTHETIC_PROVENANCE.head(1)]),
-                SYNTHETIC_PROVENANCE.assign(status=['observed', 'measured'] + ['assumed'] * 5),
-                SYNTHETIC_PROVENANCE.assign(source=[''] + ['cited'] * 6)):
+                SYNTHETIC_PROVENANCE.assign(status=['observed', 'measured'] + ['assumed'] * (len(SYNTHETIC_PROVENANCE) - 2)),
+                SYNTHETIC_PROVENANCE.assign(source=[''] + ['cited'] * (len(SYNTHETIC_PROVENANCE) - 1))):
         with pytest.raises(ValueError):
             tp.input_provenance_from_table(bad)
     # Ages observed where a map has them and assumed elsewhere: one row per subset, with its coverage.
@@ -1023,3 +1033,191 @@ def test_harvestable_flow_runs_reuses_and_skips_in_a_real_projectflow(tmp_path):
     skipped, skipped_dir = execute(tmp_path / 'skipped', ['timber_provision_shock'])
     assert not os.path.exists(skipped.timber_provision_shock_output_path)
     assert not os.path.exists(skipped_dir) or not os.listdir(skipped_dir)
+
+
+# --- regional mixtures: cohorts within a cell, unmeasured types, volume bases ----------------------
+# Type 4 is a second SYNTHETIC rotation type and type 5 an unmeasured one (area known, yield unknown).
+MIXTURE_GROWTH = pd.concat([SYNTHETIC_GROWTH, pd.DataFrame([
+    dict(forest_type_id=4, harvest_mode='rotation', rotation_age=14, vmax_m3_per_ha=600.0, k=0.12, shape=2.0,
+         volume_basis='synthetic_m3', source='SYNTHETIC test value'),
+    dict(forest_type_id=5, harvest_mode='unmeasured', source='SYNTHETIC: area known, yield unknown')])], ignore_index=True)
+MIXTURE_PARAMS = tp.growth_parameters_from_table(MIXTURE_GROWTH)
+
+
+def _mixture_cell(cohorts):
+    """One cell holding the given (type, share, age) cohorts, each at its own curve's stock."""
+    layers = []
+    for code, share, age in cohorts:
+        prm = MIXTURE_PARAMS[code]
+        stock = 0.0 if prm['mode'] == 'unmeasured' else float(tp.merchantable_volume(age, prm))
+        layers.append(dict(type=np.array([float(code)]), age=np.array([float(age)]), since_cut=np.array([0.0]),
+                           stock=np.array([stock]), managed=np.array([True]), accessible=np.array([True]),
+                           share=np.array([float(share)])))
+    return layers
+
+
+def _yearly_cell_harvest(cohorts, years, params=MIXTURE_PARAMS):
+    """A one-cell state's harvest each year, in m3 per hectare of the cell."""
+    out = []
+    for _ in range(years):
+        before = cohorts
+        cohorts, flows = tp.advance_forest_cohorts(before, 1, np.array([True]), NEW_FOREST, params, 'scheduled',
+                                                   'curve_equivalent_age', 0.0)
+        out.append(sum(float(c['share'][0] * f['harvest'][0]) for c, f in zip(before, flows)))
+    return np.array(out)
+
+
+def test_each_genus_cohort_is_cut_at_its_own_rotation_and_an_averaged_rotation_is_not_the_mixture():
+    mixed = _yearly_cell_harvest(_mixture_cell([(3, 0.6, 0.0), (4, 0.4, 0.0)]), 28)
+    v3, v4 = (float(tp.merchantable_volume(MIXTURE_PARAMS[c]['rotation_age'], MIXTURE_PARAMS[c])) for c in (3, 4))
+    expected = np.zeros(28)
+    expected[[6, 13, 20, 27]] += 0.6 * v3                   # the 7-year cohort, at ages 7, 14, 21 and 28
+    expected[[13, 27]] += 0.4 * v4                          # the 14-year cohort, at 14 and 28
+    assert np.allclose(mixed, expected, rtol=1e-12, atol=0.0)
+    # One type at the share-weighted rotation, 0.6 x 7 + 0.4 x 14 = 9.8 years, cuts in other years.
+    averaged = {6: dict(MIXTURE_PARAMS[3], rotation_age=9.8)}
+    one_type = _yearly_cell_harvest(_mixture_cell([(3, 1.0, 0.0)])[:0] + [dict(_mixture_cell([(3, 1.0, 0.0)])[0], type=np.array([6.0]))],
+                                    28, averaged)
+    assert set(np.flatnonzero(one_type) + 1) == {10, 20} != set(np.flatnonzero(mixed) + 1) == {7, 14, 21, 28}
+
+
+def test_one_cohort_taking_the_whole_cell_is_the_single_state():
+    state = _state([3, 3, 1, 2, 0], [2, 6, 200, 30, 0], since=[0, 0, 34, 35, 0])
+    forest_now = np.array([True, False, True, True, True])
+    single, f1 = _advance(state, 9, forest_now)
+    cohorts, f2 = tp.advance_forest_cohorts([dict(state, share=(state['type'] > 0).astype(float))], 9, forest_now, NEW_FOREST,
+                                            GROWTH, 'scheduled', 'curve_equivalent_age', 0.0)
+    for band in tp.FOREST_STATE_BANDS:
+        np.testing.assert_array_equal(cohorts[0][band], single[band])
+    for name in f1:
+        np.testing.assert_array_equal(f2[0][name], f1[name])
+    np.testing.assert_array_equal(cohorts[0]['share'], (single['type'] > 0).astype(float))
+
+
+def test_a_cleared_cell_loses_every_cohort_and_a_new_forest_cell_takes_the_new_forest_cohorts():
+    mixture = _mixture_cell([(3, 0.6, 5.0), (4, 0.4, 9.0)])
+    native = _mixture_cell([(1, 1.0, 200.0)]) + [tp.empty_cohort((1,))]
+    open_land = [tp.empty_cohort((1,)), tp.empty_cohort((1,))]
+    cohorts = [{b: np.concatenate([m[b], n[b], o[b]]) for b in tp.COHORT_BANDS} for m, n, o in zip(mixture, native, open_land)]
+    planting = [dict(type=3, managed=True, accessible=True, share=0.7), dict(type=4, managed=True, accessible=True, share=0.3)]
+    new, flows = tp.advance_forest_cohorts(cohorts, 1, np.array([False, True, True]), planting, MIXTURE_PARAMS, 'scheduled',
+                                           'curve_equivalent_age', 0.0)
+    types, shares = np.array([c['type'] for c in new]), np.array([c['share'] for c in new])
+    assert (types[:, 0] == 0).all() and (shares[:, 0] == 0).all()                     # cleared: every cohort goes
+    assert all(f['removed'][0] > 0 and f['closing'][0] == 0 for f in flows)
+    assert types[:, 1].tolist() == [1, 0] and shares[:, 1].tolist() == [1, 0]         # kept forest gains no planting
+    assert types[:, 2].tolist() == [3, 4] and shares[:, 2].tolist() == [0.7, 0.3]     # new forest takes the planting mix
+    assert all(c['age'][2] == 0 and c['stock'][2] == 0 for c in new)
+    assert not tp.cohort_share_violations(new).any()
+
+
+def test_cohort_shares_and_new_forest_cohorts_are_checked():
+    good = _mixture_cell([(3, 0.6, 1.0), (4, 0.4, 1.0)])
+    assert not tp.cohort_share_violations(good).any()
+    for shares in ((0.6, 0.3), (0.0, 1.0), (0.6, 0.4 + 1e-3)):
+        assert tp.cohort_share_violations(_mixture_cell([(3, shares[0], 1.0), (4, shares[1], 1.0)])).all()
+    assert tp.cohort_share_violations(good + [dict(tp.empty_cohort((1,)), share=np.array([0.1]))]).all()
+    for bad in ([dict(type=3, managed=True, accessible=True, share=0.6)],
+                [dict(type=3, managed=True, accessible=True, share=0.0), dict(type=4, managed=True, accessible=True, share=1.0)],
+                [dict(type=3, managed=True, share=1.0)]):
+        with pytest.raises(ValueError):
+            tp.new_forest_cohorts(bad)
+
+
+def test_the_growth_table_names_a_volume_basis_and_an_unmeasured_type_takes_no_growth_values():
+    for bad in (SYNTHETIC_GROWTH.drop(columns='volume_basis'), SYNTHETIC_GROWTH.assign(volume_basis=tp.UNMEASURED_BASIS)):
+        with pytest.raises(ValueError, match='volume_basis'):
+            tp.growth_parameters_from_table(bad)
+    assert MIXTURE_PARAMS[5] == {'mode': 'unmeasured', 'volume_basis': tp.UNMEASURED_BASIS}
+    assert {MIXTURE_PARAMS[c]['volume_basis'] for c in (1, 2, 3, 4)} == {'synthetic_m3'}
+
+
+def test_forest_area_follows_the_maps_whatever_the_harvest():
+    cells = [{b: np.concatenate([a[b], z[b]]) for b in tp.COHORT_BANDS}
+             for a, z in zip(_mixture_cell([(3, 0.6, 5.0), (5, 0.4, 5.0)]), [tp.empty_cohort((1,))] * 2)]
+    maps = (np.array([True, False]), np.array([True, True]), np.array([False, True]))
+    areas = {}
+    for rule in ('scheduled', 'none'):
+        state, areas[rule] = cells, []
+        for forest_now in maps:
+            state, _ = tp.advance_forest_cohorts(state, 3, forest_now, NEW_FOREST, MIXTURE_PARAMS, rule, 'curve_equivalent_age', 0.0)
+            areas[rule].append(np.array([np.where(c['type'] > 0, c['share'], 0.0) for c in state]).sum(axis=0))
+            assert (areas[rule][-1] == forest_now).all()                                # forest share of each cell is the map
+    np.testing.assert_array_equal(areas['scheduled'], areas['none'])
+
+
+def _mixture_state(paths, plantation_cohorts):
+    """Rewrite the fixture state as cohort layers: each plantation cell split into the given (type, share)
+    cohorts at the fixture's ages, every other forest cell one cohort with share 1."""
+    import rasterio
+    with rasterio.open(paths.state) as src:
+        t, age, since, stock, managed, accessible = src.read().astype('float64')
+    plantation = t == 3
+    layers = []
+    for k, (code, share) in enumerate(plantation_cohorts):
+        typ = np.where(plantation, float(code), t if k == 0 else 0.0)
+        a, s = np.where(typ > 0, age, np.nan), np.where(typ > 0, since, np.nan)
+        v = np.zeros(t.shape)
+        for c, prm in MIXTURE_PARAMS.items():
+            if prm['mode'] != 'unmeasured':
+                v[typ == c] = tp.merchantable_volume(a[typ == c], prm)
+        layers += [typ, a, s, v, np.where(typ > 0, managed, 0.0), np.where(typ > 0, accessible, 0.0),
+                   np.where(plantation, share, (t > 0).astype(float) if k == 0 else 0.0)]
+    _tif(paths.state, np.stack(layers).astype('float32'))
+
+
+def test_a_mixture_with_an_unmeasured_share_reports_covered_hectares_and_total_volume(tmp_path):
+    import rasterio
+    p, paths = _fixture(tmp_path)
+    _, _, single = _run(p, paths, ('baseline', 'policy_same'))
+    (tmp_path / 'mix').mkdir()
+    q, mix_paths = _fixture(tmp_path / 'mix')
+    MIXTURE_GROWTH.to_csv(tmp_path / 'mix' / 'growth.csv', index=False)
+    _mixture_state(mix_paths, [(3, 0.7), (5, 0.3)])
+    shock, regional, ledger = _run(q, mix_paths, ('baseline', 'policy_same'))
+    with rasterio.open(os.path.join(q.cur_dir, 'timber_forest_state_baseline_2030.tif')) as src:
+        assert src.count == 2 * len(tp.COHORT_BANDS)
+    assert ledger['ledger_residual_m3'].abs().max() < 1e-6 * ledger['closing_m3'].abs().max()
+    mix, one = ((t[(t.scenario == 'baseline') & (t.region_id == 1)].set_index(['year', 'forest_type_id'])) for t in (ledger, single))
+    for year in (2030, 2040):
+        # The rotation cohort cuts 0.7 of the single-type harvest at the same ages; native forest is unchanged.
+        assert mix.loc[(year, 3), 'harvest_m3'] == pytest.approx(0.7 * one.loc[(year, 3), 'harvest_m3'], rel=1e-6)
+        assert mix.loc[(year, 1), 'harvest_m3'] == pytest.approx(one.loc[(year, 1), 'harvest_m3'], rel=1e-9)
+        # The unmeasured cohort carries its area and no volume.
+        assert mix.loc[(year, 5), 'forest_ha'] == pytest.approx(0.3 * one.loc[(year, 3), 'forest_ha'], rel=1e-6)
+        assert mix.loc[(year, 5), ['harvest_m3', 'closing_m3', 'growth_m3', 'opening_m3']].abs().sum() == 0.0
+    aaa = regional[(regional.scenario == 'baseline') & (regional.REG == 'AAA')].set_index('year')
+    by_year = mix.groupby(level=0)
+    # Measured and unmeasured timberland add up to all timberland, and only the measured part divides the harvest.
+    assert np.allclose(aaa['timberland_during_interval_ha'] + aaa['unmeasured_timberland_during_interval_ha'],
+                       by_year['timberland_open_ha'].sum(), rtol=1e-9)
+    assert np.allclose(aaa['unmeasured_timberland_during_interval_ha'], mix.xs(5, level=1)['timberland_open_ha'], rtol=1e-9)
+    assert np.allclose(aaa['harvest_m3_per_year'], by_year['harvest_m3'].sum() / np.array([7, 10]), rtol=1e-9)
+    assert set(shock.loc[shock.REG == 'AAA', 'volume_basis']) == {'synthetic_m3'}
+
+
+def test_a_mixture_state_whose_shares_do_not_sum_to_one_is_refused(tmp_path):
+    p, paths = _fixture(tmp_path)
+    MIXTURE_GROWTH.to_csv(tmp_path / 'growth.csv', index=False)
+    _mixture_state(paths, [(3, 0.7), (5, 0.2)])
+    with pytest.raises(ValueError, match=r'contract: 0 base-map .* 0 typed .* and 16 cell\(s\) have an invalid age, since_cut, stock, share'):
+        _run(p, paths)
+
+
+def test_volumes_on_two_bases_are_not_added_and_a_region_holding_both_is_declared(tmp_path):
+    import json
+    p, paths = _fixture(tmp_path)
+    SYNTHETIC_GROWTH.assign(volume_basis=['commercial_over_50cm_dbh', 'stem_over_bark', 'stem_over_bark']).to_csv(
+        tmp_path / 'growth.csv', index=False)
+    _set_stands(paths, slice(4, 8), (0.0, 2.0, 4.0, 6.0), native_managed=False)     # BBB: plantation only
+    shock, regional, ledger = _run(p, paths, ('baseline', 'policy_same'))
+    declared = json.load(open(os.path.join(os.path.dirname(p.timber_provision_shock_output_path), 'timber_provision_excluded_regions.json')))
+    assert declared['reason']['AAA'].startswith('timberland on more than one volume basis (commercial_over_50cm_dbh, stem_over_bark)')
+    assert 'AAA' not in set(shock['REG']) | set(regional['REG'])
+    assert set(shock.loc[shock.REG == 'BBB', 'volume_basis']) == {'stem_over_bark'}
+    aaa = ledger[(ledger.region_id == 1) & (ledger.year == 2030) & (ledger.scenario == 'baseline')].groupby('volume_basis')['harvest_m3'].sum()
+    assert len(aaa) == 2 and (aaa > 0).all()                                     # both reported, apart
+    # With the native forest unmanaged AAA holds one basis and is shocked on it.
+    _set_stands(paths, slice(0, 4), (1.0, 3.0, 5.0, 6.0), native_managed=False)
+    shock, regional, _ = _run(p, paths, ('baseline', 'policy_same'))
+    assert set(shock.loc[shock.REG == 'AAA', 'volume_basis']) == set(regional.loc[regional.REG == 'AAA', 'volume_basis']) == {'stem_over_bark'}

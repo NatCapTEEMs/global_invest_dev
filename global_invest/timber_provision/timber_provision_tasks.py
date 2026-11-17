@@ -812,11 +812,15 @@ def timber_provision_shock(p):
 #
 # The initial state is an input with this contract; no library task produces it, because building
 # it (forest types, ages, management, access) is project data:
-#   - one GeoTIFF on the run grid with six float32 bands in FOREST_STATE_BANDS order;
-#   - type: a forest_type_id of the growth table on every cell the base-year map calls forest, and 0
-#     on every other cell (the first step refuses any disagreement);
-#   - age and since_cut in years (finite on forest cells), stock in m3/ha within [0, vmax] of the
-#     type, managed and accessible as 0 or 1.
+#   - one GeoTIFF on the run grid with float32 bands: either six in FOREST_STATE_BANDS order, one
+#     cohort taking every forest cell whole, or COHORT_BANDS repeated once per cohort layer, where
+#     share is the cohort's fraction of the cell (a regional plantation mixture is one layer per
+#     genus at the region's area shares, each with its own ages);
+#   - every cell the base-year map calls forest has at least one typed cohort, with a forest_type_id
+#     of the growth table, and every other cell has none (the first step refuses any disagreement);
+#   - on a typed cohort: age and since_cut in years (finite), stock in m3/ha within [0, vmax] of the
+#     type (0 for an unmeasured type), managed and accessible as 0 or 1, share in (0, 1]; the typed
+#     shares of a cell sum to 1, and an untyped cohort has share 0.
 # The input provenance table says, for each band and for the growth table, whether it is observed,
 # assumed or synthetic, and from what source. It travels into the outputs beside the shock.
 
@@ -838,77 +842,110 @@ def _harvestable_flow_settings(p):
     if settings['reference_flow'] not in REFERENCE_FLOWS:
         raise ValueError('timber_provision_reference_flow must be one of %s, got %r'
                          % (REFERENCE_FLOWS, settings['reference_flow']))
-    if set(settings['new_forest']) != {'type', 'managed', 'accessible'}:
-        raise ValueError('timber_provision_new_forest must give exactly type, managed and accessible, got %r'
-                         % settings['new_forest'])
+    tp.new_forest_cohorts(settings['new_forest'])
     return settings
+
+
+def _state_cohorts(bands, n_bands):
+    """The cohort layers of a block of a state raster: six bands are one cohort taking every forest
+    cell whole; otherwise COHORT_BANDS repeat once per cohort layer."""
+    if n_bands == len(tp.FOREST_STATE_BANDS):
+        layer = dict(zip(tp.FOREST_STATE_BANDS, bands))
+        layer['share'] = (layer['type'] > 0).astype('float64')
+        return [layer]
+    n = len(tp.COHORT_BANDS)
+    return [dict(zip(tp.COHORT_BANDS, bands[i:i + n])) for i in range(0, n_bands, n)]
 
 
 def _advance_forest_state_raster(previous_path, lulc_path, ha_path, zone_ids_path, n_zones, n_years, settings,
                                  params, out_path, base_lulc_path=None):
     """One step of a scenario's forest-state chain on the run grid, block by block.
 
-    Reads the previous state raster (bands FOREST_STATE_BANDS), advances it n_years to the map at
-    lulc_path, writes the new state and returns the per-zone totals of the step. A map cell without
-    land-cover data is not a conversion: the cell keeps its forest status. When base_lulc_path is
-    given (the step that starts from the configured initial state), the state must type exactly the
-    cells the base map calls forest, or the step refuses.
+    Reads the previous state raster (see the initial-state contract above), advances every cohort
+    n_years to the map at lulc_path, writes the new state as COHORT_BANDS per cohort layer and returns
+    the step's totals per zone and forest type. A map cell without land-cover data is not a
+    conversion: the cell keeps its forest status. When base_lulc_path is given (the step that starts
+    from the configured initial state), the state must type exactly the cells the base map calls
+    forest, with valid cohorts, or the step refuses.
+
+    Quantities that happen before the year-end map (timberland_open_ha, opening, growth, harvest,
+    removed, salvage and eligible volume) are counted under each cohort's type before the step;
+    forest_ha, timberland_ha and the closing stock under its type after it. Area is the cohort's share
+    of the cell's hectares, so the stock ledger closes per zone and type.
 
     Returns:
-        pd.DataFrame: region_id plus ZONE_QUANTITIES, in ha and m3.
+        pd.DataFrame: region_id, forest_type_id and volume_basis plus ZONE_QUANTITIES, in ha and m3,
+        one row per zone and forest type of the growth table.
     """
     paths = [previous_path, lulc_path, ha_path, zone_ids_path] + ([base_lulc_path] if base_lulc_path else [])
     sources = [rasterio.open(path) for path in paths]
     previous, lulc, ha, zones = sources[:4]
-    if previous.count != len(tp.FOREST_STATE_BANDS):
-        raise ValueError('%s has %d bands, the forest state needs %d (%s)'
-                         % (previous_path, previous.count, len(tp.FOREST_STATE_BANDS), ', '.join(tp.FOREST_STATE_BANDS)))
+    n_cohort_bands = len(tp.COHORT_BANDS)
+    if previous.count != len(tp.FOREST_STATE_BANDS) and previous.count % n_cohort_bands:
+        raise ValueError('%s has %d bands; a forest state has %d (%s) or %d per cohort layer (%s)'
+                         % (previous_path, previous.count, len(tp.FOREST_STATE_BANDS), ', '.join(tp.FOREST_STATE_BANDS),
+                            n_cohort_bands, ', '.join(tp.COHORT_BANDS)))
     _assert_one_grid({os.path.basename(s.name): (s.shape, s.transform, s.crs) for s in sources})
-    totals = np.zeros((len(ZONE_QUANTITIES), n_zones + 1))
+    layers_in = 1 if previous.count == len(tp.FOREST_STATE_BANDS) else previous.count // n_cohort_bands
+    layers_out = max(layers_in, len(tp.new_forest_cohorts(settings['new_forest'])))
+    codes = sorted(params)
+    totals = np.zeros((len(ZONE_QUANTITIES), len(codes), n_zones + 1))
+    before_step = ('timberland_open_ha', 'opening_m3', 'growth_m3', 'harvest_m3', 'removed_m3', 'salvage_m3', 'eligible_m3')
     mismatch = np.zeros(3, dtype=np.int64)
     worst_residual = 0.0
-    profile = dict(previous.profile, count=len(tp.FOREST_STATE_BANDS), dtype='float32', nodata=None)
+    profile = dict(previous.profile, count=layers_out * n_cohort_bands, dtype='float32', nodata=None)
     partial = out_path + '.partial.tif'
     try:
         with rasterio.open(partial, 'w', **profile) as out:
             for _, window in previous.block_windows(1):
-                bands = previous.read(window=window).astype('float64')
-                state = dict(zip(tp.FOREST_STATE_BANDS, bands))
-                state['managed'], state['accessible'] = state['managed'] > 0, state['accessible'] > 0
+                cohorts = _state_cohorts(previous.read(window=window).astype('float64'), previous.count)
+                flags = np.ones(cohorts[0]['type'].shape, dtype=bool)
+                typed_cell = np.zeros(flags.shape, dtype=bool)
+                for c in cohorts:
+                    flags &= np.isin(c['managed'], (0, 1)) & np.isin(c['accessible'], (0, 1))
+                    c['managed'], c['accessible'] = c['managed'] > 0, c['accessible'] > 0
+                    typed_cell |= c['type'] > 0
                 if base_lulc_path:
                     base_map = sources[4].read(1, window=window)
                     known = (base_map != sources[4].nodata) if sources[4].nodata is not None else np.ones(base_map.shape, dtype=bool)
                     base_forest = np.isin(base_map, [tp.SEALS7_FOREST_ID])
-                    vmax = np.full(base_map.shape, np.inf)
-                    for code, prm in params.items():
-                        vmax[state['type'] == code] = prm['vmax_m3_per_ha'] * (1 + 1e-6)   # float32 storage
-                    valid = (np.isfinite(state['age']) & (state['age'] >= 0) & np.isfinite(state['since_cut'])
-                             & (state['since_cut'] >= 0) & np.isfinite(state['stock']) & (state['stock'] >= 0)
-                             & (state['stock'] <= vmax))
-                    flags = np.isin(bands[4], (0, 1)) & np.isin(bands[5], (0, 1))
-                    mismatch += [int((known & base_forest & (state['type'] <= 0)).sum()),
-                                 int((known & ~base_forest & (state['type'] > 0)).sum()),
-                                 int(((state['type'] > 0) & ~valid).sum() + (~flags).sum())]
+                    invalid = ~flags | tp.cohort_share_violations(cohorts)
+                    for c in cohorts:
+                        vmax = np.full(base_map.shape, np.inf)
+                        for code, prm in params.items():
+                            vmax[c['type'] == code] = prm.get('vmax_m3_per_ha', 0.0) * (1 + 1e-6)   # float32 storage
+                        valid = (np.isfinite(c['age']) & (c['age'] >= 0) & np.isfinite(c['since_cut'])
+                                 & (c['since_cut'] >= 0) & np.isfinite(c['stock']) & (c['stock'] >= 0) & (c['stock'] <= vmax))
+                        invalid |= (c['type'] > 0) & ~valid
+                    mismatch += [int((known & base_forest & ~typed_cell).sum()), int((known & ~base_forest & typed_cell).sum()),
+                                 int(invalid.sum())]
                 lulc_block = lulc.read(1, window=window)
                 unknown = (lulc_block == lulc.nodata) if lulc.nodata is not None else np.zeros(lulc_block.shape, dtype=bool)
-                forest_now = np.where(unknown, state['type'] > 0, np.isin(lulc_block, [tp.SEALS7_FOREST_ID]))
-                timberland_open = (state['type'] > 0) & state['managed'] & state['accessible']
-                new, flows = tp.advance_forest_state(state, n_years, forest_now, settings['new_forest'], params,
-                                                     settings['harvest_rule'], settings['recovery_rule'],
-                                                     float(settings['salvage_fraction']))
-                worst_residual = max(worst_residual, float(np.abs(tp.stock_ledger_residual(flows)).max(initial=0.0)))
-                out.write(np.stack([np.asarray(new[b], dtype='float32') for b in tp.FOREST_STATE_BANDS]), window=window)
+                forest_now = np.where(unknown, typed_cell, np.isin(lulc_block, [tp.SEALS7_FOREST_ID]))
+                new, flows = tp.advance_forest_cohorts(cohorts, n_years, forest_now, settings['new_forest'], params,
+                                                       settings['harvest_rule'], settings['recovery_rule'],
+                                                       float(settings['salvage_fraction']))
+                for f in flows:
+                    worst_residual = max(worst_residual, float(np.abs(tp.stock_ledger_residual(f)).max(initial=0.0)))
+                out.write(np.stack([np.asarray(c[b], dtype='float32') for c in new for b in tp.COHORT_BANDS]), window=window)
                 cell_ha = ha.read(1, window=window).astype('float64')
                 cell_ha = np.where(np.isfinite(cell_ha) & (cell_ha > 0), cell_ha, 0.0)
                 zone = zones.read(1, window=window).astype(np.int64)
                 zone = np.where((zone > 0) & (zone <= n_zones), zone, 0).ravel()
-                forest = new['type'] > 0
-                quantities = (forest * cell_ha, timberland_open * cell_ha, (forest & new['managed'] & new['accessible']) * cell_ha,
-                              flows['opening'] * cell_ha, flows['growth'] * cell_ha, flows['harvest'] * cell_ha,
-                              flows['removed'] * cell_ha, flows['salvage'] * cell_ha, flows['closing'] * cell_ha,
-                              flows['eligible'] * cell_ha)
-                for i, quantity in enumerate(quantities):
-                    totals[i] += np.bincount(zone, weights=quantity.ravel(), minlength=n_zones + 1)
+                cohorts += [tp.empty_cohort(forest_now.shape) for _ in range(len(new) - len(cohorts))]
+                for before, after, f in zip(cohorts, new, flows):
+                    area_before, area_after = before['share'] * cell_ha, after['share'] * cell_ha
+                    values = dict(timberland_open_ha=before['managed'] & before['accessible'], opening_m3=f['opening'],
+                                  growth_m3=f['growth'], harvest_m3=f['harvest'], removed_m3=f['removed'],
+                                  salvage_m3=f['salvage'], eligible_m3=f['eligible'], forest_ha=after['type'] > 0,
+                                  timberland_ha=after['managed'] & after['accessible'], closing_m3=f['closing'])
+                    for j, code in enumerate(codes):
+                        is_before, is_after = (before['type'] == code).ravel(), (after['type'] == code).ravel()
+                        for i, q in enumerate(ZONE_QUANTITIES):
+                            pre = q in before_step
+                            mask = is_before if pre else is_after
+                            weights = (values[q] * (area_before if pre else area_after)).ravel()[mask]
+                            totals[i, j] += np.bincount(zone[mask], weights=weights, minlength=n_zones + 1)
     finally:
         for s in sources:
             s.close()
@@ -916,14 +953,18 @@ def _advance_forest_state_raster(previous_path, lulc_path, ha_path, zone_ids_pat
         os.remove(partial)
         raise ValueError('the initial forest state breaks its contract: %d base-map forest cell(s) carry no forest '
                          'type, %d typed cell(s) are not forest on the base map, and %d cell(s) have an invalid age, '
-                         'since_cut, stock or 0/1 flag. Build the initial state on the model\'s own base map; it is '
-                         'never relabelled here.' % tuple(mismatch))
+                         'since_cut, stock, share or 0/1 flag. Build the initial state on the model\'s own base map; it '
+                         'is never relabelled here.' % tuple(mismatch))
     if worst_residual > 1e-6:
         os.remove(partial)
         raise ValueError('forest stock ledger does not close: largest residual %.3g m3/ha' % worst_residual)
     os.replace(partial, out_path)
-    table = pd.DataFrame(totals.T, columns=list(ZONE_QUANTITIES)).assign(region_id=np.arange(n_zones + 1))
-    return table[table['region_id'] > 0][['region_id'] + list(ZONE_QUANTITIES)]
+    tables = [pd.DataFrame(totals[:, j, :].T, columns=list(ZONE_QUANTITIES)).assign(
+        region_id=np.arange(n_zones + 1), forest_type_id=code, volume_basis=params[code]['volume_basis'])
+        for j, code in enumerate(codes)]
+    table = pd.concat(tables, ignore_index=True)
+    table = table[table['region_id'] > 0].sort_values(['region_id', 'forest_type_id'])
+    return table[['region_id', 'forest_type_id', 'volume_basis'] + list(ZONE_QUANTITIES)].reset_index(drop=True)
 
 
 def _forest_state_chain(p, label, maps_by_year, start, ha_path, zone_ids_path, n_zones, settings, params,
@@ -1002,6 +1043,14 @@ def _harvestable_flow_shock(p, base_scenario, scenarios, anchor_years, es_shock_
     construction, not a calibrated aoall shock, and the annual values interpolate interval means
     between anchors.
 
+    Harvest and timberland are taken on one volume basis. A region that holds timberland or harvest
+    on more than one basis, in any chain at any anchor, is declared: volumes measured on different
+    bases are not added, and no conversion is configured. Unmeasured types (known area, unknown
+    yield) are not in the per-hectare denominator; the regional table reports their timberland
+    beside the measured timberland and the total harvest, and the ledger reports every quantity by
+    zone and forest type. Forest area comes only from the maps, so no economic output, frs or any
+    other, creates or removes forest here.
+
     A region whose reference or same-interval baseline has no flow or no timberland at any anchor,
     or which itself has no timberland at an anchor, has no defined factor. It is left out of the
     table for every scenario and year and named in the excluded-regions file. Its effect is
@@ -1031,7 +1080,7 @@ def _harvestable_flow_shock(p, base_scenario, scenarios, anchor_years, es_shock_
     n_zones = int(max(zone_labels))
     signed_settings = {k: (v if k != 'growth_parameters_path' else os.path.basename(str(v)))
                        for k, v in settings.items() if k != 'input_provenance_path'}
-    signed_settings.update(measure='harvestable_flow', accounting='harvestable_flow_age_v1', base_year=es_shock_base_year)
+    signed_settings.update(measure='harvestable_flow', accounting='harvestable_flow_age_v2', base_year=es_shock_base_year)
     start = (settings['initial_state_path'], es_shock_base_year,
              utilities.file_fingerprint(settings['initial_state_path'], content=False))
     chains = {REFERENCE_LABEL: _forest_state_chain(p, REFERENCE_LABEL, {anchor_years[0]: base_lulc_path}, start, ha_path,
@@ -1048,24 +1097,47 @@ def _harvestable_flow_shock(p, base_scenario, scenarios, anchor_years, es_shock_
     in_scope = {reg: ids for reg, ids in zones_by_region.items() if covered is None or all(int(z) in covered for z in ids)}
     declared = {reg: 'not fully covered by the run grid' for reg in zones_by_region if reg not in in_scope}
 
+    quantities = ('harvest_m3', 'timberland_open_ha', 'forest_ha', 'closing_m3', 'timberland_ha')
+    bases = sorted({prm['volume_basis'] for prm in params.values()})
+    measured = [b for b in bases if b != tp.UNMEASURED_BASIS]
+
     def regional(label, year):
+        """Per region and volume basis: annual harvest, timberland during the interval, forest, stock and timberland at the anchor."""
         table, n_years = chains[label][year]
-        by_zone = table.set_index('region_id')
-        return {reg: tuple(float(by_zone.reindex(ids)[c].sum()) / (n_years if c == 'harvest_m3' else 1)
-                           for c in ('harvest_m3', 'timberland_open_ha', 'forest_ha', 'closing_m3', 'timberland_ha'))
-                for reg, ids in in_scope.items()}
-    reference = regional(REFERENCE_LABEL, anchor_years[0])
+        by_basis = table.groupby(['volume_basis', 'region_id'])[list(quantities)].sum()
+        out = {}
+        for reg, ids in in_scope.items():
+            out[reg] = {}
+            for b in bases:
+                rows_b = by_basis.loc[b].reindex(ids) if b in by_basis.index.get_level_values(0) else None
+                out[reg][b] = tuple(0.0 if rows_b is None else float(rows_b[c].sum()) / (n_years if c == 'harvest_m3' else 1)
+                                    for c in quantities)
+        return out
+    regionals = {label: {y: regional(label, y) for y in chain} for label, chain in chains.items()}
+    # A region shocks on the one volume basis it holds timberland or harvest on. Volumes measured on
+    # different bases are never added, so a region holding two is declared, not shocked.
+    shocked_basis = {}
+    for reg in in_scope:
+        held = [b for b in measured if any(max(by_reg[reg][b][:2]) > 0 for chain in regionals.values() for by_reg in chain.values())]
+        shocked_basis[reg] = held[0] if held else None
+        if len(held) > 1 and reg not in declared:
+            declared[reg] = ('timberland on more than one volume basis (%s): volumes on different bases are not added, '
+                             'and no conversion between them is configured' % ', '.join(held))
+    zero = (0.0,) * len(quantities)
+
+    def on_basis(label, year, reg):
+        return regionals[label][year][reg][shocked_basis[reg]] if shocked_basis[reg] else zero
     all_years = list(range(es_shock_base_year, anchor_years[-1] + 1))
     rows, side_by_side = [], []
     for scenario in scenarios:
-        by_year = {y: regional(scenario, y) for y in anchor_years}
-        bau = {y: regional(base_scenario, y) for y in anchor_years}
         for reg, ids in in_scope.items():
             if reg in declared:
                 continue
-            flow_ref, area_ref = reference[reg][:2]
-            flow, area = (np.array([by_year[y][reg][i] for y in anchor_years]) for i in (0, 1))
-            bau_flow, bau_area = (np.array([bau[y][reg][i] for y in anchor_years]) for i in (0, 1))
+            by_year = {y: on_basis(scenario, y, reg) for y in anchor_years}
+            bau = {y: on_basis(base_scenario, y, reg) for y in anchor_years}
+            flow_ref, area_ref = on_basis(REFERENCE_LABEL, anchor_years[0], reg)[:2]
+            flow, area = (np.array([by_year[y][i] for y in anchor_years]) for i in (0, 1))
+            bau_flow, bau_area = (np.array([bau[y][i] for y in anchor_years]) for i in (0, 1))
             f = tp.harvestable_flow_factors(flow, area, flow_ref, area_ref)
             f_bau = tp.harvestable_flow_factors(bau_flow, bau_area, flow_ref, area_ref)
             vs_bau = tp.harvestable_flow_factors(flow, area, bau_flow, bau_area)
@@ -1089,10 +1161,13 @@ def _harvestable_flow_shock(p, base_scenario, scenarios, anchor_years, es_shock_
                                  'shock_pct_fixedbase': annual['shock_pct_fixedbase'][i],
                                  'shock_pct_contemp': annual['shock_pct_contemp'][i], 'shock_pct_v3': annual['shock_pct_v3'][i]})
             for i, year in enumerate(anchor_years):
-                side_by_side.append({'scenario': scenario, 'REG': reg, 'year': year,
-                                     'forest_ha': by_year[year][reg][2], 'timberland_during_interval_ha': area[i],
-                                     'timberland_at_anchor_ha': by_year[year][reg][4],
-                                     'stock_m3': by_year[year][reg][3], 'harvest_m3_per_year': flow[i],
+                every_basis = regionals[scenario][year][reg]
+                side_by_side.append({'scenario': scenario, 'REG': reg, 'year': year, 'volume_basis': shocked_basis[reg],
+                                     'forest_ha': sum(v[2] for v in every_basis.values()),
+                                     'timberland_during_interval_ha': area[i],
+                                     'unmeasured_timberland_during_interval_ha': every_basis.get(tp.UNMEASURED_BASIS, zero)[1],
+                                     'timberland_at_anchor_ha': by_year[year][4],
+                                     'stock_m3': by_year[year][3], 'harvest_m3_per_year': flow[i],
                                      'reference_harvest_m3_per_year': flow_ref, 'reference_timberland_ha': area_ref,
                                      'area_factor': f['area_factor'][i], 'per_ha_factor': f['per_ha_factor'][i],
                                      'total_factor': f['total_factor'][i], 'timing_per_ha_factor': f_bau['per_ha_factor'][i],
@@ -1116,8 +1191,9 @@ def _harvestable_flow_shock(p, base_scenario, scenarios, anchor_years, es_shock_
     out = utilities.filter_to_model_domain(out, p.timber_provision_shock_output_path, 'timber_provision', log=hb.log)
     utilities.assert_shock_table_sound(out, scenarios, 'timber_provision', column='shock_pct_v3')
     out['timber_resource_measure'] = 'harvestable_flow'
-    out['timber_provision_accounting'] = 'harvestable_flow_age_v1'
+    out['timber_provision_accounting'] = 'harvestable_flow_age_v2'
     out['harvest_basis'] = settings['harvest_rule']
+    out['volume_basis'] = out['REG'].map(shocked_basis)
     out['reference_flow'] = settings['reference_flow']
     out['input_provenance'] = ' '.join('%s:%s' % item for item in provenance.items())
     provenance_df.to_csv(os.path.join(p.cur_dir, 'timber_harvestable_flow_input_provenance.csv'), index=False)
