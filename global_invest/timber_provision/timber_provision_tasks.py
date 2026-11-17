@@ -846,6 +846,17 @@ def _harvestable_flow_settings(p):
     return settings
 
 
+def _volume_basis_weights(p):
+    """The fixed reference weights that combine volume bases, or None when the run configures none.
+
+    Optional, unlike the settings above: without it a region holding more than one volume basis is
+    declared, the conservative result rather than a default value. The table and its contract are in
+    timber_provision_functions.volume_basis_weights_from_table.
+    """
+    path = getattr(p, 'timber_provision_volume_basis_weights_path', None)
+    return None if path in (None, '') else tp.volume_basis_weights_from_table(hb.df_read(path))
+
+
 def _state_cohorts(bands, n_bands):
     """The cohort layers of a block of a state raster: six bands are one cohort taking every forest
     cell whole; otherwise COHORT_BANDS repeat once per cohort layer."""
@@ -1043,9 +1054,13 @@ def _harvestable_flow_shock(p, base_scenario, scenarios, anchor_years, es_shock_
     construction, not a calibrated aoall shock, and the annual values interpolate interval means
     between anchors.
 
-    Harvest and timberland are taken on one volume basis. A region that holds timberland or harvest
-    on more than one basis, in any chain at any anchor, is declared: volumes measured on different
-    bases are not added, and no conversion is configured. Unmeasured types (known area, unknown
+    Harvest and timberland are taken per volume basis, and volumes on different bases are never added.
+    A region holding timberland or harvest on more than one basis, in any chain at any anchor, combines
+    its within-basis factors with the fixed reference weights of p.timber_provision_volume_basis_weights_path
+    (combine_basis_factors). Without that table it is declared. With it, a region is also declared when a
+    basis it holds has no weight or when it holds only part of its reference value. The combined
+    region's area factors add hectares across bases, its volume columns stay empty, and the by-basis
+    table reports each basis's harvest, timberland, timing and factors. Unmeasured types (known area, unknown
     yield) are not in the per-hectare denominator; the regional table reports their timberland
     beside the measured timberland and the total harvest, and the ledger reports every quantity by
     zone and forest type. Forest area comes only from the maps, so no economic output, frs or any
@@ -1114,44 +1129,72 @@ def _harvestable_flow_shock(p, base_scenario, scenarios, anchor_years, es_shock_
                                     for c in quantities)
         return out
     regionals = {label: {y: regional(label, y) for y in chain} for label, chain in chains.items()}
-    # A region shocks on the one volume basis it holds timberland or harvest on. Volumes measured on
-    # different bases are never added, so a region holding two is declared, not shocked.
-    shocked_basis = {}
+    # Volumes measured on different bases are never added. A region holding one basis is shocked on it.
+    # A region holding more is combined with the configured fixed reference weights, or declared when
+    # none are configured. With weights configured, a region whose reference value the model holds only
+    # in part is declared too, so a partial cover never stands for the region's whole forestry.
+    weights = _volume_basis_weights(p)
+    held = {}
     for reg in in_scope:
-        held = [b for b in measured if any(max(by_reg[reg][b][:2]) > 0 for chain in regionals.values() for by_reg in chain.values())]
-        shocked_basis[reg] = held[0] if held else None
-        if len(held) > 1 and reg not in declared:
-            declared[reg] = ('timberland on more than one volume basis (%s): volumes on different bases are not added, '
-                             'and no conversion between them is configured' % ', '.join(held))
+        held[reg] = [b for b in measured if any(max(by_reg[reg][b][:2]) > 0 for chain in regionals.values() for by_reg in chain.values())]
+        if reg in declared or not held[reg]:
+            continue
+        if weights is None:
+            if len(held[reg]) > 1:
+                declared[reg] = ('timberland on more than one volume basis (%s): volumes on different bases are not added, '
+                                 'and no volume-basis weights are configured' % ', '.join(held[reg]))
+            continue
+        reference = weights.get(reg)
+        if not reference:
+            declared[reg] = 'no reference weights for this region in the volume-basis weights table'
+        elif any(b not in reference for b in held[reg]):
+            declared[reg] = ('timberland on volume basis %s, which has no reference weight'
+                             % ', '.join(b for b in held[reg] if b not in reference))
+        elif sum(reference[b] for b in held[reg]) < sum(reference.values()) * (1.0 - 1e-12):
+            declared[reg] = ('the model holds %.4g of the reference value: no timberland on %s'
+                             % (sum(reference[b] for b in held[reg]) / sum(reference.values()),
+                                ', '.join(b for b in reference if b not in held[reg])))
     zero = (0.0,) * len(quantities)
-
-    def on_basis(label, year, reg):
-        return regionals[label][year][reg][shocked_basis[reg]] if shocked_basis[reg] else zero
     all_years = list(range(es_shock_base_year, anchor_years[-1] + 1))
-    rows, side_by_side = [], []
+    rows, side_by_side, by_basis_rows = [], [], []
     for scenario in scenarios:
         for reg, ids in in_scope.items():
             if reg in declared:
                 continue
-            by_year = {y: on_basis(scenario, y, reg) for y in anchor_years}
-            bau = {y: on_basis(base_scenario, y, reg) for y in anchor_years}
-            flow_ref, area_ref = on_basis(REFERENCE_LABEL, anchor_years[0], reg)[:2]
-            flow, area = (np.array([by_year[y][i] for y in anchor_years]) for i in (0, 1))
-            bau_flow, bau_area = (np.array([bau[y][i] for y in anchor_years]) for i in (0, 1))
-            f = tp.harvestable_flow_factors(flow, area, flow_ref, area_ref)
-            f_bau = tp.harvestable_flow_factors(bau_flow, bau_area, flow_ref, area_ref)
-            vs_bau = tp.harvestable_flow_factors(flow, area, bau_flow, bau_area)
-            if not np.isfinite(f['per_ha_factor']).all():
-                declared[reg] = ('no defined per-hectare factor: reference flow %.6g m3/yr, reference timberland '
-                                 '%.6g ha, timberland at the anchors %s ha' % (flow_ref, area_ref, area.tolist()))
+            per_basis = {}
+            for b in held[reg] or [None]:
+                def on_basis(label, year):
+                    return regionals[label][year][reg][b] if b else zero
+                by_year = {y: on_basis(scenario, y) for y in anchor_years}
+                bau = {y: on_basis(base_scenario, y) for y in anchor_years}
+                flow_ref, area_ref = on_basis(REFERENCE_LABEL, anchor_years[0])[:2]
+                flow, area = (np.array([by_year[y][i] for y in anchor_years]) for i in (0, 1))
+                bau_flow, bau_area = (np.array([bau[y][i] for y in anchor_years]) for i in (0, 1))
+                f = tp.harvestable_flow_factors(flow, area, flow_ref, area_ref)
+                f_bau = tp.harvestable_flow_factors(bau_flow, bau_area, flow_ref, area_ref)
+                vs_bau = tp.harvestable_flow_factors(flow, area, bau_flow, bau_area)
+                on = ' on %s' % b if len(held[reg]) > 1 else ''
+                if not np.isfinite(f['per_ha_factor']).all():
+                    declared[reg] = ('no defined per-hectare factor%s: reference flow %.6g m3/yr, reference timberland '
+                                     '%.6g ha, timberland at the anchors %s ha' % (on, flow_ref, area_ref, area.tolist()))
+                    break
+                if not np.isfinite(vs_bau['per_ha_factor']).all():
+                    declared[reg] = ('no defined contemporaneous per-hectare factor%s: baseline harvest %s m3/yr and baseline '
+                                     'timberland %s ha at the anchors' % (on, bau_flow.tolist(), bau_area.tolist()))
+                    break
+                per_basis[b] = dict(by_year=by_year, flow=flow, area=area, bau_flow=bau_flow, bau_area=bau_area,
+                                    flow_ref=flow_ref, area_ref=area_ref, f=f, f_bau=f_bau, vs_bau=vs_bau)
+            if reg in declared:
                 continue
-            if not np.isfinite(vs_bau['per_ha_factor']).all():
-                declared[reg] = ('no defined contemporaneous per-hectare factor: baseline harvest %s m3/yr and baseline '
-                                 'timberland %s ha at the anchors' % (bau_flow.tolist(), bau_area.tolist()))
-                continue
-            v3 = 100.0 * (f['per_ha_factor'] - 1.0)
-            columns = {'shock_pct_v3': v3, 'shock_pct_fixedbase': 100.0 * (f['per_ha_factor'] - f_bau['per_ha_factor']),
-                       'shock_pct_contemp': 100.0 * (vs_bau['per_ha_factor'] - 1.0)}
+            w = {b: 1.0 for b in per_basis} if len(per_basis) == 1 else {b: weights[reg][b] for b in per_basis}
+            share = {b: w[b] / sum(w.values()) for b in per_basis}
+
+            def combined(factors, column):
+                return tp.combine_basis_factors({b: v[factors][column] for b, v in per_basis.items()}, w)
+            per_ha, timing, contemp = combined('f', 'per_ha_factor'), combined('f_bau', 'per_ha_factor'), combined('vs_bau', 'per_ha_factor')
+            v3 = 100.0 * (per_ha - 1.0)
+            columns = {'shock_pct_v3': v3, 'shock_pct_fixedbase': 100.0 * (per_ha - timing),
+                       'shock_pct_contemp': 100.0 * (contemp - 1.0)}
             annual = {c: tcf.interpolate_annual_shock(all_years, anchor_years, v, es_shock_base_year) for c, v in columns.items()}
             for zone_id in ids:
                 endw = zone_labels[zone_id][0]
@@ -1160,23 +1203,42 @@ def _harvestable_flow_shock(p, base_scenario, scenarios, anchor_years, es_shock_
                                  'year': year, 'shock_pct': annual['shock_pct_contemp'][i],
                                  'shock_pct_fixedbase': annual['shock_pct_fixedbase'][i],
                                  'shock_pct_contemp': annual['shock_pct_contemp'][i], 'shock_pct_v3': annual['shock_pct_v3'][i]})
+            # Hectares add across bases; volumes do not, so a combined region's volume columns stay empty
+            # here and are reported per basis in the by-basis table.
+            one = per_basis[next(iter(per_basis))] if len(per_basis) == 1 else None
+            area, area_ref, bau_area = (sum(v[k] for v in per_basis.values()) for k in ('area', 'area_ref', 'bau_area'))
+            total, total_vs_bau = combined('f', 'total_factor'), combined('vs_bau', 'total_factor')
             for i, year in enumerate(anchor_years):
                 every_basis = regionals[scenario][year][reg]
-                side_by_side.append({'scenario': scenario, 'REG': reg, 'year': year, 'volume_basis': shocked_basis[reg],
+                side_by_side.append({'scenario': scenario, 'REG': reg, 'year': year, 'volume_basis': '+'.join(per_basis),
+                                     'basis_weights': ' '.join('%s:%.6g' % (b, share[b]) for b in per_basis),
                                      'forest_ha': sum(v[2] for v in every_basis.values()),
                                      'timberland_during_interval_ha': area[i],
                                      'unmeasured_timberland_during_interval_ha': every_basis.get(tp.UNMEASURED_BASIS, zero)[1],
-                                     'timberland_at_anchor_ha': by_year[year][4],
-                                     'stock_m3': by_year[year][3], 'harvest_m3_per_year': flow[i],
-                                     'reference_harvest_m3_per_year': flow_ref, 'reference_timberland_ha': area_ref,
-                                     'area_factor': f['area_factor'][i], 'per_ha_factor': f['per_ha_factor'][i],
-                                     'total_factor': f['total_factor'][i], 'timing_per_ha_factor': f_bau['per_ha_factor'][i],
-                                     'area_factor_vs_baseline_scenario': vs_bau['area_factor'][i],
-                                     'per_ha_factor_vs_baseline_scenario': vs_bau['per_ha_factor'][i],
-                                     'total_factor_vs_baseline_scenario': vs_bau['total_factor'][i],
+                                     'timberland_at_anchor_ha': sum(v['by_year'][year][4] for v in per_basis.values()),
+                                     'stock_m3': one['by_year'][year][3] if one else np.nan,
+                                     'harvest_m3_per_year': one['flow'][i] if one else np.nan,
+                                     'reference_harvest_m3_per_year': one['flow_ref'] if one else np.nan,
+                                     'reference_timberland_ha': area_ref,
+                                     'area_factor': area[i] / area_ref, 'per_ha_factor': per_ha[i],
+                                     'total_factor': total[i], 'timing_per_ha_factor': timing[i],
+                                     'area_factor_vs_baseline_scenario': area[i] / bau_area[i],
+                                     'per_ha_factor_vs_baseline_scenario': contemp[i],
+                                     'total_factor_vs_baseline_scenario': total_vs_bau[i],
                                      'shock_pct_contemp': columns['shock_pct_contemp'][i], 'shock_pct_v3': v3[i]})
+                for b, v in per_basis.items():
+                    by_basis_rows.append({'scenario': scenario, 'REG': reg, 'year': year, 'volume_basis': b, 'weight': share[b],
+                                          'timberland_during_interval_ha': v['area'][i], 'harvest_m3_per_year': v['flow'][i],
+                                          'stock_m3': v['by_year'][year][3], 'baseline_timberland_ha': v['bau_area'][i],
+                                          'baseline_harvest_m3_per_year': v['bau_flow'][i],
+                                          'reference_timberland_ha': v['area_ref'], 'reference_harvest_m3_per_year': v['flow_ref'],
+                                          'per_ha_factor': v['f']['per_ha_factor'][i], 'timing_per_ha_factor': v['f_bau']['per_ha_factor'][i],
+                                          'area_factor_vs_baseline_scenario': v['vs_bau']['area_factor'][i],
+                                          'per_ha_factor_vs_baseline_scenario': v['vs_bau']['per_ha_factor'][i],
+                                          'total_factor_vs_baseline_scenario': v['vs_bau']['total_factor'][i]})
     rows = [r for r in rows if r['REG'] not in declared]
     side_by_side = [r for r in side_by_side if r['REG'] not in declared]
+    by_basis_rows = [r for r in by_basis_rows if r['REG'] not in declared]
     for reg in sorted(declared):
         hb.log('  harvestable flow: %s declared, not shocked: %s' % (reg, declared[reg]))
     ledger = pd.concat([table.assign(scenario=label, year=year, interval_years=n_years)
@@ -1185,6 +1247,7 @@ def _harvestable_flow_shock(p, base_scenario, scenarios, anchor_years, es_shock_
                                                            - ledger['harvest_m3'] - ledger['removed_m3'])
     ledger.to_csv(os.path.join(p.cur_dir, 'timber_harvestable_flow_ledger_by_zone.csv'), index=False)
     pd.DataFrame(side_by_side).to_csv(os.path.join(p.cur_dir, 'timber_harvestable_flow_by_region.csv'), index=False)
+    pd.DataFrame(by_basis_rows).to_csv(os.path.join(p.cur_dir, 'timber_harvestable_flow_by_region_and_basis.csv'), index=False)
 
     out = pd.DataFrame(rows, columns=['ENDW', 'ACTS', 'REG', 'scenario', 'year', 'shock_pct', 'shock_pct_fixedbase',
                                       'shock_pct_contemp', 'shock_pct_v3'])
@@ -1193,7 +1256,7 @@ def _harvestable_flow_shock(p, base_scenario, scenarios, anchor_years, es_shock_
     out['timber_resource_measure'] = 'harvestable_flow'
     out['timber_provision_accounting'] = 'harvestable_flow_age_v2'
     out['harvest_basis'] = settings['harvest_rule']
-    out['volume_basis'] = out['REG'].map(shocked_basis)
+    out['volume_basis'] = out['REG'].map({reg: '+'.join(bases_held) for reg, bases_held in held.items()})
     out['reference_flow'] = settings['reference_flow']
     out['input_provenance'] = ' '.join('%s:%s' % item for item in provenance.items())
     provenance_df.to_csv(os.path.join(p.cur_dir, 'timber_harvestable_flow_input_provenance.csv'), index=False)

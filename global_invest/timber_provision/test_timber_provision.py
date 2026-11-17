@@ -1221,3 +1221,98 @@ def test_volumes_on_two_bases_are_not_added_and_a_region_holding_both_is_declare
     _set_stands(paths, slice(0, 4), (1.0, 3.0, 5.0, 6.0), native_managed=False)
     shock, regional, _ = _run(p, paths, ('baseline', 'policy_same'))
     assert set(shock.loc[shock.REG == 'AAA', 'volume_basis']) == set(regional.loc[regional.REG == 'AAA', 'volume_basis']) == {'stem_over_bark'}
+
+
+# --- combining volume bases with fixed reference weights ------------------------------------------
+TWO_BASES = SYNTHETIC_GROWTH.assign(volume_basis=['commercial_over_50cm_dbh', 'stem_over_bark', 'stem_over_bark'])
+
+
+def _weights(tmp_path, rows):
+    """A SYNTHETIC volume-basis weights table: (REG, volume_basis, reference_value) rows."""
+    path = tmp_path / 'basis_weights.csv'
+    pd.DataFrame(rows, columns=['REG', 'volume_basis', 'reference_value']).assign(
+        source='SYNTHETIC test weight, not a calibration').to_csv(path, index=False)
+    return str(path)
+
+
+def test_the_volume_basis_weights_table_has_no_defaults_and_one_basis_passes_through():
+    good = pd.DataFrame({'REG': ['AAA', 'AAA'], 'volume_basis': ['a', 'b'], 'reference_value': [3.0, 1.0], 'source': ['cited'] * 2})
+    assert tp.volume_basis_weights_from_table(good) == {'AAA': {'a': 3.0, 'b': 1.0}}
+    for bad in (good.drop(columns='source'), pd.concat([good, good.head(1)]), good.assign(volume_basis=['a', tp.UNMEASURED_BASIS]),
+                good.assign(reference_value=[3.0, 0.0]), good.assign(reference_value=[3.0, np.nan]), good.assign(source=['cited', ' '])):
+        with pytest.raises(ValueError):
+            tp.volume_basis_weights_from_table(bad)
+    x = np.array([0.9, 1.1])
+    assert np.array_equal(tp.combine_basis_factors({'a': x}, {'a': 7.3}), x)                # no weight arithmetic on one basis
+    np.testing.assert_allclose(tp.combine_basis_factors({'a': x, 'b': np.ones(2)}, {'a': 3.0, 'b': 1.0}), 0.75 * x + 0.25, rtol=1e-15)
+
+
+def _mixed_region(tmp_path, weights):
+    """AAA: plantation rows 0-3 at ages 1, 3, 5 and 6, and managed native forest in row 4, on two volume bases.
+    The native cells were cut 30, 26, 30 and 26 years before the base year, so the native forest yields in
+    2028 and 2032 and each half of the row holds the same mix. BBB: plantation only. The policy clears AAA's
+    oldest plantation row and the first half of its native row in 2030."""
+    import json
+    import rasterio
+    p, paths = _uniform_stands(tmp_path, [(slice(3, 4), slice(0, 4)), (slice(4, 5), slice(0, 2))])
+    with rasterio.open(paths.state) as src:
+        bands = src.read()
+    bands[2, 4, 0:4] = (30.0, 26.0, 30.0, 26.0)
+    _tif(paths.state, bands)
+    TWO_BASES.to_csv(tmp_path / 'growth.csv', index=False)
+    _set_stands(paths, slice(4, 8), (0.0, 2.0, 4.0, 6.0), native_managed=False)
+    if weights is not None:
+        p.timber_provision_volume_basis_weights_path = _weights(tmp_path, weights)
+    shock, regional, _ = _run(p, paths, ('baseline', 'policy_loss'))
+    by_basis = pd.read_csv(os.path.join(p.cur_dir, 'timber_harvestable_flow_by_region_and_basis.csv'))
+    declared = json.load(open(os.path.join(os.path.dirname(p.timber_provision_shock_output_path), 'timber_provision_excluded_regions.json')))
+    return shock, regional, by_basis, declared['reason']
+
+
+def test_a_mixed_native_and_plantation_region_combines_its_within_basis_factors_with_fixed_weights(tmp_path):
+    shock, regional, by_basis, declared = _mixed_region(tmp_path, [('AAA', 'stem_over_bark', 3.0), ('AAA', 'commercial_over_50cm_dbh', 1.0),
+                                                                   ('BBB', 'stem_over_bark', 1.0)])
+    assert 'AAA' not in declared and 'BBB' not in declared
+    aaa = by_basis[(by_basis.scenario == 'policy_loss') & (by_basis.REG == 'AAA')].set_index(['year', 'volume_basis'])
+    plantation, native = aaa.xs('stem_over_bark', level=1), aaa.xs('commercial_over_50cm_dbh', level=1)
+    # Within each basis: the plantation lost its oldest row, so its per-hectare harvest changes; the native
+    # forest lost half its hectares of one identical stand, so only its area changes.
+    assert (plantation['weight'] == 0.75).all() and (native['weight'] == 0.25).all()
+    assert abs(plantation.loc[2040, 'per_ha_factor_vs_baseline_scenario'] - 1.0) > 0.01
+    assert native.loc[2040, 'per_ha_factor_vs_baseline_scenario'] == pytest.approx(1.0, abs=1e-12)
+    assert native.loc[2040, 'area_factor_vs_baseline_scenario'] == pytest.approx(0.5, rel=1e-9)
+    assert (plantation['harvest_m3_per_year'] > 0).all() and (native.loc[2030, 'harvest_m3_per_year'] > 0)
+    # The combined factor is the weighted mean of the within-basis factors, and it reaches the shock.
+    row = regional[(regional.scenario == 'policy_loss') & (regional.REG == 'AAA')].set_index('year')
+    expected = 0.75 * plantation['per_ha_factor_vs_baseline_scenario'] + 0.25 * native['per_ha_factor_vs_baseline_scenario']
+    np.testing.assert_allclose(row['per_ha_factor_vs_baseline_scenario'], expected, rtol=1e-14)
+    contemp = shock[(shock.scenario == 'policy_loss') & (shock.REG == 'AAA')].set_index('year')['shock_pct_contemp']
+    assert contemp.loc[2030] == 0.0 and contemp.loc[2040] == pytest.approx(100 * (expected.loc[2040] - 1), rel=1e-12)
+    assert abs(contemp.loc[2040]) > 1.0                                          # a material signal, in percent
+    # Volumes are not added across bases; hectares are, and the area factor is reported apart from the shock.
+    assert row[['harvest_m3_per_year', 'stock_m3', 'reference_harvest_m3_per_year']].isna().all().all()
+    np.testing.assert_allclose(row['timberland_during_interval_ha'], aaa.groupby(level=0)['timberland_during_interval_ha'].sum(), rtol=1e-12)
+    np.testing.assert_allclose(row['area_factor_vs_baseline_scenario'], row['timberland_during_interval_ha']
+                               / aaa.groupby(level=0)['baseline_timberland_ha'].sum(), rtol=1e-12)
+    assert set(shock.loc[shock.REG == 'AAA', 'volume_basis']) == {'commercial_over_50cm_dbh+stem_over_bark'}
+    assert set(row['basis_weights']) == {'commercial_over_50cm_dbh:0.25 stem_over_bark:0.75'}
+    # BBB holds one basis and is shocked on it as before.
+    assert set(shock.loc[shock.REG == 'BBB', 'volume_basis']) == {'stem_over_bark'}
+
+
+def test_weights_must_cover_every_basis_and_all_of_a_regions_reference_value(tmp_path):
+    for case, weights, survivor, reason in (
+            ('partial', [('AAA', 'stem_over_bark', 3.0), ('AAA', 'commercial_over_50cm_dbh', 1.0),
+                         ('BBB', 'stem_over_bark', 3.0), ('BBB', 'commercial_over_50cm_dbh', 1.0)],
+             'AAA', ('BBB', 'the model holds 0.75 of the reference value: no timberland on commercial_over_50cm_dbh')),
+            ('unweighted', [('AAA', 'stem_over_bark', 3.0), ('BBB', 'stem_over_bark', 1.0)],
+             'BBB', ('AAA', 'timberland on volume basis commercial_over_50cm_dbh, which has no reference weight')),
+            ('absent', [('BBB', 'stem_over_bark', 1.0)],
+             'BBB', ('AAA', 'no reference weights for this region in the volume-basis weights table'))):
+        (tmp_path / case).mkdir()
+        shock, _, _, declared = _mixed_region(tmp_path / case, weights)
+        assert declared[reason[0]] == reason[1] and set(shock['REG']) == {survivor}
+    # Without a weights table the mixed region is declared, as before.
+    (tmp_path / 'none').mkdir()
+    shock, _, _, declared = _mixed_region(tmp_path / 'none', None)
+    assert declared['AAA'].startswith('timberland on more than one volume basis') and set(shock['REG']) == {'BBB'}

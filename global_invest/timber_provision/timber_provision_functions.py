@@ -755,6 +755,65 @@ def harvestable_flow_factors(flow, area, flow_ref, area_ref):
     return dict(area_factor=area_factor, per_ha_factor=per_ha_factor, total_factor=total_factor)
 
 
+# Combining volume bases. Volumes measured on different bases (plantation stem volume over bark,
+# native commercial volume of large trees) are never added. A region holding more than one basis gets
+# one dimensionless factor per basis, and these are combined with fixed reference weights, one per
+# region and basis, such as each basis's share of the region's base-year forestry production value.
+# With value weights the combined factor is a fixed-base (Laspeyres) index of the per-hectare output
+# changes within each basis, valued at base-year prices. Hectares moving between bases change no
+# within-basis factor, so they reach the shock only through the economic model's own land, and the
+# per-basis area factors report them. The weights are configuration with a stated source; nothing
+# here supplies one.
+
+
+def volume_basis_weights_from_table(df):
+    """Fixed reference weights per region and volume basis, from the configured table. No defaults.
+
+    Args:
+        df (pd.DataFrame): one row per region and basis: REG, volume_basis, reference_value (> 0, in one
+            unit for the whole table, such as base-year production value) and a non-empty source.
+
+    Returns:
+        dict: REG -> {volume_basis: reference_value}.
+
+    Raises:
+        ValueError: on a missing column, a repeated (REG, volume_basis), the unmeasured basis, a value
+            that is missing or not positive, or an empty source.
+    """
+    missing = [c for c in ('REG', 'volume_basis', 'reference_value', 'source') if c not in df.columns]
+    if missing:
+        raise ValueError('the volume-basis weights table has no column %s' % ', '.join(missing))
+    weights = {}
+    for row in df.to_dict('records'):
+        reg, basis, value = str(row['REG']), str(row['volume_basis']), float(row['reference_value'])
+        if basis == UNMEASURED_BASIS:
+            raise ValueError('%s: the unmeasured basis has no volume to weight' % reg)
+        if basis in weights.get(reg, {}):
+            raise ValueError('%s: volume basis %s appears twice' % (reg, basis))
+        if not np.isfinite(value) or value <= 0:
+            raise ValueError('%s %s: reference_value must be positive, got %r' % (reg, basis, row['reference_value']))
+        if not isinstance(row.get('source'), str) or not row['source'].strip():
+            raise ValueError('%s %s has no source' % (reg, basis))
+        weights.setdefault(reg, {})[basis] = value
+    return weights
+
+
+def combine_basis_factors(factors, weights):
+    """Fixed-weight mean of within-basis factors, sum_b w_b x_b / sum_b w_b, elementwise.
+
+    Args:
+        factors (dict): volume basis -> factor array (or float).
+        weights (dict): volume basis -> positive reference weight, for every basis in factors.
+
+    Returns:
+        np.ndarray: the combined factor. One basis returns its own factor unchanged.
+    """
+    if len(factors) == 1:
+        return np.asarray(next(iter(factors.values())), dtype='float64')
+    total = sum(weights[b] for b in factors)
+    return sum(weights[b] * np.asarray(factors[b], dtype='float64') for b in factors) / total
+
+
 def input_provenance_from_table(df):
     """Where each harvestable_flow input comes from, read from the configured provenance table.
 
