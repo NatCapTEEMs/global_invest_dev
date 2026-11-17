@@ -475,6 +475,55 @@ def test_age_aware_logged_stand_regrows_along_its_curve_from_its_equivalent_age(
     assert later['stock'][0] < float(tp.merchantable_volume(211.0, prm))
 
 
+def test_age_aware_plantation_is_cut_exactly_at_its_rotation_age():
+    grown, flows = _advance(_state([3, 3], [5, 6]), 1, [True, True])        # rotation 7
+    assert flows['harvest'][0] == 0.0 and grown['age'][0] == 6.0
+    assert flows['harvest'][1] == pytest.approx(float(tp.merchantable_volume(7, GROWTH[3])), rel=1e-12)
+    assert grown['age'][1] == 0.0 and grown['stock'][1] == 0.0
+
+
+def test_a_newly_planted_plantation_first_yields_at_its_own_rotation_age():
+    plant = {'type': 3, 'managed': True, 'accessible': True}
+    state, flows = tp.advance_forest_state(_state([0], [0]), 1, [True], plant, GROWTH, 'scheduled', 'curve_equivalent_age', 0.0)
+    assert state['type'][0] == 3 and state['age'][0] == 0.0 and state['stock'][0] == 0.0 and flows['harvest'][0] == 0.0
+    harvests = []
+    for _ in range(8):
+        state, flows = tp.advance_forest_state(state, 1, [True], plant, GROWTH, 'scheduled', 'curve_equivalent_age', 0.0)
+        harvests.append(float(flows['harvest'][0]))
+    assert harvests[:6] == [0.0] * 6 and harvests[7] == 0.0
+    assert harvests[6] == pytest.approx(float(tp.merchantable_volume(7, GROWTH[3])), rel=1e-12)
+
+
+def _yearly_harvest(params, state, years):
+    flows = []
+    for _ in range(years):
+        state, f = tp.advance_forest_state(state, 1, np.ones(len(state['type']), bool), NEW_FOREST, params,
+                                           'scheduled', 'curve_equivalent_age', 0.0)
+        flows.append(f['harvest'].copy())
+    return np.array(flows)
+
+
+def test_plantation_harvest_depends_on_the_curve_only_through_the_volume_at_rotation():
+    other = dict(GROWTH)
+    k, shape = 0.6, 3.0                                                     # another curve through the same V(7)
+    other[3] = dict(GROWTH[3], k=k, shape=shape,
+                    vmax_m3_per_ha=float(tp.merchantable_volume(7, GROWTH[3])) / (1 - np.exp(-k * 7)) ** shape)
+    ages = np.arange(14) % 7
+    start = _state(np.full(14, 3), ages)                                    # stock on the fixture curve
+    start_other = dict(start, stock=tp.merchantable_volume(ages, other[3]))  # stock on the other curve
+    assert np.allclose(_yearly_harvest(GROWTH, start, 20), _yearly_harvest(other, start_other, 20), rtol=1e-12)
+
+
+def test_native_harvest_within_one_cycle_does_not_depend_on_the_recovery_curve():
+    since = np.arange(35.0)                                                 # cuts spread over the 35-year cycle
+    start = _state(np.full(35, 1), np.full(35, 200), since=since)
+    other = dict(GROWTH)
+    other[1] = dict(GROWTH[1], vmax_m3_per_ha=400.0, k=0.01)
+    start_other = dict(start, stock=np.minimum(start['stock'], 400.0))
+    assert np.array_equal(_yearly_harvest(GROWTH, start, 27), _yearly_harvest(other, start_other, 27))
+    assert (_yearly_harvest(GROWTH, start, 27).sum(axis=1) == 30.0).all()   # one 30 m3/ha cut a year
+
+
 def test_harvestable_flow_factors_are_undefined_at_a_zero_reference():
     f = tp.harvestable_flow_factors([5.0, 5.0, 0.0], [10.0, 10.0, 0.0], [0.0, 2.0, 2.0], [10.0, 0.0, 10.0])
     assert np.isnan(f['per_ha_factor']).all()
@@ -952,6 +1001,25 @@ def test_harvestable_flow_runs_reuses_and_skips_in_a_real_projectflow(tmp_path):
     again, _ = execute(tmp_path / 'project')                                # the same project reuses every state
     assert {f: os.stat(os.path.join(task_dir, f)).st_mtime_ns for f in states} == states
     pd.testing.assert_frame_equal(pd.read_csv(again.timber_provision_shock_output_path), shock)
+    # A trial map for 2040, then the accepted map again. Each run recomputes 2040 from the same 2030
+    # state, which is never rewritten, so the trial leaves no trace. A 2040 map acts after the 2040
+    # harvest, so it moves the 2040 state and ledger, not the shock.
+    import shutil
+    ledger_path = os.path.join(task_dir, 'timber_harvestable_flow_ledger_by_zone.csv')
+    ledger = pd.read_csv(ledger_path)
+    trial_2040, accepted_2040 = p.scenario_lulc_paths['policy_clear'][2040], tmp_path / 'accepted_2040.tif'
+    shutil.copy(trial_2040, accepted_2040)
+    trial = np.full((6, 12), FOREST, dtype='uint8')
+    trial[5, :], trial[0:3, 0:4] = CROP, CROP
+    _tif(trial_2040, trial, 255)
+    execute(tmp_path / 'project')
+    assert not pd.read_csv(ledger_path).equals(ledger)
+    pd.testing.assert_frame_equal(pd.read_csv(again.timber_provision_shock_output_path), shock)
+    shutil.copy(accepted_2040, trial_2040)
+    accepted, _ = execute(tmp_path / 'project')
+    pd.testing.assert_frame_equal(pd.read_csv(ledger_path), ledger)
+    pd.testing.assert_frame_equal(pd.read_csv(accepted.timber_provision_shock_output_path), shock)
+    assert os.stat(os.path.join(task_dir, 'timber_forest_state_policy_clear_2030.tif')).st_mtime_ns == states['timber_forest_state_policy_clear_2030.tif']
     skipped, skipped_dir = execute(tmp_path / 'skipped', ['timber_provision_shock'])
     assert not os.path.exists(skipped.timber_provision_shock_output_path)
     assert not os.path.exists(skipped_dir) or not os.listdir(skipped_dir)

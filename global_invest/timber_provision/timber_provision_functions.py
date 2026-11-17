@@ -452,11 +452,13 @@ def forest_biomass_carbon_on_map(base_forest_carbon, new_forest_carbon, lulc, fo
 # Opt-in and never a default. A forest state is kept per cell beside the land-cover map: forest
 # type, stand age, years since the last selective cut, merchantable stock (m3/ha), and whether the
 # cell is managed and accessible. Harvest does not change the land-cover label, so the state cannot
-# be read off the map. Each annual step grows the stock along the type's Chapman-Richards curve
-# from the age at which the curve holds the current stock, then removes what the harvest rule
-# cuts. A land-cover change between two maps takes effect at the later map's year: clearing
-# removes the stand and its stock, and new forest enters at age 0 with zero stock. Every growth,
-# harvest and recovery value is configuration with a stated source; nothing here supplies one.
+# be read off the map. Each annual step ages every stand by one year, grows its stock along the
+# type's Chapman-Richards curve from the age at which the curve holds the current stock, then cuts
+# from the grown stock what the harvest rule allows. A selective cut lowers the stock and resets
+# the years since the cut, never the stand's age. A map applies at the end of its year, after that
+# year's harvest: clearing removes the stand and its stock, and new forest enters at age 0 with zero
+# stock, so a planted stand first yields when it reaches its own harvest age. Every growth, harvest
+# and recovery value is configuration with a stated source; nothing here supplies one.
 
 FOREST_STATE_BANDS = ('type', 'age', 'since_cut', 'stock', 'managed', 'accessible')
 HARVEST_RULES = ('none', 'scheduled')
