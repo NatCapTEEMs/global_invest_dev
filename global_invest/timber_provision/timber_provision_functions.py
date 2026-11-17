@@ -461,6 +461,8 @@ def forest_biomass_carbon_on_map(base_forest_carbon, new_forest_carbon, lulc, fo
 FOREST_STATE_BANDS = ('type', 'age', 'since_cut', 'stock', 'managed', 'accessible')
 HARVEST_RULES = ('none', 'scheduled')
 RECOVERY_RULES = ('curve_equivalent_age',)
+PROVENANCE_STATUSES = ('observed', 'assumed', 'synthetic')
+PROVENANCE_INPUTS = FOREST_STATE_BANDS + ('growth_parameters',)
 GROWTH_PARAMETER_COLUMNS = {
     'rotation': ('rotation_age', 'vmax_m3_per_ha', 'k', 'shape'),
     'cycle': ('min_age', 'cycle_years', 'intensity_m3_per_ha', 'vmax_m3_per_ha', 'k', 'shape'),
@@ -624,9 +626,10 @@ def stock_ledger_residual(flows):
 def harvestable_flow_factors(flow, area, flow_ref, area_ref):
     """F/F_ref = (A/A_ref) x (f/f_ref) with f = F/A, elementwise; NaN where a ratio is undefined.
 
-    No epsilon is added: a zero reference flow or area has no ratio, and a year with no timberland
-    has no per-hectare flow. Which factor reaches GTAP, and with what calibration, is not decided
-    here.
+    The reference is either the base map's first interval or the baseline scenario over the same
+    interval. No epsilon is added: a zero reference flow or area has no ratio, and a year with no
+    timberland has no per-hectare flow. Which factor reaches GTAP, and with what calibration, is not
+    decided here.
 
     Returns:
         dict: area_factor, per_ha_factor and total_factor arrays.
@@ -638,3 +641,41 @@ def harvestable_flow_factors(flow, area, flow_ref, area_ref):
         per_ha_factor = np.where((area_ref > 0) & (flow_ref > 0) & (area > 0),
                                  (flow / area) / (flow_ref / area_ref), np.nan)
     return dict(area_factor=area_factor, per_ha_factor=per_ha_factor, total_factor=total_factor)
+
+
+def input_provenance_from_table(df):
+    """Where each harvestable_flow input comes from, read from the configured provenance table.
+
+    Args:
+        df (pd.DataFrame): columns input, status ('observed', 'assumed' or 'synthetic') and source,
+            with one row per input of PROVENANCE_INPUTS. An input built from more than one source
+            takes one row per subset of its cells, each also naming the subset and its coverage:
+            secondary-forest ages read from a map where it has a value and filled by an assumption
+            elsewhere are two age rows. Further inputs, such as a management or access layer behind
+            a band, are kept.
+
+    Returns:
+        dict: input -> its statuses in table order, joined by '+' (e.g. 'observed+assumed').
+
+    Raises:
+        ValueError: on a missing input, an unknown status, an empty source, or a repeated input
+            whose rows do not each name a distinct subset and its coverage.
+    """
+    rows = df.to_dict('records')
+    names = list(dict.fromkeys(str(row['input']) for row in rows))
+    missing = [name for name in PROVENANCE_INPUTS if name not in names]
+    if missing:
+        raise ValueError('input provenance has no row for %s' % missing)
+    for row in rows:
+        if row['status'] not in PROVENANCE_STATUSES:
+            raise ValueError('input %s: status must be one of %s, got %r' % (row['input'], PROVENANCE_STATUSES, row['status']))
+        if not isinstance(row.get('source'), str) or not row['source'].strip():
+            raise ValueError('input %s has no source' % row['input'])
+    statuses = {}
+    for name in names:
+        subsets = [row for row in rows if str(row['input']) == name]
+        described = all(isinstance(row.get(c), str) and row[c].strip() for row in subsets for c in ('subset', 'coverage'))
+        if len(subsets) > 1 and not (described and len({row['subset'] for row in subsets}) == len(subsets)):
+            raise ValueError('input %s has %d rows, and each needs its own subset and a coverage' % (name, len(subsets)))
+        statuses[name] = '+'.join(dict.fromkeys(str(row['status']) for row in subsets))
+    return statuses

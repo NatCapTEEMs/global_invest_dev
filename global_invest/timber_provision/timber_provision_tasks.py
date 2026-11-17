@@ -817,9 +817,11 @@ def timber_provision_shock(p):
 #     on every other cell (the first step refuses any disagreement);
 #   - age and since_cut in years (finite on forest cells), stock in m3/ha within [0, vmax] of the
 #     type, managed and accessible as 0 or 1.
+# The input provenance table says, for each band and for the growth table, whether it is observed,
+# assumed or synthetic, and from what source. It travels into the outputs beside the shock.
 
-HARVESTABLE_FLOW_SETTINGS = ('growth_parameters_path', 'initial_state_path', 'new_forest', 'harvest_rule',
-                             'recovery_rule', 'salvage_fraction', 'reference_flow')
+HARVESTABLE_FLOW_SETTINGS = ('growth_parameters_path', 'initial_state_path', 'input_provenance_path', 'new_forest',
+                             'harvest_rule', 'recovery_rule', 'salvage_fraction', 'reference_flow')
 REFERENCE_FLOWS = ('base_map_first_interval',)
 REFERENCE_LABEL = 'base_map_reference'
 ZONE_QUANTITIES = ('forest_ha', 'timberland_open_ha', 'timberland_ha', 'opening_m3', 'growth_m3', 'harvest_m3', 'removed_m3',
@@ -979,21 +981,37 @@ def _harvestable_flow_shock(p, base_scenario, scenarios, anchor_years, es_shock_
                             base_lulc_path):
     """The age-aware timber shock: per-hectare change in the harvest the forest state yields.
 
-    The fed column, shock_pct_v3, is 100 (f / f_ref - 1) with f the region's mean annual harvest
-    over the interval ending at the anchor year per hectare of the timberland (managed, accessible
-    forest) present during that interval, and f_ref the reference flow the setting names. A map
-    change takes effect at the anchor year, so the interval's timberland is the one it started
-    with. Only the per-hectare factor is fed, and the area and total factors are written beside
-    it; whether that keeps a forest-area change from entering twice depends on GTAP carrying the
-    same land change, which nothing here checks. This is an experimental construction, not a
-    calibrated aoall shock, and the annual values interpolate interval means between anchors. shock_pct and shock_pct_contemp compare the scenario with
-    the baseline scenario in the same year, shock_pct_fixedbase is that difference over f_ref, as
-    in the other measures. A region with no reference flow, no reference timberland, or no
-    timberland at an anchor has no defined factor and is declared, not shocked.
+    f is a region's mean annual harvest over the interval ending at an anchor year, per hectare of
+    the timberland (managed, accessible forest) present during that interval. A map takes effect at
+    the end of its year: an interval's harvest is cut from the timberland present at its start, so
+    with annual anchors a change in the 2030 map first changes the 2031 harvest. Every chain, the
+    reference, the baseline and each scenario, starts from the same initial state and management.
+
+    - shock_pct and shock_pct_contemp are 100 (f / f_bau - 1), against the baseline scenario in the
+      same interval. The harvest timing of the shared age structure cancels, so identical maps give
+      zero.
+    - shock_pct_v3 is 100 (f / f_ref - 1), against the reference flow the setting names. It also
+      carries that harvest timing, which timing_per_ha_factor (f_bau / f_ref) reports alone.
+    - shock_pct_fixedbase is 100 (f - f_bau) / f_ref, as in the other measures.
+
+    Only per-hectare factors are written as shocks. The area and total factors, against the
+    reference and against the baseline scenario, are written beside them in the regional table.
+    Feeding the per-hectare factor keeps a forest-area change from counting twice only if the
+    economic model's own forest-land change matches the timberland change the maps carry, in
+    definition and in hectares. Nothing here checks that condition. This is an experimental
+    construction, not a calibrated aoall shock, and the annual values interpolate interval means
+    between anchors.
+
+    A region whose reference or same-interval baseline has no flow or no timberland at any anchor,
+    or which itself has no timberland at an anchor, has no defined factor. It is left out of the
+    table for every scenario and year and named in the excluded-regions file. Its effect is
+    undefined, and a consumer must not read the missing rows as a zero shock.
     """
     from global_invest.terrestrial_carbon import terrestrial_carbon_functions as tcf
     settings = _harvestable_flow_settings(p)
     params = tp.growth_parameters_from_table(hb.df_read(settings['growth_parameters_path']))
+    provenance_df = hb.df_read(settings['input_provenance_path'])
+    provenance = tp.input_provenance_from_table(provenance_df)
     ha_path = getattr(p, 'ha_per_cell_10sec_path', None) or p.get_path(*utilities.HA_PER_CELL_10SEC_REF_PARTS)
     ha_path = _aligned_to_reference(p, ha_path, base_lulc_path, 'ha_per_cell')
     area_summary_path = os.path.join(p.cur_dir, 'timber_cell_area_by_zone.csv')
@@ -1011,7 +1029,8 @@ def _harvestable_flow_shock(p, base_scenario, scenarios, anchor_years, es_shock_
                                              year=es_shock_base_year, id_column=p.terrestrial_carbon_shock_id_col)
         utilities.write_outputs_signature(zone_signature, zone_signature_path)
     n_zones = int(max(zone_labels))
-    signed_settings = {k: (v if k != 'growth_parameters_path' else os.path.basename(str(v))) for k, v in settings.items()}
+    signed_settings = {k: (v if k != 'growth_parameters_path' else os.path.basename(str(v)))
+                       for k, v in settings.items() if k != 'input_provenance_path'}
     signed_settings.update(measure='harvestable_flow', accounting='harvestable_flow_age_v1', base_year=es_shock_base_year)
     start = (settings['initial_state_path'], es_shock_base_year,
              utilities.file_fingerprint(settings['initial_state_path'], content=False))
@@ -1046,20 +1065,22 @@ def _harvestable_flow_shock(p, base_scenario, scenarios, anchor_years, es_shock_
                 continue
             flow_ref, area_ref = reference[reg][:2]
             flow, area = (np.array([by_year[y][reg][i] for y in anchor_years]) for i in (0, 1))
+            bau_flow, bau_area = (np.array([bau[y][reg][i] for y in anchor_years]) for i in (0, 1))
             f = tp.harvestable_flow_factors(flow, area, flow_ref, area_ref)
-            f_bau = tp.harvestable_flow_factors([bau[y][reg][0] for y in anchor_years],
-                                                [bau[y][reg][1] for y in anchor_years], flow_ref, area_ref)
-            vs_bau = tp.harvestable_flow_factors(flow, area, [bau[y][reg][0] for y in anchor_years],
-                                                 [bau[y][reg][1] for y in anchor_years])['per_ha_factor']
+            f_bau = tp.harvestable_flow_factors(bau_flow, bau_area, flow_ref, area_ref)
+            vs_bau = tp.harvestable_flow_factors(flow, area, bau_flow, bau_area)
             if not np.isfinite(f['per_ha_factor']).all():
                 declared[reg] = ('no defined per-hectare factor: reference flow %.6g m3/yr, reference timberland '
                                  '%.6g ha, timberland at the anchors %s ha' % (flow_ref, area_ref, area.tolist()))
                 continue
+            if not np.isfinite(vs_bau['per_ha_factor']).all():
+                declared[reg] = ('no defined contemporaneous per-hectare factor: baseline harvest %s m3/yr and baseline '
+                                 'timberland %s ha at the anchors' % (bau_flow.tolist(), bau_area.tolist()))
+                continue
             v3 = 100.0 * (f['per_ha_factor'] - 1.0)
             columns = {'shock_pct_v3': v3, 'shock_pct_fixedbase': 100.0 * (f['per_ha_factor'] - f_bau['per_ha_factor']),
-                       'shock_pct_contemp': 100.0 * (vs_bau - 1.0)}
-            annual = {c: (tcf.interpolate_annual_shock(all_years, anchor_years, v, es_shock_base_year)
-                          if np.isfinite(v).all() else [np.nan] * len(all_years)) for c, v in columns.items()}
+                       'shock_pct_contemp': 100.0 * (vs_bau['per_ha_factor'] - 1.0)}
+            annual = {c: tcf.interpolate_annual_shock(all_years, anchor_years, v, es_shock_base_year) for c, v in columns.items()}
             for zone_id in ids:
                 endw = zone_labels[zone_id][0]
                 for i, year in enumerate(all_years):
@@ -1074,8 +1095,11 @@ def _harvestable_flow_shock(p, base_scenario, scenarios, anchor_years, es_shock_
                                      'stock_m3': by_year[year][reg][3], 'harvest_m3_per_year': flow[i],
                                      'reference_harvest_m3_per_year': flow_ref, 'reference_timberland_ha': area_ref,
                                      'area_factor': f['area_factor'][i], 'per_ha_factor': f['per_ha_factor'][i],
-                                     'total_factor': f['total_factor'][i], 'per_ha_factor_vs_baseline_scenario': vs_bau[i],
-                                     'shock_pct_v3': v3[i]})
+                                     'total_factor': f['total_factor'][i], 'timing_per_ha_factor': f_bau['per_ha_factor'][i],
+                                     'area_factor_vs_baseline_scenario': vs_bau['area_factor'][i],
+                                     'per_ha_factor_vs_baseline_scenario': vs_bau['per_ha_factor'][i],
+                                     'total_factor_vs_baseline_scenario': vs_bau['total_factor'][i],
+                                     'shock_pct_contemp': columns['shock_pct_contemp'][i], 'shock_pct_v3': v3[i]})
     rows = [r for r in rows if r['REG'] not in declared]
     side_by_side = [r for r in side_by_side if r['REG'] not in declared]
     for reg in sorted(declared):
@@ -1095,6 +1119,8 @@ def _harvestable_flow_shock(p, base_scenario, scenarios, anchor_years, es_shock_
     out['timber_provision_accounting'] = 'harvestable_flow_age_v1'
     out['harvest_basis'] = settings['harvest_rule']
     out['reference_flow'] = settings['reference_flow']
+    out['input_provenance'] = ' '.join('%s:%s' % item for item in provenance.items())
+    provenance_df.to_csv(os.path.join(p.cur_dir, 'timber_harvestable_flow_input_provenance.csv'), index=False)
     shock_signature = os.path.join(os.path.dirname(p.timber_provision_shock_output_path), TIMBER_SHOCK_SIGNATURE)
     if hb.path_exists(shock_signature):
         os.remove(shock_signature)
