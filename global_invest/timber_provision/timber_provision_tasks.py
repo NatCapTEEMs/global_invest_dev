@@ -272,10 +272,10 @@ def fuelwood_gep(p):
 # same scenarios and the size of the proxy's error is measurable instead of argued. Carbon's seam is
 # separate; a run that does not build the timber tree is unaffected by it.
 #
-# The machinery is carbon's, deliberately: the zonal summaries and the shock arithmetic
-# (summarize_raster_by_region, dynamic_shock_rows, summed_shock_rows) know nothing about carbon,
-# so timber supplies its own layer and nothing else. Reimplementing them here would fork a
-# verified path to change one input raster.
+# The machinery is carbon's, deliberately, and shared through global_invest.utilities: the zonal
+# summaries and the shock arithmetic (summarize_raster_by_region, dynamic_shock_rows,
+# summed_shock_rows) know nothing about carbon, so timber supplies its own layer and nothing else.
+# Reimplementing them here would fork a verified path to change one input raster.
 # ---------------------------------------------------------------------------------------------
 
 def timber_value_density_table(p):
@@ -292,8 +292,6 @@ def timber_value_density_table(p):
         return True
     if hb.path_exists(p.timber_value_density_lookup_table_path):
         return True
-
-    from global_invest.terrestrial_carbon import terrestrial_carbon_tasks as tct
 
     # Keyed on SEALS7 classes, because that is what the scenario maps carry. Carbon's shock lookup
     # (carbon_density_lookup_seals7_spawn.csv) is built the same way; its GEP lookup is keyed on the
@@ -318,7 +316,7 @@ def timber_value_density_table(p):
     if len(set(shapes.values())) != 1:
         raise ValueError('timber density table needs one grid, got %s' % shapes)
 
-    summary = tct.stack_layers_summary(
+    summary = utilities.stack_layers_summary(
         group_layer1_path=seals7_base_path,
         group_layer2_path=zones_path,
         value_layer_path=value_path,
@@ -380,7 +378,6 @@ def _value_one_timber_map(job):
     An incomplete summary is rebuilt together with its raster, because a torn raster is what
     usually produced it."""
     scenario, year, lulc_path, eligible_path, raster_path, summary_path, boundary_path, id_col = job
-    from global_invest.terrestrial_carbon import terrestrial_carbon_functions as tcf
     if hb.path_exists(summary_path) and not _summary_complete(summary_path):
         for stale in (summary_path, summary_path[:-4] + '_zone_ids.tif', raster_path):
             if hb.path_exists(stale):
@@ -391,7 +388,7 @@ def _value_one_timber_map(job):
             return tp.timber_value_on_forest(eligible_block, lulc_block, lulc_ndv=lulc_ndv)
         hb.raster_calculator_flex([eligible_path, lulc_path], on_forest, raster_path, datatype=6, ndv=np.nan)
     if not hb.path_exists(summary_path):
-        tcf.summarize_raster_by_region(raster_path, boundary_path, summary_path, year=year, id_column=id_col)
+        utilities.summarize_raster_by_region(raster_path, boundary_path, summary_path, year=year, id_column=id_col)
     return summary_path
 
 
@@ -400,7 +397,6 @@ def _biomass_one_map(job):
     carries -- observed stock kept while forest, the zone's mean forest density where forest was
     gained -- and its zonal summary (both cached, torn summaries rebuilt)."""
     scenario, year, lulc_path, base_forest_path, new_forest_path, raster_path, summary_path, boundary_path, id_col = job
-    from global_invest.terrestrial_carbon import terrestrial_carbon_functions as tcf
     if hb.path_exists(summary_path) and not _summary_complete(summary_path):
         for stale in (summary_path, summary_path[:-4] + '_zone_ids.tif', raster_path):
             if hb.path_exists(stale):
@@ -411,7 +407,7 @@ def _biomass_one_map(job):
             return tp.forest_biomass_carbon_on_map(base_block, new_block, lulc_block, lulc_ndv=lulc_ndv)
         hb.raster_calculator_flex([base_forest_path, new_forest_path, lulc_path], on_map, raster_path, datatype=6, ndv=np.nan)
     if not hb.path_exists(summary_path):
-        tcf.summarize_raster_by_region(raster_path, boundary_path, summary_path, year=year, id_column=id_col)
+        utilities.summarize_raster_by_region(raster_path, boundary_path, summary_path, year=year, id_column=id_col)
     return summary_path
 
 
@@ -519,7 +515,6 @@ def _write_biomass_base_and_new_forest(p, base_lulc_path, base_forest_path, new_
     """Once per project: the base-year forest biomass carbon per cell (NaN off the base forest) and
     the carbon zone's mean forest density x cell area the mature-density assumption credits to
     forest gained later. The lookup is built from the aboveground layer on the base forest."""
-    from global_invest.terrestrial_carbon import terrestrial_carbon_tasks as tct
     density_path = p.timber_provision_biomass_carbon_density_path
     zones_path = p.terrestrial_quantity_input_path
     ha_path = getattr(p, 'ha_per_cell_10sec_path', None) or p.get_path(*utilities.HA_PER_CELL_10SEC_REF_PARTS)
@@ -529,7 +524,7 @@ def _write_biomass_base_and_new_forest(p, base_lulc_path, base_forest_path, new_
     # The base map and carbon zones are on the run's grid, which for a sub-global AOI is a window
     # of the global pyramid; the biomass density and ha-per-cell rasters are global. Same
     # resolution and an aligned grid, so nearest is a lossless clip rather than a resample -- the
-    # same reasoning terrestrial_carbon's _align_zones_to_lulc_grid records. Verified for the ZAF
+    # same reasoning utilities.align_zones_to_lulc_grid records. Verified for the ZAF
     # window: identical 10-arcsec pixels, and its origin falls on global pixel (70560, 40320).
     # The clipped copy keeps the SOURCE's data type and nodata, never the reference's. Taking them
     # from a match raster truncates values its type cannot hold: carbon zone ids 606-620 in a Byte
@@ -548,9 +543,9 @@ def _write_biomass_base_and_new_forest(p, base_lulc_path, base_forest_path, new_
         hb.raster_calculator_flex([density_path, ha_path, base_lulc_path], base, base_forest_path, datatype=6, ndv=np.nan)
     lookup_path = os.path.join(p.cur_dir, 'forest_agbc_density_by_carbon_zone.csv')
     if not hb.path_exists(lookup_path):
-        summary = tct.stack_layers_summary(group_layer1_path=base_lulc_path, group_layer2_path=zones_path,
-                                           value_layer_path=density_path, group1_name='lulc_id',
-                                           group2_name='carbon_zone_id', value_name='agbc_density')
+        summary = utilities.stack_layers_summary(group_layer1_path=base_lulc_path, group_layer2_path=zones_path,
+                                                 value_layer_path=density_path, group1_name='lulc_id',
+                                                 group2_name='carbon_zone_id', value_name='agbc_density')
         summary = summary[summary['lulc_id'] == tp.SEALS7_FOREST_ID]
         summary.to_csv(lookup_path, index=False)
     lookup = pd.read_csv(lookup_path)
@@ -595,9 +590,6 @@ def timber_provision_shock(p):
         return
     import geopandas as gpd
 
-    from global_invest.terrestrial_carbon import terrestrial_carbon_functions as tcf
-    from global_invest.terrestrial_carbon import terrestrial_carbon_tasks as tct
-
     # Carbon's export keys: same zones, same boundary, same activity (FRS). Borrowing them is what
     # makes the two seams comparable row for row rather than merely similar.
     utilities.hydrate_es_parameters(p, 'terrestrial_carbon', log=hb.log)
@@ -606,13 +598,16 @@ def timber_provision_shock(p):
     anchor_years = sorted(y for y in map(int, p.es_shock_years) if y > es_shock_base_year)
 
     # Same resolution as carbon, from the same helper: the maps a project names by template.
-    scenarios = tct._resolve_scenario_lulc_paths(p, base_scenario, anchor_years)
+    scenarios = utilities.resolve_scenario_lulc_paths(p, base_scenario, anchor_years)
 
+    # Carbon's zones raster and carbon's base-year override, as before the helpers were shared.
     reference_lulc_path = p.scenario_lulc_paths[base_scenario][anchor_years[-1]]
-    tct._align_zones_to_lulc_grid(p, reference_lulc_path)
-    tct._inject_base_year_map(p, base_scenario, es_shock_base_year, reference_lulc_path)
+    p.terrestrial_quantity_input_path = utilities.align_zones_to_lulc_grid(
+        p.terrestrial_quantity_input_path, reference_lulc_path, os.path.join(p.cur_dir, 'carbon_zones_aligned.tif'))
+    utilities.inject_base_year_map(p, base_scenario, es_shock_base_year, reference_lulc_path,
+                                   override_path=getattr(p, 'terrestrial_carbon_base_year_lulc_path', None))
 
-    zone_labels = tcf.zone_labels_from_boundary(
+    zone_labels = utilities.zone_labels_from_boundary(
         gpd.read_file(p.region_boundary_path, engine='pyogrio'),
         p.terrestrial_carbon_shock_id_col, p.terrestrial_carbon_shock_endw_col,
         p.terrestrial_carbon_shock_reg_col, p.terrestrial_carbon_shock_endw_format)
@@ -639,7 +634,7 @@ def timber_provision_shock(p):
         signed = shock_maps + [p.timber_provision_biomass_carbon_density_path,
             p.terrestrial_quantity_input_path, p.region_boundary_path,
             getattr(p, 'ha_per_cell_10sec_path', None) or p.get_path(*utilities.HA_PER_CELL_10SEC_REF_PARTS),
-            __file__, tp.__file__, tcf.__file__]
+            __file__, tp.__file__, utilities.__file__]
         inputs.update({str(path): utilities.file_fingerprint(path) for path in signed})
         # The value rasters and their zone-id rasters are INPUTS to the summarisation, not outputs
         # of it. The signature hashes whole source files, so any edit to this module or to the shock
@@ -745,7 +740,7 @@ def timber_provision_shock(p):
         # them, nothing is capped and nothing is excluded. A region whose own total base-year
         # biomass is zero or negligible has no denominator and is reported, not shocked.
         excluded_regions = []
-        rows += tcf.summed_shock_rows(
+        rows += utilities.summed_shock_rows(
             {scenario: {y: zone_total(scenario, y) for y in anchor_years} for scenario in scenarios},
             zone_total(base_scenario, es_shock_base_year), zone_labels, es_shock_base_year,
             p.terrestrial_carbon_shock_acts, log=hb.log,
@@ -753,7 +748,7 @@ def timber_provision_shock(p):
             excluded_out=excluded_regions)
     else:
         for scenario in scenarios:
-            rows += tcf.dynamic_shock_rows(
+            rows += utilities.dynamic_shock_rows(
                 {y: zone_value(scenario, y) for y in anchor_years},
                 baseline_by_year, baseline_at_base_year, zone_labels, es_shock_base_year,
                 p.terrestrial_carbon_shock_acts, scenario, log=hb.log)

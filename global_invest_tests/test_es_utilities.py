@@ -315,3 +315,68 @@ def test_write_gep_by_country_gives_added_countries_the_tables_year(tmp_path):
     assert out.loc['CHN', 'year'] == 2019, 'the added country carries the table year'
     assert np.isnan(out.loc['CHN', 'value']), 'its value stays missing'
     assert out.loc['BRA', 'value'] == 5.0
+
+
+def _write_grid(path, array, data_type, nodata=None):
+    """A raster on square 90-degree pixels anchored at (-180, 90): two rows cover the globe, one row
+    is the top-half window of the same grid."""
+    import numpy as np
+    from osgeo import gdal, osr
+    array = np.asarray(array)
+    ds = gdal.GetDriverByName('GTiff').Create(str(path), array.shape[1], array.shape[0], 1, data_type)
+    ds.SetGeoTransform((-180.0, 90.0, 0.0, 90.0, 0.0, -90.0))
+    srs = osr.SpatialReference()
+    srs.ImportFromEPSG(4326)
+    ds.SetProjection(srs.ExportToWkt())
+    if nodata is not None:
+        ds.GetRasterBand(1).SetNoDataValue(float(nodata))
+    ds.GetRasterBand(1).WriteArray(array)
+    ds = None
+    return str(path)
+
+
+def test_align_zones_keeps_a_matching_grid_and_clips_a_window_without_truncating_ids(tmp_path):
+    """Zones already on the map's grid are read where they are; on a window they are clipped to it,
+    and the clip keeps zone ids above 255 although the map it matches is stored as Byte."""
+    from osgeo import gdal
+    zones = _write_grid(tmp_path / 'zones.tif', [[101, 606, 101, 101], [102, 102, 606, 102]], gdal.GDT_UInt32)
+    full_map = _write_grid(tmp_path / 'map_full.tif', [[1, 1, 1, 1], [1, 1, 1, 1]], gdal.GDT_Byte, nodata=255)
+    window_map = _write_grid(tmp_path / 'map_window.tif', [[1, 1, 1, 1]], gdal.GDT_Byte, nodata=255)
+    aligned = str(tmp_path / 'zones_aligned.tif')
+
+    assert utilities.align_zones_to_lulc_grid(zones, full_map, aligned) == zones
+    assert not (tmp_path / 'zones_aligned.tif').exists()
+
+    assert utilities.align_zones_to_lulc_grid(zones, window_map, aligned) == aligned
+    ds = gdal.Open(aligned)
+    assert ds.ReadAsArray().tolist() == [[101, 606, 101, 101]]
+    assert gdal.GetDataTypeName(ds.GetRasterBand(1).DataType) == 'Int32'
+
+
+def test_inject_base_year_map_prefers_the_override_and_leaves_a_registered_map_alone(tmp_path):
+    from types import SimpleNamespace
+    from osgeo import gdal
+    window_map = _write_grid(tmp_path / 'map_window.tif', [[1, 1, 1, 1]], gdal.GDT_Byte, nodata=255)
+    shared = _write_grid(tmp_path / 'shared_base.tif', [[4, 4, 4, 4]], gdal.GDT_Byte, nodata=255)
+    own = _write_grid(tmp_path / 'own_base_global.tif', [[3, 3, 3, 3], [2, 2, 2, 2]], gdal.GDT_Byte, nodata=255)
+
+    def project(**attrs):
+        return SimpleNamespace(cur_dir=str(tmp_path), get_path=lambda name: str(tmp_path / name), **attrs)
+
+    p = project(scenario_lulc_paths={'baseline': {2030: window_map}}, es_base_year_lulc_path=shared)
+    utilities.inject_base_year_map(p, 'baseline', 2023, window_map)
+    assert p.scenario_lulc_paths['baseline'][2023] == shared            # same grid: registered as it is
+
+    p = project(scenario_lulc_paths={'baseline': {2030: window_map}}, es_base_year_lulc_path=shared)
+    utilities.inject_base_year_map(p, 'baseline', 2023, window_map, override_path='own_base_global.tif')
+    registered = p.scenario_lulc_paths['baseline'][2023]
+    assert registered == str(tmp_path / 'lulc_base_year_aligned.tif')  # the override, clipped to the window
+    assert gdal.Open(registered).ReadAsArray().tolist() == [[3, 3, 3, 3]]
+
+    p = project(scenario_lulc_paths={'baseline': {2023: 'kept', 2030: window_map}}, es_base_year_lulc_path=shared)
+    utilities.inject_base_year_map(p, 'baseline', 2023, window_map, override_path=own)
+    assert p.scenario_lulc_paths['baseline'][2023] == 'kept'           # a map already registered stays
+
+    p = project(scenario_lulc_paths={'baseline': {2030: window_map}})
+    utilities.inject_base_year_map(p, 'baseline', 2023, window_map)
+    assert 2023 not in p.scenario_lulc_paths['baseline']               # nothing configured, nothing added

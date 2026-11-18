@@ -73,13 +73,13 @@ def test_task_switches_on_the_resource_measure_and_signs_it():
 
 # --- the summed-quantity aggregation (D19 option 1) -------------------------------------------
 import pandas as pd
-from global_invest.terrestrial_carbon import terrestrial_carbon_functions as tcf
+from global_invest import utilities
 
 LABELS = {1: ('AEZ1', 'VNM'), 2: ('AEZ2', 'VNM'), 3: ('AEZ3', 'KOR'), 4: ('AEZ4', 'XXX')}
 
 
 def _rows(scen_by_year, base):
-    return tcf.summed_shock_rows({'current_policies': scen_by_year}, base, LABELS, 2023, 'FRS', log=lambda *a: None)
+    return utilities.summed_shock_rows({'current_policies': scen_by_year}, base, LABELS, 2023, 'FRS', log=lambda *a: None)
 
 
 def test_region_shock_is_the_ratio_of_sums_not_a_mean_of_ratios():
@@ -104,7 +104,7 @@ def test_every_zone_of_a_region_carries_the_regional_value():
 def test_region_without_base_year_quantity_is_reported_not_shocked():
     base = pd.Series({1: 100.0, 2: 0.0, 3: 0.0, 4: 1e4})            # KOR has nothing at all
     said = []
-    rows = pd.DataFrame(tcf.summed_shock_rows({'current_policies': {2050: pd.Series({1: 90.0, 2: 0.0, 3: 900.0, 4: 1e4})}},
+    rows = pd.DataFrame(utilities.summed_shock_rows({'current_policies': {2050: pd.Series({1: 90.0, 2: 0.0, 3: 900.0, 4: 1e4})}},
                                               base, LABELS, 2023, 'FRS', log=said.append))
     assert 'KOR' not in set(rows.REG)
     assert said and 'KOR' in said[0]
@@ -123,5 +123,5 @@ def test_summed_measure_reads_zone_totals_not_zone_means():
     from global_invest.timber_provision import timber_provision_tasks as t
     src = inspect.getsource(t.timber_provision_shock)
     assert "def zone_total(" in src and "['total']" in inspect.getsource(t.timber_provision_shock)
-    call = src[src.index('tcf.summed_shock_rows('):src.index('tcf.summed_shock_rows(') + 300]
+    call = src[src.index('utilities.summed_shock_rows('):src.index('utilities.summed_shock_rows(') + 300]
     assert call.count('zone_total(') >= 2 and 'zone_value(' not in call
