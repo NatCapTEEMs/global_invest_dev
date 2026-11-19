@@ -13,6 +13,7 @@ and the four 2-way splits. A gap of any other shape is a legitimate sum, not thi
 from osgeo import gdal
 from osgeo import osr
 import filecmp
+import glob
 import json
 import mapclassify
 import matplotlib as mpl
@@ -141,6 +142,60 @@ def summarize_raster_by_region(value_raster_path, region_boundary_path, out_path
         df['region_id'] = df['ee_r50_aez18_id'].astype(int)
     df.to_csv(out_path, index=False)
     print(f"Summary written to: {out_path}")
+
+
+def stack_layers_summary(group_layer1_path, group_layer2_path, value_layer_path,
+                         group1_name="group1", group2_name="group2", value_name="value"):
+    """A value raster summarized over the pairs of two category rasters.
+
+    Args:
+        group_layer1_path (str): first grouping raster.
+        group_layer2_path (str): second grouping raster, on the same grid.
+        value_layer_path (str): the raster being summarized, on the same grid.
+        group1_name (str): column the first grouping raster is written under.
+        group2_name (str): column the second grouping raster is written under.
+        value_name (str): stem of the four summary columns.
+
+    Returns:
+        pd.DataFrame: one row per (group1, group2) pair, carrying the mean, min, max and count
+        of the value raster over the cells where all three rasters are valid.
+    """
+    # hb.iterblocks streams the value raster block by block; the two category rasters share its grid, so
+    # read them at the same window (raw gdal -- hb has no aligned multi-raster block reader). A cell is
+    # kept only where all three are valid. Groupby per block, then
+    # combine: only ~thousands of (g1, g2) pairs, so the accumulator stays tiny and nothing 33 GB is
+    # written (unlike composite-key + zonal).
+    ds1 = gdal.Open(group_layer1_path); g1b = ds1.GetRasterBand(1)   # hold the datasets, else the band handle dies
+    ds2 = gdal.Open(group_layer2_path); g2b = ds2.GetRasterBand(1)
+    ndv1, ndv2 = g1b.GetNoDataValue(), g2b.GetNoDataValue()
+    dsv = gdal.Open(value_layer_path); ndv_val = dsv.GetRasterBand(1).GetNoDataValue()
+
+    from tqdm import tqdm
+    parts = []
+    for offset, value_block in tqdm(hb.iterblocks((value_layer_path, 1)), desc="Summarizing blocks"):
+        w = (offset['xoff'], offset['yoff'], offset['win_xsize'], offset['win_ysize'])
+        v = value_block.astype('float32').ravel()
+        g1 = g1b.ReadAsArray(*w).ravel()
+        g2 = g2b.ReadAsArray(*w).ravel()
+
+        keep = ~np.isnan(v)
+        if ndv_val is not None: keep &= v != ndv_val
+        if ndv1 is not None: keep &= g1 != ndv1
+        if ndv2 is not None: keep &= g2 != ndv2
+        if not keep.any():   # block is all-nodata -- expected at raster edges
+            continue
+
+        block = pd.DataFrame({group1_name: g1[keep], group2_name: g2[keep], value_name: v[keep]})
+        parts.append(block.groupby([group1_name, group2_name], as_index=False)[value_name]
+                     .agg(_sum='sum', _min='min', _max='max', _count='count'))
+
+    summary = pd.concat(parts).groupby([group1_name, group2_name], as_index=False).agg(
+        _sum=('_sum', 'sum'), _min=('_min', 'min'), _max=('_max', 'max'), _count=('_count', 'sum'))
+    summary[f'{value_name}_mean'] = summary['_sum'] / summary['_count']
+    summary = summary.rename(columns={'_min': f'{value_name}_min', '_max': f'{value_name}_max',
+                                      '_count': f'{value_name}_count'})
+    return summary[[group1_name, group2_name, f'{value_name}_mean', f'{value_name}_min',
+                    f'{value_name}_max', f'{value_name}_count']]
 
 
 def render_service_results(p):
@@ -589,6 +644,398 @@ def anchored_series(x, anchor_x, anchor_y, method=ANCHOR_INTERPOLATION):
     for position, anchor in enumerate(anchor_x):
         values[x == anchor] = anchor_y[position]
     return values
+
+
+# =============================================================================
+# Shock tables shared by the ES seams. A seam measures a quantity per zone per
+# map year (carbon density, timber value, forest biomass); these turn those
+# measurements into the annual ENDW x ACTS x REG rows the economic model reads.
+# =============================================================================
+
+def shock_percent(scenario_values, baseline_values, denominator_values=None):
+    """The scenario's departure from its baseline, in percent.
+
+    The two measures the calculation reports share this numerator and differ only in what they
+    divide by: the contemporaneous measure divides by that year's baseline, the fixed-base
+    measure by the base year's, which is what `denominator_values` supplies.
+
+    Args:
+        scenario_values (pd.Series): per-zone scenario means for one year.
+        baseline_values (pd.Series): per-zone baseline means for the same year.
+        denominator_values (pd.Series): what to divide by, defaulting to baseline_values.
+
+    Returns:
+        pd.Series: percent departure, with a zero denominator giving NaN rather than an
+        infinite shock.
+    """
+    denominator = baseline_values if denominator_values is None else denominator_values
+    return (scenario_values - baseline_values) / denominator.replace(0, np.nan) * 100.0
+
+
+def interpolate_annual_shock(years, anchor_years, anchor_values, base_year,
+                             method=None):
+    """Anchor-year shocks spread over every year, starting from no shock at the base year.
+
+    The calculation computes a shock only at the years the scenario maps exist for; the economic
+    model reads one value per year, so the anchors are joined with the base year pinned at zero.
+    The join is PCHIP, the selected specification: straight lines between anchors make the annual
+    increment the model actually composes jump discontinuously at 2030 and 2040.
+    """
+    return anchored_series(
+        years, [base_year] + list(anchor_years), [0.0] + list(anchor_values), method=method)
+
+
+def zone_labels_from_boundary(regions_df, id_column, endw_column, reg_column, endw_format):
+    """Zone id -> the (ENDW, REG) pair every shock row is keyed on.
+
+    The zonal summary drops empty zones and keys what is left on the boundary's own stable id
+    column, so the shock rows are matched on that id and never on gpkg row position.
+
+    Args:
+        regions_df (pd.DataFrame): the boundary attributes, one row per zone.
+        id_column (str): the stable zone id column, falling back to `id` then row position.
+        endw_column (str): the column the ENDW label is built from.
+        reg_column (str): the column carrying the REG label.
+        endw_format (str): a percent-format turning a numeric AEZ id into its label, or None
+            when the boundary already carries the label.
+
+    Returns:
+        dict: zone id -> (ENDW, REG).
+    """
+    def endw_label(value):
+        return endw_format % int(value) if endw_format is not None else value
+
+    return {(int(row[id_column]) if id_column in row.index else row.get('id', position)):
+            (endw_label(row[endw_column]), row[reg_column])
+            for position, row in regions_df.iterrows()}
+
+
+def dynamic_shock_rows(scenario_by_year, baseline_by_year, baseline_at_base_year, zone_labels,
+                       base_year, sector, scenario, log=None):
+    """Anchor-year zone means expanded to one row per zone and year, on both denominators.
+
+    Three measures are reported. Two share the numerator `scenario[y] - baseline[y]`, the
+    scenario's departure from the nature-off baseline at the same year: shock_pct divides it by
+    that year's baseline, shock_pct_fixedbase by the base year's. The third, shock_pct_v3, is a
+    different quantity -- `scenario[y] - baseline[base_year]` over the base year, the scenario's
+    own trajectory away from the base year rather than its distance from a contemporaneous
+    baseline. The two answer different questions and do not agree in magnitude or sign.
+
+    Args:
+        scenario_by_year (dict): anchor year -> pd.Series of per-zone mean quantity (carbon density,
+            timber value).
+        baseline_by_year (dict): anchor year -> the same for the nature-off baseline.
+        baseline_at_base_year (pd.Series): per-zone baseline density at the base year, or None
+            when the base-year map is not available, which leaves shock_pct_fixedbase NaN.
+        zone_labels (dict): zone id -> (ENDW, REG). A zone the boundary does not label is dropped.
+        base_year (int): the year the interpolation starts from, at no shock.
+        sector (str): the GTAP activity the shock applies to.
+        scenario (str): the scenario label written into every row.
+
+    Returns:
+        list: dicts, one per zone and year from base_year through the last anchor year.
+    """
+    say = log or (lambda *a: None)
+    anchor_years = sorted(scenario_by_year)
+    all_years = list(range(base_year, anchor_years[-1] + 1))
+    contemporaneous_raw = pd.DataFrame({
+        y: shock_percent(scenario_by_year[y], baseline_by_year[y]) for y in anchor_years})
+    contemporaneous = contemporaneous_raw.dropna()
+    # A zone with no baseline quantity has no denominator, so no percentage exists for it and none
+    # is invented -- but it is SAID, because a quietly shorter table is how an undefined ratio and a
+    # zone nobody measured come to look the same. A zone that reaches zero is not this: its
+    # denominator is its own base year, which is present, and its ratio is a defined -100%.
+    undefined = sorted(set(contemporaneous_raw.index) - set(contemporaneous.index))
+    if undefined:
+        say('    %s: %d zone(s) have no defined ratio at one or more anchor years and carry no '
+            'shock: %s%s' % (scenario, len(undefined), undefined[:20],
+                             ' ...' if len(undefined) > 20 else ''))
+    fixedbase = (pd.DataFrame({
+        y: shock_percent(scenario_by_year[y], baseline_by_year[y], baseline_at_base_year)
+        for y in anchor_years}).dropna()
+        if baseline_at_base_year is not None else None)
+    # Baseline at the base year on BOTH sides, so a scenario at the base year is exactly zero and
+    # the interpolation's pinned zero is the measure's own value rather than an imposed one.
+    own_base = (pd.DataFrame({
+        y: shock_percent(scenario_by_year[y], baseline_at_base_year, baseline_at_base_year)
+        for y in anchor_years}).dropna()
+        if baseline_at_base_year is not None else None)
+
+    rows = []
+    for zone_id, contemp_anchors in contemporaneous.iterrows():
+        if zone_id not in zone_labels:
+            continue
+        endw, reg = zone_labels[zone_id]
+        annual_contemp = interpolate_annual_shock(all_years, anchor_years, contemp_anchors.values, base_year)
+        if fixedbase is not None and zone_id in fixedbase.index:
+            annual_fixed = interpolate_annual_shock(all_years, anchor_years,
+                                                    fixedbase.loc[zone_id].values, base_year)
+        else:
+            annual_fixed = [np.nan] * len(all_years)
+        if own_base is not None and zone_id in own_base.index:
+            annual_v3 = interpolate_annual_shock(all_years, anchor_years,
+                                                 own_base.loc[zone_id].values, base_year)
+        else:
+            annual_v3 = [np.nan] * len(all_years)
+        for year, contemp_value, fixed_value, v3_value in zip(all_years, annual_contemp,
+                                                              annual_fixed, annual_v3):
+            # Explicit, same-named columns in both ES files (carbon + pollination) for the #14 diagnostic.
+            rows.append({'ENDW': endw, 'ACTS': sector, 'REG': reg, 'scenario': scenario,
+                         'year': year, 'shock_pct': contemp_value,
+                         'shock_pct_fixedbase': fixed_value, 'shock_pct_contemp': contemp_value,
+                         'shock_pct_v3': v3_value})
+    return rows
+
+
+def summed_shock_rows(scenario_by_year_by_scenario, baseline_at_base_year, zone_labels, base_year,
+                      sector, negligible_share=1e-6, log=print,
+                      covered_zones=None, excluded_out=None):
+    """Regional shocks formed from SUMMED quantities rather than from means of zonal ratios.
+
+    For a measure that can add quantity where the base year had none -- forest biomass on land
+    afforested after the base year -- a zonal ratio is unbounded, and a weighted mean of such
+    ratios is dominated by zones that hold almost nothing. The region's change is instead
+    100 x (sum over its zones of the scenario quantity / the same sum in the base year - 1), so a
+    gain in a zone with no base-year quantity still enters the numerator and no ratio is formed
+    for it. Every zone of a region receives that regional value, which is what the aoall channel
+    reads; the zone rows are kept so the table's shape matches the other services.
+
+    A region whose base-year total is zero, or negligible against the world total, has no
+    denominator: it is logged and left out rather than given a fabricated number.
+
+    Args:
+        scenario_by_year_by_scenario (dict): scenario -> {anchor year -> per-zone quantity}.
+        baseline_at_base_year (pd.Series): per-zone quantity in the base year (the baseline map).
+        zone_labels (dict): zone id -> (ENDW, REG).
+        base_year (int): the year the trajectory starts from, at zero.
+        sector (str): the GTAP activity the shock applies to.
+        negligible_share (float): a region's base-year total below this share of the world total
+            is treated as having no denominator.
+        log (callable): where the excluded regions are reported.
+
+    Returns:
+        list: dicts, one per zone and year, carrying the region's summed-quantity trajectory.
+    """
+    zones_by_region = {}
+    for zone_id, (endw, reg) in zone_labels.items():
+        zones_by_region.setdefault(reg, []).append(zone_id)
+
+    # REGIONAL SCOPE. With covered_zones None -- every global run -- every region is required, and
+    # a missing zone raises in regional_total below: the full coverage requirement.
+    #
+    # A bounded AOI cannot satisfy it: on the zaf fixture 46 of 50 regions have no measured zone at
+    # all. Such a region is reported COMPLETELY or not at all, never partially summed, so the
+    # invariant regional_total protects still holds for every region that IS reported -- within it,
+    # every zone was measured. The excluded regions are handed back so the caller can DECLARE them:
+    # write_afeall_hars builds np.zeros over the whole set, so a region merely absent from the table
+    # is exported to GTAP as a zero shock. Making that impossible is the point of this partition.
+    if covered_zones is not None:
+        covered = {int(z) for z in covered_zones}
+        in_scope, out_of_scope = {}, []
+        for reg, ids in zones_by_region.items():
+            if all(int(z) in covered for z in ids):
+                in_scope[reg] = ids
+            else:
+                out_of_scope.append(reg)
+        if excluded_out is not None:
+            excluded_out.extend(sorted(out_of_scope))
+        if not in_scope:
+            raise ValueError('summed measure: the run grid fully covers no GTAP region, so there is '
+                             'nothing this measure can report. Covered zones: %d' % len(covered))
+        log('  summed measure: %d of %d region(s) fully covered and reported; %d excluded as '
+            'unmeasured, which MUST be declared and never exported as zero: %s'
+            % (len(in_scope), len(zones_by_region), len(out_of_scope), ', '.join(sorted(out_of_scope))))
+        zones_by_region = in_scope
+
+    def regional_total(series, region, what):
+        """The region's summed quantity, from EVERY one of its zones.
+
+        A zone absent from the series is a failure, not a zero. Dropping it silently would make a
+        missing measurement arithmetically indistinguishable from a measured zero, in the one
+        direction that matters: a zone missing from a scenario year but present in the base year
+        lowers the ratio exactly as a real loss would. The zonal summaries are asserted complete
+        before they are read, so an absence here means that assertion was bypassed."""
+        ids = zones_by_region[region]
+        absent = [z for z in ids if z not in series.index]
+        if absent:
+            raise ValueError('summed measure: %s is missing %d of region %s\'s %d zones: %s. A '
+                             'missing zone is not a zero; it is an unmeasured one.'
+                             % (what, len(absent), region, len(ids), sorted(absent)))
+        values = series.loc[ids].to_numpy()
+        if not np.isfinite(values).all():
+            raise ValueError('summed measure: %s carries %d non-finite value(s) in region %s'
+                             % (what, int((~np.isfinite(values)).sum()), region))
+        return float(values.sum())
+
+    base_by_region = {reg: regional_total(baseline_at_base_year, reg, 'the base-year quantity')
+                      for reg in zones_by_region}
+    world_base = float(np.nansum([v for v in base_by_region.values() if np.isfinite(v)]))
+    without_base = sorted(reg for reg, v in base_by_region.items()
+                          if not np.isfinite(v) or v <= 0 or (world_base > 0 and v / world_base < negligible_share))
+    if without_base:
+        log('  summed measure: %d region(s) with zero or negligible base-year quantity, not shocked: %s'
+            % (len(without_base), ', '.join(without_base)))
+
+    rows, total_loss = [], []
+    for scenario, by_year in scenario_by_year_by_scenario.items():
+        anchor_years = sorted(by_year)
+        all_years = list(range(base_year, anchor_years[-1] + 1))
+        for reg, zone_ids in zones_by_region.items():
+            if reg in without_base:
+                continue
+            totals = {y: regional_total(by_year[y], reg, '%s %d' % (scenario, y)) for y in anchor_years}
+            # A region that reaches zero has lost ALL its biomass, which is a -100% productivity
+            # factor on every one of its zones for the rest of the horizon. That is a defensible
+            # arithmetic result and an implausible physical one, so it is collected and raised
+            # together below rather than interpolated into annual shocks unexamined. A zone that
+            # reaches zero is not this: its zeros simply stop contributing to the region's sum.
+            for y, total in totals.items():
+                if total <= 0.0:
+                    total_loss.append((scenario, reg, y, total, base_by_region[reg]))
+            anchors = [100.0 * (totals[y] / base_by_region[reg] - 1.0) for y in anchor_years]
+            annual = interpolate_annual_shock(all_years, anchor_years, np.asarray(anchors), base_year)
+            for zone_id in zone_ids:
+                endw, _ = zone_labels[zone_id]
+                for year, value in zip(all_years, annual):
+                    rows.append({'ENDW': endw, 'ACTS': sector, 'REG': reg, 'scenario': scenario,
+                                 'year': year, 'shock_pct': value, 'shock_pct_fixedbase': value,
+                                 'shock_pct_contemp': value, 'shock_pct_v3': value})
+    if total_loss:
+        raise ValueError(
+            'summed measure: %d region-year(s) reach zero or negative total quantity against a '
+            'positive base year, which is a -100%% regional productivity factor held to the end of '
+            'the horizon. This needs review before annual conversion, not interpolation: %s'
+            % (len(total_loss), sorted((s, r, int(y), t, b) for s, r, y, t, b in total_loss)))
+    return rows
+
+
+def static_shock_rows(baseline_values, scenario_values, scenario, sectors, base_year, end_year):
+    """The frozen table's scenario-minus-baseline difference, ramped linearly from the base year.
+
+    Only zones present in both series are shocked: a zone the scenario or the baseline does not
+    cover has no difference to ramp, and inventing one would put a fabricated number into the
+    economic model.
+
+    Args:
+        baseline_values (pd.Series): per-zone nature-off baseline value, indexed by (ENDW, REG).
+        scenario_values (pd.Series): per-zone scenario value over the same index.
+        scenario (str): the scenario label written into every row.
+        sectors (iterable): the GTAP activities the shock applies to.
+        base_year (int): the year the ramp starts from, at zero.
+        end_year (int): the year the ramp reaches the full difference.
+
+    Returns:
+        list: dicts, one per zone, sector and year from base_year through end_year.
+    """
+    common = baseline_values.index.intersection(scenario_values.index)
+    shock = (scenario_values.loc[common] - baseline_values.loc[common]).dropna()
+    n_years = end_year - base_year
+
+    rows = []
+    for year in range(base_year, end_year + 1):
+        fraction = (year - base_year) / n_years
+        for (endw, reg), value in shock.items():
+            for sector in sectors:
+                rows.append({'ENDW': endw, 'ACTS': sector, 'REG': reg,
+                             'scenario': scenario, 'year': year, 'shock_pct': value * fraction})
+    return rows
+
+
+# =============================================================================
+# Scenario maps shared by the ES seams: which maps a project names, and the
+# zone and base-year rasters put on their grid.
+# =============================================================================
+
+def resolve_scenario_lulc_paths(p, base_scenario, anchor_years):
+    """Build p.scenario_lulc_paths from p.es_lulc_path_template when the caller has not, and return
+    the scenario list.
+
+    Shared by every seam that walks scenario maps (terrestrial_carbon, timber_provision), so a
+    project passes one template string rather than a path-building task, and the seams resolve the
+    same files.
+
+    Args:
+        p (ProjectFlow): carries es_lulc_path_template ({scenario}/{year} placeholders) or a
+            pre-built scenario_lulc_paths {scenario: {year: path}}, and optionally es_shock_scenarios.
+        base_scenario (str): the nature-off baseline label, always resolved.
+        anchor_years (list): the SEALS anchor years to resolve maps for.
+
+    Returns:
+        list: the policy scenarios -- es_shock_scenarios if set, else every resolved scenario
+            other than the baseline.
+    """
+    scenarios = list(getattr(p, 'es_shock_scenarios', []))
+    if not getattr(p, 'scenario_lulc_paths', None):
+        tmpl = p.es_lulc_path_template
+        p.scenario_lulc_paths = {
+            scen: {y: glob.glob(tmpl.format(scenario=scen, year=y))[0]
+                   for y in anchor_years if glob.glob(tmpl.format(scenario=scen, year=y))}
+            for scen in [base_scenario] + scenarios}
+    if not scenarios:
+        scenarios = [s for s in p.scenario_lulc_paths if s != base_scenario]
+    return scenarios
+
+
+def _raster_shape(raster_path):
+    return tuple(hb.get_raster_info_hb(raster_path)['raster_size'])
+
+
+def align_zones_to_lulc_grid(zones_path, reference_lulc_path, aligned_path):
+    """A zone-id raster on the reference map's grid, clipped and cached at aligned_path.
+
+    generate_carbon_density_raster asserts LULC and carbon zones share a grid. The zones raster is
+    global 300 m and a SEALS LULC map may be a sub-window (single-country or short-horizon test
+    AOI). Same resolution and an aligned grid, so nearest is a lossless clip and the task works at
+    any extent. The clip is cached: the zones raster does not change between runs.
+
+    Args:
+        zones_path (str): the zone-id raster.
+        reference_lulc_path (str): the scenario map whose grid the zones must share.
+        aligned_path (str): where the clipped copy is written, in the calling task's directory.
+
+    Returns:
+        str: zones_path itself when the two grids already have the same shape, else aligned_path.
+    """
+    if _raster_shape(zones_path) == _raster_shape(reference_lulc_path):
+        return zones_path
+    if not hb.path_exists(aligned_path):
+        # Int32, not the reference's type. The match raster is a 7-class SEALS map stored as Byte,
+        # and taking the output type from it silently truncates every zone id above 255 (South
+        # Africa's are 606-620): they land on the Byte nodata and read as missing, leaving zone 0
+        # everywhere and a carbon shock of exactly zero.
+        hb.resample_to_match(zones_path, reference_lulc_path,
+                             aligned_path, resample_method='near',
+                             output_data_type=5, src_ndv=-9999, ndv=-9999)
+    return aligned_path
+
+
+def inject_base_year_map(p, base_scenario, base_year, reference_lulc_path, override_path=None):
+    """Register the ES-shared SEALS7 base-year map as the baseline's base-year map, so the
+    fixed-base denominator can be measured on it.
+
+    NEVER p.base_year_lulc_path: SEALS OWNS that attribute and overwrites it at runtime with its
+    raw-ESA source, and the density lookup is keyed on SEALS7 classes, so a raw-ESA base map yields
+    all-NaN densities. A service-specific base map passed as override_path takes precedence over
+    p.es_base_year_lulc_path. The aligned copy is rebuilt every run because the map it comes from can
+    change while the aligned filename does not.
+
+    Args:
+        p (ProjectFlow): carries scenario_lulc_paths, es_base_year_lulc_path, cur_dir and get_path.
+        base_scenario (str): the nature-off baseline label.
+        base_year (int): the year the map is registered under.
+        reference_lulc_path (str): the scenario map whose grid the base map must share.
+        override_path (str): the caller's own base-year map, or None for es_base_year_lulc_path.
+    """
+    base_map = override_path or getattr(p, 'es_base_year_lulc_path', None)
+    if not base_map or base_year in p.scenario_lulc_paths.get(base_scenario, {}):
+        return
+    if not os.path.isabs(base_map):
+        base_map = p.get_path(base_map)
+    if _raster_shape(base_map) != _raster_shape(reference_lulc_path):
+        aligned_path = os.path.join(p.cur_dir, 'lulc_base_year_aligned.tif')
+        hb.resample_to_match(base_map, reference_lulc_path, aligned_path, resample_method='near')
+        base_map = aligned_path
+    p.scenario_lulc_paths.setdefault(base_scenario, {})[base_year] = base_map
 
 
 def _signature(settings, inputs, light_inputs=()):

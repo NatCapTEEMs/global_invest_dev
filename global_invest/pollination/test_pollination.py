@@ -121,7 +121,7 @@ def test_static_shock_rows_ramp_the_difference_linearly_to_the_end_year():
     baseline = pd.Series({ZONE_A: 10.0, ZONE_B: 4.0})
     scenario = pd.Series({ZONE_A: 12.0, ZONE_B: 4.0})
 
-    rows = pf.static_shock_rows(baseline, scenario, 'net_zero', ('V_F',), 2020, 2024)
+    rows = utilities.static_shock_rows(baseline, scenario, 'net_zero', ('V_F',), 2020, 2024)
     out = pd.DataFrame(rows).set_index(['REG', 'year'])['shock_pct']
 
     assert out.loc[('usa', 2020)] == 0.0
@@ -136,7 +136,7 @@ def test_static_shock_rows_skip_a_zone_the_scenario_does_not_cover():
     economic model, so only the zones both series carry are ramped."""
     baseline = pd.Series({ZONE_A: 10.0, ZONE_B: 4.0})
     scenario = pd.Series({ZONE_A: 12.0})
-    rows = pf.static_shock_rows(baseline, scenario, 'net_zero', ('V_F',), 2020, 2024)
+    rows = utilities.static_shock_rows(baseline, scenario, 'net_zero', ('V_F',), 2020, 2024)
     assert {row['REG'] for row in rows} == {'usa'}
 
 

@@ -61,7 +61,7 @@ def test_stack_groups_by_two_rasters_with_mean_and_count(tmp_path):
     _write_tif(cz, [[101, 101], [101, 101]], gdal.GDT_UInt32)
     _write_tif(val, [[4.0, 6.0], [8.0, 10.0]], gdal.GDT_Float32, nodata=np.nan)
 
-    df = tct.stack_layers_summary(str(lulc), str(cz), str(val),
+    df = utilities.stack_layers_summary(str(lulc), str(cz), str(val),
                                   group1_name='lulc_id', group2_name='carbon_zone_id',
                                   value_name='carbon_density').set_index(['lulc_id', 'carbon_zone_id'])
     assert df.loc[(10, 101), 'carbon_density_mean'] == 5.0     # mean of [4, 6]
@@ -156,7 +156,7 @@ def test_the_lookup_leaves_carbon_zone_0_out_and_keeps_every_other_key(tmp_path,
     the zone-101 keys are exactly what the summary over all zones gives them."""
     monkeypatch.setattr(tct, 'publish_inputs', lambda p: p)
     p = _zone0_scene(tmp_path)
-    every_zone = tct.stack_layers_summary(p.carbon_density_lookup_lulc_path, p.gep_quantity_input_path,
+    every_zone = utilities.stack_layers_summary(p.carbon_density_lookup_lulc_path, p.gep_quantity_input_path,
                                           p.reprojected_total_carbon_density_path, group1_name='lulc_id',
                                           group2_name='carbon_zone_id', value_name='carbon_density')
     assert ((every_zone.carbon_zone_id == 0) & (every_zone.lulc_id == 10)).sum() == 1
@@ -534,7 +534,7 @@ def test_shock_percent_is_the_departure_from_baseline():
 
     scenario = pd.Series([90.0, 110.0, 5.0], index=[1, 2, 3])
     baseline = pd.Series([100.0, 100.0, 0.0], index=[1, 2, 3])
-    out = tcf.shock_percent(scenario, baseline)
+    out = utilities.shock_percent(scenario, baseline)
     assert out[1] == -10.0
     assert out[2] == 10.0
     assert np.isnan(out[3])
@@ -546,7 +546,7 @@ def test_interpolate_annual_shock_starts_at_zero_and_passes_through_the_anchors(
     from global_invest.terrestrial_carbon import terrestrial_carbon_functions as tcf
 
     years = [2020, 2021, 2022, 2023, 2024]
-    annual = tcf.interpolate_annual_shock(years, [2022, 2024], [-4.0, -8.0], base_year=2020)
+    annual = utilities.interpolate_annual_shock(years, [2022, 2024], [-4.0, -8.0], base_year=2020)
     assert list(annual) == [0.0, -2.0, -4.0, -6.0, -8.0]
 
 
@@ -557,8 +557,8 @@ def test_shock_percent_keeps_one_numerator_across_both_denominators():
     from global_invest.terrestrial_carbon import terrestrial_carbon_functions as tcf
 
     scenario, baseline_now, baseline_base = pd.Series([10.0]), pd.Series([80.0]), pd.Series([100.0])
-    assert tcf.shock_percent(scenario, baseline_now)[0] == -87.5
-    assert tcf.shock_percent(scenario, baseline_now, baseline_base)[0] == -70.0
+    assert utilities.shock_percent(scenario, baseline_now)[0] == -87.5
+    assert utilities.shock_percent(scenario, baseline_now, baseline_base)[0] == -70.0
 
 
 def test_dynamic_shock_rows_v3_measures_the_scenario_against_the_base_year_baseline():
@@ -574,7 +574,7 @@ def test_dynamic_shock_rows_v3_measures_the_scenario_against_the_base_year_basel
     baseline_by_year = {2030: pd.Series({1: 120.0}), 2040: pd.Series({1: 140.0})}
     scenario_by_year = {2030: pd.Series({1: 126.0}), 2040: pd.Series({1: 133.0})}
 
-    rows = tcf.dynamic_shock_rows(scenario_by_year, baseline_by_year, baseline_at_base_year,
+    rows = utilities.dynamic_shock_rows(scenario_by_year, baseline_by_year, baseline_at_base_year,
                                   zone_labels, 2020, 'FRS', 'net_zero')
     by_year = pd.DataFrame(rows).set_index('year')
 
@@ -598,7 +598,7 @@ def test_dynamic_shock_rows_v3_measures_the_scenario_against_the_base_year_basel
 
 def test_dynamic_shock_rows_v3_is_absent_without_a_base_year_baseline():
     zone_labels = {1: ('AEZ1', 'usa')}
-    rows = tcf.dynamic_shock_rows({2030: pd.Series({1: 126.0})}, {2030: pd.Series({1: 120.0})},
+    rows = utilities.dynamic_shock_rows({2030: pd.Series({1: 126.0})}, {2030: pd.Series({1: 120.0})},
                                   None, zone_labels, 2029, 'FRS', 'net_zero')
     assert all(np.isnan(row['shock_pct_v3']) for row in rows)
 
@@ -655,7 +655,7 @@ def test_zone_reaching_zero_gives_a_minus_hundred_percent_per_zone_shock():
     """
     baseline = pd.Series({1: 100.0, 2: 50.0})
     scenario_with_explicit_zero = pd.Series({1: 100.0, 2: 0.0})
-    result = tcf.shock_percent(scenario_with_explicit_zero, baseline).dropna()
+    result = utilities.shock_percent(scenario_with_explicit_zero, baseline).dropna()
     assert result.to_dict() == {1: pytest.approx(0.0), 2: pytest.approx(-100.0)}
 
 
@@ -664,7 +664,7 @@ def test_zone_with_no_baseline_quantity_is_still_dropped_not_shocked():
     than an infinite one, whether or not it appears in the summary."""
     baseline_with_explicit_zero = pd.Series({1: 100.0, 2: 0.0})
     scenario = pd.Series({1: 100.0, 2: 25.0})
-    result = tcf.shock_percent(scenario, baseline_with_explicit_zero).dropna()
+    result = utilities.shock_percent(scenario, baseline_with_explicit_zero).dropna()
     assert result.to_dict() == {1: pytest.approx(0.0)}
 
 
@@ -692,7 +692,7 @@ def shock_at(rows, region, year, scenario='policy'):
 
 
 def run(scenario_by_year, baseline, **kwargs):
-    return tcf.summed_shock_rows({'policy': scenario_by_year}, baseline, ZONE_LABELS, BASE_YEAR,
+    return utilities.summed_shock_rows({'policy': scenario_by_year}, baseline, ZONE_LABELS, BASE_YEAR,
                                  sector='frs', log=lambda *a, **k: None, **kwargs)
 
 
@@ -768,7 +768,7 @@ def test_region_with_no_base_year_biomass_is_reported_not_shocked():
     scenario = {2030: series(z11=50.0, z12=100.0, z21=10.0, z22=10.0),
                 2050: series(z11=50.0, z12=100.0, z21=10.0, z22=10.0)}
     reported = []
-    rows = tcf.summed_shock_rows({'policy': scenario}, baseline, ZONE_LABELS, BASE_YEAR,
+    rows = utilities.summed_shock_rows({'policy': scenario}, baseline, ZONE_LABELS, BASE_YEAR,
                                  sector='frs', log=lambda m: reported.append(m))
     assert {r['REG'] for r in rows} == {'bra'}
     assert any('usa' in m for m in reported)
@@ -859,7 +859,7 @@ def _summed_scene():
 def test_bounded_scope_reports_only_fully_covered_regions_and_declares_the_rest():
     zone_labels, base, scen = _summed_scene()
     excluded = []
-    rows = tcf.summed_shock_rows({'scn': scen}, base, zone_labels, 2020, 'FRS',
+    rows = utilities.summed_shock_rows({'scn': scen}, base, zone_labels, 2020, 'FRS',
                                  log=lambda *a, **k: None,
                                  covered_zones={101, 102}, excluded_out=excluded)
     assert excluded == ['bbb'], 'the unmeasured region was not declared'
@@ -873,7 +873,7 @@ def test_bounded_scope_still_rejects_a_missing_zone_inside_a_covered_region():
     zone_labels, base, scen = _summed_scene()
     short = base.drop(index=102)                         # a zone of the COVERED region goes missing
     with pytest.raises(ValueError, match='missing zone is not a zero'):
-        tcf.summed_shock_rows({'scn': scen}, short, zone_labels, 2020, 'FRS',
+        utilities.summed_shock_rows({'scn': scen}, short, zone_labels, 2020, 'FRS',
                               log=lambda *a, **k: None,
                               covered_zones={101, 102}, excluded_out=[])
 
@@ -882,14 +882,14 @@ def test_global_runs_keep_the_full_regional_coverage_requirement():
     """covered_zones None is the global path: every region required, nothing declared."""
     zone_labels, base, scen = _summed_scene()
     with pytest.raises(ValueError, match="missing 2 of region bbb's 2 zones"):
-        tcf.summed_shock_rows({'scn': scen}, base, zone_labels, 2020, 'FRS',
+        utilities.summed_shock_rows({'scn': scen}, base, zone_labels, 2020, 'FRS',
                               log=lambda *a, **k: None)
     # Fully measured globally: both regions reported, no exclusions.
     import pandas as pd
     full_base = pd.Series({101: 100.0, 102: 100.0, 201: 100.0, 202: 100.0})
     full_scen = {2030: pd.Series({101: 90.0, 102: 90.0, 201: 80.0, 202: 80.0})}
     excluded = []
-    rows = tcf.summed_shock_rows({'scn': full_scen}, full_base, zone_labels, 2020, 'FRS',
+    rows = utilities.summed_shock_rows({'scn': full_scen}, full_base, zone_labels, 2020, 'FRS',
                                  log=lambda *a, **k: None, excluded_out=excluded)
     assert excluded == []
     assert {r['REG'] for r in rows} == {'aaa', 'bbb'}
@@ -898,5 +898,5 @@ def test_global_runs_keep_the_full_regional_coverage_requirement():
 def test_no_fully_covered_region_is_a_failure_not_an_empty_table():
     zone_labels, base, scen = _summed_scene()
     with pytest.raises(ValueError, match='fully covers no GTAP region'):
-        tcf.summed_shock_rows({'scn': scen}, base, zone_labels, 2020, 'FRS',
+        utilities.summed_shock_rows({'scn': scen}, base, zone_labels, 2020, 'FRS',
                               log=lambda *a, **k: None, covered_zones={101}, excluded_out=[])

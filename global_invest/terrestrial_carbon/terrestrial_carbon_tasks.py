@@ -1,7 +1,4 @@
-import glob
 import os
-from tqdm import tqdm
-from osgeo import gdal
 
 import pandas as pd
 import rasterio
@@ -19,59 +16,6 @@ CARBON_ZONE_NDV = 0
 
 
 
-def stack_layers_summary(group_layer1_path, group_layer2_path, value_layer_path,
-                         group1_name="group1", group2_name="group2", value_name="value"):
-    """A value raster summarized over the pairs of two category rasters.
-
-    Args:
-        group_layer1_path (str): first grouping raster.
-        group_layer2_path (str): second grouping raster, on the same grid.
-        value_layer_path (str): the raster being summarized, on the same grid.
-        group1_name (str): column the first grouping raster is written under.
-        group2_name (str): column the second grouping raster is written under.
-        value_name (str): stem of the four summary columns.
-
-    Returns:
-        pd.DataFrame: one row per (group1, group2) pair, carrying the mean, min, max and count
-        of the value raster over the cells where all three rasters are valid.
-    """
-    # hb.iterblocks streams the value raster block by block; the two category rasters share its grid, so
-    # read them at the same window (raw gdal -- hb has no aligned multi-raster block reader). A cell is
-    # kept only where all three are valid. Groupby per block, then
-    # combine: only ~thousands of (g1, g2) pairs, so the accumulator stays tiny and nothing 33 GB is
-    # written (unlike composite-key + zonal).
-    ds1 = gdal.Open(group_layer1_path); g1b = ds1.GetRasterBand(1)   # hold the datasets, else the band handle dies
-    ds2 = gdal.Open(group_layer2_path); g2b = ds2.GetRasterBand(1)
-    ndv1, ndv2 = g1b.GetNoDataValue(), g2b.GetNoDataValue()
-    dsv = gdal.Open(value_layer_path); ndv_val = dsv.GetRasterBand(1).GetNoDataValue()
-
-    parts = []
-    for offset, value_block in tqdm(hb.iterblocks((value_layer_path, 1)), desc="Summarizing blocks"):
-        w = (offset['xoff'], offset['yoff'], offset['win_xsize'], offset['win_ysize'])
-        v = value_block.astype('float32').ravel()
-        g1 = g1b.ReadAsArray(*w).ravel()
-        g2 = g2b.ReadAsArray(*w).ravel()
-
-        keep = ~np.isnan(v)
-        if ndv_val is not None: keep &= v != ndv_val
-        if ndv1 is not None: keep &= g1 != ndv1
-        if ndv2 is not None: keep &= g2 != ndv2
-        if not keep.any():   # block is all-nodata -- expected at raster edges
-            continue
-
-        block = pd.DataFrame({group1_name: g1[keep], group2_name: g2[keep], value_name: v[keep]})
-        parts.append(block.groupby([group1_name, group2_name], as_index=False)[value_name]
-                     .agg(_sum='sum', _min='min', _max='max', _count='count'))
-
-    summary = pd.concat(parts).groupby([group1_name, group2_name], as_index=False).agg(
-        _sum=('_sum', 'sum'), _min=('_min', 'min'), _max=('_max', 'max'), _count=('_count', 'sum'))
-    summary[f'{value_name}_mean'] = summary['_sum'] / summary['_count']
-    summary = summary.rename(columns={'_min': f'{value_name}_min', '_max': f'{value_name}_max',
-                                      '_count': f'{value_name}_count'})
-    return summary[[group1_name, group2_name, f'{value_name}_mean', f'{value_name}_min',
-                    f'{value_name}_max', f'{value_name}_count']]
-
-
 def publish_inputs(p):
     """Every config-consuming task's first line: this service's es_config row (defaults layer --
     anything the caller set wins) plus the shared country references. Cheap and idempotent, so a
@@ -84,10 +28,6 @@ def publish_inputs(p):
     if not hasattr(p, 'results'):
         p.results = {}   # every gep task registers its outputs here; the report renders from it
     return p
-
-
-def _raster_shape(raster_path):
-    return tuple(hb.get_raster_info_hb(raster_path)['raster_size'])
 
 
 def total_carbon_density(p):
@@ -139,7 +79,7 @@ def carbon_density_table(p):
         # default 1e-6 lets a 0.036-cell shift of the 300 m grid through. The 1e-9 absolute allowance stays.
         utilities.assert_same_grid(lookup_lulc, base_lulc, label_a='lookup land cover ' + p.carbon_density_lookup_lulc_path,
                                    label_b='base-year land cover ' + p.gep_lulc_input_path, rtol=0)
-    summary = stack_layers_summary(
+    summary = utilities.stack_layers_summary(
         group_layer1_path=p.carbon_density_lookup_lulc_path,
         group_layer2_path=p.gep_quantity_input_path,
         value_layer_path=p.reprojected_total_carbon_density_path,
@@ -199,7 +139,7 @@ def carbon_by_region(p):
     p.carbon_by_region_base_year_path = os.path.join(p.cur_dir, "gep_by_country_base_year.csv")
     if not p.run_this:
         return True
-    result = tcf.summarize_raster_by_region(
+    result = utilities.summarize_raster_by_region(
         value_raster_path=p.carbon_density_per_cell_base_year_path,
         region_boundary_path=p.gep_regions_input_path,
         out_path=p.carbon_by_region_base_year_path,
@@ -322,85 +262,11 @@ def _zone_mean(p, scenario, year, density_lookup):
             out_path=density_path)
     summary_path = os.path.join(p.cur_dir, 'carbon_by_zone_%s_%d.csv' % (scenario, year))
     if not hb.path_exists(summary_path):
-        tcf.summarize_raster_by_region(density_path, p.region_boundary_path, summary_path,
+        utilities.summarize_raster_by_region(density_path, p.region_boundary_path, summary_path,
                                        year=year, id_column=p.terrestrial_carbon_shock_id_col)
     return hb.df_read(summary_path).set_index('region_id')[
         p.terrestrial_carbon_shock_value_col]
 
-
-
-def _resolve_scenario_lulc_paths(p, base_scenario, anchor_years):
-    """Build p.scenario_lulc_paths from p.es_lulc_path_template when the caller has not, and return
-    the scenario list.
-
-    Shared by every seam that walks scenario maps -- carbon and timber -- so a project passes one
-    template string rather than a path-building task, and both seams resolve the same files.
-
-    Args:
-        p (ProjectFlow): carries es_lulc_path_template ({scenario}/{year} placeholders) or a
-            pre-built scenario_lulc_paths {scenario: {year: path}}, and optionally es_shock_scenarios.
-        base_scenario (str): the nature-off baseline label, always resolved.
-        anchor_years (list): the SEALS anchor years to resolve maps for.
-
-    Returns:
-        list: the policy scenarios -- es_shock_scenarios if set, else every resolved scenario
-            other than the baseline.
-    """
-    scenarios = list(getattr(p, 'es_shock_scenarios', []))
-    if not getattr(p, 'scenario_lulc_paths', None):
-        tmpl = p.es_lulc_path_template
-        p.scenario_lulc_paths = {
-            scen: {y: glob.glob(tmpl.format(scenario=scen, year=y))[0]
-                   for y in anchor_years if glob.glob(tmpl.format(scenario=scen, year=y))}
-            for scen in [base_scenario] + scenarios}
-    if not scenarios:
-        scenarios = [s for s in p.scenario_lulc_paths if s != base_scenario]
-    return scenarios
-
-
-def _align_zones_to_lulc_grid(p, reference_lulc_path):
-    """Point p.terrestrial_quantity_input_path at a carbon-zones raster on the reference map's grid.
-
-    generate_carbon_density_raster asserts LULC and carbon zones share a grid. The zones raster is
-    global 300 m and a SEALS LULC map may be a sub-window (single-country or short-horizon test
-    AOI). Same resolution and an aligned grid, so nearest is a lossless clip and the task works at
-    any extent. The clip is cached: the zones raster does not change between runs.
-    """
-    if _raster_shape(p.terrestrial_quantity_input_path) == _raster_shape(reference_lulc_path):
-        return
-    aligned_path = os.path.join(p.cur_dir, 'carbon_zones_aligned.tif')
-    if not hb.path_exists(aligned_path):
-        # Int32, not the reference's type. The match raster is a 7-class SEALS map stored as Byte,
-        # and taking the output type from it silently truncates every zone id above 255 (South
-        # Africa's are 606-620): they land on the Byte nodata and read as missing, leaving zone 0
-        # everywhere and a carbon shock of exactly zero.
-        hb.resample_to_match(p.terrestrial_quantity_input_path, reference_lulc_path,
-                             aligned_path, resample_method='near',
-                             output_data_type=5, src_ndv=-9999, ndv=-9999)
-    p.terrestrial_quantity_input_path = aligned_path
-
-
-def _inject_base_year_map(p, base_scenario, base_year, reference_lulc_path):
-    """Register the ES-shared SEALS7 base-year map as the baseline's base-year map, so the
-    fixed-base denominator can be measured on it.
-
-    NEVER p.base_year_lulc_path: SEALS OWNS that attribute and overwrites it at runtime with its
-    raw-ESA source, and the density lookup is keyed on SEALS7 classes, so a raw-ESA base map yields
-    all-NaN densities. A carbon-specific terrestrial_carbon_base_year_lulc_path overrides if a
-    caller sets one. The aligned copy is rebuilt every run because the map it comes from can change
-    while the aligned filename does not.
-    """
-    base_map = (getattr(p, 'terrestrial_carbon_base_year_lulc_path', None)
-                or getattr(p, 'es_base_year_lulc_path', None))
-    if not base_map or base_year in p.scenario_lulc_paths.get(base_scenario, {}):
-        return
-    if not os.path.isabs(base_map):
-        base_map = p.get_path(base_map)
-    if _raster_shape(base_map) != _raster_shape(reference_lulc_path):
-        aligned_path = os.path.join(p.cur_dir, 'lulc_base_year_aligned.tif')
-        hb.resample_to_match(base_map, reference_lulc_path, aligned_path, resample_method='near')
-        base_map = aligned_path
-    p.scenario_lulc_paths.setdefault(base_scenario, {})[base_year] = base_map
 
 
 def terrestrial_carbon_shock(p):
@@ -408,7 +274,7 @@ def terrestrial_carbon_shock(p):
 
     At each SEALS anchor year in es_shock_years (5-year MAgPIE steps), measure the mean carbon
     density per polygon of p.region_boundary_path for the baseline scenario and each scenario, and
-    hand those means to terrestrial_carbon_functions.dynamic_shock_rows, which reports both the
+    hand those means to utilities.dynamic_shock_rows, which reports both the
     contemporaneous measure the GTAP shock reads (`shock_pct`) and the fixed-base measure
     (`shock_pct_fixedbase`). The only region-specific knowledge is the boundary's column names,
     supplied by the caller via p, so nothing GTAP-specific is hardcoded.
@@ -437,17 +303,19 @@ def terrestrial_carbon_shock(p):
     # Resolve the LULC map per scenario by globbing es_lulc_path_template ({scenario}/{year}
     # placeholders) when the caller didn't pre-build scenario_lulc_paths, so a project passes only
     # a template string rather than a path-building task.
-    scenarios = _resolve_scenario_lulc_paths(p, base_scenario, anchor_years)
+    scenarios = utilities.resolve_scenario_lulc_paths(p, base_scenario, anchor_years)
 
     reference_lulc_path = p.scenario_lulc_paths[base_scenario][anchor_years[-1]]
-    _align_zones_to_lulc_grid(p, reference_lulc_path)
-    _inject_base_year_map(p, base_scenario, es_shock_base_year, reference_lulc_path)
+    p.terrestrial_quantity_input_path = utilities.align_zones_to_lulc_grid(
+        p.terrestrial_quantity_input_path, reference_lulc_path, os.path.join(p.cur_dir, 'carbon_zones_aligned.tif'))
+    utilities.inject_base_year_map(p, base_scenario, es_shock_base_year, reference_lulc_path,
+                                   override_path=getattr(p, 'terrestrial_carbon_base_year_lulc_path', None))
 
     # Reuse the table when it was made from these very maps and settings. The zonal means below read
     # every scenario-year map, so a pass that finds the table must return in seconds -- and must not
     # rewrite it, which is work repeated on resume and defeats an unchanged-resume check.
     #
-    # This sits AFTER the two calls above, and must stay there. _inject_base_year_map publishes
+    # This sits AFTER the two calls above, and must stay there. inject_base_year_map publishes
     # scenario_lulc_paths[base][base_year], which erosion_damage_pipeline reads later; returning
     # before it leaves that entry unset and the erosion damage seam fails on a missing configured
     # input. A reuse shortcut must skip the work, never the path publication. Both calls are
@@ -466,7 +334,7 @@ def terrestrial_carbon_shock(p):
 
     density_lookup = tcf.carbon_density_lookup(
         pd.read_csv(p.terrestrial_carbon_density_lookup_table_path, index_col=False))
-    zone_labels = tcf.zone_labels_from_boundary(
+    zone_labels = utilities.zone_labels_from_boundary(
         gpd.read_file(p.region_boundary_path, engine='pyogrio'),
         p.terrestrial_carbon_shock_id_col, p.terrestrial_carbon_shock_endw_col,
         p.terrestrial_carbon_shock_reg_col, p.terrestrial_carbon_shock_endw_format)
@@ -479,7 +347,7 @@ def terrestrial_carbon_shock(p):
 
     rows = []
     for scenario in scenarios:
-        rows += tcf.dynamic_shock_rows(
+        rows += utilities.dynamic_shock_rows(
             {y: _zone_mean(p, scenario, y, density_lookup) for y in anchor_years},
             baseline_by_year, baseline_at_base_year, zone_labels, es_shock_base_year,
             p.terrestrial_carbon_shock_acts, scenario, log=hb.log)
@@ -621,7 +489,7 @@ def terrestrial_carbon_scc_valuation(p):
             hb.multiply(density_path, _aligned_ha_per_cell(p, density_path), per_cell_path)
         summary_path = os.path.join(p.cur_dir, 'carbon_by_country_region_%s_%d.csv' % (scenario, year))
         if not hb.path_exists(summary_path):
-            tcf.summarize_raster_by_region(per_cell_path, p.gep_regions_input_path, summary_path,
+            utilities.summarize_raster_by_region(per_cell_path, p.gep_regions_input_path, summary_path,
                                            year=year, id_column=p.gep_regions_id_col)
         regions = hb.df_read(summary_path)
         # summed on the country id, so a country split across r264 sub-regions counts once
@@ -739,8 +607,8 @@ def terrestrial_carbon_shock_static(p):
             continue
         scn = df[(df['scenario'] == raw_scn) & (df['year'] == es_shock_end_year)]
         scn_vals = scn.set_index(['ENDW', 'REG'])['percentage_change'].astype(float) * 100.0
-        rows += tcf.static_shock_rows(base_vals, scn_vals, our_scn, p.terrestrial_carbon_shock_acts,
-                                      es_shock_base_year, es_shock_end_year)
+        rows += utilities.static_shock_rows(base_vals, scn_vals, our_scn, [p.terrestrial_carbon_shock_acts],
+                                            es_shock_base_year, es_shock_end_year)
 
     out = pd.DataFrame(rows)
     out = utilities.filter_to_model_domain(out, p.terrestrial_carbon_shock_output_path, 'terrestrial_carbon', log=hb.log)

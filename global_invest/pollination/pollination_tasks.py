@@ -1152,8 +1152,8 @@ def pollination_shock_static(p):
         if raw_scn is None:
             continue
         scn_vals = df[df['scenario'] == raw_scn].set_index(['ENDW', 'REG'])['value'].astype(float)
-        rows += pf.static_shock_rows(base, scn_vals, our_scn, p.pollination_shock_acts,
-                                     es_shock_base_year, es_shock_end_year)
+        rows += utilities.static_shock_rows(base, scn_vals, our_scn, p.pollination_shock_acts,
+                                            es_shock_base_year, es_shock_end_year)
 
     out = pd.DataFrame(rows)
     out = utilities.filter_to_model_domain(out, p.pollination_shock_output_path, 'pollination', log=hb.log)

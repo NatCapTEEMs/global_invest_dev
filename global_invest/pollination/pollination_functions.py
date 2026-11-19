@@ -290,38 +290,6 @@ def dynamic_shock_rows(fixedbase, contemporaneous, level_usd, scenario, sectors,
     return rows
 
 
-def static_shock_rows(baseline_values, scenario_values, scenario, sectors, base_year, end_year):
-    """The frozen table's scenario-minus-baseline difference, ramped linearly from the base year.
-
-    Only zones present in both series are shocked: a zone the scenario or the baseline does not
-    cover has no difference to ramp, and inventing one would put a fabricated number into the
-    economic model.
-
-    Args:
-        baseline_values (pd.Series): per-zone nature-off baseline value, indexed by (ENDW, REG).
-        scenario_values (pd.Series): per-zone scenario value over the same index.
-        scenario (str): the scenario label written into every row.
-        sectors (iterable): the GTAP activities the shock applies to.
-        base_year (int): the year the ramp starts from, at zero.
-        end_year (int): the year the ramp reaches the full difference.
-
-    Returns:
-        list: dicts, one per zone, sector and year from base_year through end_year.
-    """
-    common = baseline_values.index.intersection(scenario_values.index)
-    shock = (scenario_values.loc[common] - baseline_values.loc[common]).dropna()
-    n_years = end_year - base_year
-
-    rows = []
-    for year in range(base_year, end_year + 1):
-        fraction = (year - base_year) / n_years
-        for (endw, reg), value in shock.items():
-            for sector in sectors:
-                rows.append({'ENDW': endw, 'ACTS': sector, 'REG': reg,
-                             'scenario': scenario, 'year': year, 'shock_pct': value * fraction})
-    return rows
-
-
 # =============================================================================
 # GEP valuation arithmetic. The value raster is USD per cell with crop prices
 # and pollination dependence already embedded upstream, so there is no price
