@@ -1071,7 +1071,6 @@ def _harvestable_flow_shock(p, base_scenario, scenarios, anchor_years, es_shock_
     table for every scenario and year and named in the excluded-regions file. Its effect is
     undefined, and a consumer must not read the missing rows as a zero shock.
     """
-    from global_invest.terrestrial_carbon import terrestrial_carbon_functions as tcf
     settings = _harvestable_flow_settings(p)
     params = tp.growth_parameters_from_table(hb.df_read(settings['growth_parameters_path']))
     provenance_df = hb.df_read(settings['input_provenance_path'])
@@ -1195,7 +1194,8 @@ def _harvestable_flow_shock(p, base_scenario, scenarios, anchor_years, es_shock_
             v3 = 100.0 * (per_ha - 1.0)
             columns = {'shock_pct_v3': v3, 'shock_pct_fixedbase': 100.0 * (per_ha - timing),
                        'shock_pct_contemp': 100.0 * (contemp - 1.0)}
-            annual = {c: tcf.interpolate_annual_shock(all_years, anchor_years, v, es_shock_base_year) for c, v in columns.items()}
+            annual = {c: utilities.anchored_series(all_years, [es_shock_base_year] + list(anchor_years), [0.0] + list(v))
+                      for c, v in columns.items()}
             for zone_id in ids:
                 endw = zone_labels[zone_id][0]
                 for i, year in enumerate(all_years):
