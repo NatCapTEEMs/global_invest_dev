@@ -513,29 +513,49 @@ nature_view_amenity,nature_view_amenity_price_year,2026
 nature_view_amenity,nature_view_amenity_price_year_source,"the scrape's own booking dates; the published table deflates to the base year, the anchor holds at the owner vintage"
 nature_view_amenity,nature_view_amenity_reference_path,global_invest/nature_view_amenity/reference_results.xlsx
 nature_view_amenity,nature_view_amenity_reference_source,"the owner's results workbook ($59.73bn over 124 countries), the replication anchor; their own code reproduced it here to the cent on 2026-10-02"
-pest_control,pest_control_fibl_area_input_path,global_invest/pest_control/Area_org.xlsx
-pest_control,pest_control_fibl_area_source,"FiBL organic area by crop, country and year (statistics.fibl.org extract 8.1.2025), the owner's own staged copy"
-pest_control,pest_control_faostat_yield_input_path,global_invest/pest_control/faostat_qcl_2019.csv
-pest_control,pest_control_faostat_yield_source,"FAOSTAT QCL 2019 slice (Area harvested, Yield in kg/ha, Production), extracted 2026-09-08 from the bulk normalized file"
-pest_control,pest_control_faostat_price_input_path,global_invest/pest_control/faostat_pp_2019.csv
-pest_control,pest_control_faostat_price_source,"FAOSTAT producer prices 2019, USD per tonne, extracted 2026-09-08 from the bulk normalized file"
-pest_control,pest_control_fao_classification_input_path,global_invest/pest_control/FAO_classification.csv
-pest_control,pest_control_fao_classification_source,"the owner's manual FAOSTAT item to CPC 2.1 group mapping, staged beside the drive submission"
+pest_control,pest_control_fibl_area_input_path,global_invest/pest_control/value_org_fb40d8c/Area_org_FiBL.xlsx
+pest_control,pest_control_fibl_area_source,"FiBL organic area by crop, country and year (statistics.fibl.org extract 8.1.2025), received from the service owner with github.com/wsidemoholm/value_org at fb40d8c, README_provenance.md beside it"
+pest_control,pest_control_recent_area_input_path,global_invest/pest_control/value_org_fb40d8c/UK_org_2021_2022.csv
+pest_control,pest_control_recent_area_source,"United Kingdom organic areas for 2021 and 2022, absent from the FiBL extract, from the national organic farming statistics, received from the service owner"
+pest_control,pest_control_fao_classification_input_path,global_invest/pest_control/value_org_fb40d8c/FAO_classification.csv
+pest_control,pest_control_fao_classification_source,"the service owner's FAOSTAT item to CPC 2.1 group mapping, equal to Zenodo record 17993071 by MD5"
+pest_control,pest_control_organic_premium_input_path,global_invest/pest_control/value_org_fb40d8c/org_premiums.csv
+pest_control,pest_control_organic_premium_source,"2,459 organic-to-conventional unit price ratios from USDA GATS trade data matched by crop, country and year, received from the service owner, equal to Zenodo record 17993071 by MD5. A matched ratio applies as observed, and any other crop takes its FAO group's mean"
+pest_control,pest_control_fao_values_table_path,global_invest/pollination/fao/fao_values_1993_2024.csv
+pest_control,pest_control_fao_values_table_source,"the conventional producer price, built by pollination's fao_median_prices task (the ported crop_benefits chain), the table crop provision values. The price falls back country to subregion to region to world, with the level in price_source_agg_level"
+pest_control,pest_control_fao_production_table_path,global_invest/pollination/fao/fao_production_1993_2024.csv
+pest_control,pest_control_fao_production_table_source,"the conventional yield in tonnes per hectare, built by the same task from the FAOSTAT crops and livestock bulk file"
+pest_control,pest_control_faostat_area_input_path,global_invest/pest_control/faostat_qcl_2019.csv
+pest_control,pest_control_faostat_area_source,"FAOSTAT QCL 2019 slice, extracted 2026-09-08 from the bulk normalized file: FAOSTAT's individual crop items and the harvested area the isolated-record correction compares against"
 pest_control,pest_control_effect_lnrr_cereals,0.1280735
 pest_control,pest_control_effect_lnrr_vegetables,0.2316753
 pest_control,pest_control_effect_lnrr_others,0.2829220
-pest_control,pest_control_effect_source,"Boldorini et al. 2024 (Proc R Soc B 291:20232522) Table S3, predators' effect on crop yield by crop type, non-phylogenetic model"
-pest_control,pest_control_yield_ratio_cereals,0.75
-pest_control,pest_control_yield_ratio_fruit_nuts,0.88
-pest_control,pest_control_yield_ratio_vegetables,0.83
-pest_control,pest_control_yield_ratio_pulses,0.85
-pest_control,pest_control_yield_ratio_oilseeds,0.83
-pest_control,pest_control_yield_ratio_stimulants,0.85
-pest_control,pest_control_yield_ratio_source,"organic-to-conventional yield ratios per FAO group, the appendix's meta-regression on the Ponisio et al. 2015 pairs (appendix Table 1)"
-pest_control,pest_control_price_premium,1.38
-pest_control,pest_control_price_premium_source,"organic-to-conventional producer price ratio, the appendix's overall mean from 2,459 matched USDA GATS pairs; 1.0 reproduces the committed file's level"
-pest_control,pest_control_reference_path,global_invest/pest_control/pest_control_gep.csv
-pest_control,pest_control_reference_source,"the owner's committed final (pest_control_gep.csv, 2025-10), the comparison anchor; a Monte Carlo mean, so anchored on coverage and rank, not to the cent"
+pest_control,pest_control_effect_lnrr_se_cereals,0.1603098
+pest_control,pest_control_effect_lnrr_se_vegetables,0.1022747
+pest_control,pest_control_effect_lnrr_se_others,0.1251967
+pest_control,pest_control_effect_source,"Boldorini et al. 2024 (Proc R Soc B 291:20232522) Table S3, predators' effect on crop yield by crop type, non-phylogenetic model, with the standard errors set in value_org at fb40d8c, 10_biocontrol_effects.R"
+pest_control,pest_control_include_cereals,false
+pest_control,pest_control_include_cereals_source,"the write-up and value_org at fb40d8c leave cereals unvalued because their effect does not differ significantly from zero"
+pest_control,pest_control_yield_ratio_lnrr_cereals,-0.287926188693922
+pest_control,pest_control_yield_ratio_lnrr_fruit_nuts,-0.12839115298276
+pest_control,pest_control_yield_ratio_lnrr_vegetables,-0.181748345713335
+pest_control,pest_control_yield_ratio_lnrr_pulses,-0.212292594847659
+pest_control,pest_control_yield_ratio_lnrr_oilseeds,-0.204271097559203
+pest_control,pest_control_yield_ratio_lnrr_stimulants,-0.343189777910634
+pest_control,pest_control_yield_ratio_lnrr_se_cereals,0.0351495145586809
+pest_control,pest_control_yield_ratio_lnrr_se_fruit_nuts,0.0534065818097661
+pest_control,pest_control_yield_ratio_lnrr_se_vegetables,0.0593671987029585
+pest_control,pest_control_yield_ratio_lnrr_se_pulses,0.061037237746819
+pest_control,pest_control_yield_ratio_lnrr_se_oilseeds,0.0675677131557932
+pest_control,pest_control_yield_ratio_lnrr_se_stimulants,0.0546393886153008
+pest_control,pest_control_yield_ratio_source,"organic-to-conventional yield ratios per FAO group, the log means and standard errors of value_org at fb40d8c, 7_organic_conventional_yield_ratios.R, fitted on the file that script downloads: Ponisio et al. 2015, doi:10.5061/dryad.hf305, DataForSubmitting.csv, 741,657 bytes, MD5 3bd682813cea2be9a5acba17ce35cc30, taken from its Zenodo copy, record 5002287, and staged at global_invest/pest_control/value_org_fb40d8c. All 15 numbers in pest_control_additionaldocumentation.docx (4 November 2026) Table 1 and the 3 for cereals in the appendix of 21 August 2026 match at their printed precision. The service owner's own yield_ratios_FAO.csv is not held, so agreement at full precision is not shown. Cereals are read only when pest_control_include_cereals is true"
+pest_control,pest_control_monte_carlo_draws,10000
+pest_control,pest_control_monte_carlo_seed,4242
+pest_control,pest_control_monte_carlo_source,"the write-up reports the mean and 95 percent interval of 10,000 simulations. One draw per group and simulation for the yield ratio and group-mean price ratio, one per category for the benefit, as in value_org at fb40d8c, 8_monte_carlo_prepare.R and 10_biocontrol_effects.R"
+pest_control,pest_control_reference_path,global_invest/pest_control/value_org_fb40d8c/pest_control_2019_rebuilt_from_zenodo_mc_all.csv
+pest_control,pest_control_reference_source,"the owner's published simulations with the owner's current summary: biocontrol_gep.R and 10_biocontrol_effects.R of value_org at fb40d8c applied to MC_all.fst of Zenodo record 17993071 (2025-12-19), 1,000 draws, MD5 48ce4cba3c2c2ce06083f01bd003277e. Those draws are older than fb40d8c: their yield ratios differ and they draw yield and price ratios per row, so compare means and not intervals. The table from a run of fb40d8c is not yet held"
+pest_control,pest_control_reference_superseded_path,global_invest/pest_control/pest_control_gep.csv
+pest_control,pest_control_reference_superseded_source,"the owner's committed file of 2025-10-20, the all-services sheet's old cell, cereals included. Kept for the record and not read by the run"
 groundwater_recharge,groundwater_recharge_l_values_input_path,global_invest/groundwater_recharge/l_val_dt_ctry.csv
 groundwater_recharge,groundwater_recharge_l_values_source,"country mean local recharge from the owner's InVEST Seasonal Water Yield runs (drive folder GEP_GWR final outputs, 2025-10 vintage; converted from l_val_dt_ctry.rds); the model itself runs elsewhere and is taken as given"
 groundwater_recharge,groundwater_recharge_withdrawal_input_path,global_invest/groundwater_recharge/AQUASTAT Dissemination System.csv

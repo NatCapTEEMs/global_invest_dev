@@ -70,7 +70,10 @@ for k, v in p.results[service_label].items():
     if k == 'gep_by_country_base_year':
         total_pest_control_value = df['pest_control_gep'].sum()
         p.gep_by_country_base_year_table = df[['iso3_r250_name', 'pest_control_gep',
-                                               'pest_control_gep_reference']]
+                                               'pest_control_gep_lower', 'pest_control_gep_upper',
+                                               'pest_control_gep_central', 'pest_control_gep_reference',
+                                               'pest_control_coverage', 'pest_control_crops_missing',
+                                               'pest_control_area_missing_ha', 'pest_control_area_left_out_ha']]
 
         # Group by useful aggregation columns explicitly and assign each as an attribute to p
         if 'income_grp' in df.columns:
@@ -122,7 +125,7 @@ for k, v in p.results[service_label].items():
 
 ```
 
-Pest control is valued as the extra yield natural enemies provide on organically managed cropland, at the organic producer price. The total is $`{python} f"{total_pest_control_value:,.2f}"` in the base year, in 2019 US dollars. It scales linearly in the organic price premium, 1.38. The committed reference column beside the per-country table is a Monte Carlo mean from the owner's pipeline. The tables below aggregate by income group, region, continent and subregion, and end with the per-country table the account reads.
+Pest control is valued as the share of the organic harvest owed to natural enemies, at the organic producer price. The total is $`{python} f"{total_pest_control_value:,.2f}"` in the base year, in 2019 US dollars. It is the mean of the Monte Carlo simulations, with the 95 percent interval and the central value beside it in the per-country table. Conventional prices stay fixed in the simulations. A total covers only the crops with data, so the coverage column says whether a country's number is complete, partial or unknown, and the columns beside it count what is missing. The reference column applies the owner's summary to the owner's published simulations, which are older than this code. The tables below aggregate by income group, region, continent and subregion, and end with the per-country table the account reads.
 
 ## GEP by Country in Base Year, mapped
 
