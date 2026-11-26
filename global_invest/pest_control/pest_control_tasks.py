@@ -179,7 +179,14 @@ def gep_calculation(p):
 
     classification = pd.read_csv(str(p.get_path(p.pest_control_fao_classification_input_path)),
                                  encoding='utf-8-sig')
-    premiums = pd.read_csv(str(p.get_path(p.pest_control_organic_premium_input_path)), encoding='utf-8-sig')
+    times = float(p.pest_control_organic_premium_plausibility_times)
+    premiums, left_out_premiums = pc.plausible_premiums(
+        pd.read_csv(str(p.get_path(p.pest_control_organic_premium_input_path)), encoding='utf-8-sig'), times)
+    left_out_premiums.to_csv(os.path.join(p.cur_dir, 'pest_control_price_ratios_left_out.csv'), index=False,
+                             encoding='utf-8-sig')
+    hb.log('  %d matched price ratios kept, %d outside 1/%g to %g left out (%d at %d)'
+           % (len(premiums), len(left_out_premiums), times, times,
+              int((left_out_premiums['year'] == base_year).sum()), base_year))
     effect = parameter_pairs(p, 'pest_control_effect_lnrr_', 'pest_control_effect_lnrr_se_',
                              ['cereals', 'vegetables', 'others'])
     yield_ratio = parameter_pairs(p, 'pest_control_yield_ratio_lnrr_', 'pest_control_yield_ratio_lnrr_se_',

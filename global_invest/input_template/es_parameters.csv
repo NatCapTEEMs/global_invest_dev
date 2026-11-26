@@ -521,6 +521,8 @@ pest_control,pest_control_fao_classification_input_path,global_invest/pest_contr
 pest_control,pest_control_fao_classification_source,"the service owner's FAOSTAT item to CPC 2.1 group mapping, equal to Zenodo record 17993071 by MD5"
 pest_control,pest_control_organic_premium_input_path,global_invest/pest_control/value_org_fb40d8c/org_premiums.csv
 pest_control,pest_control_organic_premium_source,"2,459 organic-to-conventional unit price ratios from USDA GATS trade data matched by crop, country and year, received from the service owner, equal to Zenodo record 17993071 by MD5. A matched ratio applies as observed, and any other crop takes its FAO group's mean"
+pest_control,pest_control_organic_premium_plausibility_times,10
+pest_control,pest_control_organic_premium_plausibility_times_source,"the service owner's plausibility limit on the matched price ratios, premium_qc_times = 10 in value_org 6_organic_prices.R (added in 518caaa, 19 Nov 2026, unchanged at 18d69cc): a ratio above 10 or below 1/10 is left out before the group means are taken, and its crop, country and year take the group mean. On the staged file this leaves out 15 of the 2,459 ratios, 10 above and 5 below, none at either limit"
 pest_control,pest_control_fao_values_table_path,global_invest/pollination/fao/fao_values_1993_2024.csv
 pest_control,pest_control_fao_values_table_source,"the conventional producer price, built by pollination's fao_median_prices task (the ported crop_benefits chain), the table crop provision values. The price falls back country to subregion to region to world, with the level in price_source_agg_level"
 pest_control,pest_control_fao_production_table_path,global_invest/pollination/fao/fao_production_1993_2024.csv

@@ -55,7 +55,16 @@ records, the number the additional documentation gives.
 The organic producer price is the conventional price times an organic-to-conventional price ratio.
 The conventional price is the shared table's 2019 USD price, resolved at the country, or else its
 subregion, its region or the world. The price ratio is the one matched for that crop, country and
-year in the USDA trade data, or else the mean of the FAO group across all 2,459 matched ratios.
+year in the USDA trade data, or else the mean of its FAO group.
+
+Both read only the ratios within a plausibility limit, `pest_control_organic_premium_plausibility_times`,
+set to the service owner's 10. A trade unit value can compare an organic and a conventional product that
+differ in processing, packaging or quality, so a ratio above 10 or below 1/10 is left out before the group
+means are taken, and its crop, country and year take the group mean. The limits themselves are kept. The
+limit leaves out 15 of the 2,459 ratios, 10 above and 5 below, and the task writes them to
+`pest_control_price_ratios_left_out.csv`. Twelve are stimulant crops, mostly tea, and they lower that
+group's mean from 1.633 to 1.420. One reaches a 2019 value: Viet Nam's tea, whose matched ratio of 38.01
+is left out, so the row takes that group mean of 1.420.
 
 ## Valuation
 
@@ -162,8 +171,9 @@ r250 identifiers and attributes, `year`, `pest_control_gep`, `pest_control_gep_l
 `pest_control_area_valued_ha`, `pest_control_area_no_benefit_ha`, `pest_control_area_missing_ha` and
 `pest_control_area_left_out_ha`. Beside it, `pest_control_by_crop_country.csv` holds the per-crop rows
 with the note naming any missing factor, `pest_control_world_uncertainty.csv` the world statistics,
-`pest_control_coverage_summary.csv` the same counts for the world with the value by coverage, and
-`pest_control_organic_area_spikes.csv` the corrected records.
+`pest_control_coverage_summary.csv` the same counts for the world with the value by coverage,
+`pest_control_organic_area_spikes.csv` the corrected records and `pest_control_price_ratios_left_out.csv`
+the price ratios outside the plausibility limit.
 
 ## Reference
 
@@ -176,8 +186,8 @@ comparison with the published simulations, not a reproduction of fb40d8c.
 ## What the value rests on
 
 The interval draws parameters and holds the choices below fixed. These are sizes of those choices, not
-estimates, and none changes the code. They were measured on the first run of this code, at the rounded yield ratios
-and before the shared price filters, and are not re-measured. Percentages are of that run's exact expectation,
+estimates, and none changes the code. They were measured on the first run of this code, at the rounded yield ratios,
+before the shared price filters and before the price-ratio plausibility limit, and are not re-measured. Percentages are of that run's exact expectation,
 \$5,190,393,846.19, except the shares of the central value.
 
 - The benefit's evidence. Boldorini et al. (2024) hold 47 yield comparisons from 19 studies. The other-crops
@@ -207,9 +217,6 @@ and before the shared price filters, and are not re-measured. Percentages are of
 - The owner's current table. `pest_control_2019.csv` from a run of fb40d8c is not held. It cannot be rebuilt
   from what is held, because that run also reads the FAOSTAT release and the IMF exchange-rate export it was
   made with.
-- Viet Nam's tea. Its matched price ratio is 38.01, the largest of the 2,459, and carries
-  \$232.6 million at the central value, against \$10.0 million at the group mean. The code applies
-  it as matched, as the service owner's does.
 - Prices above the country. Coffee in Uganda and Tanzania takes the shared table's subregion price of
   \$844.50 per tonne, against about \$2,900 in the published simulations.
 - Two-number cells. A cell's second number has no label, and the first number is kept.

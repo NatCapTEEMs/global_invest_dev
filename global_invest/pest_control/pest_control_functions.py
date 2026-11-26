@@ -276,6 +276,32 @@ def clean_organic_areas(fibl, recent, individual_items, harvested, year):
     return d[['area_fao', 'item', 'organic_ha']].reset_index(drop=True), info
 
 
+def plausible_premiums(premiums, times):
+    """The matched price ratios within a plausibility limit, and the ones left out.
+
+    A trade unit value can compare an organic and a conventional product that differ in processing,
+    packaging or quality, so a ratio more than `times` above or below 1 is left out. A ratio is kept
+    when 1/times <= ratio <= times, so the two limits themselves are kept. The limit applies before
+    any group statistic: a group's mean and spread come from the kept ratios only, and a crop,
+    country and year whose ratio is left out takes that group mean, like any crop without a ratio.
+
+    Args:
+        premiums (pd.DataFrame): `Org_premium` and the other columns, every matched pair of every year.
+        times (float): the limit, a finite number above 1.
+
+    Returns:
+        tuple: (kept, left_out), both with `premiums`' columns.
+
+    Raises:
+        ValueError: if `times` is not a finite number above 1.
+    """
+    times = float(times)
+    if not np.isfinite(times) or times <= 1.0:
+        raise ValueError('the price-ratio plausibility limit is %r; it takes a finite number above 1' % times)
+    kept = (premiums['Org_premium'] <= times) & (premiums['Org_premium'] >= 1.0 / times)
+    return premiums[kept].reset_index(drop=True), premiums[~kept].reset_index(drop=True)
+
+
 def premium_parameters_by_group(premiums):
     """The mean organic-to-conventional price ratio of each FAO group and its log-scale spread.
 

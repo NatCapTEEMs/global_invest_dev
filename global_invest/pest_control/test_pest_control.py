@@ -127,6 +127,32 @@ def test_a_repeated_matched_price_ratio_raises_instead_of_doubling():
             repeated, GROUPS, NAMES, YIELD_RATIO, EFFECT, False, 2019)
 
 
+def test_a_price_ratio_beyond_the_plausibility_limit_is_left_out_and_the_limits_themselves_are_kept():
+    premiums = PREMIUMS.iloc[[0] * 5].assign(Org_premium=[0.0999, 0.1, 1.0, 10.0, 10.0001])
+    kept, left_out = pc.plausible_premiums(premiums, 10)
+    assert kept['Org_premium'].tolist() == [0.1, 1.0, 10.0]
+    assert left_out['Org_premium'].tolist() == [0.0999, 10.0001]
+
+
+def test_a_left_out_ratio_leaves_its_group_mean_and_its_crop_takes_the_recomputed_mean():
+    # Apples in A at 2019 carries 38, far past the limit. Without it the fruit mean is that of 1.0 and 1.1,
+    # where a limit applied after the mean would still carry 38 inside it.
+    premiums, left_out = pc.plausible_premiums(PREMIUMS.assign(Org_premium=[38.0, 1.0, 1.1, 1.3, 1.1]), 10)
+    assert left_out['Org_premium'].tolist() == [38.0]
+    assert np.isclose(pc.premium_parameters_by_group(premiums).loc[FRUIT, 'mean_ratio'], 1.05)
+    d = pc.pest_control_by_crop_country(
+        pd.DataFrame([('A', 'Apples', 1.0)], columns=['area_fao', 'item', 'organic_ha']),
+        pd.DataFrame([('A', 'Apples', 1.0, 1.0, 'country')], columns=['area_fao', 'item', 'yield_t_ha', 'price_usd_t', 'price_level']),
+        premiums, GROUPS, NAMES, YIELD_RATIO, EFFECT, False, 2019)
+    assert d['price_ratio_source'].tolist() == ['group_mean'] and np.isclose(d['price_ratio'].iloc[0], 1.05)
+
+
+@pytest.mark.parametrize('times', [1.0, 0.5, float('nan'), float('inf')])
+def test_the_plausibility_limit_takes_a_finite_number_above_one(times):
+    with pytest.raises(ValueError):
+        pc.plausible_premiums(PREMIUMS, times)
+
+
 def test_a_repeated_harvested_area_raises_instead_of_doubling():
     areas = fibl_rows(('Spain', 2019, 'Apples', 1.0))
     harvest = harvested_rows(('Spain', 'Apples', 2019, 5.0), ('Spain', 'Apples', 2019, 6.0))
@@ -408,6 +434,16 @@ def test_every_valued_group_has_its_two_kinds_of_parameter():
         assert group in pc.YIELD_RATIO_KEY_BY_GROUP and group in params.index
 
 
+def test_the_plausibility_limit_leaves_out_fifteen_staged_ratios_viet_nam_tea_among_them():
+    _, base, _ = staged_base_data()
+    premiums = pd.read_csv(os.path.join(base, 'value_org_fb40d8c', 'org_premiums.csv'), encoding='utf-8-sig')
+    kept, left_out = pc.plausible_premiums(premiums, staged_parameters()['pest_control_organic_premium_plausibility_times'])
+    assert len(kept) == 2444 and len(left_out) == 15
+    assert (left_out['Org_premium'] > 10).sum() == 10 and (left_out['Org_premium'] < 0.1).sum() == 5
+    tea = left_out[(left_out['country'] == 'Viet Nam') & (left_out['year'] == 2019)]
+    assert tea['item'].tolist() == ['Tea leaves'] and round(float(tea['Org_premium'].iloc[0]), 2) == 38.01
+
+
 def staged_table():
     """The first run's tables from the staged inputs, driven as the task drives them."""
     from global_invest import utilities
@@ -431,24 +467,25 @@ def staged_table():
     name_to_iso3.update(pest_control_tasks.SOURCE_NAME_TO_ISO3)
     name_to_iso3.update(dict(zip(fao['area_fao'], fao['iso3'])))
     groups = staged_classification(base).set_index('item', verify_integrity=True)['FAO_group'].to_dict()
-    premiums = pd.read_csv(os.path.join(value_org, 'org_premiums.csv'), encoding='utf-8-sig')
+    premiums, _ = pc.plausible_premiums(pd.read_csv(os.path.join(value_org, 'org_premiums.csv'), encoding='utf-8-sig'),
+                                        params['pest_control_organic_premium_plausibility_times'])
     rows = pc.pest_control_by_crop_country(organic, fao, premiums, groups, name_to_iso3, ratio, effect, False, 2019)
     return rows, ratio, pc.premium_parameters_by_group(premiums), effect, info, params
 
 
 def test_the_staged_inputs_give_the_first_run_figures_to_the_cent():
-    """The staged inputs through the task's route, the yield ratios fitted on the exact Ponisio file,
-    10,000 draws and the configured seed. These pin this code on the shared prices staged in base data,
+    """The staged inputs through the task's route, the price ratios within the plausibility limit, the yield
+    ratios fitted on the exact Ponisio file, 10,000 draws and the configured seed. These pin this code on the shared prices staged in base data,
     not a reproduction of the owner's current table, which is not yet held."""
     rows, ratio, premium, effect, info, params = staged_table()
     labels, totals = pc.monte_carlo_by_country(rows, ratio, premium, effect, int(params['pest_control_monte_carlo_draws']),
                                                int(params['pest_control_monte_carlo_seed']))
     world = totals.sum(axis=1)
-    assert round(float(rows['pest_control_value'].sum()), 2) == 5_296_644_595.35
-    assert round(float(pc.expected_value_by_country(rows, ratio, premium, effect).sum()), 2) == 5_181_246_896.82
-    assert round(float(world.mean()), 2) == 5_195_473_666.75
-    assert round(float(np.quantile(world, 0.025)), 2) == 1_389_762_095.71
-    assert round(float(np.quantile(world, 0.975)), 2) == 8_402_623_749.17
+    assert round(float(rows['pest_control_value'].sum()), 2) == 5_059_193_031.23
+    assert round(float(pc.expected_value_by_country(rows, ratio, premium, effect).sum()), 2) == 4_949_018_090.59
+    assert round(float(world.mean()), 2) == 4_962_317_397.12
+    assert round(float(np.quantile(world, 0.025)), 2) == 1_348_510_181.71
+    assert round(float(np.quantile(world, 0.975)), 2) == 7_995_944_063.13
     means = pd.Series(totals.mean(axis=0), index=labels)
     assert (means > 0).sum() == 124
     assert sorted(means[means == 0].index) == ['BTN', 'IRL', 'ISL', 'JPN', 'KHM', 'LAO', 'MLI', 'PRY', 'TJK', 'ZWE']
