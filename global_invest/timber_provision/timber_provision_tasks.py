@@ -978,6 +978,43 @@ def _advance_forest_state_raster(previous_path, lulc_path, ha_path, zone_ids_pat
     return table[['region_id', 'forest_type_id', 'volume_basis'] + list(ZONE_QUANTITIES)].reset_index(drop=True)
 
 
+
+def forest_state_annual_step(p, previous_state_path, lulc_path, out_path, ha_path, zone_ids_path, n_zones,
+                             base_lulc_path=None):
+    """One year of the harvestable-flow forest state, for a caller that owns the accepted state.
+
+    An annual coupling loop runs several trials of the same year and accepts one. Each trial calls
+    this with the accepted start-of-year state and that trial's map. The timing is the measure's own:
+    the stock at the start of the year ages, grows and is harvested, and the year's map then converts
+    land at its end, so forest the map removes first changes the following year's harvest.
+
+    previous_state_path is only read. The new state goes to out_path, which must be another file,
+    through a temporary file renamed into place, so a failed or repeated trial never changes the state
+    it started from, and two trials from the same state and map give the same state and table. Which
+    trial's state is accepted, and where it is kept, is the caller's decision.
+
+    Args:
+        p: carries the timber_provision_* harvestable-flow settings, read as the shock task reads them.
+        previous_state_path (str): the accepted forest state at the start of the year.
+        lulc_path (str): this trial's land-cover map for the year, on the state's grid.
+        out_path (str): where this trial's end-of-year state is written.
+        ha_path (str): hectares per cell on the same grid.
+        zone_ids_path (str): zone ids on the same grid, 1 to n_zones.
+        n_zones (int): the largest zone id.
+        base_lulc_path (str): the base-year map, given only for the step that starts from the
+            configured initial state, which is then checked against it.
+
+    Returns:
+        pd.DataFrame: the year's totals per zone and forest type, as _advance_forest_state_raster.
+    """
+    if os.path.abspath(out_path) == os.path.abspath(previous_state_path):
+        raise ValueError('the annual step writes a new state; out_path must not be the state it starts from (%s)'
+                         % previous_state_path)
+    settings = _harvestable_flow_settings(p)
+    params = tp.growth_parameters_from_table(hb.df_read(settings['growth_parameters_path']))
+    return _advance_forest_state_raster(previous_state_path, lulc_path, ha_path, zone_ids_path, n_zones, 1, settings,
+                                        params, out_path, base_lulc_path)
+
 def _forest_state_chain(p, label, maps_by_year, start, ha_path, zone_ids_path, n_zones, settings, params,
                         signed_settings, base_lulc_path):
     """Advance the initial state through one scenario's maps, reusing a step only when its provenance matches.

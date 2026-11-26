@@ -950,6 +950,71 @@ def test_a_map_change_first_changes_the_next_years_harvest(tmp_path):
     assert (contemp.loc[:2030] == 0.0).all() and contemp.loc[2031] != 0.0
 
 
+
+def _zone_ids(tmp_path):
+    zones = np.zeros((6, 12), dtype='int32')
+    zones[:, 0:4], zones[:, 4:8], zones[:, 8:12] = 1, 2, 3
+    return _tif(tmp_path / 'zone_ids.tif', zones)
+
+
+def test_annual_trials_from_one_accepted_state_never_advance_it(tmp_path):
+    """An annual loop runs several trials of a year from one accepted state and accepts one. Every
+    trial reads that state and writes its own, so the accepted file never changes and a later trial
+    with an earlier trial's map gets that trial's state and table back."""
+    import hashlib
+    import rasterio
+    from global_invest.timber_provision import timber_provision_tasks as t
+    p, paths = _fixture(tmp_path)
+    zones = _zone_ids(tmp_path)
+    cleared = p.scenario_lulc_paths['policy_clear'][2030]
+    before = hashlib.sha256(open(paths.state, 'rb').read()).hexdigest()
+    trials = []
+    for k, lulc in enumerate((cleared, paths.base, cleared)):
+        out = str(tmp_path / ('trial_%03d_state.tif' % k))
+        table = t.forest_state_annual_step(p, paths.state, lulc, out, paths.ha, zones, 3, base_lulc_path=paths.base)
+        with rasterio.open(out) as src:
+            trials.append((table, src.read()))
+    assert hashlib.sha256(open(paths.state, 'rb').read()).hexdigest() == before
+    pd.testing.assert_frame_equal(trials[0][0], trials[2][0])
+    assert np.array_equal(trials[0][1], trials[2][1], equal_nan=True)
+    assert not trials[0][0].equals(trials[1][0])                       # the trials did differ
+    with pytest.raises(ValueError, match='must not be the state it starts from'):
+        t.forest_state_annual_step(p, paths.state, paths.base, paths.state, paths.ha, zones, 3)
+
+
+def test_the_annual_step_harvests_before_its_map_and_the_loss_reaches_the_next_year(tmp_path):
+    from global_invest.timber_provision import timber_provision_tasks as t
+    p, paths = _fixture(tmp_path)
+    zones = _zone_ids(tmp_path)
+    cleared = p.scenario_lulc_paths['policy_clear'][2030]
+
+    def aaa(table):
+        return table[table.region_id == 1][list(t.ZONE_QUANTITIES)].sum()
+    kept_path, lost_path = str(tmp_path / 'kept_2024.tif'), str(tmp_path / 'lost_2024.tif')
+    kept = aaa(t.forest_state_annual_step(p, paths.state, paths.base, kept_path, paths.ha, zones, 3, base_lulc_path=paths.base))
+    lost = aaa(t.forest_state_annual_step(p, paths.state, cleared, lost_path, paths.ha, zones, 3, base_lulc_path=paths.base))
+    for q in ('timberland_open_ha', 'opening_m3', 'growth_m3', 'harvest_m3'):       # cut before the year-end map
+        assert lost[q] == kept[q]
+    assert lost['forest_ha'] < kept['forest_ha'] and lost['removed_m3'] > 0 == kept['removed_m3']
+    after_kept = aaa(t.forest_state_annual_step(p, kept_path, paths.base, str(tmp_path / 'kept_2025.tif'), paths.ha, zones, 3))
+    after_lost = aaa(t.forest_state_annual_step(p, lost_path, paths.base, str(tmp_path / 'lost_2025.tif'), paths.ha, zones, 3))
+    assert after_lost['timberland_open_ha'] < after_kept['timberland_open_ha']      # the loss reaches the next year
+
+
+def test_the_annual_step_is_the_shock_chains_one_year_step(tmp_path):
+    import rasterio
+    from global_invest.timber_provision import timber_provision_tasks as t
+    p, paths = _fixture(tmp_path)
+    p.scenario_lulc_paths = {'baseline': {2023: paths.base, 2024: paths.base, 2025: paths.base}}
+    _, _, ledger = _run(p, paths, ('baseline',), (2024, 2025))
+    chain = ledger[(ledger.scenario == 'baseline') & (ledger.year == 2024)].sort_values(['region_id', 'forest_type_id'])
+    zones = os.path.join(p.cur_dir, 'timber_cell_area_by_zone_zone_ids.tif')            # the chain's own zone ids
+    out = str(tmp_path / 'step_2024.tif')
+    step = t.forest_state_annual_step(p, paths.state, paths.base, out, paths.ha, zones, 3, base_lulc_path=paths.base)
+    np.testing.assert_array_equal(step[list(t.ZONE_QUANTITIES)].to_numpy(), chain[list(t.ZONE_QUANTITIES)].to_numpy())
+    with rasterio.open(out) as mine, rasterio.open(os.path.join(p.cur_dir, 'timber_forest_state_baseline_2024.tif')) as theirs:
+        assert np.array_equal(mine.read(), theirs.read(), equal_nan=True)
+
 def test_input_provenance_is_required_complete_and_written_beside_the_shock(tmp_path):
     p, paths = _fixture(tmp_path)
     shock, _, _ = _run(p, paths)
