@@ -89,6 +89,20 @@ FIBL_CROP_TO_FAO = {
     'Vegetables, root tuber and bulb': 'Root, bulb or tuberous vegetables', 'Walnuts, with shell': 'Walnuts, in shell',
 }
 
+# FiBL reports French nuts mostly as one aggregate, which has no yield or price. Agence Bio reports each nut every
+# year, under these production names. Its overseas departments (region codes below) are reported apart in FiBL.
+FIBL_NUT_AGGREGATE = 'Nuts, no details'
+AGENCE_BIO_NUT_PRODUCTIONS = {
+    'Walnuts, with shell': ['Noix'],
+    'Chestnuts': ['Châtaignes et marrons'],
+    'Hazelnuts': ['Noisettes'],
+    'Almonds': ['Amandes'],
+    'Pistachios': ['Pistaches'],
+    'Nuts, other': ["Autres fruits à coque (à l'exclusion des noix sauvages, arachides et noix de coco)"],
+}
+AGENCE_BIO_OVERSEAS_REGION_CODES = ('01', '02', '03', '04', '06')
+AGENCE_BIO_SUPPRESSED = 'NC'
+
 # The meta-analysis category each FAO group's benefit comes from. Cereals are valued only when the
 # configuration asks, their effect not differing significantly from zero.
 EFFECT_CATEGORY_BY_GROUP = {
@@ -226,6 +240,80 @@ def correct_organic_area_spikes(areas, harvested):
                               'replacement_ha']].reset_index(drop=True)
     d['organic_ha'] = d['organic_ha'].where(~is_spike, d['replacement_ha'])
     return d[areas.columns.tolist()], spikes
+
+
+def agence_bio_nut_shares(surfaces, years):
+    """Each year's share of each FiBL nut item in mainland France's organic nut area, from Agence Bio.
+
+    The area is `surfbio`, certified plus in conversion, as FiBL counts it, and the overseas
+    departments are left out because FiBL reports them apart. Agence Bio withholds some regional
+    cells for statistical confidentiality and writes `NC` in them. Such a cell's area is unknown, not
+    zero: it adds nothing to a share, as in the service owner's rule, and the number of such cells is
+    returned beside each share so the reader sees what the share omits.
+
+    Args:
+        surfaces (pd.DataFrame): Agence Bio's table read as text, with `annee`, `coderegion`,
+            `production` and `surfbio`.
+        years (list): the years to split.
+
+    Returns:
+        pd.DataFrame: `year`, `crop` (the FiBL nut item), `known_ha`, `suppressed_cells` and `share`,
+        the shares of a year summing to 1.
+
+    Raises:
+        ValueError: if a production name is absent from the table, a `surfbio` cell is neither a
+            number nor `NC`, or a year has no known nut area.
+    """
+    crop_of = {name: crop for crop, names in AGENCE_BIO_NUT_PRODUCTIONS.items() for name in names}
+    absent = sorted(set(crop_of) - set(surfaces['production']))
+    if absent:
+        raise ValueError('Agence Bio lists no production named %s' % absent)
+    d = surfaces[surfaces['annee'].astype(int).isin(years) & surfaces['production'].isin(crop_of)
+                 & ~surfaces['coderegion'].isin(AGENCE_BIO_OVERSEAS_REGION_CODES)]
+    value = d['surfbio'].str.strip()
+    suppressed = value == AGENCE_BIO_SUPPRESSED
+    known = pd.to_numeric(value.where(~suppressed), errors='coerce')
+    if (~suppressed & known.isna()).any():
+        raise ValueError('Agence Bio surfbio holds %s, neither a number nor %s'
+                         % (sorted(set(value[~suppressed & known.isna()])), AGENCE_BIO_SUPPRESSED))
+    d = pd.DataFrame({'year': d['annee'].astype(int), 'crop': d['production'].map(crop_of),
+                      'known_ha': known.fillna(0.0), 'suppressed_cells': suppressed.astype(int)})
+    out = d.groupby(['year', 'crop'], as_index=False)[['known_ha', 'suppressed_cells']].sum()
+    total = out.groupby('year')['known_ha'].transform('sum')
+    if (total <= 0).any():
+        raise ValueError('Agence Bio holds no known nut area in %s' % sorted(out.loc[total <= 0, 'year'].unique()))
+    out['share'] = out['known_ha'] / total
+    return out
+
+
+def split_french_nut_aggregate(fibl, shares, years):
+    """FiBL's French nut area split into individual nuts by Agence Bio's shares of the same year.
+
+    Without the split, the French aggregate goes unvalued in most years and the nuts are valued only
+    in the years FiBL happens to list them singly. In each of `years`, FiBL's French total over the
+    nut items and the aggregate is replaced by that total times each nut's share, so the total is
+    kept exactly. Other countries, crops and years are untouched.
+
+    Args:
+        fibl (pd.DataFrame): `country`, `year`, `crop`, `organic_ha` (read_fibl_organic_areas output).
+        shares (pd.DataFrame): agence_bio_nut_shares output.
+        years (list): the years to split.
+
+    Returns:
+        pd.DataFrame: `fibl` with the French nut rows of those years replaced.
+
+    Raises:
+        ValueError: if a year holds French nut area in FiBL and no Agence Bio share.
+    """
+    in_rule = ((fibl['country'] == 'France') & fibl['year'].isin(years)
+               & fibl['crop'].isin(list(AGENCE_BIO_NUT_PRODUCTIONS) + [FIBL_NUT_AGGREGATE]))
+    totals = fibl[in_rule].groupby('year')['organic_ha'].sum().rename('total').reset_index()
+    without = sorted(set(totals.loc[totals['total'] > 0, 'year']) - set(shares['year']))
+    if without:
+        raise ValueError('FiBL holds French nut area in %s and Agence Bio gives no share' % without)
+    split = totals.merge(shares[['year', 'crop', 'share']], on='year', how='inner')
+    split = split.assign(country='France', organic_ha=split['total'] * split['share'])
+    return pd.concat([fibl[~in_rule], split[['country', 'year', 'crop', 'organic_ha']]], ignore_index=True)
 
 
 def clean_organic_areas(fibl, recent, individual_items, harvested, year):

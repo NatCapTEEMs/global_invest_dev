@@ -44,9 +44,16 @@ The organic area is FiBL's extract, cleaned as the service owner does:
   matters in 2019 only for rye in Austria and Ukraine.
 - A record above ten times its neighbouring years and also above the crop's whole harvested area
   takes the mean of those years.
+- France's nut area of 2008-2020, which FiBL reports mostly as one aggregate, is split into walnuts,
+  chestnuts, hazelnuts, almonds, pistachios and other nuts by Agence Bio's mainland shares of the same
+  year, so each year's total is kept. A regional cell Agence Bio withholds for confidentiality (`NC`)
+  adds no area to a share: its area is unknown, not zero. In 2019 the 15,147 hectares split into
+  8,168 of walnuts, 5,652 of chestnuts, 631 of almonds, 563 of hazelnuts and 133 of other nuts, the
+  last without a FAOSTAT yield or price, so that row stays missing. 9 of the 52 mainland nut cells of
+  2019 are withheld.
 
 In 2019 FiBL reports 11,931,709 hectares. Of these, 703 are in countries without a FAOSTAT series,
-702,518 in crops without a counterpart and 1,098,251 in aggregates. One record is corrected:
+702,518 in crops without a counterpart and 1,083,104 in aggregates. One record is corrected:
 walnuts in Kyrgyzstan, from 3,199 to 175 hectares. Across all years the same rule corrects seven
 records, the number the additional documentation gives.
 
@@ -156,8 +163,8 @@ is not held.
 ## Inputs
 
 All paths and parameters come from `es_parameters.csv` under the `pest_control` service key,
-each with a source row beside it: the FiBL extract, the United Kingdom statistics, the FAO
-classification, the matched price ratios, the shared FAOSTAT tables, the 2019 FAOSTAT slice for
+each with a source row beside it: the FiBL extract, the United Kingdom statistics, Agence Bio's regional
+areas with their sha256 and the years they split, the FAO classification, the matched price ratios, the shared FAOSTAT tables, the 2019 FAOSTAT slice for
 crop items and harvested area, the effect sizes and yield ratios with their standard errors, and
 the number of draws and the seed.
 
@@ -172,8 +179,9 @@ r250 identifiers and attributes, `year`, `pest_control_gep`, `pest_control_gep_l
 `pest_control_area_left_out_ha`. Beside it, `pest_control_by_crop_country.csv` holds the per-crop rows
 with the note naming any missing factor, `pest_control_world_uncertainty.csv` the world statistics,
 `pest_control_coverage_summary.csv` the same counts for the world with the value by coverage,
-`pest_control_organic_area_spikes.csv` the corrected records and `pest_control_price_ratios_left_out.csv`
-the price ratios outside the plausibility limit.
+`pest_control_organic_area_spikes.csv` the corrected records, `pest_control_price_ratios_left_out.csv`
+the price ratios outside the plausibility limit and `pest_control_france_nut_shares.csv` the Agence Bio
+shares with their count of withheld cells.
 
 ## Reference
 
@@ -187,7 +195,7 @@ comparison with the published simulations, not a reproduction of fb40d8c.
 
 The interval draws parameters and holds the choices below fixed. These are sizes of those choices, not
 estimates, and none changes the code. They were measured on the first run of this code, at the rounded yield ratios,
-before the shared price filters and before the price-ratio plausibility limit, and are not re-measured. Percentages are of that run's exact expectation,
+before the shared price filters, the price-ratio plausibility limit and the French nut split, and are not re-measured. Percentages are of that run's exact expectation,
 \$5,190,393,846.19, except the shares of the central value.
 
 - The benefit's evidence. Boldorini et al. (2024) hold 47 yield comparisons from 19 studies. The other-crops

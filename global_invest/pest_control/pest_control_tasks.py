@@ -89,6 +89,17 @@ def read_recent_organic_areas(path):
     return d.rename(columns={'item': 'crop', 'value': 'organic_ha'})[['country', 'year', 'crop', 'organic_ha']]
 
 
+def read_agence_bio_surfaces(path, expected_sha256):
+    """Agence Bio's organic areas by region and production as shipped, checked against their recorded sha256.
+
+    Every column is read as text, so the region codes keep their leading zero and a suppressed cell stays `NC`.
+    """
+    found = utilities.sha256_file(path)
+    if found != str(expected_sha256).strip().lower():
+        raise ValueError('%s has sha256 %s, not the recorded %s' % (path, found, expected_sha256))
+    return pd.read_csv(path, dtype=str, encoding='utf-8-sig')
+
+
 def read_ponisio_observations(path):
     """The columns of the Ponisio et al. 2015 file that the yield-ratio model reads.
 
@@ -160,8 +171,16 @@ def gep_calculation(p):
                                 str(p.get_path(p.pest_control_fao_production_table_path)), base_year)
     individual_items, harvested = read_faostat_crop_items_and_area(
         str(p.get_path(p.pest_control_faostat_area_input_path)), base_year)
+    nut_years = list(range(int(p.pest_control_france_nut_first_year), int(p.pest_control_france_nut_last_year) + 1))
+    nut_shares = pc.agence_bio_nut_shares(
+        read_agence_bio_surfaces(str(p.get_path(p.pest_control_france_nut_input_path)), p.pest_control_france_nut_sha256),
+        nut_years)
+    nut_shares.to_csv(os.path.join(p.cur_dir, 'pest_control_france_nut_shares.csv'), index=False, encoding='utf-8-sig')
+    hb.log('  French nut area of %d-%d split by Agence Bio shares, %d suppressed regional cells adding no area'
+           % (nut_years[0], nut_years[-1], int(nut_shares['suppressed_cells'].sum())))
     organic, info = pc.clean_organic_areas(
-        read_fibl_organic_areas(str(p.get_path(p.pest_control_fibl_area_input_path))),
+        pc.split_french_nut_aggregate(read_fibl_organic_areas(str(p.get_path(p.pest_control_fibl_area_input_path))),
+                                      nut_shares, nut_years),
         read_recent_organic_areas(str(p.get_path(p.pest_control_recent_area_input_path))),
         individual_items, harvested, base_year)
     hb.log('  organic area %.0f ha in %d: %.0f ha in countries with no FAOSTAT crop series, %.0f ha in crops with no '

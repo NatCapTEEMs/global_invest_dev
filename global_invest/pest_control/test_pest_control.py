@@ -153,6 +153,53 @@ def test_the_plausibility_limit_takes_a_finite_number_above_one(times):
         pc.plausible_premiums(PREMIUMS, times)
 
 
+def agence_bio_rows(*rows):
+    return pd.DataFrame(rows, columns=['annee', 'coderegion', 'production', 'surfbio'])
+
+
+# Every production name the shares need, in a year no test splits.
+EVERY_NUT_NAME = agence_bio_rows(*[('2005', '84', name, '0') for names in pc.AGENCE_BIO_NUT_PRODUCTIONS.values() for name in names])
+
+
+def test_the_nut_shares_leave_out_suppressed_cells_and_the_overseas_departments():
+    surfaces = pd.concat([EVERY_NUT_NAME, agence_bio_rows(
+        ('2019', '84', 'Noix', '30'), ('2019', '75', 'Noix', '15'), ('2019', '84', 'Noisettes', '15'),
+        ('2019', '84', 'Amandes', 'NC'), ('2019', '04', 'Noix', '100'))], ignore_index=True)
+    shares = pc.agence_bio_nut_shares(surfaces, [2019]).set_index('crop')
+    assert shares['share'].to_dict() == pytest.approx({'Walnuts, with shell': 0.75, 'Hazelnuts': 0.25, 'Almonds': 0.0})
+    assert shares.loc['Almonds', 'suppressed_cells'] == 1 and shares['suppressed_cells'].sum() == 1
+
+
+def test_the_nut_shares_refuse_a_missing_name_an_unreadable_cell_and_a_year_without_known_area():
+    with pytest.raises(ValueError, match='no production named'):
+        pc.agence_bio_nut_shares(EVERY_NUT_NAME[EVERY_NUT_NAME['production'] != 'Noix'], [2005])
+    with pytest.raises(ValueError, match='neither a number'):
+        pc.agence_bio_nut_shares(pd.concat([EVERY_NUT_NAME, agence_bio_rows(('2019', '84', 'Noix', 'n/a'))], ignore_index=True), [2019])
+    with pytest.raises(ValueError, match='no known nut area'):
+        pc.agence_bio_nut_shares(pd.concat([EVERY_NUT_NAME, agence_bio_rows(('2019', '84', 'Noix', 'NC'))], ignore_index=True), [2019])
+
+
+def test_the_french_nut_split_keeps_each_years_total_and_touches_nothing_else():
+    fibl = fibl_rows(('France', 2019, 'Nuts, no details', 100.0), ('France', 2011, 'Walnuts, with shell', 20.0),
+                     ('France', 2011, 'Chestnuts', 10.0), ('France', 2005, 'Nuts, no details', 7.0),
+                     ('Italy', 2019, 'Nuts, no details', 50.0), ('France', 2019, 'Apples', 5.0))
+    shares = pd.DataFrame({'year': [2011, 2011, 2019, 2019], 'share': [0.5, 0.5, 0.8, 0.2],
+                           'crop': ['Walnuts, with shell', 'Hazelnuts', 'Walnuts, with shell', 'Chestnuts']})
+    out = pc.split_french_nut_aggregate(fibl, shares, [2011, 2019])
+    split = (out['country'] == 'France') & out['year'].isin([2011, 2019]) & (out['crop'] != 'Apples')
+    assert out[split].groupby('year')['organic_ha'].sum().to_dict() == pytest.approx({2011: 30.0, 2019: 100.0})
+    assert out[split].set_index(['year', 'crop'])['organic_ha'].to_dict() == pytest.approx({
+        (2011, 'Walnuts, with shell'): 15.0, (2011, 'Hazelnuts'): 15.0, (2019, 'Walnuts, with shell'): 80.0, (2019, 'Chestnuts'): 20.0})
+    assert sorted(map(tuple, out[~split].values.tolist())) == sorted(
+        [('France', 2005, 'Nuts, no details', 7.0), ('Italy', 2019, 'Nuts, no details', 50.0), ('France', 2019, 'Apples', 5.0)])
+
+
+def test_a_year_with_french_nut_area_and_no_share_raises():
+    with pytest.raises(ValueError, match='no share'):
+        pc.split_french_nut_aggregate(fibl_rows(('France', 2019, 'Nuts, no details', 1.0)),
+                                      pd.DataFrame({'year': [2018], 'crop': ['Chestnuts'], 'share': [1.0]}), [2019])
+
+
 def test_a_repeated_harvested_area_raises_instead_of_doubling():
     areas = fibl_rows(('Spain', 2019, 'Apples', 1.0))
     harvest = harvested_rows(('Spain', 'Apples', 2019, 5.0), ('Spain', 'Apples', 2019, 6.0))
@@ -444,6 +491,27 @@ def test_the_plausibility_limit_leaves_out_fifteen_staged_ratios_viet_nam_tea_am
     assert tea['item'].tolist() == ['Tea leaves'] and round(float(tea['Org_premium'].iloc[0]), 2) == 38.01
 
 
+def staged_french_nut_split(fibl, base, params):
+    """FiBL's areas with the French nuts split by the staged Agence Bio shares, as the task splits them."""
+    years = list(range(int(params['pest_control_france_nut_first_year']), int(params['pest_control_france_nut_last_year']) + 1))
+    path = os.path.join(os.path.dirname(os.path.dirname(base)), params['pest_control_france_nut_input_path'])
+    shares = pc.agence_bio_nut_shares(
+        pest_control_tasks.read_agence_bio_surfaces(path, params['pest_control_france_nut_sha256']), years)
+    return pc.split_french_nut_aggregate(fibl, shares, years), shares
+
+
+def test_the_staged_french_nut_split_keeps_the_2019_area_in_the_owner_rule_shares():
+    _, base, _ = staged_base_data()
+    fibl = pest_control_tasks.read_fibl_organic_areas(os.path.join(base, 'value_org_fb40d8c', 'Area_org_FiBL.xlsx'))
+    out, shares = staged_french_nut_split(fibl, base, staged_parameters())
+    nuts = out[(out['country'] == 'France') & (out['year'] == 2019) & out['crop'].isin(pc.AGENCE_BIO_NUT_PRODUCTIONS)]
+    assert round(float(nuts['organic_ha'].sum()), 6) == 15147.0
+    assert nuts.set_index('crop')['organic_ha'].round(6).to_dict() == {
+        'Almonds': 630.811791, 'Chestnuts': 5652.131226, 'Hazelnuts': 563.14136, 'Nuts, other': 132.557197,
+        'Walnuts, with shell': 8168.358427}
+    assert int(shares.loc[shares['year'] == 2019, 'suppressed_cells'].sum()) == 9
+
+
 def staged_table():
     """The first run's tables from the staged inputs, driven as the task drives them."""
     from global_invest import utilities
@@ -458,9 +526,10 @@ def staged_table():
     fao = pest_control_tasks.read_shared_fao_table(os.path.join(pollination, 'fao', 'fao_values_1993_2024.csv'),
                                                    os.path.join(pollination, 'fao', 'fao_production_1993_2024.csv'), 2019)
     items, harvested = pest_control_tasks.read_faostat_crop_items_and_area(os.path.join(base, 'faostat_qcl_2019.csv'), 2019)
+    fibl, _ = staged_french_nut_split(
+        pest_control_tasks.read_fibl_organic_areas(os.path.join(value_org, 'Area_org_FiBL.xlsx')), base, params)
     organic, info = pc.clean_organic_areas(
-        pest_control_tasks.read_fibl_organic_areas(os.path.join(value_org, 'Area_org_FiBL.xlsx')),
-        pest_control_tasks.read_recent_organic_areas(os.path.join(value_org, 'UK_org_2021_2022.csv')),
+        fibl, pest_control_tasks.read_recent_organic_areas(os.path.join(value_org, 'UK_org_2021_2022.csv')),
         items, harvested, 2019)
     names = utilities.collapse_countries_to_r250(p.df_countries)[['iso3_r250_label', 'iso3_r250_name']]
     name_to_iso3 = dict(zip(names['iso3_r250_name'], names['iso3_r250_label']))
@@ -474,22 +543,23 @@ def staged_table():
 
 
 def test_the_staged_inputs_give_the_first_run_figures_to_the_cent():
-    """The staged inputs through the task's route, the price ratios within the plausibility limit, the yield
-    ratios fitted on the exact Ponisio file, 10,000 draws and the configured seed. These pin this code on the shared prices staged in base data,
+    """The staged inputs through the task's route, the French nuts split by the Agence Bio shares, the price
+    ratios within the plausibility limit, the yield ratios fitted on the exact Ponisio file, 10,000 draws and the
+    configured seed. These pin this code on the shared prices staged in base data,
     not a reproduction of the owner's current table, which is not yet held."""
     rows, ratio, premium, effect, info, params = staged_table()
     labels, totals = pc.monte_carlo_by_country(rows, ratio, premium, effect, int(params['pest_control_monte_carlo_draws']),
                                                int(params['pest_control_monte_carlo_seed']))
     world = totals.sum(axis=1)
-    assert round(float(rows['pest_control_value'].sum()), 2) == 5_059_193_031.23
-    assert round(float(pc.expected_value_by_country(rows, ratio, premium, effect).sum()), 2) == 4_949_018_090.59
-    assert round(float(world.mean()), 2) == 4_962_317_397.12
-    assert round(float(np.quantile(world, 0.025)), 2) == 1_348_510_181.71
-    assert round(float(np.quantile(world, 0.975)), 2) == 7_995_944_063.13
+    assert round(float(rows['pest_control_value'].sum()), 2) == 5_070_678_636.40
+    assert round(float(pc.expected_value_by_country(rows, ratio, premium, effect).sum()), 2) == 4_960_244_841.05
+    assert round(float(world.mean()), 2) == 4_973_595_176.52
+    assert round(float(np.quantile(world, 0.025)), 2) == 1_350_975_767.61
+    assert round(float(np.quantile(world, 0.975)), 2) == 8_014_232_581.80
     means = pd.Series(totals.mean(axis=0), index=labels)
     assert (means > 0).sum() == 124
     assert sorted(means[means == 0].index) == ['BTN', 'IRL', 'ISL', 'JPN', 'KHM', 'LAO', 'MLI', 'PRY', 'TJK', 'ZWE']
-    assert (rows['benefit_status'] != 'unclassified').all() and len(rows) == 1461
+    assert (rows['benefit_status'] != 'unclassified').all() and len(rows) == 1466
     assert info['spikes'][['area_fao', 'item']].values.tolist() == [['Kyrgyzstan', 'Walnuts, in shell']]
 
 
@@ -516,11 +586,11 @@ def test_the_staged_inputs_correct_seven_records_across_all_years():
 def test_the_staged_inputs_qualify_the_totals_by_coverage():
     rows, _, _, _, info, _ = staged_table()
     c = pc.coverage_by_country(rows)
-    assert c['coverage'].value_counts().to_dict() == {'complete_value': 80, 'partial_value': 44, 'complete_zero': 9,
+    assert c['coverage'].value_counts().to_dict() == {'complete_value': 79, 'partial_value': 45, 'complete_zero': 9,
                                                       'missing_inputs': 3, 'zero_with_missing': 1}
     assert c[c['coverage'] == 'zero_with_missing'].index.tolist() == ['PRY']
     assert sorted(c[c['coverage'] == 'missing_inputs'].index) == ['GIN', 'GMB', 'MUS']
-    assert int(c['crops_missing'].sum()) == 118 and int(c['crops'].sum()) == 1461
+    assert int(c['crops_missing'].sum()) == 119 and int(c['crops'].sum()) == 1466
     assert round(float(c['area_missing_ha'].sum()), 2) == round(float(rows.loc[rows['pest_control_value'].isna() & (rows['benefit_status'] != 'no_benefit'), 'organic_ha'].sum()), 2)
     # Every hectare FiBL reports in 2019 is valued, without a benefit, lacking an input, left out or removed as a spike.
     accounted = (c['area_valued_ha'].sum() + c['area_no_benefit_ha'].sum() + c['area_missing_ha'].sum() + info['left_out']['organic_ha'].sum()

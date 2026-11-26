@@ -517,6 +517,11 @@ pest_control,pest_control_fibl_area_input_path,global_invest/pest_control/value_
 pest_control,pest_control_fibl_area_source,"FiBL organic area by crop, country and year (statistics.fibl.org extract 8.1.2025), received from the service owner with github.com/wsidemoholm/value_org at fb40d8c, README_provenance.md beside it"
 pest_control,pest_control_recent_area_input_path,global_invest/pest_control/value_org_fb40d8c/UK_org_2021_2022.csv
 pest_control,pest_control_recent_area_source,"United Kingdom organic areas for 2021 and 2022, absent from the FiBL extract, from the national organic farming statistics, received from the service owner"
+pest_control,pest_control_france_nut_input_path,global_invest/pest_control/agence_bio_surfaces_20260916/donnees-region-secretstat-14092026-surfaces-par-production.csv
+pest_control,pest_control_france_nut_sha256,fc6612bdb906c99c5110c7c5d31e9918d52fd7f5ccbeaa576781cd4c3a1e9e4a
+pest_control,pest_control_france_nut_first_year,2008
+pest_control,pest_control_france_nut_last_year,2020
+pest_control,pest_control_france_nut_source,"Agence Bio organic areas by region and production, version of 16 September 2026 (data.gouv.fr), copied unchanged, with README_provenance.md beside it. The service owner's rule (value_org 2_organic_hectares.R at 18d69cc): FiBL's French nut area of 2008-2020, the six nut items and Nuts, no details, is split by each year's mainland Agence Bio shares, so the nuts can be valued. A cell Agence Bio suppresses for confidentiality (NC) adds no area to a share. 2005-2007 predate Agence Bio and stay as FiBL reports them"
 pest_control,pest_control_fao_classification_input_path,global_invest/pest_control/value_org_fb40d8c/FAO_classification.csv
 pest_control,pest_control_fao_classification_source,"the service owner's FAOSTAT item to CPC 2.1 group mapping, equal to Zenodo record 17993071 by MD5"
 pest_control,pest_control_organic_premium_input_path,global_invest/pest_control/value_org_fb40d8c/org_premiums.csv
