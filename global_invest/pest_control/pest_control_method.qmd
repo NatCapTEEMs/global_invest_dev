@@ -57,6 +57,28 @@ In 2019 FiBL reports 11,931,709 hectares. Of these, 703 are in countries without
 walnuts in Kyrgyzstan, from 3,199 to 175 hectares. Across all years the same rule corrects seven
 records, the number the additional documentation gives.
 
+The valuation reads only that workbook. An optional task, `fibl_organic_area_snapshot`, runs before it.
+It downloads and checks FiBL's records for the years the valuation reads (2018-2020) and never hands
+them to the valuation, so a fresh download does not replace the workbook as the valuation's source.
+Its comparison reads the workbook as well, so neither the task nor the valuation runs from a download
+alone:
+
+- It reaches FiBL only when `pest_control_fibl_download` is true. It then posts FiBL's selected-crops
+  form once, for the organic area of every country and item in those years, and keeps the response
+  unchanged under a new dated name. The receipt beside it holds the request time, every field sent
+  (the page's hidden token as a sha256), the response's sha256 and a hash of its records.
+- With the download off and `pest_control_fibl_snapshot_records_sha256` set, it requires a cached
+  snapshot holding exactly those records and stops the run when none is held, or when the file no
+  longer matches its receipt. With both off, the default, it does nothing.
+- Every record stays as FiBL lists it: a key FiBL reports twice keeps both rows, and a dash stays a
+  missing value. On each run the task compares each key's records with the workbook's cell
+  (`fibl_snapshot_vs_workbook.csv`): the same records in the same order, the same in another order,
+  different, or on one side only. No area changes. A workbook cell holding two numbers still gives
+  its first.
+- FiBL's data may not be redistributed, so the snapshots stay in the task's own directory or in
+  `pest_control_fibl_snapshot_dir`, outside the repository and base data. That the download works
+  grants no right to redistribute.
+
 ## Price
 
 The organic producer price is the conventional price times an organic-to-conventional price ratio.
@@ -166,7 +188,8 @@ All paths and parameters come from `es_parameters.csv` under the `pest_control` 
 each with a source row beside it: the FiBL extract, the United Kingdom statistics, Agence Bio's regional
 areas with their sha256 and the years they split, the FAO classification, the matched price ratios, the shared FAOSTAT tables, the 2019 FAOSTAT slice for
 crop items and harvested area, the effect sizes and yield ratios with their standard errors, and
-the number of draws and the seed.
+the number of draws and the seed. The FiBL snapshot's switch, address, years, timeout, directory
+and pin sit beside the FiBL extract.
 
 ## Output
 
@@ -181,7 +204,9 @@ with the note naming any missing factor, `pest_control_world_uncertainty.csv` th
 `pest_control_coverage_summary.csv` the same counts for the world with the value by coverage,
 `pest_control_organic_area_spikes.csv` the corrected records, `pest_control_price_ratios_left_out.csv`
 the price ratios outside the plausibility limit and `pest_control_france_nut_shares.csv` the Agence Bio
-shares with their count of withheld cells.
+shares with their count of withheld cells. When a FiBL snapshot is requested or pinned,
+`fibl_organic_area_snapshot` writes `fibl_snapshot_vs_workbook.csv` into its own directory, and the
+snapshots with their receipts stay where `pest_control_fibl_snapshot_dir` points, or in that directory.
 
 ## Reference
 

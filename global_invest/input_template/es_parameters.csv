@@ -515,6 +515,18 @@ nature_view_amenity,nature_view_amenity_reference_path,global_invest/nature_view
 nature_view_amenity,nature_view_amenity_reference_source,"the owner's results workbook ($59.73bn over 124 countries), the replication anchor; their own code reproduced it here to the cent on 2026-10-02"
 pest_control,pest_control_fibl_area_input_path,global_invest/pest_control/value_org_fb40d8c/Area_org_FiBL.xlsx
 pest_control,pest_control_fibl_area_source,"FiBL organic area by crop, country and year (statistics.fibl.org extract 8.1.2025), received from the service owner with github.com/wsidemoholm/value_org at fb40d8c, README_provenance.md beside it"
+pest_control,pest_control_fibl_download,false
+pest_control,pest_control_fibl_download_source,"true makes fibl_organic_area_snapshot request FiBL's organic-area records of pest_control_fibl_download_years once and keep the response unchanged under a new dated name in the snapshot directory. The snapshot is checked against the workbook and never becomes the valuation's input: the valuation keeps reading pest_control_fibl_area_input_path. FiBL's data may not be redistributed, so a snapshot stays out of the repository and base data, and that the download works grants no right to redistribute"
+pest_control,pest_control_fibl_download_url,https://statistics.fibl.org/world/selected-crops-world.html
+pest_control,pest_control_fibl_download_url_source,"FiBL's statistics site, Data, World, Selected crops: the form the service owner's 2_organic_hectares.R posts in value_org"
+pest_control,pest_control_fibl_download_years,"[2018, 2019, 2020]"
+pest_control,pest_control_fibl_download_years_source,"the years the 2019 valuation reads from FiBL: the base year and its two neighbours, which the isolated-record correction compares against"
+pest_control,pest_control_fibl_download_timeout_seconds,600
+pest_control,pest_control_fibl_download_timeout_seconds_source,the service owner's timeout in 2_organic_hectares.R
+pest_control,pest_control_fibl_snapshot_dir,
+pest_control,pest_control_fibl_snapshot_dir_source,machine configuration: a local directory outside the repository and base data that keeps FiBL snapshots across projects. Blank keeps them in the task's own directory
+pest_control,pest_control_fibl_snapshot_records_sha256,
+pest_control,pest_control_fibl_snapshot_records_sha256_source,"blank checks nothing. A records hash (fibl_records_sha256) in this row makes fibl_organic_area_snapshot require a cached snapshot holding exactly those records, and stop when none is held. FiBL's Organic area [ha] records for every country and item in 2018-2020, as served on 27 Nov 2026 (6,389 records), hash to 516fee27384fcfbbe63fa80a5b32f6cf656accb0e2e090f1d8c1cf11006690fb"
 pest_control,pest_control_recent_area_input_path,global_invest/pest_control/value_org_fb40d8c/UK_org_2021_2022.csv
 pest_control,pest_control_recent_area_source,"United Kingdom organic areas for 2021 and 2022, absent from the FiBL extract, from the national organic farming statistics, received from the service owner"
 pest_control,pest_control_france_nut_input_path,global_invest/pest_control/agence_bio_surfaces_20260916/donnees-region-secretstat-14092026-surfaces-par-production.csv

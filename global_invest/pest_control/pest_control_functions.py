@@ -18,6 +18,7 @@ and price are present. A missing factor leaves a valued crop NA, never a silent 
 country's total covers the crops with data, so each country carries how much it covers, and a
 country whose computed crops are all zero but which has valued crops without data has no total.
 """
+import hashlib
 import re
 
 import numpy as np
@@ -27,6 +28,14 @@ from scipy.optimize import minimize
 from scipy.stats import norm
 
 ORGANIC_AREA_ELEMENT = 'Organic area [ha]'
+
+# FiBL's selected-crops form: the menus a request chooses from, and the five columns of the table it answers with.
+# A value is a number, possibly negative, with an apostrophe as its thousands mark, or '-' or nothing where FiBL
+# has none.
+FIBL_FORM_MENUS = ('menu_country', 'menu_element', 'menu_item', 'menu_year')
+FIBL_TABLE_COLUMNS = ['Country', 'Year', 'Item', 'Element', 'Value']
+FIBL_NUMBER = r"-?(?:\d{1,3}(?:'\d{3})+|\d+)(?:\.\d+)?"
+FIBL_NO_VALUE = ('', '-')
 
 # An isolated FiBL record is treated as a reporting error when it exceeds this multiple of the
 # adjacent years and the crop's whole harvested area.
@@ -200,6 +209,158 @@ def organic_area_from_cell(value):
         match = re.search(r'\d+(?:\.\d+)?', value)
         return float(match.group()) if match else np.nan
     return float(value)
+
+
+def fibl_cell_records(value):
+    """Every record a FiBL workbook cell holds, in its order: one number, the two of a text such as
+    '1234.5, 67.8', or none for an empty cell or a dash. Unlike organic_area_from_cell, which the valuation
+    uses, nothing is dropped.
+
+    Raises:
+        ValueError: if a part of a text cell is not a number.
+    """
+    if not isinstance(value, str):
+        return [] if pd.isna(value) else [float(value)]
+    parts = [s.strip() for s in value.split(',') if s.strip() not in FIBL_NO_VALUE]
+    unreadable = [s for s in parts if not re.fullmatch(FIBL_NUMBER, s)]
+    if unreadable:
+        raise ValueError('FiBL cell %r holds %s, which is not a number' % (value, unreadable))
+    return [float(s.replace("'", '')) for s in parts]
+
+
+def fibl_form_fields(page, element, years):
+    """The fields of a request to FiBL's selected-crops form: the page's hidden inputs, every country and item it
+    offers, the one element named `element` and the years in `years`.
+
+    Args:
+        page (bytes or str): the form page as FiBL serves it.
+        element (str): an element's name as the form's menu shows it, such as 'Organic area [ha]'.
+        years (list of int): the years to request.
+
+    Returns:
+        list of (str, str): the name and value of each field, in the order the form's own submission sends them.
+
+    Raises:
+        ValueError: if the page holds no form named 'statistics' or more than one, a menu is empty, the element is
+            not on its menu exactly once, or a year is not on its menu.
+    """
+    from lxml import html
+    forms = html.fromstring(page).xpath("//form[@name='statistics']")
+    if len(forms) != 1:
+        raise ValueError('the FiBL page holds %d forms named statistics, not one' % len(forms))
+    menus = {m: [(o.get('value'), o.text_content().strip()) for o in forms[0].xpath(".//select[@class='%s']/option" % m)]
+             for m in FIBL_FORM_MENUS}
+    empty = [m for m, options in menus.items() if not options]
+    if empty:
+        raise ValueError('the FiBL form offers nothing in %s' % empty)
+    element_ids = [v for v, label in menus['menu_element'] if label == element]
+    if len(element_ids) != 1:
+        raise ValueError('the FiBL form lists the element %r %d times, not once' % (element, len(element_ids)))
+    year_ids = {label: v for v, label in menus['menu_year']}
+    not_offered = [y for y in years if str(y) not in year_ids]
+    if not_offered:
+        raise ValueError('the FiBL form offers no year %s' % not_offered)
+    chosen = {'menu_country': [v for v, _ in menus['menu_country']], 'menu_element': element_ids,
+              'menu_item': [v for v, _ in menus['menu_item']], 'menu_year': [year_ids[str(y)] for y in years]}
+    hidden = [(i.get('name'), i.get('value') or '') for i in forms[0].xpath(".//input[@type='hidden']")]
+    return hidden + [('tx_statisticdata_pi1[%s][]' % m, v) for m in FIBL_FORM_MENUS for v in chosen[m]]
+
+
+def fibl_records_from_html(response, element, years):
+    """FiBL's answer to a selected-crops request as records, one per row of its table, in the order it lists them.
+
+    Nothing is summed, dropped or reordered. A key FiBL reports twice keeps both rows, and `record` numbers the rows
+    of each country, year, item and element in the order of the response. `value_text` is the cell as shown, and
+    `organic_ha` its number, missing where FiBL shows '-' or nothing.
+
+    Args:
+        response (bytes or str): the page FiBL returns for the request.
+        element (str): the element requested.
+        years (list of int): the years requested.
+
+    Returns:
+        pd.DataFrame: `country`, `year`, `item`, `element`, `value_text`, `organic_ha`, `record`.
+
+    Raises:
+        ValueError: if the page holds no result table or more than one, the table's columns are not FiBL's five, it
+            has no rows, a row has another number of cells, names another element or a year not requested, a
+            requested year has no row, or a value is neither a number nor missing.
+    """
+    from lxml import html
+    tables = html.fromstring(response).xpath("//table[.//th[contains(., 'Country')]]")
+    if len(tables) != 1:
+        raise ValueError('the FiBL response holds %d result tables, not one' % len(tables))
+    header = [th.text_content().strip() for th in tables[0].xpath('.//th')]
+    if header != FIBL_TABLE_COLUMNS:
+        raise ValueError('the FiBL table has the columns %s, not %s' % (header, FIBL_TABLE_COLUMNS))
+    rows = [[td.text_content().strip() for td in tr.xpath('./td')] for tr in tables[0].xpath('.//tr[td]')]
+    if not rows:
+        raise ValueError('the FiBL table has no rows')
+    ragged = [r for r in rows if len(r) != len(FIBL_TABLE_COLUMNS)]
+    if ragged:
+        raise ValueError('%d FiBL rows do not have five cells, the first %s' % (len(ragged), ragged[0]))
+    d = pd.DataFrame(rows, columns=['country', 'year', 'item', 'element', 'value_text'])
+    other_elements = sorted(set(d['element']) - {element})
+    if other_elements:
+        raise ValueError('the FiBL table holds elements %s besides %r' % (other_elements, element))
+    if not d['year'].str.fullmatch(r'\d{4}').all():
+        raise ValueError('FiBL years %s are not years' % sorted(set(d.loc[~d['year'].str.fullmatch(r'\d{4}'), 'year'])))
+    d['year'] = d['year'].astype(int)
+    unrequested = sorted(set(d['year']) - set(years))
+    absent = sorted(set(years) - set(d['year']))
+    if unrequested or absent:
+        raise ValueError('the FiBL table holds years %s that were not requested and lacks requested years %s'
+                         % (unrequested, absent))
+    missing = d['value_text'].isin(FIBL_NO_VALUE)
+    numeric = d['value_text'].str.fullmatch(FIBL_NUMBER)
+    if (~missing & ~numeric).any():
+        raise ValueError('FiBL values %s are neither numbers nor missing'
+                         % sorted(set(d.loc[~missing & ~numeric, 'value_text']))[:5])
+    d['organic_ha'] = d['value_text'].str.replace("'", '', regex=False).where(numeric).astype(float)
+    d['record'] = d.groupby(['country', 'year', 'item', 'element']).cumcount() + 1
+    return d
+
+
+def fibl_records_sha256(records):
+    """A hash of FiBL records that ignores their order and counts each of them: one line per record of country,
+    year, item, element and the value as shown less its thousands mark, the lines sorted."""
+    lines = sorted('%s|%d|%s|%s|%s' % (c, y, i, e, v.replace("'", '')) for c, y, i, e, v in
+                   records[['country', 'year', 'item', 'element', 'value_text']].itertuples(index=False))
+    return hashlib.sha256('\n'.join(lines).encode('utf-8')).hexdigest()
+
+
+def compare_fibl_records(snapshot, workbook):
+    """FiBL's records against the workbook's cells, per country, year and crop, every record of a key counted.
+
+    Names lose their apostrophes before the join, as the workbook writes them. A snapshot row without a value and an
+    empty or dashed cell hold no record. `status` is 'same' where both hold the same records in the same order,
+    'same records, other order', 'differs', 'only in the snapshot' or 'only in the workbook'.
+
+    Args:
+        snapshot (pd.DataFrame): fibl_records_from_html output.
+        workbook (pd.DataFrame): `country`, `year`, `crop`, `cell`, limited to the snapshot's years.
+
+    Returns:
+        pd.DataFrame: `country`, `year`, `crop`, `workbook_records`, `snapshot_records`, `status`, one row per key
+        holding a record on either side.
+    """
+    s = snapshot[snapshot['organic_ha'].notna()].assign(
+        country=lambda f: f['country'].str.replace("'", '', regex=False),
+        crop=lambda f: f['item'].str.replace("'", '', regex=False)).sort_values('record', kind='stable')
+    s = s.groupby(['country', 'year', 'crop'])['organic_ha'].agg(tuple).rename('snapshot_records')
+    w = workbook.assign(year=workbook['year'].astype(int),
+                        workbook_records=workbook['cell'].map(lambda c: tuple(fibl_cell_records(c))))
+    w = w[w['workbook_records'].map(len) > 0].set_index(['country', 'year', 'crop'])['workbook_records']
+    if w.index.duplicated().any():
+        raise ValueError('the workbook holds %s more than once' % list(w.index[w.index.duplicated()])[:3])
+    d = pd.concat([w, s], axis=1).reset_index()
+    has_w, has_s = d['workbook_records'].notna(), d['snapshot_records'].notna()
+    sorted_records = lambda column: d[column].map(lambda t: tuple(sorted(t)), na_action='ignore')
+    same = has_w & has_s & (d['workbook_records'] == d['snapshot_records'])
+    reordered = has_w & has_s & ~same & (sorted_records('workbook_records') == sorted_records('snapshot_records'))
+    d['status'] = np.select([same, reordered, has_w & has_s, has_s], ['same', 'same records, other order', 'differs',
+                                                                      'only in the snapshot'], 'only in the workbook')
+    return d.sort_values(['year', 'country', 'crop']).reset_index(drop=True)
 
 
 def _recode(values, mapping):

@@ -5,7 +5,10 @@ zero and missing rules and the draw structure are stated as executable facts, an
 inputs anchor the joins and the published figures.
 """
 import csv
+import datetime
+import hashlib
 import os
+import types
 
 import numpy as np
 import pandas as pd
@@ -722,3 +725,269 @@ def test_the_exact_ponisio_file_refits_in_python_at_the_configured_coefficients(
     assert (diagnostics['max_abs_gradient_free'] < pc.REML_GRADIENT_TOLERANCE).all()
     assert (diagnostics['n_starts_at_best'] == diagnostics['n_starts']).all()
 
+
+
+# FiBL's selected-crops form and its answer, built by hand: no FiBL record is held in the repository.
+AREA = pc.ORGANIC_AREA_ELEMENT
+FORM_PAGE = ('<html><head><meta charset="utf-8"></head><body><form name="statistics" method="post">'
+             '<input type="hidden" name="tx_statisticdata_pi1[__trustedProperties]" value="token">'
+             '<input type="hidden" name="tx_statisticdata_pi1[menu_country]" value="">'
+             '<select class="menu_country"><option value="11">Testland</option><option value="12">Île d\'Essai</option></select>'
+             '<select class="menu_element"><option value="1">Organic area [ha]</option><option value="2">Share [%]</option></select>'
+             '<select class="menu_item"><option value="1186">Rye</option><option value="1100">Cocoa</option></select>'
+             '<select class="menu_year"><option value="23">2018</option><option value="24">2019</option></select>'
+             '</form></body></html>').encode('utf-8')
+
+
+def fibl_table(*rows, header=pc.FIBL_TABLE_COLUMNS):
+    head = ''.join('<th>%s</th>' % h for h in header)
+    body = ''.join('<tr>%s</tr>' % ''.join('<td>%s</td>' % c for c in r) for r in rows)
+    return ('<html><head><meta charset="utf-8"></head><body><table><thead><tr>%s</tr></thead><tbody>%s</tbody>'
+            '</table><span class="lastupdate">Last Update:&nbsp;10.02.2026</span></body></html>' % (head, body)).encode('utf-8')
+
+
+ANSWER_ROWS = [('Testland', '2019', 'Rye', AREA, "1'234.50"), ('Testland', '2019', 'Rye', AREA, '56.70'),
+               ("Île d'Essai", '2019', 'Cocoa', AREA, '-'), ('Testland', '2018', 'Rye', AREA, ''),
+               ('Testland', '2018', 'Cocoa', AREA, '-12.5')]
+ANSWER = fibl_table(*ANSWER_ROWS)
+REQUESTED = datetime.datetime(2026, 11, 27, 10, 48, 35, tzinfo=datetime.timezone.utc)
+
+
+def test_the_form_fields_send_the_hidden_inputs_every_country_and_item_one_element_and_the_years():
+    fields = pc.fibl_form_fields(FORM_PAGE, AREA, [2019])
+    menu = 'tx_statisticdata_pi1[%s][]'
+    assert fields == [('tx_statisticdata_pi1[__trustedProperties]', 'token'), ('tx_statisticdata_pi1[menu_country]', ''),
+                      (menu % 'menu_country', '11'), (menu % 'menu_country', '12'), (menu % 'menu_element', '1'),
+                      (menu % 'menu_item', '1186'), (menu % 'menu_item', '1100'), (menu % 'menu_year', '24')]
+
+
+@pytest.mark.parametrize('page, element, years, message', [
+    (b'<html><body><p>maintenance</p></body></html>', AREA, [2019], 'forms named statistics'),
+    (FORM_PAGE.replace(b'Share [%]', b'Organic area [ha]'), AREA, [2019], 'not once'),
+    (FORM_PAGE, 'Organic area', [2019], 'not once'),
+    (FORM_PAGE, AREA, [2019, 2020], 'no year'),
+    (FORM_PAGE.replace(b'<option value="1186">Rye</option><option value="1100">Cocoa</option>', b''), AREA, [2019],
+     'offers nothing'),
+])
+def test_the_form_fields_refuse_a_page_they_cannot_read_exactly(page, element, years, message):
+    with pytest.raises(ValueError, match=message):
+        pc.fibl_form_fields(page, element, years)
+
+
+def test_fibl_records_keep_every_row_in_its_order_with_repeated_keys_and_missing_values():
+    r = pc.fibl_records_from_html(ANSWER, AREA, [2018, 2019])
+    assert r['country'].tolist() == ['Testland', 'Testland', "Île d'Essai", 'Testland', 'Testland']
+    assert r['value_text'].tolist() == ["1'234.50", '56.70', '-', '', '-12.5']
+    assert r['organic_ha'].tolist()[:2] == [1234.50, 56.70] and r['organic_ha'].tolist()[4] == -12.5
+    assert r['organic_ha'].isna().tolist() == [False, False, True, True, False]
+    assert r['record'].tolist() == [1, 2, 1, 1, 1]
+    reordered = pc.fibl_records_from_html(fibl_table(*[ANSWER_ROWS[i] for i in (1, 0, 2, 3, 4)]), AREA, [2018, 2019])
+    assert reordered['organic_ha'].tolist()[:2] == [56.70, 1234.50] and reordered['record'].tolist()[:2] == [1, 2]
+
+
+@pytest.mark.parametrize('response, years, message', [
+    (b'<html><body><p>no data</p></body></html>', [2019], 'result tables'),
+    (ANSWER + ANSWER, [2018, 2019], 'result tables'),
+    (fibl_table(('Testland', '2019', 'Rye', '15.0'), header=['Country', 'Year', 'Item', 'Value']), [2019], 'columns'),
+    (fibl_table(), [2019], 'no rows'),
+    (fibl_table(('Testland', '2019', 'Rye', AREA)), [2019], 'five cells'),
+    (fibl_table(('Testland', '2019', 'Rye', 'Share [%]', '0.5')), [2019], 'elements'),
+    (fibl_table(('Testland', 'n.a.', 'Rye', AREA, '1.0')), [2019], 'not years'),
+    (fibl_table(('Testland', '2017', 'Rye', AREA, '1.0'), ('Testland', '2019', 'Rye', AREA, '1.0')), [2019], 'not requested'),
+    (fibl_table(('Testland', '2019', 'Rye', AREA, '1.0')), [2018, 2019], 'lacks requested years'),
+    (fibl_table(('Testland', '2019', 'Rye', AREA, '15.899,42')), [2019], 'neither numbers'),
+    (fibl_table(('Testland', '2019', 'Rye', AREA, 'n.a.')), [2019], 'neither numbers'),
+])
+def test_fibl_records_refuse_an_answer_that_is_empty_partial_or_unreadable(response, years, message):
+    with pytest.raises(ValueError, match=message):
+        pc.fibl_records_from_html(response, AREA, years)
+
+
+def test_the_records_hash_ignores_order_and_the_thousands_mark_and_counts_each_record():
+    records = lambda rows: pc.fibl_records_from_html(fibl_table(*rows), AREA, [2018, 2019])
+    original = pc.fibl_records_sha256(records(ANSWER_ROWS))
+    assert pc.fibl_records_sha256(records(ANSWER_ROWS[::-1])) == original
+    assert pc.fibl_records_sha256(records([('Testland', '2019', 'Rye', AREA, '1234.50')] + ANSWER_ROWS[1:])) == original
+    assert pc.fibl_records_sha256(records(ANSWER_ROWS + ANSWER_ROWS[1:2])) != original
+    assert pc.fibl_records_sha256(records([('Testland', '2019', 'Rye', AREA, '1234.51')] + ANSWER_ROWS[1:])) != original
+
+
+def test_a_workbook_cell_gives_every_record_it_holds():
+    assert pc.fibl_cell_records(1234.50) == [1234.50]
+    assert pc.fibl_cell_records('1234.50, 56.70') == [1234.50, 56.70]
+    assert pc.fibl_cell_records("1'234.56") == [1234.56]
+    assert pc.fibl_cell_records('-') == [] and pc.fibl_cell_records(np.nan) == []
+    with pytest.raises(ValueError, match='not a number'):
+        pc.fibl_cell_records('12.0, n.a.')
+
+
+def test_the_comparison_counts_every_record_and_separates_reordered_differing_and_one_sided_keys():
+    snapshot = pc.fibl_records_from_html(fibl_table(
+        ('Testland', '2019', 'Rye', AREA, '1234.50'), ('Testland', '2019', 'Rye', AREA, '56.70'),
+        ('Examplestan', '2019', 'Rye', AREA, "3'210.75"), ('Examplestan', '2019', 'Rye', AREA, '87.25'),
+        ("Île d'Essai", '2019', 'Cocoa', AREA, '432.10'), ('Mockovia', '2019', 'Coffee', AREA, '100'),
+        ('Samplia', '2019', 'Apples', AREA, '5'), ('Fixtura', '2019', 'Rye', AREA, '-')), AREA, [2019])
+    workbook = pd.DataFrame([('Testland', 2019.0, 'Rye', '1234.50, 56.70'), ('Examplestan', 2019.0, 'Rye', '87.25, 3210.75'),
+                             ('Île dEssai', 2019.0, 'Cocoa', 432.10), ('Mockovia', 2019.0, 'Coffee', 90.0),
+                             ('Fixtura', 2019.0, 'Taro', 3.0), ('Fixtura', 2019.0, 'Rye', np.nan)],
+                            columns=['country', 'year', 'crop', 'cell'])
+    d = pc.compare_fibl_records(snapshot, workbook).set_index(['country', 'crop'])['status'].to_dict()
+    assert d == {('Testland', 'Rye'): 'same', ('Examplestan', 'Rye'): 'same records, other order',
+                 ('Île dEssai', 'Cocoa'): 'same', ('Mockovia', 'Coffee'): 'differs',
+                 ('Samplia', 'Apples'): 'only in the snapshot', ('Fixtura', 'Taro'): 'only in the workbook'}
+
+
+def test_a_snapshot_is_kept_unchanged_under_a_dated_name_and_never_overwritten(tmp_path):
+    records = pc.fibl_records_from_html(ANSWER, AREA, [2018, 2019])
+    fields = pc.fibl_form_fields(FORM_PAGE, AREA, [2018, 2019])
+    receipt = pest_control_tasks.save_fibl_snapshot(str(tmp_path), ANSWER, records, fields, REQUESTED, 'https://fibl.test',
+                                                    AREA, [2018, 2019])
+    assert receipt['raw_file'] == 'fibl_organic_area_2018-2019_20261127T104835Z.html'
+    assert (tmp_path / receipt['raw_file']).read_bytes() == ANSWER
+    assert receipt['records_sha256'] == pc.fibl_records_sha256(records) and receipt['records'] == 5
+    assert (receipt['repeated_keys'], receipt['missing_values'], receipt['site_last_update']) == (1, 2, '10.02.2026')
+    menu = 'tx_statisticdata_pi1[%s][]'
+    assert receipt['fields'] == [
+        ['tx_statisticdata_pi1[__trustedProperties]', 'sha256:' + hashlib.sha256(b'token').hexdigest()],
+        ['tx_statisticdata_pi1[menu_country]', ''], [menu % 'menu_country', '11'], [menu % 'menu_country', '12'],
+        [menu % 'menu_element', '1'], [menu % 'menu_item', '1186'], [menu % 'menu_item', '1100'],
+        [menu % 'menu_year', '23'], [menu % 'menu_year', '24']]
+    receipt_text = (tmp_path / receipt['raw_file'].replace('.html', '.receipt.json')).read_text(encoding='utf-8')
+    revised = ANSWER.replace(b'56.70', b'60.00')
+    with pytest.raises(FileExistsError):
+        pest_control_tasks.save_fibl_snapshot(str(tmp_path), revised, pc.fibl_records_from_html(revised, AREA, [2018, 2019]),
+                                              fields, REQUESTED, 'https://fibl.test', AREA, [2018, 2019])
+    assert (tmp_path / receipt['raw_file']).read_bytes() == ANSWER
+    assert (tmp_path / receipt['raw_file'].replace('.html', '.receipt.json')).read_text(encoding='utf-8') == receipt_text
+
+
+def test_a_cached_snapshot_is_reused_only_unchanged_and_as_pinned(tmp_path):
+    load = pest_control_tasks.load_fibl_snapshot
+    with pytest.raises(ValueError, match='holds no FiBL snapshot with the pinned'):
+        load(str(tmp_path), 'any', AREA, [2018, 2019])
+    records = pc.fibl_records_from_html(ANSWER, AREA, [2018, 2019])
+    receipt = pest_control_tasks.save_fibl_snapshot(str(tmp_path), ANSWER, records, [], REQUESTED, 'https://fibl.test',
+                                                    AREA, [2018, 2019])
+    reused, reused_receipt = load(str(tmp_path), receipt['records_sha256'], AREA, [2018, 2019])
+    assert reused.equals(records) and reused_receipt == receipt
+    with pytest.raises(ValueError, match='holds no FiBL snapshot with the pinned'):
+        load(str(tmp_path), 'another', AREA, [2018, 2019])
+    with pytest.raises(ValueError, match='the run reads'):
+        load(str(tmp_path), receipt['records_sha256'], AREA, [2019])
+    (tmp_path / receipt['raw_file']).write_bytes(ANSWER.replace(b'56.70', b'56.71'))
+    with pytest.raises(ValueError, match='changed since it was saved'):
+        load(str(tmp_path), receipt['records_sha256'], AREA, [2018, 2019])
+
+
+class FiblSession:
+    """FiBL as the snapshot task meets it: the form page on GET, `answer` on POST."""
+    answer = ANSWER
+
+    def get(self, url, timeout):
+        return types.SimpleNamespace(status_code=200, content=FORM_PAGE)
+
+    def post(self, url, data, timeout):
+        return types.SimpleNamespace(status_code=200, content=self.answer)
+
+
+class NoNetwork:
+    def __init__(self):
+        raise AssertionError('the snapshot task reached the network')
+
+
+def snapshot_project(tmp_path, monkeypatch, download, pin, session):
+    """A project for the snapshot task alone: the configuration it reads and a two-crop workbook."""
+    monkeypatch.setattr(pest_control_tasks, 'publish_inputs', lambda p: p)
+    monkeypatch.setattr(pest_control_tasks.requests, 'Session', session)
+    sheet = [[None] * 6 for _ in range(7)] + [
+        [None, None, 'Rye', 'Rye', 'Cocoa', 'Cocoa'], [None, None, AREA, 'Share [%]', AREA, 'Share [%]'],
+        ['Testland', 2019, '1234.50, 56.70', 0.1, None, None], ['Testland', 2018, None, None, -12.5, None],
+        ['Île dEssai', 2019, None, None, 432.10, None]]
+    workbook = str(tmp_path / 'Area_org_FiBL.xlsx')
+    pd.DataFrame(sheet).to_excel(workbook, sheet_name='Data by country', header=False, index=False)
+    cur_dir = tmp_path / 'fibl_organic_area_snapshot'
+    cur_dir.mkdir()
+    return types.SimpleNamespace(run_this=1, cur_dir=str(cur_dir), get_path=lambda path: path,
+                                 pest_control_fibl_area_input_path=workbook, pest_control_fibl_download=download,
+                                 pest_control_fibl_download_url='https://fibl.test', pest_control_fibl_download_years=[2018, 2019],
+                                 pest_control_fibl_download_timeout_seconds=600, pest_control_fibl_snapshot_records_sha256=pin)
+
+
+def test_the_snapshot_task_without_the_flag_reuses_the_pinned_snapshot_and_touches_no_network(tmp_path, monkeypatch):
+    records = pc.fibl_records_from_html(ANSWER, AREA, [2018, 2019])
+    p = snapshot_project(tmp_path, monkeypatch, False, pc.fibl_records_sha256(records), NoNetwork)
+    pest_control_tasks.save_fibl_snapshot(p.cur_dir, ANSWER, records, [], REQUESTED, 'https://fibl.test', AREA, [2018, 2019])
+    pest_control_tasks.fibl_organic_area_snapshot(p)
+    d = pd.read_csv(os.path.join(p.cur_dir, 'fibl_snapshot_vs_workbook.csv'), encoding='utf-8-sig')
+    assert d.set_index(['country', 'year', 'crop'])['status'].to_dict() == {
+        ('Testland', 2018, 'Cocoa'): 'same', ('Testland', 2019, 'Rye'): 'same',
+        ('Île dEssai', 2019, 'Cocoa'): 'only in the workbook'}
+    assert p.pest_control_fibl_snapshot_dir == p.cur_dir
+
+
+def test_the_snapshot_task_without_the_flag_or_a_pin_does_nothing(tmp_path, monkeypatch):
+    p = snapshot_project(tmp_path, monkeypatch, False, '', NoNetwork)
+    pest_control_tasks.fibl_organic_area_snapshot(p)
+    assert os.listdir(p.cur_dir) == []
+
+
+@pytest.mark.parametrize('snapshot_dir', ['absent', 'empty'])
+def test_a_pin_without_its_snapshot_stops_the_run_offline(tmp_path, monkeypatch, snapshot_dir):
+    p = snapshot_project(tmp_path, monkeypatch, False, 'a' * 64, NoNetwork)
+    p.pest_control_fibl_snapshot_dir = str(tmp_path / snapshot_dir)
+    if snapshot_dir == 'empty':
+        os.makedirs(p.pest_control_fibl_snapshot_dir)
+    with pytest.raises(ValueError, match='holds no FiBL snapshot with the pinned'):
+        pest_control_tasks.fibl_organic_area_snapshot(p)
+    assert os.listdir(p.cur_dir) == []
+
+
+def test_a_skipped_snapshot_task_only_publishes_its_directory(tmp_path, monkeypatch):
+    p = snapshot_project(tmp_path, monkeypatch, True, '', NoNetwork)
+    p.run_this = 0
+    assert pest_control_tasks.fibl_organic_area_snapshot(p) is p
+    assert p.pest_control_fibl_snapshot_dir == p.cur_dir and os.listdir(p.cur_dir) == []
+
+
+def test_the_snapshot_task_downloads_when_asked_and_stops_on_records_other_than_the_pin(tmp_path, monkeypatch):
+    pin = pc.fibl_records_sha256(pc.fibl_records_from_html(ANSWER, AREA, [2018, 2019]))
+    p = snapshot_project(tmp_path, monkeypatch, True, pin, FiblSession)
+    pest_control_tasks.fibl_organic_area_snapshot(p)
+    held = sorted(f for f in os.listdir(p.cur_dir) if f.startswith('fibl_organic_area_'))
+    assert len(held) == 2 and held[0].endswith('Z.html') and held[1].endswith('Z.receipt.json')
+    assert os.path.exists(os.path.join(p.cur_dir, 'fibl_snapshot_vs_workbook.csv'))
+    revised = types.new_class('RevisedFibl', (FiblSession,))
+    revised.answer = ANSWER.replace(b'56.70', b'60.00')
+    p.cur_dir = str(tmp_path / 'second')
+    os.makedirs(p.cur_dir)
+    p.pest_control_fibl_snapshot_dir = p.cur_dir
+    monkeypatch.setattr(pest_control_tasks.requests, 'Session', revised)
+    with pytest.raises(ValueError, match='not the pinned'):
+        pest_control_tasks.fibl_organic_area_snapshot(p)
+    assert len([f for f in os.listdir(p.cur_dir) if f.endswith('.html')]) == 1
+
+
+def test_a_refresh_listing_the_same_records_in_another_order_makes_the_comparison_afresh(tmp_path, monkeypatch):
+    """The records hash ignores order and the workbook is unchanged, so only a comparison made on every run sees
+    that the refreshed response lists the workbook's two records the other way round."""
+    pin = pc.fibl_records_sha256(pc.fibl_records_from_html(ANSWER, AREA, [2018, 2019]))
+    p = snapshot_project(tmp_path, monkeypatch, True, pin, FiblSession)
+    status = lambda: pd.read_csv(os.path.join(p.cur_dir, 'fibl_snapshot_vs_workbook.csv'), encoding='utf-8-sig').set_index(
+        ['country', 'year', 'crop']).loc[('Testland', 2019, 'Rye'), 'status']
+    p.pest_control_fibl_snapshot_dir = str(tmp_path / 'day1')
+    pest_control_tasks.fibl_organic_area_snapshot(p)
+    assert status() == 'same'
+    reordered = types.new_class('ReorderedFibl', (FiblSession,))
+    reordered.answer = fibl_table(*[ANSWER_ROWS[i] for i in (1, 0, 2, 3, 4)])
+    monkeypatch.setattr(pest_control_tasks.requests, 'Session', reordered)
+    p.pest_control_fibl_snapshot_dir = str(tmp_path / 'day2')
+    pest_control_tasks.fibl_organic_area_snapshot(p)
+    assert status() == 'same records, other order'
+
+
+def test_the_calculation_tree_runs_the_fibl_snapshot_before_the_valuation(tmp_path):
+    import hazelbean as hb
+    from global_invest.pest_control import pest_control_initialize
+    p = hb.ProjectFlow(project_dir=str(tmp_path / 'tree'))
+    pest_control_initialize.build_gep_service_calculation_task_tree(p)
+    assert [t.function.__name__ for t in p.task_tree.children] == ['fibl_organic_area_snapshot', 'gep_calculation']
