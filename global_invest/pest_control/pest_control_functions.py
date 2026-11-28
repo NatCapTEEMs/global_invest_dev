@@ -18,6 +18,7 @@ and price are present. A missing factor leaves a valued crop NA, never a silent 
 country's total covers the crops with data, so each country carries how much it covers, and a
 country whose computed crops are all zero but which has valued crops without data has no total.
 """
+import hashlib
 import re
 
 import numpy as np
@@ -27,6 +28,14 @@ from scipy.optimize import minimize
 from scipy.stats import norm
 
 ORGANIC_AREA_ELEMENT = 'Organic area [ha]'
+
+# FiBL's selected-crops form: the menus a request chooses from, and the five columns of the table it answers with.
+# A value is a number, possibly negative, with an apostrophe as its thousands mark, or '-' or nothing where FiBL
+# has none.
+FIBL_FORM_MENUS = ('menu_country', 'menu_element', 'menu_item', 'menu_year')
+FIBL_TABLE_COLUMNS = ['Country', 'Year', 'Item', 'Element', 'Value']
+FIBL_NUMBER = r"-?(?:\d{1,3}(?:'\d{3})+|\d+)(?:\.\d+)?"
+FIBL_NO_VALUE = ('', '-')
 
 # An isolated FiBL record is treated as a reporting error when it exceeds this multiple of the
 # adjacent years and the crop's whole harvested area.
@@ -88,6 +97,20 @@ FIBL_CROP_TO_FAO = {
     'Vegetables, leafy or stalked': 'Leafy or stem vegetables', 'Vegetables, other': 'Vegetables',
     'Vegetables, root tuber and bulb': 'Root, bulb or tuberous vegetables', 'Walnuts, with shell': 'Walnuts, in shell',
 }
+
+# FiBL reports French nuts mostly as one aggregate, which has no yield or price. Agence Bio reports each nut every
+# year, under these production names. Its overseas departments (region codes below) are reported apart in FiBL.
+FIBL_NUT_AGGREGATE = 'Nuts, no details'
+AGENCE_BIO_NUT_PRODUCTIONS = {
+    'Walnuts, with shell': ['Noix'],
+    'Chestnuts': ['Châtaignes et marrons'],
+    'Hazelnuts': ['Noisettes'],
+    'Almonds': ['Amandes'],
+    'Pistachios': ['Pistaches'],
+    'Nuts, other': ["Autres fruits à coque (à l'exclusion des noix sauvages, arachides et noix de coco)"],
+}
+AGENCE_BIO_OVERSEAS_REGION_CODES = ('01', '02', '03', '04', '06')
+AGENCE_BIO_SUPPRESSED = 'NC'
 
 # The meta-analysis category each FAO group's benefit comes from. Cereals are valued only when the
 # configuration asks, their effect not differing significantly from zero.
@@ -188,6 +211,158 @@ def organic_area_from_cell(value):
     return float(value)
 
 
+def fibl_cell_records(value):
+    """Every record a FiBL workbook cell holds, in its order: one number, the two of a text such as
+    '1234.5, 67.8', or none for an empty cell or a dash. Unlike organic_area_from_cell, which the valuation
+    uses, nothing is dropped.
+
+    Raises:
+        ValueError: if a part of a text cell is not a number.
+    """
+    if not isinstance(value, str):
+        return [] if pd.isna(value) else [float(value)]
+    parts = [s.strip() for s in value.split(',') if s.strip() not in FIBL_NO_VALUE]
+    unreadable = [s for s in parts if not re.fullmatch(FIBL_NUMBER, s)]
+    if unreadable:
+        raise ValueError('FiBL cell %r holds %s, which is not a number' % (value, unreadable))
+    return [float(s.replace("'", '')) for s in parts]
+
+
+def fibl_form_fields(page, element, years):
+    """The fields of a request to FiBL's selected-crops form: the page's hidden inputs, every country and item it
+    offers, the one element named `element` and the years in `years`.
+
+    Args:
+        page (bytes or str): the form page as FiBL serves it.
+        element (str): an element's name as the form's menu shows it, such as 'Organic area [ha]'.
+        years (list of int): the years to request.
+
+    Returns:
+        list of (str, str): the name and value of each field, in the order the form's own submission sends them.
+
+    Raises:
+        ValueError: if the page holds no form named 'statistics' or more than one, a menu is empty, the element is
+            not on its menu exactly once, or a year is not on its menu.
+    """
+    from lxml import html
+    forms = html.fromstring(page).xpath("//form[@name='statistics']")
+    if len(forms) != 1:
+        raise ValueError('the FiBL page holds %d forms named statistics, not one' % len(forms))
+    menus = {m: [(o.get('value'), o.text_content().strip()) for o in forms[0].xpath(".//select[@class='%s']/option" % m)]
+             for m in FIBL_FORM_MENUS}
+    empty = [m for m, options in menus.items() if not options]
+    if empty:
+        raise ValueError('the FiBL form offers nothing in %s' % empty)
+    element_ids = [v for v, label in menus['menu_element'] if label == element]
+    if len(element_ids) != 1:
+        raise ValueError('the FiBL form lists the element %r %d times, not once' % (element, len(element_ids)))
+    year_ids = {label: v for v, label in menus['menu_year']}
+    not_offered = [y for y in years if str(y) not in year_ids]
+    if not_offered:
+        raise ValueError('the FiBL form offers no year %s' % not_offered)
+    chosen = {'menu_country': [v for v, _ in menus['menu_country']], 'menu_element': element_ids,
+              'menu_item': [v for v, _ in menus['menu_item']], 'menu_year': [year_ids[str(y)] for y in years]}
+    hidden = [(i.get('name'), i.get('value') or '') for i in forms[0].xpath(".//input[@type='hidden']")]
+    return hidden + [('tx_statisticdata_pi1[%s][]' % m, v) for m in FIBL_FORM_MENUS for v in chosen[m]]
+
+
+def fibl_records_from_html(response, element, years):
+    """FiBL's answer to a selected-crops request as records, one per row of its table, in the order it lists them.
+
+    Nothing is summed, dropped or reordered. A key FiBL reports twice keeps both rows, and `record` numbers the rows
+    of each country, year, item and element in the order of the response. `value_text` is the cell as shown, and
+    `organic_ha` its number, missing where FiBL shows '-' or nothing.
+
+    Args:
+        response (bytes or str): the page FiBL returns for the request.
+        element (str): the element requested.
+        years (list of int): the years requested.
+
+    Returns:
+        pd.DataFrame: `country`, `year`, `item`, `element`, `value_text`, `organic_ha`, `record`.
+
+    Raises:
+        ValueError: if the page holds no result table or more than one, the table's columns are not FiBL's five, it
+            has no rows, a row has another number of cells, names another element or a year not requested, a
+            requested year has no row, or a value is neither a number nor missing.
+    """
+    from lxml import html
+    tables = html.fromstring(response).xpath("//table[.//th[contains(., 'Country')]]")
+    if len(tables) != 1:
+        raise ValueError('the FiBL response holds %d result tables, not one' % len(tables))
+    header = [th.text_content().strip() for th in tables[0].xpath('.//th')]
+    if header != FIBL_TABLE_COLUMNS:
+        raise ValueError('the FiBL table has the columns %s, not %s' % (header, FIBL_TABLE_COLUMNS))
+    rows = [[td.text_content().strip() for td in tr.xpath('./td')] for tr in tables[0].xpath('.//tr[td]')]
+    if not rows:
+        raise ValueError('the FiBL table has no rows')
+    ragged = [r for r in rows if len(r) != len(FIBL_TABLE_COLUMNS)]
+    if ragged:
+        raise ValueError('%d FiBL rows do not have five cells, the first %s' % (len(ragged), ragged[0]))
+    d = pd.DataFrame(rows, columns=['country', 'year', 'item', 'element', 'value_text'])
+    other_elements = sorted(set(d['element']) - {element})
+    if other_elements:
+        raise ValueError('the FiBL table holds elements %s besides %r' % (other_elements, element))
+    if not d['year'].str.fullmatch(r'\d{4}').all():
+        raise ValueError('FiBL years %s are not years' % sorted(set(d.loc[~d['year'].str.fullmatch(r'\d{4}'), 'year'])))
+    d['year'] = d['year'].astype(int)
+    unrequested = sorted(set(d['year']) - set(years))
+    absent = sorted(set(years) - set(d['year']))
+    if unrequested or absent:
+        raise ValueError('the FiBL table holds years %s that were not requested and lacks requested years %s'
+                         % (unrequested, absent))
+    missing = d['value_text'].isin(FIBL_NO_VALUE)
+    numeric = d['value_text'].str.fullmatch(FIBL_NUMBER)
+    if (~missing & ~numeric).any():
+        raise ValueError('FiBL values %s are neither numbers nor missing'
+                         % sorted(set(d.loc[~missing & ~numeric, 'value_text']))[:5])
+    d['organic_ha'] = d['value_text'].str.replace("'", '', regex=False).where(numeric).astype(float)
+    d['record'] = d.groupby(['country', 'year', 'item', 'element']).cumcount() + 1
+    return d
+
+
+def fibl_records_sha256(records):
+    """A hash of FiBL records that ignores their order and counts each of them: one line per record of country,
+    year, item, element and the value as shown less its thousands mark, the lines sorted."""
+    lines = sorted('%s|%d|%s|%s|%s' % (c, y, i, e, v.replace("'", '')) for c, y, i, e, v in
+                   records[['country', 'year', 'item', 'element', 'value_text']].itertuples(index=False))
+    return hashlib.sha256('\n'.join(lines).encode('utf-8')).hexdigest()
+
+
+def compare_fibl_records(snapshot, workbook):
+    """FiBL's records against the workbook's cells, per country, year and crop, every record of a key counted.
+
+    Names lose their apostrophes before the join, as the workbook writes them. A snapshot row without a value and an
+    empty or dashed cell hold no record. `status` is 'same' where both hold the same records in the same order,
+    'same records, other order', 'differs', 'only in the snapshot' or 'only in the workbook'.
+
+    Args:
+        snapshot (pd.DataFrame): fibl_records_from_html output.
+        workbook (pd.DataFrame): `country`, `year`, `crop`, `cell`, limited to the snapshot's years.
+
+    Returns:
+        pd.DataFrame: `country`, `year`, `crop`, `workbook_records`, `snapshot_records`, `status`, one row per key
+        holding a record on either side.
+    """
+    s = snapshot[snapshot['organic_ha'].notna()].assign(
+        country=lambda f: f['country'].str.replace("'", '', regex=False),
+        crop=lambda f: f['item'].str.replace("'", '', regex=False)).sort_values('record', kind='stable')
+    s = s.groupby(['country', 'year', 'crop'])['organic_ha'].agg(tuple).rename('snapshot_records')
+    w = workbook.assign(year=workbook['year'].astype(int),
+                        workbook_records=workbook['cell'].map(lambda c: tuple(fibl_cell_records(c))))
+    w = w[w['workbook_records'].map(len) > 0].set_index(['country', 'year', 'crop'])['workbook_records']
+    if w.index.duplicated().any():
+        raise ValueError('the workbook holds %s more than once' % list(w.index[w.index.duplicated()])[:3])
+    d = pd.concat([w, s], axis=1).reset_index()
+    has_w, has_s = d['workbook_records'].notna(), d['snapshot_records'].notna()
+    sorted_records = lambda column: d[column].map(lambda t: tuple(sorted(t)), na_action='ignore')
+    same = has_w & has_s & (d['workbook_records'] == d['snapshot_records'])
+    reordered = has_w & has_s & ~same & (sorted_records('workbook_records') == sorted_records('snapshot_records'))
+    d['status'] = np.select([same, reordered, has_w & has_s, has_s], ['same', 'same records, other order', 'differs',
+                                                                      'only in the snapshot'], 'only in the workbook')
+    return d.sort_values(['year', 'country', 'crop']).reset_index(drop=True)
+
+
 def _recode(values, mapping):
     """A series mapped through a recode table, with names the table leaves out kept as they are."""
     return values.map(lambda value: mapping.get(value, value))
@@ -226,6 +401,80 @@ def correct_organic_area_spikes(areas, harvested):
                               'replacement_ha']].reset_index(drop=True)
     d['organic_ha'] = d['organic_ha'].where(~is_spike, d['replacement_ha'])
     return d[areas.columns.tolist()], spikes
+
+
+def agence_bio_nut_shares(surfaces, years):
+    """Each year's share of each FiBL nut item in mainland France's organic nut area, from Agence Bio.
+
+    The area is `surfbio`, certified plus in conversion, as FiBL counts it, and the overseas
+    departments are left out because FiBL reports them apart. Agence Bio withholds some regional
+    cells for statistical confidentiality and writes `NC` in them. Such a cell's area is unknown, not
+    zero: it adds nothing to a share, as in the service owner's rule, and the number of such cells is
+    returned beside each share so the reader sees what the share omits.
+
+    Args:
+        surfaces (pd.DataFrame): Agence Bio's table read as text, with `annee`, `coderegion`,
+            `production` and `surfbio`.
+        years (list): the years to split.
+
+    Returns:
+        pd.DataFrame: `year`, `crop` (the FiBL nut item), `known_ha`, `suppressed_cells` and `share`,
+        the shares of a year summing to 1.
+
+    Raises:
+        ValueError: if a production name is absent from the table, a `surfbio` cell is neither a
+            number nor `NC`, or a year has no known nut area.
+    """
+    crop_of = {name: crop for crop, names in AGENCE_BIO_NUT_PRODUCTIONS.items() for name in names}
+    absent = sorted(set(crop_of) - set(surfaces['production']))
+    if absent:
+        raise ValueError('Agence Bio lists no production named %s' % absent)
+    d = surfaces[surfaces['annee'].astype(int).isin(years) & surfaces['production'].isin(crop_of)
+                 & ~surfaces['coderegion'].isin(AGENCE_BIO_OVERSEAS_REGION_CODES)]
+    value = d['surfbio'].str.strip()
+    suppressed = value == AGENCE_BIO_SUPPRESSED
+    known = pd.to_numeric(value.where(~suppressed), errors='coerce')
+    if (~suppressed & known.isna()).any():
+        raise ValueError('Agence Bio surfbio holds %s, neither a number nor %s'
+                         % (sorted(set(value[~suppressed & known.isna()])), AGENCE_BIO_SUPPRESSED))
+    d = pd.DataFrame({'year': d['annee'].astype(int), 'crop': d['production'].map(crop_of),
+                      'known_ha': known.fillna(0.0), 'suppressed_cells': suppressed.astype(int)})
+    out = d.groupby(['year', 'crop'], as_index=False)[['known_ha', 'suppressed_cells']].sum()
+    total = out.groupby('year')['known_ha'].transform('sum')
+    if (total <= 0).any():
+        raise ValueError('Agence Bio holds no known nut area in %s' % sorted(out.loc[total <= 0, 'year'].unique()))
+    out['share'] = out['known_ha'] / total
+    return out
+
+
+def split_french_nut_aggregate(fibl, shares, years):
+    """FiBL's French nut area split into individual nuts by Agence Bio's shares of the same year.
+
+    Without the split, the French aggregate goes unvalued in most years and the nuts are valued only
+    in the years FiBL happens to list them singly. In each of `years`, FiBL's French total over the
+    nut items and the aggregate is replaced by that total times each nut's share, so the total is
+    kept exactly. Other countries, crops and years are untouched.
+
+    Args:
+        fibl (pd.DataFrame): `country`, `year`, `crop`, `organic_ha` (read_fibl_organic_areas output).
+        shares (pd.DataFrame): agence_bio_nut_shares output.
+        years (list): the years to split.
+
+    Returns:
+        pd.DataFrame: `fibl` with the French nut rows of those years replaced.
+
+    Raises:
+        ValueError: if a year holds French nut area in FiBL and no Agence Bio share.
+    """
+    in_rule = ((fibl['country'] == 'France') & fibl['year'].isin(years)
+               & fibl['crop'].isin(list(AGENCE_BIO_NUT_PRODUCTIONS) + [FIBL_NUT_AGGREGATE]))
+    totals = fibl[in_rule].groupby('year')['organic_ha'].sum().rename('total').reset_index()
+    without = sorted(set(totals.loc[totals['total'] > 0, 'year']) - set(shares['year']))
+    if without:
+        raise ValueError('FiBL holds French nut area in %s and Agence Bio gives no share' % without)
+    split = totals.merge(shares[['year', 'crop', 'share']], on='year', how='inner')
+    split = split.assign(country='France', organic_ha=split['total'] * split['share'])
+    return pd.concat([fibl[~in_rule], split[['country', 'year', 'crop', 'organic_ha']]], ignore_index=True)
 
 
 def clean_organic_areas(fibl, recent, individual_items, harvested, year):
@@ -274,6 +523,32 @@ def clean_organic_areas(fibl, recent, individual_items, harvested, year):
     info['spikes'] = spikes[spikes['year'] == year].reset_index(drop=True)
     d = d[(d['year'] == year) & (d['organic_ha'] > 0)]
     return d[['area_fao', 'item', 'organic_ha']].reset_index(drop=True), info
+
+
+def plausible_premiums(premiums, times):
+    """The matched price ratios within a plausibility limit, and the ones left out.
+
+    A trade unit value can compare an organic and a conventional product that differ in processing,
+    packaging or quality, so a ratio more than `times` above or below 1 is left out. A ratio is kept
+    when 1/times <= ratio <= times, so the two limits themselves are kept. The limit applies before
+    any group statistic: a group's mean and spread come from the kept ratios only, and a crop,
+    country and year whose ratio is left out takes that group mean, like any crop without a ratio.
+
+    Args:
+        premiums (pd.DataFrame): `Org_premium` and the other columns, every matched pair of every year.
+        times (float): the limit, a finite number above 1.
+
+    Returns:
+        tuple: (kept, left_out), both with `premiums`' columns.
+
+    Raises:
+        ValueError: if `times` is not a finite number above 1.
+    """
+    times = float(times)
+    if not np.isfinite(times) or times <= 1.0:
+        raise ValueError('the price-ratio plausibility limit is %r; it takes a finite number above 1' % times)
+    kept = (premiums['Org_premium'] <= times) & (premiums['Org_premium'] >= 1.0 / times)
+    return premiums[kept].reset_index(drop=True), premiums[~kept].reset_index(drop=True)
 
 
 def premium_parameters_by_group(premiums):

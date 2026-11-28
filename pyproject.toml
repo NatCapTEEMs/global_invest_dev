@@ -45,7 +45,8 @@ dependencies = [
 gdal = ["GDAL"]
 # natcap.invest runs erosion's SDR model; mapclassify classifies erosion's map breaks and has a
 # quantile fallback; contextily draws landslide basemaps and fetches its tiles over the network.
-models = ["natcap.invest", "mapclassify", "contextily"]
+# lxml reads FiBL's form and result table in pest control's opt-in FiBL snapshot.
+models = ["natcap.invest", "mapclassify", "contextily", "lxml"]
 # fisheries reads a HAR file through gtappy, a sibling repo in this stack rather than a PyPI
 # package, so it is installed from source alongside this one.
 gtap = ["gtappy"]
